@@ -9,9 +9,10 @@ export const CALIBRATION_LIFECYCLE_RULES = Object.freeze({
 });
 
 function finiteOrNull(value) {
-  return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
-    ? Number(value)
-    : null;
+  if (value === null || value === undefined || typeof value === 'boolean') return null;
+  if (typeof value === 'string' && !value.trim()) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function nonNegativeFiniteOrNull(value) {
@@ -20,25 +21,40 @@ function nonNegativeFiniteOrNull(value) {
 }
 
 function nonNegativeInteger(value) {
-  const number = Number(value);
+  const number = finiteOrNull(value);
   return Number.isSafeInteger(number) && number >= 0 ? number : 0;
 }
 
 function positiveRule(value, fallback) {
-  const number = Number(value);
-  return Number.isFinite(number) && number > 0 ? number : fallback;
+  const number = finiteOrNull(value);
+  return number !== null && number > 0 ? number : fallback;
 }
 
 function nonNegativeRule(value, fallback) {
-  const number = Number(value);
-  return Number.isFinite(number) && number >= 0 ? number : fallback;
+  const number = finiteOrNull(value);
+  return number !== null && number >= 0 ? number : fallback;
+}
+
+function trustedTimestampMs(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const text = value.trim();
+  const calendar = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(text);
+  if (!calendar) return null;
+  const year = Number(calendar[1]);
+  const month = Number(calendar[2]);
+  const day = Number(calendar[3]);
+  if (!Number.isSafeInteger(year) || month < 1 || month > 12 || day < 1) return null;
+  const maxDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (day > maxDay) return null;
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function validWindowRange(from, to) {
-  const fromMs = Date.parse(String(from || ''));
-  const toMs = Date.parse(String(to || ''));
+  const fromMs = trustedTimestampMs(from);
+  const toMs = trustedTimestampMs(to);
   return {
-    valid: Number.isFinite(fromMs) && Number.isFinite(toMs) && fromMs <= toMs,
+    valid: fromMs !== null && toMs !== null && fromMs <= toMs,
     fromMs,
     toMs,
   };
@@ -54,14 +70,19 @@ function canonical(value) {
 }
 
 export function calibrationFingerprintPayload(profile = {}) {
+  const source = profile && typeof profile === 'object' && !Array.isArray(profile) ? profile : {};
+  const signalWeights = source.signalWeights
+    && typeof source.signalWeights === 'object'
+    && !Array.isArray(source.signalWeights)
+    && Object.getPrototypeOf(source.signalWeights) !== null
+      ? source.signalWeights
+      : {};
   return canonical({
-    algorithm: String(profile.version || ''),
-    temperature: finiteOrNull(profile.temperature) ?? 1,
-    temperatureActive: profile.temperatureActive === true,
-    signalWeights: profile.signalWeights && typeof profile.signalWeights === 'object' && !Array.isArray(profile.signalWeights)
-      ? profile.signalWeights
-      : {},
-    weightsActive: profile.weightsActive === true,
+    algorithm: String(source.version || ''),
+    temperature: finiteOrNull(source.temperature) ?? 1,
+    temperatureActive: source.temperatureActive === true,
+    signalWeights,
+    weightsActive: source.weightsActive === true,
   });
 }
 
@@ -149,13 +170,17 @@ export function evaluatePostPromotionRollback(metrics = {}, rules = CALIBRATION_
     CALIBRATION_LIFECYCLE_RULES.rollbackLogLossTolerance,
   );
   const enoughData = sample >= minPostPromotionSample;
-  const rollback = enoughData && (
-    (brierRegression !== null && brierRegression > rollbackBrierTolerance)
-    || (logLossRegression !== null && logLossRegression > rollbackLogLossTolerance)
+  const metricsValid = [activeBrier, championBrier, activeLogLoss, championLogLoss].every(value => value !== null);
+  const decisionReady = enoughData && metricsValid;
+  const rollback = decisionReady && (
+    brierRegression > rollbackBrierTolerance
+    || logLossRegression > rollbackLogLossTolerance
   );
   return {
     sample,
     enoughData,
+    metricsValid,
+    decisionReady,
     rollback,
     activeBrier,
     championBrier,
@@ -165,16 +190,18 @@ export function evaluatePostPromotionRollback(metrics = {}, rules = CALIBRATION_
     logLossRegression,
     reason: rollback
       ? 'Post-promotion когорта ухудшила контрольные метрики сверх допуска.'
-      : enoughData
-        ? 'Post-promotion метрики находятся в допустимых пределах.'
-        : 'Post-promotion выборка ещё недостаточна для решения об откате.',
+      : !enoughData
+        ? 'Post-promotion выборка ещё недостаточна для решения об откате.'
+        : !metricsValid
+          ? 'Post-promotion контрольные метрики неполны; решение об откате остаётся на удержании.'
+          : 'Post-promotion метрики находятся в допустимых пределах.',
   };
 }
 
 export function splitRollingValidation(rows = [], rules = CALIBRATION_LIFECYCLE_RULES) {
   const validRows = (Array.isArray(rows) ? rows : [])
-    .map(row => ({ row, kickoffMs: Date.parse(String(row?.kickoff_at || '')) }))
-    .filter(item => Number.isFinite(item.kickoffMs));
+    .map(row => ({ row, kickoffMs: trustedTimestampMs(row?.kickoff_at) }))
+    .filter(item => item.kickoffMs !== null);
   validRows.sort((a, b) => a.kickoffMs - b.kickoffMs);
   const sorted = validRows.map(item => item.row);
   const minWindowSample = Math.ceil(positiveRule(rules?.minWindowSample, CALIBRATION_LIFECYCLE_RULES.minWindowSample));
@@ -183,7 +210,11 @@ export function splitRollingValidation(rows = [], rules = CALIBRATION_LIFECYCLE_
   const windowSize = Math.max(minWindowSample, Math.floor(sorted.length * 0.2));
   const cappedWindow = Math.min(50, windowSize);
   const validationTotal = cappedWindow * 2;
-  if (sorted.length < minTrustedSample || sorted.length - validationTotal < minTrainSample) {
+  if (
+    cappedWindow < minWindowSample
+    || sorted.length < minTrustedSample
+    || sorted.length - validationTotal < minTrainSample
+  ) {
     return { train: [], windows: [], ready: false, sample: sorted.length };
   }
   const train = sorted.slice(0, sorted.length - validationTotal);
