@@ -94,45 +94,83 @@ export function createAnalysisLifecycleRuntime(deps) {
   }
 
   function analysisFreshness(payload = {}, now = Date.now()) {
-    const generatedMs=Date.parse(payload?.generatedAt || '');
-    const kickoffMs=Date.parse(payload?.match?.date || '');
-    const status=String(payload?.match?.status || '');
-    const live=isLiveStatus(status);
-    const finished=isFinishedStatus(status);
-    const ageMinutes=Number.isFinite(generatedMs) ? Math.max(0,Math.round((now-generatedMs)/60000)) : 99999;
-    const minutesToKickoff=Number.isFinite(kickoffMs) ? Math.round((kickoffMs-now)/60000) : null;
-    const homeConfirmed=Number(payload?.lineups?.home?.startXI?.length || 0)>=10;
-    const awayConfirmed=Number(payload?.lineups?.away?.startXI?.length || 0)>=10;
-    const lineupsConfirmed=homeConfirmed && awayConfirmed;
-    const marketAvailable=Boolean(payload?.market);
+    const source=objectValue(payload) || {};
+    const nowMs=safeNow(now);
+    const generatedMs=parsedTime(source.generatedAt);
+    const kickoffMs=parsedTime(source?.match?.date);
+    const status=safeText(source?.match?.status,32);
+    const live=statusFlag(isLiveStatus,status);
+    const finished=statusFlag(isFinishedStatus,status);
+    const generatedValid=generatedMs !== null && generatedMs <= nowMs+5*60_000;
+    const ageMinutes=generatedValid
+      ? Math.max(0,Math.round((nowMs-generatedMs)/60000))
+      : 99999;
+    const minutesToKickoff=kickoffMs !== null
+      ? Math.round((kickoffMs-nowMs)/60000)
+      : null;
+    const lineupsConfirmed=trustedLineupsConfirmed(source);
+    const marketAvailable=Boolean(objectValue(source.market));
+
     if (live || finished || (minutesToKickoff !== null && minutesToKickoff < -5)) {
-      return {state:'started',label:finished?'Матч завершён':'Матч уже начался',ageMinutes,minutesToKickoff,maxAgeMinutes:0,needsRecheck:false,lineupsConfirmed,marketAvailable,reasonCode:'match_started',reason:'Предматчевый AI больше не обновляется как pre-match: используйте центр матча.'};
+      return {
+        state:'started',
+        label:finished ? 'Матч завершён' : 'Матч уже начался',
+        ageMinutes,
+        minutesToKickoff,
+        maxAgeMinutes:0,
+        needsRecheck:false,
+        lineupsConfirmed,
+        marketAvailable,
+        generatedAtValid:generatedValid,
+        reasonCode:'match_started',
+        reason:'Предматчевый AI больше не обновляется как pre-match: используйте центр матча.',
+      };
     }
+
     let maxAgeMinutes=45;
     if (minutesToKickoff !== null) {
-      if (minutesToKickoff <= 15) maxAgeMinutes=3;
-      else if (minutesToKickoff <= 45) maxAgeMinutes=5;
-      else if (minutesToKickoff <= 120) maxAgeMinutes=10;
-      else if (minutesToKickoff <= 360) maxAgeMinutes=20;
+      if (minutesToKickoff<=15) maxAgeMinutes=3;
+      else if (minutesToKickoff<=45) maxAgeMinutes=5;
+      else if (minutesToKickoff<=120) maxAgeMinutes=10;
+      else if (minutesToKickoff<=360) maxAgeMinutes=20;
     }
-    if (minutesToKickoff !== null && minutesToKickoff <= 90 && !lineupsConfirmed) maxAgeMinutes=Math.min(maxAgeMinutes,5);
-    const needsRecheck=ageMinutes>maxAgeMinutes;
+    if (minutesToKickoff !== null && minutesToKickoff<=90 && !lineupsConfirmed) {
+      maxAgeMinutes=Math.min(maxAgeMinutes,5);
+    }
+
+    const needsRecheck=!generatedValid || ageMinutes>maxAgeMinutes;
     let reasonCode='fresh';
     let reason=`AI обновлён ${ageMinutes} мин. назад; рабочее окно свежести — ${maxAgeMinutes} мин.`;
-    if (needsRecheck && minutesToKickoff !== null && minutesToKickoff <= 90 && !lineupsConfirmed) {
+
+    if (!generatedValid) {
+      reasonCode='generated_time_invalid';
+      reason='Время формирования сохранённого AI-снимка не подтверждено; требуется новая проверка.';
+    } else if (needsRecheck && minutesToKickoff !== null && minutesToKickoff<=90 && !lineupsConfirmed) {
       reasonCode='lineups_window';
-      reason='Матч близко: стартовые составы могли появиться после последнего расчёта.';
-    } else if (needsRecheck && minutesToKickoff !== null && minutesToKickoff <= 30 && marketAvailable) {
+      reason='Матч близко: подтверждённые стартовые составы могли появиться после последнего расчёта.';
+    } else if (needsRecheck && minutesToKickoff !== null && minutesToKickoff<=30 && marketAvailable) {
       reasonCode='market_window';
       reason='До старта мало времени: рынок и вероятности могли заметно измениться.';
     } else if (needsRecheck) {
       reasonCode='age_window';
       reason=`Последнему AI-разбору ${ageMinutes} мин.; для этого этапа до матча лимит свежести ${maxAgeMinutes} мин.`;
     }
-    return {state:needsRecheck?'recheck':'fresh',label:needsRecheck?'Нужна перепроверка':'AI свежий',ageMinutes,minutesToKickoff,maxAgeMinutes,needsRecheck,lineupsConfirmed,marketAvailable,reasonCode,reason};
+
+    return {
+      state:needsRecheck ? 'recheck' : 'fresh',
+      label:needsRecheck ? 'Нужна перепроверка' : 'AI свежий',
+      ageMinutes,
+      minutesToKickoff,
+      maxAgeMinutes,
+      needsRecheck,
+      lineupsConfirmed,
+      marketAvailable,
+      generatedAtValid:generatedValid,
+      reasonCode,
+      reason,
+    };
   }
-  
-  
+
   function analysisKickoffHandoff(payload = {}, now = Date.now()) {
     const status=String(payload?.match?.status || '');
     const kickoffMs=Date.parse(payload?.match?.date || '');
