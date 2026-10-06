@@ -62,7 +62,7 @@ export function createAnalysisController({
   const errorCategory = typeof apiErrorCategory === 'function' ? apiErrorCategory : () => 'error';
   const showToast = typeof toast === 'function' ? toast : () => {};
 
-  async function loadAnalysisAccessSnapshot(fixtureId) {
+  async function loadAnalysisAccessSnapshot(id) {
     const id = Number(fixtureId || 0);
     if (!Number.isSafeInteger(id) || id <= 0) return null;
     try {
@@ -93,14 +93,20 @@ export function createAnalysisController({
       return;
     }
 
-    const sourceView = activeViewId();
-    const requestSeq = ++state.analysisRequestSeq;
-    if (sourceView !== 'analysisView') state.analysisBackView = sourceView;
+    const id = Number(fixtureId);
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      showToast('Не удалось определить матч для AI-разбора.');
+      return;
+    }
 
     if (!canRun('analysisEnabled')) {
       showToast(state.runtimeStatus?.message || 'Полный анализ временно приостановлен.');
       return;
     }
+
+    const sourceView = activeViewId();
+    const requestSeq = ++state.analysisRequestSeq;
+    if (sourceView !== 'analysisView') state.analysisBackView = sourceView;
 
     stopLive();
     hidePaywall();
@@ -126,14 +132,14 @@ export function createAnalysisController({
     if (button) button.textContent = '⏳ Собираю данные…';
 
     try {
-      const entitlementBefore = await loadAnalysisAccessSnapshot(fixtureId);
+      const entitlementBefore = await loadAnalysisAccessSnapshot(id);
       const data = await api('/api/analyze', {
         method: 'POST',
-        body: JSON.stringify(analysisPayload(fixtureId, options)),
+        body: JSON.stringify(analysisPayload(id, options)),
       });
 
       const entitlementAfter = entitlementBefore?.entitlement?.source === 'pass'
-        ? await loadAnalysisAccessSnapshot(fixtureId)
+        ? await loadAnalysisAccessSnapshot(id)
         : entitlementBefore;
 
       data.accessUsage = buildAccessUsage({
@@ -141,11 +147,11 @@ export function createAnalysisController({
         entitlementBefore: entitlementBefore || {},
         entitlementAfter: entitlementAfter || entitlementBefore || {},
         profile: state.profile || {},
-        fixtureId,
+        fixtureId:id,
       });
 
       if (entitlementBefore?.entitlement?.source === 'pass') {
-        void Promise.resolve(refreshPass(fixtureId)).catch(() => null);
+        void Promise.resolve(refreshPass(id)).catch(() => null);
       }
 
       if (adminCheck() && data.provider?.visibility === 'admin') {
@@ -177,11 +183,20 @@ export function createAnalysisController({
       if (requestSeq !== state.analysisRequestSeq || activeViewId() !== 'analysisView') return;
 
       const recovery = error?.payload?.newsImpactRecovery || null;
+      const errorCode = String(error?.payload?.code || '').toUpperCase();
       const providerRateLimit = error?.status === 429
-        && String(error?.payload?.code || '').startsWith('FOOTBALL_');
-      const quotaExhausted = error?.status === 429 && !providerRateLimit;
+        && errorCode.startsWith('FOOTBALL_');
+      const analysisWarming = error?.status === 429
+        && errorCode === 'ANALYSIS_WARMING';
+      const legacyQuotaExhausted = error?.status === 429
+        && !errorCode
+        && Number(error?.payload?.quota?.left) <= 0;
+      const quotaExhausted = error?.status === 429
+        && !providerRateLimit
+        && !analysisWarming
+        && (errorCode === 'ANALYSIS_QUOTA_EXHAUSTED' || legacyQuotaExhausted);
 
-      if (quotaExhausted) showPaywall(fixtureId);
+      if (quotaExhausted) showPaywall(id);
 
       if (recovery?.message) {
         showToast(recovery.message);
@@ -216,7 +231,7 @@ export function createAnalysisController({
             : (error?.status === 429
               ? 'Источник футбольных данных временно ограничил обновления.'
               : (error?.message || 'Не удалось подготовить анализ.')),
-          retry: () => analyzeMatch(fixtureId, null, options),
+          retry: () => analyzeMatch(id, null, options),
         });
       }
     } finally {
