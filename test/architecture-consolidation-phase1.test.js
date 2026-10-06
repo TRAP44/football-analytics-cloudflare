@@ -110,10 +110,10 @@ test('public feedback copy hides internal beta/severity terminology while keepin
 
   const publicFeedback=html.slice(start,end);
   assert.match(publicFeedback,/Сообщить о проблеме/);
-  assert.match(publicFeedback,/>Важность</);
-  assert.match(publicFeedback,/>Работает нестабильно или непонятно</);
-  assert.match(publicFeedback,/>Основной функцией невозможно пользоваться</);
-  assert.match(publicFeedback,/>Визуальный или небольшой недочёт</);
+  assert.match(publicFeedback,/>\s*Важность\s*</);
+  assert.match(publicFeedback,/>\s*Работает нестабильно или непонятно\s*</);
+  assert.match(publicFeedback,/>\s*Основной функцией невозможно пользоваться\s*</);
+  assert.match(publicFeedback,/>\s*Визуальный или небольшой недочёт\s*</);
 
   // Stable values remain implementation details; raw labels must not be user-facing copy.
   assert.match(publicFeedback,/value="MAJOR"/);
