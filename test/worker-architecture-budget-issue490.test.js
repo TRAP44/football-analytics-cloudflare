@@ -25,13 +25,14 @@ import { createSupabaseSchemaRuntime } from '../src/supabase-schema-runtime.js';
 import { createProductionMonitorRuntime } from '../src/production-monitor-runtime.js';
 import { createProviderSloRuntime } from '../src/provider-slo-runtime.js';
 import { createBetaPhase5Runtime } from '../src/beta-phase5-runtime.js';
+import { createClientTelemetryRuntime } from '../src/client-telemetry-runtime.js';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 
 test('Worker composition root stays below the post-audit architecture budget',()=>{
   const bytes=Buffer.byteLength(worker,'utf8');
   assert.ok(
-    bytes<=625_000,
+    bytes<=615_000,
     `src/worker.js grew to ${bytes} bytes; extract another cohesive runtime instead of growing the composition root`,
   );
 });
@@ -150,6 +151,7 @@ test('extracted runtime factories are executable contracts, not source-only plac
   const productionMonitor=createProductionMonitorRuntime(new Proxy({}, {get:()=>()=>null}));
   const providerSlo=createProviderSloRuntime(new Proxy({}, {get:()=>()=>null}));
   const betaPhase5=createBetaPhase5Runtime(new Proxy({}, {get:()=>()=>null}));
+  const clientTelemetry=createClientTelemetryRuntime(new Proxy({}, {get:()=>()=>null}));
   assert.equal(typeof settlement.runSettlementWatchdog,'function');
   assert.equal(typeof settlement.runSettlementFinalityVerification,'function');
   assert.equal(typeof providerData.providerDataState,'function');
@@ -197,6 +199,9 @@ test('extracted runtime factories are executable contracts, not source-only plac
   assert.equal(typeof betaPhase5.apiBetaDashboard,'function');
   assert.equal(typeof betaPhase5.apiPhase5Dashboard,'function');
   assert.equal(typeof betaPhase5.controlledBetaExpansionDecision,'function');
+  assert.equal(typeof clientTelemetry.phase5ValidationContext,'function');
+  assert.equal(typeof clientTelemetry.clientTelemetryMetadata,'function');
+  assert.equal(typeof clientTelemetry.apiClientTelemetry,'function');
 });
 
 test('Worker composes extracted runtimes through explicit imports',()=>{
@@ -226,6 +231,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/import \{ createProductionMonitorRuntime \} from '\.\/production-monitor-runtime\.js'/);
   assert.match(worker,/import \{ createProviderSloRuntime \} from '\.\/provider-slo-runtime\.js'/);
   assert.match(worker,/import \{ createBetaPhase5Runtime \} from '\.\/beta-phase5-runtime\.js'/);
+  assert.match(worker,/import \{ createClientTelemetryRuntime \} from '\.\/client-telemetry-runtime\.js'/);
   assert.match(worker,/createDiagnosticsRuntime\(\{/);
   assert.match(worker,/createPublicHealthRuntime\(\{/);
   assert.match(worker,/createPublicStatusRuntime\(\{/);
@@ -253,6 +259,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/createProductionMonitorRuntime\(\{/);
   assert.match(worker,/createProviderSloRuntime\(\{/);
   assert.match(worker,/createBetaPhase5Runtime\(\{/);
+  assert.match(worker,/createClientTelemetryRuntime\(\{/);
   assert.doesNotMatch(worker,/async function collectDiagnostics\(/);
   assert.doesNotMatch(worker,/async function readRecentOpsEvents\(/);
   assert.doesNotMatch(worker,/async function publicServiceStatus\(/);
@@ -335,4 +342,9 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.doesNotMatch(worker,/function controlledBetaExpansionDecision\(/);
   assert.doesNotMatch(worker,/async function apiPhase5Dashboard\(/);
   assert.doesNotMatch(worker,/async function apiBetaDashboard\(/);
+  assert.doesNotMatch(worker,/async function closedBetaTelemetrySubject\(/);
+  assert.doesNotMatch(worker,/function phase5ValidationRequestKind\(/);
+  assert.doesNotMatch(worker,/async function phase5ValidationContext\(/);
+  assert.doesNotMatch(worker,/function clientTelemetryMetadata\(/);
+  assert.doesNotMatch(worker,/async function apiClientTelemetry\(/);
 });
