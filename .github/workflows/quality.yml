@@ -12,9 +12,6 @@ on:
       - "docs/**"
       - "**/*.md"
       - ".github/workflows/cleanup-merged-branches.yml"
-      - ".github/workflows/cleanup-actions-history.yml"
-      - ".github/workflows/cleanup-actions-artifacts.yml"
-      - ".github/workflows/cleanup-actions-caches.yml"
       - ".github/workflows/repository-maintenance.yml"
 
 permissions:
@@ -26,7 +23,8 @@ concurrency:
 
 jobs:
   test:
-    runs-on: [self-hosted, Linux, X64]
+    # This job executes PR-controlled npm/scripts. Keep it ephemeral for public-repo PR safety.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,6 +47,9 @@ jobs:
 
 
   database-integration:
+    # Fork PR code must never execute on the persistent WSL runner.
+    # The full database gate still runs after merge on trusted main before production deploy.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 20
     env:
@@ -61,6 +62,23 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      - name: Validate database integration runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          NODE_BIN="$(command -v node)"
+          NPX_BIN="$(command -v npx)"
+          [[ -n "$NODE_BIN" && -n "$NPX_BIN" ]]
+          case "$NODE_BIN:$NPX_BIN" in
+            *"/mnt/c/"*|*".exe"*|*".cmd"*)
+              echo "Database integration requires native Linux Node/npm tooling on the WSL runner." >&2
+              echo "node=$NODE_BIN npx=$NPX_BIN" >&2
+              exit 1
+              ;;
+          esac
+          docker info >/dev/null
+          command -v psql >/dev/null
 
       - name: Verify pinned Supabase CLI
         run: |
@@ -75,6 +93,7 @@ jobs:
           command -v psql >/dev/null
 
           FRESH_DIR="$RUNNER_TEMP/matchradar-supabase-fresh"
+          rm -rf "$FRESH_DIR"
           mkdir -p "$FRESH_DIR"
           cd "$FRESH_DIR"
 
@@ -143,6 +162,7 @@ jobs:
         run: |
           set -euo pipefail
           UPGRADE_DIR="$RUNNER_TEMP/matchradar-supabase-upgrade"
+          rm -rf "$UPGRADE_DIR"
           mkdir -p "$UPGRADE_DIR"
           cd "$UPGRADE_DIR"
 
