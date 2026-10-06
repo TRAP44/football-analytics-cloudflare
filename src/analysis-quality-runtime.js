@@ -122,8 +122,9 @@ export function createAnalysisQualityRuntime(deps) {
     const structuralHomeConfirmed=lineupQuality?.home?.confirmed === true;
     const structuralAwayConfirmed=lineupQuality?.away?.confirmed === true;
     const lineupFeature=featureReliability(reliability,'lineups');
-    const lineupSourceTrusted=!lineupFeature || (
-      lineupFeature.confidenceBearing === true
+    const lineupSourceTrusted=Boolean(
+      lineupFeature
+      && lineupFeature.confidenceBearing === true
       && lineupFeature.stale !== true
       && lineupFeature.confirmed !== false
     );
@@ -135,11 +136,12 @@ export function createAnalysisQualityRuntime(deps) {
     const injuryState=safeText(injuryFeature?.state,60).toLowerCase() || inferredInjuryState;
     const lineupState=safeText(lineupFeature?.state,60).toLowerCase()
       || (structuralHomeConfirmed || structuralAwayConfirmed ? 'available' : 'unknown');
-    const injuryUsable=injuryFeature
-      ? injuryFeature.confidenceBearing === true
-        && injuryFeature.stale !== true
-        && injuryState === 'available'
-      : injuryState === 'available';
+    const injuryUsable=Boolean(
+      injuryFeature
+      && injuryFeature.confidenceBearing === true
+      && injuryFeature.stale !== true
+      && injuryState === 'available'
+    );
 
     const summary=objectValue(absenceData.summary) || {};
     const homeSummary=objectValue(summary.home) || {};
@@ -387,11 +389,20 @@ export function createAnalysisQualityRuntime(deps) {
     if (provider) {
       const providerState=safeText(provider.state,40).toLowerCase();
       const trustCap=finiteRange(provider.trustCap,0,100);
-      if (trustCap === null) {
+      if (
+        trustCap === null
+        || !['healthy','partial','degraded'].includes(providerState)
+      ) {
         reasons.push({
           code:'provider_reliability_invalid',
           level:'hold',
           text:'Оценка надёжности источника имеет некорректный формат.',
+        });
+      } else if (trustCap<60) {
+        reasons.push({
+          code:'provider_trust_cap',
+          level:'hold',
+          text:'Провайдер ограничивает доверие к входным данным ниже рабочего порога.',
         });
       } else if (providerState==='degraded') {
         reasons.push({
