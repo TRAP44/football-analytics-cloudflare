@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/analysis-runtime.js','utf8')+'\n'+fs.readFileSync('src/model-intelligence-runtime.js','utf8');
+const worker=fs.readFileSync('src/worker.js','utf8')
+  +'\n'+fs.readFileSync('src/analysis-runtime.js','utf8')
+  +'\n'+fs.readFileSync('src/analysis-quality-runtime.js','utf8')
+  +'\n'+fs.readFileSync('src/model-intelligence-runtime.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 
 test('RC105 confidence uses weighted signal coverage instead of raw source count',()=>{
