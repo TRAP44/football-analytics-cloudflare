@@ -1,6 +1,14 @@
 -- Football Analytics v6.17 / RC108
 -- Persistent Telegram webhook dedupe observability.
 -- Adds aggregate duplicate counters and a service-role-only read health RPC.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. The current Telegram dedupe runtime
+-- calls telegram_webhook_dedupe_health(), and v6.21 requires duplicate_count
+-- and last_duplicate_at as part of the schema contract.
+-- claim_telegram_update() intentionally replaces the v6.16 definition to add
+-- duplicate-attempt accounting without changing the public RPC signature.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 alter table public.telegram_update_claims
   add column if not exists duplicate_count integer not null default 0,
