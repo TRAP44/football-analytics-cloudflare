@@ -2,6 +2,15 @@
 -- Idempotent follow-up for environments where the first v6.27.2 rollout was
 -- applied before the v1 compatibility freeze was included in the canonical
 -- migration. Fresh installs also apply this safely after v6.27.2.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- This apparent duplicate of the v6.27.2 compatibility freeze is intentional.
+-- Some databases had already applied an earlier v6.27.2 before the freeze was
+-- folded into its canonical repository text; v6.27.3 repairs those databases.
+-- backend_schema_fingerprint() remains the legacy old-Worker rollout contract;
+-- current releases gate on backend_schema_contract_v2()/readiness v2 instead.
+-- Do not delete or rewrite this migration even though fresh installs execute
+-- an equivalent definition immediately after v6.27.2.
 
 -- Freeze the historical v1 fingerprint for old-Worker/new-DB rollout compatibility.
 -- The complete current-release contract is backend_schema_contract_v2(); only the
