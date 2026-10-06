@@ -12,6 +12,120 @@ function runtime({hasSupabase=()=>true,supaRpc,events=[]}={}) {
   });
 }
 
+test('scheduled lease rejects coercible keys, timestamps and numeric bounds before RPC',async()=>{
+  let calls=0;
+  const api=runtime({
+    supaRpc:async()=>{calls+=1;return {};},
+  });
+
+  for(const input of [
+    {jobKey:{toString:()=> 'cron:x'},groupKey:'cron-global',scheduledAt:new Date()},
+    {jobKey:'cron:a b',groupKey:'cron-global',scheduledAt:new Date()},
+    {jobKey:'cron:test',groupKey:['cron-global'],scheduledAt:new Date()},
+    {jobKey:'cron:test',groupKey:'cron-global',scheduledAt:true},
+    {jobKey:'cron:test',groupKey:'cron-global',scheduledAt:'2026-09-28T12:05:00Z'},
+  ]){
+    const claim=await api.claimScheduledJob({},input);
+    assert.equal(claim.claimed,false);
+    assert.equal(claim.reason,'invalid_input');
+  }
+  assert.equal(calls,0);
+});
+
+test('scheduled lease bounds TTL and retention without JavaScript coercion',async()=>{
+  const calls=[];
+  const api=runtime({
+    supaRpc:async(_cfg,name,args)=>{
+      calls.push({name,args});
+      return {
+        claimed:false,
+        reason:'duplicate',
+        jobKey:args.p_job_key,
+        groupKey:args.p_group_key,
+      };
+    },
+  });
+  await api.claimScheduledJob({},{
+    jobKey:'cron:test',
+    groupKey:'cron-global',
+    scheduledAt:new Date('2026-09-28T12:05:00Z'),
+    leaseSeconds:true,
+    retentionSeconds:[600],
+  });
+  assert.equal(calls[0].args.p_lease_seconds,720);
+  assert.equal(calls[0].args.p_retention_seconds,172800);
+
+  await api.claimScheduledJob({},{
+    jobKey:'cron:test-2',
+    groupKey:'cron-global',
+    scheduledAt:new Date('2026-09-28T12:10:00Z'),
+    leaseSeconds:'1800',
+    retentionSeconds:'604800',
+  });
+  assert.equal(calls[1].args.p_lease_seconds,1800);
+  assert.equal(calls[1].args.p_retention_seconds,604800);
+});
+
+test('truthy Supabase availability does not silently enable persistent coordination',async()=>{
+  let calls=0;
+  const api=runtime({
+    hasSupabase:()=> 'true',
+    supaRpc:async()=>{calls+=1;return {};},
+  });
+  const claim=await api.claimScheduledJob({},{
+    jobKey:'cron:test',
+    groupKey:'cron-global',
+    scheduledAt:new Date('2026-09-28T12:05:00Z'),
+  });
+  assert.equal(claim.claimed,false);
+  assert.equal(claim.persistent,true);
+  assert.equal(claim.reason,'lease_unavailable');
+  assert.equal(calls,0);
+});
+
+test('claim response requires strict boolean ownership and matching lease identity',async()=>{
+  const cases=[
+    {
+      claimed:'true',
+      reason:'claimed',
+      jobKey:'cron:test',
+      groupKey:'cron-global',
+      leaseToken:'lease-token-123456',
+      scheduledAt:'2026-09-28T12:05:00Z',
+      lockedUntil:'2026-09-28T12:17:00Z',
+    },
+    {
+      claimed:true,
+      reason:'claimed',
+      jobKey:'cron:other',
+      groupKey:'cron-global',
+      leaseToken:'lease-token-123456',
+      scheduledAt:'2026-09-28T12:05:00Z',
+      lockedUntil:'2026-09-28T12:17:00Z',
+    },
+    {
+      claimed:true,
+      reason:'claimed',
+      jobKey:'cron:test',
+      groupKey:'cron-global',
+      leaseToken:'short',
+      scheduledAt:'2026-09-28T12:05:00Z',
+      lockedUntil:'2026-09-28T12:17:00Z',
+    },
+  ];
+
+  for(const response of cases){
+    const api=runtime({supaRpc:async()=>response});
+    const claim=await api.claimScheduledJob({},{
+      jobKey:'cron:test',
+      groupKey:'cron-global',
+      scheduledAt:new Date('2026-09-28T12:05:00Z'),
+    });
+    assert.equal(claim.claimed,false);
+    assert.equal(claim.reason,'malformed_response');
+  }
+});
+
 test('scheduled lease wrapper uses server-only RPC contract and keeps lease identity', async () => {
   const calls=[];
   const api=runtime({
@@ -65,6 +179,37 @@ test('scheduled lease claim fails closed when persistent coordination is unavail
   assert.equal(claim.persistent,true);
   assert.equal(claim.reason,'lease_unavailable');
   assert.equal(events[0].code,'SCHEDULED_LEASE_UNAVAILABLE');
+});
+
+test('memory-only mode requires strict false Supabase availability',async()=>{
+  const api=runtime({
+    hasSupabase:()=>false,
+    supaRpc:async()=>{throw new Error('must not run');},
+  });
+  const claim=await api.claimScheduledJob({},{
+    jobKey:'cron:dev',
+    groupKey:'cron-global',
+    scheduledAt:new Date('2026-09-28T12:05:00Z'),
+  });
+  assert.equal(claim.claimed,true);
+  assert.equal(claim.persistent,false);
+  assert.equal(await api.completeScheduledJob({},claim),true);
+  assert.equal(await api.releaseScheduledJob({},claim),true);
+});
+
+test('complete and release require strict true RPC confirmation',async()=>{
+  const claim={
+    claimed:true,
+    persistent:true,
+    jobKey:'cron:test',
+    groupKey:'cron-global',
+    leaseToken:'lease-token-123456',
+  };
+  for(const response of ['true',1,{ok:true}]){
+    const api=runtime({supaRpc:async()=>response});
+    assert.equal(await api.completeScheduledJob({},claim),false);
+    assert.equal(await api.releaseScheduledJob({},claim),false);
+  }
 });
 
 test('memory-only development mode remains runnable without pretending persistence', async () => {
