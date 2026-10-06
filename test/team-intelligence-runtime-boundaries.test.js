@@ -200,12 +200,20 @@ test('team intelligence rejects statistics returned for another provider scope',
   assert.equal(response.body.available,false);
   assert.equal(response.body.stats.team.id,10);
   assert.equal(response.body.stats.league.id,39);
-  assert.equal(writes.length,1);
-  assert.equal(writes[0][1],10);
+  assert.equal(writes.length,0);
 });
 
 test('successful provider data survives cache write failure', async () => {
   const runtime=createTeamIntelligenceRuntime(deps({
+    apiFootball:async path=>path==='/players/squads'
+      ? [{
+          team:{id:10,name:'Team'},
+          players:[{id:1,name:'Keeper',age:25,number:1,position:'Goalkeeper'}],
+        }]
+      : {
+          team:{id:10,name:'Team'},
+          league:{id:39,name:'League',season:2026},
+        },
     setCache:async()=>{ throw new Error('cache unavailable'); },
   }));
 
@@ -220,6 +228,7 @@ test('successful provider data survives cache write failure', async () => {
     url:'https://example.test/api/team-squad?teamId=10',
   },{});
   assert.equal(squad.status,200);
+  assert.equal(squad.body.available,true);
   assert.equal(squad.body.cached,false);
 });
 
