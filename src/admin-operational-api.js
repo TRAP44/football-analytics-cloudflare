@@ -77,6 +77,7 @@ export function createAdminOperationalApi(deps) {
     providerDataReliabilitySelfTest,
     providerEndpointLabel,
     providerFeatureFetch,
+    providerFeatureSourcesSummary,
     providerSnapshot,
     providerTransitionProfile,
     providerValidationStatus,
