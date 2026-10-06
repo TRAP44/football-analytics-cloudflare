@@ -1,5 +1,11 @@
 -- Football Analytics v6.14 / RC43
 -- Persist compact AI verdict snapshots in the user's backend-only analysis history.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. The current user-history runtime
+-- writes these AI snapshot fields, and v6.21 includes them in the schema contract.
+-- The DROP/ADD constraint pair is intentional idempotent constraint refresh logic.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 alter table public.analysis_history
   add column if not exists ai_signal_code text not null default '',
