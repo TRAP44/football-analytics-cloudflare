@@ -6,8 +6,9 @@ const workerCore=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8'
 const providerDataRuntime=readFileSync(new URL('../src/provider-data-runtime.js',import.meta.url),'utf8');
 const analysisRuntime=readFileSync(new URL('../src/analysis-runtime.js',import.meta.url),'utf8');
 const matchCenterRuntime=readFileSync(new URL('../src/match-center-runtime.js',import.meta.url),'utf8');
+const providerFixtureRuntime=readFileSync(new URL('../src/provider-fixture-runtime.js',import.meta.url),'utf8');
 const gateway=readFileSync(new URL('../src/api-football-gateway.js',import.meta.url),'utf8');
-const worker=workerCore+'\n'+providerDataRuntime+'\n'+analysisRuntime+'\n'+matchCenterRuntime+'\n'+gateway;
+const worker=workerCore+'\n'+providerDataRuntime+'\n'+analysisRuntime+'\n'+matchCenterRuntime+'\n'+providerFixtureRuntime+'\n'+gateway;
 const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 const searchController=readFileSync(new URL('../public/modules/global-search-controller.js',import.meta.url),'utf8');
 const matchCenterController=readFileSync(new URL('../public/modules/match-center-controller.js',import.meta.url),'utf8');
@@ -32,19 +33,19 @@ test('FREE LIVE cadence and shared feature cache protect provider minute budget'
 });
 
 test('fixtures are reused from persistent shared caches before provider calls',()=>{
-  const fixtures=block(worker,'function providerFixtureDateCacheKey','async function apiMatches');
+  const fixtures=block(providerFixtureRuntime,'function providerFixtureDateCacheKey','async function apiMatches');
   assert.match(fixtures,/provider-fixtures:/);
   assert.match(fixtures,/provider-fixture:/);
   assert.match(fixtures,/cachedProviderFixture/);
   assert.match(fixtures,/loadProviderFixture/);
 
-  const matches=block(worker,'async function apiMatches','function normalizeStandingRow');
+  const matches=block(providerFixtureRuntime,'async function apiMatches','  return {');
   assert.match(matches,/providerBatchKey/);
   assert.match(matches,/getStaleCache\(providerBatchKey,cfg\)/);
   assert.match(matches,/staleProviderBatch/);
   assert.match(matches,/providerFallback/);
   assert.match(matches,/cached:true,[\s\S]*stale:true/);
-  const sharedDateLoader=block(worker,'async function loadProviderFixturesForDate','function providerFixtureDirectCacheKey');
+  const sharedDateLoader=block(providerFixtureRuntime,'async function loadProviderFixturesForDate','function providerFixtureDirectCacheKey');
   assert.match(sharedDateLoader,/providerFixtureDateCacheKey\(normalized\)/);
   assert.match(sharedDateLoader,/providerFixtureDateReuses/);
   assert.match(sharedDateLoader,/apiFootball\('\/fixtures',\{date:normalized\},cfg\)/);
@@ -62,7 +63,7 @@ test('fixtures are reused from persistent shared caches before provider calls',(
 });
 
 test('public match feed uses the shared provider-valid exact-date fixtures loader',()=>{
-  const matches=block(worker,'async function apiMatches','function normalizeStandingRow');
+  const matches=block(providerFixtureRuntime,'async function apiMatches','  return {');
   assert.match(matches,/loadProviderFixturesForDate\(date,cfg,\{forceRefresh:true\}\)/);
   assert.doesNotMatch(matches,/apiFootball\('\/fixtures'/);
   assert.doesNotMatch(matches,/publicFeedDateWindow/);
