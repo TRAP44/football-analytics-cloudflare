@@ -274,8 +274,10 @@ export function createAnalysisRuntime(deps) {
     const shouldPerformRecheck=Boolean(needsFreshnessRecheck || newsImpactEligible);
     const recheckReasonCode=newsImpactEligible ? 'news_impact' : (previousFreshness?.reasonCode || 'fresh');
     let freeRecheck=false;
+    // Only freshness derived from the stored server-side snapshot can waive
+    // quota. News-impact flags/timestamps arrive from the client and may request
+    // a comparison, but must never mint free provider work on their own.
     if (needsFreshnessRecheck) freeRecheck=await userHasAnalyzedFixture(userId,fixtureId,cfg);
-    else if (newsImpactEligible) freeRecheck=await userHasAnalyzedFixture(userId,fixtureId,cfg);
     if (cached && !needsFreshnessRecheck) {
       if (!newsImpactEligible) {
         await recordHistory(userId, cached, cfg);
