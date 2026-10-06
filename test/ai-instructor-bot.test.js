@@ -143,8 +143,9 @@ test('pre-match AI instructor preserves referee context and match-plan guidance'
 test('analysis payload wires the instructor with referee, lineups, market and reliability context', () => {
   assert.match(
     analysisRuntime,
-    /aiInstructor: buildAiInstructor\(\{[\s\S]*?probabilities,[\s\S]*?goalModel,[\s\S]*?confidence,[\s\S]*?referee: fixture\.fixture\?\.referee \|\| '',[\s\S]*?refereeHistory,[\s\S]*?lineupImpact,[\s\S]*?marketMovement,[\s\S]*?providerReliability,[\s\S]*?minutesToKickoff/,
+    /aiInstructor=objectValue\(buildAiInstructor\(\{[\s\S]*?probabilities,[\s\S]*?goalModel,[\s\S]*?confidence,[\s\S]*?referee:safeText\(fixture\?\.fixture\?\.referee,180\),[\s\S]*?refereeHistory,[\s\S]*?lineupImpact,[\s\S]*?marketMovement,[\s\S]*?providerReliability,[\s\S]*?minutesToKickoff/,
   );
+  assert.match(analysisRuntime, /\n\s*aiInstructor,\n/);
 });
 
 test('Telegram verdict renders skip state, referee and user-controlled text safely', () => {
