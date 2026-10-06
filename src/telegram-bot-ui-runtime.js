@@ -170,7 +170,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
     if (!base || !raw) return '';
     try {
       const url=new URL(raw);
-      if (!['http:','https:'].includes(url.protocol)) return '';
+      if (base.protocol!=='https:' || url.protocol!=='https:') return '';
       if (url.username || url.password || url.origin!==base.origin) return '';
       return url.toString();
     } catch {
