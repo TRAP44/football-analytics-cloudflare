@@ -776,6 +776,7 @@ function getBillingRuntime() {
       activatePassPurchase,
       bytesToHex,
       constantTimeEqual,
+      enc,
       fetchWithTimeout,
       getQuota,
       getUserRecord,
