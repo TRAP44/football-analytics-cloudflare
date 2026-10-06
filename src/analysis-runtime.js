@@ -141,6 +141,15 @@ export function createAnalysisRuntime(deps) {
     return value === true;
   }
 
+  function safePredicate(fn, ...args) {
+    try { return typeof fn === 'function' && fn(...args) === true; }
+    catch { return false; }
+  }
+
+  function quotaHealthy(reserve, cost) {
+    return safePredicate(freeQuotaHealthy,reserve,cost);
+  }
+
   function rowsOrEmpty(value, limit = 1000) {
     return Array.isArray(value) ? value.slice(0,limit) : [];
   }
@@ -443,8 +452,10 @@ export function createAnalysisRuntime(deps) {
     const entitlementBefore=objectValue(
       await resolveUserEntitlements(userId,fixtureId,cfg).catch(()=>null),
     ) || {source:'free',access:{},passes:{}};
+    const activePass=objectValue(objectValue(entitlementBefore.passes)?.active);
     const passCandidate=entitlementBefore.source==='pass'
-      && objectValue(entitlementBefore.access)?.expandedAi === true;
+      && objectValue(entitlementBefore.access)?.expandedAi === true
+      && Boolean(activePass);
     let quotaBefore;
     try {
       quotaBefore=quotaSnapshot(await getQuota(userId,cfg),null);
@@ -509,10 +520,16 @@ export function createAnalysisRuntime(deps) {
     if (!freeRecheck && passCandidate) {
       const passOperationId=crypto.randomUUID();
       try {
-        passUsageReservation=await reserveEntitlementUsage(userId,entitlementBefore.passes.active,fixtureId,cfg,{
-          durable:hasSupabase(cfg),
-          operationId:passOperationId,
-        });
+        passUsageReservation=objectValue(await reserveEntitlementUsage(
+          userId,
+          activePass,
+          fixtureId,
+          cfg,
+          {
+            durable:safePredicate(hasSupabase,cfg),
+            operationId:passOperationId,
+          },
+        ));
       } catch (error) {
         await recordOpsEvent(cfg,{
           severity:'error',
@@ -528,66 +545,171 @@ export function createAnalysisRuntime(deps) {
         }).catch(()=>null);
         throw error;
       }
-      passAccess=Boolean(passUsageReservation?.allowed);
+      passAccess=passUsageReservation?.allowed === true;
     }
     if (!freeRecheck && !passAccess) {
-      usageReservation=await reserveAnalysisQuota(userId,cfg);
-      if (!usageReservation.allowed) {
-        return await trackedFullAiFailureResponse({error:`Лимит исчерпан: ${usageReservation.used}/${usageReservation.limit} анализов сегодня.`,quota:{plan:usageReservation.plan,used:usageReservation.used,limit:usageReservation.limit,left:usageReservation.left}},429,'quota_exhausted');
+      usageReservation=objectValue(await reserveAnalysisQuota(userId,cfg));
+      if (!usageReservation) {
+        return await trackedFullAiFailureResponse({
+          error:'Не удалось безопасно зарезервировать лимит AI-анализа. Повторите позже.',
+          code:'ANALYSIS_QUOTA_RESERVATION_INVALID',
+          quota:quotaBefore,
+        },503,'quota_reservation_invalid',{'retry-after':'30'});
+      }
+      if (usageReservation.allowed !== true) {
+        const rejectedQuota=quotaSnapshot(usageReservation,quotaBefore) || quotaBefore;
+        return await trackedFullAiFailureResponse({
+          error:`Лимит исчерпан: ${rejectedQuota.used}/${rejectedQuota.limit} анализов сегодня.`,
+          quota:rejectedQuota,
+        },429,'quota_exhausted');
       }
     }
     let fixture;
     try {
-      fixture = await loadProviderFixture(fixtureId,cfg);
+      fixture=objectValue(await loadProviderFixture(fixtureId,cfg));
     } catch (error) {
-      const transientProviderFailure = isFootballRateLimitError(error) || isRetryableFootballTransportError(error);
+      const providerLimited=safePredicate(isFootballRateLimitError,error);
+      const transientProviderFailure=providerLimited
+        || safePredicate(isRetryableFootballTransportError,error);
       if (staleBefore && transientProviderFailure) {
-        await recordHistory(userId, staleBefore, cfg);
-        if (trackFullAi) void recordGrowthEvent(cfg,{userId:userId,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,stale:true}});
+        await safeRecordHistory(staleBefore);
+        if (trackFullAi) {
+          fireAndForget(recordGrowthEvent,cfg,{
+            userId,
+            eventName:'full_ai',
+            channel:'miniapp',
+            fixtureId,
+            metadata:{cached:true,stale:true},
+          });
+        }
         await recordTrackedFullAiOutcome('stale');
-        const providerLimited = isFootballRateLimitError(error);
         return json(analysisResponsePayload(staleBefore,{
           cached:true,
           stale:true,
           warning:providerLimited
             ? 'Показан последний сохранённый анализ: источник футбольных данных временно ограничил запросы.'
             : 'Показан последний сохранённый анализ: источник футбольных данных временно недоступен.',
-          retryAfter:boundedRetryAfter(error?.retryAfter, 60),
-          recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_provider_unavailable' : (previousFreshness?.reasonCode || 'provider_unavailable')},
+          retryAfter:boundedRetryAfter(error?.retryAfter,60),
+          recheck:{
+            requested:recheckRequested,
+            performed:false,
+            free:freeRecheck,
+            reasonCode:newsImpactEligible
+              ? 'news_impact_provider_unavailable'
+              : (safeText(previousFreshness?.reasonCode,80) || 'provider_unavailable'),
+          },
           quota:quotaBefore,
         }));
       }
       throw error;
     }
-    if (!fixture) return json({ error: 'Матч не найден.' }, 404);
-    const analysisIntegrity = validateFixtureIntegrity(fixture, '', null);
-    if (analysisIntegrity.quarantine) {
-      await recordOpsEvent(cfg, { severity: 'warning', source: 'integrity', eventType: 'single_fixture_guard', code: 'ANALYSIS_REJECTED', message: 'Анализ отклонён: данные матча не прошли структурную проверку.', meta: { fixtureId, issues: analysisIntegrity.issues.filter(x => x.severity === 'error').map(x => x.code) } }).catch(() => {});
-      return await trackedFullAiFailureResponse({ error: 'Данные матча выглядят противоречиво, поэтому анализ временно заблокирован.', code: 'MATCH_DATA_INVALID', integrity: analysisIntegrity, quota: quotaBefore },409,'data_invalid');
+
+    if (!fixture) return json({error:'Матч не найден.'},404);
+
+    const loadedFixtureId=positiveSafeInteger(fixture?.fixture?.id);
+    if (loadedFixtureId!==fixtureId) {
+      await recordOpsEvent(cfg,{
+        severity:'warning',
+        source:'integrity',
+        eventType:'single_fixture_guard',
+        code:'ANALYSIS_FIXTURE_ID_MISMATCH',
+        message:'Analysis provider returned a fixture outside the requested identity.',
+        meta:{fixtureId,loadedFixtureId},
+      }).catch(()=>null);
+      return await trackedFullAiFailureResponse({
+        error:'Источник вернул данные другого матча, поэтому анализ заблокирован.',
+        code:'MATCH_IDENTITY_MISMATCH',
+        quota:quotaBefore,
+      },409,'data_invalid');
     }
+
+    let analysisIntegrity;
+    try {
+      analysisIntegrity=objectValue(validateFixtureIntegrity(fixture,'',null));
+    } catch {
+      analysisIntegrity=null;
+    }
+    if (!analysisIntegrity) {
+      analysisIntegrity={
+        state:'invalid',
+        qualityScore:0,
+        quarantine:true,
+        warnings:[],
+        issues:[{severity:'error',code:'integrity_check_unavailable'}],
+      };
+    }
+
+    const integrityIssues=rowsOrEmpty(analysisIntegrity.issues,50);
+    const integrityWarnings=rowsOrEmpty(analysisIntegrity.warnings,50);
+    if (analysisIntegrity.quarantine === true) {
+      await recordOpsEvent(cfg,{
+        severity:'warning',
+        source:'integrity',
+        eventType:'single_fixture_guard',
+        code:'ANALYSIS_REJECTED',
+        message:'Анализ отклонён: данные матча не прошли структурную проверку.',
+        meta:{
+          fixtureId,
+          issues:integrityIssues
+            .filter(issue=>issue?.severity==='error')
+            .map(issue=>safeText(issue?.code,80))
+            .filter(Boolean)
+            .slice(0,12),
+        },
+      }).catch(()=>null);
+      return await trackedFullAiFailureResponse({
+        error:'Данные матча выглядят противоречиво, поэтому анализ временно заблокирован.',
+        code:'MATCH_DATA_INVALID',
+        integrity:{...analysisIntegrity,issues:integrityIssues,warnings:integrityWarnings},
+        quota:quotaBefore,
+      },409,'data_invalid');
+    }
+
+    const status=safeText(fixture?.fixture?.status?.short,24);
     // If this fixture has already finished, settle any earlier immutable pre-match snapshot without another football API call.
-    if (isFinishedStatus(fixture.fixture?.status?.short)) await settlePredictionsFromFixtures([fixture], cfg).catch(() => null);
-  
-    const homeId = fixture.teams?.home?.id, awayId = fixture.teams?.away?.id;
-    const homeName = fixture.teams?.home?.name || '', awayName = fixture.teams?.away?.name || '';
-    const leagueName = fixture.league?.name || '';
-  
-    const kickoffMs = fixture.fixture?.date ? Date.parse(fixture.fixture.date) : NaN;
-    const minutesToKickoff = Number.isFinite(kickoffMs) ? Math.round((kickoffMs - Date.now()) / 60000) : null;
-    const status = fixture.fixture?.status?.short || '';
-    const detailedCoverage = !isYouthReserveMatch(leagueName, homeName, awayName);
-    const providerPlan = memory.provider?.plan || 'UNKNOWN';
-    const paid = ['PRO','ULTRA','MEGA'].includes(providerPlan);
-    const healthyFree = freeQuotaHealthy(30, 6);
+    if (safePredicate(isFinishedStatus,status)) {
+      await settlePredictionsFromFixtures([fixture],cfg).catch(()=>null);
+    }
+
+    const homeId=positiveSafeInteger(fixture?.teams?.home?.id);
+    const awayId=positiveSafeInteger(fixture?.teams?.away?.id);
+    if (!homeId || !awayId || homeId===awayId) {
+      return await trackedFullAiFailureResponse({
+        error:'Команды матча не прошли проверку идентификаторов.',
+        code:'MATCH_TEAM_IDENTITY_INVALID',
+        quota:quotaBefore,
+      },409,'data_invalid');
+    }
+
+    const homeName=safeText(fixture?.teams?.home?.name,180);
+    const awayName=safeText(fixture?.teams?.away?.name,180);
+    const leagueName=safeText(fixture?.league?.name,180);
+
+    const kickoffRaw=safeText(fixture?.fixture?.date,80);
+    const kickoffMs=kickoffRaw ? Date.parse(kickoffRaw) : NaN;
+    const minutesToKickoff=Number.isFinite(kickoffMs)
+      ? Math.round((kickoffMs-Date.now())/60000)
+      : null;
+
+    let detailedCoverage=false;
+    try {
+      detailedCoverage=isYouthReserveMatch(leagueName,homeName,awayName)!==true;
+    } catch {
+      detailedCoverage=false;
+    }
+
+    const providerPlan=safeText(memory?.provider?.plan,40).toUpperCase() || 'UNKNOWN';
+    const paid=['PRO','ULTRA','MEGA'].includes(providerPlan);
+    const healthyFree=quotaHealthy(30,6);
     // FREE keeps only the two highest-value uncached AI provider calls (predictions + odds).
     // Optional signals reuse shared cache when present but do not fan out into
     // injuries/H2H/lineups/team-form network calls in the same minute.
     const canFetchLineups = detailedCoverage && paid && (
-      isLiveStatus(status) || (minutesToKickoff !== null && minutesToKickoff <= 90 && minutesToKickoff >= -240)
+      safePredicate(isLiveStatus,status) || (minutesToKickoff !== null && minutesToKickoff <= 90 && minutesToKickoff >= -240)
     );
     const canFetchFreshForm = detailedCoverage && paid && healthyFree;
     const canFetchH2H = detailedCoverage && paid;
-    const canFetchInjuries = paid;
+    const canFetchInjuries=detailedCoverage && paid;
   
     const skipped = [];
     if (!canFetchFreshForm && detailedCoverage) skipped.push('Свежая форма команд: бережём лимит источника данных и используем сохранённые данные, если они есть.');
@@ -600,7 +722,7 @@ export function createAnalysisRuntime(deps) {
     const h2hSkipReason = !detailedCoverage ? 'limited_coverage' : canFetchH2H ? '' : 'quota_reserve';
     const lineupSkipReason = !detailedCoverage
       ? 'limited_coverage'
-      : minutesToKickoff === null || (!isLiveStatus(status) && (minutesToKickoff > 90 || minutesToKickoff < -240))
+      : minutesToKickoff === null || (!safePredicate(isLiveStatus,status) && (minutesToKickoff > 90 || minutesToKickoff < -240))
         ? 'publication_window'
         : canFetchLineups ? '' : 'quota_reserve';
   
