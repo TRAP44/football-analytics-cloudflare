@@ -13,6 +13,7 @@ export function createAdminOperationalApi(deps) {
     RC_NAME,
     RELEASE_CHANNEL,
     SUPABASE_SCHEMA_GUIDANCE,
+    analysisFreshnessDrill,
     analysisQualityGateSelfTest,
     apiFavoritePlayers,
     apiFavorites,
@@ -1068,6 +1069,9 @@ export function createAdminOperationalApi(deps) {
     const calibrationPromotionCheck = calibrationPromotionSelfTest();
     const schemaDriftSelfTest = supabaseSchemaDriftSelfTest();
     const providerReliabilitySelfTest = providerDataReliabilitySelfTest();
+    const analysisFreshnessSelfTest = typeof analysisFreshnessDrill === 'function'
+      ? analysisFreshnessDrill()
+      : { pass:false, cases:0 };
     const aiQualityGateSelfTest = analysisQualityGateSelfTest();
     const telegramMiniAppE2ESelfTest = telegramMiniAppE2EDrill();
     const telegramPersistentDedupeCheck = telegramPersistentDedupeSelfTest();
@@ -1109,6 +1113,10 @@ export function createAdminOperationalApi(deps) {
         aiQualityGateSelfTest.pass
           ? `ready=${aiQualityGateSelfTest.ready}; hold=${aiQualityGateSelfTest.hold}; причины hold: ${aiQualityGateSelfTest.holdReasons.join(', ')}.`
           : 'AI Quality Gate не удерживает слабый сигнал fail-closed.', true),
+      releaseCheck('ai_analysis_freshness_selftest', 'Самопроверка свежести AI', analysisFreshnessSelfTest.pass ? 'pass' : 'fail',
+        analysisFreshnessSelfTest.pass
+          ? `Проверено ${Number(analysisFreshnessSelfTest.cases || 0)} сценария свежести: near-kickoff, fresh, far-away и некорректное время снимка.`
+          : 'AI Freshness Guard не прошёл детерминированную самопроверку и release остаётся fail-closed.', true),
       releaseCheck('telegram_miniapp_e2e_selftest', 'Telegram → Mini App E2E', telegramMiniAppE2ESelfTest.pass ? 'pass' : 'fail',
         telegramMiniAppE2ESelfTest.pass
           ? `Проверено ${telegramMiniAppE2ESelfTest.cases} переходов: поиск → матч → Quick AI → полный анализ → избранное.`
