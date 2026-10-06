@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   adminSensitivePathInventory,
+  adminSensitiveRouteRule,
   isAdminSensitivePath,
   privilegedDistributedRatePolicy,
   privilegedLocalRatePolicy,
@@ -51,6 +52,55 @@ test('strict-freshness operational publisher route stays classified without inve
   assert.equal(isAdminSensitivePath('/api/media-publisher-link'),true);
   assert.equal(requiresAdminAuthorizationPath('/api/media-publisher-link'),false);
   assert.ok(privilegedDistributedRatePolicy('/api/media-publisher-link','POST'));
+});
+
+test('registry rejects path coercion and non-canonical route inputs',()=>{
+  for(const path of [
+    {toString:()=>'/api/diagnostics'},
+    ['/api/diagnostics'],
+    ' /api/diagnostics',
+    '/api/diagnostics ',
+    'api/diagnostics',
+    '/api/diagnostics?x=1',
+    '/api/diagnostics#x',
+    '/api\\diagnostics',
+  ]){
+    assert.equal(isAdminSensitivePath(path),false);
+    assert.equal(requiresAdminAuthorizationPath(path),false);
+    assert.equal(privilegedLocalRatePolicy(path),null);
+  }
+});
+
+test('registry rules and returned rate policies are immutable',()=>{
+  const rule=adminSensitiveRouteRule('/api/provider/probe');
+  assert.ok(rule);
+  assert.equal(Object.isFrozen(rule),true);
+  assert.equal(Object.isFrozen(rule.rate),true);
+  assert.throws(()=>{ rule.rate.distributedLimit=999; },TypeError);
+
+  const first=privilegedDistributedRatePolicy('/api/provider/probe','POST');
+  assert.equal(Object.isFrozen(first),true);
+  assert.throws(()=>{ first.limit=999; },TypeError);
+
+  const second=privilegedDistributedRatePolicy('/api/provider/probe','POST');
+  assert.equal(second.limit,6);
+});
+
+test('distributed privileged policy treats malformed or unsupported methods fail-closed as mutation',()=>{
+  assert.equal(privilegedDistributedRatePolicy('/api/diagnostics','GET').mutation,false);
+  assert.equal(privilegedDistributedRatePolicy('/api/diagnostics','HEAD').mutation,false);
+  assert.equal(privilegedDistributedRatePolicy('/api/diagnostics','POST').mutation,true);
+  assert.equal(privilegedDistributedRatePolicy('/api/diagnostics','OPTIONS').mutation,true);
+  assert.equal(privilegedDistributedRatePolicy('/api/diagnostics',{toString:()=> 'GET'}).mutation,true);
+  assert.equal(privilegedDistributedRatePolicy('/api/diagnostics',['GET']).mutation,true);
+});
+
+test('registry inventories are isolated immutable snapshots',()=>{
+  const inventory=adminSensitivePathInventory();
+  assert.equal(Object.isFrozen(inventory),true);
+  assert.equal(Object.isFrozen(inventory[0]),true);
+  assert.throws(()=>inventory.push({path:'/api/evil',adminAuthorization:false}),TypeError);
+  assert.equal(isAdminSensitivePath('/api/evil'),false);
 });
 
 test('registry prefix matching is boundary-safe',()=>{
