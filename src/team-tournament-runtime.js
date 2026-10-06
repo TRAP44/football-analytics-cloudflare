@@ -638,6 +638,8 @@ export function createTeamTournamentRuntime(deps) {
     const normalizedTeamId=positiveSafeInteger(teamId);
     const homeId=positiveSafeInteger(f?.teams?.home?.id) || 0;
     const awayId=positiveSafeInteger(f?.teams?.away?.id) || 0;
+    const belongsToTeam=!normalizedTeamId || homeId===normalizedTeamId || awayId===normalizedTeamId;
+    if (!belongsToTeam) return { fixtureId:0 };
     const isHome=Boolean(normalizedTeamId && homeId===normalizedTeamId);
     const opponent=isHome ? f?.teams?.away : f?.teams?.home;
     const status=safeText(f?.fixture?.status?.short,20).toUpperCase();
@@ -1025,10 +1027,12 @@ export function createTeamTournamentRuntime(deps) {
 
     const players=rows(providerRows).map(row=>{
       const statistics=rows(row?.statistics);
+      const scoped=Boolean(teamId || leagueId || season);
       const stats=statistics.find(stat=>
         (!teamId || positiveSafeInteger(stat?.team?.id)===teamId)
         && (!leagueId || positiveSafeInteger(stat?.league?.id)===leagueId)
-      ) || statistics[0] || null;
+        && (!season || positiveSafeInteger(stat?.league?.season)===season)
+      ) || (!scoped ? statistics[0] : null);
       if (!stats) return null;
 
       const player=row?.player && typeof row.player === 'object' ? row.player : {};
