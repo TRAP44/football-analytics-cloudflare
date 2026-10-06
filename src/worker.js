@@ -56,6 +56,7 @@ import { cloudflareEdgeGuard, cloudflareEdgePolicies } from './edge-security.js'
 import { isSecurityLockdownControls, telegramLockdownDecision } from './runtime-lockdown.js';
 import { createRuntimeControlsRuntime } from './runtime-controls.js';
 import { createGrowthReferralRuntime } from './growth-referral.js';
+import { createAuthGrowthWiringRuntime } from './auth-growth-wiring-runtime.js';
 import { assessSecuritySignals, formatSecurityIncidentAlert, securityIncidentOpsEvent, securityIncidentTimeline } from './security-incidents.js';
 import { channelPublisherState, publishChannelMessage } from './channel-publisher.js';
 import { createPublisherRuntime } from './publisher-runtime.js';
@@ -772,20 +773,6 @@ const {
   getRequestUser,
   upsertUser,
   getUserRecord,
-} = createUserAuthRuntime({
-  memory,
-  validateTelegramInitData,
-  developmentTelegramId: DEVELOPMENT_TELEGRAM_ID,
-  hasSupabase,
-  supaUpsert,
-  supaSelectOne,
-  withSingleFlight,
-  pruneMemoryState,
-  bumpTelemetry,
-  recordOpsEvent,
-});
-
-const {
   cleanLaunchPart,
   parseLaunchStartParam,
   ensureLaunchAttribution,
@@ -794,20 +781,27 @@ const {
   applyReferralAttribution,
   recordReferredPayment,
   cleanupGrowthEvents,
-} = createGrowthReferralRuntime({
-  memory,
-  getUserRecord,
+} = createAuthGrowthWiringRuntime({
+  DEVELOPMENT_TELEGRAM_ID,
+  bumpTelemetry,
+  createGrowthReferralRuntime,
+  createUserAuthRuntime,
   hasSupabase,
-  supaPatch,
-  supaUpsert,
-  supaSelectOne,
-  supaDelete,
-  safeOpsMetadata,
-  redactOpsString,
+  memory,
   normalizeReferralCode,
   opaqueReferralCode,
+  pruneMemoryState,
+  recordOpsEvent,
+  redactOpsString,
   referralAttributionDecision,
+  safeOpsMetadata,
   splitLaunchReferralParts,
+  supaDelete,
+  supaPatch,
+  supaSelectOne,
+  supaUpsert,
+  validateTelegramInitData,
+  withSingleFlight,
 });
 
 function telegramStartPayload(text = '') {
