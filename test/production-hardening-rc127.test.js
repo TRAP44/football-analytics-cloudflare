@@ -8,7 +8,10 @@ const worker=fs.readFileSync('src/worker.js','utf8')
   +'\n'+fs.readFileSync('src/api-football-gateway.js','utf8')
   +'\n'+fs.readFileSync('src/quota-usage-runtime.js','utf8')
   +'\n'+fs.readFileSync('src/analysis-runtime.js','utf8')
-  +'\n'+fs.readFileSync('src/distributed-analysis-lock-runtime.js','utf8');
+  +'\n'+fs.readFileSync('src/distributed-analysis-lock-runtime.js','utf8')
+  +'\n'+fs.readFileSync('src/telegram-digest-runtime.js','utf8')
+  +'\n'+fs.readFileSync('src/readiness-contract.js','utf8')
+  +'\n'+fs.readFileSync('src/public-status.js','utf8');
 const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_18.sql','utf8');
 const hotfix=fs.readFileSync('supabase/migrations/supabase_migration_v6_18_1.sql','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
@@ -84,7 +87,7 @@ test('RC127 fails analysis coordination closed during shared-lock outage',()=>{
 
 test('RC127 shortens Telegram initData lifetime for sensitive operations',()=>{
   assert.match(worker,/adminSensitive \? 15 \* 60 : mutation \? 2 \* 60 \* 60 : 24 \* 60 \* 60/);
-  assert.match(worker,/validateTelegramInitData\(initData, cfg\.botToken, initDataMaxAgeSeconds\)/);
+  assert.match(worker,/validateTelegramInitData\(initData, cfg\?\.botToken, initDataMaxAgeSeconds\)/);
 });
 
 test('RC127 backend-only RPCs are explicitly least-privilege',()=>{
