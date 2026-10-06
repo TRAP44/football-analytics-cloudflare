@@ -58,6 +58,12 @@ test('Supabase restore drill is isolated, measurable and preserves least privile
   assert.match(workflow, /actions\/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0/);
   assert.doesNotMatch(workflow, /gh run download/);
   assert.match(workflow, /supabase@\$SUPABASE_CLI_VERSION" start/);
+  assert.ok(workflow.includes('grep -qi microsoft /proc/sys/kernel/osrelease'));
+  assert.ok(workflow.includes('/mnt/c/Users/Public/matchradar-supabase-restore-${GITHUB_RUN_ID}'));
+  assert.ok(workflow.includes('echo "LOCAL_PROJECT=$LOCAL_PROJECT" >> "$GITHUB_ENV"'));
+  assert.ok(workflow.includes('tail -n 80 "$RUNNER_TEMP/supabase-restore-start.log"'));
+  assert.ok(workflow.includes('DB_CONTAINER="supabase_db_${PROJECT_ID}"'));
+  assert.ok(workflow.includes('[[ -n "${LOCAL_PROJECT:-}" && -d "$LOCAL_PROJECT" ]]'));
   assert.match(workflow, /apply-supabase-restore-hardening\.sql/);
   assert.match(workflow, /verify-supabase-restore\.sql/);
   assert.match(workflow, /BACKUP_AGE_SECONDS/);

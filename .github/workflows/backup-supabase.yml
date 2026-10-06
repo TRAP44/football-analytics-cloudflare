@@ -336,18 +336,39 @@ jobs:
           set -euo pipefail
           RESTORE_STARTED_EPOCH="$(date -u +%s)"
           RESTORE_STARTED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          LOCAL_PROJECT="$RUNNER_TEMP/supabase-restore-project"
+
+          # Docker Desktop can invoke Windows-side helpers from WSL. A Linux-only
+          # working directory is then exposed to CMD.EXE as a UNC path, which
+          # makes Supabase fall back to C:\\Windows. Use a Windows-backed
+          # throwaway directory on WSL so both Linux tools and Docker Desktop
+          # resolve the same working directory without weakening isolation.
+          if grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null \
+            && [[ -d /mnt/c/Users/Public && -w /mnt/c/Users/Public ]]; then
+            LOCAL_PROJECT="/mnt/c/Users/Public/matchradar-supabase-restore-${GITHUB_RUN_ID}"
+          else
+            LOCAL_PROJECT="$RUNNER_TEMP/supabase-restore-project"
+          fi
+
           rm -rf "$LOCAL_PROJECT"
           mkdir -p "$LOCAL_PROJECT"
+          echo "LOCAL_PROJECT=$LOCAL_PROJECT" >> "$GITHUB_ENV"
           cd "$LOCAL_PROJECT"
 
           npx --yes "supabase@$SUPABASE_CLI_VERSION" init >/dev/null
-          npx --yes "supabase@$SUPABASE_CLI_VERSION" start \
-            -x studio,imgproxy,edge-runtime,logflare,vector,supavisor \
-            >"$RUNNER_TEMP/supabase-restore-start.log" 2>&1
 
-          DB_CONTAINER="$(docker ps --format '{{.Names}}' | grep '^supabase_db_' | head -n 1)"
-          [[ -n "$DB_CONTAINER" ]]
+          if ! npx --yes "supabase@$SUPABASE_CLI_VERSION" start \
+            -x studio,imgproxy,edge-runtime,logflare,vector,supavisor \
+            >"$RUNNER_TEMP/supabase-restore-start.log" 2>&1; then
+            echo "Supabase local start failed; diagnostic tail follows." >&2
+            tail -n 80 "$RUNNER_TEMP/supabase-restore-start.log" >&2 || true
+            exit 1
+          fi
+
+          PROJECT_ID="$(sed -n 's/^project_id = "\\(.*\\)"/\\1/p' supabase/config.toml | head -n 1)"
+          [[ -n "$PROJECT_ID" ]]
+          DB_CONTAINER="supabase_db_${PROJECT_ID}"
+          docker inspect "$DB_CONTAINER" >/dev/null 2>&1
+
           echo "DB_CONTAINER=$DB_CONTAINER" >> "$GITHUB_ENV"
           echo "RESTORE_STARTED_EPOCH=$RESTORE_STARTED_EPOCH" >> "$GITHUB_ENV"
           echo "RESTORE_STARTED_AT=$RESTORE_STARTED_AT" >> "$GITHUB_ENV"
@@ -483,8 +504,11 @@ jobs:
         shell: bash
         run: |
           set +e
-          if [[ -d "$RUNNER_TEMP/supabase-restore-project" ]]; then
-            cd "$RUNNER_TEMP/supabase-restore-project"
+          if [[ -n "${LOCAL_PROJECT:-}" && -d "$LOCAL_PROJECT" ]]; then
+            cd "$LOCAL_PROJECT"
             npx --yes "supabase@$SUPABASE_CLI_VERSION" stop --no-backup >/dev/null 2>&1
+          fi
+          if [[ -n "${LOCAL_PROJECT:-}" ]]; then
+            rm -rf "$LOCAL_PROJECT"
           fi
           rm -rf "$RUNNER_TEMP/matchradar-restore" "$RUNNER_TEMP/restore-artifact"
