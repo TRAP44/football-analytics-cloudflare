@@ -109,7 +109,7 @@ test('RC141 routes sanitized events into live and post-match analytics', () => {
   assert.match(worker, /buildSmartMatchInsights\(\{[\s\S]{0,500}?events:analyticalEvents/);
   assert.match(worker, /buildLiveAiCoach\(\{[\s\S]{0,500}?events:analyticalEvents/);
   assert.match(worker, /eventQuality,/);
-  assert.match(worker, /eventSemanticQualityGuard: 'enabled'/);
+  assert.match(worker, /events:eventQuality\?\.confidenceBearing===true/);
 });
 
 test('RC141 exposes event quality in Match Center UI and rolls the cache contract', () => {
