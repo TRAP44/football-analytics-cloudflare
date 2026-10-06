@@ -62,7 +62,7 @@ export function createAnalysisController({
   const errorCategory = typeof apiErrorCategory === 'function' ? apiErrorCategory : () => 'error';
   const showToast = typeof toast === 'function' ? toast : () => {};
 
-  async function loadAnalysisAccessSnapshot(id) {
+  async function loadAnalysisAccessSnapshot(fixtureId) {
     const id = Number(fixtureId || 0);
     if (!Number.isSafeInteger(id) || id <= 0) return null;
     try {
