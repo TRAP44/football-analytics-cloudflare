@@ -201,97 +201,207 @@ export function createTelegramBotUiRuntime(deps = {}) {
     }
   }
 
-  function publicSiteUrl(request, pathname = '/') {
-    const url=new URL(request.url);
-    url.pathname=pathname.startsWith('/') ? pathname : `/${pathname}`;
+  function publicSiteUrl(request,pathname='/') {
+    const url=requestUrl(request);
+    if (!url) throw new TypeError('Некорректный URL Telegram-запроса.');
+    const rawPath=safeText(pathname,400,'/');
+    if (/^[a-z][a-z0-9+.-]*:/i.test(rawPath)) {
+      throw new TypeError('Некорректный путь публичного сайта.');
+    }
+    url.pathname=rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
     url.search='';
     url.hash='';
     return url.toString();
   }
-  
-  function footballBotKeyboard(request) {
+
+  function footballBotKeyboard(_request) {
     return {
-      keyboard: [
-        [{ text: '⚽ Матчи' }, { text: '🔎 Найти матч' }],
-        [{ text: '🔴 LIVE' }, { text: '⭐ Мои команды' }],
-        [{ text: '🤖 AI-подборка' }, { text: '••• Ещё' }],
+      keyboard:[
+        [{text:'⚽ Матчи'},{text:'🔎 Найти матч'}],
+        [{text:'🔴 LIVE'},{text:'⭐ Мои команды'}],
+        [{text:'🤖 AI-подборка'},{text:'••• Ещё'}],
       ],
-      resize_keyboard: true,
-      is_persistent: true,
-      input_field_placeholder: 'Команда, матч или вопрос…',
+      resize_keyboard:true,
+      is_persistent:true,
+      input_field_placeholder:'Команда, матч или вопрос…',
     };
   }
-  
-  function footballBotMoreKeyboard(request) {
+
+  function footballBotMoreKeyboard(_request) {
     return {
-      keyboard: [
-        [{ text: '🕘 Последний разбор' }, { text: '📰 Новости' }],
-        [{ text: '📈 Протокол AI' }, { text: '☀️ Утренняя подборка' }],
-        [{ text: 'ℹ️ Как это работает' }, { text: '← Главное меню' }],
+      keyboard:[
+        [{text:'🕘 Последний разбор'},{text:'📰 Новости'}],
+        [{text:'📈 Протокол AI'},{text:'☀️ Утренняя подборка'}],
+        [{text:'ℹ️ Как это работает'},{text:'← Главное меню'}],
       ],
-      resize_keyboard: true,
-      is_persistent: true,
+      resize_keyboard:true,
+      is_persistent:true,
     };
   }
-  
-  function favoriteTeamIdSet(rows = []) {
-    return new Set((rows || []).map(x=>Number(x.team_id || x.teamId || 0)).filter(Boolean));
-  }
-  
-  function favoriteMatchTeamRow(match = {}, favorites = []) {
-    const fav=favoriteTeamIdSet(favorites);
-    const fixtureId=Number(match?.fixtureId || 0);
-    const teams=[match?.home,match?.away].filter(x=>Number(x?.id || 0)>0 && x?.name);
-    if (!teams.length) return [];
-    return teams.map(team=>({
-      text:`${fav.has(Number(team.id))?'★':'☆'} ${String(team.name || 'Команда').slice(0,22)}`,
-      callback_data:`favorite:toggle:${Number(team.id)}:${fixtureId}`,
-    }));
-  }
-  
-  function footballMatchActionKeyboard(request, match = {}, searchUrl = '', favorites = []) {
-    const fixtureId = Number(match?.fixtureId || 0);
-    if (!fixtureId) return footballBotKeyboard(request);
-    const favoriteRow=favoriteMatchTeamRow(match,favorites);
-    if (match?.live || match?.finished) {
-      const rows = [];
-      if (favoriteRow.length) rows.push(favoriteRow);
-      if (match.finished) rows.push([
-        { text: '🧠 Итог AI', callback_data: `match:review:${fixtureId}` },
-        { text: '📋 Центр матча', web_app: { url: telegramWebAppUrl(request, { fixtureId, action: 'center' }) } },
-      ]);
-      else rows.push([{ text: '🔴 Открыть LIVE-центр', web_app: { url: telegramWebAppUrl(request, { fixtureId, action: 'center' }) } }]);
-      rows.push([{text:'↗ Поделиться матчем',callback_data:`match:share:${fixtureId}`}]);
-      if (searchUrl) rows.push([{ text: '🔎 Вернуться к поиску', web_app: { url: searchUrl } }]);
-      return { inline_keyboard: rows };
+
+  function favoriteTeamIdSet(rows=[]) {
+    const ids=new Set();
+    for (const row of rowsOrEmpty(rows,500)) {
+      const source=objectValue(row);
+      const id=positiveSafeInteger(source?.team_id ?? source?.teamId);
+      if (id!==null) ids.add(id);
     }
-    const rows = [];
+    return ids;
+  }
+
+  function favoriteMatchTeamRow(match={},favorites=[]) {
+    const fixtureId=positiveSafeInteger(objectValue(match)?.fixtureId);
+    if (fixtureId===null) return [];
+
+    const fav=favoriteTeamIdSet(favorites);
+    const teams=[
+      safeTeam(objectValue(match)?.home,'Хозяева'),
+      safeTeam(objectValue(match)?.away,'Гости'),
+    ].filter(team=>team.id>0 && team.name);
+
+    const seen=new Set();
+    return teams
+      .filter(team=>{
+        if (seen.has(team.id)) return false;
+        seen.add(team.id);
+        return true;
+      })
+      .map(team=>({
+        text:`${fav.has(team.id)?'★':'☆'} ${safeText(team.name,22,'Команда')}`,
+        callback_data:`favorite:toggle:${team.id}:${fixtureId}`,
+      }));
+  }
+
+  function centerUrl(request,fixtureId) {
+    return generatedWebAppUrl(
+      request,
+      telegramWebAppUrl,
+      {fixtureId,action:'center'},
+    );
+  }
+
+  function fullAnalysisUrl(request,fixtureId) {
+    return generatedWebAppUrl(
+      request,
+      telegramFullAnalysisUrl,
+      fixtureId,
+      'brief',
+    );
+  }
+
+  function trustedSearchUrl(request,searchUrl) {
+    return sameOriginWebAppUrl(request,searchUrl);
+  }
+
+  function footballMatchActionKeyboard(
+    request,
+    match={},
+    searchUrl='',
+    favorites=[],
+  ) {
+    const source=objectValue(match) || {};
+    const fixtureId=positiveSafeInteger(source.fixtureId);
+    if (fixtureId===null) return footballBotKeyboard(request);
+
+    const favoriteRow=favoriteMatchTeamRow(source,favorites);
+    const finished=source.finished===true;
+    const live=!finished && source.live===true;
+    const search=trustedSearchUrl(request,searchUrl);
+    const center=centerUrl(request,fixtureId);
+    const full=fullAnalysisUrl(request,fixtureId);
+    const rows=[];
+
     if (favoriteRow.length) rows.push(favoriteRow);
+
+    if (live || finished) {
+      if (finished) {
+        const row=[
+          {text:'🧠 Итог AI',callback_data:`match:review:${fixtureId}`},
+        ];
+        if (center) {
+          row.push({
+            text:'📋 Центр матча',
+            web_app:{url:center},
+          });
+        }
+        rows.push(row);
+      } else if (center) {
+        rows.push([{
+          text:'🔴 Открыть LIVE-центр',
+          web_app:{url:center},
+        }]);
+      }
+
+      rows.push([{
+        text:'↗ Поделиться матчем',
+        callback_data:`match:share:${fixtureId}`,
+      }]);
+      if (search) {
+        rows.push([{
+          text:'🔎 Вернуться к поиску',
+          web_app:{url:search},
+        }]);
+      }
+      return {inline_keyboard:rows};
+    }
+
     rows.push(
       [
-        { text: '🧠 AI-вердикт', callback_data: `match:verdict:${fixtureId}` },
-        { text: '🧑‍⚖️ Судья', callback_data: `match:referee:${fixtureId}` },
+        {text:'🧠 AI-вердикт',callback_data:`match:verdict:${fixtureId}`},
+        {text:'🧑‍⚖️ Судья',callback_data:`match:referee:${fixtureId}`},
       ],
       [
-        { text: '👥 Составы и потери', callback_data: `match:squads:${fixtureId}` },
-        { text: '💹 Рынок и риски', callback_data: `match:market:${fixtureId}` },
+        {text:'👥 Составы и потери',callback_data:`match:squads:${fixtureId}`},
+        {text:'💹 Рынок и риски',callback_data:`match:market:${fixtureId}`},
       ],
-      [
-        { text: '🔄 Обновить AI', callback_data: `match:refresh:${fixtureId}` },
-        { text: '📊 Полный AI-разбор', web_app: { url: telegramFullAnalysisUrl(request, fixtureId, 'brief') } },
-      ],
-      [{text:'↗ Поделиться матчем',callback_data:`match:share:${fixtureId}`}],
     );
-    if (searchUrl) rows.push([{ text: '🔎 Другие результаты', web_app: { url: searchUrl } }]);
-    return { inline_keyboard: rows };
+
+    const refreshRow=[
+      {text:'🔄 Обновить AI',callback_data:`match:refresh:${fixtureId}`},
+    ];
+    if (full) {
+      refreshRow.push({
+        text:'📊 Полный AI-разбор',
+        web_app:{url:full},
+      });
+    }
+    rows.push(refreshRow);
+    rows.push([{
+      text:'↗ Поделиться матчем',
+      callback_data:`match:share:${fixtureId}`,
+    }]);
+
+    if (search) {
+      rows.push([{
+        text:'🔎 Другие результаты',
+        web_app:{url:search},
+      }]);
+    }
+    return {inline_keyboard:rows};
   }
-  
-  function footballQuickAiHandoffKeyboard(request, match = {}, favorites = [], searchUrl = '') {
-    const fixtureId=Number(match?.fixtureId || 0);
-    if (!fixtureId) return footballBotKeyboard(request);
-    const rows=[[{text:'📊 Полный AI-разбор',web_app:{url:telegramFullAnalysisUrl(request,fixtureId,'brief')}}]];
-    const favoriteRow=favoriteMatchTeamRow(match,favorites);
+
+  function footballQuickAiHandoffKeyboard(
+    request,
+    match={},
+    favorites=[],
+    searchUrl='',
+  ) {
+    const source=objectValue(match) || {};
+    const fixtureId=positiveSafeInteger(source.fixtureId);
+    if (fixtureId===null) return footballBotKeyboard(request);
+
+    const rows=[];
+    const full=fullAnalysisUrl(request,fixtureId);
+    if (full) {
+      rows.push([{
+        text:'📊 Полный AI-разбор',
+        web_app:{url:full},
+      }]);
+    }
+
+    const favoriteRow=favoriteMatchTeamRow(source,favorites);
     if (favoriteRow.length) rows.push(favoriteRow);
+
     rows.push(
       [
         {text:'🧑‍⚖️ Судья',callback_data:`match:referee:${fixtureId}`},
@@ -301,53 +411,129 @@ export function createTelegramBotUiRuntime(deps = {}) {
         {text:'💹 Рынок и риски',callback_data:`match:market:${fixtureId}`},
         {text:'🔄 Обновить AI',callback_data:`match:refresh:${fixtureId}`},
       ],
-      [{text:'↗ Поделиться матчем',callback_data:`match:share:${fixtureId}`}],
+      [{
+        text:'↗ Поделиться матчем',
+        callback_data:`match:share:${fixtureId}`,
+      }],
     );
-    if (searchUrl) rows.push([{text:'🔎 Другие результаты',web_app:{url:searchUrl}}]);
+
+    const search=trustedSearchUrl(request,searchUrl);
+    if (search) {
+      rows.push([{
+        text:'🔎 Другие результаты',
+        web_app:{url:search},
+      }]);
+    }
     return {inline_keyboard:rows};
   }
-  
-  function footballSearchHandoffKeyboard(request, match = {}, searchUrl = '') {
-    const fixtureId=Number(match?.fixtureId || 0);
-    if (!fixtureId) return footballBotKeyboard(request);
-    if (match?.live || match?.finished) return footballMatchActionKeyboard(request,match,searchUrl,[]);
-    const label=match?.selection?.primary ? '⭐ Короткая AI-оценка' : '🧠 Короткая AI-оценка';
-    const rows=[
-      [{text:label,callback_data:`match:menu:${fixtureId}`}],
-      [{text:'📊 Сразу полный AI-разбор',web_app:{url:telegramFullAnalysisUrl(request,fixtureId,'brief')}}],
-    ];
-    if (searchUrl) rows.push([{text:'🔎 Другие результаты',web_app:{url:searchUrl}}]);
+
+  function footballSearchHandoffKeyboard(request,match={},searchUrl='') {
+    const source=objectValue(match) || {};
+    const fixtureId=positiveSafeInteger(source.fixtureId);
+    if (fixtureId===null) return footballBotKeyboard(request);
+
+    if (source.live===true || source.finished===true) {
+      return footballMatchActionKeyboard(request,source,searchUrl,[]);
+    }
+
+    const selection=objectValue(source.selection);
+    const label=selection?.primary===true
+      ? '⭐ Короткая AI-оценка'
+      : '🧠 Короткая AI-оценка';
+    const rows=[[
+      {text:label,callback_data:`match:menu:${fixtureId}`},
+    ]];
+
+    const full=fullAnalysisUrl(request,fixtureId);
+    if (full) {
+      rows.push([{
+        text:'📊 Сразу полный AI-разбор',
+        web_app:{url:full},
+      }]);
+    }
+
+    const search=trustedSearchUrl(request,searchUrl);
+    if (search) {
+      rows.push([{
+        text:'🔎 Другие результаты',
+        web_app:{url:search},
+      }]);
+    }
     return {inline_keyboard:rows};
   }
-  
-  function normalizeBotFixtureCard(match = {}) {
-    const fixtureId = Number(match?.fixtureId || match?.fixture?.id || 0);
-    const status = String(match?.status || match?.fixture?.status?.short || '');
-    const homeSource=match?.home || match?.teams?.home || {};
-    const awaySource=match?.away || match?.teams?.away || {};
-    const homeName = String(homeSource?.name || match?.homeName || 'Хозяева');
-    const awayName = String(awaySource?.name || match?.awayName || 'Гости');
-    const leagueSource=match?.league;
-    const league = String((typeof leagueSource==='object' ? leagueSource?.name : leagueSource) || match?.leagueShort || 'Турнир');
+
+  function normalizeBotFixtureCard(match={}) {
+    const source=objectValue(match) || {};
+    const fixture=objectValue(source.fixture) || {};
+    const fixtureStatus=objectValue(fixture.status) || {};
+    const teams=objectValue(source.teams) || {};
+    const leagueSource=objectValue(source.league);
+
+    const fixtureId=positiveSafeInteger(source.fixtureId ?? fixture.id) || 0;
+    const status=safeText(source.status ?? fixtureStatus.short,24);
+    const statusLive=safePredicate(isLiveStatus,status);
+    const statusFinished=safePredicate(isFinishedStatus,status);
+    const finished=statusFinished || (!statusLive && source.finished===true);
+    const live=!finished && (statusLive || source.live===true);
+
+    const homeSource=objectValue(source.home)
+      || objectValue(teams.home)
+      || {};
+    const awaySource=objectValue(source.away)
+      || objectValue(teams.away)
+      || {};
+    const home=safeTeam({
+      ...homeSource,
+      name:safeText(homeSource.name ?? source.homeName,120,'Хозяева'),
+    },'Хозяева');
+    const away=safeTeam({
+      ...awaySource,
+      name:safeText(awaySource.name ?? source.awayName,120,'Гости'),
+    },'Гости');
+
+    const elapsed=nonNegativeSafeInteger(
+      source.elapsed ?? fixtureStatus.elapsed,
+      300,
+    );
+    const league=safeText(
+      leagueSource?.name
+        ?? (typeof source.league==='string' ? source.league : '')
+        ?? source.leagueShort,
+      160,
+      'Турнир',
+    );
+
     return {
       fixtureId,
-      date:String(match?.date || match?.fixture?.date || ''),
+      date:safeText(source.date ?? fixture.date,80),
       status,
-      statusLabel:String(match?.statusLabel || statusLabel(status, match?.fixture?.status?.elapsed)),
-      live:Boolean(match?.live) || isLiveStatus(status),
-      finished:Boolean(match?.finished) || isFinishedStatus(status),
-      elapsed:Number(match?.elapsed || match?.fixture?.status?.elapsed || 0) || null,
-      home:{id:Number(homeSource?.id || 0),name:homeName,logo:String(homeSource?.logo || '')},
-      away:{id:Number(awaySource?.id || 0),name:awayName,logo:String(awaySource?.logo || '')},
-      homeName,
-      awayName,
+      statusLabel:safeText(
+        source.statusLabel,
+        120,
+        safeStatusLabel(status,elapsed),
+      ),
+      live,
+      finished,
+      elapsed,
+      home,
+      away,
+      homeName:home.name,
+      awayName:away.name,
       league,
-      leagueId:Number(match?.leagueId || (typeof leagueSource==='object' ? leagueSource?.id : 0) || 0),
-      country:String(match?.country || (typeof leagueSource==='object' ? leagueSource?.country : '') || ''),
-      round:String(match?.roundLabel || match?.round || (typeof leagueSource==='object' ? leagueSource?.round : '') || ''),
+      leagueId:positiveSafeInteger(
+        source.leagueId ?? leagueSource?.id,
+      ) || 0,
+      country:safeText(
+        source.country ?? leagueSource?.country,
+        120,
+      ),
+      round:safeText(
+        source.roundLabel ?? source.round ?? leagueSource?.round,
+        120,
+      ),
     };
   }
-  
+
   async function rememberBotFixtureCards(matches = [], cfg) {
     await Promise.allSettled((matches || []).map(async match => {
       const card = normalizeBotFixtureCard(match);
