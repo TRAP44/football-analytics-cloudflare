@@ -12094,9 +12094,10 @@ async function apiBetaDashboard(request,cfg) {
       clientEvents:betaClientRows.length,
       opsEvents:opsRows.length,
       identityMode:'hmac_pseudonym',
-      opsPersistent:Boolean(opsResult.persncident.state,
-    transition:incident.transition?.kind || '',
-  };
+      opsPersistent:Boolean(opsResult.persistent),
+      opsSampleLimited:opsRows.length>=1000,
+    },
+  });
 }
 
 let providerSloRuntime = null;
