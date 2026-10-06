@@ -1892,77 +1892,140 @@ export function createAnalysisRuntime(deps) {
       quota:responseQuota,
     }));
     } finally {
-      try {
-        const disposition=usageCommitted ? 'commit' : 'refund';
-  
-        if (usageReservation?.reserved) {
-          if (usageReservation.durable) {
+      const disposition=usageCommitted ? 'commit' : 'refund';
+
+      const logFinalizationFailure=async (code,error,meta={})=>{
+        try { bumpTelemetry('analysisUsageCompensationFailures'); } catch {}
+        await recordOpsEvent(cfg,{
+          severity:'error',
+          source:'quota',
+          eventType:'analysis_usage_compensation',
+          code,
+          message:'Analysis usage finalization did not complete synchronously; durable reconciliation may be required.',
+          meta:{
+            ...objectValue(meta),
+            error:safeText(error?.message || error,180) || 'unknown_error',
+          },
+        }).catch(()=>null);
+      };
+
+      if (usageReservation?.reserved) {
+        if (usageReservation.durable) {
+          try {
             await finalizeAnalysisUsageReservation({
               reservation:usageReservation,
               disposition,
               cfg,
-              userId:userId,
+              userId,
             });
-          } else if (!usageCommitted) {
-            try {
-              await refundAnalysisQuota(userId,usageReservation,cfg);
-            } catch (error) {
-              bumpTelemetry('quotaRefundFailures');
-              await recordOpsEvent(cfg,{
-                severity:'error',
-                source:'quota',
-                eventType:'analysis_usage_compensation',
-                code:'LEGACY_QUOTA_REFUND_FAILED',
-                message:'Legacy analysis quota refund failed before durable lifecycle confirmation.',
-                meta:{
-                  usageDate:usageReservation.date || null,
-                  error:redactOpsString(error?.message || error,180),
-                },
-              }).catch(()=>null);
-            }
+          } catch (error) {
+            await logFinalizationFailure(
+              'ANALYSIS_QUOTA_FINALIZATION_FAILED',
+              error,
+              {operationId:safeText(usageReservation.operationId,80)},
+            );
+          }
+        } else if (!usageCommitted) {
+          try {
+            await refundAnalysisQuota(userId,usageReservation,cfg);
+          } catch (error) {
+            try { bumpTelemetry('quotaRefundFailures'); } catch {}
+            await recordOpsEvent(cfg,{
+              severity:'error',
+              source:'quota',
+              eventType:'analysis_usage_compensation',
+              code:'LEGACY_QUOTA_REFUND_FAILED',
+              message:'Legacy analysis quota refund failed before durable lifecycle confirmation.',
+              meta:{
+                usageDate:safeText(usageReservation.date,40) || null,
+                error:safeText(error?.message || error,180) || 'unknown_error',
+              },
+            }).catch(()=>null);
           }
         }
-  
-        if (passUsageReservation?.reserved) {
-          if (passUsageReservation.durable) {
+      }
+
+      if (passUsageReservation?.reserved) {
+        if (passUsageReservation.durable) {
+          try {
             await finalizeAnalysisUsageReservation({
               reservation:passUsageReservation,
               disposition,
               cfg,
-              userId:userId,
+              userId,
             });
-          } else if (!usageCommitted) {
-            try {
-              const result=await refundEntitlementUsage(userId,passUsageReservation.entitlementId,cfg);
-              if (result?.updated !== true) throw new Error(String(result?.reason || 'legacy_pass_refund_not_confirmed'));
-              bumpTelemetry('passUsageRefunds');
-            } catch (error) {
-              bumpTelemetry('passUsageRefundFailures');
-              await recordOpsEvent(cfg,{
-                severity:'error',
-                source:'quota',
-                eventType:'analysis_usage_compensation',
-                code:'LEGACY_PASS_REFUND_FAILED',
-                message:'Legacy limited Pass refund failed before durable lifecycle confirmation.',
-                meta:{
-                  entitlementId:Number(passUsageReservation.entitlementId || 0) || null,
-                  error:redactOpsString(error?.message || error,180),
-                },
-              }).catch(()=>null);
+          } catch (error) {
+            await logFinalizationFailure(
+              'ANALYSIS_PASS_FINALIZATION_FAILED',
+              error,
+              {
+                operationId:safeText(passUsageReservation.operationId,80),
+                entitlementId:positiveSafeInteger(passUsageReservation.entitlementId),
+              },
+            );
+          }
+        } else if (!usageCommitted) {
+          try {
+            const result=objectValue(await refundEntitlementUsage(
+              userId,
+              passUsageReservation.entitlementId,
+              cfg,
+            ));
+            if (result?.updated !== true) {
+              throw new Error(
+                safeText(result?.reason,120) || 'legacy_pass_refund_not_confirmed',
+              );
             }
+            try { bumpTelemetry('passUsageRefunds'); } catch {}
+          } catch (error) {
+            try { bumpTelemetry('passUsageRefundFailures'); } catch {}
+            await recordOpsEvent(cfg,{
+              severity:'error',
+              source:'quota',
+              eventType:'analysis_usage_compensation',
+              code:'LEGACY_PASS_REFUND_FAILED',
+              message:'Legacy limited Pass refund failed before durable lifecycle confirmation.',
+              meta:{
+                entitlementId:positiveSafeInteger(passUsageReservation.entitlementId),
+                error:safeText(error?.message || error,180) || 'unknown_error',
+              },
+            }).catch(()=>null);
           }
         }
-      } finally {
+      }
+
+      try {
         await releaseDistributedAnalysisLock(analysisLock,cfg);
+      } catch (error) {
+        await recordOpsEvent(cfg,{
+          severity:'warning',
+          source:'coordination',
+          eventType:'analysis_lock_release',
+          code:'ANALYSIS_LOCK_RELEASE_FAILED',
+          message:'Distributed analysis lock release failed; lease expiry will recover it.',
+          meta:{
+            fixtureId,
+            error:safeText(error?.message || error,180) || 'unknown_error',
+          },
+        }).catch(()=>null);
       }
     }
     } catch (error) {
-      const reason=newsImpactFailureCode(error,'server_error');
-      const recovery=await recordTrackedFullAiFailure(reason,Number(error?.status || 0));
-      if (recovery) error.newsImpactRecovery=recovery;
+      let reason='server_error';
+      try {
+        reason=safeText(newsImpactFailureCode(error,'server_error'),120)
+          || 'server_error';
+      } catch {}
+      const recovery=await recordTrackedFullAiFailure(
+        reason,
+        nonNegativeSafeInteger(error?.status,999) ?? 0,
+      );
+      if (recovery && error && typeof error === 'object') {
+        try { error.newsImpactRecovery=recovery; } catch {}
+      }
       throw error;
     }
   }
 
-  return { apiAnalyze };
+  return Object.freeze({apiAnalyze});
 }
