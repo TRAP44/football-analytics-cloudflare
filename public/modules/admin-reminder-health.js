@@ -39,10 +39,13 @@ export function createAdminReminderHealthModule(deps) {
     }
   
     if (!r.available) {
+      const migrationMissing = r.migrationReady === false;
       badge.className = 'reminder-health-badge blocked';
-      badge.textContent = 'БД';
-      status.textContent = r.reason || SUPABASE_SCHEMA_HINT;
-      kpis.innerHTML = `<div class="data-notice stale">Перед проверкой уведомлений ${escapeHtml(SUPABASE_SCHEMA_HINT)}.</div>`;
+      badge.textContent = migrationMissing ? 'БД' : 'НЕДОСТУПНО';
+      status.textContent = r.reason || (migrationMissing ? SUPABASE_SCHEMA_HINT : 'Проверка доставки недоступна.');
+      kpis.innerHTML = migrationMissing
+        ? `<div class="data-notice stale">Перед проверкой уведомлений ${escapeHtml(SUPABASE_SCHEMA_HINT)}.</div>`
+        : '<div class="data-notice stale">Не удалось получить актуальное состояние доставки. Повторите проверку.</div>';
       recent.innerHTML = '';
       return;
     }
