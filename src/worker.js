@@ -2402,6 +2402,7 @@ function getProviderFixtureRuntime() {
       getStaleCache,
       isFinishedStatus,
       isFootballRateLimitError,
+      isRetryableFootballTransportError,
       isLiveStatus,
       isTopLeague,
       json,
