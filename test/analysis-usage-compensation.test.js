@@ -1,11 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { readFileSync } from 'node:fs';
 import {
   createAnalysisUsageCompensationRuntime,
   durableAnalysisUsageHeaders,
 } from '../src/analysis-usage-compensation.js';
 import { POST_BASELINE_MIGRATIONS } from '../scripts/prepare-supabase-ci-migrations.js';
+
+function readRepoFile(relativePath) {
+  return readFileSync(new URL('../' + relativePath, import.meta.url), 'utf8');
+}
 
 const CFG = { supabaseUrl: 'https://example.supabase.co', supabaseKey: 'secret' };
 const QUOTA_OPERATION = '11111111-1111-4111-8111-111111111111';
@@ -17,6 +21,19 @@ test('durable usage headers bind a valid operation id and reject malformed ids',
     'x-analysis-operation-id': QUOTA_OPERATION,
   });
   assert.throws(() => durableAnalysisUsageHeaders('not-a-uuid'), /requires a UUID/);
+});
+
+test('analysis usage compensation runtime exposes a frozen finalization surface', () => {
+  const runtime=createAnalysisUsageCompensationRuntime({
+    hasSupabase:()=>false,
+    supaRpc:async()=>({}),
+  });
+
+  assert.equal(Object.isFrozen(runtime),true);
+  assert.deepEqual(
+    Object.keys(runtime).sort(),
+    ['finalizeAnalysisUsageReservation','reconcileAnalysisUsageReservations'],
+  );
 });
 
 test('durable usage identifiers reject coercive booleans and symbols safely', () => {
@@ -66,6 +83,30 @@ test('explicit finalization user must match the durable reservation owner', asyn
   assert.equal(calls,0);
 });
 
+test('invalid durable disposition fails before Supabase', async () => {
+  let calls=0;
+  const runtime=createAnalysisUsageCompensationRuntime({
+    hasSupabase:()=>true,
+    supaRpc:async()=>{ calls+=1; return {}; },
+  });
+
+  const result=await runtime.finalizeAnalysisUsageReservation({
+    reservation:{
+      reserved:true,
+      durable:true,
+      operationId:QUOTA_OPERATION,
+      kind:'quota',
+      userId:42,
+      date:'2026-10-05',
+    },
+    disposition:'cancel',
+    cfg:CFG,
+  });
+
+  assert.deepEqual(result,{ok:false,pending:false,reason:'invalid_reservation'});
+  assert.equal(calls,0);
+});
+
 test('confirmed quota refund increments success telemetry only after persistence', async () => {
   const calls = [];
   const telemetry = {};
@@ -104,6 +145,45 @@ test('confirmed quota refund increments success telemetry only after persistence
   assert.deepEqual(calls[0][2], { p_telegram_id: 42, p_usage_date: '2026-10-05' });
   assert.equal(calls[0][4]['x-analysis-usage-action'], 'refund');
   assert.equal(calls[0][4]['x-analysis-operation-id'], QUOTA_OPERATION);
+});
+
+test('confirmed quota commit uses the durable finalizer without refund telemetry', async () => {
+  const calls=[];
+  const telemetry={};
+  const runtime=createAnalysisUsageCompensationRuntime({
+    hasSupabase:()=>true,
+    supaRpc:async(...args)=>{
+      calls.push(args);
+      return {ok:true,status:'committed',operationId:QUOTA_OPERATION};
+    },
+    bumpTelemetry:(key,amount=1)=>{
+      telemetry[key]=Number(telemetry[key] || 0)+amount;
+    },
+  });
+
+  const result=await runtime.finalizeAnalysisUsageReservation({
+    reservation:{
+      reserved:true,
+      durable:true,
+      operationId:QUOTA_OPERATION,
+      kind:'quota',
+      userId:42,
+      date:'2026-10-05',
+    },
+    disposition:'commit',
+    cfg:CFG,
+  });
+
+  assert.equal(result.ok,true);
+  assert.equal(result.pending,false);
+  assert.equal(result.status,'committed');
+  assert.equal(telemetry.analysisUsageCommits,1);
+  assert.equal(telemetry.analysisUsageRefunds,undefined);
+  assert.equal(telemetry.quotaRefunds,undefined);
+  assert.equal(calls[0][1],'refund_analysis_quota');
+  assert.deepEqual(calls[0][2],{p_telegram_id:42,p_usage_date:'2026-10-05'});
+  assert.equal(calls[0][4]['x-analysis-usage-action'],'commit');
+  assert.equal(calls[0][4]['x-analysis-operation-id'],QUOTA_OPERATION);
 });
 
 test('invalid durable reservation fields fail before Supabase and never become pending', async () => {
@@ -343,6 +423,43 @@ test('successful limited Pass usage is explicitly committed through the existing
   assert.equal(calls[0][4]['x-analysis-usage-action'], 'commit');
 });
 
+test('failed limited Pass analysis refunds only after durable persistence confirmation', async () => {
+  const calls=[];
+  const telemetry={};
+  const runtime=createAnalysisUsageCompensationRuntime({
+    hasSupabase:()=>true,
+    supaRpc:async(...args)=>{
+      calls.push(args);
+      return {ok:true,status:'refunded',operationId:PASS_OPERATION};
+    },
+    bumpTelemetry:(key,amount=1)=>{
+      telemetry[key]=Number(telemetry[key] || 0)+amount;
+    },
+  });
+
+  const result=await runtime.finalizeAnalysisUsageReservation({
+    reservation:{
+      reserved:true,
+      durable:true,
+      operationId:PASS_OPERATION,
+      kind:'pass',
+      userId:42,
+      entitlementId:77,
+    },
+    disposition:'refund',
+    cfg:CFG,
+  });
+
+  assert.equal(result.ok,true);
+  assert.equal(result.status,'refunded');
+  assert.equal(telemetry.analysisUsageRefunds,1);
+  assert.equal(telemetry.passUsageRefunds,1);
+  assert.equal(telemetry.passUsageRefundFailures,undefined);
+  assert.equal(calls[0][1],'refund_pass_entitlement_usage');
+  assert.deepEqual(calls[0][2],{p_telegram_id:42,p_entitlement_id:77});
+  assert.equal(calls[0][4]['x-analysis-usage-action'],'refund');
+});
+
 test('legacy or unlimited reservations bypass durable finalization', async () => {
   let calls = 0;
   const runtime = createAnalysisUsageCompensationRuntime({
@@ -492,9 +609,24 @@ test('partial reconciliation remains observable while preserving successful reco
   assert.equal(events[0].code, 'ANALYSIS_USAGE_RECONCILIATION_PARTIAL');
 });
 
+test('analysis orchestration observes structured durable finalization rejection', () => {
+  const source=readRepoFile('src/analysis-runtime.js');
+
+  assert.match(
+    source,
+    /finalization\?\.ok !== true && finalization\?\.pending !== true[\s\S]*?ANALYSIS_QUOTA_FINALIZATION_REJECTED/,
+  );
+  assert.match(
+    source,
+    /finalization\?\.ok !== true && finalization\?\.pending !== true[\s\S]*?ANALYSIS_PASS_FINALIZATION_REJECTED/,
+  );
+  assert.match(source,/ANALYSIS_QUOTA_FINALIZATION_FAILED/);
+  assert.match(source,/ANALYSIS_PASS_FINALIZATION_FAILED/);
+});
+
 test('v6.28 migration keeps the public contract stable and durable state private', () => {
-  const sql = fs.readFileSync('supabase/migrations/supabase_migration_v6_28.sql', 'utf8');
-  const release = JSON.parse(fs.readFileSync('release-contract.json', 'utf8'));
+  const sql = readRepoFile('supabase/migrations/supabase_migration_v6_28.sql');
+  const release = JSON.parse(readRepoFile('release-contract.json'));
 
   assert.match(sql, /create schema if not exists private/i);
   assert.match(sql, /create table if not exists private\.analysis_usage_reservations/i);
@@ -529,7 +661,7 @@ test('v6.28 migration keeps the public contract stable and durable state private
 });
 
 test('v6.29.7 gates readiness on the private durable usage contract without changing the public fingerprint', () => {
-  const sql=fs.readFileSync('supabase/migrations/supabase_migration_v6_29_7.sql','utf8');
+  const sql=readRepoFile('supabase/migrations/supabase_migration_v6_29_7.sql');
   assert.match(sql,/create or replace function public\.backend_readiness_contract_v2/);
   assert.match(sql,/analysis_usage_private_contract/);
   assert.match(sql,/'privateAnalysisUsage'/);
