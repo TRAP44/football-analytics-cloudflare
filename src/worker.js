@@ -7,6 +7,7 @@ import { createUserDataApiRuntime } from './user-data-api-runtime.js';
 import { createBillingRuntime } from './billing-runtime.js';
 import { createBillingApiRuntime } from './billing-api-runtime.js';
 import { createClientTelemetryRuntime } from './client-telemetry-runtime.js';
+import { CLIENT_TELEMETRY_CODES } from './client-telemetry-contract.js';
 import { createBetaPhase5Runtime } from './beta-phase5-runtime.js';
 import { createProviderSloRuntime } from './provider-slo-runtime.js';
 import { createProductionMonitorRuntime } from './production-monitor-runtime.js';
@@ -1708,17 +1709,9 @@ const {
   withSingleFlight,
 });
 
-const CLIENT_TELEMETRY_EVENTS = new Set([
-  'boot_ok',
-  'boot_recovery',
-  'compatibility_block',
-  'network_recovery',
-  'client_error',
-  'product_action',
-  'action_error',
-  'operation_timing',
-  'data_coverage',
-]);
+const CLIENT_TELEMETRY_EVENTS = new Set(
+  Object.values(CLIENT_TELEMETRY_CODES).map(code => String(code).toLowerCase()),
+);
 
 const CLIENT_PRODUCT_ACTIONS = new Set([
   'matches_open',
