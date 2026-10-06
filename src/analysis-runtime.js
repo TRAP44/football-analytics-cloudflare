@@ -172,6 +172,47 @@ export function createAnalysisRuntime(deps) {
     }
   }
 
+  function unavailableFeatureMeta(feature, reason = 'provider_unavailable') {
+    return {
+      feature:safeText(feature,40) || 'unknown',
+      provider:'api-football',
+      source:'network',
+      state:'unavailable',
+      available:false,
+      usable:false,
+      observed:false,
+      attempted:true,
+      confidenceBearing:false,
+      stale:false,
+      reason:safeText(reason,120) || 'provider_unavailable',
+    };
+  }
+
+  function providerEnvelope(value, feature, reason = 'invalid_provider_response') {
+    const envelope=objectValue(value);
+    return {
+      data:rowsOrEmpty(envelope?.data,1000),
+      meta:objectValue(envelope?.meta) || unavailableFeatureMeta(feature,reason),
+    };
+  }
+
+  async function safeAnalysisProviderFetch(input) {
+    const request=objectValue(input) || {};
+    const feature=safeText(request.feature,40) || 'unknown';
+    try {
+      return providerEnvelope(
+        await analysisProviderFetch(request),
+        feature,
+      );
+    } catch (error) {
+      return providerEnvelope(
+        null,
+        feature,
+        safeText(error?.code,120) || 'provider_error',
+      );
+    }
+  }
+
   function analysisCachePayload(value, fixtureId) {
     const cached=objectValue(value);
     if (!cached) return null;
@@ -726,56 +767,233 @@ export function createAnalysisRuntime(deps) {
         ? 'publication_window'
         : canFetchLineups ? '' : 'quota_reserve';
   
-    const [injuryResult, predictionResult, oddsResult, h2hResult] = await Promise.all([
-      analysisProviderFetch({ feature:'injuries', path:'/injuries', params:{ fixture:fixtureId }, fixtureId, cfg, allowed:canFetchInjuries, skipReason:injurySkipReason }),
-      analysisProviderFetch({ feature:'predictions', path:'/predictions', params:{ fixture:fixtureId }, fixtureId, cfg }),
-      analysisProviderFetch({ feature:'odds', path:'/odds', params:{ fixture:fixtureId }, fixtureId, cfg }),
-      analysisProviderFetch({ feature:'h2h', path:'/fixtures/headtohead', params:{ h2h:`${homeId}-${awayId}`, last:5 }, fixtureId, cfg, allowed:canFetchH2H, skipReason:h2hSkipReason }),
+    const [injuryResult,predictionResult,oddsResult,h2hResult]=await Promise.all([
+      safeAnalysisProviderFetch({
+        feature:'injuries',
+        path:'/injuries',
+        params:{fixture:fixtureId},
+        fixtureId,
+        cfg,
+        allowed:canFetchInjuries,
+        skipReason:injurySkipReason,
+      }),
+      safeAnalysisProviderFetch({
+        feature:'predictions',
+        path:'/predictions',
+        params:{fixture:fixtureId},
+        fixtureId,
+        cfg,
+      }),
+      safeAnalysisProviderFetch({
+        feature:'odds',
+        path:'/odds',
+        params:{fixture:fixtureId},
+        fixtureId,
+        cfg,
+      }),
+      safeAnalysisProviderFetch({
+        feature:'h2h',
+        path:'/fixtures/headtohead',
+        params:{h2h:`${homeId}-${awayId}`,last:5},
+        fixtureId,
+        cfg,
+        allowed:canFetchH2H,
+        skipReason:h2hSkipReason,
+      }),
     ]);
-    const lineupResult = await analysisProviderFetch({
-      feature:'lineups', path:'/fixtures/lineups', params:{ fixture:fixtureId }, fixtureId, cfg,
-      allowed:canFetchLineups, skipReason:lineupSkipReason,
+    const lineupResult=await safeAnalysisProviderFetch({
+      feature:'lineups',
+      path:'/fixtures/lineups',
+      params:{fixture:fixtureId},
+      fixtureId,
+      cfg,
+      allowed:canFetchLineups,
+      skipReason:lineupSkipReason,
     });
-  
-    const injuries = rowsOrEmpty(injuryResult?.data);
-    const predictions = rowsOrEmpty(predictionResult?.data);
-    const odds = rowsOrEmpty(oddsResult?.data);
-    const h2hRows = rowsOrEmpty(h2hResult?.data);
-    const lineupsRows = rowsOrEmpty(lineupResult?.data);
-    const lineups = formatLineups(lineupsRows, homeId, awayId);
-    const lineupQuality=assessMatchLineups(lineups);
-    const lineupMeta=annotateLineupReliability(lineupResult.meta, lineupQuality);
-    const primaryMarket = extractMarket(odds);
-    const primaryMarketMeta = usableOddsFeatureMeta(oddsResult.meta, primaryMarket);
-    const primaryMarketShape = assessOddsMarketQuality(primaryMarket, { oddsMeta:primaryMarketMeta, mode:'upcoming' });
-    const secondaryOdds = primaryMarket && primaryMarketShape.marketValid
-      ? null
-      : await secondaryOddsMarket(fixture, cfg, { mode:'prematch' });
-    const market = secondaryOdds?.available ? secondaryOdds.market : primaryMarket || null;
-    const resolvedOddsMeta = secondaryOdds?.available
-      ? usableOddsFeatureMeta(secondaryOdds.meta, market)
-      : usableOddsFeatureMeta(oddsResult.meta, primaryMarket, secondaryOdds?.reason || '');
-    const analysisFeatureMeta = applyFeatureFreshnessMap({
-      injuries: injuryResult.meta,
-      predictions: predictionResult.meta,
-      odds: resolvedOddsMeta,
-      h2h: h2hResult.meta,
-      lineups: lineupMeta,
-    }, { mode:'upcoming' });
-    const oddsQuality = assessOddsMarketQuality(market, { oddsMeta:analysisFeatureMeta.odds || {}, mode:'upcoming' });
-    analysisFeatureMeta.odds = annotateOddsReliability(analysisFeatureMeta.odds || { feature:'odds' }, oddsQuality);
-    const analysisMarket = oddsMarketForTrustedAnalytics(market, oddsQuality);
-    const availabilityQuality = assessFixtureAvailabilityQuality(injuries, {
-      homeId, awayId, injuriesMeta:analysisFeatureMeta.injuries || {}, mode:'upcoming',
-    });
-    analysisFeatureMeta.injuries = annotateAvailabilityReliability(
-      analysisFeatureMeta.injuries || { feature:'injuries', provider:'api-football', source:'network' },
-      availabilityQuality,
-    );
-    const trustedInjuries = sanitizeAvailabilityRows(injuries, availabilityQuality);
-    const providerReliability = providerDataReliabilitySummary(analysisFeatureMeta, { minutesToKickoff, mode:'upcoming' });
+
+    const injuries=rowsOrEmpty(injuryResult.data,500);
+    const predictions=rowsOrEmpty(predictionResult.data,50);
+    const odds=rowsOrEmpty(oddsResult.data,100);
+    const h2hRows=rowsOrEmpty(h2hResult.data,20);
+    const lineupsRows=rowsOrEmpty(lineupResult.data,20);
+
+    let lineups={};
+    try { lineups=objectValue(formatLineups(lineupsRows,homeId,awayId)) || {}; }
+    catch { lineups={}; }
+
+    let lineupQuality;
+    try { lineupQuality=objectValue(assessMatchLineups(lineups)); } catch {}
+    if (!lineupQuality) {
+      lineupQuality={
+        home:{confirmed:false},
+        away:{confirmed:false},
+        bothConfirmed:false,
+        bothPublished:false,
+        anyPublished:false,
+        confirmedSides:0,
+        partialSides:0,
+      };
+    }
+
+    let lineupMeta=lineupResult.meta;
+    try {
+      lineupMeta=objectValue(
+        annotateLineupReliability(lineupResult.meta,lineupQuality),
+      ) || lineupResult.meta;
+    } catch {}
+
+    let primaryMarket=null;
+    try { primaryMarket=objectValue(extractMarket(odds)); } catch {}
+
+    let primaryMarketMeta=objectValue(oddsResult.meta) || unavailableFeatureMeta('odds');
+    try {
+      primaryMarketMeta=objectValue(
+        usableOddsFeatureMeta(primaryMarketMeta,primaryMarket),
+      ) || primaryMarketMeta;
+    } catch {}
+
+    let primaryMarketShape={marketValid:false};
+    try {
+      primaryMarketShape=objectValue(assessOddsMarketQuality(primaryMarket,{
+        oddsMeta:primaryMarketMeta,
+        mode:'upcoming',
+      })) || primaryMarketShape;
+    } catch {}
+
+    let secondaryOdds=null;
+    if (!(primaryMarket && primaryMarketShape.marketValid === true)) {
+      try {
+        secondaryOdds=objectValue(
+          await secondaryOddsMarket(fixture,cfg,{mode:'prematch'}),
+        );
+      } catch {
+        secondaryOdds=null;
+      }
+    }
+
+    const secondaryMarket=secondaryOdds?.available === true
+      ? objectValue(secondaryOdds.market)
+      : null;
+    const market=secondaryMarket || primaryMarket;
+
+    let resolvedOddsMeta;
+    try {
+      resolvedOddsMeta=objectValue(
+        secondaryMarket
+          ? usableOddsFeatureMeta(secondaryOdds?.meta,market)
+          : usableOddsFeatureMeta(
+              oddsResult.meta,
+              primaryMarket,
+              safeText(secondaryOdds?.reason,120),
+            ),
+      );
+    } catch {}
+    resolvedOddsMeta=resolvedOddsMeta
+      || objectValue(oddsResult.meta)
+      || unavailableFeatureMeta('odds');
+
+    let analysisFeatureMeta;
+    try {
+      analysisFeatureMeta=objectValue(applyFeatureFreshnessMap({
+        injuries:injuryResult.meta,
+        predictions:predictionResult.meta,
+        odds:resolvedOddsMeta,
+        h2h:h2hResult.meta,
+        lineups:lineupMeta,
+      },{mode:'upcoming'}));
+    } catch {}
+    analysisFeatureMeta=analysisFeatureMeta || {
+      injuries:injuryResult.meta,
+      predictions:predictionResult.meta,
+      odds:resolvedOddsMeta,
+      h2h:h2hResult.meta,
+      lineups:lineupMeta,
+    };
+
+    let oddsQuality={marketValid:false,confidenceBearing:false};
+    try {
+      oddsQuality=objectValue(assessOddsMarketQuality(market,{
+        oddsMeta:objectValue(analysisFeatureMeta.odds) || {},
+        mode:'upcoming',
+      })) || oddsQuality;
+    } catch {}
+
+    try {
+      analysisFeatureMeta.odds=objectValue(annotateOddsReliability(
+        objectValue(analysisFeatureMeta.odds) || {feature:'odds'},
+        oddsQuality,
+      )) || objectValue(analysisFeatureMeta.odds) || unavailableFeatureMeta('odds');
+    } catch {
+      analysisFeatureMeta.odds=objectValue(analysisFeatureMeta.odds)
+        || unavailableFeatureMeta('odds');
+    }
+
+    let analysisMarket=null;
+    try { analysisMarket=objectValue(oddsMarketForTrustedAnalytics(market,oddsQuality)); }
+    catch { analysisMarket=null; }
+
+    let availabilityQuality;
+    try {
+      availabilityQuality=objectValue(assessFixtureAvailabilityQuality(injuries,{
+        homeId,
+        awayId,
+        injuriesMeta:objectValue(analysisFeatureMeta.injuries) || {},
+        mode:'upcoming',
+      }));
+    } catch {}
+    availabilityQuality=availabilityQuality || {
+      state:'invalid',
+      acceptedCount:0,
+      rejectedCount:injuries.length,
+      confidenceBearing:false,
+      issues:[{code:'availability_quality_unavailable'}],
+    };
+
+    try {
+      analysisFeatureMeta.injuries=objectValue(annotateAvailabilityReliability(
+        objectValue(analysisFeatureMeta.injuries)
+          || {feature:'injuries',provider:'api-football',source:'network'},
+        availabilityQuality,
+      )) || unavailableFeatureMeta('injuries','availability_quality_unavailable');
+    } catch {
+      analysisFeatureMeta.injuries=unavailableFeatureMeta(
+        'injuries',
+        'availability_quality_unavailable',
+      );
+    }
+
+    let trustedInjuries=[];
+    try {
+      trustedInjuries=rowsOrEmpty(
+        sanitizeAvailabilityRows(injuries,availabilityQuality),
+        500,
+      );
+    } catch {
+      trustedInjuries=[];
+    }
+
+    let providerReliability;
+    try {
+      providerReliability=objectValue(providerDataReliabilitySummary(
+        analysisFeatureMeta,
+        {minutesToKickoff,mode:'upcoming'},
+      ));
+    } catch {}
+    providerReliability=providerReliability || {
+      state:'degraded',
+      trustCap:0,
+      available:0,
+      checked:0,
+      features:analysisFeatureMeta,
+      warnings:['Надёжность части входных данных не удалось подтвердить.'],
+    };
+    providerReliability.features=objectValue(providerReliability.features)
+      || analysisFeatureMeta;
+    providerReliability.warnings=rowsOrEmpty(providerReliability.warnings,30)
+      .map(value=>safeText(value,360))
+      .filter(Boolean);
     skipped.push(...providerReliability.warnings);
-  
+
     const webPromise = tavilySearch(`${homeName} ${awayName} injuries team news probable lineups latest`, cfg);
     const homeFormPromise = detailedCoverage
       ? getRecentTeamForm(homeId, 'home', fixture.fixture?.date, fixtureId, cfg, { allowNetwork: canFetchFreshForm }).catch(() => null)
