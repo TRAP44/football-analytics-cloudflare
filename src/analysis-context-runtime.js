@@ -105,40 +105,183 @@ export function createAnalysisContextRuntime(deps) {
   }
 
   async function cachedTeamIntelligenceForAnalysis(teamId, leagueId, season, cfg) {
-    if (!teamId || !leagueId || !season) return { stats: null, playerStats: null };
-    const cached = await getStaleCache(`team:intelligence:${Number(teamId)}:${Number(leagueId)}:${Number(season)}:v2`, cfg);
+    const normalizedTeamId=positiveSafeInteger(teamId);
+    const normalizedLeagueId=positiveSafeInteger(leagueId);
+    const normalizedSeason=safeSeason(season);
+    if (!normalizedTeamId || !normalizedLeagueId || !normalizedSeason) {
+      return {stats:null,playerStats:null};
+    }
+
+    const cacheKey=`team:intelligence:${normalizedTeamId}:${normalizedLeagueId}:${normalizedSeason}:v2`;
+    const raw=await getStaleCache(cacheKey,cfg).catch(()=>null);
+    const cached=teamIntelligenceCacheValue(
+      raw,
+      normalizedTeamId,
+      normalizedLeagueId,
+      normalizedSeason,
+    );
+    if (!cached) return {stats:null,playerStats:null};
+
+    const stats=objectValue(cached.stats);
     return {
-      stats: cached?.stats?.available ? cached.stats : null,
-      playerStats: cached?.playerStats?.available ? cached.playerStats : null,
+      stats:stats?.available === true ? stats : null,
+      playerStats:playerStatsValue(cached.playerStats),
     };
   }
-  
+
   async function hydratePlayerRolesForAnalysis({
-    teamId, teamName, leagueId, leagueName, season, cachedPlayerStats, needed, cfg, maxPages = 1,
+    teamId,
+    teamName,
+    leagueId,
+    leagueName,
+    season,
+    cachedPlayerStats,
+    needed,
+    cfg,
+    maxPages=1,
   } = {}) {
-    if (cachedPlayerStats?.available) return { playerStats:cachedPlayerStats, source:'team-intelligence-cache', network:false, stale:false, reason:'' };
-    if (!needed || !teamId || !leagueId || !season) return { playerStats:null, source:'not-needed', network:false, stale:false, reason:'not_needed' };
-    const cacheKey=`analysis:player-role:${Number(teamId)}:${Number(leagueId)}:${Number(season)}:v1`;
-    const cached=await getCache(cacheKey,cfg).catch(()=>null);
-    if (cached?.playerStats?.available) return { playerStats:cached.playerStats, source:'analysis-cache', network:false, stale:false, reason:'' };
-    const stale=await getStaleCache(cacheKey,cfg).catch(()=>null);
-    if (!freeQuotaHealthy(12,1)) return stale?.playerStats?.available
-      ? { playerStats:stale.playerStats, source:'analysis-stale-cache', network:false, stale:true, reason:'quota_guard' }
-      : { playerStats:null, source:'unavailable', network:false, stale:false, reason:'quota_guard' };
+    const normalizedTeamId=positiveSafeInteger(teamId);
+    const normalizedLeagueId=positiveSafeInteger(leagueId);
+    const normalizedSeason=safeSeason(season);
+    const suppliedPlayerStats=playerStatsValue(cachedPlayerStats);
+
+    if (suppliedPlayerStats) {
+      return {
+        playerStats:suppliedPlayerStats,
+        source:'team-intelligence-cache',
+        network:false,
+        stale:false,
+        reason:'',
+      };
+    }
+    if (
+      needed !== true
+      || !normalizedTeamId
+      || !normalizedLeagueId
+      || !normalizedSeason
+    ) {
+      return {
+        playerStats:null,
+        source:'not-needed',
+        network:false,
+        stale:false,
+        reason:'not_needed',
+      };
+    }
+
+    const requestedPages=positiveSafeInteger(maxPages);
+    const pageLimit=requestedPages ? Math.min(2,requestedPages) : 1;
+    const cacheKey=`analysis:player-role:${normalizedTeamId}:${normalizedLeagueId}:${normalizedSeason}:v1`;
+    const cached=playerRoleCacheValue(
+      await getCache(cacheKey,cfg).catch(()=>null),
+      normalizedTeamId,
+      normalizedLeagueId,
+      normalizedSeason,
+    );
+    if (cached) {
+      return {
+        playerStats:cached.playerStats,
+        source:'analysis-cache',
+        network:false,
+        stale:false,
+        reason:'',
+      };
+    }
+
+    const stale=playerRoleCacheValue(
+      await getStaleCache(cacheKey,cfg).catch(()=>null),
+      normalizedTeamId,
+      normalizedLeagueId,
+      normalizedSeason,
+    );
+    if (!quotaHealthy(12,1)) {
+      return stale
+        ? {
+            playerStats:stale.playerStats,
+            source:'analysis-stale-cache',
+            network:false,
+            stale:true,
+            reason:'quota_guard',
+          }
+        : {
+            playerStats:null,
+            source:'unavailable',
+            network:false,
+            stale:false,
+            reason:'quota_guard',
+          };
+    }
+
     try {
-      const playerStats=await resolveTeamSeasonPlayers(teamId,teamName,leagueId,leagueName,season,cfg,{ maxPages:Math.max(1,Math.min(2,Number(maxPages || 1))) });
-      if (playerStats?.available) {
-        await setCache(cacheKey,teamId,{playerStats,refreshedAt:new Date().toISOString()},cfg,360).catch(()=>false);
-        return { playerStats, source:'analysis-hydration', network:true, stale:false, reason:String(playerStats.reason || '') };
+      const resolved=objectValue(await resolveTeamSeasonPlayers(
+        normalizedTeamId,
+        safeText(teamName,180),
+        normalizedLeagueId,
+        safeText(leagueName,180),
+        normalizedSeason,
+        cfg,
+        {maxPages:pageLimit},
+      ));
+      const playerStats=playerStatsValue(resolved);
+      if (playerStats) {
+        await setCache(
+          cacheKey,
+          normalizedTeamId,
+          {
+            teamId:normalizedTeamId,
+            leagueId:normalizedLeagueId,
+            season:normalizedSeason,
+            playerStats,
+            refreshedAt:new Date().toISOString(),
+          },
+          cfg,
+          360,
+        ).catch(()=>false);
+        return {
+          playerStats,
+          source:'analysis-hydration',
+          network:true,
+          stale:false,
+          reason:safeText(resolved?.reason,160),
+        };
       }
-      if (stale?.playerStats?.available) return { playerStats:stale.playerStats, source:'analysis-stale-cache', network:true, stale:true, reason:String(playerStats?.reason || 'provider_unavailable') };
-      return { playerStats:null, source:'unavailable', network:true, stale:false, reason:String(playerStats?.reason || 'provider_unavailable') };
+
+      const reason=safeText(resolved?.reason,160) || 'provider_unavailable';
+      return stale
+        ? {
+            playerStats:stale.playerStats,
+            source:'analysis-stale-cache',
+            network:true,
+            stale:true,
+            reason,
+          }
+        : {
+            playerStats:null,
+            source:'unavailable',
+            network:true,
+            stale:false,
+            reason,
+          };
     } catch (error) {
-      if (stale?.playerStats?.available) return { playerStats:stale.playerStats, source:'analysis-stale-cache', network:true, stale:true, reason:String(error?.code || 'provider_error') };
-      return { playerStats:null, source:'unavailable', network:true, stale:false, reason:String(error?.code || 'provider_error') };
+      const reason=safeText(error?.code,120) || 'provider_error';
+      return stale
+        ? {
+            playerStats:stale.playerStats,
+            source:'analysis-stale-cache',
+            network:true,
+            stale:true,
+            reason,
+          }
+        : {
+            playerStats:null,
+            source:'unavailable',
+            network:true,
+            stale:false,
+            reason,
+          };
     }
   }
-  
+
   function comparisonNumber(value) {
     const n = Number(value);
     return Number.isFinite(n) ? n : null;
