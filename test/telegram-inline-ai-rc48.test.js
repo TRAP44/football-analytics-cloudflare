@@ -8,9 +8,9 @@ const worker=(fs.readFileSync('src/worker.js','utf8')
 
 test('telegram match buttons answer inline instead of forcing the mini app',()=> {
   assert.match(worker,/callback_data:\`match:verdict:/);
-  assert.match(worker,/callback_data: `match:referee:/);
-  assert.match(worker,/callback_data: `match:squads:/);
-  assert.match(worker,/callback_data: `match:market:/);
+  assert.match(worker,/callback_data:\`match:referee:/);
+  assert.match(worker,/callback_data:\`match:squads:/);
+  assert.match(worker,/callback_data:\`match:market:/);
   assert.match(worker,/function sendBotFixtureSection/);
 });
 
