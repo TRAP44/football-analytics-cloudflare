@@ -41,6 +41,7 @@ export function createAdminModelRemediationModule({
   }
   
   function renderModelRemediation() {
+    if (!isAdmin()) return;
     const root = $('modelRemediation');
     const status = $('modelRemediationStatus');
     const summary = $('modelRemediationSummary');
@@ -254,6 +255,7 @@ export function createAdminModelRemediationModule({
       await refreshModelQuality(true);
     } catch (error) {
       toast(error.message || 'Разбор расхождения не выполнен.');
+      state.modelRemediationRunning = false;
       state.modelRemediation = null;
       await loadModelRemediation(true);
     } finally {
@@ -285,6 +287,7 @@ export function createAdminModelRemediationModule({
       toast('Защитный контур закрыт. Сброс записан в журнал.');
     } catch (error) {
       toast(error.message || 'Не удалось сбросить защитный контур.');
+      state.modelRemediationRunning = false;
       state.modelRemediation = null;
       await loadModelRemediation(true);
     } finally {
