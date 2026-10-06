@@ -1,6 +1,17 @@
 -- Football Analytics v6.23 / Favorite Players
 -- Additive migration for authenticated per-user player follows.
 -- Smart Notification delivery is intentionally NOT implemented here.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. favorite_players and
+-- save_favorite_player_guarded() remain directly used by the current Worker,
+-- and personal_write_guard_contract() still exposes the favorite-player limit.
+-- The (telegram_id, created_at desc) index matches the current per-user list
+-- query. The Smart Notification note above describes the v6.23 rollout state;
+-- notification delivery is added later (v6.24+) without replacing this table.
+-- The SQL COMMENT ON TABLE below is likewise historical metadata and is not
+-- rewritten in an already-applied migration.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 create table if not exists public.favorite_players (
   telegram_id bigint not null references public.users(telegram_id) on delete cascade,
