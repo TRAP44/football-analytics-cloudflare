@@ -123,24 +123,43 @@ export function createLiveMatchIntelligenceRuntime(deps) {
   function livePressure(statistics) {
     const items=rows(statistics?.items);
     if (!items.length) return null;
-    const get=key=>items.find(item=>item?.key===key) || {};
-    const val=(item,key,side)=>metricValue(key,item?.[side]) ?? 0;
-    const totalShots=get('Total Shots');
-    const shotsOn=get('Shots on Goal');
-    const corners=get('Corner Kicks');
-    const possession=get('Ball Possession');
-    const reds=get('Red Cards');
+    const get=key=>items.find(item=>item?.key===key) || null;
+    const pair=(key,homeWeight,awayWeight=homeWeight)=>{
+      const item=get(key);
+      const home=metricValue(key,item?.home);
+      const away=metricValue(key,item?.away);
+      if (home === null || away === null) return null;
+      return {home:home*homeWeight,away:away*awayWeight};
+    };
+    const components=[
+      pair('Shots on Goal',4.2),
+      pair('Total Shots',1.25),
+      pair('Corner Kicks',1.4),
+      pair('Ball Possession',0.07),
+      pair('Goalkeeper Saves',0.8),
+      pair('Red Cards',-7),
+    ].filter(Boolean);
+    if (!components.length) return null;
+    let homeScore=0,awayScore=0;
+    for (const component of components) {
+      if (component.home >= 0 && component.away >= 0) {
+        if (component === components.find(()=>false)) {}
+      }
+      homeScore+=component.home;
+      awayScore+=component.away;
+    }
+    // Opponent goalkeeper saves indicate attacking pressure by the other side.
     const saves=get('Goalkeeper Saves');
-    const score=side=>(
-      val(shotsOn,'Shots on Goal',side)*4.2
-      + val(totalShots,'Total Shots',side)*1.25
-      + val(corners,'Corner Kicks',side)*1.4
-      + val(possession,'Ball Possession',side)*0.07
-      + val(saves,'Goalkeeper Saves',side==='home' ? 'away' : 'home')*0.8
-      - val(reds,'Red Cards',side)*7
-    );
-    const h=Math.max(0,score('home'));
-    const a=Math.max(0,score('away'));
+    const homeSaves=metricValue('Goalkeeper Saves',saves?.home);
+    const awaySaves=metricValue('Goalkeeper Saves',saves?.away);
+    if (homeSaves !== null && awaySaves !== null) {
+      homeScore-=homeSaves*.8;
+      awayScore-=awaySaves*.8;
+      homeScore+=awaySaves*.8;
+      awayScore+=homeSaves*.8;
+    }
+    const h=Math.max(0,homeScore);
+    const a=Math.max(0,awayScore);
     const total=h+a;
     if (!Number.isFinite(total) || total<1) return null;
     const home=Math.round(h/total*100);
@@ -286,11 +305,16 @@ export function createLiveMatchIntelligenceRuntime(deps) {
         : 'Без явного перевеса';
     const recent=recentEventSummary(eventRows,minuteValue,homeName,awayName);
     const marketShift=liveMarketShift(oddsMovement);
-    const pre= prematch?.aiInstructor || null;
-    const preSignal=pre?.betSignal || null;
-    const expectedSide=sideFromPrematchSignal(preSignal?.code);
-    let support=0, contradiction=0;
-    if (preSignal?.code === 'skip') contradiction += 1;
+    const pre=prematch?.aiInstructor && typeof prematch.aiInstructor === 'object' && !Array.isArray(prematch.aiInstructor)
+      ? prematch.aiInstructor
+      : null;
+    const preSignal=pre?.betSignal && typeof pre.betSignal === 'object' && !Array.isArray(pre.betSignal)
+      ? pre.betSignal
+      : null;
+    const preCode=String(preSignal?.code || '').trim().toLowerCase();
+    const expectedSide=sideFromPrematchSignal(preCode);
+    let support=0,contradiction=0;
+    if (preCode==='skip') contradiction+=1;
     if (expectedSide==='home' || expectedSide==='away') {
       const other=expectedSide==='home'?'away':'home';
       const expectedGoals=expectedSide==='home'?hg:ag, otherGoals=other==='home'?hg:ag;
@@ -300,12 +324,12 @@ export function createLiveMatchIntelligenceRuntime(deps) {
       if (performanceSide===other) contradiction += 1.2;
       if (scoreKnown && otherGoals>expectedGoals) contradiction += minute>=45?1.5:.8;
       if ((expectedSide==='home'?hred:ared) > (other==='home'?hred:ared)) contradiction += 1.8;
-    } else if (preSignal?.code === 'over25') {
+    } else if (preCode==='over25') {
       const totalGoals=scoreKnown ? hg+ag : null;
       const totalXg=(hxg ?? 0)+(axg ?? 0);
       if ((scoreKnown && totalGoals>=2) || (minuteValue !== null && minute<=60 && totalXg>=1.8)) support += 2;
       if (scoreKnown && minuteValue !== null && minute>=60 && totalGoals===0 && totalXg<1.2) contradiction += 2;
-    } else if (preSignal?.code === 'btts') {
+    } else if (preCode==='btts') {
       if (scoreKnown && hg>0 && ag>0) support += 2;
       if (scoreKnown && minuteValue !== null && minute>=65 && (hg===0 || ag===0) && ((hg===0?hxg:axg) ?? 0)<.5) contradiction += 1.8;
     }
@@ -314,7 +338,7 @@ export function createLiveMatchIntelligenceRuntime(deps) {
   
     let state='neutral', stateLabel='Пока без вывода';
     if (!pre) { state='shifted'; stateLabel='Нет предматчевого снимка'; }
-    else if (preSignal?.code === 'skip') { state='wait'; stateLabel='До матча: пропуск'; }
+    else if (preCode==='skip') { state='wait'; stateLabel='До матча: пропуск'; }
     else if (contradiction>=3 && contradiction>support+1) { state='broken'; stateLabel='Сценарий сломан'; }
     else if (contradiction>=1.8 && contradiction>support) { state='weakened'; stateLabel='Сценарий ослаб'; }
     else if (support>=1.8 && support>=contradiction+.5) { state='holds'; stateLabel='Сценарий подтверждается'; }
@@ -358,10 +382,14 @@ export function createLiveMatchIntelligenceRuntime(deps) {
     if (hxg!==null && axg!==null) watch.push(`xG сейчас ${hxg.toFixed(2)}:${axg.toFixed(2)} — важно, продолжает ли расти преимущество по качеству моментов.`);
     if (hred!==ared) watch.push('Удаление меняет базовый сценарий: отдельно следите за ударами и территорией после красной карточки.');
     else if (recent?.text) watch.push(recent.text);
-    if (marketShift) { const n=marketShift.side==='home'?homeName:marketShift.side==='away'?awayName:'ничью'; watch.push(`Рынок заметно сдвинулся в сторону ${n}: ${marketShift.delta>0?'+':''}${marketShift.delta} п.п. по расчётной вероятности.`); }
+    if (marketShift) { const n=marketShift.side==='home'?smartSideName('home',homeName,awayName):marketShift.side==='away'?smartSideName('away',homeName,awayName):'ничью'; watch.push(`Рынок заметно сдвинулся в сторону ${n}: ${marketShift.delta>0?'+':''}${marketShift.delta} п.п. по расчётной вероятности.`); }
     if (!watch.length) watch.push('Следите за ударами в створ, xG и первым заметным изменением давления.');
   
-    const mainTeam=performanceSide==='home'?homeName:performanceSide==='away'?awayName:'';
+    const mainTeam=performanceSide==='home'
+      ? smartSideName('home',homeName,awayName)
+      : performanceSide==='away'
+        ? smartSideName('away',homeName,awayName)
+        : '';
     let headline='Матч пока читается осторожно';
     if (state==='holds') headline='Предматчевый сценарий держится';
     else if (state==='weakened') headline='Предматчевый сценарий ослабевает';
@@ -544,10 +572,19 @@ export function createLiveMatchIntelligenceRuntime(deps) {
     ].filter(player=>(boundedNumber(player?.rating,0,10) ?? 0)>=7.5)
       .sort((a,b)=>(boundedNumber(b?.rating,0,10) ?? 0)-(boundedNumber(a?.rating,0,10) ?? 0));
     if (leaders[0]) {
-      const p = leaders[0];
-      insights.push(smartInsight('player', p.side, '⭐', 'Выделяется игрок',
-        `${p.name} — один из самых заметных по доступной статистике${p.rating ? `, рейтинг ${Number(p.rating).toFixed(1)}` : ''}${p.goals ? `, голов: ${p.goals}` : ''}${p.assists ? `, ассистов: ${p.assists}` : ''}.`,
-        'low'));
+      const player=leaders[0];
+      const playerName=displayText(player?.name,'Игрок',120);
+      const rating=boundedNumber(player?.rating,0,10);
+      const goals=boundedNumber(player?.goals,0,20) ?? 0;
+      const assists=boundedNumber(player?.assists,0,20) ?? 0;
+      insights.push(smartInsight(
+        'player',
+        player.side,
+        '⭐',
+        'Выделяется игрок',
+        `${playerName} — один из самых заметных по доступной статистике${rating !== null ? `, рейтинг ${rating.toFixed(1)}` : ''}${goals ? `, голов: ${goals}` : ''}${assists ? `, ассистов: ${assists}` : ''}.`,
+        'low',
+      ));
     }
   
     const hAbs=rows(absences?.home).length;
