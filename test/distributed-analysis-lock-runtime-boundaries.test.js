@@ -72,6 +72,20 @@ test('invalid coordination policy falls back to a bounded safe policy', () => {
   assert.equal(runtime.distributedAnalysisLockDrill().pass,true);
 });
 
+test('coordination availability probe failures fail closed', async () => {
+  const events=[];
+  const runtime=createDistributedAnalysisLockRuntime(baseDeps({
+    hasSupabase:()=>{ throw new Error('probe failed'); },
+    recordOpsEvent:async(_cfg,event)=>events.push(event),
+  }));
+
+  const result=await runtime.claimDistributedAnalysisLock(123,{});
+  assert.equal(result.claimed,false);
+  assert.equal(result.unavailable,true);
+  assert.equal(result.reason,'coordination_probe_failed');
+  assert.equal(events[0].code,'ANALYSIS_LOCK_FAIL_CLOSED');
+});
+
 test('invalid fixture claims fail before any shared coordination call', async () => {
   let reads=0;
   const runtime=createDistributedAnalysisLockRuntime(baseDeps({
@@ -93,6 +107,7 @@ test('fresh validated shared lock joins without creating a second claim', async 
     hasSupabase:()=>true,
     getCacheEntry:async()=>({
       expired:false,
+      expiresAt:new Date(Date.now()+60_000).toISOString(),
       payload:{state:'computing',fixtureId:123,claimId},
     }),
     fetchWithTimeout:async()=>{ network+=1; throw new Error('should not call'); },
@@ -229,12 +244,20 @@ test('release uses claim identity in the delete filter', async () => {
     expiresAt:Date.now()+60_000,
   }]])};
 
+  let selects=0;
   const runtime=createDistributedAnalysisLockRuntime(baseDeps({
     memory,
     hasSupabase:()=>true,
-    supaSelectOne:async()=>({
-      payload:{state:'computing',fixtureId:123,claimId},
-    }),
+    supaSelectOne:async()=>{
+      selects+=1;
+      return selects===1
+        ? {
+            cache_key:key,
+            fixture_id:123,
+            payload:{state:'computing',fixtureId:123,claimId},
+          }
+        : null;
+    },
     supaDelete:async(_cfg,table,filters)=>deletes.push({table,filters}),
   }));
 
