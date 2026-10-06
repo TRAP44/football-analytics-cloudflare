@@ -5161,13 +5161,19 @@ async function loadHistory(showLoader = true) {
 }
 
 async function openHistoryAnalysis(fixtureId, btn) {
+  const id = Number(fixtureId);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    toast('Не удалось определить матч из истории.');
+    return;
+  }
+
   const sourceView = activeViewId();
   if (sourceView !== 'analysisView') state.analysisBackView = sourceView;
   const seq = ++state.historyOpenRequestSeq;
   const original = btn?.textContent || '';
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Открываю…'; }
   try {
-    const data = await api(`/api/history-analysis?fixtureId=${Number(fixtureId)}`, { retry: false, timeoutMs: 9000 });
+    const data = await api(`/api/history-analysis?fixtureId=${id}`, { retry: false, timeoutMs: 9000 });
     if (seq !== state.historyOpenRequestSeq) return;
     state.currentCenter = null;
     renderAnalysis(data);
@@ -5177,7 +5183,7 @@ async function openHistoryAnalysis(fixtureId, btn) {
     if (seq !== state.historyOpenRequestSeq) return;
     if (Number(error?.status || 0) === 404) {
       const [center] = await Promise.all([
-        requestMatchCenter(fixtureId, {}, { timeoutMs: 9000 }),
+        requestMatchCenter(id, {}, { timeoutMs: 9000 }),
         ensureMatchCenterExtras(),
       ]);
       if (seq !== state.historyOpenRequestSeq || !center) return;
