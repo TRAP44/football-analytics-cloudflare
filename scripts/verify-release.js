@@ -95,6 +95,11 @@ if (releaseContract.databaseContract?.personalWriteGuards?.explicitRearm !== tru
 if (releaseContract.databaseContract?.personalWriteGuards?.reminderRetentionDays !== 90) failures.push('release-contract personalWriteGuards reminderRetentionDays must remain 90');
 if (releaseContract.databaseContract?.personalWriteGuards?.readinessField !== 'schema.personalWriteGuards') failures.push('release-contract personalWriteGuards readiness field drifted');
 if (releaseContract.databaseContract?.personalWriteGuards?.sourceMigration !== 'supabase/migrations/supabase_migration_v6_29_2.sql') failures.push('release-contract personalWriteGuards source migration drifted');
+if (releaseContract.databaseContract?.providerSloReadBoundary?.version !== 1) failures.push('release-contract providerSloReadBoundary version must remain 1');
+if (releaseContract.databaseContract?.providerSloReadBoundary?.volatility !== 'stable') failures.push('release-contract providerSloReadBoundary volatility must remain stable');
+if (releaseContract.databaseContract?.providerSloReadBoundary?.implicitUpperBound !== 'statement_timestamp') failures.push('release-contract providerSloReadBoundary implicit upper bound must remain statement_timestamp');
+if (releaseContract.databaseContract?.providerSloReadBoundary?.readinessField !== 'backendSecurity.function_violations') failures.push('release-contract providerSloReadBoundary readiness field drifted');
+if (releaseContract.databaseContract?.providerSloReadBoundary?.sourceMigration !== 'supabase/migrations/supabase_migration_v6_29_3.sql') failures.push('release-contract providerSloReadBoundary source migration drifted');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
 if (!expectedRc || !worker.includes(`const RC_NAME = '${expectedRc}'`)) failures.push(`Worker RC name must be ${expectedRc || 'derived from runtimeVersion'}`);
