@@ -136,25 +136,20 @@ export function createLiveMatchIntelligenceRuntime(deps) {
       pair('Total Shots',1.25),
       pair('Corner Kicks',1.4),
       pair('Ball Possession',0.07),
-      pair('Goalkeeper Saves',0.8),
       pair('Red Cards',-7),
     ].filter(Boolean);
-    if (!components.length) return null;
+    const saves=get('Goalkeeper Saves');
+    const homeSaves=metricValue('Goalkeeper Saves',saves?.home);
+    const awaySaves=metricValue('Goalkeeper Saves',saves?.away);
+    const hasSavePair=homeSaves !== null && awaySaves !== null;
+    if (!components.length && !hasSavePair) return null;
     let homeScore=0,awayScore=0;
     for (const component of components) {
-      if (component.home >= 0 && component.away >= 0) {
-        if (component === components.find(()=>false)) {}
-      }
       homeScore+=component.home;
       awayScore+=component.away;
     }
     // Opponent goalkeeper saves indicate attacking pressure by the other side.
-    const saves=get('Goalkeeper Saves');
-    const homeSaves=metricValue('Goalkeeper Saves',saves?.home);
-    const awaySaves=metricValue('Goalkeeper Saves',saves?.away);
-    if (homeSaves !== null && awaySaves !== null) {
-      homeScore-=homeSaves*.8;
-      awayScore-=awaySaves*.8;
+    if (hasSavePair) {
       homeScore+=awaySaves*.8;
       awayScore+=homeSaves*.8;
     }
