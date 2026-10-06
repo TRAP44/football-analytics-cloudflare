@@ -114,6 +114,14 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
     catch { return false; }
   }
 
+  function analysisCacheInsertUrl(cfg) {
+    const base=safeText(cfg?.supabaseUrl,1000).replace(/\/+$/,'');
+    if (!/^https?:\/\/[^\s/?#]+(?::\d+)?(?:\/[^\s?#]*)?$/i.test(base)) {
+      throw new Error('analysis lock Supabase URL invalid');
+    }
+    return `${base}/rest/v1/analysis_cache?on_conflict=cache_key`;
+  }
+
   function lockPolicy() {
     const ttlSeconds=boundedInteger(
       DISTRIBUTED_ANALYSIS_LOCK_TTL_SECONDS,
@@ -285,9 +293,7 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
         version:safeText(APP_VERSION,80),
       };
 
-      const baseUrl=safeText(cfg?.supabaseUrl,1000).replace(/\/+$/,'');
-      const url=new URL(`${baseUrl}/rest/v1/analysis_cache`);
-      url.searchParams.set('on_conflict','cache_key');
+      const url=analysisCacheInsertUrl(cfg);
 
       const response=await fetchWithTimeout(url,{
         method:'POST',
