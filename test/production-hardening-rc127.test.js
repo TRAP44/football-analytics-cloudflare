@@ -2,7 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/daily-digest-delivery.js','utf8')+'\n'+fs.readFileSync('src/auth-user.js','utf8')+'\n'+fs.readFileSync('src/api-football-gateway.js','utf8');
+const worker=fs.readFileSync('src/worker.js','utf8')
+  +'\n'+fs.readFileSync('src/daily-digest-delivery.js','utf8')
+  +'\n'+fs.readFileSync('src/auth-user.js','utf8')
+  +'\n'+fs.readFileSync('src/api-football-gateway.js','utf8')
+  +'\n'+fs.readFileSync('src/quota-usage-runtime.js','utf8')
+  +'\n'+fs.readFileSync('src/analysis-runtime.js','utf8')
+  +'\n'+fs.readFileSync('src/distributed-analysis-lock-runtime.js','utf8');
 const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_18.sql','utf8');
 const hotfix=fs.readFileSync('supabase/migrations/supabase_migration_v6_18_1.sql','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
@@ -26,7 +32,7 @@ test('RC127 atomically reserves and refunds analysis quota',()=>{
   assert.match(migration,/create or replace function public\.refund_analysis_quota/);
   assert.match(worker,/async function reserveAnalysisQuota/);
   assert.match(worker,/supaRpc\(cfg, 'consume_analysis_quota'/);
-  assert.match(worker,/refundAnalysisQuota\(user\.id,usageReservation,cfg\)/);
+  assert.match(worker,/refundAnalysisQuota\(userId,usageReservation,cfg\)/);
   assert.match(hotfix,/insert into public\.users\(telegram_id\)/);
   assert.match(hotfix,/on conflict \(telegram_id\) do nothing/);
   assert.match(hotfix,/p_telegram_id <= 0/);
@@ -70,9 +76,10 @@ test('RC127 separates liveness and readiness and deploy smoke requires readiness
 
 test('RC127 fails analysis coordination closed during shared-lock outage',()=>{
   assert.match(worker,/code:'ANALYSIS_LOCK_FAIL_CLOSED'/);
-  assert.match(worker,/return \{claimed:false,key,claimId:'',shared:false,degraded:true,unavailable:true\}/);
-  assert.match(worker,/analysisLockFailClosed: 'enabled'/);
-  assert.match(worker,/analysisLockFailOpen: 'disabled'/);
+  assert.match(worker,/safeTelemetry\('analysisLockFailClosed'\)/);
+  assert.match(worker,/unavailable:true,[\s\S]{0,120}?reason:'coordination_unavailable'/);
+  assert.match(worker,/reason:'coordination_probe_failed'/);
+  assert.doesNotMatch(worker,/safeTelemetry\('analysisLockFailOpen'\)/);
 });
 
 test('RC127 shortens Telegram initData lifetime for sensitive operations',()=>{
