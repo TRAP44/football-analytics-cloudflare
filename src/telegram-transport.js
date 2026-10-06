@@ -121,12 +121,15 @@ export function createTelegramWebhookHandler(deps) {
     }
     if (!plainObject(update)) return json({ok:false},400);
 
-    let claim;
+    let claimResult=null;
     try {
-      claim=plainObject(claimTelegramUpdate(update,cfg)) || {};
+      const claim=claimTelegramUpdate(update,cfg);
+      claimResult=plainObject(claim);
     } catch {
       return json({ok:false},500);
     }
+    if (!claimResult) return json({ok:false},500);
+    const claim=claimResult;
     if (claim.duplicate === true) return json({ok:true,deduped:true});
 
     let persistentClaim;
