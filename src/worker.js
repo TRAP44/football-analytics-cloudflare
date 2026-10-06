@@ -9993,7 +9993,9 @@ async function probeReminderReliabilitySchema(cfg) {
     url.searchParams.set('limit', '1');
     const r = await fetchWithTimeout(url, { headers: supaHeaders(cfg) }, 7000, 'Supabase reminder reliability schema');
     return { ok: r.ok, status: r.ok ? 'ok' : `http_${r.status}` };
-  } catch r.isFinite(t) ? Math.max(0, Math.floor((Date.now() - t) / 1000)) : null;
+  } catch (error) {
+    return { ok: false, status: error?.code || 'error' };
+  }
 }
 
 
