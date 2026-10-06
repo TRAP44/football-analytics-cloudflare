@@ -203,11 +203,8 @@ export async function launchChromeWithRetry(executable, attempts = 3, runtime = 
       return { chrome, profileDir, debugPort };
     } catch (error) {
       lastError = error;
-      try {
-        await stopProcess(chrome);
-      } finally {
-        try { await removeProfile(profileDir); } catch {}
-      }
+      try { await stopProcess(chrome); } catch {}
+      try { await removeProfile(profileDir); } catch {}
       if (attempt < totalAttempts) await sleep(250 * attempt);
     }
   }
