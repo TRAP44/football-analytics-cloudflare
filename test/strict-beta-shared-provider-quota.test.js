@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 const workerCore=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 const router=readFileSync(new URL('../src/router.js',import.meta.url),'utf8');
 const providerRoutes=readFileSync(new URL('../src/provider-route-registry.js',import.meta.url),'utf8');
+const providerFixtureRuntime=readFileSync(new URL('../src/provider-fixture-runtime.js',import.meta.url),'utf8');
 const worker=workerCore+'\n'+router+'\n'+readFileSync(new URL('../src/api-football-gateway.js',import.meta.url),'utf8');
 const appCore=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 const clientCore=readFileSync(new URL('../public/modules/client-core.js',import.meta.url),'utf8');
@@ -97,13 +98,13 @@ test('release evidence captures beta config and one real provider quota probe',(
 });
 
 test('one normal startup match-list request delegates to one bounded shared provider loader',()=>{
-  const matches=block(worker,'async function apiMatches','function normalizeStandingRow');
+  const matches=block(providerFixtureRuntime,'async function apiMatches','  return {');
   assert.equal((matches.match(/apiFootball\(/g) || []).length,0);
   assert.equal((matches.match(/loadProviderFixturesForDate\(/g) || []).length,1);
   assert.match(matches,/providerBatch/);
   assert.match(matches,/getCache\(providerBatchKey/);
 
-  const loader=block(worker,'async function loadProviderFixturesForDate','function providerFixtureDirectCacheKey');
+  const loader=block(providerFixtureRuntime,'async function loadProviderFixturesForDate','function providerFixtureDirectCacheKey');
   assert.equal((loader.match(/apiFootball\(/g) || []).length,1);
   assert.match(loader,/apiFootball\('\/fixtures',\{date:normalized\},cfg\)/);
 });
