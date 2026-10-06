@@ -99,74 +99,136 @@ export function createAnalysisRuntime(deps) {
     waitForSharedAnalysis,
   } = deps;
 
+  function objectValue(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  }
+
+  function safeText(value, max = 240) {
+    if (!['string','number','bigint'].includes(typeof value)) return '';
+    return String(value)
+      .normalize('NFKC')
+      .replace(/[\u0000-\u001F\u007F]/g,' ')
+      .replace(/\s+/g,' ')
+      .trim()
+      .slice(0,max);
+  }
+
+  function finiteNumber(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value !== 'string') return null;
+    const raw=value.trim();
+    if (!/^-?(?:\d+|\d+\.\d+|\.\d+)$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isFinite(number) ? number : null;
+  }
+
   function positiveSafeInteger(value) {
-    if (value === null || value === undefined || value === '') return null;
-    const number = Number(value);
-    return Number.isSafeInteger(number) && number > 0 ? number : null;
+    const number=finiteNumber(value);
+    return number !== null && Number.isSafeInteger(number) && number>0 ? number : null;
+  }
+
+  function nonNegativeSafeInteger(value, max = Number.MAX_SAFE_INTEGER) {
+    const number=finiteNumber(value);
+    return number !== null
+      && Number.isSafeInteger(number)
+      && number>=0
+      && number<=max
+      ? number
+      : null;
   }
 
   function strictBoolean(value) {
     return value === true;
   }
 
-  function rowsOrEmpty(value) {
-    return Array.isArray(value) ? value : [];
+  function rowsOrEmpty(value, limit = 1000) {
+    return Array.isArray(value) ? value.slice(0,limit) : [];
   }
 
   function boundedRetryAfter(value, fallback = 60) {
-    const number = Number(value);
-    return Number.isSafeInteger(number) && number >= 1 && number <= 3600 ? number : fallback;
+    const number=positiveSafeInteger(value);
+    return number !== null && number<=3600 ? number : fallback;
+  }
+
+  function safeHttpUrl(value, max = 1000) {
+    const raw=safeText(value,max);
+    if (!raw) return '';
+    try {
+      const parsed=new URL(raw);
+      return ['http:','https:'].includes(parsed.protocol)
+        ? parsed.toString().slice(0,max)
+        : '';
+    } catch {
+      return '';
+    }
   }
 
   function analysisCachePayload(value, fixtureId) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-    if (positiveSafeInteger(value?.match?.fixtureId) !== fixtureId) return null;
-    return value;
+    const cached=objectValue(value);
+    if (!cached) return null;
+    if (positiveSafeInteger(cached?.match?.fixtureId)!==fixtureId) return null;
+    return cached;
+  }
+
+  function quotaSnapshot(value, fallback = null) {
+    const quota=objectValue(value);
+    if (!quota) return fallback;
+
+    const used=nonNegativeSafeInteger(quota.used);
+    const limit=nonNegativeSafeInteger(quota.limit);
+    const left=nonNegativeSafeInteger(quota.left);
+    if (used === null || limit === null || left === null) return fallback;
+
+    return {
+      ...quota,
+      plan:safeText(quota.plan || fallback?.plan || 'FREE',40) || 'FREE',
+      used,
+      limit,
+      left,
+    };
   }
 
   function reservationQuotaSnapshot(reservation, fallback = null) {
-    if (!reservation || reservation.allowed !== true) return fallback;
-    const used = Number(reservation.used);
-    const limit = Number(reservation.limit);
-    const left = Number(reservation.left);
-    if (!Number.isFinite(used) || !Number.isFinite(limit) || !Number.isFinite(left)) return fallback;
-    return {
-      plan:String(reservation.plan || fallback?.plan || 'FREE'),
-      used,
-      limit,
-      left:Math.max(0, left),
-    };
+    const value=objectValue(reservation);
+    if (!value || value.allowed !== true) return fallback;
+    return quotaSnapshot(value,fallback);
   }
 
   async function quotaSnapshotForResponse(userId, cfg, fallback = null) {
     try {
-      const quota = await getQuota(userId, cfg);
-      return quota && typeof quota === 'object' ? quota : fallback;
+      return quotaSnapshot(await getQuota(userId,cfg),fallback);
     } catch {
       return fallback;
     }
   }
 
   function normalizeNewsPublishedAt(value, now = Date.now()) {
-    const parsed = Date.parse(String(value || ''));
+    const raw=safeText(value,80);
+    if (!raw) return '';
+    const parsed=Date.parse(raw);
     if (!Number.isFinite(parsed)) return '';
+
+    const nowMs=finiteNumber(now);
+    const anchor=nowMs !== null && nowMs>=0 ? nowMs : Date.now();
     // Client clocks can drift slightly, but future-dated news must not create a
     // synthetic "after news" recheck window.
-    if (parsed > now + 5 * 60_000) return '';
-    if (parsed < now - 7 * 86400_000) return '';
+    if (parsed>anchor+5*60_000) return '';
+    if (parsed<anchor-7*86400_000) return '';
     return new Date(parsed).toISOString();
   }
 
   async function tavilySearch(query, cfg) {
-    const normalized = String(query || '').trim().slice(0, 500);
-    if (!normalized || !cfg?.tavilyKey || typeof fetchWithTimeout !== 'function') {
-      return { available:false, answer:'', results:[], reason:'not_configured' };
+    const normalized=safeText(query,500);
+    const token=safeText(cfg?.tavilyKey,1000);
+    if (!normalized || !token || typeof fetchWithTimeout !== 'function') {
+      return {available:false,answer:'',results:[],reason:'not_configured'};
     }
+
     try {
-      const response = await fetchWithTimeout('https://api.tavily.com/search', {
+      const response=await fetchWithTimeout('https://api.tavily.com/search',{
         method:'POST',
         headers:{
-          'authorization':`Bearer ${String(cfg.tavilyKey)}`,
+          authorization:`Bearer ${token}`,
           'content-type':'application/json',
         },
         body:JSON.stringify({
@@ -178,21 +240,33 @@ export function createAnalysisRuntime(deps) {
           safe_search:true,
           max_results:5,
         }),
-      }, 7000, 'Tavily search');
+      },7000,'Tavily search');
+
       if (!response?.ok) {
-        return { available:false, answer:'', results:[], reason:`http_${Number(response?.status || 0) || 0}` };
+        return {
+          available:false,
+          answer:'',
+          results:[],
+          reason:`http_${nonNegativeSafeInteger(response?.status,999) ?? 0}`,
+        };
       }
-      const data = await response.json().catch(() => null);
-      const results = rowsOrEmpty(data?.results).slice(0, 5).map(item => ({
-        title:String(item?.title || '').slice(0, 200),
-        url:String(item?.url || '').slice(0, 1000),
-        content:String(item?.content || '').slice(0, 1200),
-        publishedAt:String(item?.published_date || '').slice(0, 80),
-        score:Number.isFinite(Number(item?.score)) ? Number(item.score) : null,
-      }));
+
+      const data=objectValue(await response.json().catch(()=>null)) || {};
+      const results=rowsOrEmpty(data.results,5).map(item=>{
+        const row=objectValue(item) || {};
+        return {
+          title:safeText(row.title,200),
+          url:safeHttpUrl(row.url,1000),
+          content:safeText(row.content,1200),
+          publishedAt:safeText(row.published_date,80),
+          score:finiteNumber(row.score),
+        };
+      }).filter(item=>item.title || item.url || item.content);
+
+      const answer=safeText(data.answer,2400);
       return {
-        available:Boolean(String(data?.answer || '').trim() || results.length),
-        answer:String(data?.answer || '').slice(0, 2400),
+        available:Boolean(answer || results.length),
+        answer,
         results,
         reason:'',
       };
@@ -201,7 +275,7 @@ export function createAnalysisRuntime(deps) {
         available:false,
         answer:'',
         results:[],
-        reason:String(error?.code || 'search_error').slice(0, 60),
+        reason:safeText(error?.code,60) || 'search_error',
       };
     }
   }
