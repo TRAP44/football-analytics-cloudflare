@@ -163,7 +163,28 @@ export function createApiFootballGateway({
   }
 
   async function claimDistributedProviderBudget(cfg) {
-    if (!hasSupabase(cfg)) {
+    let persistentGuardAvailable=false;
+    try {
+      persistentGuardAvailable=hasSupabase(cfg) === true;
+    } catch (error) {
+      bumpTelemetry('providerDistributedFallbacks');
+      bumpTelemetry('providerDistributedBlocks');
+      await emitOpsEvent(cfg,{
+        severity:'warning',source:'provider',eventType:'distributed_rate_guard',code:'PROVIDER_RATE_GUARD_DEGRADED',
+        message:error?.message || error,endpoint:'api-football',
+        meta:{disposition:'fail_closed',providerCallAllowed:false,reason:'supabase_probe_failed'},
+      });
+      return {
+        allowed:false,
+        degraded:true,
+        local:false,
+        reason:'guard_unavailable',
+        count:0,
+        limit:distributedProviderMinuteLimit(),
+        retryAfter:15,
+      };
+    }
+    if (!persistentGuardAvailable) {
       bumpTelemetry('providerDistributedFallbacks');
       return claimEmergencyLocalProviderBudget('supabase_not_configured');
     }
@@ -572,7 +593,7 @@ export function createApiFootballGateway({
     const pairs = Object.entries(params || {})
       .filter(([, value]) => value !== undefined && value !== null && value !== '')
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, value]) => `${key}=${String(value)}`)
+      .map(([key, value]) => `${encodeURIComponent(String(key))}=${encodeURIComponent(String(value))}`)
       .join('&');
     const policy=providerTransportPolicy(options);
     return [
