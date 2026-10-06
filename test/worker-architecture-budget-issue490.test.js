@@ -8,13 +8,14 @@ import { createReleaseFieldEvidenceRuntime } from '../src/release-field-evidence
 import { createAppCapabilitiesRuntime } from '../src/app-capabilities.js';
 import { createSettlementRuntime } from '../src/settlement-runtime.js';
 import { createProviderDataRuntime } from '../src/provider-data-runtime.js';
+import { createProviderFixtureRuntime } from '../src/provider-fixture-runtime.js';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 
 test('Worker composition root stays below the post-audit architecture budget',()=>{
   const bytes=Buffer.byteLength(worker,'utf8');
   assert.ok(
-    bytes<=950_000,
+    bytes<=935_000,
     `src/worker.js grew to ${bytes} bytes; extract another cohesive runtime instead of growing the composition root`,
   );
 });
@@ -116,10 +117,13 @@ test('extracted runtime factories are executable contracts, not source-only plac
 
   const settlement=createSettlementRuntime(new Proxy({}, {get:()=>()=>null}));
   const providerData=createProviderDataRuntime(new Proxy({}, {get:()=>()=>null}));
+  const providerFixture=createProviderFixtureRuntime(new Proxy({}, {get:()=>()=>null}));
   assert.equal(typeof settlement.runSettlementWatchdog,'function');
   assert.equal(typeof settlement.runSettlementFinalityVerification,'function');
   assert.equal(typeof providerData.providerDataState,'function');
   assert.equal(typeof providerData.providerFeatureFetch,'function');
+  assert.equal(typeof providerFixture.loadProviderFixturesForDate,'function');
+  assert.equal(typeof providerFixture.apiMatches,'function');
 });
 
 test('Worker composes extracted runtimes through explicit imports',()=>{
@@ -132,6 +136,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/import \{ createMatchCenterRuntime \} from '\.\/match-center-runtime\.js'/);
   assert.match(worker,/import \{ createAnalysisRuntime \} from '\.\/analysis-runtime\.js'/);
   assert.match(worker,/import \{ createProviderDataRuntime \} from '\.\/provider-data-runtime\.js'/);
+  assert.match(worker,/import \{ createProviderFixtureRuntime \} from '\.\/provider-fixture-runtime\.js'/);
   assert.match(worker,/createDiagnosticsRuntime\(\{/);
   assert.match(worker,/createPublicHealthRuntime\(\{/);
   assert.match(worker,/createPublicStatusRuntime\(\{/);
@@ -142,6 +147,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/createMatchCenterRuntime\(\{/);
   assert.match(worker,/createAnalysisRuntime\(\{/);
   assert.match(worker,/createProviderDataRuntime\(\{/);
+  assert.match(worker,/createProviderFixtureRuntime\(\{/);
   assert.doesNotMatch(worker,/async function collectDiagnostics\(/);
   assert.doesNotMatch(worker,/async function readRecentOpsEvents\(/);
   assert.doesNotMatch(worker,/async function publicServiceStatus\(/);
@@ -158,4 +164,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.doesNotMatch(worker,/async function analysisProviderFetch\(/);
   assert.doesNotMatch(worker,/async function providerFeatureFetch\(/);
   assert.doesNotMatch(worker,/function providerDataReliabilitySummary\(/);
+  assert.doesNotMatch(worker,/async function loadProviderFixturesForDate\(/);
+  assert.doesNotMatch(worker,/async function loadProviderFixture\(/);
+  assert.doesNotMatch(worker,/async function apiMatches\(/);
 });
