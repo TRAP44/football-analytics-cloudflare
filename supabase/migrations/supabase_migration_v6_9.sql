@@ -1,6 +1,12 @@
 -- Football Analytics v6.9 / RC17
 -- Persistent champion-challenger calibration lifecycle and safe rollback.
--- Legacy incremental step. Fresh installs use baseline v6.18; existing upgrades must already include the pre-v6.9 schema.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Existing upgrades must already include the pre-v6.9 schema and must preserve
+-- this migration in sequence because v6.10+ depends on the objects created here.
+-- Fresh installs use supabase/baseline/supabase_baseline_v6_19.sql and then the
+-- numbered migrations starting at v6.20, as defined by release-contract.json.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 create table if not exists public.model_calibration_profiles (
   fingerprint text primary key,
