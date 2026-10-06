@@ -17,6 +17,42 @@ function req(path, method = 'GET') {
   return new Request(`https://example.com${path}`, { method });
 }
 
+test('fail-closed snapshot rejects object coercion and strips untrusted previous fields',()=>{
+  const fallback=failClosedRuntimeControls({
+    revision:true,
+    updatedAt:{toString:()=> '2026-10-03T08:00:00.000Z'},
+    secret:'must-not-survive',
+  },{toString:()=> 'spoofed_reason'});
+
+  assert.equal(fallback.revision,1);
+  assert.equal(fallback.updatedAt,null);
+  assert.equal(fallback.controlPlaneReason,'control_plane_unavailable');
+  assert.equal('secret' in fallback,false);
+  assert.equal(isSecurityLockdownControls(fallback),true);
+});
+
+test('lockdown detection requires exact boolean state',()=>{
+  assert.equal(isSecurityLockdownControls({...locked,maintenanceMode:'true'}),false);
+  assert.equal(isSecurityLockdownControls({...locked,autoSettlementRecoveryEnabled:0}),false);
+  assert.equal(isSecurityLockdownControls({...locked,analysisEnabled:0}),false);
+  assert.equal(isSecurityLockdownControls([]),false);
+});
+
+test('malformed runtime state becomes fail-closed instead of disabling lockdown',()=>{
+  const decision=runtimeLockdownDecision(req('/api/preferences','PATCH'),{
+    runtime:{maintenanceMode:'false'},
+  });
+  assert.equal(decision.blocked,true);
+  assert.equal(decision.code,'SECURITY_LOCKDOWN_CONTROL_PLANE_UNAVAILABLE');
+  assert.equal(decision.controlPlaneFailClosed,true);
+
+  const telegram=telegramLockdownDecision({message:{text:'/start'}},{
+    runtime:{analysisEnabled:'true'},
+  });
+  assert.equal(telegram.blocked,true);
+  assert.equal(telegram.controlPlaneFailClosed,true);
+});
+
 test('control-plane failure produces an explicit fail-closed lockdown snapshot', () => {
   const fallback = failClosedRuntimeControls({
     maintenanceMode: false,
@@ -109,6 +145,34 @@ test('lockdown stops provider fan-out for users and admins', () => {
   }
 });
 
+test('admin recovery exceptions are limited to explicit methods',()=>{
+  for(const [path,method] of [
+    ['/api/runtime-controls','DELETE'],
+    ['/api/runtime-controls','OPTIONS'],
+    ['/api/runtime-controls/rollback','GET'],
+    ['/api/runtime-controls/rollback','PATCH'],
+  ]){
+    const decision=runtimeLockdownDecision(req(path,method),{runtime:locked,isAdmin:true});
+    assert.equal(decision.blocked,true,`${method} ${path}`);
+    assert.equal(decision.code,'SECURITY_LOCKDOWN_WRITE_BLOCKED');
+  }
+
+  const truthyAdmin=runtimeLockdownDecision(req('/api/runtime-controls','POST'),{
+    runtime:locked,
+    isAdmin:'true',
+  });
+  assert.equal(truthyAdmin.blocked,true);
+});
+
+test('malformed lockdown request is blocked rather than throwing',()=>{
+  const decision=runtimeLockdownDecision(
+    {method:{toString:()=> 'GET'},url:{toString:()=> 'https://example.com/api/me'}},
+    {runtime:locked,isAdmin:true},
+  );
+  assert.equal(decision.blocked,true);
+  assert.equal(decision.invalidRequest,true);
+});
+
 test('admin recovery endpoints remain available during lockdown', () => {
   assert.equal(runtimeLockdownDecision(req('/api/runtime-controls', 'GET'), { runtime: locked, isAdmin: true }).blocked, false);
   assert.equal(runtimeLockdownDecision(req('/api/runtime-controls', 'PATCH'), { runtime: locked, isAdmin: true }).blocked, false);
@@ -141,7 +205,7 @@ test('worker and admin surface wire lockdown into history, rollback-safe runtime
   assert.match(runtimeControls, /SECURITY_LOCKDOWN_ENABLED/);
   assert.match(runtimeControls, /SECURITY_LOCKDOWN_RELEASED/);
   assert.match(worker, /SECURITY_LOCKDOWN_SCHEDULED_TASKS_PAUSED/);
-  assert.match(runtimeControls, /runtimeLockdownDecision\(request, \{ runtime, isAdmin: admin \}\)/);
+  assert.match(runtimeControls, /runtimeLockdownDecision\([\s\S]*runtime:normalizedRuntime[\s\S]*isAdmin:admin/);
   assert.match(admin, /runtimeSecurityLockdownToggle/);
   assert.match(module, /action: wasSecurityLockdown \? 'update' : 'lockdown'/);
   assert.match(module, /action: 'lockdown_release'/);
@@ -149,14 +213,31 @@ test('worker and admin surface wire lockdown into history, rollback-safe runtime
 });
 
 
-test('Telegram lockdown blocks new actions and checkout but preserves payment/refund reconciliation', () => {
+test('Telegram lockdown blocks new actions and checkout but preserves verified payment/refund reconciliation', () => {
   assert.equal(telegramLockdownDecision({ pre_checkout_query: { id: 'q1' } }, { runtime: locked }).blocked, true);
   assert.equal(telegramLockdownDecision({ pre_checkout_query: { id: 'q1' } }, { runtime: locked }).rejectCheckout, true);
   assert.equal(telegramLockdownDecision({ callback_query: { id: 'cb1' } }, { runtime: locked }).blocked, true);
   assert.equal(telegramLockdownDecision({ message: { text: '/start' } }, { runtime: locked }).blocked, true);
-  assert.equal(telegramLockdownDecision({ message: { successful_payment: { telegram_payment_charge_id: 'charge' } } }, { runtime: locked }).blocked, false);
-  assert.equal(telegramLockdownDecision({ message: { refunded_payment: { telegram_payment_charge_id: 'charge' } } }, { runtime: locked }).blocked, false);
-  assert.equal(telegramLockdownDecision({ subscription: { state: 'canceled' } }, { runtime: locked }).blocked, false);
+
+  assert.equal(telegramLockdownDecision({
+    message:{successful_payment:{telegram_payment_charge_id:'charge'}},
+  },{runtime:locked}).blocked,false);
+  assert.equal(telegramLockdownDecision({
+    message:{refunded_payment:{telegram_payment_charge_id:'charge'}},
+  },{runtime:locked}).blocked,false);
+  assert.equal(telegramLockdownDecision({
+    subscription:{state:'canceled',invoice_payload:'signed-payload',user:{id:7}},
+  },{runtime:locked}).blocked,false);
+
+  for(const malformed of [
+    {message:{successful_payment:'true'}},
+    {message:{successful_payment:{telegram_payment_charge_id:true}}},
+    {message:{refunded_payment:{}}},
+    {subscription:{state:'canceled'}},
+    {subscription:{state:'other',invoice_payload:'signed-payload',user:{id:7}}},
+  ]){
+    assert.equal(telegramLockdownDecision(malformed,{runtime:locked}).blocked,true);
+  }
 });
 
 test('worker applies Telegram lockdown before checkout, callbacks and bot business routing', () => {
