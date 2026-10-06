@@ -102,6 +102,18 @@ test('duplicate preference rows block that user instead of selecting an arbitrar
   assert.equal(result.contextFailures,1);
 });
 
+test('missing local preference dependency blocks delivery instead of default-enabling it',async()=>{
+  const {api}=runtime({
+    hasSupabase:()=>false,
+    getPreferences:undefined,
+    getUserRecord:async userId=>({telegram_id:userId,plan:'FREE'}),
+  });
+  const result=await api.filterRecipients([{telegram_id:3}],'match.goal',{});
+  assert.equal(result.rows.length,0);
+  assert.equal(result.blockedByPreference,1);
+  assert.equal(result.contextFailures,1);
+});
+
 test('local preference lookup failure blocks delivery for that user',async()=>{
   const {api}=runtime({
     hasSupabase:()=>false,
@@ -109,6 +121,50 @@ test('local preference lookup failure blocks delivery for that user',async()=>{
     getPreferences:async()=>{throw new Error('preferences unavailable');},
   });
   const result=await api.filterRecipients([{telegram_id:9}],'player.goal',{});
+  assert.equal(result.rows.length,0);
+  assert.equal(result.blockedByPreference,1);
+  assert.equal(result.contextFailures,1);
+});
+
+test('coercible user plan cannot unlock paid notification categories',async()=>{
+  const {api}=runtime({
+    supaSelectMany:async(_cfg,table)=>{
+      if(table==='users') return [{
+        telegram_id:7,
+        plan:{toString:()=> 'PRO'},
+      }];
+      if(table==='user_preferences') return [{
+        telegram_id:7,
+        notification_preferences:{enabled:true,players:true},
+      }];
+      return [];
+    },
+  });
+  const result=await api.filterRecipients([{telegram_id:7}],'player.goal',{});
+  assert.equal(result.rows.length,0);
+  assert.equal(result.blockedByEntitlement,1);
+});
+
+test('malformed persisted notification preferences fail closed',async()=>{
+  const {api}=runtime({
+    supaSelectMany:async(_cfg,table)=>{
+      if(table==='users') return [{telegram_id:7,plan:'FREE'}];
+      if(table==='user_preferences') return [{
+        telegram_id:7,
+        notification_preferences:'{"enabled":true,"match":true}',
+      }];
+      return [];
+    },
+  });
+  const result=await api.filterRecipients([{telegram_id:7}],'match.goal',{});
+  assert.equal(result.rows.length,0);
+  assert.equal(result.blockedByPreference,1);
+  assert.equal(result.contextFailures,1);
+});
+
+test('unknown notification namespace fails closed instead of defaulting to free match category',async()=>{
+  const {api}=runtime();
+  const result=await api.filterRecipients([{telegram_id:1}],'unknown.event',{});
   assert.equal(result.rows.length,0);
   assert.equal(result.blockedByPreference,1);
   assert.equal(result.contextFailures,1);
