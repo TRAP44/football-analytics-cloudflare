@@ -19,13 +19,14 @@ import { createTeamIntelligenceRuntime } from '../src/team-intelligence-runtime.
 import { createRefereeIntelligenceRuntime } from '../src/referee-intelligence-runtime.js';
 import { createAnalysisQualityRuntime } from '../src/analysis-quality-runtime.js';
 import { createAnalysisLifecycleRuntime } from '../src/analysis-lifecycle-runtime.js';
+import { createAnalysisContextRuntime } from '../src/analysis-context-runtime.js';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 
 test('Worker composition root stays below the post-audit architecture budget',()=>{
   const bytes=Buffer.byteLength(worker,'utf8');
   assert.ok(
-    bytes<=765_000,
+    bytes<=750_000,
     `src/worker.js grew to ${bytes} bytes; extract another cohesive runtime instead of growing the composition root`,
   );
 });
@@ -138,6 +139,7 @@ test('extracted runtime factories are executable contracts, not source-only plac
   const refereeIntelligence=createRefereeIntelligenceRuntime({hasSupabase:()=>false,memory:{refereeMatchHistory:new Map()},numericValue:value=>Number(value),supaSelectMany:async()=>[],supaUpsert:async()=>{}});
   const analysisQuality=createAnalysisQualityRuntime({absenceAdjustmentUnits:()=>0,assessMatchLineups:()=>({home:{confirmed:false},away:{confirmed:false},partialSides:0}),probabilityLeaderMargin:()=>10});
   const analysisLifecycle=createAnalysisLifecycleRuntime({hasSupabase:()=>false,isFinishedStatus:()=>false,isLiveStatus:()=>false,memory:{history:new Map()},supaSelectOne:async()=>null});
+  const analysisContext=createAnalysisContextRuntime({analysisQualityGate:()=>({allowSignal:true,reasons:[]}),freeQuotaHealthy:()=>true,getCache:async()=>null,getStaleCache:async()=>null,marketMovementNote:()=>'',refereeProfile:()=>({}),resolveTeamSeasonPlayers:async()=>({available:false}),setCache:async()=>true});
   assert.equal(typeof settlement.runSettlementWatchdog,'function');
   assert.equal(typeof settlement.runSettlementFinalityVerification,'function');
   assert.equal(typeof providerData.providerDataState,'function');
@@ -167,6 +169,9 @@ test('extracted runtime factories are executable contracts, not source-only plac
   assert.equal(typeof analysisLifecycle.analysisFreshness,'function');
   assert.equal(typeof analysisLifecycle.analysisKickoffHandoff,'function');
   assert.equal(typeof analysisLifecycle.analysisRecheckDelta,'function');
+  assert.equal(typeof analysisContext.cachedTeamIntelligenceForAnalysis,'function');
+  assert.equal(typeof analysisContext.buildMatchComparison,'function');
+  assert.equal(typeof analysisContext.buildAiInstructor,'function');
 });
 
 test('Worker composes extracted runtimes through explicit imports',()=>{
@@ -190,6 +195,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/import \{ createRefereeIntelligenceRuntime \} from '\.\/referee-intelligence-runtime\.js'/);
   assert.match(worker,/import \{ createAnalysisQualityRuntime \} from '\.\/analysis-quality-runtime\.js'/);
   assert.match(worker,/import \{ createAnalysisLifecycleRuntime \} from '\.\/analysis-lifecycle-runtime\.js'/);
+  assert.match(worker,/import \{ createAnalysisContextRuntime \} from '\.\/analysis-context-runtime\.js'/);
   assert.match(worker,/createDiagnosticsRuntime\(\{/);
   assert.match(worker,/createPublicHealthRuntime\(\{/);
   assert.match(worker,/createPublicStatusRuntime\(\{/);
@@ -211,6 +217,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/createRefereeIntelligenceRuntime\(\{/);
   assert.match(worker,/createAnalysisQualityRuntime\(\{/);
   assert.match(worker,/createAnalysisLifecycleRuntime\(\{/);
+  assert.match(worker,/createAnalysisContextRuntime\(\{/);
   assert.doesNotMatch(worker,/async function collectDiagnostics\(/);
   assert.doesNotMatch(worker,/async function readRecentOpsEvents\(/);
   assert.doesNotMatch(worker,/async function publicServiceStatus\(/);
@@ -265,4 +272,8 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.doesNotMatch(worker,/function analysisRecheckDelta\(/);
   assert.doesNotMatch(worker,/function newsImpactDeltaStatus\(/);
   assert.doesNotMatch(worker,/function analysisResponsePayload\(/);
+  assert.doesNotMatch(worker,/async function cachedTeamIntelligenceForAnalysis\(/);
+  assert.doesNotMatch(worker,/async function hydratePlayerRolesForAnalysis\(/);
+  assert.doesNotMatch(worker,/function buildMatchComparison\(/);
+  assert.doesNotMatch(worker,/function buildAiInstructor\(/);
 });
