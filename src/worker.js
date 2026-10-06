@@ -1302,6 +1302,7 @@ function getBillingApiRuntime() {
       json,
       listUserEntitlements,
       makeInvoicePayload,
+      memory,
       passProductConfig,
       recordOpsEvent,
       resolveUserEntitlements,
