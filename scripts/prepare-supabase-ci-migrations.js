@@ -31,6 +31,7 @@ export const POST_BASELINE_MIGRATIONS = Object.freeze([
   'supabase/migrations/supabase_migration_v6_29_3.sql',
   'supabase/migrations/supabase_migration_v6_29_4.sql',
   'supabase/migrations/supabase_migration_v6_29_5.sql',
+  'supabase/migrations/supabase_migration_v6_29_6.sql',
 ]);
 
 function timestampForIndex(index) {
