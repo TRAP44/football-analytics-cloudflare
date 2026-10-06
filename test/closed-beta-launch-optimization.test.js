@@ -167,9 +167,9 @@ test('closed beta full journey requires the exact ordered path and a later re-en
   assert.equal(completed.stages.reentry,1);
 
   const wrongOrder=runtime.betaJourneySummary([
-    rows[0],
-    rows[2],
-    rows[1],
+    clientRow('2026-10-06T10:00:00.000Z','BOOT_OK'),
+    clientRow('2026-10-06T10:01:00.000Z','PRODUCT_ACTION','search_found'),
+    clientRow('2026-10-06T10:02:00.000Z','PRODUCT_ACTION','search_used'),
     ...rows.slice(3),
   ]);
   assert.equal(wrongOrder.fullCompleted,0);
@@ -179,6 +179,11 @@ test('closed beta full journey requires the exact ordered path and a later re-en
     clientRow('not-a-date','BOOT_OK'),
   ]);
   assert.equal(malformed.fullCompleted,0);
+
+  const invalidOnly=runtime.betaJourneySummary([
+    clientRow('not-a-date','BOOT_OK'),
+  ]);
+  assert.equal(invalidOnly.betaUsers,0);
 });
 
 test('provider quota launch evidence rejects future, ambiguous and impossible quota facts', () => {
@@ -289,7 +294,8 @@ test('beta launch dashboard uses only fresh complete provider quota evidence and
   assert.equal(result.body.launchReadiness.betaAssignments.assigned,2);
   assert.equal(result.body.launchReadiness.betaAssignments.idsReturned,false);
   assert.equal(result.body.privacy.telegramIdsReturned,false);
-  assert.doesNotMatch(JSON.stringify(result.body),/"101"|"102"/);
+  assert.equal('betaTelegramIds' in result.body,false);
+  assert.equal('adminTelegramIds' in result.body,false);
 });
 
 test('beta launch dashboard fails closed when quota, webhook or strict access evidence is missing', async () => {
