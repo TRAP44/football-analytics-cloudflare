@@ -1,6 +1,12 @@
 -- Football Analytics v6.11.1 / RC19
 -- Verifies default privileges for the roles that own application relations.
 -- Supabase platform-owned defaults are intentionally outside this contract.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. backend_default_acl_contract() is
+-- an active release/restore gate used by scripts/verify-release.js and
+-- scripts/verify-supabase-restore.sql.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 create or replace function public.backend_default_acl_contract()
 returns jsonb
