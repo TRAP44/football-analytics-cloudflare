@@ -65,8 +65,12 @@ export function createRefereeIntelligenceRuntime(deps) {
   }
 
   function boundedMetric(value, max) {
-    const number=Number(value);
-    return Number.isFinite(number) && number >= 0 && number <= max ? number : null;
+    try {
+      const number=Number(value);
+      return Number.isFinite(number) && number >= 0 && number <= max ? number : null;
+    } catch {
+      return null;
+    }
   }
 
   function providerMetric(value, max = 100) {
@@ -189,7 +193,7 @@ export function createRefereeIntelligenceRuntime(deps) {
     return true;
   }
 
-  function normalizedHistoryRow(row, expectedKey, now = Date.now()) {
+  function normalizedHistoryRow(row, expectedKey, expectedCountry = '', now = Date.now()) {
     if (!row || typeof row !== 'object' || Array.isArray(row)) return null;
 
     const fixtureId=positiveSafeInteger(row?.fixture_id);
@@ -199,7 +203,13 @@ export function createRefereeIntelligenceRuntime(deps) {
       .replace(/\s+/g,' ')
       .trim();
     const key=storedKey || rowKey;
-    if (!fixtureId || !key || key !== expectedKey) return null;
+    if (!fixtureId || !key || key !== expectedKey || (rowKey && rowKey !== expectedKey)) {
+      return null;
+    }
+
+    const requestedCountry=safeText(expectedCountry,120).toLocaleLowerCase('en-US');
+    const rowCountry=safeText(row?.referee_country,120).toLocaleLowerCase('en-US');
+    if (requestedCountry && rowCountry !== requestedCountry) return null;
 
     const kickoffAt=canonicalDate(row?.kickoff_at);
     const kickoffMs=Date.parse(kickoffAt || '');
@@ -260,7 +270,7 @@ export function createRefereeIntelligenceRuntime(deps) {
     const seenFixtures=new Set();
     const normalized=[];
     for (const row of sourceRows) {
-      const item=normalizedHistoryRow(row,key,now);
+      const item=normalizedHistoryRow(row,key,profile.country,now);
       if (!item || seenFixtures.has(item.fixtureId)) continue;
       seenFixtures.add(item.fixtureId);
       normalized.push(item);
