@@ -372,22 +372,6 @@ export function createRuntimeControlsRuntime({
     },'revision');
   }
 
-  async function appendRuntimeHistory(cfg,value,user,meta = {}) {
-    const snapshot=runtimeHistorySnapshot(value);
-    const source=plainObject(meta);
-    const sourceRevision=positiveRevision(source.sourceRevision,0);
-    await supaInsertIgnore(cfg,'runtime_control_history',{
-      revision:snapshot.revision,
-      action:RUNTIME_ACTIONS.has(source.action) ? source.action : 'update',
-      reason:cleanText(source.reason,'',240),
-      snapshot,
-      app_version:appVersion,
-      changed_by:positiveId(user?.id) || null,
-      source_revision:sourceRevision || null,
-      created_at:new Date(safeClock(clock)).toISOString(),
-    },'revision');
-  }
-
   async function listRuntimeHistory(cfg, limit = 12) {
     const requested=integerCandidate(limit);
     const safeLimit=requested !== null && requested >= 1 ? Math.min(30,requested) : 12;
@@ -1021,7 +1005,6 @@ export function createRuntimeControlsRuntime({
     runtimeHistorySnapshot,
     probeRuntimeHistorySchema,
     ensureRuntimeHistoryBaseline,
-    appendRuntimeHistory,
     listRuntimeHistory,
     rollbackRuntimeControls,
     saveRuntimeControls,
