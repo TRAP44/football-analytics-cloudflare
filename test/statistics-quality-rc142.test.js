@@ -116,7 +116,7 @@ test('RC142 leaves xG for the dedicated RC140 xG guard', () => {
   assert.ok(analytical.items.some(row=>row.key==='expected_goals'));
 });
 
-const worker=fs.readFileSync('src/worker.js','utf8');
+const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/match-center-runtime.js', 'utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 
