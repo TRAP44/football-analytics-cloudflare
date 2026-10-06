@@ -273,6 +273,41 @@ test('finalization failure remains structured even when observability helpers th
   assert.match(result.reason,/database unavailable/);
 });
 
+test('duplicate durable confirmation does not inflate successful refund telemetry', async () => {
+  const telemetry={};
+  const runtime=createAnalysisUsageCompensationRuntime({
+    hasSupabase:()=>true,
+    supaRpc:async()=>({
+      ok:true,
+      duplicate:true,
+      status:'refunded',
+      operationId:QUOTA_OPERATION,
+    }),
+    bumpTelemetry:(key,amount=1)=>{
+      telemetry[key]=Number(telemetry[key] || 0)+amount;
+    },
+  });
+
+  const result=await runtime.finalizeAnalysisUsageReservation({
+    reservation:{
+      reserved:true,
+      durable:true,
+      operationId:QUOTA_OPERATION,
+      kind:'quota',
+      userId:42,
+      date:'2026-10-05',
+    },
+    disposition:'refund',
+    cfg:CFG,
+  });
+
+  assert.equal(result.ok,true);
+  assert.equal(result.duplicate,true);
+  assert.equal(telemetry.analysisUsageFinalizationDuplicates,1);
+  assert.equal(telemetry.analysisUsageRefunds,undefined);
+  assert.equal(telemetry.quotaRefunds,undefined);
+});
+
 test('successful limited Pass usage is explicitly committed through the existing refund RPC surface', async () => {
   const calls = [];
   const telemetry = {};
@@ -425,7 +460,8 @@ test('Supabase detection failures stay fail-soft', async () => {
     cfg:CFG,
   });
   assert.equal(finalization.ok,false);
-  assert.equal(finalization.pending,false);
+  assert.equal(finalization.pending,true);
+  assert.equal(finalization.persistent,true);
   assert.equal(finalization.reason,'supabase_not_configured');
 });
 
