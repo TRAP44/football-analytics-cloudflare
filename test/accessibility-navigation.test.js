@@ -2,50 +2,79 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const app = fs.readFileSync('public/app.js', 'utf8');
-const navigationShell = fs.readFileSync('public/modules/navigation-shell.js', 'utf8');
-const reminderList = fs.readFileSync('public/modules/reminder-list.js', 'utf8');
-const favoriteTeamsRenderer = fs.readFileSync('public/modules/favorite-teams-renderer.js', 'utf8');
-const historyRenderer = fs.readFileSync('public/modules/history-renderer.js', 'utf8');
-const globalSearchRenderer = fs.readFileSync('public/modules/global-search-renderer.js', 'utf8');
-const html = fs.readFileSync('public/index.html', 'utf8');
-const styles = fs.readFileSync('public/styles.css', 'utf8');
+function readPublicFile(relativePath) {
+  return fs.readFileSync(new URL(`../public/${relativePath}`, import.meta.url), 'utf8');
+}
 
-test('all interactive tab groups expose keyboard and ARIA relationships', () => {
-  assert.match(app, /function bindRovingTabKeyboard\(/);
-  assert.match(app, /ArrowRight/);
-  assert.match(app, /ArrowLeft/);
-  assert.match(app, /aria-controls/);
-  assert.match(app, /aria-labelledby/);
-  assert.match(app, /bindRovingTabKeyboard\(buttons, 'tab'/);
-  assert.match(app, /bindRovingTabKeyboard\(buttons, 'centerTab'/);
-  assert.match(app, /bindRovingTabKeyboard\(tournamentTabs, 'tournamentTab'/);
-  assert.match(app, /bindRovingTabKeyboard\(teamTabs, 'teamTab'/);
-  assert.match(app, /tournament-tab-/);
-  assert.match(app, /team-tab-/);
-  assert.match(styles, /\.analysis-tab-btn:focus-visible/);
-  assert.match(styles, /\.center-tab-btn:focus-visible/);
-  assert.match(styles, /\.tournament-tab:focus-visible/);
-  assert.match(styles, /\.team-tab:focus-visible/);
+function assertContainsAll(source, patterns) {
+  patterns.forEach(pattern => assert.match(source, pattern));
+}
+
+const app = readPublicFile('app.js');
+const navigationShell = readPublicFile('modules/navigation-shell.js');
+const reminderList = readPublicFile('modules/reminder-list.js');
+const favoriteTeamsRenderer = readPublicFile('modules/favorite-teams-renderer.js');
+const historyRenderer = readPublicFile('modules/history-renderer.js');
+const globalSearchRenderer = readPublicFile('modules/global-search-renderer.js');
+const html = readPublicFile('index.html');
+const styles = readPublicFile('styles.css');
+
+test('interactive tab groups expose keyboard navigation and ARIA relationships', () => {
+  assertContainsAll(app, [
+    /function bindRovingTabKeyboard\(/,
+    /ArrowRight/,
+    /ArrowLeft/,
+    /Home/,
+    /End/,
+    /setAttribute\('role', 'tab'\)/,
+    /setAttribute\('role', 'tabpanel'\)/,
+    /setAttribute\('aria-controls'/,
+    /setAttribute\('aria-selected'/,
+    /setAttribute\('aria-labelledby'/,
+    /toggleAttribute\('inert'/,
+    /bindRovingTabKeyboard\(buttons, 'tab'/,
+    /bindRovingTabKeyboard\(buttons, 'centerTab'/,
+    /bindRovingTabKeyboard\(tournamentTabs, 'tournamentTab'/,
+    /bindRovingTabKeyboard\(teamTabs, 'teamTab'/,
+    /tournament-tab-/,
+    /team-tab-/,
+  ]);
+
+  assertContainsAll(styles, [
+    /\.analysis-tab-btn:focus-visible/,
+    /\.center-tab-btn:focus-visible/,
+    /\.tournament-tab:focus-visible/,
+    /\.team-tab:focus-visible/,
+  ]);
 });
 
-test('history empty state gives the user a useful next action', () => {
-  assert.match(historyRenderer, /historyEmptyMatches/);
-  assert.match(historyRenderer, /Найти матч/);
-  assert.match(historyRenderer, /historyEmptyRetry/);
-  assert.match(historyRenderer, /Обновить историю/);
-  assert.match(historyRenderer, /aria-label="Открыть анализ матча/);
+test('history empty state gives the user useful recovery actions', () => {
+  assertContainsAll(historyRenderer, [
+    /historyEmptyMatches/,
+    /Найти матч/,
+    /historyEmptyRetry/,
+    /Обновить историю/,
+    /aria-label="Открыть анализ матча/,
+  ]);
 });
 
-test('top bar heading can receive programmatic focus', () => {
-  assert.match(html, /id="topbarTitle" tabindex="-1"/);
+test('top bar heading supports programmatic focus after navigation', () => {
+  assert.match(html, /<h1\b[^>]*\bid="topbarTitle"[^>]*>/);
+  assert.match(html, /<h1\b[^>]*\btabindex="-1"[^>]*>/);
   assert.match(navigationShell, /options\.focusHeading === true/);
+  assert.match(navigationShell, /\$\('topbarTitle'\)\?\.focus\?\./);
 });
 
 test('search, favorites and reminders empty states provide recovery actions', () => {
-  assert.match(globalSearchRenderer, /searchEmptyAll/);
-  assert.match(favoriteTeamsRenderer, /favoritesEmptyMatches/);
-  assert.match(reminderList, /remindersEmptyMatches/);
-  assert.match(favoriteTeamsRenderer, /favoritesEmptyRetry/);
-  assert.match(reminderList, /remindersEmptyRetry/);
+  assertContainsAll(globalSearchRenderer, [
+    /searchEmptyAll/,
+  ]);
+  assertContainsAll(favoriteTeamsRenderer, [
+    /favoritesEmptyMatches/,
+    /favoritesEmptyRetry/,
+  ]);
+  assertContainsAll(reminderList, [
+    /remindersEmptyMatches/,
+    /remindersEmptyRetry/,
+  ]);
 });
