@@ -146,6 +146,11 @@ export function createWorkerBootstrapRuntime(deps = {}) {
     return null;
   }
 
+  function validScheduledTimestamp(controller) {
+    const timestamp=scheduledTimestamp(controller);
+    return timestamp !== null && timestamp > 0 ? timestamp : null;
+  }
+
   function safeProviderCapabilities() {
     try {
       const value=publicDataCapabilities();
@@ -157,8 +162,24 @@ export function createWorkerBootstrapRuntime(deps = {}) {
 
   return Object.freeze({
     async fetch(request, env, ctx) {
-      const cfg = buildConfig(env,ctx);
-      const url = new URL(request.url);
+      let cfg;
+      try {
+        cfg=buildConfig(env,ctx);
+      } catch {
+        return json({
+          error:'Конфигурация сервиса временно недоступна.',
+          code:'WORKER_CONFIG_UNAVAILABLE',
+        },503);
+      }
+      let url;
+      try {
+        url=new URL(typeof request?.url === 'string' ? request.url : '');
+      } catch {
+        return json({
+          error:'Запрос не может быть безопасно обработан.',
+          code:'REQUEST_URL_INVALID',
+        },400);
+      }
   
       let edgeGuard;
       try {
@@ -463,7 +484,26 @@ export function createWorkerBootstrapRuntime(deps = {}) {
     },
   
     async scheduled(controller, env, ctx) {
-      const cfg = buildConfig(env,ctx);
+      let cfg;
+      try {
+        cfg=buildConfig(env,ctx);
+      } catch {
+        return undefined;
+      }
+
+      const timestamp=validScheduledTimestamp(controller);
+      if (timestamp === null) {
+        await safeRecord(cfg,{
+          severity:'error',
+          source:'cron',
+          eventType:'scheduled_execution',
+          code:'CRON_SCHEDULE_INVALID',
+          message:'Scheduled execution rejected an invalid scheduled timestamp at the Worker boundary.',
+          status:400,
+        });
+        return undefined;
+      }
+
       let runtimeState;
       try {
         runtimeState=plainObject(await loadRuntimeControls(cfg,{force:true}));
@@ -489,9 +529,15 @@ export function createWorkerBootstrapRuntime(deps = {}) {
         });
         return undefined;
       }
-      if (isSecurityLockdownControls(runtimeState.value)) {
-        const timestamp=scheduledTimestamp(controller);
-        const hourBucket = new Date(timestamp ?? Date.now()).toISOString().slice(0,13);
+
+      let lockdown=true;
+      try {
+        lockdown=isSecurityLockdownControls(runtimeState.value) === true;
+      } catch {
+        lockdown=true;
+      }
+      if (lockdown) {
+        const hourBucket = new Date(timestamp).toISOString().slice(0,13);
         await safeRecord(cfg, {
           severity: 'warning',
           source: 'release',
@@ -508,8 +554,7 @@ export function createWorkerBootstrapRuntime(deps = {}) {
         return undefined;
       }
   
-      const timestamp=scheduledTimestamp(controller);
-      if (timestamp !== null) {
+      {
         const scheduledAt=new Date(timestamp);
         if (scheduledAt.getUTCMinutes() % 15 === 0) {
           const reconciliation=Promise.resolve()
