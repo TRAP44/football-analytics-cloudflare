@@ -7,6 +7,7 @@ export function createBillingRuntime(deps = {}) {
     activatePassPurchase,
     bytesToHex,
     constantTimeEqual,
+    enc,
     fetchWithTimeout,
     getQuota,
     getUserRecord,
@@ -132,7 +133,7 @@ export function createBillingRuntime(deps = {}) {
       payment = await supaSelectOne(cfg, 'billing_payments', {
         telegram_payment_charge_id: `eq.${chargeId}`,
         telegram_id: `eq.${uid}`,
-      }).catch(() => null);
+      });
     } else {
       const row = memory.billingPayments.get(chargeId) || null;
       if (row && Number(row.telegram_id) === uid) payment = row;
@@ -143,7 +144,7 @@ export function createBillingRuntime(deps = {}) {
       plan: String(payment.plan || ''),
     };
   
-    const entitlements = await listUserEntitlements(uid, cfg).catch(() => []);
+    const entitlements = await listUserEntitlements(uid, cfg);
     const entitlement = entitlements.find(row =>
       String(row.payment_charge_id || row.paymentChargeId || '') === chargeId
       && Number(row.telegram_id || row.telegramId || 0) === uid
@@ -208,7 +209,9 @@ export function createBillingRuntime(deps = {}) {
     const chargeId = String(payment.telegram_payment_charge_id || '');
     if (!chargeId) return false;
   
-    const existingCharge = await findRefundableBillingCharge(userId, chargeId, cfg).catch(() => null);
+    // A refunded-charge lookup is a billing safety boundary. Storage failures must
+    // fail closed rather than treating an unknown charge as safe to activate.
+    const existingCharge = await findRefundableBillingCharge(userId, chargeId, cfg);
     if (String(existingCharge?.status || '').toLowerCase() === 'refunded') {
       await recordOpsEvent(cfg, {
         severity:'warning',
