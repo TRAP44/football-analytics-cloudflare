@@ -511,7 +511,7 @@ export function createBetaPhase5Runtime(deps) {
       {category:'matches',errors:betaErrorCountByAction(errorRows,'match'),attempts:Number(metrics.matchOpen?.events || 0)+betaErrorCountByAction(errorRows,'match')},
       {category:'ai',errors:betaErrorCountByAction(errorRows,'ai'),attempts:Number(metrics.aiStart?.events || 0)},
       {category:'live',errors:betaErrorCountByAction(errorRows,'live_refresh'),attempts:Number(metrics.liveOpen?.events || 0)+betaErrorCountByAction(errorRows,'live_refresh')},
-      {category:'ux',errors:betaErrorCountByAction(errorRows,'history')+betaErrorCountByAction(errorRows,'profile')+Number(clientErrorRows.length || 0),attempts:Number(metrics.miniAppLaunch?.events || 0)+Number(metrics.historyOpen?.events || 0)+Number(metrics.profileOpen?.events || 0)},
+      {category:'ux',errors:betaErrorCountByAction(errorRows,'history')+betaErrorCountByAction(errorRows,'profile')+betaErrorCountByAction(errorRows,'profile_modules')+betaErrorCountByAction(errorRows,'billing_ui')+Number(clientErrorRows.length || 0),attempts:Number(metrics.miniAppLaunch?.events || 0)+Number(metrics.historyOpen?.events || 0)+Number(metrics.profileOpen?.events || 0)},
       {category:'data_sources',errors:betaErrorCountByKind(errorRows,['provider','rate_limit']),attempts:0},
       {category:'performance',errors:betaErrorCountByKind(errorRows,['timeout']),attempts:0},
     ];
