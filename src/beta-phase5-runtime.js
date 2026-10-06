@@ -204,9 +204,9 @@ export function createBetaPhase5Runtime(deps) {
         : ['invalid_launch_blockers'];
     const opsSampleLimited=source.opsSampleLimited===true;
     const invalidOpsSampleFlag=source.opsSampleLimited!==undefined && typeof source.opsSampleLimited!=='boolean';
-    const providerEvidence=['insufficient_evidence','review_provider_options'].includes(String(source.providerEvidence || ''))
-      ? String(source.providerEvidence)
-      : 'insufficient_evidence';
+    const rawProviderEvidence=source.providerEvidence===undefined ? 'insufficient_evidence' : String(source.providerEvidence);
+    const providerEvidenceValid=['insufficient_evidence','review_provider_options'].includes(rawProviderEvidence);
+    const providerEvidence=providerEvidenceValid ? rawProviderEvidence : 'insufficient_evidence';
     const evidenceCount=value=>{
       const count=Number(value);
       return Number.isSafeInteger(count) && count>=0 ? count : 0;
@@ -238,6 +238,7 @@ export function createBetaPhase5Runtime(deps) {
       ...launchBlockers,
       ...(invalidIssues ? ['invalid_issue_evidence'] : []),
       ...(invalidOpsSampleFlag ? ['invalid_ops_sample_flag'] : []),
+      ...(!providerEvidenceValid ? ['invalid_provider_evidence'] : []),
       ...(opsSampleLimited ? ['beta_ops_sample_truncated'] : []),
       ...(blockerCount>0 ? ['confirmed_blocker'] : []),
       ...(majorCount>0 ? ['confirmed_major'] : []),
