@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const worker=fs.readFileSync('src/worker.js','utf8');
+const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/analysis-runtime.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const analysisController=fs.readFileSync('public/modules/analysis-controller.js','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
