@@ -185,11 +185,20 @@ export function createTeamIntelligenceRuntime(deps) {
         country:safeText(url.searchParams.get('country'),120),
         leagueLogo:safeText(url.searchParams.get('leagueLogo'),500),
       });
-      const stats=objectValue(normalizedStats) || {
-        available:false,
-        team:{id:teamId,name:teamName,logo:''},
-        league:{id:leagueId,name:leagueName,season},
-      };
+      const providerStats=objectValue(row);
+      const statsScopeValid=Boolean(
+        providerStats
+        && positiveSafeInteger(providerStats?.team?.id)===teamId
+        && positiveSafeInteger(providerStats?.league?.id)===leagueId
+        && safeSeason(providerStats?.league?.season)===season
+      );
+      const stats=statsScopeValid && objectValue(normalizedStats)
+        ? {...normalizedStats,available:normalizedStats.available === true}
+        : {
+            available:false,
+            team:{id:teamId,name:teamName,logo:''},
+            league:{id:leagueId,name:leagueName,season},
+          };
 
       let playerStats=emptyPlayerStats();
       if (quotaHealthy(10,1)) {
@@ -439,7 +448,6 @@ export function createTeamIntelligenceRuntime(deps) {
   }
 
   function normalizeLineupPlayers(entries, limit) {
-    const seen=new Set();
     const normalized=[];
 
     for (const entry of rows(entries)) {
@@ -451,22 +459,13 @@ export function createTeamIntelligenceRuntime(deps) {
       }
       if (!value) continue;
 
-      const id=positiveSafeInteger(value.id);
       const name=safeText(value.name,120);
       if (!name) continue;
-
-      const position=safeText(value.pos,24);
-      const key=id
-        ? `id:${id}`
-        : `name:${name.toLocaleLowerCase('ru')}:${position.toLocaleLowerCase('ru')}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-
       normalized.push({
-        id,
+        id:positiveSafeInteger(value.id),
         name,
         number:positiveSafeInteger(value.number,999),
-        pos:position,
+        pos:safeText(value.pos,24),
         grid:safeText(value.grid,32),
         photo:safeText(value.photo,500),
       });
