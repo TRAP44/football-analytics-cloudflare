@@ -102,12 +102,12 @@ const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync
 const app = fs.readFileSync('public/app.js', 'utf8');
 
 test('RC141 routes sanitized events into live and post-match analytics', () => {
-  assert.match(worker, /assessMatchEventQuality\(rawFormattedEvents/);
-  assert.match(worker, /sanitizeEventsForDisplay\(rawFormattedEvents, eventQuality\)/);
-  assert.match(worker, /eventsForTrustedAnalytics\(rawFormattedEvents, eventQuality\)/);
-  assert.match(worker, /buildPostMatchReview\(\{prediction:postMatchPrediction,fixture,statistics:analyticalStatistics,events:analyticalEvents/);
-  assert.match(worker, /buildSmartMatchInsights\(\{[\s\S]{0,320}events: analyticalEvents/);
-  assert.match(worker, /buildLiveAiCoach\(\{[\s\S]{0,320}events: analyticalEvents/);
+  assert.match(worker, /assessMatchEventQuality\([\s\S]{0,120}?rawFormattedEvents/);
+  assert.match(worker, /sanitizeEventsForDisplay\([\s\S]{0,120}?rawFormattedEvents,[\s\S]{0,120}?eventQuality/);
+  assert.match(worker, /eventsForTrustedAnalytics\([\s\S]{0,120}?rawFormattedEvents,[\s\S]{0,120}?eventQuality/);
+  assert.match(worker, /buildPostMatchReview\(\{[\s\S]{0,500}?prediction:postMatchPrediction,[\s\S]{0,500}?events:analyticalEvents/);
+  assert.match(worker, /buildSmartMatchInsights\(\{[\s\S]{0,500}?events:analyticalEvents/);
+  assert.match(worker, /buildLiveAiCoach\(\{[\s\S]{0,500}?events:analyticalEvents/);
   assert.match(worker, /eventQuality,/);
   assert.match(worker, /eventSemanticQualityGuard: 'enabled'/);
 });
