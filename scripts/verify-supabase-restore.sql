@@ -197,21 +197,7 @@ begin
   select public.backend_schema_contract_v2() into v_contract;
   if coalesce((v_contract->>'ok')::boolean, false) is not true
      or coalesce((v_contract->>'version')::integer, 0) <> 2
-     or coalesce(v_contract->>'fingerprint', '') !~ '^[0-9a-f]{32}
-    raise exception 'restore acceptance: backend_security_contract() failed';
-  end if;
-
-  if coalesce((public.backend_default_acl_contract()->>'ok')::boolean, false) is not true then
-    raise exception 'restore acceptance: backend_default_acl_contract() failed';
-  end if;
-end
-$$;
-
-select public.backend_schema_fingerprint();
-select public.backend_schema_contract_v2();
-select public.backend_security_contract();
-select public.backend_default_acl_contract();
-
+     or coalesce(v_contract->>'fingerprint', '') !~ '^[0-9a-f]{32}$'
      or coalesce((v_contract->>'parts')::integer, 0) <= 0 then
     raise exception 'restore acceptance: backend_schema_contract_v2() returned an invalid contract';
   end if;
@@ -227,5 +213,6 @@ end
 $$;
 
 select public.backend_schema_fingerprint();
+select public.backend_schema_contract_v2();
 select public.backend_security_contract();
 select public.backend_default_acl_contract();
