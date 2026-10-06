@@ -12,7 +12,8 @@ const worker=fs.readFileSync('src/worker.js','utf8')
   +'\n'+fs.readFileSync('src/telegram-digest-runtime.js','utf8')
   +'\n'+fs.readFileSync('src/readiness-contract.js','utf8')
   +'\n'+fs.readFileSync('src/public-status.js','utf8')
-  +'\n'+fs.readFileSync('src/supabase-schema-runtime.js','utf8');
+  +'\n'+fs.readFileSync('src/supabase-schema-runtime.js','utf8')
+  +'\n'+fs.readFileSync('src/public-health.js','utf8');
 const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_18.sql','utf8');
 const hotfix=fs.readFileSync('supabase/migrations/supabase_migration_v6_18_1.sql','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
