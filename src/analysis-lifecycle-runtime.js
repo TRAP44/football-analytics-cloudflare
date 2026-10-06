@@ -332,54 +332,241 @@ export function createAnalysisLifecycleRuntime(deps) {
   }
 
   function analysisDeltaProbabilityLabel(key = '') {
-    return key==='home'?'П1':key==='draw'?'Н':key==='away'?'П2':String(key || '');
+    const normalized=safeText(key,20).toLowerCase();
+    return normalized==='home'
+      ? 'П1'
+      : normalized==='draw'
+        ? 'Н'
+        : normalized==='away'
+          ? 'П2'
+          : normalized;
   }
-  
+
+  function probabilityVector(value) {
+    const source=objectValue(value);
+    if (!source) return null;
+    const home=finiteNumber(source.home);
+    const draw=finiteNumber(source.draw);
+    const away=finiteNumber(source.away);
+    if (
+      home === null || draw === null || away === null
+      || home<0 || home>100
+      || draw<0 || draw>100
+      || away<0 || away>100
+    ) return null;
+    const total=home+draw+away;
+    if (!Number.isFinite(total) || Math.abs(total-100)>2.5) return null;
+    return {home,draw,away};
+  }
+
+  function confirmedLineupSides(payload) {
+    const impact=objectValue(objectValue(payload)?.lineupImpact);
+    if (!impact) return null;
+    return Number(impact.homeConfirmed === true)+Number(impact.awayConfirmed === true);
+  }
+
+  function absenceCount(payload) {
+    const absences=objectValue(objectValue(payload)?.absences);
+    if (!absences || !Array.isArray(absences.home) || !Array.isArray(absences.away)) {
+      return null;
+    }
+    return Math.min(400,absences.home.length+absences.away.length);
+  }
+
   function analysisRecheckDelta(previous = {}, next = {}) {
-    if (!previous?.match?.fixtureId || !next?.match?.fixtureId) return {available:false,material:false,stable:true,codes:[],items:[],summary:'Нет предыдущего полного снимка для сравнения.'};
+    const before=objectValue(previous);
+    const after=objectValue(next);
+    const previousFixtureId=positiveSafeInteger(before?.match?.fixtureId);
+    const nextFixtureId=positiveSafeInteger(after?.match?.fixtureId);
+
+    if (!previousFixtureId || !nextFixtureId) {
+      return {
+        available:false,
+        material:false,
+        stable:false,
+        reasonCode:'fixture_missing',
+        codes:[],
+        items:[],
+        summary:'Нет двух корректных снимков одного матча для сравнения.',
+      };
+    }
+    if (previousFixtureId!==nextFixtureId) {
+      return {
+        available:false,
+        material:false,
+        stable:false,
+        reasonCode:'fixture_mismatch',
+        codes:[],
+        items:[],
+        summary:'Снимки относятся к разным матчам и не могут сравниваться.',
+      };
+    }
+
     const items=[];
-    const add=(code,title,before='',after='',importance='medium')=>items.push({code,title,before:String(before || ''),after:String(after || ''),importance});
-    const oldSignal=String(previous?.aiInstructor?.betSignal?.code || '');
-    const newSignal=String(next?.aiInstructor?.betSignal?.code || '');
-    const oldSignalLabel=String(previous?.aiInstructor?.betSignal?.label || oldSignal || '—');
-    const newSignalLabel=String(next?.aiInstructor?.betSignal?.label || newSignal || '—');
-    if (oldSignal && newSignal && oldSignal!==newSignal) add('signal','AI-сигнал изменился',oldSignalLabel,newSignalLabel,'high');
-  
-    const probRows=['home','draw','away'].map(key=>({key,delta:Math.round((Number(next?.probabilities?.[key] || 0)-Number(previous?.probabilities?.[key] || 0))*10)/10})).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
-    const maxProb=probRows[0];
-    if (maxProb && Math.abs(maxProb.delta)>=3) add('probability','Вероятности заметно сдвинулись','',`${analysisDeltaProbabilityLabel(maxProb.key)} ${maxProb.delta>0?'+':''}${maxProb.delta.toFixed(1)} п.п.`,Math.abs(maxProb.delta)>=7?'high':'medium');
-  
-    const oldConf=Number(previous?.aiInstructor?.confidenceScore ?? previous?.confidence?.score);
-    const newConf=Number(next?.aiInstructor?.confidenceScore ?? next?.confidence?.score);
-    if (Number.isFinite(oldConf)&&Number.isFinite(newConf)&&Math.abs(newConf-oldConf)>=8) add('confidence','Уверенность модели изменилась',`${Math.round(oldConf)}/100`,`${Math.round(newConf)}/100`,Math.abs(newConf-oldConf)>=15?'high':'medium');
-  
-    const oldHome=Boolean(previous?.lineupImpact?.homeConfirmed), oldAway=Boolean(previous?.lineupImpact?.awayConfirmed);
-    const newHome=Boolean(next?.lineupImpact?.homeConfirmed), newAway=Boolean(next?.lineupImpact?.awayConfirmed);
-    const oldLineups=Number(oldHome)+Number(oldAway), newLineups=Number(newHome)+Number(newAway);
-    if (newLineups>oldLineups) add('lineups','Появились стартовые составы',oldLineups===0?'Не подтверждены':`${oldLineups}/2 подтверждены`,newLineups===2?'Оба состава подтверждены':`${newLineups}/2 подтверждены`,'high');
-  
-    const absenceCount=p=>Number(p?.absences?.home?.length || 0)+Number(p?.absences?.away?.length || 0);
-    const oldAbs=absenceCount(previous), newAbs=absenceCount(next);
-    if (oldAbs!==newAbs) add('absences','Изменились подтверждённые потери',`${oldAbs}`,`${newAbs}`,Math.abs(newAbs-oldAbs)>=2?'high':'medium');
-  
-    const marketRows=['home','draw','away'].map(key=>({key,delta:Math.round((Number(next?.market?.probabilities?.[key] || 0)-Number(previous?.market?.probabilities?.[key] || 0))*10)/10})).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
-    const maxMarket=marketRows[0];
-    if (maxMarket && Math.abs(maxMarket.delta)>=2.5) add('market','Рынок заметно изменился','',`${analysisDeltaProbabilityLabel(maxMarket.key)} ${maxMarket.delta>0?'+':''}${maxMarket.delta.toFixed(1)} п.п.`,Math.abs(maxMarket.delta)>=5?'high':'medium');
-  
-    const oldRef=String(previous?.match?.referee || '').trim(), newRef=String(next?.match?.referee || '').trim();
-    if (!oldRef && newRef) add('referee','Назначен судья','Не был указан',newRef,'medium');
-  
-    const codes=[...new Set(items.map(x=>x.code))];
-    const material=items.some(x=>x.importance==='high') || codes.some(code=>['signal','probability','lineups','market'].includes(code));
-    const stable=items.length===0;
+    let incomplete=false;
+    const add=(code,title,beforeValue='',afterValue='',importance='medium')=>{
+      items.push({
+        code:safeText(code,40),
+        title:safeText(title,160),
+        before:safeText(beforeValue,180),
+        after:safeText(afterValue,180),
+        importance:['high','medium','low'].includes(importance) ? importance : 'medium',
+      });
+    };
+
+    const oldSignal=safeText(before?.aiInstructor?.betSignal?.code,40);
+    const newSignal=safeText(after?.aiInstructor?.betSignal?.code,40);
+    const oldSignalLabel=safeText(before?.aiInstructor?.betSignal?.label || oldSignal || '—',120);
+    const newSignalLabel=safeText(after?.aiInstructor?.betSignal?.label || newSignal || '—',120);
+    if (oldSignal && newSignal && oldSignal!==newSignal) {
+      add('signal','AI-сигнал изменился',oldSignalLabel,newSignalLabel,'high');
+    } else if (Boolean(oldSignal)!==Boolean(newSignal)) {
+      incomplete=true;
+    }
+
+    const oldProbabilities=probabilityVector(before?.probabilities);
+    const newProbabilities=probabilityVector(after?.probabilities);
+    if (oldProbabilities && newProbabilities) {
+      const probRows=['home','draw','away']
+        .map(key=>({
+          key,
+          delta:Math.round((newProbabilities[key]-oldProbabilities[key])*10)/10,
+        }))
+        .sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
+      const maxProb=probRows[0];
+      if (maxProb && Math.abs(maxProb.delta)>=3) {
+        add(
+          'probability',
+          'Вероятности заметно сдвинулись',
+          '',
+          `${analysisDeltaProbabilityLabel(maxProb.key)} ${maxProb.delta>0?'+':''}${maxProb.delta.toFixed(1)} п.п.`,
+          Math.abs(maxProb.delta)>=7 ? 'high' : 'medium',
+        );
+      }
+    } else {
+      incomplete=true;
+    }
+
+    const oldConf=finiteNumber(before?.aiInstructor?.confidenceScore ?? before?.confidence?.score);
+    const newConf=finiteNumber(after?.aiInstructor?.confidenceScore ?? after?.confidence?.score);
+    if (
+      oldConf !== null && newConf !== null
+      && oldConf>=0 && oldConf<=100
+      && newConf>=0 && newConf<=100
+      && Math.abs(newConf-oldConf)>=8
+    ) {
+      add(
+        'confidence',
+        'Уверенность модели изменилась',
+        `${Math.round(oldConf)}/100`,
+        `${Math.round(newConf)}/100`,
+        Math.abs(newConf-oldConf)>=15 ? 'high' : 'medium',
+      );
+    }
+
+    const oldLineups=confirmedLineupSides(before);
+    const newLineups=confirmedLineupSides(after);
+    if (oldLineups !== null && newLineups !== null && oldLineups!==newLineups) {
+      if (newLineups>oldLineups) {
+        add(
+          'lineups',
+          'Появились подтверждённые стартовые составы',
+          oldLineups===0 ? 'Не подтверждены' : `${oldLineups}/2 подтверждены`,
+          newLineups===2 ? 'Оба состава подтверждены' : `${newLineups}/2 подтверждены`,
+          'high',
+        );
+      } else {
+        add(
+          'lineups',
+          'Подтверждение стартовых составов ухудшилось',
+          oldLineups===2 ? 'Оба состава подтверждены' : `${oldLineups}/2 подтверждены`,
+          newLineups===0 ? 'Не подтверждены' : `${newLineups}/2 подтверждены`,
+          'high',
+        );
+      }
+    } else if (oldLineups === null || newLineups === null) {
+      incomplete=true;
+    }
+
+    const oldAbs=absenceCount(before);
+    const newAbs=absenceCount(after);
+    if (oldAbs !== null && newAbs !== null && oldAbs!==newAbs) {
+      add(
+        'absences',
+        'Изменились подтверждённые потери',
+        oldAbs,
+        newAbs,
+        Math.abs(newAbs-oldAbs)>=2 ? 'high' : 'medium',
+      );
+    } else if (oldAbs === null || newAbs === null) {
+      incomplete=true;
+    }
+
+    const oldMarket=probabilityVector(before?.market?.probabilities);
+    const newMarket=probabilityVector(after?.market?.probabilities);
+    if (oldMarket && newMarket) {
+      const marketRows=['home','draw','away']
+        .map(key=>({
+          key,
+          delta:Math.round((newMarket[key]-oldMarket[key])*10)/10,
+        }))
+        .sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
+      const maxMarket=marketRows[0];
+      if (maxMarket && Math.abs(maxMarket.delta)>=2.5) {
+        add(
+          'market',
+          'Рынок заметно изменился',
+          '',
+          `${analysisDeltaProbabilityLabel(maxMarket.key)} ${maxMarket.delta>0?'+':''}${maxMarket.delta.toFixed(1)} п.п.`,
+          Math.abs(maxMarket.delta)>=5 ? 'high' : 'medium',
+        );
+      }
+    } else if (Boolean(oldMarket)!==Boolean(newMarket)) {
+      add(
+        'market',
+        newMarket ? 'Рыночный сигнал появился' : 'Рыночный сигнал стал недоступен',
+        oldMarket ? 'Доступен' : 'Недоступен',
+        newMarket ? 'Доступен' : 'Недоступен',
+        'high',
+      );
+    }
+
+    const oldRef=safeText(before?.match?.referee,180);
+    const newRef=safeText(after?.match?.referee,180);
+    if (oldRef!==newRef) {
+      if (!oldRef && newRef) {
+        add('referee','Назначен судья','Не был указан',newRef,'medium');
+      } else if (oldRef && newRef) {
+        add('referee','Изменено назначение судьи',oldRef,newRef,'medium');
+      } else if (oldRef && !newRef) {
+        add('referee','Назначение судьи больше не подтверждено',oldRef,'Не указан','medium');
+      }
+    }
+
+    const codes=[...new Set(items.map(item=>item.code).filter(Boolean))];
+    const material=items.some(item=>item.importance==='high')
+      || codes.some(code=>['signal','probability','lineups','market'].includes(code));
+    const stable=items.length===0 && !incomplete;
     const summary=stable
       ? 'Значимых изменений после перепроверки не найдено.'
-      : material
-        ? `После перепроверки есть значимые изменения: ${items.slice(0,3).map(x=>x.title.toLocaleLowerCase('ru-RU')).join(', ')}.`
-        : `Обновились детали матча: ${items.slice(0,3).map(x=>x.title.toLocaleLowerCase('ru-RU')).join(', ')}.`;
-    return {available:true,material,stable,codes,items:items.slice(0,6),summary};
+      : items.length
+        ? material
+          ? `После перепроверки есть значимые изменения: ${items.slice(0,3).map(item=>item.title.toLocaleLowerCase('ru-RU')).join(', ')}.`
+          : `Обновились детали матча: ${items.slice(0,3).map(item=>item.title.toLocaleLowerCase('ru-RU')).join(', ')}.`
+        : 'Часть полей двух снимков не удалось надёжно сопоставить; стабильность прогноза не подтверждена.';
+
+    return {
+      available:true,
+      material,
+      stable,
+      incomplete,
+      reasonCode:incomplete && !items.length ? 'comparison_incomplete' : '',
+      codes,
+      items:items.slice(0,6),
+      summary,
+    };
   }
-  
+
   function newsImpactDeltaStatus(previous = {}, next = {}, delta = null, { requested=false, eligible=false, performed=false, publishedAt='' } = {}) {
     if (!requested) return null;
     if (!previous?.match?.fixtureId) {
