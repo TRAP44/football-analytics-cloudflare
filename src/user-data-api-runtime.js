@@ -116,8 +116,29 @@ export function createUserDataApiRuntime(deps) {
         code: 'HISTORY_ANALYSIS_UNAVAILABLE',
       }, 404);
     }
-  
-    return json(analysisResponsePayload(payload,{cached:true,stale:!fresh,historyReadOnly:true,recheck:{requested:false,performed:false,free:false,reasonCode:analysisFreshness(payload).reasonCode},quota:await getQuota(user.id,cfg)}));
+
+    const payloadFixtureId = Number(payload?.match?.fixtureId);
+    if (!Number.isSafeInteger(payloadFixtureId) || payloadFixtureId !== fixtureId) {
+      void recordOpsEvent(cfg, {
+        severity:'warning',
+        source:'cache',
+        eventType:'history_analysis_cache_rejected',
+        code:'HISTORY_ANALYSIS_IDENTITY_MISMATCH',
+        message:'History analysis cache payload was rejected because fixture identity did not match.',
+        meta:{fixtureId,payloadFixtureId:Number.isSafeInteger(payloadFixtureId) ? payloadFixtureId : null},
+      }).catch(()=>null);
+      return json({
+        error:'Сохранённый анализ не прошёл проверку идентичности матча.',
+        code:'HISTORY_ANALYSIS_IDENTITY_MISMATCH',
+      },409);
+    }
+
+    let freshnessReason='history_snapshot';
+    try {
+      freshnessReason=String(analysisFreshness(payload)?.reasonCode || freshnessReason).slice(0,80);
+    } catch {}
+
+    return json(analysisResponsePayload(payload,{cached:true,stale:!fresh,historyReadOnly:true,recheck:{requested:false,performed:false,free:false,reasonCode:freshnessReason},quota:await getQuota(user.id,cfg)}));
   }
   
   
