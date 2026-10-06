@@ -1,6 +1,15 @@
 -- Football Analytics v6.21.1 / post-deploy regression lifecycle transition dedupe
 -- Additive migration: gives regression lifecycle transitions a durable, atomic
 -- cross-isolate idempotency key without changing existing ops_events behavior.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. transition_key remains the durable
+-- idempotency key read by current regression-response logic and is the unique
+-- conflict target used by record_ops_event_occurrence() introduced in v6.26.3.
+-- The nullable column is intentional: ordinary ops events do not require dedupe.
+-- Fingerprint exclusions are rollout-compatibility behavior carried forward
+-- by later migrations while the operational field is checked separately.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 alter table public.ops_events
   add column if not exists transition_key text;
