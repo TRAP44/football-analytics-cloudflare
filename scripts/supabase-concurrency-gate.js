@@ -374,10 +374,15 @@ async function testSensitiveMutationIdempotency() {
   const retryDigest='436'.padEnd(64,'d');
   const retentionKey='437'.padEnd(64,'e');
   const retentionDigest='438'.padEnd(64,'f');
+  const expiredCompleteKey='440'.padEnd(64,'a');
+  const expiredCompleteDigest='440'.padEnd(64,'b');
+  const expiredFailKey='441'.padEnd(64,'c');
+  const expiredFailDigest='441'.padEnd(64,'d');
 
   await psql(
     "delete from public.sensitive_mutation_idempotency where operation_key in ('"
-      + operationKey + "','" + retryKey + "','" + retentionKey + "');",
+      + operationKey + "','" + retryKey + "','" + retentionKey + "','"
+      + expiredCompleteKey + "','" + expiredFailKey + "');",
   );
 
   const results=await Promise.all(
@@ -482,6 +487,48 @@ async function testSensitiveMutationIdempotency() {
     'active ownership must block reclaim even when a legacy row retention timestamp expired',
   );
   assert.equal(duplicateWhileActive.reason,'duplicate_inflight');
+
+  const expiredCompleteClaim=parseJson(await serviceRoleQuery(
+    "select public.claim_sensitive_mutation('"
+      + expiredCompleteKey + "',900000000435,'POST','/api/runtime-controls','"
+      + expiredCompleteDigest + "',null,30,300)::text;",
+  ),'claim_sensitive_mutation expired complete');
+  assert.equal(expiredCompleteClaim.claimed,true);
+  await psql(
+    "update public.sensitive_mutation_idempotency"
+      + " set locked_until=clock_timestamp()-interval '1 second'"
+      + " where operation_key='" + expiredCompleteKey + "';",
+  );
+  const expiredComplete=parseJson(await serviceRoleQuery(
+    "select public.complete_sensitive_mutation('"
+      + expiredCompleteKey + "','" + expiredCompleteClaim.leaseToken + "',300)::text;",
+  ),'complete_sensitive_mutation expired lease');
+  assert.equal(
+    expiredComplete.ok,
+    false,
+    'expired sensitive mutation owner must not complete after losing its lease',
+  );
+
+  const expiredFailClaim=parseJson(await serviceRoleQuery(
+    "select public.claim_sensitive_mutation('"
+      + expiredFailKey + "',900000000435,'POST','/api/runtime-controls/rollback','"
+      + expiredFailDigest + "',null,30,300)::text;",
+  ),'claim_sensitive_mutation expired fail');
+  assert.equal(expiredFailClaim.claimed,true);
+  await psql(
+    "update public.sensitive_mutation_idempotency"
+      + " set locked_until=clock_timestamp()-interval '1 second'"
+      + " where operation_key='" + expiredFailKey + "';",
+  );
+  const expiredFail=parseJson(await serviceRoleQuery(
+    "select public.fail_sensitive_mutation('"
+      + expiredFailKey + "','" + expiredFailClaim.leaseToken + "',true,300)::text;",
+  ),'fail_sensitive_mutation expired lease');
+  assert.equal(
+    expiredFail.ok,
+    false,
+    'expired sensitive mutation owner must not fail-settle after losing its lease',
+  );
 }
 
 async function cleanup() {
