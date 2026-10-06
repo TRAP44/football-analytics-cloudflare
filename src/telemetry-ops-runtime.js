@@ -43,7 +43,11 @@ export function createTelemetryOpsRuntime(deps = {}) {
   }
 
   async function observeProviderRequest(event = {}, cfg = {}) {
-    observeProviderRequestLocal(event);
+    try {
+      observeProviderRequestLocal(event);
+    } catch {
+      bumpTelemetry('providerObservabilityErrors');
+    }
     if (!safeHasSupabase(cfg)) return { ok:true, persistent:false, reason:'supabase_not_configured' };
     try {
       const result=await supaRpc(cfg,'record_provider_slo_observation',{
@@ -99,7 +103,13 @@ export function createTelemetryOpsRuntime(deps = {}) {
 
   async function recordOpsEvent(cfg, event = {}) {
     const task = recordOpsEventTask(cfg, event);
-    if (typeof cfg?.waitUntil === 'function') cfg.waitUntil(task);
+    if (typeof cfg?.waitUntil === 'function') {
+      try {
+        cfg.waitUntil(task);
+      } catch {
+        bumpTelemetry('opsWaitUntilErrors');
+      }
+    }
     return await task;
   }
 
