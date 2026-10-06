@@ -236,9 +236,12 @@ export function createRuntimeControlsRuntime({
   function runtimeControlsSnapshot() {
     const current=memory.runtimeControls?.value;
     if (!current || typeof current !== 'object' || Array.isArray(current)) return {...defaults};
-    const normalized=inspectRuntimeControls(current,defaults).value;
+    const inspected=inspectRuntimeControls(current,defaults,{requireComplete:true});
+    if (!inspected.valid) {
+      return failClosedRuntimeControls(defaults,'runtime_state_invalid');
+    }
     return {
-      ...normalized,
+      ...inspected.value,
       ...(current.controlPlaneFailClosed === true
         ? {
             controlPlaneFailClosed:true,
@@ -277,7 +280,12 @@ export function createRuntimeControlsRuntime({
       && now >= loadedAtValue
       && now-loadedAtValue < cacheMs
     ) {
-      return {...memory.runtimeControls,cached:true};
+      const cachedValue=inspectRuntimeControls(
+        memory.runtimeControls.value,
+        defaults,
+        {requireComplete:true},
+      );
+      if (cachedValue.valid) return {...memory.runtimeControls,cached:true};
     }
 
     const activateFailClosed = (reason, error = null) => {
@@ -484,10 +492,10 @@ export function createRuntimeControlsRuntime({
       reason:cleanText(source.reason,`Rollback to revision ${rowRevision}`,240),
       action:'rollback',
       sourceRevision:rowRevision,
-    });
+    },{trustedRollback:true});
   }
 
-  async function saveRuntimeControls(cfg,user,body = {}) {
+  async function saveRuntimeControls(cfg,user,body = {},options = {}) {
     const currentState=await loadRuntimeControls(cfg,{force:true});
     if (!currentState.schemaReady) {
       return {
@@ -511,6 +519,15 @@ export function createRuntimeControlsRuntime({
     }
 
     const requestedAction=typeof source.action === 'string' ? source.action.trim() : '';
+    const trustedRollback=plainObject(options).trustedRollback === true;
+    if (requestedAction === 'rollback' && !trustedRollback) {
+      return {
+        error:'Откат разрешён только через проверенную точку истории.',
+        code:'RUNTIME_CONTROLS_ACTION_INVALID',
+        status:400,
+        current:publicRuntimeControls(current),
+      };
+    }
     const changeAction=RUNTIME_ACTIONS.has(requestedAction) ? requestedAction : 'update';
     if (!['lockdown','lockdown_release'].includes(changeAction) && !validMutationControls(source)) {
       return {
@@ -568,7 +585,9 @@ export function createRuntimeControlsRuntime({
 
     const historyReady=true;
     const historyReason='';
-    const sourceRevision=positiveRevision(source.sourceRevision,0) || null;
+    const sourceRevision=trustedRollback
+      ? positiveRevision(source.sourceRevision,0) || null
+      : null;
     const wasSecurityLockdown=isSecurityLockdownControls(current);
     const lockdownRequested=changeAction === 'lockdown';
     const lockdownReleaseRequested=changeAction === 'lockdown_release';
@@ -786,7 +805,11 @@ export function createRuntimeControlsRuntime({
     } catch {
       admin=false;
     }
-    const normalizedRuntime=publicRuntimeControls(runtime);
+    const runtimeInspection=inspectRuntimeControls(runtime,defaults,{requireComplete:true});
+    const guardRuntime=runtimeInspection.valid
+      ? runtime
+      : failClosedRuntimeControls(defaults,'runtime_state_invalid');
+    const normalizedRuntime=publicRuntimeControls(guardRuntime);
     let requestUrl;
     try {
       requestUrl=new URL(typeof request?.url === 'string' ? request.url : '');
