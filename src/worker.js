@@ -2863,6 +2863,7 @@ const {
   SUPABASE_SCHEMA_GUIDANCE,
   actualOutcomeFromGoals,
   adminForbidden,
+  analysisFreshnessDrill,
   analysisQualityGateSelfTest,
   apiAiTrackRecord,
   apiAnalyze,
