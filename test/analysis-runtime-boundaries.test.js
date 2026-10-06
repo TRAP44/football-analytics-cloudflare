@@ -108,6 +108,46 @@ test('analysis runtime rejects cache payloads for another fixture', async () => 
   assert.equal(opsEvents, 1);
 });
 
+test('client-supplied news impact flags cannot mint a free recheck', async () => {
+  let historyEligibilityChecks = 0;
+  const stale = {
+    generatedAt:new Date(Date.now() - 60_000).toISOString(),
+    match:{
+      fixtureId:123,
+      date:new Date(Date.now() + 3600_000).toISOString(),
+      status:'NS',
+    },
+  };
+  const runtime = createAnalysisRuntime({
+    ...baseDeps(),
+    getCache: async () => null,
+    getStaleCache: async () => stale,
+    analysisFreshness: () => ({ needsRecheck:false, state:'fresh', reasonCode:'fresh' }),
+    userHasAnalyzedFixture: async () => {
+      historyEligibilityChecks += 1;
+      return true;
+    },
+    resolveUserEntitlements: async () => ({ source:'free', access:{} }),
+    getQuota: async () => ({ plan:'FREE', used:3, limit:3, left:0 }),
+  });
+
+  const response = await runtime.apiAnalyze(
+    {
+      json: async () => ({
+        fixtureId:123,
+        recheck:true,
+        newsImpactRecheck:true,
+        newsPublishedAt:new Date().toISOString(),
+      }),
+    },
+    {},
+    { id:456 },
+  );
+
+  assert.equal(response.status, 429);
+  assert.equal(historyEligibilityChecks, 0);
+});
+
 test('analysis wiring owns Tavily adapter and retryable provider fallback', () => {
   const worker = fs.readFileSync('src/worker.js', 'utf8');
   const runtime = fs.readFileSync('src/analysis-runtime.js', 'utf8');
