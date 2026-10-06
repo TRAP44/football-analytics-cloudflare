@@ -8,31 +8,99 @@ export function createLiveMatchIntelligenceRuntime(deps) {
     numericValue,
   } = deps;
 
-  function formatPlayerLeaders(rows, homeId, awayId) {
-    const sides = { home: [], away: [] };
-    for (const teamRow of rows || []) {
-      const teamId = Number(teamRow.team?.id || 0);
-      const side = teamId === Number(homeId) ? 'home' : teamId === Number(awayId) ? 'away' : '';
+  if (typeof numericValue !== 'function') {
+    throw new TypeError('numericValue is required');
+  }
+
+  const LIVE_MAX_MINUTE=180;
+
+  function rows(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  function finiteNumber(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number=numericValue(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function boundedNumber(value,min,max) {
+    const number=finiteNumber(value);
+    return number !== null && number >= min && number <= max ? number : null;
+  }
+
+  function positiveSafeInteger(value) {
+    const number=finiteNumber(value);
+    return number !== null && Number.isSafeInteger(number) && number > 0 ? number : null;
+  }
+
+  function metricValue(key,value) {
+    const limits={
+      'Ball Possession':[0,100],
+      'expected_goals':[0,20],
+      'Total Shots':[0,100],
+      'Shots on Goal':[0,100],
+      'Corner Kicks':[0,50],
+      'Goalkeeper Saves':[0,50],
+      'Red Cards':[0,10],
+    };
+    const range=limits[String(key || '')] || [0,10000];
+    return boundedNumber(value,range[0],range[1]);
+  }
+
+  function displayText(value,fallback='',max=160) {
+    const text=String(value ?? '').trim();
+    return (text || fallback).slice(0,max);
+  }
+
+  function normalizedPressure(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const home=boundedNumber(value.home,0,100);
+    const away=boundedNumber(value.away,0,100);
+    if (home === null || away === null || Math.abs((home+away)-100) > 2) return null;
+    const leader=value.leader === 'home' || value.leader === 'away' || value.leader === 'balanced'
+      ? value.leader
+      : Math.abs(home-away)<10 ? 'balanced' : home>away ? 'home' : 'away';
+    return {home,away,leader};
+  }
+
+  function eventMinute(value) {
+    return boundedNumber(value,0,LIVE_MAX_MINUTE);
+  }
+
+  function scoreValue(value) {
+    return boundedNumber(value,0,30);
+  }
+
+  function formatPlayerLeaders(rowsInput, homeId, awayId) {
+    const sides={home:[],away:[]};
+    const homeTeamId=positiveSafeInteger(homeId);
+    const awayTeamId=positiveSafeInteger(awayId);
+    if (!homeTeamId || !awayTeamId || homeTeamId===awayTeamId) return sides;
+    for (const teamRow of rows(rowsInput)) {
+      const teamId=positiveSafeInteger(teamRow?.team?.id);
+      const side=teamId===homeTeamId ? 'home' : teamId===awayTeamId ? 'away' : '';
       if (!side) continue;
-      for (const entry of teamRow.players || []) {
-        const st = entry.statistics?.[0] || {};
-        const rating = numericValue(st.games?.rating);
-        const minutes = numericValue(st.games?.minutes) || 0;
-        const goals = numericValue(st.goals?.total) || 0;
-        const assists = numericValue(st.goals?.assists) || 0;
-        const saves = numericValue(st.goals?.saves) || 0;
-        const shotsOn = numericValue(st.shots?.on) || 0;
-        const keyPasses = numericValue(st.passes?.key) || 0;
-        const tackles = numericValue(st.tackles?.total) || 0;
-        const interceptions = numericValue(st.tackles?.interceptions) || 0;
-        if (!minutes && rating === null && !goals && !assists && !saves && !shotsOn && !keyPasses) continue;
-        const impact = (rating || 0) * 10 + goals * 20 + assists * 14 + saves * 2 + shotsOn * 2 + keyPasses * 1.5 + tackles + interceptions;
+      for (const entry of rows(teamRow?.players)) {
+        const st=rows(entry?.statistics)[0] || {};
+        const rating=boundedNumber(st?.games?.rating,0,10);
+        const minutes=boundedNumber(st?.games?.minutes,0,150) ?? 0;
+        const goals=boundedNumber(st?.goals?.total,0,20) ?? 0;
+        const assists=boundedNumber(st?.goals?.assists,0,20) ?? 0;
+        const saves=boundedNumber(st?.goals?.saves,0,50) ?? 0;
+        const shotsOn=boundedNumber(st?.shots?.on,0,50) ?? 0;
+        const keyPasses=boundedNumber(st?.passes?.key,0,100) ?? 0;
+        const tackles=boundedNumber(st?.tackles?.total,0,100) ?? 0;
+        const interceptions=boundedNumber(st?.tackles?.interceptions,0,100) ?? 0;
+        if (!minutes && rating === null && !goals && !assists && !saves && !shotsOn && !keyPasses && !tackles && !interceptions) continue;
+        const impact=(rating ?? 0)*10+goals*20+assists*14+saves*2+shotsOn*2+keyPasses*1.5+tackles+interceptions;
+        if (!Number.isFinite(impact)) continue;
         sides[side].push({
-          id: Number(entry.player?.id || 0),
-          name: entry.player?.name || 'Игрок',
-          photo: entry.player?.photo || '',
-          position: st.games?.position || '',
-          rating: rating !== null ? Math.round(rating * 10) / 10 : null,
+          id:positiveSafeInteger(entry?.player?.id),
+          name:displayText(entry?.player?.name,'Игрок',120),
+          photo:displayText(entry?.player?.photo,'',1000),
+          position:displayText(st?.games?.position,'',40),
+          rating:rating !== null ? Math.round(rating*10)/10 : null,
           minutes,
           goals,
           assists,
@@ -41,7 +109,7 @@ export function createLiveMatchIntelligenceRuntime(deps) {
           keyPasses,
           tackles,
           interceptions,
-          impact: Math.round(impact * 10) / 10,
+          impact:Math.round(impact*10)/10,
         });
       }
     }
@@ -53,55 +121,75 @@ export function createLiveMatchIntelligenceRuntime(deps) {
   }
   
   function livePressure(statistics) {
-    const rows = statistics?.items || [];
-    if (!rows.length) return null;
-    const get = key => rows.find(x => x.key === key) || {};
-    const val = (x, side) => numericValue(x?.[side]) || 0;
-    const totalShots = get('Total Shots');
-    const shotsOn = get('Shots on Goal');
-    const corners = get('Corner Kicks');
-    const possession = get('Ball Possession');
-    const reds = get('Red Cards');
-    const saves = get('Goalkeeper Saves');
-    const score = side => (
-      val(shotsOn, side) * 4.2 +
-      val(totalShots, side) * 1.25 +
-      val(corners, side) * 1.4 +
-      val(possession, side) * 0.07 +
-      val(saves, side === 'home' ? 'away' : 'home') * 0.8 -
-      val(reds, side) * 7
+    const items=rows(statistics?.items);
+    if (!items.length) return null;
+    const get=key=>items.find(item=>item?.key===key) || {};
+    const val=(item,key,side)=>metricValue(key,item?.[side]) ?? 0;
+    const totalShots=get('Total Shots');
+    const shotsOn=get('Shots on Goal');
+    const corners=get('Corner Kicks');
+    const possession=get('Ball Possession');
+    const reds=get('Red Cards');
+    const saves=get('Goalkeeper Saves');
+    const score=side=>(
+      val(shotsOn,'Shots on Goal',side)*4.2
+      + val(totalShots,'Total Shots',side)*1.25
+      + val(corners,'Corner Kicks',side)*1.4
+      + val(possession,'Ball Possession',side)*0.07
+      + val(saves,'Goalkeeper Saves',side==='home' ? 'away' : 'home')*0.8
+      - val(reds,'Red Cards',side)*7
     );
-    const h = Math.max(0, score('home'));
-    const a = Math.max(0, score('away'));
-    if (h + a < 1) return null;
-    const home = Math.round(h / (h + a) * 100);
-    const away = 100 - home;
-    const diff = home - away;
+    const h=Math.max(0,score('home'));
+    const a=Math.max(0,score('away'));
+    const total=h+a;
+    if (!Number.isFinite(total) || total<1) return null;
+    const home=Math.round(h/total*100);
+    const away=100-home;
+    const diff=home-away;
     return {
-      home, away,
-      leader: Math.abs(diff) < 10 ? 'balanced' : diff > 0 ? 'home' : 'away',
-      note: 'Эвристика давления по ударам, владению, угловым, сейвам и карточкам. Это не вероятность победы.',
+      home,
+      away,
+      leader:Math.abs(diff)<10 ? 'balanced' : diff>0 ? 'home' : 'away',
+      note:'Эвристика давления по ударам, владению, угловым, сейвам и карточкам. Это не вероятность победы.',
     };
   }
   
   
   function smartStat(statistics, key, side) {
-    const row = (statistics?.items || []).find(x => x.key === key);
-    return numericValue(row?.[side]);
+    if (side !== 'home' && side !== 'away') return null;
+    const row=rows(statistics?.items).find(item=>item?.key===key);
+    return metricValue(key,row?.[side]);
   }
   
   function smartSideName(side, homeName, awayName) {
-    return side === 'home' ? homeName : side === 'away' ? awayName : '';
+    return side === 'home'
+      ? displayText(homeName,'Хозяева',120)
+      : side === 'away'
+        ? displayText(awayName,'Гости',120)
+        : '';
   }
   
   function smartInsight(type, side, icon, title, text, importance = 'medium', metrics = []) {
-    return { type, side, icon, title, text, importance, metrics };
+    return {
+      type:displayText(type,'',60),
+      side:['home','away','balanced','neutral'].includes(side) ? side : 'neutral',
+      icon:displayText(icon,'',8),
+      title:displayText(title,'',160),
+      text:displayText(text,'',1000),
+      importance:['high','medium','low'].includes(importance) ? importance : 'medium',
+      metrics:rows(metrics).slice(0,10),
+    };
   }
   
   function recentEventSummary(events, elapsed, homeName, awayName) {
-    if (!Array.isArray(events) || !events.length || !Number.isFinite(Number(elapsed))) return null;
-    const cutoff = Math.max(0, Number(elapsed) - 15);
-    const recent = events.filter(e => Number(e.minute || 0) >= cutoff);
+    const eventRows=rows(events);
+    const minute=eventMinute(elapsed);
+    if (!eventRows.length || minute === null) return null;
+    const cutoff=Math.max(0,minute-15);
+    const recent=eventRows.filter(event=>{
+      const eventAt=eventMinute(event?.minute);
+      return eventAt !== null && eventAt >= cutoff && eventAt <= minute+15;
+    });
     if (!recent.length) return null;
   
     const score = { home: 0, away: 0 };
@@ -143,27 +231,32 @@ export function createLiveMatchIntelligenceRuntime(deps) {
   }
   
   function sideFromPrematchSignal(code = '') {
-    if (['home','double_home'].includes(String(code))) return 'home';
-    if (['away','double_away'].includes(String(code))) return 'away';
+    const normalized=String(code || '').trim().toLowerCase();
+    if (['home','double_home'].includes(normalized)) return 'home';
+    if (['away','double_away'].includes(normalized)) return 'away';
     return 'balanced';
   }
   
   function livePerformanceSide({ statistics, pressure } = {}) {
-    const hxg=smartStat(statistics,'expected_goals','home'), axg=smartStat(statistics,'expected_goals','away');
-    if (hxg !== null && axg !== null && Math.abs(hxg-axg) >= .35) return hxg>axg?'home':'away';
-    const hso=smartStat(statistics,'Shots on Goal','home'), aso=smartStat(statistics,'Shots on Goal','away');
-    if (hso !== null && aso !== null && Math.abs(hso-aso) >= 2) return hso>aso?'home':'away';
-    if (pressure?.leader === 'home' || pressure?.leader === 'away') return pressure.leader;
+    const hxg=smartStat(statistics,'expected_goals','home'),axg=smartStat(statistics,'expected_goals','away');
+    if (hxg !== null && axg !== null && Math.abs(hxg-axg)>=.35) return hxg>axg ? 'home' : 'away';
+    const hso=smartStat(statistics,'Shots on Goal','home'),aso=smartStat(statistics,'Shots on Goal','away');
+    if (hso !== null && aso !== null && Math.abs(hso-aso)>=2) return hso>aso ? 'home' : 'away';
+    const normalized=normalizedPressure(pressure);
+    if (normalized?.leader === 'home' || normalized?.leader === 'away') return normalized.leader;
     return 'balanced';
   }
   
   function liveMarketShift(oddsMovement = null) {
-    const p=oddsMovement?.probabilityChange;
-    if (!p) return null;
-    const rows=[['home',Number(p.home||0)],['draw',Number(p.draw||0)],['away',Number(p.away||0)]].sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
-    const [side,delta]=rows[0] || [];
-    if (!side || Math.abs(delta) < 3) return null;
-    return { side, delta:Math.round(delta*10)/10 };
+    const changes=oddsMovement?.probabilityChange;
+    if (!changes || typeof changes !== 'object' || Array.isArray(changes)) return null;
+    const candidates=['home','draw','away']
+      .map(side=>[side,boundedNumber(changes[side],-100,100)])
+      .filter(([,delta])=>delta !== null)
+      .sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
+    const [side,delta]=candidates[0] || [];
+    if (!side || Math.abs(delta)<3) return null;
+    return {side,delta:Math.round(delta*10)/10};
   }
   
   function buildLiveAiCoach({ statistics, events, pressure, score, elapsed, homeName, awayName, smartInsights, prematch, oddsMovement, xgQuality = null } = {}) {
