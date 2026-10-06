@@ -1,5 +1,15 @@
 -- MatchRadar v6.22 / AI Timeline immutable probability snapshots
 -- Additive persistence for real historical model states. No backfill: past states are never invented.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. analysis_timeline_snapshots remains
+-- the current durable source for AI Timeline history; the Worker inserts by
+-- snapshot_key and reads each fixture ordered by captured_at.
+-- The service-role grant is intentionally append-only (SELECT + INSERT):
+-- historical model states must not be rewritten or deleted by application code.
+-- Later migrations preserve this table and only keep it outside the legacy
+-- rollout fingerprint while dedicated schema probes validate its columns.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 create table if not exists public.analysis_timeline_snapshots (
   snapshot_key text primary key,
