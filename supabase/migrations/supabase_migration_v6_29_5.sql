@@ -1,6 +1,17 @@
 -- MatchRadar v6.29.5 / scheduled lease retention hardening
 -- Forward hotfix for v6.26/v6.27.1.
 -- Keep scheduled-job retention at least as long as the active ownership lease.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- claim_scheduled_job() and renew_scheduled_job() defined here remain the
+-- current scheduled-lease implementations; later migrations do not replace them.
+-- Initial retention is clamped to at least the lease horizon, heartbeat renewal
+-- never shortens locked_until, and expires_at is extended through the effective
+-- ownership horizon. Application cleanup also requires both expires_at and
+-- locked_until to be expired before deleting a lease row.
+-- Current cron keys are deterministic by scheduled timestamp/day and use multi-day
+-- retention, while complete/release keep the active-lease ownership checks from
+-- v6.27.1. Do not rewrite applied SQL here; corrections belong forward.
 
 create or replace function public.claim_scheduled_job(
   p_job_key text,
