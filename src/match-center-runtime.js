@@ -36,6 +36,7 @@ export function createMatchCenterRuntime(deps) {
     getStaleCache,
     isFinishedStatus,
     isFootballRateLimitError,
+    isRetryableFootballTransportError,
     isLiveStatus,
     isYouthReserveMatch,
     json,
@@ -70,16 +71,56 @@ export function createMatchCenterRuntime(deps) {
     validateFixtureIntegrity,
   } = deps;
 
+  function positiveSafeInteger(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number > 0 ? number : null;
+  }
+
+  function nonNegativeSafeInteger(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number >= 0 ? number : null;
+  }
+
+  function boundedRetryAfter(value, fallback = 60) {
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number >= 1 && number <= 3600 ? number : fallback;
+  }
+
+  function rowsOrEmpty(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  function matchCenterCachePayload(value, fixtureId) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    if (positiveSafeInteger(value?.match?.fixtureId) !== fixtureId) return null;
+    if (!['live', 'finished', 'upcoming'].includes(String(value.mode || ''))) return null;
+    return value;
+  }
+
   async function apiMatchCenter(request, cfg) {
     const url = new URL(request.url);
-    const fixtureId = Number(url.searchParams.get('fixtureId'));
-    if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Номер матча обязателен.' }, 400);
+    const fixtureId = positiveSafeInteger(url.searchParams.get('fixtureId'));
+    if (fixtureId === null) return json({ error: 'Укажите корректный положительный целый номер матча.' }, 400);
   
-    // Shared across all users. During LIVE it expires after 60 seconds.
+    // Shared across all users. LIVE cache follows the provider refresh cadence
+    // with a hard minimum of 10 seconds.
     const baseCacheKey = `match-center:${fixtureId}:v16-availability-quality-rc144`;
-    const cached = await getCache(baseCacheKey, cfg);
+    const cachedCandidate = await getCache(baseCacheKey, cfg);
+    const cached = matchCenterCachePayload(cachedCandidate, fixtureId);
+    if (cachedCandidate && !cached) {
+      await recordOpsEvent(cfg, {
+        severity:'warning',
+        source:'cache',
+        eventType:'match_center_cache_rejected',
+        code:'MATCH_CENTER_CACHE_INVALID',
+        message:'Match Center ignored a cache entry whose fixture identity or mode was invalid.',
+        meta:{ fixtureId },
+      }).catch(() => null);
+    }
     if (cached) {
-      const cachedMode = String(cached.mode || 'upcoming');
+      const cachedMode = String(cached.mode);
       const cachedMeta = {
         ...(cached.dataFreshness || {}),
         match: cached.dataFreshness?.match || {
@@ -100,9 +141,21 @@ export function createMatchCenterRuntime(deps) {
     try {
       fixture = await loadProviderFixture(fixtureId,cfg);
     } catch (error) {
-      const stale = await getStaleCache(baseCacheKey, cfg);
-      if (stale && isFootballRateLimitError(error)) {
-        const staleMode = String(stale.mode || 'upcoming');
+      const staleCandidate = await getStaleCache(baseCacheKey, cfg);
+      const stale = matchCenterCachePayload(staleCandidate, fixtureId);
+      const transientProviderFailure = isFootballRateLimitError(error) || isRetryableFootballTransportError(error);
+      if (staleCandidate && !stale) {
+        await recordOpsEvent(cfg, {
+          severity:'warning',
+          source:'cache',
+          eventType:'match_center_stale_cache_rejected',
+          code:'MATCH_CENTER_STALE_CACHE_INVALID',
+          message:'Match Center ignored an invalid stale cache entry.',
+          meta:{ fixtureId },
+        }).catch(() => null);
+      }
+      if (stale && transientProviderFailure) {
+        const staleMode = String(stale.mode);
         const staleMeta = {
           ...(stale.dataFreshness || {}),
           match: stale.dataFreshness?.match || {
@@ -138,7 +191,7 @@ export function createMatchCenterRuntime(deps) {
           cached:true,
           stale:true,
           warning:'Данные матча показаны из последнего сохранённого снимка. Устаревшие live-сигналы исключены из аналитики.',
-          retryAfter:Number(error?.retryAfter || 60),
+          retryAfter:boundedRetryAfter(error?.retryAfter, 60),
         });
       }
       throw error;
@@ -151,12 +204,12 @@ export function createMatchCenterRuntime(deps) {
     }
   
     const status = fixture.fixture?.status?.short || '';
-    const elapsed = Number(fixture.fixture?.status?.elapsed ?? 0) || null;
+    const elapsed = nonNegativeSafeInteger(fixture.fixture?.status?.elapsed);
     const live = isLiveStatus(status);
     const finished = isFinishedStatus(status);
     const homeId = fixture.teams?.home?.id;
     const awayId = fixture.teams?.away?.id;
-    const embedded = embeddedLiveData(fixture);
+    const embedded = embeddedLiveData(fixture) || {};
     const leagueName = fixture.league?.name || '';
     const homeName = fixture.teams?.home?.name || '';
     const awayName = fixture.teams?.away?.name || '';
@@ -174,10 +227,10 @@ export function createMatchCenterRuntime(deps) {
     // Do not burn extra /events + /statistics calls when coverage is predictably low.
     // For senior competitions, targeted fallbacks are still allowed when embedded
     // fixture data does not contain details.
-    let events = embedded.events;
-    let statistics = embedded.statistics;
-    let playerRows = embedded.players;
-    let lineupRows = embedded.lineups;
+    let events = rowsOrEmpty(embedded.events);
+    let statistics = rowsOrEmpty(embedded.statistics);
+    let playerRows = rowsOrEmpty(embedded.players);
+    let lineupRows = rowsOrEmpty(embedded.lineups);
     let injuryRows = [];
   
     if (events.length) {
@@ -192,7 +245,7 @@ export function createMatchCenterRuntime(deps) {
         feature: 'events', path: '/fixtures/events', params: { fixture: fixtureId },
         fixtureId, cfg, context: eventContext,
       });
-      events = result.data;
+      events = rowsOrEmpty(result.data);
       featureMeta.events = result.meta;
       // FREE intentionally skips the API-Football events call and tries the
       // secondary source instead. Paid plans also retain the secondary fallback
@@ -200,7 +253,7 @@ export function createMatchCenterRuntime(deps) {
       if (!events.length && !limitedCoverage) {
         const secondaryEvents=await secondaryOpenLigaEvents(fixture, cfg, eventContext);
         if (secondaryEvents.available) {
-          events=secondaryEvents.events;
+          events=rowsOrEmpty(secondaryEvents.events);
           featureMeta.events=secondaryEvents.meta;
         } else {
           featureMeta.events={ ...result.meta, fallbackProvider:'openligadb', fallbackReason:String(secondaryEvents.reason || '') };
@@ -215,7 +268,7 @@ export function createMatchCenterRuntime(deps) {
         feature: 'statistics', path: '/fixtures/statistics', params: { fixture: fixtureId },
         fixtureId, cfg, context: { mode: centerMode, limitedCoverage },
       });
-      statistics = result.data;
+      statistics = rowsOrEmpty(result.data);
       featureMeta.statistics = result.meta;
     }
   
@@ -226,7 +279,7 @@ export function createMatchCenterRuntime(deps) {
         feature: 'players', path: '/fixtures/players', params: { fixture: fixtureId },
         fixtureId, cfg, context: { mode: centerMode, limitedCoverage },
       });
-      playerRows = result.data;
+      playerRows = rowsOrEmpty(result.data);
       featureMeta.players = result.meta;
     }
   
@@ -245,7 +298,7 @@ export function createMatchCenterRuntime(deps) {
         feature: 'lineups', path: '/fixtures/lineups', params: { fixture: fixtureId },
         fixtureId, cfg, context: { mode: centerMode, limitedCoverage },
       });
-      lineupRows = result.data;
+      lineupRows = rowsOrEmpty(result.data);
       featureMeta.lineups = result.meta;
     }
   
@@ -254,7 +307,7 @@ export function createMatchCenterRuntime(deps) {
         feature: 'injuries', path: '/injuries', params: { fixture: fixtureId },
         fixtureId, cfg, context: { mode: centerMode, limitedCoverage },
       });
-      injuryRows = result.data;
+      injuryRows = rowsOrEmpty(result.data);
       featureMeta.injuries = result.meta;
     }
   
@@ -266,7 +319,7 @@ export function createMatchCenterRuntime(deps) {
         feature: 'liveOdds', path: '/odds/live', params: { fixture: fixtureId },
         fixtureId, cfg, context: { mode: centerMode, limitedCoverage },
       });
-      const primaryLiveOdds = extractLiveMarket(result.data);
+      const primaryLiveOdds = extractLiveMarket(rowsOrEmpty(result.data));
       const primaryLiveMeta = usableOddsFeatureMeta(result.meta, primaryLiveOdds);
       const primaryLiveShape = assessOddsMarketQuality(primaryLiveOdds, { oddsMeta:primaryLiveMeta, mode:'live' });
       liveOdds = primaryLiveOdds;
@@ -297,7 +350,12 @@ export function createMatchCenterRuntime(deps) {
       oddsMovement = buildOddsMovement(snapshots, liveOdds);
     }
   
-    const refreshSeconds = live && runtimeControlsSnapshot().liveEnabled !== false ? providerBudgetProfile().liveRefreshSeconds : 0;
+    const finalBudget = providerBudgetProfile();
+    const runtimeControls = runtimeControlsSnapshot();
+    const configuredRefreshSeconds = Number(finalBudget?.liveRefreshSeconds);
+    const refreshSeconds = live && runtimeControls?.liveEnabled !== false && Number.isFinite(configuredRefreshSeconds)
+      ? Math.max(0, Math.trunc(configuredRefreshSeconds))
+      : 0;
     const rawFormattedStatistics = formatLiveStatistics(statistics, homeId, awayId);
     const statisticsQuality = assessMatchStatisticsQuality(rawFormattedStatistics, { statisticsMeta:featureMeta.statistics || {}, mode:centerMode });
     const xgQuality = assessExpectedGoalsQuality(rawFormattedStatistics, { statisticsMeta:featureMeta.statistics || {}, mode:centerMode });
@@ -345,8 +403,12 @@ export function createMatchCenterRuntime(deps) {
     const formattedEvents = sanitizeEventsForDisplay(rawFormattedEvents, eventQuality);
     const analyticalEvents = eventsForTrustedAnalytics(rawFormattedEvents, eventQuality);
     if (finished) await settlePredictionsFromFixtures([fixture], cfg).catch(() => null);
-    const postMatchPrediction = finished ? await loadModelPredictionForFixture(fixtureId, cfg) : null;
-    const postMatchReview = finished ? buildPostMatchReview({prediction:postMatchPrediction,fixture,statistics:analyticalStatistics,events:analyticalEvents,homeName,awayName}) : null;
+    const postMatchPrediction = finished
+      ? await loadModelPredictionForFixture(fixtureId, cfg).catch(() => null)
+      : null;
+    const postMatchReview = finished
+      ? buildPostMatchReview({prediction:postMatchPrediction,fixture,statistics:analyticalStatistics,events:analyticalEvents,homeName,awayName})
+      : null;
     if (finished && fixture.fixture?.referee) await saveRefereeMatchHistory({ fixtureId, referee:fixture.fixture.referee, kickoffAt:fixture.fixture?.date || null, leagueId:Number(fixture.league?.id || 0), events:analyticalEvents, statistics:analyticalStatistics }, cfg).catch(() => false);
     const smartInsights = (live || finished) ? buildSmartMatchInsights({
       statistics: analyticalStatistics,
@@ -383,9 +445,10 @@ export function createMatchCenterRuntime(deps) {
       xgQuality,
     }) : null;
   
+    const dataCapabilities = publicDataCapabilities();
     const payload = {
       generatedAt: new Date().toISOString(),
-      mode: live ? 'live' : finished ? 'finished' : 'upcoming',
+      mode: centerMode,
       match: {
         fixtureId,
         date: fixture.fixture?.date || '',
@@ -437,17 +500,17 @@ export function createMatchCenterRuntime(deps) {
         liveOdds: Boolean(liveOddsQuality?.confidenceBearing && liveOdds),
         limitedCoverage,
       },
-      dataCapabilities: publicDataCapabilities(),
+      dataCapabilities,
       liveOddsQuality,
       liveOdds,
       oddsMovement,
-      provider: publicDataCapabilities(),
+      provider: dataCapabilities,
       refreshSeconds,
       note: limitedCoverage
         ? 'Молодёжный или резервный турнир: дополнительные запросы данных ограничены для экономии квоты.'
-        : providerBudgetProfile().mode === 'emergency'
+        : finalBudget.mode === 'emergency'
           ? 'Квота источника данных в защитном резерве: часть расширенных данных временно берётся из сохранённых данных или пропускается.'
-          : providerBudgetProfile().mode === 'conserve'
+          : finalBudget.mode === 'conserve'
             ? 'Включён сберегающий режим: тяжёлые дополнительные запросы обновляются реже.'
             : (!events.length && !statistics.length)
               ? 'Для этого турнира или матча источник данных не отдаёт детальные события/статистику.'
