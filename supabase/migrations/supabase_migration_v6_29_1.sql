@@ -7,6 +7,15 @@
 -- 3. preserve lockdown/lockdown_release intent in snapshot.requestedAction;
 -- 4. remove the superseded pre-merge commit_runtime_controls RPC if present;
 -- 5. restore the canonical v2 readiness contract implementation.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- This is the canonical compatibility repair for the v6.29 rule. Persisted
+-- action remains constraint-compatible while requestedAction carries lockdown
+-- intent. v6.29.7 later extends readiness with the private usage contract and
+-- v6.29.8 makes this pg_rewrite rule release-blocking through security readiness.
+-- Current runtime history must recover lockdown/lockdown_release from
+-- snapshot.requestedAction when persisted action is the compatibility value update.
+-- Do not rewrite applied SQL here; corrections belong in forward migrations/runtime.
 
 drop function if exists public.commit_runtime_controls(
   integer,
