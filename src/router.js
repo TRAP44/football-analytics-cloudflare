@@ -155,8 +155,8 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
   if (pathname === '/api/runtime-controls') {
     if (!adminAllowed()) return adminForbidden();
     if (method === 'GET') return await apiRuntimeControls(request,cfg,user);
-    if (method === 'POST') return await sensitiveMutation(()=>apiRuntimeControls(request,cfg,user));
-    return methodNotAllowed(['GET','POST']);
+    if (method === 'PATCH' || method === 'POST') return await sensitiveMutation(()=>apiRuntimeControls(request,cfg,user));
+    return methodNotAllowed(['GET','PATCH','POST']);
   }
   if (pathname === '/api/runtime-controls/rollback') {
     if (!adminAllowed()) return adminForbidden();
