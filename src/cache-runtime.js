@@ -23,20 +23,26 @@ function cacheOpsCategory(cacheKey) {
   return (safe.join(':') || 'opaque').slice(0, 80);
 }
 
+function finiteCacheNumber(value) {
+  if (value === null || value === undefined || typeof value === 'boolean') return null;
+  if (typeof value === 'string' && !value.trim()) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function cacheTtlMinutes(value, fallback = 10) {
-  const parsed = Number(value);
-  const fallbackParsed = Number(fallback);
-  const safeFallback = Number.isFinite(fallbackParsed)
+  const parsed = finiteCacheNumber(value);
+  const fallbackParsed = finiteCacheNumber(fallback);
+  const safeFallback = fallbackParsed !== null
     ? Math.max(1 / 6, Math.min(24 * 60, fallbackParsed))
     : 10;
-  return Number.isFinite(parsed)
+  return parsed !== null
     ? Math.max(1 / 6, Math.min(24 * 60, parsed))
     : safeFallback;
 }
 
 function cacheExpiryMs(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
+  return finiteCacheNumber(value);
 }
 
 export function createSharedCacheRuntime({
@@ -49,6 +55,26 @@ export function createSharedCacheRuntime({
   pruneMemoryState,
   recordOpsEvent,
 }) {
+  if (!memory?.cache || typeof memory.cache.get !== 'function' || typeof memory.cache.set !== 'function') {
+    throw new TypeError('Shared cache runtime requires memory.cache Map-like storage.');
+  }
+
+  function noteTelemetry(key) {
+    try { bumpTelemetry?.(key); } catch {}
+  }
+
+  function noteProviderCacheUsage(cfg, cacheKey, kind) {
+    try { phase5ProviderCacheUsage?.(cfg, cacheKey, kind); } catch {}
+  }
+
+  function sharedCacheEnabled(cfg) {
+    try { return hasSupabase?.(cfg) === true; } catch { return false; }
+  }
+
+  function pruneLocalCache() {
+    try { pruneMemoryState?.(); } catch {}
+  }
+
   async function emitOpsEvent(cfg, event) {
     if (typeof recordOpsEvent !== 'function') return;
     try {
@@ -68,60 +94,73 @@ export function createSharedCacheRuntime({
       local = null;
     }
     if (local && localExpiresAt > Date.now()) {
-      bumpTelemetry('cacheHits');
-      phase5ProviderCacheUsage(cfg,cacheKey,'cacheHits');
+      noteTelemetry('cacheHits');
+      noteProviderCacheUsage(cfg,cacheKey,'cacheHits');
       // Touch the key so Map insertion order acts as a lightweight LRU.
       memory.cache.delete(cacheKey);
       memory.cache.set(cacheKey, local);
       return { payload: local.payload, expired: false, expiresAt: new Date(localExpiresAt).toISOString(), layer: 'memory' };
     }
 
-    if (hasSupabase(cfg)) {
+    if (sharedCacheEnabled(cfg)) {
       try {
         const row = await supaSelectOne(cfg, 'analysis_cache', { cache_key: `eq.${cacheKey}` });
         if (!row) {
-          bumpTelemetry('cacheMisses');
+          noteTelemetry('cacheMisses');
           if (allowExpired && local) {
-            bumpTelemetry('staleCacheHits');
-            phase5ProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
+            noteTelemetry('staleCacheHits');
+            noteProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
             return { payload: local.payload, expired: true, expiresAt: new Date(localExpiresAt).toISOString(), layer: 'memory-stale' };
           }
           return null;
         }
-        const expiresAtMs = Date.parse(row.expires_at);
-        const expired = Number.isFinite(expiresAtMs) ? expiresAtMs <= Date.now() : true;
-        memory.cache.set(cacheKey, { payload: row.payload, expiresAt: Number.isFinite(expiresAtMs) ? expiresAtMs : Date.now() - 1 });
+        const expiresAtMs = Date.parse(String(row?.expires_at || ''));
+        if (!Number.isFinite(expiresAtMs)) {
+          noteTelemetry('cacheMisses');
+          await emitOpsEvent(cfg, {
+            severity: 'warning', source: 'cache', eventType: 'supabase_cache_invalid_row', code: 'CACHE_DB_INVALID_ROW',
+            message: 'Shared cache row has an invalid expiration timestamp.', meta: { cacheCategory: cacheOpsCategory(cacheKey) },
+          });
+          if (allowExpired && local) {
+            noteTelemetry('staleCacheHits');
+            noteProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
+            return { payload: local.payload, expired: true, expiresAt: new Date(localExpiresAt).toISOString(), layer: 'memory-stale' };
+          }
+          return null;
+        }
+        const expired = expiresAtMs <= Date.now();
+        memory.cache.set(cacheKey, { payload: row.payload, expiresAt: expiresAtMs });
         if (expired && !allowExpired) {
-          bumpTelemetry('cacheMisses');
+          noteTelemetry('cacheMisses');
           return null;
         }
         if (expired) {
-          bumpTelemetry('staleCacheHits');
-          phase5ProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
+          noteTelemetry('staleCacheHits');
+          noteProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
         } else {
-          bumpTelemetry('cacheHits');
-          phase5ProviderCacheUsage(cfg,cacheKey,'cacheHits');
+          noteTelemetry('cacheHits');
+          noteProviderCacheUsage(cfg,cacheKey,'cacheHits');
         }
         return { payload: row.payload, expired, expiresAt: row.expires_at, layer: 'supabase' };
       } catch (error) {
-        bumpTelemetry('supabaseErrors');
+        noteTelemetry('supabaseErrors');
         if (local && (allowExpired || localExpiresAt > Date.now())) {
           if (localExpiresAt <= Date.now()) {
-            bumpTelemetry('staleCacheHits');
-            phase5ProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
+            noteTelemetry('staleCacheHits');
+            noteProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
           } else {
-            bumpTelemetry('cacheHits');
-            phase5ProviderCacheUsage(cfg,cacheKey,'cacheHits');
+            noteTelemetry('cacheHits');
+            noteProviderCacheUsage(cfg,cacheKey,'cacheHits');
           }
           await emitOpsEvent(cfg, {
             severity: 'warning', source: 'cache', eventType: 'supabase_cache_read_fallback', code: 'CACHE_DB_READ',
-            message: error?.message || error, meta: { cacheCategory: cacheOpsCategory(cacheKey) },
+            message: 'Shared cache read failed; served the local cache fallback.', meta: { cacheCategory: cacheOpsCategory(cacheKey), errorName: String(error?.name || 'Error').slice(0, 40) },
           });
           return { payload: local.payload, expired: localExpiresAt <= Date.now(), expiresAt: new Date(localExpiresAt).toISOString(), layer: 'memory-fallback' };
         }
         await emitOpsEvent(cfg, {
           severity: 'warning', source: 'cache', eventType: 'supabase_cache_read_degraded', code: 'CACHE_DB_READ_NO_L1',
-          message: error?.message || error, meta: { cacheCategory: cacheOpsCategory(cacheKey) },
+          message: 'Shared cache read failed and no local fallback was available.', meta: { cacheCategory: cacheOpsCategory(cacheKey), errorName: String(error?.name || 'Error').slice(0, 40) },
         });
         // Treat a transient shared-cache outage as a cache miss. The route may
         // still refresh from the provider and serve the user.
@@ -130,20 +169,20 @@ export function createSharedCacheRuntime({
     }
 
     if (!local) {
-      bumpTelemetry('cacheMisses');
+      noteTelemetry('cacheMisses');
       return null;
     }
     const expired = localExpiresAt <= Date.now();
     if (expired && !allowExpired) {
-      bumpTelemetry('cacheMisses');
+      noteTelemetry('cacheMisses');
       return null;
     }
     if (expired) {
-      bumpTelemetry('staleCacheHits');
-      phase5ProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
+      noteTelemetry('staleCacheHits');
+      noteProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
     } else {
-      bumpTelemetry('cacheHits');
-      phase5ProviderCacheUsage(cfg,cacheKey,'cacheHits');
+      noteTelemetry('cacheHits');
+      noteProviderCacheUsage(cfg,cacheKey,'cacheHits');
     }
     return { payload: local.payload, expired, expiresAt: new Date(localExpiresAt).toISOString(), layer: 'memory' };
   }
@@ -188,9 +227,9 @@ export function createSharedCacheRuntime({
     const provenance = cacheSourceProvenance(payload);
     // Always keep an L1 copy. Supabase remains the persistent/shared cache.
     memory.cache.set(cacheKey, { payload, expiresAt: expiresAtMs });
-    if (memory.cache.size > 600) pruneMemoryState();
-    bumpTelemetry('cacheWrites');
-    if (!hasSupabase(cfg)) return;
+    if (memory.cache.size > 600) pruneLocalCache();
+    noteTelemetry('cacheWrites');
+    if (!sharedCacheEnabled(cfg)) return;
     try {
       await supaUpsert(cfg, 'analysis_cache', {
         cache_key: cacheKey,
@@ -203,11 +242,11 @@ export function createSharedCacheRuntime({
         updated_at: new Date().toISOString(),
       }, 'cache_key');
     } catch (error) {
-      bumpTelemetry('cacheWriteErrors');
-      bumpTelemetry('supabaseErrors');
+      noteTelemetry('cacheWriteErrors');
+      noteTelemetry('supabaseErrors');
       await emitOpsEvent(cfg, {
         severity: 'warning', source: 'cache', eventType: 'supabase_cache_write_fallback', code: 'CACHE_DB_WRITE',
-        message: error?.message || error, meta: { cacheCategory: cacheOpsCategory(cacheKey), provider: provenance.provider },
+        message: 'Shared cache persistence failed; the local cache copy remains available.', meta: { cacheCategory: cacheOpsCategory(cacheKey), provider: provenance.provider, errorName: String(error?.name || 'Error').slice(0, 40) },
       });
       // Cache persistence is an optimization. Do not fail a successful user request
       // only because the shared cache could not be written.
