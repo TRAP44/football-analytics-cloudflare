@@ -14,27 +14,27 @@ const hotfix = fs.readFileSync(
 const release = JSON.parse(fs.readFileSync('release-contract.json', 'utf8'));
 const ciContract = fs.readFileSync('scripts/supabase-ci-contract.sql', 'utf8');
 
-test('Issue #478 publishes v6.29.1 as the canonical latest migration', () => {
+test('Issue #478 remains in the deterministic migration chain without pinning the repository latest migration', () => {
   assert.equal(release.productionSchema, '6.29');
+  assert.ok(
+    POST_BASELINE_MIGRATIONS.includes('supabase/migrations/supabase_migration_v6_29_1.sql'),
+    'v6.29.1 compatibility hotfix must stay in the upgrade chain',
+  );
   assert.equal(
     release.latestMigration,
-    'supabase/migrations/supabase_migration_v6_29_1.sql',
-  );
-  assert.equal(
     POST_BASELINE_MIGRATIONS.at(-1),
-    'supabase/migrations/supabase_migration_v6_29_1.sql',
+    'release latest migration must track the deterministic CI migration chain',
   );
 
+  const fresh = buildMigrationPlan('fresh');
   const base = buildMigrationPlan('upgrade-base');
   const latest = buildMigrationPlan('latest-only');
-  assert.equal(
-    base.at(-1).source,
-    'supabase/migrations/supabase_migration_v6_29.sql',
-  );
+  assert.equal(base.at(-1).source, POST_BASELINE_MIGRATIONS.at(-2));
   assert.equal(latest.length, 1);
   assert.equal(latest[0].source, release.latestMigration);
-  assert.equal(latest[0].version, '20260101002200');
-  assert.match(ciContract, /where version='20260101002200'/);
+  assert.equal(latest[0].version, fresh.at(-1).version);
+  assert.match(ciContract, /expected_latest_migration_version/);
+  assert.doesNotMatch(ciContract, /where version='20260101002200'/);
 });
 
 test('Issue #478 removes the superseded public atomic RPC and restores strict readiness', () => {
