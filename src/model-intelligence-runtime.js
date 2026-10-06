@@ -5,6 +5,7 @@ export function createModelIntelligenceRuntime(deps) {
     throw new TypeError('Model intelligence runtime dependencies are required.');
   }
   const {
+    MODEL_BASE_WEIGHTS,
     apiFootball,
     getCache,
     isFinishedStatus,
@@ -15,17 +16,140 @@ export function createModelIntelligenceRuntime(deps) {
     todayUtc,
   } = deps;
 
+  const requiredFunctions={
+    apiFootball,
+    getCache,
+    isFinishedStatus,
+    normalizeThree,
+    parsePercent,
+    round1,
+    setCache,
+    todayUtc,
+  };
+  for (const [name,fn] of Object.entries(requiredFunctions)) {
+    if (typeof fn !== 'function') throw new TypeError(`${name} is required`);
+  }
+
+  const MODEL_SIGNAL_NAMES=Object.freeze(['market','apiPrediction','recentForm','h2h']);
+  if (!MODEL_BASE_WEIGHTS || typeof MODEL_BASE_WEIGHTS !== 'object' || Array.isArray(MODEL_BASE_WEIGHTS)) {
+    throw new TypeError('MODEL_BASE_WEIGHTS is required');
+  }
+  const baseWeightValues={};
+  let baseWeightTotal=0;
+  for (const name of MODEL_SIGNAL_NAMES) {
+    const weight=Number(MODEL_BASE_WEIGHTS[name]);
+    if (!Number.isFinite(weight) || weight <= 0) {
+      throw new TypeError(`MODEL_BASE_WEIGHTS.${name} must be positive`);
+    }
+    baseWeightValues[name]=weight;
+    baseWeightTotal+=weight;
+  }
+  const baseWeights=Object.freeze(Object.fromEntries(
+    MODEL_SIGNAL_NAMES.map(name=>[name,baseWeightValues[name]/baseWeightTotal]),
+  ));
+
+  function positiveSafeInteger(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number=Number(value);
+    return Number.isSafeInteger(number) && number > 0 ? number : null;
+  }
+
+  function nonNegativeSafeInteger(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number=Number(value);
+    return Number.isSafeInteger(number) && number >= 0 ? number : null;
+  }
+
+  function finiteNumber(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number=Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function finiteRange(value,min,max) {
+    const number=finiteNumber(value);
+    return number !== null && number >= min && number <= max ? number : null;
+  }
+
+  function strictUtcDate(value) {
+    const raw=String(value || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return '';
+    const timestamp=Date.parse(`${raw}T00:00:00.000Z`);
+    if (!Number.isFinite(timestamp)) return '';
+    try {
+      return new Date(timestamp).toISOString().slice(0,10) === raw ? raw : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function probabilityObject(value,{requirePercentTotal=true}={}) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const home=finiteRange(value.home,0,100);
+    const draw=finiteRange(value.draw,0,100);
+    const away=finiteRange(value.away,0,100);
+    if (home === null || draw === null || away === null) return null;
+    const total=home+draw+away;
+    if (!(total > 0)) return null;
+    if (requirePercentTotal && (total < 95 || total > 105)) return null;
+    const normalized=normalizeThree(home,draw,away);
+    if (!normalized || typeof normalized !== 'object') return null;
+    const result={
+      home:finiteRange(normalized.home,0,100),
+      draw:finiteRange(normalized.draw,0,100),
+      away:finiteRange(normalized.away,0,100),
+    };
+    return Object.values(result).every(x=>x !== null) ? result : null;
+  }
+
+  function percentValue(value) {
+    if (value === null || value === undefined || String(value).trim() === '') return null;
+    const parsed=parsePercent(value);
+    return finiteRange(parsed,0,100);
+  }
+
+  function providerRows(value,label='fixtures') {
+    if (Array.isArray(value)) return value;
+    const error=new Error(`API-Football returned an invalid ${label} payload.`);
+    error.code='FOOTBALL_INVALID_RESPONSE';
+    throw error;
+  }
+
+  function formSample(value) {
+    const sample=positiveSafeInteger(value?.sample);
+    const ppg=finiteRange(value?.ppg,0,3);
+    const gfAvg=finiteRange(value?.gfAvg,0,20);
+    const gaAvg=finiteRange(value?.gaAvg,0,20);
+    const gdAvg=finiteRange(value?.gdAvg,-20,20);
+    if (!sample || ppg === null || gfAvg === null || gaAvg === null || gdAvg === null) return null;
+    return {sample,ppg,gfAvg,gaAvg,gdAvg};
+  }
+
+  function cachedFormSummary(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    if (value.overall !== null && value.overall !== undefined && !formSample(value.overall)) return null;
+    if (value.venue !== null && value.venue !== undefined && !formSample(value.venue)) return null;
+    const preferredVenue=['home','away'].includes(value.preferredVenue) ? value.preferredVenue : '';
+    return {...value,preferredVenue};
+  }
+
   function extractPrediction(rows) {
-    const p = rows?.[0]?.predictions;
-    if (!p) return null;
-    const home = parsePercent(p.percent?.home), draw = parsePercent(p.percent?.draw), away = parsePercent(p.percent?.away);
+    if (!Array.isArray(rows)) return null;
+    const p=rows[0]?.predictions;
+    if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
+    const home=percentValue(p.percent?.home);
+    const draw=percentValue(p.percent?.draw);
+    const away=percentValue(p.percent?.away);
+    const probabilities=home !== null && draw !== null && away !== null
+      ? probabilityObject({home,draw,away})
+      : null;
     return {
-      probabilities: home !== null && draw !== null && away !== null ? normalizeThree(home, draw, away) : null,
-      winner: p.winner?.name || '',
-      winnerComment: p.winner?.comment || '',
-      advice: p.advice || '',
-      underOver: p.under_over || '',
-      goals: p.goals || null,
+      probabilities,
+      winner:String(p.winner?.name || '').slice(0,160),
+      winnerComment:String(p.winner?.comment || '').slice(0,500),
+      advice:String(p.advice || '').slice(0,500),
+      underOver:String(p.under_over || '').slice(0,80),
+      goals:p.goals && typeof p.goals === 'object' && !Array.isArray(p.goals) ? p.goals : null,
     };
   }
   function clamp(value, min, max) {
@@ -33,39 +157,46 @@ export function createModelIntelligenceRuntime(deps) {
   }
   
   function ymd(value) {
-    const d = new Date(value);
-    return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : todayUtc();
+    const d=new Date(value);
+    if (Number.isFinite(d.getTime())) return d.toISOString().slice(0,10);
+    return strictUtcDate(todayUtc()) || new Date().toISOString().slice(0,10);
   }
   
   function teamResult(fixture, teamId) {
-    const homeId = Number(fixture.teams?.home?.id || 0);
-    const awayId = Number(fixture.teams?.away?.id || 0);
-    const isHome = homeId === Number(teamId);
-    const isAway = awayId === Number(teamId);
+    const id=positiveSafeInteger(teamId);
+    const homeId=positiveSafeInteger(fixture?.teams?.home?.id);
+    const awayId=positiveSafeInteger(fixture?.teams?.away?.id);
+    if (!id || !homeId || !awayId) return null;
+    const isHome=homeId===id;
+    const isAway=awayId===id;
     if (!isHome && !isAway) return null;
-    const hg = Number(fixture.goals?.home ?? 0);
-    const ag = Number(fixture.goals?.away ?? 0);
-    const gf = isHome ? hg : ag;
-    const ga = isHome ? ag : hg;
+    const hg=finiteRange(fixture?.goals?.home,0,30);
+    const ag=finiteRange(fixture?.goals?.away,0,30);
+    const date=String(fixture?.fixture?.date || '');
+    if (hg === null || ag === null || !Number.isFinite(Date.parse(date))) return null;
+    const gf=isHome ? hg : ag;
+    const ga=isHome ? ag : hg;
     return {
-      date: fixture.fixture?.date || '',
-      venue: isHome ? 'home' : 'away',
-      opponent: isHome ? fixture.teams?.away?.name || '' : fixture.teams?.home?.name || '',
-      opponentLogo: isHome ? fixture.teams?.away?.logo || '' : fixture.teams?.home?.logo || '',
-      league: fixture.league?.name || '',
+      date,
+      venue:isHome ? 'home' : 'away',
+      opponent:String(isHome ? fixture?.teams?.away?.name || '' : fixture?.teams?.home?.name || '').slice(0,160),
+      opponentLogo:String(isHome ? fixture?.teams?.away?.logo || '' : fixture?.teams?.home?.logo || '').slice(0,1000),
+      league:String(fixture?.league?.name || '').slice(0,160),
       gf,
       ga,
-      result: gf > ga ? 'W' : gf < ga ? 'L' : 'D',
+      result:gf > ga ? 'W' : gf < ga ? 'L' : 'D',
     };
   }
   
   function summarizeFormRows(rows, teamId, preferredVenue) {
-    const all = (rows || [])
-      .map(x => teamResult(x, teamId))
+    const id=positiveSafeInteger(teamId);
+    const venueKey=['home','away'].includes(preferredVenue) ? preferredVenue : '';
+    const all = (Array.isArray(rows) ? rows : [])
+      .map(x => teamResult(x, id))
       .filter(Boolean)
       .sort((a, b) => Date.parse(b.date || 0) - Date.parse(a.date || 0));
     const last = all.slice(0, 5);
-    const venue = all.filter(x => x.venue === preferredVenue).slice(0, 3);
+    const venue = venueKey ? all.filter(x => x.venue === venueKey).slice(0,3) : [];
     const summarize = list => {
       if (!list.length) return null;
       const wins = list.filter(x => x.result === 'W').length;
@@ -87,73 +218,103 @@ export function createModelIntelligenceRuntime(deps) {
         matches: list,
       };
     };
-    return { overall: summarize(last), venue: summarize(venue), preferredVenue };
+    return { overall:summarize(last), venue:summarize(venue), preferredVenue:venueKey };
   }
   
   async function getRecentTeamForm(teamId, preferredVenue, fixtureDate, fixtureId, cfg, { allowNetwork = true } = {}) {
-    if (!teamId) return null;
-    const targetMs = Number.isFinite(Date.parse(fixtureDate || '')) ? Date.parse(fixtureDate) : Date.now();
-    const to = ymd(new Date(targetMs - 60_000));
-    const from = ymd(new Date(targetMs - 90 * 86400_000));
-    const cacheKey = `teamform:${Number(teamId)}:${preferredVenue}:${to}:v2`;
-    const cached = await getCache(cacheKey, cfg);
+    const id=positiveSafeInteger(teamId);
+    if (!id) return null;
+    const fixtureIdentity=positiveSafeInteger(fixtureId);
+    const venueKey=['home','away'].includes(preferredVenue) ? preferredVenue : '';
+    const parsedTarget=Date.parse(String(fixtureDate || ''));
+    const targetMs=Number.isFinite(parsedTarget) ? parsedTarget : Date.now();
+    const to=ymd(new Date(targetMs-60_000));
+    const cacheKey=`teamform:${id}:${venueKey || 'all'}:${to}:v2`;
+    const cached=cachedFormSummary(await getCache(cacheKey,cfg).catch(()=>null));
     if (cached) return cached;
-    if (!allowNetwork) return null;
-    const rows = await apiFootball('/fixtures', { team: Number(teamId), last: 20 }, cfg);
-    const usable = rows.filter(x => {
-      const id = Number(x.fixture?.id || 0);
-      const dateMs = Date.parse(x.fixture?.date || '');
-      return id !== Number(fixtureId) && isFinishedStatus(x.fixture?.status?.short) && Number.isFinite(dateMs) && dateMs < targetMs;
+    if (allowNetwork === false) return null;
+    const rows=providerRows(await apiFootball('/fixtures',{team:id,last:20},cfg),'recent-team-form');
+    const usable=rows.filter(x=>{
+      const rowId=positiveSafeInteger(x?.fixture?.id);
+      const dateMs=Date.parse(x?.fixture?.date || '');
+      return rowId
+        && (!fixtureIdentity || rowId !== fixtureIdentity)
+        && isFinishedStatus(x?.fixture?.status?.short)
+        && Number.isFinite(dateMs)
+        && dateMs < targetMs;
     });
-    const summary = summarizeFormRows(usable, teamId, preferredVenue);
-    await setCache(cacheKey, Number(fixtureId || teamId), summary, cfg, 120);
+    const summary=summarizeFormRows(usable,id,venueKey);
+    await setCache(cacheKey,fixtureIdentity || id,summary,cfg,120).catch(()=>null);
     return summary;
   }
   
   function formProbabilities(homeForm, awayForm) {
-    const h = homeForm?.overall, a = awayForm?.overall;
-    if (!h?.sample || !a?.sample) return null;
-    const hv = homeForm?.venue?.sample >= 2 ? homeForm.venue.ppg : h.ppg;
-    const av = awayForm?.venue?.sample >= 2 ? awayForm.venue.ppg : a.ppg;
-    let edge = 4; // conservative home-field prior
-    edge += clamp((h.ppg - a.ppg) * 8, -18, 18);
-    edge += clamp((h.gdAvg - a.gdAvg) * 2.6, -10, 10);
-    edge += clamp((hv - av) * 3.5, -8, 8);
-    edge = clamp(edge, -24, 24);
-    const draw = clamp(28.5 - Math.abs(edge) * 0.24, 20, 29);
-    const remaining = 100 - draw;
-    const homeShare = 1 / (1 + Math.exp(-edge / 8.5));
-    return normalizeThree(remaining * homeShare, draw, remaining * (1 - homeShare));
+    const h=formSample(homeForm?.overall);
+    const a=formSample(awayForm?.overall);
+    if (!h || !a) return null;
+    const hvSample=formSample(homeForm?.venue);
+    const avSample=formSample(awayForm?.venue);
+    const hv=hvSample?.sample >= 2 ? hvSample.ppg : h.ppg;
+    const av=avSample?.sample >= 2 ? avSample.ppg : a.ppg;
+    let edge=4;
+    edge+=clamp((h.ppg-a.ppg)*8,-18,18);
+    edge+=clamp((h.gdAvg-a.gdAvg)*2.6,-10,10);
+    edge+=clamp((hv-av)*3.5,-8,8);
+    if (!Number.isFinite(edge)) return null;
+    edge=clamp(edge,-24,24);
+    const draw=clamp(28.5-Math.abs(edge)*0.24,20,29);
+    const remaining=100-draw;
+    const homeShare=1/(1+Math.exp(-edge/8.5));
+    return probabilityObject(normalizeThree(remaining*homeShare,draw,remaining*(1-homeShare)));
   }
   
   function h2hProbabilities(h2h) {
-    const total = Number(h2h?.homeWins || 0) + Number(h2h?.draws || 0) + Number(h2h?.awayWins || 0);
-    if (!total) return null;
-    return normalizeThree(Number(h2h.homeWins || 0) + 1, Number(h2h.draws || 0) + 1, Number(h2h.awayWins || 0) + 1);
+    const values=[h2h?.homeWins,h2h?.draws,h2h?.awayWins].map(value=>
+      value === null || value === undefined || value === '' ? 0 : nonNegativeSafeInteger(value)
+    );
+    if (values.some(value=>value === null)) return null;
+    const [homeWins,draws,awayWins]=values;
+    const total=homeWins+draws+awayWins;
+    if (total <= 0) return null;
+    return probabilityObject(normalizeThree(homeWins+1,draws+1,awayWins+1));
   }
   
-  function blendProbabilitySignals({ market, model, form, h2h, weightOverrides = null }) {
-    const configured = weightOverrides && typeof weightOverrides === 'object' ? weightOverrides : MODEL_BASE_WEIGHTS;
-    const candidates = [
-      ['market', market?.probabilities, Number(configured.market ?? MODEL_BASE_WEIGHTS.market)],
-      ['apiPrediction', model?.probabilities, Number(configured.apiPrediction ?? MODEL_BASE_WEIGHTS.apiPrediction)],
-      ['recentForm', form, Number(configured.recentForm ?? MODEL_BASE_WEIGHTS.recentForm)],
-      ['h2h', h2h, Number(configured.h2h ?? MODEL_BASE_WEIGHTS.h2h)],
-    ].filter(([, p, w]) => p && [p.home, p.draw, p.away].every(x => Number.isFinite(Number(x))) && Number.isFinite(w) && w > 0);
-    if (!candidates.length) return { probabilities: null, weights: {}, signals: [] };
-    const weightSum = candidates.reduce((sum, x) => sum + x[2], 0);
-    const weights = {};
-    let home = 0, draw = 0, away = 0;
-    const signals = [];
-    for (const [name, p, rawWeight] of candidates) {
-      const w = rawWeight / weightSum;
-      weights[name] = round1(w * 100);
-      home += Number(p.home) * w;
-      draw += Number(p.draw) * w;
-      away += Number(p.away) * w;
-      signals.push({ name, probabilities: p, weight: round1(w * 100) });
+  function blendProbabilitySignals({ market, model, form, h2h, weightOverrides = null } = {}) {
+    const configured=weightOverrides && typeof weightOverrides === 'object' && !Array.isArray(weightOverrides)
+      ? weightOverrides
+      : {};
+    const signalRows=[
+      ['market',market?.probabilities],
+      ['apiPrediction',model?.probabilities],
+      ['recentForm',form],
+      ['h2h',h2h],
+    ];
+    const candidates=[];
+    for (const [name,input] of signalRows) {
+      const probabilities=probabilityObject(input);
+      if (!probabilities) continue;
+      const hasOverride=Object.prototype.hasOwnProperty.call(configured,name);
+      const override=hasOverride ? finiteNumber(configured[name]) : null;
+      const rawWeight=hasOverride && override !== null && override >= 0 ? override : baseWeights[name];
+      if (!(rawWeight > 0)) continue;
+      candidates.push([name,probabilities,rawWeight]);
     }
-    return { probabilities: normalizeThree(home, draw, away), weights, signals };
+    if (!candidates.length) return {probabilities:null,weights:{},signals:[]};
+    const weightSum=candidates.reduce((sum,row)=>sum+row[2],0);
+    if (!(weightSum > 0) || !Number.isFinite(weightSum)) return {probabilities:null,weights:{},signals:[]};
+    const weights={};
+    let home=0,draw=0,away=0;
+    const signals=[];
+    for (const [name,p,rawWeight] of candidates) {
+      const weight=rawWeight/weightSum;
+      const percentWeight=round1(weight*100);
+      weights[name]=percentWeight;
+      home+=p.home*weight;
+      draw+=p.draw*weight;
+      away+=p.away*weight;
+      signals.push({name,probabilities:p,weight:percentWeight});
+    }
+    return {probabilities:probabilityObject(normalizeThree(home,draw,away)),weights,signals};
   }
   
   function absenceAdjustmentUnits(rows = []) {
@@ -166,83 +327,99 @@ export function createModelIntelligenceRuntime(deps) {
   }
   
   function applyAbsenceAdjustment(probabilities, absences) {
-    if (!probabilities) return null;
-    const homeCount = Math.min(6, absenceAdjustmentUnits(absences?.home));
-    const awayCount = Math.min(6, absenceAdjustmentUnits(absences?.away));
-    const shift = clamp((awayCount - homeCount) * 0.55, -3.3, 3.3);
-    return normalizeThree(probabilities.home + shift, probabilities.draw, probabilities.away - shift);
+    const input=probabilityObject(probabilities);
+    if (!input) return null;
+    const homeCount=Math.min(6,absenceAdjustmentUnits(absences?.home));
+    const awayCount=Math.min(6,absenceAdjustmentUnits(absences?.away));
+    const shift=clamp((awayCount-homeCount)*0.55,-3.3,3.3);
+    return probabilityObject(normalizeThree(
+      Math.max(0,input.home+shift),
+      input.draw,
+      Math.max(0,input.away-shift),
+    ));
   }
   
   function poissonGoalModel(homeForm, awayForm) {
-    const h = homeForm?.overall, a = awayForm?.overall;
-    if (!h?.sample || !a?.sample || h.sample < 3 || a.sample < 3) return null;
-    const homeVenueSample = Number(homeForm?.venue?.sample || 0);
-    const awayVenueSample = Number(awayForm?.venue?.sample || 0);
-    const hv = homeVenueSample >= 2 ? homeForm.venue : h;
-    const av = awayVenueSample >= 2 ? awayForm.venue : a;
-    const homeLambda = clamp(((h.gfAvg + a.gaAvg + hv.gfAvg + av.gaAvg) / 4) + 0.12, 0.35, 3.4);
-    const awayLambda = clamp(((a.gfAvg + h.gaAvg + av.gfAvg + hv.gaAvg) / 4) - 0.03, 0.25, 3.2);
-    const total = homeLambda + awayLambda;
-    const underOrEqual2 = Math.exp(-total) * (1 + total + (total * total) / 2);
-    const over25 = clamp((1 - underOrEqual2) * 100, 0, 100);
-    const btts = clamp((1 - Math.exp(-homeLambda)) * (1 - Math.exp(-awayLambda)) * 100, 0, 100);
-    const overallSample = Math.min(Number(h.sample || 0), Number(a.sample || 0));
-    const venueSample = Math.min(homeVenueSample, awayVenueSample);
-    const qualityScore = Math.round(clamp(
-      Math.min(1, overallSample / 5) * 70 + Math.min(1, venueSample / 3) * 30,
-      0, 100,
+    const h=formSample(homeForm?.overall);
+    const a=formSample(awayForm?.overall);
+    if (!h || !a || h.sample < 3 || a.sample < 3) return null;
+    const homeVenue=formSample(homeForm?.venue);
+    const awayVenue=formSample(awayForm?.venue);
+    const hv=homeVenue?.sample >= 2 ? homeVenue : h;
+    const av=awayVenue?.sample >= 2 ? awayVenue : a;
+    const homeLambda=clamp(((h.gfAvg+a.gaAvg+hv.gfAvg+av.gaAvg)/4)+0.12,0.35,3.4);
+    const awayLambda=clamp(((a.gfAvg+h.gaAvg+av.gfAvg+hv.gaAvg)/4)-0.03,0.25,3.2);
+    if (!Number.isFinite(homeLambda) || !Number.isFinite(awayLambda)) return null;
+    const total=homeLambda+awayLambda;
+    const underOrEqual2=Math.exp(-total)*(1+total+(total*total)/2);
+    const over25=clamp((1-underOrEqual2)*100,0,100);
+    const btts=clamp((1-Math.exp(-homeLambda))*(1-Math.exp(-awayLambda))*100,0,100);
+    const overallSample=Math.min(h.sample,a.sample);
+    const venueSample=Math.min(homeVenue?.sample || 0,awayVenue?.sample || 0);
+    const qualityScore=Math.round(clamp(
+      Math.min(1,overallSample/5)*70+Math.min(1,venueSample/3)*30,
+      0,100,
     ));
     return {
-      homeExpected: round1(homeLambda),
-      awayExpected: round1(awayLambda),
-      totalExpected: round1(total),
-      over25: round1(over25),
-      btts: round1(btts),
+      homeExpected:round1(homeLambda),
+      awayExpected:round1(awayLambda),
+      totalExpected:round1(total),
+      over25:round1(over25),
+      btts:round1(btts),
       qualityScore,
-      qualityLabel: qualityScore >= 80 ? 'Высокая выборка' : qualityScore >= 65 ? 'Рабочая выборка' : 'Ограниченная выборка',
-      sample: { overall: overallSample, venue: venueSample },
+      qualityLabel:qualityScore >= 80 ? 'Высокая выборка' : qualityScore >= 65 ? 'Рабочая выборка' : 'Ограниченная выборка',
+      sample:{overall:overallSample,venue:venueSample},
     };
   }
   
   function outcomeName(probabilities, homeName, awayName) {
-    if (!probabilities) return 'Недостаточно данных';
-    const rows = [
-      { key: 'home', label: homeName || 'П1', value: Number(probabilities.home) },
-      { key: 'draw', label: 'Ничья', value: Number(probabilities.draw) },
-      { key: 'away', label: awayName || 'П2', value: Number(probabilities.away) },
-    ].filter(row => Number.isFinite(row.value)).sort((a, b) => b.value - a.value);
+    const rows=probabilityRanking(probabilities,homeName,awayName);
     if (rows.length !== 3) return 'Недостаточно данных';
-    if (rows[0].value - rows[1].value < 1) return 'Нет явного фаворита';
+    if (rows[0].value-rows[1].value < 1) return 'Нет явного фаворита';
     return rows[0].label;
   }
   
   function signalDisagreement(signals, finalP) {
-    if (!finalP || !signals?.length) return null;
-    const values = signals.map(s => (
-      Math.abs(Number(s.probabilities.home) - Number(finalP.home)) +
-      Math.abs(Number(s.probabilities.draw) - Number(finalP.draw)) +
-      Math.abs(Number(s.probabilities.away) - Number(finalP.away))
-    ) / 3);
-    return round1(values.reduce((a, b) => a + b, 0) / values.length);
+    const final=probabilityObject(finalP);
+    if (!final || !Array.isArray(signals) || !signals.length) return null;
+    const values=[];
+    for (const signal of signals) {
+      const p=probabilityObject(signal?.probabilities);
+      if (!p) continue;
+      values.push((
+        Math.abs(p.home-final.home)
+        + Math.abs(p.draw-final.draw)
+        + Math.abs(p.away-final.away)
+      )/3);
+    }
+    return values.length ? round1(values.reduce((sum,value)=>sum+value,0)/values.length) : null;
   }
   
   function signalCanonicalCoverage(signals = []) {
-    const names = new Set((signals || []).map(x => String(x?.name || '')));
-    return clamp(Object.entries(MODEL_BASE_WEIGHTS).reduce((sum,[name,weight]) => sum + (names.has(name) ? Number(weight || 0) : 0), 0), 0, 1);
+    const rows=Array.isArray(signals) ? signals : [];
+    const names=new Set(rows
+      .filter(signal=>probabilityObject(signal?.probabilities))
+      .map(signal=>String(signal?.name || '')));
+    return clamp(MODEL_SIGNAL_NAMES.reduce(
+      (sum,name)=>sum+(names.has(name) ? baseWeights[name] : 0),
+      0,
+    ),0,1);
   }
   
   function signalLeaderAgreement(signals = [], finalP = null) {
-    if (!finalP || !signals.length) return 0;
-    const finalLeader = probabilityRanking(finalP, 'home', 'away')[0]?.key || '';
+    if (!Array.isArray(signals) || !signals.length) return 0;
+    const finalLeader=probabilityRanking(finalP,'home','away')[0]?.key || '';
     if (!finalLeader) return 0;
-    let agree = 0, total = 0;
+    let agree=0,total=0;
     for (const signal of signals) {
-      const weight = Math.max(0, Number(signal?.weight || 0));
-      const leader = probabilityRanking(signal?.probabilities, 'home', 'away')[0]?.key || '';
-      total += weight;
-      if (leader === finalLeader) agree += weight;
+      const ranking=probabilityRanking(signal?.probabilities,'home','away');
+      if (!ranking.length) continue;
+      const weight=finiteRange(signal?.weight,0,100);
+      if (weight === null || weight <= 0) continue;
+      total+=weight;
+      if (ranking[0].key===finalLeader) agree+=weight;
     }
-    return total > 0 ? round1(clamp(agree / total * 100, 0, 100)) : 0;
+    return total>0 ? round1(clamp(agree/total*100,0,100)) : 0;
   }
   
   function probabilityLeaderMargin(probabilities = null) {
@@ -252,13 +429,16 @@ export function createModelIntelligenceRuntime(deps) {
   }
   
   function confidenceModel(signals, finalP, homeForm, awayForm) {
-    const coverage = signalCanonicalCoverage(signals);
-    const signalCount = Number(signals?.length || 0);
-    const formSample = Math.min(1, Math.min(homeForm?.overall?.sample || 0, awayForm?.overall?.sample || 0) / 5);
-    const disagreement = signalDisagreement(signals, finalP) ?? 18;
-    const agreement = signalLeaderAgreement(signals || [], finalP);
-    const margin = probabilityLeaderMargin(finalP);
-    const marginFactor = Math.min(1, margin / 15);
+    const validSignals=(Array.isArray(signals) ? signals : []).filter(signal=>probabilityObject(signal?.probabilities));
+    const coverage=signalCanonicalCoverage(validSignals);
+    const signalCount=validSignals.length;
+    const homeSample=positiveSafeInteger(homeForm?.overall?.sample) || 0;
+    const awaySample=positiveSafeInteger(awayForm?.overall?.sample) || 0;
+    const formSample=Math.min(1,Math.min(homeSample,awaySample)/5);
+    const disagreement=signalDisagreement(validSignals,finalP) ?? 18;
+    const agreement=signalLeaderAgreement(validSignals,finalP);
+    const margin=probabilityLeaderMargin(finalP);
+    const marginFactor=Math.min(1,margin/15);
     const score = Math.round(clamp(
       28
         + coverage * 32
@@ -316,12 +496,13 @@ export function createModelIntelligenceRuntime(deps) {
   
   
   function probabilityRanking(probabilities, homeName, awayName) {
-    if (!probabilities) return [];
+    const p=probabilityObject(probabilities);
+    if (!p) return [];
     return [
-      { key: 'home', label: homeName || 'П1', value: Number(probabilities.home || 0) },
-      { key: 'draw', label: 'Ничья', value: Number(probabilities.draw || 0) },
-      { key: 'away', label: awayName || 'П2', value: Number(probabilities.away || 0) },
-    ].sort((a, b) => b.value - a.value);
+      {key:'home',label:homeName || 'П1',value:p.home},
+      {key:'draw',label:'Ничья',value:p.draw},
+      {key:'away',label:awayName || 'П2',value:p.away},
+    ].sort((a,b)=>b.value-a.value);
   }
   
   function preMatchDriver({ type, icon, side = 'neutral', title, text, strength = 'medium', source = '', weight = null, values = null }) {
@@ -351,14 +532,15 @@ export function createModelIntelligenceRuntime(deps) {
     h2h, absences, lineups, goalModel, comparison, confidence, modelBreakdown,
     homeName, awayName, minutesToKickoff, news, completeness,
   }) {
-    const ranking = probabilityRanking(probabilities, homeName, awayName);
+    probabilities=probabilityObject(probabilities);
+    const ranking=probabilityRanking(probabilities,homeName,awayName);
     const top = ranking[0] || { key: '', label: 'Недостаточно данных', value: 0 };
     const second = ranking[1] || { value: 0 };
     const gap = round1(Math.max(0, Number(top.value || 0) - Number(second.value || 0)));
     const closeMatch = gap < 7;
     const clearEdge = gap >= 12;
-    const confidenceScore = Number(confidence?.score || 0);
-    const disagreement = Number(confidence?.disagreement || 0);
+    const confidenceScore=finiteRange(confidence?.score,0,100) ?? 0;
+    const disagreement=finiteRange(confidence?.disagreement,0,100) ?? 0;
   
     let headline = 'Матч выглядит близким по доступным данным';
     if (probabilities && clearEdge) headline = `Модель выделяет вариант «${top.label}»`;
@@ -374,7 +556,9 @@ export function createModelIntelligenceRuntime(deps) {
     const drivers = [];
     const finalLeaderKey = top.key;
   
-    for (const signal of (modelBreakdown?.signals || []).slice().sort((a, b) => Number(b.weight || 0) - Number(a.weight || 0))) {
+    for (const signal of (Array.isArray(modelBreakdown?.signals) ? modelBreakdown.signals : []).slice().sort(
+      (a,b)=>(finiteRange(b?.weight,0,100) ?? 0)-(finiteRange(a?.weight,0,100) ?? 0),
+    )) {
       const sr = probabilityRanking(signal.probabilities, homeName, awayName);
       const sTop = sr[0];
       if (!sTop) continue;
@@ -585,11 +769,11 @@ export function createModelIntelligenceRuntime(deps) {
         ? { level: 'medium', label: 'Средняя неопределённость' }
         : { level: 'low', label: 'Умеренная неопределённость' };
   
-    const completenessScore = Number(completeness?.score || 0);
-    const completenessMax = Math.max(1, Number(completeness?.max || 10));
-    const dataScore = Math.round(clamp(completenessScore / completenessMax * 100, 0, 100));
+    const completenessScore=finiteNumber(completeness?.score) ?? 0;
+    const completenessMax=Math.max(1,finiteNumber(completeness?.max) ?? 10);
+    const dataScore=Math.round(clamp(completenessScore/completenessMax*100,0,100));
   
-    const sourceRows = (modelBreakdown?.signals || []).map(signal => {
+    const sourceRows=(Array.isArray(modelBreakdown?.signals) ? modelBreakdown.signals : []).map(signal => {
       const sr = probabilityRanking(signal.probabilities, homeName, awayName);
       const lead = sr[0] || {};
       return {
@@ -642,7 +826,7 @@ export function createModelIntelligenceRuntime(deps) {
     };
   }
   
-  return {
+  return Object.freeze({
     extractPrediction,
     clamp,
     ymd,
@@ -667,5 +851,5 @@ export function createModelIntelligenceRuntime(deps) {
     signalDisplayName,
     signalIcon,
     buildPreMatchIntelligence,
-  };
+  });
 }
