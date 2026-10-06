@@ -68,6 +68,20 @@ test('Issue #478 keeps lockdown writes constraint-compatible without losing requ
   );
 });
 
+test('Issue #478 exposes lockdown intent from snapshot.requestedAction in runtime history', () => {
+  const runtime=fs.readFileSync('src/runtime-controls.js','utf8');
+  const start=runtime.indexOf('async function listRuntimeHistory');
+  const end=runtime.indexOf('async function rollbackRuntimeControls',start);
+  assert.ok(start>=0 && end>start,'listRuntimeHistory section must exist');
+  const history=runtime.slice(start,end);
+
+  assert.match(history,/const persistedAction=RUNTIME_ACTIONS\.has\(row\.action\)/);
+  assert.match(history,/plainObject\(row\.snapshot\)\.requestedAction/);
+  assert.match(history,/requestedAction === 'lockdown'/);
+  assert.match(history,/requestedAction === 'lockdown_release'/);
+  assert.match(history,/action,/);
+});
+
 test('Issue #478 preserves the atomic database-rule commit point', () => {
   assert.match(hotfix, /on update to public\.runtime_controls/i);
   assert.match(hotfix, /old\.revision is distinct from new\.revision/i);
