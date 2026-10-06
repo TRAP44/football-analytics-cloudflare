@@ -289,7 +289,8 @@ test('analysis access HTML escapes content even when no external escape helper i
 
   assert.match(html,/&lt;FREE &amp; Pass&gt;/);
   assert.match(html,/&lt;script&gt;alert\(&quot;x&quot;\)&lt;\/script&gt;/);
-  assert.doesNotMatch(html,/<script>|<FREE/);
+  assert.doesNotMatch(html, /<script/i);
+  assert.ok(!html.includes('<FREE'));
 });
 
 test('analysis controller validates entitlement snapshot fixture IDs before calling API', async () => {
