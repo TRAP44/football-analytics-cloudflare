@@ -108,7 +108,6 @@ export function createTelegramDedupeRuntime({
 
   const noteTelemetry = typeof bumpTelemetry === 'function' ? bumpTelemetry : () => {};
   const pruneMemory = typeof pruneMemoryState === 'function' ? pruneMemoryState : () => {};
-  const supabaseAvailable = typeof hasSupabase === 'function' ? hasSupabase : () => false;
   const rpc = typeof supaRpc === 'function'
     ? supaRpc
     : async () => { throw new Error('Supabase RPC unavailable'); };
@@ -173,8 +172,9 @@ export function createTelegramDedupeRuntime({
   }
 
   async function claimTelegramUpdatePersistent(cfg, key='', update = {}) {
+    if (!key || !hasSupabase(cfg)) return degradedTelegramDedupeDecision(update);
     const normalizedKey=validDedupeKey(key);
-    if (!normalizedKey || !supabaseAvailable(cfg)) return degradedTelegramDedupeDecision(update);
+    if (!normalizedKey) return degradedTelegramDedupeDecision(update);
     try {
       const claimed=await rpc(
         cfg,
@@ -194,8 +194,9 @@ export function createTelegramDedupeRuntime({
   }
 
   async function completeTelegramUpdatePersistent(cfg, key='') {
+    if (!key || !hasSupabase(cfg)) return false;
     const normalizedKey=validDedupeKey(key);
-    if (!normalizedKey || !supabaseAvailable(cfg)) return false;
+    if (!normalizedKey) return false;
     try {
       await rpc(cfg,'complete_telegram_update',{p_update_key:normalizedKey},1200);
       return true;
@@ -206,8 +207,9 @@ export function createTelegramDedupeRuntime({
   }
 
   async function releaseTelegramUpdatePersistent(cfg, key='') {
+    if (!key || !hasSupabase(cfg)) return false;
     const normalizedKey=validDedupeKey(key);
-    if (!normalizedKey || !supabaseAvailable(cfg)) return false;
+    if (!normalizedKey) return false;
     try {
       await rpc(cfg,'release_telegram_update',{p_update_key:normalizedKey},1200);
       return true;
@@ -278,7 +280,7 @@ export function createTelegramDedupeRuntime({
   }
 
   async function readTelegramDedupeHealth(cfg, windowMinutes = 60) {
-    if (!supabaseAvailable(cfg)) return normalizeTelegramDedupeHealth({},false,'supabase_not_configured');
+    if (!hasSupabase(cfg)) return normalizeTelegramDedupeHealth({},false,'supabase_not_configured');
     try {
       const raw=await rpc(cfg,'telegram_webhook_dedupe_health',{
         p_window_minutes:boundedInteger(windowMinutes,60,5,1440),
