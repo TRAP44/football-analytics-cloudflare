@@ -411,7 +411,7 @@ test('worker exposes security guard telemetry and keeps server-side admin author
   assert.match(worker,/securityPreAuthBlocks/);
   assert.match(worker,/preAuthAbuseGuard: 'enabled'/);
   assert.match(worker,/distributedPreAuthRateLimit: 'enabled'/);
-  assert.match(router,/isAdminUser\(user, cfg\)/);
+  assert.match(router,/isAdminUser\(user\s*,\s*cfg\)\s*===\s*true/);
   assert.match(router,/adminForbidden\(\)/);
 });
 
