@@ -438,8 +438,247 @@ export function createTeamIntelligenceRuntime(deps) {
     }
   }
 
+  function normalizeLineupPlayers(entries, limit) {
+    const seen=new Set();
+    const normalized=[];
+
+    for (const entry of rows(entries)) {
+      let value;
+      try {
+        value=objectValue(normalizeLineupPlayer(entry));
+      } catch {
+        value=null;
+      }
+      if (!value) continue;
+
+      const id=positiveSafeInteger(value.id);
+      const name=safeText(value.name,120);
+      if (!name) continue;
+
+      const position=safeText(value.pos,24);
+      const key=id
+        ? `id:${id}`
+        : `name:${name.toLocaleLowerCase('ru')}:${position.toLocaleLowerCase('ru')}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      normalized.push({
+        id,
+        name,
+        number:positiveSafeInteger(value.number,999),
+        pos:position,
+        grid:safeText(value.grid,32),
+        photo:safeText(value.photo,500),
+      });
+      if (normalized.length>=limit) break;
+    }
+
+    return normalized;
+  }
+
   function normalizeLineupNotificationRow(row = {}) {
+    const source=objectValue(row) || {};
     return {
+      teamId:positiveSafeInteger(source?.team?.id) || 0,
+      teamName:safeText(source?.team?.name,180),
+      formation:safeText(source?.formation,32),
+      coach:safeText(source?.coach?.name,120),
+      startXI:normalizeLineupPlayers(source?.startXI,30),
+      substitutes:normalizeLineupPlayers(source?.substitutes,40),
+    };
+  }
+
+  async function loadLineupNotificationSnapshot(fixtureId, cfg) {
+    const id=positiveSafeInteger(fixtureId);
+    if (!id) return {confirmed:false,reason:'invalid_fixture'};
+    if (!quotaHealthy(10,1)) return {confirmed:false,reason:'quota_guard'};
+
+    const result=objectValue(await providerFeatureFetch({
+      feature:'lineups',
+      path:'/fixtures/lineups',
+      params:{fixture:id},
+      fixtureId:id,
+      cfg,
+      context:{mode:'upcoming',limitedCoverage:false},
+    })) || {};
+
+    const distinct=new Map();
+    for (const providerRow of rows(result?.data)) {
+      const teamId=positiveSafeInteger(providerRow?.team?.id);
+      if (!teamId) continue;
+
+      const candidate=normalizeLineupNotificationRow(providerRow);
+      const current=distinct.get(teamId);
+      const candidateScore=candidate.startXI.length*10+candidate.substitutes.length;
+      const currentScore=current
+        ? current.startXI.length*10+current.substitutes.length
+        : -1;
+      if (!current || candidateScore>currentScore) distinct.set(teamId,candidate);
+    }
+
+    const teams=[...distinct.values()];
+    if (teams.length!==2) {
+      return {
+        confirmed:false,
+        reason:teams.length<2 ? 'both_teams_not_published' : 'unexpected_team_count',
+        teamCount:teams.length,
+        teams,
+      };
+    }
+
+    const lineups={home:teams[0],away:teams[1]};
+    const assessed=assessMatchLineups(lineups);
+    const quality=objectValue(assessed) || {
+      anyPublished:false,
+      bothPublished:false,
+      bothConfirmed:false,
+      confirmedSides:0,
+      partialSides:0,
+    };
+
+    const fallbackMeta={
+      feature:'lineups',
+      provider:'api-football',
+      source:'network',
+      state:'available',
+      available:true,
+      usable:true,
+      observed:true,
+    };
+    const freshMeta=objectValue(applyFeatureFreshness(
+      objectValue(result?.meta) || fallbackMeta,
+      {feature:'lineups',mode:'upcoming'},
+    )) || fallbackMeta;
+    const annotated=objectValue(annotateLineupReliability(freshMeta,quality));
+    const meta=annotated || {
+      ...freshMeta,
+      confirmed:false,
+      confidenceBearing:false,
+      reason:'lineup_reliability_unavailable',
+    };
+
+    return {
+      confirmed:Boolean(
+        quality?.bothConfirmed === true
+        && meta?.confirmed === true
+        && meta?.confidenceBearing === true
+      ),
+      reason:quality?.bothConfirmed === true
+        ? safeText(meta?.reason,160)
+        : 'lineup_incomplete',
+      lineupQuality:quality,
+      sourceMeta:meta,
+      teamCount:teams.length,
+      teams,
+    };
+  }
+
+  async function loadSmartNotificationEventSnapshot(fixtureId, cfg) {
+    const id=positiveSafeInteger(fixtureId);
+    if (!id) return {trusted:false,stale:false,reason:'invalid_fixture',events:[]};
+
+    const controls=objectValue(runtimeControlsSnapshot()) || {};
+    if (controls.liveEnabled === false) {
+      return {trusted:false,stale:false,reason:'live_disabled',events:[]};
+    }
+
+    const result=objectValue(await providerFeatureFetch({
+      feature:'events',
+      path:'/fixtures/events',
+      params:{fixture:id},
+      fixtureId:id,
+      cfg,
+      context:{mode:'live',limitedCoverage:false},
+    })) || {};
+
+    const rawRows=rows(result?.data);
+    const formatted=rows(formatLiveEvents(rawRows,0,0));
+    const fallbackMeta={
+      feature:'events',
+      provider:'api-football',
+      source:'network',
+      state:'available',
+      available:true,
+      usable:true,
+      observed:true,
+    };
+    const freshMeta=objectValue(applyFeatureFreshness(
+      objectValue(result?.meta) || fallbackMeta,
+      {feature:'events',mode:'live'},
+    )) || fallbackMeta;
+
+    const assessed=assessMatchEventQuality(formatted,{
+      eventsMeta:freshMeta,
+      mode:'live',
+    });
+    const quality=objectValue(assessed) || {
+      observed:false,
+      sourceTrusted:false,
+      displayCount:0,
+      analyticalCount:0,
+      confidenceBearing:false,
+      displayEventIndices:[],
+    };
+    const annotated=objectValue(annotateEventReliability(freshMeta,quality));
+    const meta=annotated || {
+      ...freshMeta,
+      stale:true,
+      confidenceBearing:false,
+      reason:'event_reliability_unavailable',
+    };
+
+    const maxRawIndex=Math.max(0,rawRows.length-1);
+    const events=formatted.map(formattedEvent=>{
+      const event=objectValue(formattedEvent) || {};
+      const idTail=safeText(event?.id,120).split('-').at(-1);
+      const index=nonNegativeSafeInteger(idTail,maxRawIndex);
+      const raw=index !== null && index<rawRows.length
+        ? objectValue(rawRows[index])
+        : null;
+      const playerId=positiveSafeInteger(raw?.player?.id) || 0;
+      const assistPlayerId=positiveSafeInteger(raw?.assist?.id) || 0;
+      const minute=nonNegativeSafeInteger(event?.minute,180);
+      const extra=nonNegativeSafeInteger(event?.extra,30) || 0;
+      const teamId=positiveSafeInteger(event?.teamId) || 0;
+      const type=safeText(event?.type,80);
+      const detail=safeText(event?.detail,160);
+
+      return {
+        ...event,
+        playerId,
+        assistPlayerId,
+        playerName:safeText(event?.player,120),
+        assistPlayerName:safeText(event?.assist,120),
+        eventKey:[
+          minute ?? 'na',
+          extra,
+          type.toLowerCase(),
+          detail.toLowerCase(),
+          teamId,
+          playerId,
+          assistPlayerId,
+        ].join(':'),
+      };
+    });
+
+    const stale=Boolean(
+      meta?.stale === true
+      || meta?.source === 'stale'
+      || meta?.source === 'stale-cache'
+    );
+
+    return {
+      trusted:Boolean(quality?.confidenceBearing === true && !stale),
+      stale,
+      reason:safeText(meta?.reason,160),
+      sourceMeta:meta,
+      eventQuality:quality,
+      events,
+    };
+  }
+
+
+  return Object.freeze({
       teamId: Number(row?.team?.id || 0),
       teamName: String(row?.team?.name || ''),
       formation: String(row?.formation || ''),
@@ -555,5 +794,5 @@ export function createTeamIntelligenceRuntime(deps) {
     normalizeLineupNotificationRow,
     loadLineupNotificationSnapshot,
     loadSmartNotificationEventSnapshot,
-  };
+  });
 }
