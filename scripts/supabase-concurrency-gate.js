@@ -243,6 +243,61 @@ async function testScheduledLease() {
   assert.equal(rows, 2, 'reclaim should retain the stale audit row and create one current owner row');
 }
 
+async function testOpsEventOccurrence() {
+  const transitionKey='ci-433-ops-occurrence';
+  const occurredAt='2099-04-03T12:00:00.000Z';
+
+  await psql(
+    "delete from public.ops_events where transition_key='" + transitionKey + "';",
+  );
+
+  const results=await Promise.all(
+    Array.from({length:12},(_,index)=>serviceRoleQuery(
+      "select public.record_ops_event_occurrence("
+        + "timestamptz '" + occurredAt + "',"
+        + "'warning','security','ci_concurrency','" + transitionKey + "',"
+        + "'CI_OCCURRENCE_" + index + "','concurrency gate','ci',null,null,"
+        + "'{}'::jsonb)::text;",
+    )),
+  );
+  const decoded=results.map(value=>parseJson(value,'record_ops_event_occurrence'));
+  assert.equal(
+    decoded.every(item=>item.ok===true),
+    true,
+    'every concurrent ops occurrence write must be confirmed',
+  );
+
+  const count=Number(await psql(
+    "select occurrence_count from public.ops_events where transition_key='"
+      + transitionKey + "';",
+  ));
+  assert.equal(
+    count,
+    12,
+    'transition-key occurrence upsert must retain every concurrent occurrence',
+  );
+
+  const rowCount=Number(await psql(
+    "select count(*) from public.ops_events where transition_key='"
+      + transitionKey + "';",
+  ));
+  assert.equal(
+    rowCount,
+    1,
+    'transition-key occurrence upsert must retain one deduplicated row',
+  );
+
+  const last=await psql(
+    "select last_occurred_at= timestamptz '" + occurredAt
+      + "' from public.ops_events where transition_key='" + transitionKey + "';",
+  );
+  assert.equal(
+    parsePgBoolean(last,'record_ops_event_occurrence last_occurred_at'),
+    true,
+    'deduplicated ops row must retain the latest represented occurrence timestamp',
+  );
+}
+
 async function testSensitiveMutationIdempotency() {
   const operationKey='435'.padEnd(64,'a');
   const requestDigest='435'.padEnd(64,'b');
@@ -315,6 +370,7 @@ async function cleanup() {
     "delete from public.provider_rate_windows where bucket_key='ci-433-provider-budget'",
     "delete from public.telegram_update_claims where update_key='ci-433-telegram-update'",
     "delete from public.scheduled_job_leases where group_key='ci-433-scheduled-group'",
+    "delete from public.ops_events where transition_key='ci-433-ops-occurrence'",
     "delete from public.sensitive_mutation_idempotency where actor_id=900000000435",
   ].join('; ') + ';');
 }
@@ -325,13 +381,14 @@ export async function runConcurrencyGate() {
     await testProviderBudget();
     await testTelegramDedupe();
     await testScheduledLease();
+    await testOpsEventOccurrence();
     await testSensitiveMutationIdempotency();
   } finally {
     await cleanup();
   }
 
   console.log(
-    'Supabase concurrency gate passed: quota, provider budget, Telegram dedupe, renewable scheduled lease and sensitive mutation idempotency.',
+    'Supabase concurrency gate passed: quota, provider budget, Telegram dedupe, renewable scheduled lease, ops occurrence aggregation and sensitive mutation idempotency.',
   );
 }
 
