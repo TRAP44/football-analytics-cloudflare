@@ -12,6 +12,7 @@ on:
       - "wrangler.jsonc"
       - ".gitignore"
       - ".env.example"
+      - ".github/dependabot.yml"
   push:
     branches: [main]
     paths:
@@ -22,6 +23,7 @@ on:
       - "wrangler.jsonc"
       - ".gitignore"
       - ".env.example"
+      - ".github/dependabot.yml"
   schedule:
     - cron: "47 3 * * 1"
   workflow_dispatch:
@@ -35,7 +37,7 @@ concurrency:
 
 jobs:
   audit:
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
