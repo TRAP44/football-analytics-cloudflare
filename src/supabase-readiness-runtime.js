@@ -128,6 +128,31 @@ export function createSupabaseReadinessRuntime(deps) {
     return combined;
   }
 
+  function supabaseProbeConfirmationSelfTest() {
+    const direct=combineSupabaseProbeAttempts({
+      configured:true,
+      ok:true,
+      status:'ok',
+      latencyMs:40,
+    });
+    const recovered=combineSupabaseProbeAttempts(
+      {configured:true,ok:false,status:'network_error',latencyMs:7000},
+      {configured:true,ok:true,status:'ok',latencyMs:52},
+    );
+    const confirmed=combineSupabaseProbeAttempts(
+      {configured:true,ok:false,status:'network_error',latencyMs:7000},
+      {configured:true,ok:false,status:'http_503',latencyMs:120},
+    );
+    return {
+      pass:direct.ok && direct.attempts===1
+        && recovered.ok && recovered.attempts===2 && recovered.recovered && !recovered.confirmedFailure
+        && !confirmed.ok && confirmed.attempts===2 && confirmed.confirmedFailure,
+      direct:direct.ok,
+      recovered:recovered.recovered,
+      confirmedFailure:confirmed.confirmedFailure,
+    };
+  }
+
   return {
     probeSupabase,
     combineSupabaseProbeAttempts,
