@@ -79,7 +79,7 @@ test('RC140 rejects structurally valid xG from stale or unverified statistics', 
   assert.equal(missingMeta.confidenceBearing, false);
 });
 
-const worker = fs.readFileSync('src/worker.js', 'utf8');
+const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/match-center-runtime.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
