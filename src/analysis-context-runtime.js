@@ -517,97 +517,329 @@ export function createAnalysisContextRuntime(deps) {
   }
 
 
-  function buildAiInstructor({ probabilities, goalModel, confidence, completeness, factors = [], risks = [], referee = '', refereeData = null, refereeHistory = null, lineupImpact = null, marketMovement = null, providerReliability = null, minutesToKickoff = null } = {}) {
-    const p = { home: Number(probabilities?.home || 0), draw: Number(probabilities?.draw || 0), away: Number(probabilities?.away || 0) };
-    const confidenceScore = Math.max(0, Math.min(100, Number(confidence?.score || 0)));
-    const completenessScore = Number(completeness?.score || 0);
-    const candidates = [];
-    const homeDouble = p.home + p.draw;
-    const awayDouble = p.away + p.draw;
-    if (homeDouble >= 74 && p.home >= p.away + 7) candidates.push({ code:'double_home', label:'1X · хозяева не проиграют', strength:homeDouble, reason:'Суммарная модельная вероятность П1 или ничьей около ' + Math.round(homeDouble) + '%.' });
-    if (awayDouble >= 74 && p.away >= p.home + 7) candidates.push({ code:'double_away', label:'X2 · гости не проиграют', strength:awayDouble, reason:'Суммарная модельная вероятность ничьей или П2 около ' + Math.round(awayDouble) + '%.' });
-    if (Number(goalModel?.qualityScore || 0) >= 65 && Number(goalModel?.over25 || 0) >= 64) candidates.push({ code:'over25', label:'ТБ 2.5', strength:Number(goalModel.over25), reason:'Голевая модель даёт около ' + Math.round(Number(goalModel.over25)) + '% на тотал больше 2.5.' });
-    if (Number(goalModel?.qualityScore || 0) >= 65 && Number(goalModel?.btts || 0) >= 64) candidates.push({ code:'btts', label:'Обе забьют · да', strength:Number(goalModel.btts), reason:'Голевая модель даёт около ' + Math.round(Number(goalModel.btts)) + '% на голы обеих команд.' });
-    if (p.home >= 58 && p.home >= p.away + 14) candidates.push({ code:'home', label:'П1', strength:p.home, reason:'Победа хозяев имеет наибольшую модельную вероятность — около ' + Math.round(p.home) + '%.' });
-    if (p.away >= 58 && p.away >= p.home + 14) candidates.push({ code:'away', label:'П2', strength:p.away, reason:'Победа гостей имеет наибольшую модельную вероятность — около ' + Math.round(p.away) + '%.' });
-    candidates.sort((a,b) => b.strength - a.strength);
-    let betSignal = candidates[0] || { code:'skip', label:'Пропустить ставку', strength:0, reason:'Нет достаточно выраженного перевеса по доступным сигналам.' };
-    if (confidenceScore < 56 || completenessScore < 6) betSignal = { code:'skip', label:'Пропустить ставку', strength:0, reason: confidenceScore < 56 ? 'Уверенность модели ниже рабочего порога.' : 'Для уверенного сигнала недостаточно данных по матчу.' };
-    const riskLabel = confidenceScore >= 74 && completenessScore >= 8 ? 'Умеренный' : confidenceScore >= 60 && completenessScore >= 6 ? 'Повышенный' : 'Высокий';
-    const confidenceLabel = confidenceScore >= 74 ? 'Высокая' : confidenceScore >= 60 ? 'Средняя' : 'Низкая';
-    const completenessMax = Math.max(1, Number(completeness?.max || 10));
-    const baseDataTrustScore = Math.max(0, Math.min(100, Math.round((completenessScore / completenessMax) * 100)));
-    const reliabilityCap = Math.max(0, Math.min(100, Number(providerReliability?.trustCap ?? 100)));
-    const dataTrustScore = Math.min(baseDataTrustScore, reliabilityCap);
-    if (dataTrustScore < 60 && betSignal.code !== 'skip') {
-      betSignal = { code:'skip', label:'Пропустить ставку', strength:0, reason:'Надёжность входных данных ниже рабочего порога.' };
+  function probabilityVector(value) {
+    const source=objectValue(value);
+    if (!source) return null;
+    const home=finiteRange(source.home,0,100);
+    const draw=finiteRange(source.draw,0,100);
+    const away=finiteRange(source.away,0,100);
+    if (home === null || draw === null || away === null) return null;
+    const total=home+draw+away;
+    if (!Number.isFinite(total) || Math.abs(total-100)>2.5) return null;
+    return {home,draw,away};
+  }
+
+  function safeMarketMovementNote(value) {
+    try {
+      return safeText(marketMovementNote(objectValue(value) || {}),360);
+    } catch {
+      return '';
     }
-    const dataTrust = {
-      score:dataTrustScore,
-      baseScore:baseDataTrustScore,
-      reliabilityCap,
-      label:dataTrustScore >= 80 ? 'Высокая полнота' : dataTrustScore >= 60 ? 'Рабочая полнота' : 'Ограниченные данные',
-      note:providerReliability?.state === 'degraded'
-        ? 'Часть данных источника недоступна или ограничена тарифом; неизвестные значения не подменяются нулями.'
-        : dataTrustScore >= 80 ? 'Большинство ключевых блоков доступны.' : dataTrustScore >= 60 ? 'Для рабочего вывода хватает данных, но есть пробелы.' : 'Не хватает части ключевых данных — вывод нужно трактовать осторожно.',
+  }
+
+  function safeRefereeProfile(value) {
+    try {
+      return objectValue(refereeProfile(value));
+    } catch {
+      return null;
+    }
+  }
+
+  function safeQualityGate(input) {
+    try {
+      const gate=objectValue(analysisQualityGate(input));
+      if (!gate) throw new Error('invalid quality gate');
+      return {
+        ...gate,
+        allowSignal:gate.allowSignal === true,
+        state:safeText(gate.state,40) || (gate.allowSignal === true ? 'ready' : 'blocked'),
+        reasons:rows(gate.reasons,20).filter(reason=>objectValue(reason)),
+      };
+    } catch {
+      return {
+        state:'blocked',
+        allowSignal:false,
+        label:'Анализ заблокирован',
+        reasons:[{
+          code:'quality_gate_unavailable',
+          level:'block',
+          text:'Проверка качества анализа недоступна; рабочий сигнал заблокирован.',
+        }],
+        metrics:{},
+      };
+    }
+  }
+
+  function buildAiInstructor({
+    probabilities,
+    goalModel,
+    confidence,
+    completeness,
+    factors=[],
+    risks=[],
+    referee='',
+    refereeData=null,
+    refereeHistory=null,
+    lineupImpact=null,
+    marketMovement=null,
+    providerReliability=null,
+    minutesToKickoff=null,
+  } = {}) {
+    const safeProbabilities=probabilityVector(probabilities);
+    const p=safeProbabilities || {home:0,draw:0,away:0};
+    const confidenceData=objectValue(confidence) || {};
+    const confidenceScore=finiteRange(confidenceData.score,0,100) ?? 0;
+
+    const completenessData=objectValue(completeness) || {};
+    const rawCompletenessMax=finiteRange(completenessData.max,1,100);
+    const completenessMax=rawCompletenessMax ?? 10;
+    const completenessScore=finiteRange(completenessData.score,0,completenessMax) ?? 0;
+
+    const model=objectValue(goalModel);
+    const modelQuality=finiteRange(model?.qualityScore,0,100);
+    const over25=finiteRange(model?.over25,0,100);
+    const btts=finiteRange(model?.btts,0,100);
+
+    const candidates=[];
+    if (safeProbabilities) {
+      const homeDouble=p.home+p.draw;
+      const awayDouble=p.away+p.draw;
+      if (homeDouble>=74 && p.home>=p.away+7) {
+        candidates.push({
+          code:'double_home',
+          label:'1X · хозяева не проиграют',
+          strength:homeDouble,
+          reason:'Суммарная модельная вероятность П1 или ничьей около '+Math.round(homeDouble)+'%.',
+        });
+      }
+      if (awayDouble>=74 && p.away>=p.home+7) {
+        candidates.push({
+          code:'double_away',
+          label:'X2 · гости не проиграют',
+          strength:awayDouble,
+          reason:'Суммарная модельная вероятность ничьей или П2 около '+Math.round(awayDouble)+'%.',
+        });
+      }
+      if (p.home>=58 && p.home>=p.away+14) {
+        candidates.push({
+          code:'home',
+          label:'П1',
+          strength:p.home,
+          reason:'Победа хозяев имеет наибольшую модельную вероятность — около '+Math.round(p.home)+'%.',
+        });
+      }
+      if (p.away>=58 && p.away>=p.home+14) {
+        candidates.push({
+          code:'away',
+          label:'П2',
+          strength:p.away,
+          reason:'Победа гостей имеет наибольшую модельную вероятность — около '+Math.round(p.away)+'%.',
+        });
+      }
+    }
+    if (modelQuality !== null && modelQuality>=65 && over25 !== null && over25>=64) {
+      candidates.push({
+        code:'over25',
+        label:'ТБ 2.5',
+        strength:over25,
+        reason:'Голевая модель даёт около '+Math.round(over25)+'% на тотал больше 2.5.',
+      });
+    }
+    if (modelQuality !== null && modelQuality>=65 && btts !== null && btts>=64) {
+      candidates.push({
+        code:'btts',
+        label:'Обе забьют · да',
+        strength:btts,
+        reason:'Голевая модель даёт около '+Math.round(btts)+'% на голы обеих команд.',
+      });
+    }
+    candidates.sort((a,b)=>b.strength-a.strength);
+
+    let betSignal=candidates[0] || {
+      code:'skip',
+      label:'Пропустить ставку',
+      strength:0,
+      reason:safeProbabilities
+        ? 'Нет достаточно выраженного перевеса по доступным сигналам.'
+        : 'Расчётные вероятности не прошли проверку качества.',
     };
-    const qualityGate = analysisQualityGate({
-      probabilities,
-      confidence,
-      dataTrustScore,
-      providerReliability,
-      lineupImpact,
-      minutesToKickoff,
-    });
-    if (!qualityGate.allowSignal && betSignal.code !== 'skip') {
-      const primaryReason = qualityGate.reasons.find(x => x.level === 'block' || x.level === 'hold');
-      betSignal = {
+
+    if (confidenceScore<56 || completenessScore<6) {
+      betSignal={
         code:'skip',
         label:'Пропустить ставку',
         strength:0,
-        reason:primaryReason?.text || 'Качество входных данных не прошло рабочий gate.',
+        reason:confidenceScore<56
+          ? 'Уверенность модели ниже рабочего порога.'
+          : 'Для уверенного сигнала недостаточно данных по матчу.',
       };
     }
-    const maxOutcome = [['П1',p.home],['Н',p.draw],['П2',p.away]].sort((a,b)=>b[1]-a[1])[0];
-    const over25 = Number(goalModel?.over25 || 0);
-    const btts = Number(goalModel?.btts || 0);
-    const verdict = {
-      outcome: maxOutcome ? `${maxOutcome[0]} · ${Math.round(maxOutcome[1])}%` : '—',
-      total: !goalModel ? 'Нет данных' : over25 >= 55 ? `ТБ 2.5 · ${Math.round(over25)}%` : over25 <= 45 ? `ТМ 2.5 · ${Math.round(100-over25)}%` : 'Без перевеса',
-      btts: !goalModel ? 'Нет данных' : btts >= 55 ? `Да · ${Math.round(btts)}%` : btts <= 45 ? `Нет · ${Math.round(100-btts)}%` : 'Без перевеса',
+
+    const riskLabel=confidenceScore>=74 && completenessScore>=8
+      ? 'Умеренный'
+      : confidenceScore>=60 && completenessScore>=6
+        ? 'Повышенный'
+        : 'Высокий';
+    const confidenceLabel=confidenceScore>=74
+      ? 'Высокая'
+      : confidenceScore>=60
+        ? 'Средняя'
+        : 'Низкая';
+
+    const baseDataTrustScore=Math.max(
+      0,
+      Math.min(100,Math.round((completenessScore/completenessMax)*100)),
+    );
+    const reliability=objectValue(providerReliability);
+    const reliabilityCap=reliability
+      ? (finiteRange(reliability.trustCap,0,100) ?? 0)
+      : 100;
+    const dataTrustScore=Math.min(baseDataTrustScore,reliabilityCap);
+
+    if (dataTrustScore<60 && betSignal.code!=='skip') {
+      betSignal={
+        code:'skip',
+        label:'Пропустить ставку',
+        strength:0,
+        reason:'Надёжность входных данных ниже рабочего порога.',
+      };
+    }
+
+    const dataTrust={
+      score:dataTrustScore,
+      baseScore:baseDataTrustScore,
+      reliabilityCap,
+      label:dataTrustScore>=80
+        ? 'Высокая полнота'
+        : dataTrustScore>=60
+          ? 'Рабочая полнота'
+          : 'Ограниченные данные',
+      note:safeText(reliability?.state,40)==='degraded'
+        ? 'Часть данных источника недоступна или ограничена тарифом; неизвестные значения не подменяются нулями.'
+        : dataTrustScore>=80
+          ? 'Большинство ключевых блоков доступны.'
+          : dataTrustScore>=60
+            ? 'Для рабочего вывода хватает данных, но есть пробелы.'
+            : 'Не хватает части ключевых данных — вывод нужно трактовать осторожно.',
     };
-    const planChecks = [
-      lineupImpact?.note ? String(lineupImpact.note) : 'Проверить стартовые составы и ключевые потери ближе к началу матча.',
-      marketMovementNote(marketMovement || {}) || 'Сверить движение коэффициентов и убедиться, что рынок не ушёл резко против сценария.',
-      refereeHistory?.available ? `Учесть судью: ${refereeHistory.styleLabel}, среднее ${refereeHistory.avgYellow} жёлтых карточки за матч.` : referee ? 'Судья назначен; проверить, появились ли дополнительные данные по его стилю.' : 'Проверить назначение судьи ближе к стартовому свистку.',
+
+    const qualityGate=safeQualityGate({
+      probabilities:safeProbabilities || probabilities,
+      confidence:confidenceData,
+      dataTrustScore,
+      providerReliability:reliability,
+      lineupImpact:objectValue(lineupImpact),
+      minutesToKickoff:finiteRange(minutesToKickoff,-1440,10080),
+    });
+    if (!qualityGate.allowSignal && betSignal.code!=='skip') {
+      const primaryReason=qualityGate.reasons.find(
+        reason=>reason?.level==='block' || reason?.level==='hold',
+      );
+      betSignal={
+        code:'skip',
+        label:'Пропустить ставку',
+        strength:0,
+        reason:safeText(primaryReason?.text,280)
+          || 'Качество входных данных не прошло рабочий gate.',
+      };
+    }
+
+    const maxOutcome=safeProbabilities
+      ? [['П1',p.home],['Н',p.draw],['П2',p.away]].sort((a,b)=>b[1]-a[1])[0]
+      : null;
+    const verdict={
+      outcome:maxOutcome ? `${maxOutcome[0]} · ${Math.round(maxOutcome[1])}%` : 'Нет данных',
+      total:over25 === null
+        ? 'Нет данных'
+        : over25>=55
+          ? `ТБ 2.5 · ${Math.round(over25)}%`
+          : over25<=45
+            ? `ТМ 2.5 · ${Math.round(100-over25)}%`
+            : 'Без перевеса',
+      btts:btts === null
+        ? 'Нет данных'
+        : btts>=55
+          ? `Да · ${Math.round(btts)}%`
+          : btts<=45
+            ? `Нет · ${Math.round(100-btts)}%`
+            : 'Без перевеса',
+    };
+
+    const lineup=objectValue(lineupImpact);
+    const history=objectValue(refereeHistory);
+    const refereeName=safeText(referee,180);
+    const movementNote=safeMarketMovementNote(marketMovement);
+    const historyStyle=safeText(history?.styleLabel,120);
+    const historyYellow=finiteRange(history?.avgYellow,0,30);
+    const refereeCheck=history?.available === true
+      ? historyStyle
+        ? historyYellow !== null
+          ? `Учесть судью: ${historyStyle}, среднее ${historyYellow} жёлтых карточки за матч.`
+          : `Учесть судью: ${historyStyle}.`
+        : 'Учесть подтверждённую историю назначенного судьи.'
+      : refereeName
+        ? 'Судья назначен; проверить, появились ли дополнительные данные по его стилю.'
+        : 'Проверить назначение судьи ближе к стартовому свистку.';
+
+    const planChecks=[
+      safeText(lineup?.note,360)
+        || 'Проверить стартовые составы и ключевые потери ближе к началу матча.',
+      movementNote
+        || 'Сверить движение коэффициентов и убедиться, что рынок не ушёл резко против сценария.',
+      refereeCheck,
     ].filter(Boolean).slice(0,3);
-    const firstRisk = String((risks || []).find(Boolean) || '').trim();
-    const matchPlan = {
+
+    const riskRows=rows(risks,20)
+      .map(value=>safeText(value,360))
+      .filter(Boolean);
+    const factorRows=rows(factors,20)
+      .map(value=>safeText(value,360))
+      .filter(Boolean);
+    const firstRisk=riskRows[0] || '';
+
+    const matchPlan={
       checks:planChecks,
-      cancel:betSignal.code === 'skip'
+      cancel:betSignal.code==='skip'
         ? 'Рабочего сигнала нет: не форсировать решение до появления новых данных.'
         : firstRisk || 'Если составы, рынок или доступность ключевых игроков меняют исходный баланс — пересчитать матч.',
-      liveWatch:betSignal.code === 'over25' || betSignal.code === 'btts'
+      liveWatch:betSignal.code==='over25' || betSignal.code==='btts'
         ? 'В первые 15–20 минут смотреть на темп, удары из опасных зон и реальное давление обеих команд.'
         : 'После старта сверять территорию, опасные атаки и качество моментов с предматчевым сценарием.',
     };
+
+    const profile=objectValue(refereeData) || safeRefereeProfile(refereeName);
     return {
-      role:'football-ai-instructor', confidenceScore:Math.round(confidenceScore), confidenceLabel, riskLabel, betSignal, verdict, dataTrust, qualityGate, matchPlan,
-      riskNote: betSignal.code === 'skip' ? 'Сильного сигнала нет — не форсируйте решение.' : 'Проверяйте составы и изменения коэффициентов ближе к старту.',
-      referee:String(referee || ''), refereeProfile:refereeData || refereeProfile(referee), refereeHistory:refereeHistory || null,
-      refereeNote: referee ? 'Арбитр назначен; имя учитывается как контекст матча.' : 'Назначение судьи ещё не опубликовано источником данных.',
-      lineupImpact:lineupImpact || null,
-      marketNote:marketMovementNote(marketMovement || {}),
-      factors:(factors || []).slice(0,4), risks:(risks || []).slice(0,3),
+      role:'football-ai-instructor',
+      confidenceScore:Math.round(confidenceScore),
+      confidenceLabel,
+      riskLabel,
+      betSignal,
+      verdict,
+      dataTrust,
+      qualityGate,
+      matchPlan,
+      riskNote:betSignal.code==='skip'
+        ? 'Сильного сигнала нет — не форсируйте решение.'
+        : 'Проверяйте составы и изменения коэффициентов ближе к старту.',
+      referee:refereeName,
+      refereeProfile:profile,
+      refereeHistory:history,
+      refereeNote:refereeName
+        ? 'Арбитр назначен; имя учитывается как контекст матча.'
+        : 'Назначение судьи ещё не опубликовано источником данных.',
+      lineupImpact:lineup,
+      marketNote:movementNote,
+      factors:factorRows.slice(0,4),
+      risks:riskRows.slice(0,3),
     };
   }
 
-  return {
+  return Object.freeze({
     cachedTeamIntelligenceForAnalysis,
     hydratePlayerRolesForAnalysis,
     comparisonNumber,
     comparisonMetric,
     buildMatchComparison,
     buildAiInstructor,
-  };
+  });
 }
