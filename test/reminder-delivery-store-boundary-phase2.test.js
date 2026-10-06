@@ -78,6 +78,22 @@ test('store requires strict Supabase availability and confirmed HTTP success',as
   );
 });
 
+test('claim requires returned claim marker instead of trusting a single matching row',async()=>{
+  const rt=runtime({responses:[{
+    ok:true,
+    status:200,
+    json:[{telegram_id:15,fixture_id:77}],
+  }]});
+  await assert.rejects(
+    rt.store.claimReminderDelivery(
+      {telegram_id:15,fixture_id:77},
+      'prematch',
+      {supabaseUrl:'https://db.test'},
+    ),
+    error=>error?.code==='REMINDER_DELIVERY_CLAIM_MISMATCH',
+  );
+});
+
 test('claim requires returned ownership identity and claim marker',async()=>{
   const mismatch=runtime({responses:[{
     ok:true,
@@ -381,6 +397,19 @@ test('stale claim cleanup surfaces partial clear or reconciliation failures inst
   assert.deepEqual(result,{prematch:0,kickoff:1,lineup:0,important_change:0,failed:1});
   assert.equal(events.some(event=>event.code==='REMINDER_STALE_CLAIM_CLEANUP_FAILED'),true);
   assert.equal(events.find(event=>event.code==='REMINDER_STALE_CLAIM_CLEANUP_FAILED').meta.failed,1);
+});
+
+test('strict false-positive Supabase detection keeps fallback side-effect free',async()=>{
+  const {store,calls}=runtime({hasSupabase:()=> 'true'});
+  const claim=await store.claimReminderDelivery({},'prematch',{});
+  assert.equal(claim.claimed,true);
+  await store.markReminderDeliverySending({},'prematch',claim.claimAt,{});
+  await store.holdReminderDeliveryUnknown({},'prematch',claim.claimAt,{});
+  assert.equal(await store.readReminderDeliveryState({},'prematch',{}),null);
+  const finish=await store.finishReminderDelivery({},'prematch',claim.claimAt,{});
+  assert.equal(finish.finalized,true);
+  await store.releaseReminderClaim({},'prematch',claim.claimAt,'x',{});
+  assert.equal(calls.length,0);
 });
 
 test('non-Supabase fallback preserves no-op lifecycle semantics', async () => {
