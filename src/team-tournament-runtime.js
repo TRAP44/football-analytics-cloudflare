@@ -633,91 +633,238 @@ export function createTeamTournamentRuntime(deps) {
   }
 
 
-  function normalizeTeamHubMatch(f, teamId) {
-    const homeId = Number(f.teams?.home?.id || 0);
-    const awayId = Number(f.teams?.away?.id || 0);
-    const isHome = homeId === Number(teamId);
-    const opponent = isHome ? f.teams?.away : f.teams?.home;
-    const status = String(f.fixture?.status?.short || '');
-    const elapsed = Number(f.fixture?.status?.elapsed ?? 0) || null;
-    const competition = normalizeCompetition(Number(f.league?.id || 0), f.league?.name || '', f.league?.country || '', f.teams?.home?.name || '', f.teams?.away?.name || '');
-    const result = isFinishedStatus(status) ? teamResult(f, teamId) : null;
+  function normalizeTeamHubMatch(fixture, teamId) {
+    const f=fixture && typeof fixture === 'object' && !Array.isArray(fixture) ? fixture : {};
+    const normalizedTeamId=positiveSafeInteger(teamId);
+    const homeId=positiveSafeInteger(f?.teams?.home?.id) || 0;
+    const awayId=positiveSafeInteger(f?.teams?.away?.id) || 0;
+    const isHome=Boolean(normalizedTeamId && homeId===normalizedTeamId);
+    const opponent=isHome ? f?.teams?.away : f?.teams?.home;
+    const status=safeText(f?.fixture?.status?.short,20).toUpperCase();
+    const elapsedValue=nonNegativeInteger(f?.fixture?.status?.elapsed);
+    const elapsed=elapsedValue || null;
+    const competition=normalizeCompetition(
+      positiveSafeInteger(f?.league?.id) || 0,
+      safeText(f?.league?.name,180),
+      safeText(f?.league?.country,120),
+      safeText(f?.teams?.home?.name,180),
+      safeText(f?.teams?.away?.name,180),
+    );
+    const result=normalizedTeamId && isFinishedStatus(status) ? teamResult(f,normalizedTeamId) : null;
+
     return {
-      fixtureId: Number(f.fixture?.id || 0), date: f.fixture?.date || '', status,
-      statusLong: f.fixture?.status?.long || '', statusLabel: statusLabel(status, elapsed), elapsed,
-      live: isLiveStatus(status), finished: isFinishedStatus(status), score: scoreSnapshot(f),
-      venue: isHome ? 'home' : 'away', result: result?.result || '', goalsFor: result?.gf ?? null, goalsAgainst: result?.ga ?? null,
-      opponent: { id: Number(opponent?.id || 0), name: String(opponent?.name || ''), logo: String(opponent?.logo || '') },
-      home: { id: homeId, name: f.teams?.home?.name || '', logo: f.teams?.home?.logo || '' },
-      away: { id: awayId, name: f.teams?.away?.name || '', logo: f.teams?.away?.logo || '' },
-      leagueId: Number(f.league?.id || 0), season: Number(f.league?.season || 0) || null,
-      league: competition.name, leagueShort: competition.shortName, leagueLogo: f.league?.logo || '', country: competition.country,
-      round: f.league?.round || '', roundLabel: normalizeRoundLabel(f.league?.round || ''), competition,
+      fixtureId:positiveSafeInteger(f?.fixture?.id) || 0,
+      date:safeText(f?.fixture?.date,80),
+      status,
+      statusLong:safeText(f?.fixture?.status?.long,120),
+      statusLabel:statusLabel(status,elapsed),
+      elapsed,
+      live:isLiveStatus(status),
+      finished:isFinishedStatus(status),
+      score:scoreSnapshot(f),
+      venue:isHome ? 'home' : 'away',
+      result:safeText(result?.result,20),
+      goalsFor:result?.gf ?? null,
+      goalsAgainst:result?.ga ?? null,
+      opponent:{
+        id:positiveSafeInteger(opponent?.id) || 0,
+        name:safeText(opponent?.name,180),
+        logo:safeText(opponent?.logo,500),
+      },
+      home:{
+        id:homeId,
+        name:safeText(f?.teams?.home?.name,180),
+        logo:safeText(f?.teams?.home?.logo,500),
+      },
+      away:{
+        id:awayId,
+        name:safeText(f?.teams?.away?.name,180),
+        logo:safeText(f?.teams?.away?.logo,500),
+      },
+      leagueId:positiveSafeInteger(f?.league?.id) || 0,
+      season:positiveSafeInteger(f?.league?.season),
+      league:safeText(competition?.name,180),
+      leagueShort:safeText(competition?.shortName,120),
+      leagueLogo:safeText(f?.league?.logo,500),
+      country:safeText(competition?.country,120),
+      round:safeText(f?.league?.round,120),
+      roundLabel:normalizeRoundLabel(f?.league?.round || ''),
+      competition,
     };
   }
-  
+
   function choosePrimaryTeamCompetition(matches = []) {
-    const byLeague = new Map();
-    for (const m of matches) {
-      const id = Number(m.leagueId || 0);
-      if (!id || m.competition?.youth || m.competition?.friendly) continue;
-      const cur = byLeague.get(id) || { count: 0, item: m, priority: Number(m.competition?.priority || 0) };
-      cur.count += 1;
-      if (Number(m.competition?.priority || 0) > cur.priority) { cur.priority = Number(m.competition?.priority || 0); cur.item = m; }
-      byLeague.set(id, cur);
+    const byLeague=new Map();
+    for (const match of rows(matches)) {
+      const id=positiveSafeInteger(match?.leagueId);
+      if (!id || match?.competition?.youth || match?.competition?.friendly) continue;
+      const priority=nonNegativeInteger(match?.competition?.priority);
+      const current=byLeague.get(id) || {count:0,item:match,priority};
+      current.count+=1;
+      if (priority>current.priority) {
+        current.priority=priority;
+        current.item=match;
+      }
+      byLeague.set(id,current);
     }
-    const best = [...byLeague.values()].sort((a,b) => (b.count*10+b.priority) - (a.count*10+a.priority))[0];
+
+    const best=[...byLeague.values()].sort(
+      (a,b)=>(b.count*10+b.priority)-(a.count*10+a.priority),
+    )[0];
     if (!best?.item) return null;
-    const m = best.item;
-    return { leagueId:Number(m.leagueId), season:Number(m.season || new Date().getFullYear()), name:m.league||'Турнир', shortName:m.leagueShort||m.league||'Турнир', logo:m.leagueLogo||'', country:m.country||'', category:m.competition?.category||'', tier:m.competition?.tier||'standard', priority:Number(m.competition?.priority||0) };
+
+    const match=best.item;
+    return {
+      leagueId:positiveSafeInteger(match?.leagueId) || 0,
+      season:positiveSafeInteger(match?.season) || new Date().getUTCFullYear(),
+      name:safeText(match?.league,180) || 'Турнир',
+      shortName:safeText(match?.leagueShort || match?.league,120) || 'Турнир',
+      logo:safeText(match?.leagueLogo,500),
+      country:safeText(match?.country,120),
+      category:safeText(match?.competition?.category,80),
+      tier:safeText(match?.competition?.tier,80) || 'standard',
+      priority:nonNegativeInteger(match?.competition?.priority),
+    };
   }
-  
+
   async function cachedTeamStanding(teamId, competition, cfg) {
-    if (!competition?.leagueId || !competition?.season) return null;
-    const cached = await getCache(`tournament:${Number(competition.leagueId)}:${Number(competition.season)}:standings:v1`, cfg);
-    const row = cached?.standings?.find?.(x => Number(x.team?.id) === Number(teamId));
+    const normalizedTeamId=positiveSafeInteger(teamId);
+    const leagueId=positiveSafeInteger(competition?.leagueId);
+    const season=positiveSafeInteger(competition?.season);
+    if (!normalizedTeamId || !leagueId || !season) return null;
+
+    const cached=await getCache(`tournament:${leagueId}:${season}:standings:v1`,cfg).catch(()=>null);
+    const row=rows(cached?.standings).find(
+      item=>positiveSafeInteger(item?.team?.id)===normalizedTeamId,
+    );
     if (!row) return null;
-    return { rank:Number(row.rank||0), points:Number(row.points||0), played:Number(row.played||0), win:Number(row.win||0), draw:Number(row.draw||0), lose:Number(row.lose||0), goalsFor:Number(row.goalsFor||0), goalsAgainst:Number(row.goalsAgainst||0), goalsDiff:Number(row.goalsDiff||0), form:String(row.form||'') };
+
+    return {
+      rank:nonNegativeInteger(row?.rank),
+      points:nonNegativeInteger(row?.points),
+      played:nonNegativeInteger(row?.played),
+      win:nonNegativeInteger(row?.win),
+      draw:nonNegativeInteger(row?.draw),
+      lose:nonNegativeInteger(row?.lose),
+      goalsFor:nonNegativeInteger(row?.goalsFor),
+      goalsAgainst:nonNegativeInteger(row?.goalsAgainst),
+      goalsDiff:integer(row?.goalsDiff),
+      form:safeText(row?.form,12),
+    };
   }
-  
+
   async function apiTeam(request, cfg) {
-    const url = new URL(request.url);
-    const teamId = Number(url.searchParams.get('teamId'));
-    if (!Number.isFinite(teamId) || teamId <= 0) return json({ error: 'Номер команды обязателен.' }, 400);
-    const {from,to}=teamDiscoveryWindow();
-    const cacheKey = `teamhub:${teamId}:${from}:${to}:v2`;
-    const cached = await getCache(cacheKey, cfg);
-    if (cached) return json({ ...cached, standing: await cachedTeamStanding(teamId, cached.primaryCompetition, cfg), sourceMeta: markCachedSourceMeta(cached.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' })), cached:true, stale:false, provider:publicDataCapabilities() });
+    const url=new URL(request.url);
+    const teamId=positiveSafeInteger(url.searchParams.get('teamId'));
+    if (!teamId) return json({error:'Номер команды обязателен.'},400);
+
+    const window=teamDiscoveryWindow() || {};
+    const from=safeText(window?.from,20);
+    const to=safeText(window?.to,20);
+    const cacheKey=`teamhub:${teamId}:${from}:${to}:v2`;
+    const cached=await getCache(cacheKey,cfg).catch(()=>null);
+
+    if (cached && typeof cached === 'object' && !Array.isArray(cached)) {
+      return json({
+        ...cached,
+        standing:await cachedTeamStanding(teamId,cached.primaryCompetition,cfg),
+        sourceMeta:markCachedSourceMeta(
+          cached.sourceMeta || sourceMeta({provider:'api-football',label:'API-Football'}),
+        ),
+        cached:true,
+        stale:false,
+        provider:capabilities(),
+      });
+    }
+
     let fixtures;
     try {
       fixtures=await loadProviderTeamDiscoveryFixtures(teamId,cfg);
-    }
-    catch (error) {
-      const stale = await getStaleCache(cacheKey, cfg);
-      if (stale && isFootballRateLimitError(error)) return json({ ...stale, standing:await cachedTeamStanding(teamId, stale.primaryCompetition, cfg), sourceMeta:markCachedSourceMeta(stale.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' }),{stale:true}), cached:true, stale:true, warning:'Страница команды показана из последних сохранённых данных из-за лимита источника данных.', provider:publicDataCapabilities() });
+    } catch (error) {
+      const stale=await getStaleCache(cacheKey,cfg).catch(()=>null);
+      if (
+        stale
+        && typeof stale === 'object'
+        && !Array.isArray(stale)
+        && isFootballRateLimitError(error)
+      ) {
+        return json({
+          ...stale,
+          standing:await cachedTeamStanding(teamId,stale.primaryCompetition,cfg),
+          sourceMeta:markCachedSourceMeta(
+            stale.sourceMeta || sourceMeta({provider:'api-football',label:'API-Football'}),
+            {stale:true},
+          ),
+          cached:true,
+          stale:true,
+          warning:'Страница команды показана из последних сохранённых данных из-за лимита источника данных.',
+          provider:capabilities(),
+        });
+      }
       throw error;
     }
-    const usable = (fixtures||[]).filter(f => !['CANC','PST','ABD','AWD','WO'].includes(String(f.fixture?.status?.short||'')));
-    const normalized = usable.map(f => normalizeTeamHubMatch(f, teamId)).filter(x => x.fixtureId);
-    const discovery=splitTeamDiscoveryMatches(normalized,'',{upcomingLimit:8,recentLimit:8});
-    const recent=discovery.recent;
-    const upcoming=discovery.upcoming;
-    let rawTeam = null;
-    for (const f of usable) {
-      if (Number(f.teams?.home?.id)===teamId) { rawTeam=f.teams.home; break; }
-      if (Number(f.teams?.away?.id)===teamId) { rawTeam=f.teams.away; break; }
+
+    const usable=rows(fixtures).filter(fixture=>
+      !['CANC','PST','ABD','AWD','WO'].includes(
+        safeText(fixture?.fixture?.status?.short,20).toUpperCase(),
+      ),
+    );
+    const normalized=usable
+      .map(fixture=>normalizeTeamHubMatch(fixture,teamId))
+      .filter(match=>match.fixtureId);
+    const discovery=splitTeamDiscoveryMatches(normalized,'',{upcomingLimit:8,recentLimit:8}) || {};
+    const recent=rows(discovery?.recent);
+    const upcoming=rows(discovery?.upcoming);
+
+    let rawTeam=null;
+    for (const fixture of usable) {
+      if (positiveSafeInteger(fixture?.teams?.home?.id)===teamId) {
+        rawTeam=fixture?.teams?.home;
+        break;
+      }
+      if (positiveSafeInteger(fixture?.teams?.away?.id)===teamId) {
+        rawTeam=fixture?.teams?.away;
+        break;
+      }
     }
-    const team = { id:teamId, name:String(rawTeam?.name || url.searchParams.get('name') || `Команда ${teamId}`), logo:String(rawTeam?.logo || url.searchParams.get('logo') || '') };
-    const completedRaw = usable.filter(f => isFinishedStatus(f.fixture?.status?.short));
-    const form = summarizeFormRows(completedRaw, teamId, 'home')?.overall || null;
-    const primaryCompetition = choosePrimaryTeamCompetition(normalized);
-    const standing = await cachedTeamStanding(teamId, primaryCompetition, cfg);
-    const payload = { team, primaryCompetition, standing, form, recent, upcoming, primaryFixtureId:Number(discovery.primary?.fixtureId || 0) || null, discovery:{mode:discovery.mode,primaryFixtureId:Number(discovery.primary?.fixtureId || 0) || null,primaryReason:String(discovery.primary?.selection?.reason || ''),windowPastDays:normalizedPastDays,windowFutureDays:normalizedFutureDays}, liveNow:upcoming.find(x=>x.live)||null, nextMatch:upcoming.find(x=>!x.live)||upcoming[0]||null, refreshedAt:new Date().toISOString(), sourceMeta:sourceMeta({provider:'api-football',label:'API-Football'}) };
-    await setCache(cacheKey, teamId, payload, cfg, 120);
-    return json({ ...payload, cached:false, stale:false, provider:publicDataCapabilities() });
+
+    const team={
+      id:teamId,
+      name:safeText(rawTeam?.name || url.searchParams.get('name'),180) || `Команда ${teamId}`,
+      logo:safeText(rawTeam?.logo || url.searchParams.get('logo'),500),
+    };
+    const completedRaw=usable.filter(fixture=>isFinishedStatus(fixture?.fixture?.status?.short));
+    const form=summarizeFormRows(completedRaw,teamId,'home')?.overall || null;
+    const primaryCompetition=choosePrimaryTeamCompetition(normalized);
+    const standing=await cachedTeamStanding(teamId,primaryCompetition,cfg);
+    const primaryFixtureId=positiveSafeInteger(discovery?.primary?.fixtureId);
+
+    const payload={
+      team,
+      primaryCompetition,
+      standing,
+      form,
+      recent,
+      upcoming,
+      primaryFixtureId,
+      discovery:{
+        mode:safeText(discovery?.mode,40) || (upcoming.length ? 'upcoming' : recent.length ? 'recent' : 'empty'),
+        primaryFixtureId,
+        primaryReason:safeText(discovery?.primary?.selection?.reason,240),
+        windowPastDays:normalizedPastDays,
+        windowFutureDays:normalizedFutureDays,
+      },
+      liveNow:upcoming.find(match=>match?.live===true) || null,
+      nextMatch:upcoming.find(match=>match?.live!==true) || upcoming[0] || null,
+      refreshedAt:new Date().toISOString(),
+      sourceMeta:sourceMeta({provider:'api-football',label:'API-Football'}),
+    };
+
+    await setCache(cacheKey,teamId,payload,cfg,120).catch(()=>null);
+    return json({...payload,cached:false,stale:false,provider:capabilities()});
   }
-  
-  
+
+
   function teamStatsNum(value) {
     const n = Number(value);
     return Number.isFinite(n) ? n : 0;
