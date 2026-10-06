@@ -364,6 +364,18 @@ async function testSensitiveMutationIdempotency() {
   assert.equal(retryOwner.claimed,true,'retryable failed mutation must be reclaimable');
   assert.equal(retryOwner.reason,'retry_failed');
 
+  const invalidMethod=parseJson(await serviceRoleQuery(
+    "select public.claim_sensitive_mutation('"
+      + '439'.padEnd(64,'a') + "',900000000435,null,'/api/runtime-controls','"
+      + '439'.padEnd(64,'b') + "',null,300,300)::text;",
+  ),'claim_sensitive_mutation null method');
+  assert.equal(invalidMethod.claimed,false);
+  assert.equal(
+    invalidMethod.reason,
+    'invalid_input',
+    'null HTTP method must be rejected as invalid input instead of reaching a table constraint',
+  );
+
   const retentionClaim=parseJson(await serviceRoleQuery(
     "select public.claim_sensitive_mutation('"
       + retentionKey + "',900000000435,'POST','/api/runtime-controls','"
