@@ -56,20 +56,20 @@ test('RC127 uses atomic daily digest delivery claims',()=>{
   assert.match(migration,/create or replace function public\.release_daily_digest/);
   assert.match(worker,/async function claimDigestDelivery/);
   assert.match(worker,/claim:\(row,deliveryDate\)=>claimDigestDelivery\(row,deliveryDate,cfg\)/);
-  assert.match(worker,/owned = Boolean\(await claim\(row, date\)\)/);
+  assert.match(worker,/owned = await claim\(row, date\) === true/);
 });
 
 test('RC127 uses full schema fingerprint plus selected compatibility probes',()=>{
   assert.match(migration,/create or replace function public\.backend_schema_fingerprint/);
   assert.match(worker,/const EXPECTED_SCHEMA_FINGERPRINT = '6a7f0fe444f49a2a52c4603e952ee9ea'/);
   assert.match(worker,/const EXPECTED_SCHEMA_CONTRACT_VERSION = 2/);
-  assert.match(worker,/readinessRpc: 'backend_readiness_contract_v2'/);
+  assert.match(worker,/readinessRpc = 'backend_readiness_contract_v2'/);
   assert.match(worker,/async function readSupabaseSchemaFingerprint/);
   assert.match(worker,/missing\.push\('schema_fingerprint'\)/);
 });
 
 test('RC127 separates liveness and readiness and deploy smoke requires readiness',()=>{
-  assert.match(worker,/url\.pathname === '\/health\/live'/);
+  assert.match(worker,/pathname === '\/health\/live'/);
   assert.match(worker,/url\.pathname === '\/health\/ready'/);
   assert.match(worker,/async function readinessSnapshot/);
   assert.match(worker,/recentSupabaseAuthFailures/);
