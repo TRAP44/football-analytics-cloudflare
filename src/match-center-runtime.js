@@ -583,225 +583,694 @@ export function createMatchCenterRuntime(deps) {
     // Do not burn extra /events + /statistics calls when coverage is predictably low.
     // For senior competitions, targeted fallbacks are still allowed when embedded
     // fixture data does not contain details.
-    let events = rowsOrEmpty(embedded.events);
-    let statistics = rowsOrEmpty(embedded.statistics);
-    let playerRows = rowsOrEmpty(embedded.players);
-    let lineupRows = rowsOrEmpty(embedded.lineups);
-    let injuryRows = [];
-  
+    let events=rowsOrEmpty(embedded.events,1000);
+    let statistics=rowsOrEmpty(embedded.statistics,200);
+    let playerRows=rowsOrEmpty(embedded.players,1000);
+    let lineupRows=rowsOrEmpty(embedded.lineups,50);
+    let injuryRows=[];
+
+    let budgetProfile={paid:false,mode:'unknown',liveRefreshSeconds:0};
+    try {
+      budgetProfile=objectValue(providerBudgetProfile()) || budgetProfile;
+    } catch {}
+
+    const embeddedMeta=(feature,rows)=>({
+      feature,
+      provider:'api-football',
+      source:'embedded',
+      fetchedAt:fixtureFetchedAt,
+      ageSeconds:0,
+      fallback:false,
+      policy:safeFeaturePolicy(feature,{mode:centerMode,limitedCoverage}),
+      ...safeProviderDataState(rows,{attempted:true,feature}),
+    });
+
     if (events.length) {
-      featureMeta.events = { feature:'events', provider:'api-football', source:'embedded', fetchedAt:fixtureFetchedAt, ageSeconds:0, fallback:false, policy:providerFeaturePolicy('events', { mode:centerMode, limitedCoverage }), ...providerDataState(events, { attempted:true }) };
+      featureMeta.events=embeddedMeta('events',events);
     } else if (live || finished) {
       const eventContext={
         mode:centerMode,
         limitedCoverage,
-        preserveAiBudget: !providerBudgetProfile().paid,
+        preserveAiBudget:budgetProfile.paid!==true,
       };
-      const result = await providerFeatureFetch({
-        feature: 'events', path: '/fixtures/events', params: { fixture: fixtureId },
-        fixtureId, cfg, context: eventContext,
+      const result=await safeProviderFeatureFetch({
+        feature:'events',
+        path:'/fixtures/events',
+        params:{fixture:fixtureId},
+        fixtureId,
+        cfg,
+        context:eventContext,
       });
-      events = rowsOrEmpty(result.data);
-      featureMeta.events = result.meta;
+      events=rowsOrEmpty(result.data,1000);
+      featureMeta.events=result.meta;
+
       // FREE intentionally skips the API-Football events call and tries the
       // secondary source instead. Paid plans also retain the secondary fallback
       // when the primary endpoint is empty or degraded.
       if (!events.length && !limitedCoverage) {
-        const secondaryEvents=await secondaryOpenLigaEvents(fixture, cfg, eventContext);
-        if (secondaryEvents.available) {
-          events=rowsOrEmpty(secondaryEvents.events);
-          featureMeta.events=secondaryEvents.meta;
+        const secondaryEvents=objectValue(
+          await optionalAsync(secondaryOpenLigaEvents,fixture,cfg,eventContext),
+        );
+        if (secondaryEvents?.available===true) {
+          events=rowsOrEmpty(secondaryEvents.events,1000);
+          featureMeta.events=objectValue(secondaryEvents.meta)
+            || unavailableFeatureMeta('events','secondary_meta_invalid');
         } else {
-          featureMeta.events={ ...result.meta, fallbackProvider:'openligadb', fallbackReason:String(secondaryEvents.reason || '') };
+          featureMeta.events={
+            ...objectValue(result.meta),
+            fallbackProvider:'openligadb',
+            fallbackReason:safeText(secondaryEvents?.reason,120),
+          };
         }
       }
     }
-  
+
     if (statistics.length) {
-      featureMeta.statistics = { feature:'statistics', provider:'api-football', source:'embedded', fetchedAt:fixtureFetchedAt, ageSeconds:0, fallback:false, policy:providerFeaturePolicy('statistics', { mode:centerMode, limitedCoverage }), ...providerDataState(statistics, { attempted:true }) };
+      featureMeta.statistics=embeddedMeta('statistics',statistics);
     } else if (live || finished) {
-      const result = await providerFeatureFetch({
-        feature: 'statistics', path: '/fixtures/statistics', params: { fixture: fixtureId },
-        fixtureId, cfg, context: { mode: centerMode, limitedCoverage },
+      const result=await safeProviderFeatureFetch({
+        feature:'statistics',
+        path:'/fixtures/statistics',
+        params:{fixture:fixtureId},
+        fixtureId,
+        cfg,
+        context:{mode:centerMode,limitedCoverage},
       });
-      statistics = rowsOrEmpty(result.data);
-      featureMeta.statistics = result.meta;
+      statistics=rowsOrEmpty(result.data,200);
+      featureMeta.statistics=result.meta;
     }
-  
+
     if (playerRows.length) {
-      featureMeta.players = { feature:'players', provider:'api-football', source:'embedded', fetchedAt:fixtureFetchedAt, ageSeconds:0, fallback:false, policy:providerFeaturePolicy('players', { mode:centerMode, limitedCoverage }), ...providerDataState(playerRows, { attempted:true }) };
+      featureMeta.players=embeddedMeta('players',playerRows);
     } else if (live || finished) {
-      const result = await providerFeatureFetch({
-        feature: 'players', path: '/fixtures/players', params: { fixture: fixtureId },
-        fixtureId, cfg, context: { mode: centerMode, limitedCoverage },
+      const result=await safeProviderFeatureFetch({
+        feature:'players',
+        path:'/fixtures/players',
+        params:{fixture:fixtureId},
+        fixtureId,
+        cfg,
+        context:{mode:centerMode,limitedCoverage},
       });
-      playerRows = rowsOrEmpty(result.data);
-      featureMeta.players = result.meta;
+      playerRows=rowsOrEmpty(result.data,1000);
+      featureMeta.players=result.meta;
     }
-  
-    const kickoffMsCenter = fixture.fixture?.date ? Date.parse(fixture.fixture.date) : NaN;
-    const minutesToKickoffCenter = Number.isFinite(kickoffMsCenter)
-      ? Math.round((kickoffMsCenter - Date.now()) / 60000)
+
+    const kickoffRaw=safeText(fixture?.fixture?.date,80);
+    const kickoffMsCenter=kickoffRaw ? Date.parse(kickoffRaw) : NaN;
+    const minutesToKickoffCenter=Number.isFinite(kickoffMsCenter)
+      ? Math.round((kickoffMsCenter-Date.now())/60000)
       : null;
-    const lineupsWindow = live || finished || (
-      minutesToKickoffCenter !== null && minutesToKickoffCenter <= 120 && minutesToKickoffCenter >= -300
+    const lineupsWindow=live || finished || (
+      minutesToKickoffCenter!==null
+      && minutesToKickoffCenter<=120
+      && minutesToKickoffCenter>=-300
     );
-  
+
     if (lineupRows.length) {
-      featureMeta.lineups = { feature:'lineups', provider:'api-football', source:'embedded', fetchedAt:fixtureFetchedAt, ageSeconds:0, fallback:false, policy:providerFeaturePolicy('lineups', { mode:centerMode, limitedCoverage }), ...providerDataState(lineupRows, { attempted:true }) };
+      featureMeta.lineups=embeddedMeta('lineups',lineupRows);
     } else if (lineupsWindow) {
-      const result = await providerFeatureFetch({
-        feature: 'lineups', path: '/fixtures/lineups', params: { fixture: fixtureId },
-        fixtureId, cfg, context: { mode: centerMode, limitedCoverage },
+      const result=await safeProviderFeatureFetch({
+        feature:'lineups',
+        path:'/fixtures/lineups',
+        params:{fixture:fixtureId},
+        fixtureId,
+        cfg,
+        context:{mode:centerMode,limitedCoverage},
       });
-      lineupRows = rowsOrEmpty(result.data);
-      featureMeta.lineups = result.meta;
+      lineupRows=rowsOrEmpty(result.data,50);
+      featureMeta.lineups=result.meta;
     }
-  
+
     if (!finished) {
-      const result = await providerFeatureFetch({
-        feature: 'injuries', path: '/injuries', params: { fixture: fixtureId },
-        fixtureId, cfg, context: { mode: centerMode, limitedCoverage },
+      const result=await safeProviderFeatureFetch({
+        feature:'injuries',
+        path:'/injuries',
+        params:{fixture:fixtureId},
+        fixtureId,
+        cfg,
+        context:{mode:centerMode,limitedCoverage},
       });
-      injuryRows = rowsOrEmpty(result.data);
-      featureMeta.injuries = result.meta;
+      injuryRows=rowsOrEmpty(result.data,500);
+      featureMeta.injuries=result.meta;
     }
-  
-    let liveOdds = null;
-    let liveOddsQuality = assessOddsMarketQuality(null, { mode:centerMode });
-    let oddsMovement = null;
-    if (live && cfg.liveOddsEnabled) {
-      const result = await providerFeatureFetch({
-        feature: 'liveOdds', path: '/odds/live', params: { fixture: fixtureId },
-        fixtureId, cfg, context: { mode: centerMode, limitedCoverage },
+
+    let liveOdds=null;
+    let liveOddsQuality={
+      state:'unavailable',
+      marketValid:false,
+      confidenceBearing:false,
+    };
+    try {
+      liveOddsQuality=objectValue(assessOddsMarketQuality(null,{mode:centerMode}))
+        || liveOddsQuality;
+    } catch {}
+
+    let oddsMovement=null;
+    if (live && cfg?.liveOddsEnabled===true) {
+      const result=await safeProviderFeatureFetch({
+        feature:'liveOdds',
+        path:'/odds/live',
+        params:{fixture:fixtureId},
+        fixtureId,
+        cfg,
+        context:{mode:centerMode,limitedCoverage},
       });
-      const primaryLiveOdds = extractLiveMarket(rowsOrEmpty(result.data));
-      const primaryLiveMeta = usableOddsFeatureMeta(result.meta, primaryLiveOdds);
-      const primaryLiveShape = assessOddsMarketQuality(primaryLiveOdds, { oddsMeta:primaryLiveMeta, mode:'live' });
-      liveOdds = primaryLiveOdds;
-      if (!primaryLiveOdds || !primaryLiveShape.marketValid) {
-        const secondaryOdds = await secondaryOddsMarket(fixture, cfg, { mode:'live' });
-        if (secondaryOdds?.available) {
-          liveOdds = secondaryOdds.market;
-          featureMeta.liveOdds = usableOddsFeatureMeta(secondaryOdds.meta, liveOdds);
+
+      let primaryLiveOdds=null;
+      try {
+        primaryLiveOdds=objectValue(extractLiveMarket(rowsOrEmpty(result.data,100)));
+      } catch {}
+
+      let primaryLiveMeta=objectValue(result.meta)
+        || unavailableFeatureMeta('liveOdds');
+      try {
+        primaryLiveMeta=objectValue(
+          usableOddsFeatureMeta(primaryLiveMeta,primaryLiveOdds),
+        ) || primaryLiveMeta;
+      } catch {}
+
+      let primaryLiveShape={marketValid:false,confidenceBearing:false};
+      try {
+        primaryLiveShape=objectValue(assessOddsMarketQuality(
+          primaryLiveOdds,
+          {oddsMeta:primaryLiveMeta,mode:'live'},
+        )) || primaryLiveShape;
+      } catch {}
+
+      liveOdds=primaryLiveOdds;
+      if (!primaryLiveOdds || primaryLiveShape.marketValid!==true) {
+        const secondaryOdds=objectValue(
+          await optionalAsync(secondaryOddsMarket,fixture,cfg,{mode:'live'}),
+        );
+        if (secondaryOdds?.available===true) {
+          liveOdds=objectValue(secondaryOdds.market);
+          try {
+            featureMeta.liveOdds=objectValue(
+              usableOddsFeatureMeta(secondaryOdds.meta,liveOdds),
+            ) || unavailableFeatureMeta('liveOdds','secondary_meta_invalid');
+          } catch {
+            featureMeta.liveOdds=unavailableFeatureMeta(
+              'liveOdds',
+              'secondary_meta_invalid',
+            );
+          }
         } else {
-          featureMeta.liveOdds = usableOddsFeatureMeta(result.meta, primaryLiveOdds, secondaryOdds?.reason || '');
+          try {
+            featureMeta.liveOdds=objectValue(usableOddsFeatureMeta(
+              result.meta,
+              primaryLiveOdds,
+              safeText(secondaryOdds?.reason,120),
+            )) || primaryLiveMeta;
+          } catch {
+            featureMeta.liveOdds=primaryLiveMeta;
+          }
         }
       } else {
-        featureMeta.liveOdds = primaryLiveMeta;
+        featureMeta.liveOdds=primaryLiveMeta;
       }
     }
-  
-    for (const feature of ['events','statistics','players','lineups','injuries','liveOdds']) {
-      if (featureMeta[feature]) featureMeta[feature] = applyFeatureFreshness(featureMeta[feature], { feature, mode:centerMode });
+
+    for (const feature of [
+      'events',
+      'statistics',
+      'players',
+      'lineups',
+      'injuries',
+      'liveOdds',
+    ]) {
+      if (featureMeta[feature]) {
+        featureMeta[feature]=safeFeatureFreshness(
+          featureMeta[feature],
+          {feature,mode:centerMode},
+        );
+      }
     }
+
     if (liveOdds || featureMeta.liveOdds) {
-      liveOddsQuality = assessOddsMarketQuality(liveOdds, { oddsMeta:featureMeta.liveOdds || {}, mode:centerMode });
-      featureMeta.liveOdds = annotateOddsReliability(featureMeta.liveOdds || { feature:'liveOdds' }, liveOddsQuality);
-      liveOdds = oddsMarketForTrustedAnalytics(liveOdds, liveOddsQuality);
+      try {
+        liveOddsQuality=objectValue(assessOddsMarketQuality(liveOdds,{
+          oddsMeta:objectValue(featureMeta.liveOdds) || {},
+          mode:centerMode,
+        })) || liveOddsQuality;
+      } catch {}
+
+      try {
+        featureMeta.liveOdds=objectValue(annotateOddsReliability(
+          objectValue(featureMeta.liveOdds) || {feature:'liveOdds'},
+          liveOddsQuality,
+        )) || unavailableFeatureMeta('liveOdds','odds_quality_invalid');
+      } catch {
+        featureMeta.liveOdds=unavailableFeatureMeta(
+          'liveOdds',
+          'odds_quality_error',
+        );
+      }
+
+      try {
+        liveOdds=objectValue(
+          oddsMarketForTrustedAnalytics(liveOdds,liveOddsQuality),
+        );
+      } catch {
+        liveOdds=null;
+      }
     }
+
     if (liveOdds) {
-      await saveOddsSnapshot(fixtureId, liveOdds, cfg);
-      const snapshots = await getOddsSnapshots(fixtureId, cfg, 12);
-      oddsMovement = buildOddsMovement(snapshots, liveOdds);
+      await optionalAsync(saveOddsSnapshot,fixtureId,liveOdds,cfg);
+      const snapshots=rowsOrEmpty(
+        await optionalAsync(getOddsSnapshots,fixtureId,cfg,12),
+        20,
+      );
+      try {
+        oddsMovement=objectValue(buildOddsMovement(snapshots,liveOdds));
+      } catch {}
     }
-  
-    const finalBudget = providerBudgetProfile();
-    const runtimeControls = runtimeControlsSnapshot();
-    const configuredRefreshSeconds = Number(finalBudget?.liveRefreshSeconds);
-    const refreshSeconds = live && runtimeControls?.liveEnabled !== false && Number.isFinite(configuredRefreshSeconds)
-      ? Math.max(0, Math.trunc(configuredRefreshSeconds))
-      : 0;
-    const rawFormattedStatistics = formatLiveStatistics(statistics, homeId, awayId);
-    const statisticsQuality = assessMatchStatisticsQuality(rawFormattedStatistics, { statisticsMeta:featureMeta.statistics || {}, mode:centerMode });
-    const xgQuality = assessExpectedGoalsQuality(rawFormattedStatistics, { statisticsMeta:featureMeta.statistics || {}, mode:centerMode });
-    if (featureMeta.statistics || statisticsQuality.observed) {
-      featureMeta.statistics = annotateStatisticsReliability(
-        featureMeta.statistics || { feature:'statistics', provider:'api-football', source:'embedded', ageSeconds:0 },
+
+    let finalBudget=budgetProfile;
+    try {
+      finalBudget=objectValue(providerBudgetProfile()) || budgetProfile;
+    } catch {}
+
+    let runtimeControls={};
+    try { runtimeControls=objectValue(runtimeControlsSnapshot()) || {}; } catch {}
+    const configuredRefreshSeconds=positiveSafeInteger(
+      finalBudget?.liveRefreshSeconds,
+    );
+    const refreshSeconds=live
+      && runtimeControls.liveEnabled!==false
+      && configuredRefreshSeconds!==null
+        ? Math.max(10,Math.min(300,configuredRefreshSeconds))
+        : 0;
+
+    let rawFormattedStatistics={items:[],home:{values:{}},away:{values:{}}};
+    try {
+      rawFormattedStatistics=objectValue(
+        formatLiveStatistics(statistics,homeId,awayId),
+      ) || rawFormattedStatistics;
+    } catch {}
+
+    let statisticsQuality={
+      state:'invalid',
+      observed:false,
+      confidenceBearing:false,
+    };
+    try {
+      statisticsQuality=objectValue(assessMatchStatisticsQuality(
+        rawFormattedStatistics,
+        {
+          statisticsMeta:objectValue(featureMeta.statistics) || {},
+          mode:centerMode,
+        },
+      )) || statisticsQuality;
+    } catch {}
+
+    let xgQuality={
+      state:'invalid',
+      observed:false,
+      confidenceBearing:false,
+    };
+    try {
+      xgQuality=objectValue(assessExpectedGoalsQuality(
+        rawFormattedStatistics,
+        {
+          statisticsMeta:objectValue(featureMeta.statistics) || {},
+          mode:centerMode,
+        },
+      )) || xgQuality;
+    } catch {}
+
+    if (featureMeta.statistics || statisticsQuality.observed===true) {
+      try {
+        featureMeta.statistics=objectValue(annotateStatisticsReliability(
+          objectValue(featureMeta.statistics) || {
+            feature:'statistics',
+            provider:'api-football',
+            source:'embedded',
+            ageSeconds:0,
+          },
+          statisticsQuality,
+        )) || unavailableFeatureMeta('statistics','statistics_quality_invalid');
+      } catch {
+        featureMeta.statistics=unavailableFeatureMeta(
+          'statistics',
+          'statistics_quality_error',
+        );
+      }
+    }
+
+    let rawFormattedEvents=[];
+    try {
+      rawFormattedEvents=rowsOrEmpty(
+        formatLiveEvents(events,homeId,awayId),
+        1000,
+      );
+    } catch {}
+
+    let eventQuality={
+      state:'invalid',
+      observed:false,
+      confidenceBearing:false,
+    };
+    try {
+      eventQuality=objectValue(assessMatchEventQuality(
+        rawFormattedEvents,
+        {
+          eventsMeta:objectValue(featureMeta.events) || {},
+          mode:centerMode,
+          elapsed,
+        },
+      )) || eventQuality;
+    } catch {}
+
+    if (featureMeta.events || eventQuality.observed===true) {
+      try {
+        featureMeta.events=objectValue(annotateEventReliability(
+          objectValue(featureMeta.events) || {
+            feature:'events',
+            provider:'api-football',
+            source:'embedded',
+            ageSeconds:0,
+          },
+          eventQuality,
+        )) || unavailableFeatureMeta('events','event_quality_invalid');
+      } catch {
+        featureMeta.events=unavailableFeatureMeta(
+          'events',
+          'event_quality_error',
+        );
+      }
+    }
+
+    let availabilityQuality={
+      state:'invalid',
+      observed:false,
+      acceptedCount:0,
+      rejectedCount:injuryRows.length,
+      confidenceBearing:false,
+    };
+    try {
+      availabilityQuality=objectValue(assessFixtureAvailabilityQuality(
+        injuryRows,
+        {
+          homeId,
+          awayId,
+          injuriesMeta:objectValue(featureMeta.injuries) || {},
+          mode:centerMode,
+        },
+      )) || availabilityQuality;
+    } catch {}
+
+    if (featureMeta.injuries || availabilityQuality.observed===true) {
+      try {
+        featureMeta.injuries=objectValue(annotateAvailabilityReliability(
+          objectValue(featureMeta.injuries) || {
+            feature:'injuries',
+            provider:'api-football',
+            source:'embedded',
+            ageSeconds:0,
+          },
+          availabilityQuality,
+        )) || unavailableFeatureMeta('injuries','availability_quality_invalid');
+      } catch {
+        featureMeta.injuries=unavailableFeatureMeta(
+          'injuries',
+          'availability_quality_error',
+        );
+      }
+    }
+
+    const trustedPlayerRows=trustedFeature(featureMeta.players)
+      ? playerRows
+      : [];
+
+    let trustedInjuryRows=[];
+    try {
+      trustedInjuryRows=rowsOrEmpty(
+        sanitizeAvailabilityRows(injuryRows,availabilityQuality),
+        500,
+      );
+    } catch {}
+
+    let statisticsForDisplay={items:[],home:{values:{}},away:{values:{}}};
+    try {
+      statisticsForDisplay=objectValue(sanitizeStatisticsForDisplay(
+        rawFormattedStatistics,
         statisticsQuality,
+      )) || statisticsForDisplay;
+    } catch {}
+
+    let publicStatistics=statisticsForDisplay;
+    try {
+      publicStatistics=objectValue(sanitizeExpectedGoalsForDisplay(
+        statisticsForDisplay,
+        xgQuality,
+      )) || statisticsForDisplay;
+    } catch {}
+
+    let comparativeStatistics={items:[],home:{values:{}},away:{values:{}}};
+    try {
+      comparativeStatistics=objectValue(statisticsForTrustedAnalytics(
+        publicStatistics,
+        statisticsQuality,
+      )) || comparativeStatistics;
+    } catch {}
+
+    let analyticalStatistics=comparativeStatistics;
+    try {
+      analyticalStatistics=objectValue(statisticsForTrustedExpectedGoals(
+        comparativeStatistics,
+        xgQuality,
+      )) || comparativeStatistics;
+    } catch {}
+
+    let playerLeaders={home:[],away:[]};
+    try {
+      const formatted=objectValue(
+        formatPlayerLeaders(trustedPlayerRows,homeId,awayId),
       );
+      if (formatted) {
+        playerLeaders={
+          ...formatted,
+          home:rowsOrEmpty(formatted.home,100),
+          away:rowsOrEmpty(formatted.away,100),
+        };
+      }
+    } catch {}
+
+    let lineups={};
+    try { lineups=objectValue(formatLineups(lineupRows,homeId,awayId)) || {}; }
+    catch {}
+
+    let lineupQuality={
+      home:{confirmed:false},
+      away:{confirmed:false},
+      bothConfirmed:false,
+      bothPublished:false,
+      anyPublished:false,
+      confirmedSides:0,
+      partialSides:0,
+    };
+    try {
+      lineupQuality=objectValue(assessMatchLineups(lineups)) || lineupQuality;
+    } catch {}
+
+    if (featureMeta.lineups || lineupQuality.anyPublished===true) {
+      try {
+        featureMeta.lineups=objectValue(annotateLineupReliability(
+          objectValue(featureMeta.lineups) || {
+            feature:'lineups',
+            provider:'api-football',
+            source:'embedded',
+            ageSeconds:0,
+          },
+          lineupQuality,
+        )) || unavailableFeatureMeta('lineups','lineup_quality_invalid');
+      } catch {
+        featureMeta.lineups=unavailableFeatureMeta(
+          'lineups',
+          'lineup_quality_error',
+        );
+      }
     }
-    const rawFormattedEvents = formatLiveEvents(events, homeId, awayId);
-    const eventQuality = assessMatchEventQuality(rawFormattedEvents, { eventsMeta:featureMeta.events || {}, mode:centerMode, elapsed });
-    if (featureMeta.events || eventQuality.observed) {
-      featureMeta.events = annotateEventReliability(
-        featureMeta.events || { feature:'events', provider:'api-football', source:'embedded', ageSeconds:0 },
-        eventQuality,
+
+    const lineupSourceTrusted=trustedFeature(featureMeta.lineups);
+    let absences={
+      home:[],
+      away:[],
+      summary:{home:{total:0},away:{total:0},resolvedByLineup:0},
+      resolvedByLineup:{home:[],away:[]},
+    };
+    try {
+      const formatted=objectValue(formatAbsences(
+        trustedInjuryRows,
+        homeId,
+        awayId,
+        lineupSourceTrusted ? lineups : null,
+      ));
+      if (
+        formatted
+        && Array.isArray(formatted.home)
+        && Array.isArray(formatted.away)
+      ) {
+        absences={
+          ...formatted,
+          home:formatted.home.slice(0,200),
+          away:formatted.away.slice(0,200),
+        };
+      }
+    } catch {}
+
+    let pressure=null;
+    if (live || finished) {
+      try { pressure=objectValue(livePressure(analyticalStatistics)); }
+      catch {}
+    }
+
+    let formattedEvents=[];
+    try {
+      formattedEvents=rowsOrEmpty(
+        sanitizeEventsForDisplay(rawFormattedEvents,eventQuality),
+        1000,
       );
-    }
-    const availabilityQuality = assessFixtureAvailabilityQuality(injuryRows, {
-      homeId, awayId, injuriesMeta:featureMeta.injuries || {}, mode:centerMode,
-    });
-    if (featureMeta.injuries || availabilityQuality.observed) {
-      featureMeta.injuries = annotateAvailabilityReliability(
-        featureMeta.injuries || { feature:'injuries', provider:'api-football', source:'embedded', ageSeconds:0 },
-        availabilityQuality,
+    } catch {}
+
+    let analyticalEvents=[];
+    try {
+      analyticalEvents=rowsOrEmpty(
+        eventsForTrustedAnalytics(rawFormattedEvents,eventQuality),
+        1000,
       );
+    } catch {}
+
+    if (finished) {
+      await optionalAsync(settlePredictionsFromFixtures,[fixture],cfg);
     }
-    const trustedPlayerRows = featureMeta.players?.confidenceBearing === false ? [] : playerRows;
-    const trustedInjuryRows = sanitizeAvailabilityRows(injuryRows, availabilityQuality);
-    const statisticsForDisplay = sanitizeStatisticsForDisplay(rawFormattedStatistics, statisticsQuality);
-    const publicStatistics = sanitizeExpectedGoalsForDisplay(statisticsForDisplay, xgQuality);
-    const comparativeStatistics = statisticsForTrustedAnalytics(publicStatistics, statisticsQuality);
-    const analyticalStatistics = statisticsForTrustedExpectedGoals(comparativeStatistics, xgQuality);
-    const playerLeaders = formatPlayerLeaders(trustedPlayerRows, homeId, awayId);
-    const lineups = formatLineups(lineupRows, homeId, awayId);
-    const lineupQuality=assessMatchLineups(lineups);
-    if (featureMeta.lineups || lineupQuality.anyPublished) {
-      featureMeta.lineups = annotateLineupReliability(
-        featureMeta.lineups || { feature:'lineups', provider:'api-football', source:'embedded', ageSeconds:0 },
-        lineupQuality,
-      );
-    }
-    const lineupSourceTrusted = featureMeta.lineups?.stale !== true && featureMeta.lineups?.provenanceState !== 'unknown';
-    const absences = formatAbsences(trustedInjuryRows, homeId, awayId, lineupSourceTrusted ? lineups : null);
-    const pressure = (live || finished) ? livePressure(analyticalStatistics) : null;
-    const formattedEvents = sanitizeEventsForDisplay(rawFormattedEvents, eventQuality);
-    const analyticalEvents = eventsForTrustedAnalytics(rawFormattedEvents, eventQuality);
-    if (finished) await settlePredictionsFromFixtures([fixture], cfg).catch(() => null);
-    const postMatchPrediction = finished
-      ? await loadModelPredictionForFixture(fixtureId, cfg).catch(() => null)
+
+    const postMatchPrediction=finished
+      ? objectValue(await optionalAsync(
+          loadModelPredictionForFixture,
+          fixtureId,
+          cfg,
+        ))
       : null;
-    const postMatchReview = finished
-      ? buildPostMatchReview({prediction:postMatchPrediction,fixture,statistics:analyticalStatistics,events:analyticalEvents,homeName,awayName})
+
+    let postMatchReview=null;
+    if (finished) {
+      try {
+        postMatchReview=objectValue(buildPostMatchReview({
+          prediction:postMatchPrediction,
+          fixture,
+          statistics:analyticalStatistics,
+          events:analyticalEvents,
+          homeName,
+          awayName,
+        }));
+      } catch {}
+    }
+
+    const referee=safeText(fixture?.fixture?.referee,180);
+    const leagueId=positiveSafeInteger(fixture?.league?.id);
+    if (finished && referee) {
+      await optionalAsync(saveRefereeMatchHistory,{
+        fixtureId,
+        referee,
+        kickoffAt:kickoffRaw || null,
+        leagueId,
+        events:analyticalEvents,
+        statistics:analyticalStatistics,
+      },cfg);
+    }
+
+    let currentScore=null;
+    try { currentScore=objectValue(scoreSnapshot(fixture)); } catch {}
+
+    let smartInsights=null;
+    if (live || finished) {
+      try {
+        smartInsights=objectValue(buildSmartMatchInsights({
+          statistics:analyticalStatistics,
+          events:analyticalEvents,
+          pressure,
+          score:currentScore,
+          elapsed,
+          status,
+          homeName,
+          awayName,
+          playerLeaders,
+          absences,
+        }));
+      } catch {}
+    }
+
+    const prematchCandidate=live
+      ? await optionalAsync(
+          getStaleCache,
+          `fixture:${fixtureId}:v15-availability-quality-rc144`,
+          cfg,
+        )
       : null;
-    if (finished && fixture.fixture?.referee) await saveRefereeMatchHistory({ fixtureId, referee:fixture.fixture.referee, kickoffAt:fixture.fixture?.date || null, leagueId:Number(fixture.league?.id || 0), events:analyticalEvents, statistics:analyticalStatistics }, cfg).catch(() => false);
-    const smartInsights = (live || finished) ? buildSmartMatchInsights({
-      statistics: analyticalStatistics,
-      events: analyticalEvents,
-      pressure,
-      score: scoreSnapshot(fixture),
-      elapsed,
-      status,
-      homeName,
-      awayName,
-      playerLeaders,
-      absences,
-    }) : null;
-  
-    const prematchAnalysis = live ? await getStaleCache(`fixture:${fixtureId}:v15-availability-quality-rc144`, cfg).catch(() => null) : null;
-    const aiTimeline = await loadFixtureAiTimeline({
+    const prematchAnalysis=live
+      ? prematchAnalysisPayload(prematchCandidate,fixtureId)
+      : null;
+    if (prematchCandidate && !prematchAnalysis) {
+      await safeRecordOps(cfg,{
+        severity:'warning',
+        source:'cache',
+        eventType:'match_center_prematch_cache_rejected',
+        code:'MATCH_CENTER_PREMATCH_CACHE_INVALID',
+        message:'Match Center ignored a prematch AI snapshot with mismatched fixture identity.',
+        meta:{fixtureId},
+      });
+    }
+
+    const timelineMatch={
       fixtureId,
-      match: { fixtureId, date: fixture.fixture?.date || '', status, elapsed },
-      events: formattedEvents,
-      cfg,
-    }).catch(() => buildAiTimeline({ match: { fixtureId, date: fixture.fixture?.date || '', status, elapsed }, events: formattedEvents }));
-  
-    const liveAiCoach = live ? buildLiveAiCoach({
-      statistics: analyticalStatistics,
-      events: analyticalEvents,
-      pressure,
-      score: scoreSnapshot(fixture),
+      date:kickoffRaw,
+      status,
       elapsed,
-      homeName,
-      awayName,
-      smartInsights,
-      prematch: prematchAnalysis,
-      oddsMovement,
-      xgQuality,
-    }) : null;
-  
-    const dataCapabilities = publicDataCapabilities();
+    };
+    let aiTimeline=objectValue(await optionalAsync(loadFixtureAiTimeline,{
+      fixtureId,
+      match:timelineMatch,
+      events:formattedEvents,
+      cfg,
+    }));
+    if (!aiTimeline) {
+      try {
+        aiTimeline=objectValue(buildAiTimeline({
+          match:timelineMatch,
+          events:formattedEvents,
+        }));
+      } catch {}
+    }
+
+    let liveAiCoach=null;
+    if (live) {
+      try {
+        liveAiCoach=objectValue(buildLiveAiCoach({
+          statistics:analyticalStatistics,
+          events:analyticalEvents,
+          pressure,
+          score:currentScore,
+          elapsed,
+          homeName,
+          awayName,
+          smartInsights,
+          prematch:prematchAnalysis,
+          oddsMovement,
+          xgQuality,
+        }));
+      } catch {}
+    }
+
+    let dataCapabilities={};
+    try { dataCapabilities=objectValue(publicDataCapabilities()) || {}; }
+    catch {}
+
+    let quotaMode='unknown';
+    try { quotaMode=safeText(providerPublicBudgetMode(),40) || 'unknown'; }
+    catch {}
+
     const payload = {
       generatedAt: new Date().toISOString(),
       mode: centerMode,
