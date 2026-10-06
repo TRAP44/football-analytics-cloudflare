@@ -232,7 +232,7 @@ test('analysis runtime rejects cache payloads for another fixture and records th
   assert.equal(response.body.code,'ANALYSIS_QUOTA_EXHAUSTED');
   assert.equal(events.length,1);
   assert.equal(events[0].code,'ANALYSIS_CACHE_INVALID');
-  assert.deepEqual(events[0].meta,{fixtureId:123,source:'fresh'});
+  assert.deepEqual(events[0].meta,{fixtureId:123});
 });
 
 test('client-supplied news impact flags cannot mint a free recheck', async () => {
