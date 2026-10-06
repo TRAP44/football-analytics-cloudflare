@@ -60,10 +60,6 @@ function boundedNonNegativeInteger(value, max = Number.MAX_SAFE_INTEGER) {
   return number !== null && number>=0 && number<=max ? number : null;
 }
 
-function nonNegativeInteger(value, max = Number.MAX_SAFE_INTEGER) {
-  return boundedNonNegativeInteger(value,max) ?? 0;
-}
-
 function compensationCode(disposition) {
   return disposition==='commit'
     ? 'ANALYSIS_USAGE_COMMIT_PENDING'
@@ -169,10 +165,28 @@ export function createAnalysisUsageCompensationRuntime({
     }
 
     if (!supabaseConfigured(cfg)) {
+      safeTelemetry('analysisUsageCompensationFailures');
+      if (action==='commit') safeTelemetry('analysisUsageCommitFailures');
+      if (action==='refund' && kind==='quota') safeTelemetry('quotaRefundFailures');
+      if (action==='refund' && kind==='pass') safeTelemetry('passUsageRefundFailures');
+      await safeRecordOpsEvent(cfg,{
+        severity:'error',
+        source:'quota',
+        eventType:'analysis_usage_compensation',
+        code:compensationCode(action),
+        message:'Durable analysis usage could not be finalized because persistent storage is unavailable; the reservation remains pending for reconciliation.',
+        meta:{
+          operationId,
+          kind,
+          usageDate:reservationDate || null,
+          entitlementId:entitlementId || null,
+          error:'supabase_not_configured',
+        },
+      });
       return {
         ok:false,
-        pending:false,
-        persistent:false,
+        pending:true,
+        persistent:true,
         operationId,
         kind,
         reason:'supabase_not_configured',
@@ -223,7 +237,11 @@ export function createAnalysisUsageCompensationRuntime({
 
       // Persistence is already confirmed. Observability must never turn a
       // committed/refunded operation back into a synthetic pending failure.
-      if (action==='commit') {
+      // Duplicate confirmations are idempotent reads, not new usage events.
+      const duplicate=result.duplicate === true;
+      if (duplicate) {
+        safeTelemetry('analysisUsageFinalizationDuplicates');
+      } else if (action==='commit') {
         safeTelemetry('analysisUsageCommits');
       } else {
         safeTelemetry('analysisUsageRefunds');
@@ -235,7 +253,7 @@ export function createAnalysisUsageCompensationRuntime({
         ok:true,
         pending:false,
         persistent:true,
-        duplicate:result.duplicate === true,
+        duplicate,
         status:expectedStatus,
         operationId,
         kind,
