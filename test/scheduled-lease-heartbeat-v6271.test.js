@@ -269,3 +269,16 @@ test('v6.27.1 migration provides token-CAS heartbeat and rejects expired owner s
   assert.ok(release.includes('and locked_until>v_now'),'expired owner cannot release');
   assert.doesNotMatch(sql,/security\s+definer/);
 });
+
+test('v6.29.5 preserves renewable ownership beyond the original retention horizon',()=>{
+  const sql=fs.readFileSync(
+    'supabase/migrations/supabase_migration_v6_29_5.sql',
+    'utf8',
+  ).toLowerCase();
+  assert.match(
+    sql,
+    /set locked_until=v_next_locked_until,\s+expires_at=greatest\(expires_at,v_next_locked_until\)/,
+  );
+  assert.ok(sql.includes('and locked_until>v_now'));
+});
+
