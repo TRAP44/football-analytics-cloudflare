@@ -479,11 +479,21 @@ export function createCompetitionIntegrityRuntime(deps) {
   }
   
   function runMatchIntegrityGuard(fixtures, requestedDate, previousPayload = null) {
+    const collectionValid=Array.isArray(fixtures);
     const fixtureRows=rows(fixtures);
     const requested=strictUtcDate(requestedDate);
     const previous=previousMatchMap(previousPayload);
     const accepted=[];
-    const issues=[];
+    const issues=collectionValid ? [] : [{
+      fixtureId:null,
+      severity:'error',
+      code:'FIXTURE_COLLECTION_INVALID',
+      message:'Источник данных вернул некорректный список матчей.',
+      meta:{},
+      home:'',
+      away:'',
+      league:'',
+    }];
     const seenIds=new Set();
     const seenSignatures = new Map();
     let quarantined = 0, duplicates = 0, warningMatches = 0, incompleteMatches = 0, cleanMatches = 0, repaired = 0;
@@ -529,11 +539,17 @@ export function createCompetitionIntegrityRuntime(deps) {
     }
   
     const inspected=fixtureRows.length;
-    const errors = issues.filter(x => x.severity === 'error').length;
-    const warnings = issues.filter(x => x.severity === 'warning').length;
-    const qualityScore = inspected ? Math.round((accepted.reduce((sum, x) => sum + Number(x.integrity?.score || 0), 0) / inspected) * 10) / 10 : 100;
-    const quarantinePct = inspected ? quarantined / inspected * 100 : 0;
-    const health = quarantinePct >= 10 || errors >= 5 ? 'critical' : (quarantined || warnings ? 'warning' : 'ok');
+    const errors=issues.filter(x=>x.severity==='error').length;
+    const warnings=issues.filter(x=>x.severity==='warning').length;
+    const qualityScore=!collectionValid
+      ? 0
+      : inspected
+        ? Math.round((accepted.reduce((sum,item)=>sum+boundedQuality(item.integrity?.score,0),0)/inspected)*10)/10
+        : 100;
+    const quarantinePct=inspected ? quarantined/inspected*100 : 0;
+    const health=!collectionValid || quarantinePct>=10 || errors>=5
+      ? 'critical'
+      : (quarantined || warnings ? 'warning' : 'ok');
     return {
       accepted,
       report:{requestedDate:requested,inspected,accepted:accepted.length,clean:cleanMatches,incomplete:incompleteMatches,warningMatches,quarantined,duplicates,repaired,warnings,errors,qualityScore,health},
