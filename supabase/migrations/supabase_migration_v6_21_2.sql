@@ -1,5 +1,16 @@
 -- Football Analytics v6.21.2 / lineup notification persistence
 -- Additive operational migration. Dedicated atomic state for lineup-published delivery.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. lineup_notified_at,
+-- lineup_claimed_at and lineup_attempts remain active fields used by the current
+-- reminder delivery store and lineup notification service.
+-- save_match_reminder_guarded() here is an intermediate implementation:
+-- v6.21.3 extends it for important-change delivery and v6.25.2 later introduces
+-- explicit rearm semantics via save_match_reminder_guarded_v2() so ordinary
+-- updates no longer reset completed delivery state.
+-- Fingerprint exclusions here are rollout-compatibility behavior only.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 alter table public.match_reminders
   add column if not exists lineup_notified_at timestamptz,
