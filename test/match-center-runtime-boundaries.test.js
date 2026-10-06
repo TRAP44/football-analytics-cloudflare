@@ -179,6 +179,74 @@ test('cache outages fail soft while cross-fixture cache rows are rejected', asyn
   assert.equal((await cacheDown.apiMatchCenter(request(),{})).status,200);
 });
 
+test('cached live signals are revalidated against current feature freshness', async () => {
+  let providerCalls=0;
+  const cached={
+    generatedAt:new Date().toISOString(),
+    mode:'live',
+    match:{fixtureId:123,status:'1H'},
+    events:[{id:'e1'}],
+    statistics:{items:[{key:'Total Shots',home:5,away:4}]},
+    livePressure:{home:60,away:40},
+    smartInsights:{items:[{title:'Old'}]},
+    liveAiCoach:{state:'holds'},
+    liveOdds:{odds:{home:2,draw:3,away:4}},
+    oddsMovement:{sample:2},
+    xgQuality:{confidenceBearing:true},
+    liveOddsQuality:{confidenceBearing:true},
+    availabilityQuality:{confidenceBearing:true},
+    lineupQuality:{bothConfirmed:true},
+    playerLeaders:{home:[{id:1}],away:[]},
+    absences:{home:[{id:7}],away:[]},
+    availability:{
+      events:true,statistics:true,xg:true,players:true,injuries:true,
+      liveOdds:true,lineupsTrusted:true,lineupsConfirmed:true,
+    },
+    dataFreshness:{
+      events:{feature:'events',provider:'api-football',source:'network',available:true,usable:true},
+      statistics:{feature:'statistics',provider:'api-football',source:'network',available:true,usable:true},
+      players:{feature:'players',provider:'api-football',source:'network',available:true,usable:true},
+      injuries:{feature:'injuries',provider:'api-football',source:'network',available:true,usable:true},
+      lineups:{feature:'lineups',provider:'api-football',source:'network',available:true,usable:true},
+      liveOdds:{feature:'liveOdds',provider:'api-football',source:'network',available:true,usable:true},
+    },
+  };
+
+  const runtime=createMatchCenterRuntime(baseDeps({
+    getCache:async()=>cached,
+    loadProviderFixture:async()=>{
+      providerCalls+=1;
+      return fixture();
+    },
+    applyFeatureFreshnessMap:meta=>Object.fromEntries(
+      Object.entries(meta || {}).map(([feature,value])=>[
+        feature,
+        {
+          ...value,
+          stale:['statistics','liveOdds','lineups'].includes(feature),
+          provenanceState:'verified',
+          confidenceBearing:!['statistics','liveOdds','lineups'].includes(feature),
+        },
+      ]),
+    ),
+  }));
+
+  const response=await runtime.apiMatchCenter(request(),{});
+  assert.equal(response.status,200);
+  assert.equal(providerCalls,0);
+  assert.equal(response.body.cached,true);
+  assert.equal(response.body.livePressure,null);
+  assert.equal(response.body.smartInsights,null);
+  assert.equal(response.body.liveAiCoach,null);
+  assert.equal(response.body.liveOdds,null);
+  assert.equal(response.body.oddsMovement,null);
+  assert.equal(response.body.availability.statistics,false);
+  assert.equal(response.body.availability.xg,false);
+  assert.equal(response.body.availability.liveOdds,false);
+  assert.equal(response.body.availability.lineupsTrusted,false);
+  assert.equal(response.body.availability.lineupsConfirmed,false);
+});
+
 test('provider fixture identity mismatch fails closed', async () => {
   const runtime=createMatchCenterRuntime(baseDeps({
     loadProviderFixture:async()=>fixture({
