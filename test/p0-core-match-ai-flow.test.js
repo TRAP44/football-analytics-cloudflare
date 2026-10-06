@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
+const matchCenterRuntime=fs.readFileSync('src/match-center-runtime.js','utf8');
 const analysisRuntime=fs.readFileSync('src/analysis-runtime.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 
@@ -38,7 +39,7 @@ test('P0 FREE Match Center preserves provider minute budget for AI',()=>{
   assert.match(policy,/context\.preserveAiBudget === true && feature === 'events'/);
   assert.match(policy,/reason = 'interactive_ai_reserve'/);
 
-  const center=block(worker,'async function apiMatchCenter','async function cachedTeamIntelligenceForAnalysis');
+  const center=block(matchCenterRuntime,'async function apiMatchCenter','  return { apiMatchCenter };');
   assert.match(center,/preserveAiBudget: !providerBudgetProfile\(\)\.paid/);
   assert.match(center,/secondaryOpenLigaEvents/);
   assert.match(center,/feature: 'statistics', path: '\/fixtures\/statistics'/);
