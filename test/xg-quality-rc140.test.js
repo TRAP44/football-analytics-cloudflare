@@ -92,7 +92,7 @@ test('RC140 routes xG through the semantic guard before live AI and post-match e
   assert.match(worker, /buildLiveAiCoach\(\{[\s\S]{0,420}?statistics:analyticalStatistics/);
   assert.match(worker, /buildPostMatchReview\(\{[\s\S]{0,420}?prediction:postMatchPrediction,[\s\S]{0,420}?statistics:analyticalStatistics/);
   assert.match(worker, /xgQuality,/);
-  assert.match(worker, /xgSemanticQualityGuard: 'enabled'/);
+  assert.match(worker, /xg:xgQuality\?\.confidenceBearing===true/);
 });
 
 test('RC140 exposes xG quality in Match Center and production health contracts', () => {
