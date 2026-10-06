@@ -275,11 +275,12 @@ test('RC41 lineup impact does not treat untrusted or incomplete lineups as confi
 test('RC41 pre-match analysis wires odds movement and lineup impact into the AI instructor', () => {
   assert.match(analysisRuntime, /const previousMarketSnapshots/);
   assert.match(analysisRuntime, /buildOddsMovement\(/);
-  assert.match(analysisRuntime, /const lineupImpact = buildLineupImpact\(/);
+  assert.match(analysisRuntime, /lineupImpact=objectValue\(buildLineupImpact\(\{/);
   assert.match(
     analysisRuntime,
-    /aiInstructor: buildAiInstructor\(\{[\s\S]*?lineupImpact,[\s\S]*?marketMovement,/,
+    /aiInstructor=objectValue\(buildAiInstructor\(\{[\s\S]*?lineupImpact,[\s\S]*?marketMovement,/,
   );
+  assert.match(analysisRuntime, /\n\s*aiInstructor,\n/);
   assert.match(app, /ai-market-note/);
   assert.match(app, /ai-lineup-note/);
 });
