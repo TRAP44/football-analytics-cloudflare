@@ -1,3 +1,5 @@
+import { BOOT_OK_REQUIRED_METADATA } from './client-telemetry-contract.js';
+
 // Client telemetry ingestion and Phase 5 request tagging extracted from worker.js.
 // Identity, growth and ops-event primitives are injected by the composition root.
 export function createClientTelemetryRuntime(deps) {
@@ -119,6 +121,10 @@ export function createClientTelemetryRuntime(deps) {
     'profileView',
     'unknown',
   ]);
+
+  const CLIENT_BOOT_OK_REQUIRED_METADATA = Object.freeze(
+    BOOT_OK_REQUIRED_METADATA.filter(field => field !== 'deploySha'),
+  );
   
   function finiteTelemetryNumber(value) {
     if (value === null || value === undefined || typeof value === 'boolean') return null;
@@ -193,6 +199,9 @@ export function createClientTelemetryRuntime(deps) {
     }
   
     const meta = clientTelemetryMetadata(body, event);
+    if (event === 'boot_ok' && CLIENT_BOOT_OK_REQUIRED_METADATA.some(field => !(field in meta))) {
+      return json({ ok: false, error: 'Incomplete boot telemetry.' }, 400);
+    }
     if (event === 'product_action' && !meta.reason) return json({ ok: false, error: 'Unsupported product action.' }, 400);
     if (event === 'action_error' && !meta.reason) return json({ ok: false, error: 'Unsupported action error.' }, 400);
     if (event === 'operation_timing' && (!meta.reason || !Number.isFinite(Number(meta.durationMs)))) {
