@@ -1,8 +1,8 @@
-const DEFAULT_BOTTOM_NAV = Object.freeze([
-  ['navMatches', 'matchesView'],
-  ['navMyTeams', 'myTeamsView'],
-  ['navHistory', 'historyView'],
-  ['navProfile', 'profileView'],
+export const DEFAULT_BOTTOM_NAV = Object.freeze([
+  Object.freeze(['navMatches', 'matchesView']),
+  Object.freeze(['navMyTeams', 'myTeamsView']),
+  Object.freeze(['navHistory', 'historyView']),
+  Object.freeze(['navProfile', 'profileView']),
 ]);
 
 export function createNavigationShell({
@@ -24,10 +24,18 @@ export function createNavigationShell({
   }
 
   const $ = elementById;
-  const views = [...viewIds];
+  const views = Array.isArray(viewIds) ? [...new Set(viewIds.map(value => String(value || '')).filter(Boolean))] : [];
   const viewSet = new Set(views);
   const scrollByView = new Map();
-  const navBindings = [...bottomNav];
+  const rawNavBindings = Array.isArray(bottomNav) ? bottomNav : DEFAULT_BOTTOM_NAV;
+  const navBindings = rawNavBindings
+    .filter(binding => Array.isArray(binding) && binding.length >= 2)
+    .map(([navId, viewId]) => [String(navId || ''), String(viewId || '')])
+    .filter(([navId, viewId], index, rows) =>
+      navId
+      && viewSet.has(viewId)
+      && rows.findIndex(([candidate]) => candidate === navId) === index
+    );
 
   function reportEffectError(error, context) {
     if (typeof onEffectError === 'function') {
@@ -78,10 +86,12 @@ export function createNavigationShell({
   }
 
   function updateBottomNavigation(target) {
-    document.querySelectorAll('.nav-item').forEach(item => {
+    for (const [navId] of navBindings) {
+      const item = $(navId);
+      if (!item) continue;
       item.classList.remove('active');
       item.removeAttribute('aria-current');
-    });
+    }
 
     const binding = navBindings.find(([, viewId]) => viewId === target);
     if (!binding) return;
