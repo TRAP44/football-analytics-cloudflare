@@ -1,28 +1,67 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { FRONTEND_ASSET_REVISION } from '../public/modules/app-runtime.js';
 
-const publicHtml = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
-const adminHtml = readFileSync(new URL('../public/admin.html', import.meta.url), 'utf8');
-const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+function readPublicFile(relativePath) {
+  return readFileSync(new URL('../public/' + relativePath, import.meta.url), 'utf8');
+}
 
-test('public and admin surfaces declare distinct identities', () => {
-  assert.match(publicHtml, /matchradar-surface" content="public"/);
-  assert.match(adminHtml, /matchradar-surface" content="admin"/);
-  assert.match(adminHtml, /MatchRadar Admin · Состояние и управление/);
-  assert.match(adminHtml, /admin-dedicated-surface/);
+function metaContent(html, name) {
+  const pattern = '<meta\\s+name=["\\']' + name + '["\\']\\s+content=["\\']([^"\\']+)["\\']';
+  return html.match(new RegExp(pattern))?.[1] || '';
+}
+
+function assetRevision(html, assetPath) {
+  const escapedPath = assetPath.replace(/\./g, '\\.');
+  return html.match(new RegExp(escapedPath + '\\?v=([^"\\'\\s>]+)'))?.[1] || '';
+}
+
+const publicHtml = readPublicFile('index.html');
+const adminHtml = readPublicFile('admin.html');
+const app = readPublicFile('app.js');
+
+test('public and admin surfaces declare distinct identities and DOM boundaries', () => {
+  assert.equal(metaContent(publicHtml, 'matchradar-surface'), 'public');
+  assert.equal(metaContent(adminHtml, 'matchradar-surface'), 'admin');
+
+  assert.doesNotMatch(publicHtml, /admin-dedicated-surface/);
+  assert.doesNotMatch(publicHtml, /data-admin-only/);
+  assert.match(adminHtml, /<body\b[^>]*\badmin-dedicated-surface\b/);
+  assert.match(adminHtml, /data-admin-only/);
+  assert.match(adminHtml, /<title>MatchRadar Admin · Состояние и управление<\/title>/);
 });
 
-test('dedicated admin surface is role-gated after startup', () => {
-  assert.match(app, /querySelector\('meta\[name="matchradar-surface"\]'\)\?\.content === 'admin'/);
-  assert.match(app, /if \(isAdmin\(\)\)/);
-  assert.match(app, /openProfileView\(\)/);
-  assert.match(app, /location\.replace\('\/'\)/);
+test('dedicated admin surface is role-gated after startup and redirects non-admin users', () => {
+  assert.match(
+    app,
+    /await runStartupSequence\(\);[\s\S]*?meta\[name="matchradar-surface"\][\s\S]*?=== 'admin'[\s\S]*?if \(isAdmin\(\)\)[\s\S]*?openProfileView\(\)[\s\S]*?admin-surface-ready[\s\S]*?location\.replace\('\/'\)/,
+  );
 });
 
-test('both surfaces share the same frontend asset revision during runtime extraction', () => {
-  for (const html of [publicHtml, adminHtml]) {
-    assert.match(html, /frontend-asset-revision" content="6\.120\.0-launch\d+"/);
-    assert.match(html, /\/app\.js\?v=6\.120\.0-launch\d+/);
+test('both surfaces use the shared frontend asset revision source of truth', () => {
+  assert.ok(FRONTEND_ASSET_REVISION, 'frontend asset revision must be defined');
+
+  for (const [name, html] of [['public', publicHtml], ['admin', adminHtml]]) {
+    assert.equal(
+      metaContent(html, 'frontend-asset-revision'),
+      FRONTEND_ASSET_REVISION,
+      name + ' surface meta revision must match app-runtime.js',
+    );
+    assert.equal(
+      assetRevision(html, '/styles.css'),
+      FRONTEND_ASSET_REVISION,
+      name + ' styles.css revision must match app-runtime.js',
+    );
+    assert.equal(
+      assetRevision(html, '/styles/public-shell.css'),
+      FRONTEND_ASSET_REVISION,
+      name + ' public-shell.css revision must match app-runtime.js',
+    );
+    assert.equal(
+      assetRevision(html, '/app.js'),
+      FRONTEND_ASSET_REVISION,
+      name + ' app.js revision must match app-runtime.js',
+    );
   }
 });
