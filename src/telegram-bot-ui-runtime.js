@@ -685,141 +685,364 @@ export function createTelegramBotUiRuntime(deps = {}) {
     return await botAnalyzeFixture(request,cfg,userId,fixtureId);
   }
 
-  async function sendBotFixtureMenu(request, cfg, userId, chatId, fixtureId, options = {}) {
-    void recordGrowthEvent(cfg,{userId,eventName:'match_open',channel:'telegram',fixtureId,attribution:options.attribution || null,metadata:{source:options.source || 'match_select'}});
-    const [match,favorites] = await Promise.all([
-      loadBotFixtureCard(fixtureId,cfg),
-      getFavorites(userId,cfg).catch(()=>[]),
+  async function sendBotFixtureMenu(
+    request,
+    cfg,
+    userId,
+    chatId,
+    fixtureId,
+    options={},
+  ) {
+    const user=positiveSafeInteger(userId);
+    const chat=chatIdValue(chatId);
+    const id=positiveSafeInteger(fixtureId);
+    if (user===null || chat===null || id===null) {
+      throw new TypeError('Некорректный Telegram user/chat/fixture ID.');
+    }
+
+    const opts=objectValue(options) || {};
+    const attribution=objectValue(opts.attribution);
+    const source=safeText(opts.source,48,'match_select');
+
+    backgroundCall(recordGrowthEvent,cfg,{
+      userId:user,
+      eventName:'match_open',
+      channel:'telegram',
+      fixtureId:id,
+      attribution,
+      metadata:{source},
+    });
+
+    const [match,favoriteRows]=await Promise.all([
+      loadBotFixtureCard(id,cfg),
+      optionalAsync(getFavorites,user,cfg),
     ]);
+    const favorites=rowsOrEmpty(favoriteRows,500);
+
     if (!match) {
-      await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'Матч больше не найден в доступных данных.',reply_markup:footballBotKeyboard(request)});
-      return;
+      await telegramApi('sendMessage',cfg,{
+        chat_id:chat,
+        text:'Матч больше не найден в доступных данных.',
+        reply_markup:footballBotKeyboard(request),
+      });
+      return false;
     }
+
     await rememberBotFixtureCards([match],cfg);
+
     if (match.live || match.finished) {
-      const analysis=await getCache(`fixture:${Number(fixtureId)}:v10-ai-instructor`,cfg).catch(()=>null);
+      const analysis=objectValue(
+        await optionalAsync(
+          getCache,
+          `fixture:${id}:v10-ai-instructor`,
+          cfg,
+        ),
+      );
+      const analysisMatch=objectValue(analysis?.match)
+        ? normalizeBotFixtureCard(analysis.match)
+        : null;
+      const aiReady=Boolean(
+        analysis
+        && (!analysisMatch || analysisMatch.fixtureId===id),
+      );
+
       await telegramApi('sendMessage',cfg,{
-        chat_id:chatId,
+        chat_id:chat,
         parse_mode:'HTML',
-        text:botFixtureCardText(match,{aiReady:Boolean(analysis)}),
-        reply_markup:footballMatchActionKeyboard(request,match,'',favorites),
+        text:botFixtureCardText(match,{aiReady}),
+        reply_markup:footballMatchActionKeyboard(
+          request,
+          match,
+          '',
+          favorites,
+        ),
       });
-      return;
+      return true;
     }
+
     try {
-      markTelegramWebhookMutation(cfg, 'analysis_quota_or_history');
-      const data=options.newsImpactDelta
-        ? await botAnalyzeFixture(request,cfg,userId,fixtureId,{
-            newsImpactRecheck:true,
-            newsPublishedAt:options.newsPublishedAt || '',
-          })
-        : await botAnalyzeFixtureDefault(request,cfg,userId,fixtureId);
-      const analyzedMatch=normalizeBotFixtureCard(data.match || match);
+      // Analysis can mutate quota/history. If retry bookkeeping itself fails,
+      // abort before the mutation rather than risk replaying a charged analysis.
+      markTelegramWebhookMutation(cfg,'analysis_quota_or_history');
+
+      const newsImpactDelta=opts.newsImpactDelta===true;
+      const data=objectValue(
+        newsImpactDelta
+          ? await botAnalyzeFixture(request,cfg,user,id,{
+              newsImpactRecheck:true,
+              newsPublishedAt:safeText(opts.newsPublishedAt,40),
+            })
+          : await botAnalyzeFixtureDefault(request,cfg,user,id),
+      ) || {};
+
+      const analyzedCandidate=objectValue(data.match)
+        ? normalizeBotFixtureCard(data.match)
+        : match;
+      const analyzedMatch=analyzedCandidate.fixtureId===id
+        ? analyzedCandidate
+        : match;
+
       await rememberBotFixtureCards([analyzedMatch],cfg);
-      void recordGrowthEvent(cfg,{userId,eventName:'quick_ai',channel:'telegram',fixtureId,attribution:options.attribution || null,metadata:{section:'handoff',cached:Boolean(data.cached),source:options.source || 'match_select'}});
-      if (options.newsImpactDelta) {
-        const decision=newsImpactDecisionCard(data?.newsImpact || null);
-        void recordGrowthEvent(cfg,{userId,eventName:'news_impact_delta',channel:'telegram',fixtureId,metadata:{
-          compared:Boolean(data?.newsImpact?.compared),
-          material:Boolean(data?.newsImpact?.material),
-          stable:Boolean(data?.newsImpact?.stable),
-          reason:String(data?.newsImpact?.reasonCode || '').slice(0,32),
-          decision:String(decision?.code || '').slice(0,24),
-          changeCount:Number(data?.newsImpact?.items?.length || 0),
-        }});
-      }
-      if (options.attribution) {
-        void recordGrowthEvent(cfg,{userId,eventName:'ai_handoff',channel:'telegram',fixtureId,attribution:options.attribution,metadata:{cached:Boolean(data.cached),source:options.source || 'deep_link'}});
-      } else {
-        void recordGrowthEvent(cfg,{userId,eventName:'ai_handoff',channel:'telegram',fixtureId,metadata:{cached:Boolean(data.cached),source:'match_select'}});
-      }
-      await telegramApi('sendMessage',cfg,{
-        chat_id:chatId,
-        parse_mode:'HTML',
-        text:botAiHandoffText(data),
-        reply_markup:options.newsImpactDelta
-          ? newsImpactDecisionKeyboard(request,analyzedMatch,favorites,data?.newsImpact || null)
-          : footballQuickAiHandoffKeyboard(request,analyzedMatch,favorites),
+
+      backgroundCall(recordGrowthEvent,cfg,{
+        userId:user,
+        eventName:'quick_ai',
+        channel:'telegram',
+        fixtureId:id,
+        attribution,
+        metadata:{
+          section:'handoff',
+          cached:data.cached===true,
+          source,
+        },
       });
+
+      if (newsImpactDelta) {
+        let decision=null;
+        try {
+          decision=objectValue(
+            newsImpactDecisionCard(objectValue(data.newsImpact)),
+          );
+        } catch {}
+
+        const newsImpact=objectValue(data.newsImpact) || {};
+        backgroundCall(recordGrowthEvent,cfg,{
+          userId:user,
+          eventName:'news_impact_delta',
+          channel:'telegram',
+          fixtureId:id,
+          metadata:{
+            compared:newsImpact.compared===true,
+            material:newsImpact.material===true,
+            stable:newsImpact.stable===true,
+            reason:safeText(newsImpact.reasonCode,32),
+            decision:safeText(decision?.code,24),
+            changeCount:rowsOrEmpty(newsImpact.items,100).length,
+          },
+        });
+      }
+
+      backgroundCall(recordGrowthEvent,cfg,{
+        userId:user,
+        eventName:'ai_handoff',
+        channel:'telegram',
+        fixtureId:id,
+        ...(attribution ? {attribution} : {}),
+        metadata:{
+          cached:data.cached===true,
+          source:attribution ? source : 'match_select',
+        },
+      });
+
+      const replyMarkup=newsImpactDelta
+        ? newsImpactDecisionKeyboard(
+            request,
+            analyzedMatch,
+            favorites,
+            objectValue(data.newsImpact),
+          )
+        : footballQuickAiHandoffKeyboard(
+            request,
+            analyzedMatch,
+            favorites,
+          );
+
+      await telegramApi('sendMessage',cfg,{
+        chat_id:chat,
+        parse_mode:'HTML',
+        text:safeText(
+          botAiHandoffText(data),
+          3900,
+          'AI-разбор готов.',
+        ),
+        reply_markup:replyMarkup,
+      });
+      return true;
     } catch (error) {
-      const status=Number(error?.status || 0);
+      const status=nonNegativeSafeInteger(error?.status,599) || 0;
       const message=status===429
         ? 'Короткий AI-разбор сейчас недоступен из-за лимита. Матч выбран — можно повторить позже.'
         : status===409
           ? 'Данные матча сейчас противоречивы, поэтому AI временно не строит вывод.'
-          : error?.message || 'Не удалось собрать короткую AI-оценку.';
+          : safeText(
+              error?.message,
+              600,
+              'Не удалось собрать короткую AI-оценку.',
+            );
+
       await telegramApi('sendMessage',cfg,{
-        chat_id:chatId,
+        chat_id:chat,
         parse_mode:'HTML',
-        text:`⚠️ ${telegramHtmlEscape(message)}\n\n${botFixtureCardText(match,{aiReady:false})}`,
-        reply_markup:footballMatchActionKeyboard(request,match,'',favorites),
+        text:`⚠️ ${escapeHtml(message,600)}\n\n${botFixtureCardText(match,{aiReady:false})}`,
+        reply_markup:footballMatchActionKeyboard(
+          request,
+          match,
+          '',
+          favorites,
+        ),
       });
+      return false;
     }
   }
-  async function botAnalyzeFixture(request, cfg, userId, fixtureId, options = {}) {
-    const inner = options.newsImpactRecheck
-      ? new Request(request.url, {
-          method:'POST',
-          headers:{'content-type':'application/json'},
-          body:JSON.stringify({
-            fixtureId:Number(fixtureId),
-            origin:'telegram_quick',
-            recheck:true,
-            newsImpactRecheck:true,
-            newsPublishedAt:String(options.newsPublishedAt || '').slice(0,40),
-          }),
-        })
-      : new Request(request.url, {
-          method:'POST',
-          headers:{'content-type':'application/json'},
-          body:JSON.stringify({fixtureId:Number(fixtureId),origin:'telegram_quick',recheck:true}),
-        });
-    const response = await apiAnalyze(inner, cfg, { id:Number(userId) });
-    let payload = {};
-    try { payload = await response.json(); } catch {}
-    if (!response.ok) {
-      const error = new Error(payload?.error || 'Не удалось получить AI-разбор матча.');
-      error.status = response.status;
-      error.payload = payload;
+
+  async function botAnalyzeFixture(
+    request,
+    cfg,
+    userId,
+    fixtureId,
+    options={},
+  ) {
+    const user=positiveSafeInteger(userId);
+    const id=positiveSafeInteger(fixtureId);
+    const base=requestUrl(request);
+    if (user===null || id===null || !base) {
+      throw new TypeError('Некорректные параметры Telegram AI-разбора.');
+    }
+
+    const opts=objectValue(options) || {};
+    const newsImpactRecheck=opts.newsImpactRecheck===true;
+    const body={
+      fixtureId:id,
+      origin:'telegram_quick',
+      recheck:true,
+      ...(newsImpactRecheck ? {
+        newsImpactRecheck:true,
+        newsPublishedAt:safeText(opts.newsPublishedAt,40),
+      } : {}),
+    };
+
+    let inner;
+    try {
+      inner=createRequest(base.toString(),{
+        method:'POST',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify(body),
+      });
+    } catch {
+      throw new TypeError('Не удалось создать внутренний запрос AI-разбора.');
+    }
+
+    const response=objectValue(await apiAnalyze(inner,cfg,{id:user}));
+    if (!response || typeof response.json!=='function') {
+      const error=new Error('Сервис AI вернул некорректный ответ.');
+      error.status=502;
+      throw error;
+    }
+
+    let payload={};
+    try {
+      payload=objectValue(await response.json()) || {};
+    } catch {}
+
+    const status=nonNegativeSafeInteger(response.status,599) || 502;
+    if (response.ok!==true) {
+      const error=new Error(
+        safeText(
+          payload.error,
+          600,
+          'Не удалось получить AI-разбор матча.',
+        ),
+      );
+      error.status=status;
+      error.payload=payload;
+      throw error;
+    }
+
+    const payloadMatch=objectValue(payload.match)
+      ? normalizeBotFixtureCard(payload.match)
+      : null;
+    if (payloadMatch && payloadMatch.fixtureId!==id) {
+      const error=new Error('AI вернул данные другого матча.');
+      error.status=409;
+      error.code='TELEGRAM_ANALYSIS_FIXTURE_MISMATCH';
       throw error;
     }
     return payload;
   }
-  
-  function botAiVerdictText(data = {}) {
-    const match = data.match || {};
-    const ai = data.aiInstructor || {};
-    const signal = ai.betSignal || {};
-    const verdict = ai.verdict || {};
-    const trust = ai.dataTrust || {};
-    const referee = ai.refereeHistory?.available
-      ? `${ai.refereeHistory.name || ai.refereeProfile?.name || match.referee || 'Судья'} · ${ai.refereeHistory.styleLabel} · ${ai.refereeHistory.avgYellow} жёлт./матч`
-      : ai.refereeProfile?.name || ai.referee || match.referee || 'ещё не назначен';
-    const skip = signal.code === 'skip';
-    const headline = skip ? '⛔ <b>Лучше пропустить</b>' : '🧠 <b>AI-вердикт</b>';
-    const confidence = Number.isFinite(Number(ai.confidenceScore)) ? `${Math.round(Number(ai.confidenceScore))}/100` : '—';
-    const trustScore = Number.isFinite(Number(trust.score)) ? `${Math.round(Number(trust.score))}%` : '—';
+
+  function botAiVerdictText(data={}) {
+    const source=objectValue(data) || {};
+    const match=objectValue(source.match) || {};
+    const ai=objectValue(source.aiInstructor) || {};
+    const signal=objectValue(ai.betSignal) || {};
+    const verdict=objectValue(ai.verdict) || {};
+    const trust=objectValue(ai.dataTrust) || {};
+    const refereeHistory=objectValue(ai.refereeHistory);
+    const refereeProfile=objectValue(ai.refereeProfile);
+
+    let referee='ещё не назначен';
+    if (refereeHistory?.available===true) {
+      const name=safeText(
+        refereeHistory.name
+          ?? refereeProfile?.name
+          ?? match.referee,
+        120,
+        'Судья',
+      );
+      const style=safeText(
+        refereeHistory.styleLabel,
+        120,
+        'стиль уточняется',
+      );
+      const avg=finiteNumber(refereeHistory.avgYellow);
+      referee=`${name} · ${style}${avg!==null && avg>=0 && avg<=20
+        ? ` · ${Math.round(avg*10)/10} жёлт./матч`
+        : ''}`;
+    } else {
+      referee=safeText(
+        refereeProfile?.name ?? ai.referee ?? match.referee,
+        180,
+        'ещё не назначен',
+      );
+    }
+
+    const skip=safeText(signal.code,24).toLowerCase()==='skip';
+    const headline=skip
+      ? '⛔ <b>Лучше пропустить</b>'
+      : '🧠 <b>AI-вердикт</b>';
+
+    const confidenceValue=finiteNumber(ai.confidenceScore);
+    const confidence=confidenceValue!==null
+      && confidenceValue>=0
+      && confidenceValue<=100
+        ? `${Math.round(confidenceValue)}/100`
+        : '—';
+
+    const trustValue=finiteNumber(trust.score);
+    const trustScore=trustValue!==null
+      && trustValue>=0
+      && trustValue<=100
+        ? `${Math.round(trustValue)}%`
+        : '—';
+
+    const home=objectValue(match.home);
+    const away=objectValue(match.away);
     return [
       headline,
-      `<b>${telegramHtmlEscape(match.home?.name || 'Хозяева')} — ${telegramHtmlEscape(match.away?.name || 'Гости')}</b>`,
+      `<b>${escapeHtml(home?.name,120) || 'Хозяева'} — ${escapeHtml(away?.name,120) || 'Гости'}</b>`,
       '',
-      `🎯 Идея: <b>${telegramHtmlEscape(signal.label || 'Нет выраженного сигнала')}</b>`,
-      `📊 Исход: ${telegramHtmlEscape(verdict.outcome || '—')}`,
-      `⚽ Тотал: ${telegramHtmlEscape(verdict.total || '—')}`,
-      `🥅 Обе забьют: ${telegramHtmlEscape(verdict.btts || '—')}`,
-      `🧠 Уверенность: <b>${telegramHtmlEscape(ai.confidenceLabel || '—')}</b> · ${confidence}`,
-      `🗂 Качество данных: <b>${telegramHtmlEscape(trust.label || '—')}</b> · ${trustScore}`,
-      `⚠️ Риск: <b>${telegramHtmlEscape(ai.riskLabel || '—')}</b>`,
-      `🧑‍⚖️ Судья: ${telegramHtmlEscape(referee)}`,
+      `🎯 Идея: <b>${escapeHtml(signal.label,180) || 'Нет выраженного сигнала'}</b>`,
+      `📊 Исход: ${escapeHtml(verdict.outcome,120) || '—'}`,
+      `⚽ Тотал: ${escapeHtml(verdict.total,120) || '—'}`,
+      `🥅 Обе забьют: ${escapeHtml(verdict.btts,120) || '—'}`,
+      `🧠 Уверенность: <b>${escapeHtml(ai.confidenceLabel,120) || '—'}</b> · ${confidence}`,
+      `🗂 Качество данных: <b>${escapeHtml(trust.label,120) || '—'}</b> · ${trustScore}`,
+      `⚠️ Риск: <b>${escapeHtml(ai.riskLabel,120) || '—'}</b>`,
+      `🧑‍⚖️ Судья: ${escapeHtml(referee,360)}`,
       '',
-      `Почему: ${telegramHtmlEscape(signal.reason || ai.riskNote || 'Оцениваю доступные данные матча.')}`,
-      skip ? 'Сильного перевеса нет — не нужно искать ставку любой ценой.' : 'Перед стартом ещё раз проверьте составы и движение рынка.',
+      `Почему: ${escapeHtml(
+        signal.reason ?? ai.riskNote,
+        900,
+      ) || 'Оцениваю доступные данные матча.'}`,
+      skip
+        ? 'Сильного перевеса нет — не нужно искать ставку любой ценой.'
+        : 'Перед стартом ещё раз проверьте составы и движение рынка.',
       '',
       '<i>AI-сигнал основан на доступных данных и не гарантирует результат.</i>',
     ].join('\n');
   }
 
-  return {
+  return Object.freeze({
     publicSiteUrl,
     footballBotKeyboard,
     footballBotMoreKeyboard,
@@ -837,6 +1060,6 @@ export function createTelegramBotUiRuntime(deps = {}) {
     botAnalyzeFixtureDefault,
     sendBotFixtureMenu,
     botAnalyzeFixture,
-    botAiVerdictText
-  };
+    botAiVerdictText,
+  });
 }
