@@ -600,9 +600,9 @@ export function createBetaPhase5Runtime(deps) {
       'miniapp_open',
     ];
     const subjects=new Map();
-    for (const row of rows || []) {
+    for (const row of Array.isArray(rows) ? rows : []) {
       const subject=String(row?.metadata?.betaSubject || '');
-      if (!/^[0-9a-f]{32}$/.test(subject)) continue;
+      if (!/^[0-9a-f]{32}$/.test(subject) || trustedEventTime(row?.created_at) === null) continue;
       if (!subjects.has(subject)) subjects.set(subject,[]);
       subjects.get(subject).push(row);
     }
