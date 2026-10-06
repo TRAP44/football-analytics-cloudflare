@@ -2,7 +2,7 @@ name: Quality
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, closed]
     paths-ignore:
       - "docs/**"
       - "**/*.md"
@@ -23,6 +23,8 @@ concurrency:
 
 jobs:
   test:
+    # A synthetic pull_request.closed run exists only to cancel superseded PR work.
+    if: ${{ github.event_name != 'pull_request' || github.event.action != 'closed' }}
     # This job executes PR-controlled npm/scripts. Keep it ephemeral for public-repo PR safety.
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -47,9 +49,9 @@ jobs:
 
 
   database-integration:
-    # Fork PR code must never execute on the persistent WSL runner.
+    # Fork PR code and synthetic close/cancellation runs must never execute on the persistent WSL runner.
     # The full database gate still runs after merge on trusted main before production deploy.
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    if: ${{ github.event_name != 'pull_request' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 20
     env:
