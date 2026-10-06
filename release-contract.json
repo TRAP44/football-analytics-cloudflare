@@ -4,7 +4,7 @@
   "runtimeVersion": "6.120.0-rc144",
   "productionSchema": "6.29",
   "freshInstallBaseline": "supabase/baseline/supabase_baseline_v6_19.sql",
-  "latestMigration": "supabase/migrations/supabase_migration_v6_29_8.sql",
+  "latestMigration": "supabase/migrations/supabase_migration_v6_29_9.sql",
   "accessContract": "public-telegram-validated-by-default",
   "strictBeta": "opt-in-only-when-BETA_ACCESS_ENABLED=true",
   "productionDatabaseRule": "never-run-fresh-install-baseline-over-existing-production",
@@ -39,6 +39,17 @@
       "version": 1,
       "readinessField": "backendSecurity.rule_violations",
       "sourceMigration": "supabase/migrations/supabase_migration_v6_29_1.sql"
+    },
+    "personalWriteGuards": {
+      "version": "v2",
+      "favoritesLimit": 50,
+      "favoritePlayersLimit": 50,
+      "remindersLimit": 50,
+      "canonicalReminders": true,
+      "explicitRearm": true,
+      "reminderRetentionDays": 90,
+      "readinessField": "schema.personalWriteGuards",
+      "sourceMigration": "supabase/migrations/supabase_migration_v6_29_2.sql"
     }
   }
 }
