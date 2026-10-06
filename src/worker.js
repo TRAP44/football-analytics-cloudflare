@@ -1703,7 +1703,6 @@ const {
   combineSupabaseProbeAttempts,
   probeSupabaseConfirmed,
   probeSupabaseReadiness,
-  probeSupabaseReadinessConfirmed,
   supabaseProbeConfirmationSelfTest,
   readCompositeReadiness,
   readRecentOpsEvents,
