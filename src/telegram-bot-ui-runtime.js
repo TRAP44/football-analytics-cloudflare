@@ -79,6 +79,21 @@ export function createTelegramBotUiRuntime(deps = {}) {
     return Number.isFinite(number) ? number : null;
   }
 
+  function safeMessageText(value,max=3900,fallback='') {
+    if (typeof value!=='string') return fallback;
+    try {
+      const text=value
+        .normalize('NFKC')
+        .replace(/\r\n?/g,'\n')
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g,' ')
+        .trim()
+        .slice(0,max);
+      return text || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
   function positiveSafeInteger(value) {
     const number=finiteNumber(value);
     return number!==null && Number.isSafeInteger(number) && number>0
@@ -497,8 +512,8 @@ export function createTelegramBotUiRuntime(deps = {}) {
     );
     const league=safeText(
       leagueSource?.name
-        ?? (typeof source.league==='string' ? source.league : '')
-        ?? source.leagueShort,
+        || (typeof source.league==='string' ? source.league : '')
+        || source.leagueShort,
       160,
       'Турнир',
     );
@@ -761,8 +776,8 @@ export function createTelegramBotUiRuntime(deps = {}) {
     }
 
     try {
-      // Analysis can mutate quota/history. If retry bookkeeping itself fails,
-      // abort before the mutation rather than risk replaying a charged analysis.
+      // Record the unsafe quota/history mutation in an active webhook attempt.
+      // A thrown bookkeeping failure aborts before the analysis mutation.
       markTelegramWebhookMutation(cfg,'analysis_quota_or_history');
 
       const newsImpactDelta=opts.newsImpactDelta===true;
@@ -850,7 +865,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
       await telegramApi('sendMessage',cfg,{
         chat_id:chat,
         parse_mode:'HTML',
-        text:safeText(
+        text:safeMessageText(
           botAiHandoffText(data),
           3900,
           'AI-разбор готов.',
