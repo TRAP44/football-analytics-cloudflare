@@ -1,0 +1,222 @@
+// Analysis freshness, kickoff handoff and recheck-delta lifecycle extracted from worker.js.
+// Storage and match-status primitives are injected by the composition root.
+export function createAnalysisLifecycleRuntime(deps) {
+  if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
+    throw new TypeError('Analysis lifecycle runtime dependencies are required.');
+  }
+  const {
+    hasSupabase,
+    isFinishedStatus,
+    isLiveStatus,
+    memory,
+    supaSelectOne,
+  } = deps;
+
+  function analysisFreshness(payload = {}, now = Date.now()) {
+    const generatedMs=Date.parse(payload?.generatedAt || '');
+    const kickoffMs=Date.parse(payload?.match?.date || '');
+    const status=String(payload?.match?.status || '');
+    const live=isLiveStatus(status);
+    const finished=isFinishedStatus(status);
+    const ageMinutes=Number.isFinite(generatedMs) ? Math.max(0,Math.round((now-generatedMs)/60000)) : 99999;
+    const minutesToKickoff=Number.isFinite(kickoffMs) ? Math.round((kickoffMs-now)/60000) : null;
+    const homeConfirmed=Number(payload?.lineups?.home?.startXI?.length || 0)>=10;
+    const awayConfirmed=Number(payload?.lineups?.away?.startXI?.length || 0)>=10;
+    const lineupsConfirmed=homeConfirmed && awayConfirmed;
+    const marketAvailable=Boolean(payload?.market);
+    if (live || finished || (minutesToKickoff !== null && minutesToKickoff < -5)) {
+      return {state:'started',label:finished?'Матч завершён':'Матч уже начался',ageMinutes,minutesToKickoff,maxAgeMinutes:0,needsRecheck:false,lineupsConfirmed,marketAvailable,reasonCode:'match_started',reason:'Предматчевый AI больше не обновляется как pre-match: используйте центр матча.'};
+    }
+    let maxAgeMinutes=45;
+    if (minutesToKickoff !== null) {
+      if (minutesToKickoff <= 15) maxAgeMinutes=3;
+      else if (minutesToKickoff <= 45) maxAgeMinutes=5;
+      else if (minutesToKickoff <= 120) maxAgeMinutes=10;
+      else if (minutesToKickoff <= 360) maxAgeMinutes=20;
+    }
+    if (minutesToKickoff !== null && minutesToKickoff <= 90 && !lineupsConfirmed) maxAgeMinutes=Math.min(maxAgeMinutes,5);
+    const needsRecheck=ageMinutes>maxAgeMinutes;
+    let reasonCode='fresh';
+    let reason=`AI обновлён ${ageMinutes} мин. назад; рабочее окно свежести — ${maxAgeMinutes} мин.`;
+    if (needsRecheck && minutesToKickoff !== null && minutesToKickoff <= 90 && !lineupsConfirmed) {
+      reasonCode='lineups_window';
+      reason='Матч близко: стартовые составы могли появиться после последнего расчёта.';
+    } else if (needsRecheck && minutesToKickoff !== null && minutesToKickoff <= 30 && marketAvailable) {
+      reasonCode='market_window';
+      reason='До старта мало времени: рынок и вероятности могли заметно измениться.';
+    } else if (needsRecheck) {
+      reasonCode='age_window';
+      reason=`Последнему AI-разбору ${ageMinutes} мин.; для этого этапа до матча лимит свежести ${maxAgeMinutes} мин.`;
+    }
+    return {state:needsRecheck?'recheck':'fresh',label:needsRecheck?'Нужна перепроверка':'AI свежий',ageMinutes,minutesToKickoff,maxAgeMinutes,needsRecheck,lineupsConfirmed,marketAvailable,reasonCode,reason};
+  }
+  
+  
+  function analysisKickoffHandoff(payload = {}, now = Date.now()) {
+    const status=String(payload?.match?.status || '');
+    const kickoffMs=Date.parse(payload?.match?.date || '');
+    const minutesToKickoff=Number.isFinite(kickoffMs) ? Math.round((kickoffMs-now)/60000) : null;
+    const finished=isFinishedStatus(status);
+    const liveByStatus=isLiveStatus(status);
+    const liveByClock=!finished && minutesToKickoff!==null && minutesToKickoff < -5;
+    if (finished) {
+      return {state:'finished',locked:true,minutesToKickoff,label:'Матч завершён',actionLabel:'Открыть итог матча',reason:'Предматчевый AI сохранён как архивный снимок. Для результата, событий и статистики используйте центр матча.'};
+    }
+    if (liveByStatus || liveByClock) {
+      return {state:'live',locked:true,minutesToKickoff,label:'Матч уже идёт',actionLabel:'Открыть центр матча',reason:'Предматчевый сигнал зафиксирован и больше не обновляется как live-рекомендация. Смотрите счёт, события и статистику в центре матча.'};
+    }
+    if (minutesToKickoff!==null && minutesToKickoff<=10) {
+      return {state:'imminent',locked:false,minutesToKickoff,label:'Финальное окно до старта',actionLabel:'Перепроверить перед стартом',reason:'До матча осталось мало времени: финально проверьте составы, потери и движение рынка.'};
+    }
+    return {state:'prematch',locked:false,minutesToKickoff,label:'Предматчевый режим',actionLabel:'',reason:''};
+  }
+  
+  const ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW=Date.parse('2026-09-23T18:00:00Z');
+  function analysisKickoffHandoffDrill() {
+    const pre=analysisKickoffHandoff({match:{date:'2026-09-23T20:00:00Z',status:'NS'}},ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW);
+    const imminent=analysisKickoffHandoff({match:{date:'2026-09-23T18:08:00Z',status:'NS'}},ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW);
+    const live=analysisKickoffHandoff({match:{date:'2026-09-23T17:55:00Z',status:'1H'}},ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW);
+    const finished=analysisKickoffHandoff({match:{date:'2026-09-23T15:00:00Z',status:'FT'}},ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW);
+    return {pass:pre.state==='prematch' && !pre.locked && imminent.state==='imminent' && !imminent.locked && live.state==='live' && live.locked && finished.state==='finished' && finished.locked,cases:4};
+  }
+  
+  async function userHasAnalyzedFixture(userId, fixtureId, cfg) {
+    const uid=Number(userId || 0), id=Number(fixtureId || 0);
+    if (!uid || !id) return false;
+    if (hasSupabase(cfg)) {
+      try {
+        const row=await supaSelectOne(cfg,'analysis_history',{telegram_id:`eq.${uid}`,fixture_id:`eq.${id}`});
+        return Boolean(row?.fixture_id);
+      } catch { return false; }
+    }
+    return (memory.history.get(uid) || []).some(row=>Number(row.fixture_id)===id);
+  }
+  
+  const ANALYSIS_FRESHNESS_DRILL_NOW=Date.parse('2026-09-23T18:00:00Z');
+  function analysisFreshnessDrill() {
+    const base={match:{date:'2026-09-23T18:30:00Z',status:'NS'},market:{odds:{home:2,draw:3,away:4}},lineups:{home:{startXI:[]},away:{startXI:[]}}};
+    const stale=analysisFreshness({...base,generatedAt:'2026-09-23T17:52:00Z'},ANALYSIS_FRESHNESS_DRILL_NOW);
+    const fresh=analysisFreshness({...base,generatedAt:'2026-09-23T17:58:00Z'},ANALYSIS_FRESHNESS_DRILL_NOW);
+    const far=analysisFreshness({...base,match:{date:'2026-09-24T02:00:00Z',status:'NS'},generatedAt:'2026-09-23T17:30:00Z'},ANALYSIS_FRESHNESS_DRILL_NOW);
+    return {pass:stale.needsRecheck && stale.reasonCode==='lineups_window' && !fresh.needsRecheck && !far.needsRecheck,cases:3};
+  }
+  
+  function analysisDeltaProbabilityLabel(key = '') {
+    return key==='home'?'П1':key==='draw'?'Н':key==='away'?'П2':String(key || '');
+  }
+  
+  function analysisRecheckDelta(previous = {}, next = {}) {
+    if (!previous?.match?.fixtureId || !next?.match?.fixtureId) return {available:false,material:false,stable:true,codes:[],items:[],summary:'Нет предыдущего полного снимка для сравнения.'};
+    const items=[];
+    const add=(code,title,before='',after='',importance='medium')=>items.push({code,title,before:String(before || ''),after:String(after || ''),importance});
+    const oldSignal=String(previous?.aiInstructor?.betSignal?.code || '');
+    const newSignal=String(next?.aiInstructor?.betSignal?.code || '');
+    const oldSignalLabel=String(previous?.aiInstructor?.betSignal?.label || oldSignal || '—');
+    const newSignalLabel=String(next?.aiInstructor?.betSignal?.label || newSignal || '—');
+    if (oldSignal && newSignal && oldSignal!==newSignal) add('signal','AI-сигнал изменился',oldSignalLabel,newSignalLabel,'high');
+  
+    const probRows=['home','draw','away'].map(key=>({key,delta:Math.round((Number(next?.probabilities?.[key] || 0)-Number(previous?.probabilities?.[key] || 0))*10)/10})).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
+    const maxProb=probRows[0];
+    if (maxProb && Math.abs(maxProb.delta)>=3) add('probability','Вероятности заметно сдвинулись','',`${analysisDeltaProbabilityLabel(maxProb.key)} ${maxProb.delta>0?'+':''}${maxProb.delta.toFixed(1)} п.п.`,Math.abs(maxProb.delta)>=7?'high':'medium');
+  
+    const oldConf=Number(previous?.aiInstructor?.confidenceScore ?? previous?.confidence?.score);
+    const newConf=Number(next?.aiInstructor?.confidenceScore ?? next?.confidence?.score);
+    if (Number.isFinite(oldConf)&&Number.isFinite(newConf)&&Math.abs(newConf-oldConf)>=8) add('confidence','Уверенность модели изменилась',`${Math.round(oldConf)}/100`,`${Math.round(newConf)}/100`,Math.abs(newConf-oldConf)>=15?'high':'medium');
+  
+    const oldHome=Boolean(previous?.lineupImpact?.homeConfirmed), oldAway=Boolean(previous?.lineupImpact?.awayConfirmed);
+    const newHome=Boolean(next?.lineupImpact?.homeConfirmed), newAway=Boolean(next?.lineupImpact?.awayConfirmed);
+    const oldLineups=Number(oldHome)+Number(oldAway), newLineups=Number(newHome)+Number(newAway);
+    if (newLineups>oldLineups) add('lineups','Появились стартовые составы',oldLineups===0?'Не подтверждены':`${oldLineups}/2 подтверждены`,newLineups===2?'Оба состава подтверждены':`${newLineups}/2 подтверждены`,'high');
+  
+    const absenceCount=p=>Number(p?.absences?.home?.length || 0)+Number(p?.absences?.away?.length || 0);
+    const oldAbs=absenceCount(previous), newAbs=absenceCount(next);
+    if (oldAbs!==newAbs) add('absences','Изменились подтверждённые потери',`${oldAbs}`,`${newAbs}`,Math.abs(newAbs-oldAbs)>=2?'high':'medium');
+  
+    const marketRows=['home','draw','away'].map(key=>({key,delta:Math.round((Number(next?.market?.probabilities?.[key] || 0)-Number(previous?.market?.probabilities?.[key] || 0))*10)/10})).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
+    const maxMarket=marketRows[0];
+    if (maxMarket && Math.abs(maxMarket.delta)>=2.5) add('market','Рынок заметно изменился','',`${analysisDeltaProbabilityLabel(maxMarket.key)} ${maxMarket.delta>0?'+':''}${maxMarket.delta.toFixed(1)} п.п.`,Math.abs(maxMarket.delta)>=5?'high':'medium');
+  
+    const oldRef=String(previous?.match?.referee || '').trim(), newRef=String(next?.match?.referee || '').trim();
+    if (!oldRef && newRef) add('referee','Назначен судья','Не был указан',newRef,'medium');
+  
+    const codes=[...new Set(items.map(x=>x.code))];
+    const material=items.some(x=>x.importance==='high') || codes.some(code=>['signal','probability','lineups','market'].includes(code));
+    const stable=items.length===0;
+    const summary=stable
+      ? 'Значимых изменений после перепроверки не найдено.'
+      : material
+        ? `После перепроверки есть значимые изменения: ${items.slice(0,3).map(x=>x.title.toLocaleLowerCase('ru-RU')).join(', ')}.`
+        : `Обновились детали матча: ${items.slice(0,3).map(x=>x.title.toLocaleLowerCase('ru-RU')).join(', ')}.`;
+    return {available:true,material,stable,codes,items:items.slice(0,6),summary};
+  }
+  
+  function newsImpactDeltaStatus(previous = {}, next = {}, delta = null, { requested=false, eligible=false, performed=false, publishedAt='' } = {}) {
+    if (!requested) return null;
+    if (!previous?.match?.fixtureId) {
+      return {requested:true,eligible:false,performed:false,compared:false,material:false,stable:false,publishedAt,reasonCode:'baseline_missing',summary:'До новости не было сохранённого AI-снимка: текущий анализ станет базовой точкой для следующего сравнения.',items:[]};
+    }
+    if (!eligible) {
+      return {requested:true,eligible:false,performed:false,compared:false,material:false,stable:true,publishedAt,reasonCode:'snapshot_not_before_news',summary:'Сохранённый AI-снимок не старше новости, поэтому приписывать ей изменение прогноза нельзя.',items:[]};
+    }
+    if (!performed || !delta?.available) {
+      return {requested:true,eligible:true,performed:false,compared:false,material:false,stable:false,publishedAt,reasonCode:'recheck_unavailable',summary:'Новость привязана к матчу, но свежую перепроверку сейчас выполнить не удалось.',items:[]};
+    }
+    return {
+      requested:true,
+      eligible:true,
+      performed:true,
+      compared:true,
+      material:Boolean(delta.material),
+      stable:Boolean(delta.stable),
+      publishedAt,
+      reasonCode:delta.material?'material_change':delta.stable?'stable':'detail_change',
+      summary:delta.material
+        ? 'После новости и свежей перепроверки обнаружены существенные изменения во входных данных AI.'
+        : delta.stable
+          ? 'После новости свежая перепроверка не обнаружила значимых изменений в AI-входах.'
+          : 'После новости изменились отдельные детали, но существенного сдвига AI-сценария не обнаружено.',
+      items:(delta.items || []).slice(0,6),
+      codes:(delta.codes || []).slice(0,6),
+    };
+  }
+  
+  function newsImpactDeltaDrill() {
+    const previous={match:{fixtureId:71},probabilities:{home:45,draw:30,away:25},market:{probabilities:{home:44,draw:31,away:25}},lineupImpact:{homeConfirmed:false,awayConfirmed:false},absences:{home:[],away:[]},aiInstructor:{betSignal:{code:'skip',label:'Пропустить ставку'},confidenceScore:54}};
+    const next={match:{fixtureId:71},probabilities:{home:53,draw:27,away:20},market:{probabilities:{home:50,draw:29,away:21}},lineupImpact:{homeConfirmed:true,awayConfirmed:true},absences:{home:[{name:'X'}],away:[]},aiInstructor:{betSignal:{code:'home',label:'П1'},confidenceScore:68}};
+    const delta=analysisRecheckDelta(previous,next);
+    const impact=newsImpactDeltaStatus(previous,next,delta,{requested:true,eligible:true,performed:true,publishedAt:'2026-09-23T12:00:00Z'});
+    const guarded=newsImpactDeltaStatus(previous,next,null,{requested:true,eligible:false,performed:false,publishedAt:'2026-09-23T12:00:00Z'});
+    return {
+      pass:impact?.compared===true
+        && impact?.material===true
+        && impact?.codes?.includes('signal')
+        && guarded?.reasonCode==='snapshot_not_before_news'
+        && guarded?.compared===false,
+      cases:5,
+    };
+  }
+  
+  function analysisDeltaDrill() {
+    const previous={match:{fixtureId:7,referee:''},probabilities:{home:44,draw:29,away:27},market:{probabilities:{home:43,draw:30,away:27}},lineupImpact:{homeConfirmed:false,awayConfirmed:false},absences:{home:[],away:[]},aiInstructor:{betSignal:{code:'skip',label:'Пропустить ставку'},confidenceScore:55}};
+    const next={match:{fixtureId:7,referee:'A. Ref'},probabilities:{home:53,draw:26,away:21},market:{probabilities:{home:49,draw:28,away:23}},lineupImpact:{homeConfirmed:true,awayConfirmed:true},absences:{home:[{name:'Player'}],away:[]},aiInstructor:{betSignal:{code:'home',label:'П1'},confidenceScore:69}};
+    const delta=analysisRecheckDelta(previous,next);
+    return {pass:delta.available && delta.material && delta.codes.includes('signal') && delta.codes.includes('probability') && delta.codes.includes('lineups') && delta.codes.includes('market'),count:delta.items.length};
+  }
+  function analysisResponsePayload(payload = {}, extra = {}) {
+    return {...payload,freshness:analysisFreshness(payload),kickoffHandoff:analysisKickoffHandoff(payload),...extra};
+  }
+
+  return {
+    analysisFreshness,
+    analysisKickoffHandoff,
+    analysisKickoffHandoffDrill,
+    userHasAnalyzedFixture,
+    analysisFreshnessDrill,
+    analysisDeltaProbabilityLabel,
+    analysisRecheckDelta,
+    newsImpactDeltaStatus,
+    newsImpactDeltaDrill,
+    analysisDeltaDrill,
+    analysisResponsePayload,
+  };
+}
