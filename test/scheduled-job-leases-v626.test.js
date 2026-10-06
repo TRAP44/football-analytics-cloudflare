@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createScheduledLeaseRuntime } from '../src/scheduled-lease.js';
+import { createMaintenanceRuntime } from '../src/maintenance-runtime.js';
 
 function runtime({hasSupabase=()=>true,supaRpc,events=[]}={}) {
   return createScheduledLeaseRuntime({
@@ -64,6 +65,20 @@ test('scheduled lease bounds TTL and retention without JavaScript coercion',asyn
   });
   assert.equal(calls[1].args.p_lease_seconds,1800);
   assert.equal(calls[1].args.p_retention_seconds,604800);
+
+  await api.claimScheduledJob({},{
+    jobKey:'cron:test-3',
+    groupKey:'cron-global',
+    scheduledAt:new Date('2026-09-28T12:15:00Z'),
+    leaseSeconds:1800,
+    retentionSeconds:300,
+  });
+  assert.equal(calls[2].args.p_lease_seconds,1800);
+  assert.equal(
+    calls[2].args.p_retention_seconds,
+    1800,
+    'client retention must cover the complete initial ownership lease',
+  );
 });
 
 test('truthy Supabase availability does not silently enable persistent coordination',async()=>{
@@ -325,4 +340,37 @@ test('v6.26.1 lease privilege hardening removes non-CRUD service-role table priv
     'revoke execute on function public.claim_scheduled_job(text,text,timestamptz,integer,integer)',
     'grant execute on function public.claim_scheduled_job(text,text,timestamptz,integer,integer)',
   ]) assert.ok(sql.includes(marker),marker);
+});
+
+test('scheduled lease maintenance never deletes rows with an active ownership lease', async()=>{
+  const calls=[];
+  const api=createMaintenanceRuntime({
+    hasSupabase:()=>true,
+    memory:{telemetry:{},inflight:new Map(),routeBurst:new Map(),cache:new Map()},
+    redactOpsString:value=>String(value || ''),
+    supaDelete:async(_cfg,table,filters)=>calls.push({table,filters}),
+  });
+
+  const result=await api.cleanupScheduledJobLeases({});
+  assert.equal(result.ok,true);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].table,'scheduled_job_leases');
+  assert.equal(typeof calls[0].filters.expires_at,'string');
+  assert.equal(calls[0].filters.expires_at,calls[0].filters.locked_until);
+  assert.match(calls[0].filters.expires_at,/^lt\./);
+});
+
+test('v6.29.5 keeps scheduled retention at or beyond the active lease horizon',()=>{
+  const sql=fs.readFileSync(
+    'supabase/migrations/supabase_migration_v6_29_5.sql',
+    'utf8',
+  ).toLowerCase();
+  assert.ok(
+    sql.includes('v_retention_seconds := greatest(v_retention_seconds, v_lease_seconds)'),
+    'initial retention must cover the requested lease',
+  );
+  assert.ok(
+    sql.includes('expires_at=greatest(expires_at,v_next_locked_until)'),
+    'heartbeat renewal must extend retention through the renewed lease',
+  );
 });
