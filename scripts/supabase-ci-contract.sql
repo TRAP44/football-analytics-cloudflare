@@ -516,6 +516,51 @@ begin
 end
 $matchradar$;
 
+-- Atomic runtime-control history lives in pg_rewrite and is not part of the
+-- structural v2 fingerprint. Rename it temporarily to prove readiness fails
+-- closed, then restore it without recreating the rule body.
+alter rule runtime_controls_atomic_history on public.runtime_controls
+  rename to issue478_atomic_history_probe;
+
+do $atomic_history_probe$
+declare
+  v_security jsonb;
+  v_readiness jsonb;
+  v_expected text;
+begin
+  select public.backend_security_contract() into v_security;
+  if coalesce((v_security->>'ok')::boolean,false) is true
+     or not exists (
+       select 1
+       from jsonb_array_elements(coalesce(v_security->'rule_violations','[]'::jsonb)) item
+       where item->>'reason'='atomic_history_rule_missing_or_invalid'
+     ) then
+    raise exception 'Supabase integration contract: missing atomic history rule was not rejected: %', v_security;
+  end if;
+
+  select v2_fingerprint into v_expected
+  from issue438_contract_expectations;
+  select public.backend_readiness_contract_v2(v_expected,5) into v_readiness;
+  if coalesce((v_readiness->>'ok')::boolean,false) is true then
+    raise exception 'Supabase integration contract: readiness stayed green without atomic history rule: %', v_readiness;
+  end if;
+end
+$atomic_history_probe$;
+
+alter rule issue478_atomic_history_probe on public.runtime_controls
+  rename to runtime_controls_atomic_history;
+
+do $atomic_history_restored$
+declare
+  v_security jsonb;
+begin
+  select public.backend_security_contract() into v_security;
+  if coalesce((v_security->>'ok')::boolean,false) is not true then
+    raise exception 'Supabase integration contract: atomic history security contract did not recover: %', v_security;
+  end if;
+end
+$atomic_history_restored$;
+
 -- The structural v2 fingerprint intentionally does not include function proconfig.
 -- Prove that the readiness security contract closes that gap by rejecting a
 -- backend-only public function whose search_path is inherited from the session.
