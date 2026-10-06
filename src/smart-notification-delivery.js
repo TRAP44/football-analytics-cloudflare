@@ -93,6 +93,16 @@ function cleanCategory(value) {
   return typeof value === 'string' && CATEGORIES.has(value.trim()) ? value.trim() : '';
 }
 
+function expectedCategory(eventType) {
+  if (eventType.startsWith('player.')) return 'players';
+  if (eventType.startsWith('ai.') || eventType.startsWith('radar.') || eventType.startsWith('market.')) {
+    return 'aiRadar';
+  }
+  if (eventType.startsWith('team.')) return 'teams';
+  if (eventType.startsWith('match.')) return 'match';
+  return '';
+}
+
 function cleanDedupeKey(value) {
   return cleanToken(value,240,/^[A-Za-z0-9][A-Za-z0-9._:+-]{0,239}$/);
 }
@@ -127,7 +137,9 @@ function normalizeTelegramResult(value) {
   const rawOutcome=typeof source.outcome === 'string' ? source.outcome.trim().toLowerCase() : '';
   const reportedOk=source.ok === true;
   const statusCompatible=status === null || (status >= 200 && status <= 299);
-  const ok=reportedOk && statusCompatible;
+  const errorCompatible=errorCode === null || (errorCode >= 200 && errorCode <= 299);
+  const outcomeCompatible=!rawOutcome || rawOutcome === 'sent';
+  const ok=reportedOk && statusCompatible && errorCompatible && outcomeCompatible;
   const outcome=ok
     ? 'sent'
     : rawOutcome === 'confirmed_failure'
@@ -192,8 +204,10 @@ function normalizeInput({row,eventType,category,text,dedupeKey,cooldownSeconds=0
     || !fixtureId
     || !normalizedEventType
     || !normalizedCategory
+    || normalizedCategory !== expectedCategory(normalizedEventType)
     || !normalizedText
     || !normalizedDedupeKey
+    || !normalizedDedupeKey.startsWith(`v1:${fixtureId}:${normalizedEventType}:`)
     || normalizedCooldown === null
   ) return null;
   return {
