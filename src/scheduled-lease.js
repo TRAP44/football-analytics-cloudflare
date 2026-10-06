@@ -143,9 +143,14 @@ function normalizeClaim(raw={},fallback={}) {
     : cleanLeasePart(source.groupKey ?? source.group_key,'group');
   const leaseToken=cleanLeaseToken(source.leaseToken ?? source.lease_token);
   const lockedUntil=rpcTimestamp(source.lockedUntil ?? source.locked_until,null);
-  const scheduledAt=rpcTimestamp(
-    source.scheduledAt ?? source.scheduled_at,
-    fallbackScheduledAt,
+  const rawScheduledAt=source.scheduledAt ?? source.scheduled_at;
+  const scheduledAt=rpcTimestamp(rawScheduledAt,fallbackScheduledAt);
+  const scheduledAtMatches=(
+    rawScheduledAt === undefined
+    || rawScheduledAt === null
+    || rawScheduledAt === ''
+    || !fallbackScheduledAt
+    || scheduledAt === fallbackScheduledAt
   );
   const leaseSeconds=boundedLeaseSeconds(
     source.leaseSeconds ?? source.lease_seconds ?? fallbackLeaseSeconds,
@@ -163,7 +168,7 @@ function normalizeClaim(raw={},fallback={}) {
     && scheduledAt
   );
 
-  if (!identityValid || !claimedValid) {
+  if (!identityValid || !scheduledAtMatches || !claimedValid) {
     return {
       claimed:false,
       persistent:true,
@@ -272,14 +277,25 @@ export function createScheduledLeaseRuntime({
       };
     }
     if (source.persistent === false) {
-      return {
-        renewed:true,
-        persistent:false,
-        reason:'memory_only',
-        jobKey:cleanLeasePart(source.jobKey,'job'),
-        groupKey:cleanLeasePart(source.groupKey,'group'),
-        lockedUntil:null,
-      };
+      const jobKey=cleanLeasePart(source.jobKey,'job');
+      const groupKey=cleanLeasePart(source.groupKey,'group');
+      return jobKey && groupKey
+        ? {
+            renewed:true,
+            persistent:false,
+            reason:'memory_only',
+            jobKey,
+            groupKey,
+            lockedUntil:null,
+          }
+        : {
+            renewed:false,
+            persistent:false,
+            reason:'invalid_claim',
+            jobKey:'',
+            groupKey:'',
+            lockedUntil:null,
+          };
     }
     if (!validPersistentClaim(source)) {
       return {
