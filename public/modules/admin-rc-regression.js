@@ -63,10 +63,15 @@ export function createAdminRcRegressionModule({
       return;
     }
   
-    const cls = r.status === 'rc_ready' ? 'ready' : r.status === 'blocked' ? 'blocked' : 'warning';
+    const cs = r.clientContract || clientContractSmoke();
+    const clientFailed = Number(cs.failed || 0);
+    const effectiveStatus = r.status === 'blocked' || clientFailed > 0 ? 'blocked' : r.status;
+    const cls = effectiveStatus === 'rc_ready' ? 'ready' : effectiveStatus === 'blocked' ? 'blocked' : 'warning';
     badge.className = `rc-badge ${cls}`;
-    badge.textContent = rcStateText(r.status);
-    status.textContent = r.label || 'Регрессионная проверка завершена.';
+    badge.textContent = rcStateText(effectiveStatus);
+    status.textContent = clientFailed > 0 && r.status !== 'blocked'
+      ? `Клиентский контракт не пройден: ${clientFailed} ошибок.`
+      : r.label || 'Регрессионная проверка завершена.';
     meta.textContent = `${Number(r.score || 0)}% сервер · ${relativeAge(r.generatedAt)} · ${Number(r.durationMs || 0)} мс`;
   
     summary.innerHTML = `
@@ -88,7 +93,6 @@ export function createAdminRcRegressionModule({
         <small>${Number(g.warn || 0)} предупреждений · ${Number(g.fail || 0)} ошибок</small>
       </div>`).join('')}</div>`;
   
-    const cs = r.clientContract || clientContractSmoke();
     client.innerHTML = `
       <div class="rc-client-head"><strong>📱 Проверка клиентского контракта</strong><span>${Number(cs.passed || 0)}/${Number(cs.total || 0)}</span></div>
       <div class="rc-client-checks">${(cs.checks || []).map(x => `
