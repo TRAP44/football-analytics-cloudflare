@@ -4,6 +4,11 @@ import fs from 'node:fs';
 
 const codeql = fs.readFileSync('.github/workflows/codeql.yml','utf8');
 const dependabot = fs.readFileSync('.github/dependabot.yml','utf8');
+const quality = fs.readFileSync('.github/workflows/quality.yml','utf8');
+const privileged = fs.readFileSync('.github/workflows/privileged-access-audit.yml','utf8');
+const cleanup = fs.readFileSync('.github/workflows/cleanup-merged-branches.yml','utf8');
+const deploy = fs.readFileSync('.github/workflows/deploy-production.yml','utf8');
+const rollback = fs.readFileSync('.github/workflows/rollback-production.yml','utf8');
 
 test('CodeQL scans JavaScript on PR, main and schedule with pinned actions', () => {
   assert.match(codeql,/pull_request:\s*\n\s*branches:\s*\[main\]/);
@@ -19,6 +24,7 @@ test('CodeQL scans JavaScript on PR, main and schedule with pinned actions', () 
   assert.match(codeql,/actions\/checkout@11d5960a326750d5838078e36cf38b85af677262/);
   assert.doesNotMatch(codeql,/uses:\s*[^\n]+@v\d+/);
   assert.doesNotMatch(codeql,/security-events:\s*write/);
+  assert.match(codeql,/runs-on:\s*ubuntu-latest/);
 });
 
 test('Dependabot covers npm and GitHub Actions without automatic merge policy', () => {
@@ -35,4 +41,33 @@ test('Dependabot groups routine minor and patch maintenance but leaves major upd
   assert.ok(updateTypes.includes('minor'));
   assert.ok(updateTypes.includes('patch'));
   assert.ok(!updateTypes.includes('major'));
+});
+
+
+test('public PR automation cannot execute untrusted repository code on the persistent runner', () => {
+  assert.match(codeql, /runs-on:\s*ubuntu-latest/);
+  assert.match(privileged, /runs-on:\s*ubuntu-latest/);
+
+  const qualityUnitJob = quality.slice(
+    quality.indexOf('  test:'),
+    quality.indexOf('  database-integration:'),
+  );
+  assert.match(qualityUnitJob, /runs-on:\s*ubuntu-latest/);
+  assert.doesNotMatch(qualityUnitJob, /self-hosted/);
+
+  assert.match(
+    quality,
+    /database-integration:[\s\S]*if:\s*\$\{\{ github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository \}\}/,
+  );
+});
+
+test('workflow cleanup and production mutation guards are fail-closed', () => {
+  assert.match(cleanup, /\$1 == current_sha && \$2 != ""/);
+  assert.doesNotMatch(quality, /cleanup-actions-(history|artifacts|caches)\.yml/);
+  assert.match(quality, /rm -rf "\$FRESH_DIR"[\s\S]*mkdir -p "\$FRESH_DIR"/);
+  assert.match(quality, /rm -rf "\$UPGRADE_DIR"[\s\S]*mkdir -p "\$UPGRADE_DIR"/);
+  assert.match(quality, /Database integration requires native Linux Node\/npm tooling/);
+  assert.match(privileged, /\.github\/dependabot\.yml/);
+  assert.match(deploy, /ref: \$\{\{ env\.DEPLOY_SHA \}\}[\s\S]*persist-credentials: false/);
+  assert.match(rollback, /ref: \$\{\{ env\.ROLLBACK_WORKFLOW_SHA \}\}[\s\S]*persist-credentials: false/);
 });
