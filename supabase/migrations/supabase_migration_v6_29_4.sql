@@ -7,6 +7,13 @@
 --
 -- Public signatures, function volatility/security attributes and grants remain
 -- unchanged, so established legacy and v2 schema fingerprints stay valid.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- This migration hardens claim/reclaim and cleanup, but complete/fail remained
+-- the v6.27 definitions and could still settle after locked_until had expired.
+-- v6.29.11 closes that ownership-finalization gap by requiring an active lease
+-- for both terminal settlement RPCs while preserving their public signatures.
+-- Do not rewrite this migration's SQL semantics; corrections belong forward.
 
 create or replace function public.claim_sensitive_mutation(
   p_operation_key text,
