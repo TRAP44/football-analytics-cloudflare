@@ -1101,132 +1101,439 @@ export function createAnalysisRuntime(deps) {
       .filter(Boolean);
     skipped.push(...providerReliability.warnings);
 
-    const webPromise = tavilySearch(`${homeName} ${awayName} injuries team news probable lineups latest`, cfg);
-    const homeFormPromise = detailedCoverage
-      ? getRecentTeamForm(homeId, 'home', fixture.fixture?.date, fixtureId, cfg, { allowNetwork: canFetchFreshForm }).catch(() => null)
+    const webPromise=tavilySearch(
+      `${homeName} ${awayName} injuries team news probable lineups latest`,
+      cfg,
+    );
+    const homeFormPromise=detailedCoverage
+      ? optionalAsync(
+          getRecentTeamForm,
+          homeId,
+          'home',
+          kickoffRaw,
+          fixtureId,
+          cfg,
+          {allowNetwork:canFetchFreshForm},
+        )
       : Promise.resolve(null);
-    const awayFormPromise = detailedCoverage
-      ? getRecentTeamForm(awayId, 'away', fixture.fixture?.date, fixtureId, cfg, { allowNetwork: canFetchFreshForm }).catch(() => null)
+    const awayFormPromise=detailedCoverage
+      ? optionalAsync(
+          getRecentTeamForm,
+          awayId,
+          'away',
+          kickoffRaw,
+          fixtureId,
+          cfg,
+          {allowNetwork:canFetchFreshForm},
+        )
       : Promise.resolve(null);
-    const refereeHistoryPromise = loadRefereeHistoryProfile(fixture.fixture?.referee || '', cfg).catch(() => ({ available:false, sample:0 }));
-    const [web, homeForm, awayForm, refereeHistory] = await Promise.all([webPromise, homeFormPromise, awayFormPromise, refereeHistoryPromise]);
-  
-    // v3.5 Match Comparison: reuse only already cached deep team data.
-    // This adds Supabase cache reads but deliberately makes zero extra API-Football calls.
-    const leagueId = Number(fixture.league?.id || 0);
-    const season = Number(fixture.league?.season || 0) || null;
-    const comparisonCompetition = { leagueId, season };
-    const [homeStanding, awayStanding, homeTeamIntelligence, awayTeamIntelligence] = await Promise.all([
-      cachedTeamStanding(homeId, comparisonCompetition, cfg).catch(() => null),
-      cachedTeamStanding(awayId, comparisonCompetition, cfg).catch(() => null),
-      cachedTeamIntelligenceForAnalysis(homeId, leagueId, season, cfg).catch(() => ({ stats:null, playerStats:null })),
-      cachedTeamIntelligenceForAnalysis(awayId, leagueId, season, cfg).catch(() => ({ stats:null, playerStats:null })),
+    const refereeHistoryPromise=optionalAsync(
+      loadRefereeHistoryProfile,
+      safeText(fixture?.fixture?.referee,180),
+      cfg,
+    );
+    const [webRaw,homeFormRaw,awayFormRaw,refereeHistoryRaw]=await Promise.all([
+      webPromise,
+      homeFormPromise,
+      awayFormPromise,
+      refereeHistoryPromise,
     ]);
-    const homeSeasonStats = homeTeamIntelligence?.stats || null;
-    const awaySeasonStats = awayTeamIntelligence?.stats || null;
-    const cachedHomePlayerStats = homeTeamIntelligence?.playerStats || null;
-    const cachedAwayPlayerStats = awayTeamIntelligence?.playerStats || null;
-  
-    const previousMarketSnapshots = analysisMarket ? await getOddsSnapshots(fixtureId, cfg, 8).catch(() => []) : [];
-    const marketMovement = buildOddsMovement(previousMarketSnapshots, analysisMarket);
-    if (analysisMarket) await saveOddsSnapshot(fixtureId, analysisMarket, cfg).catch(() => false);
-    const apiPrediction = extractPrediction(predictions);
-    const h2h = formatH2H(h2hRows, homeId, awayId);
-    const normalizedAbsences = formatAbsences(trustedInjuries, homeId, awayId, lineups);
-    // Production must fail soft when optional availability enrichment is absent or
-    // malformed. Never let a null optional block turn the entire AI endpoint into 502.
-    const baseAbsences = normalizedAbsences && Array.isArray(normalizedAbsences.home) && Array.isArray(normalizedAbsences.away)
-      ? normalizedAbsences
-      : {
-        home: [],
-        away: [],
-        summary: { home:{ total:0 }, away:{ total:0 }, resolvedByLineup:0 },
-        resolvedByLineup: { home:[], away:[] },
-        source: 'unavailable',
-        methodology: 'Данные о потерях недоступны; анализ продолжен без этого сигнала.',
-      };
-    const roleHydrationMaxPages = paid ? 2 : 1;
-    const [homeRoleHydration, awayRoleHydration] = await Promise.all([
-      hydratePlayerRolesForAnalysis({ teamId:homeId, teamName:homeName, leagueId, leagueName, season, cachedPlayerStats:cachedHomePlayerStats, needed:baseAbsences.home.length>0, cfg, maxPages:roleHydrationMaxPages }),
-      hydratePlayerRolesForAnalysis({ teamId:awayId, teamName:awayName, leagueId, leagueName, season, cachedPlayerStats:cachedAwayPlayerStats, needed:baseAbsences.away.length>0, cfg, maxPages:roleHydrationMaxPages }),
+    const web=objectValue(webRaw) || {
+      available:false,
+      answer:'',
+      results:[],
+      reason:'unavailable',
+    };
+    const homeForm=objectValue(homeFormRaw);
+    const awayForm=objectValue(awayFormRaw);
+    const refereeHistory=objectValue(refereeHistoryRaw) || {
+      available:false,
+      sample:0,
+    };
+
+    // Match Comparison only reuses already cached deep team data.
+    const leagueId=positiveSafeInteger(fixture?.league?.id) || 0;
+    const season=safeSeason(fixture?.league?.season);
+    const comparisonCompetition={leagueId,season};
+    const [
+      homeStandingRaw,
+      awayStandingRaw,
+      homeTeamIntelligenceRaw,
+      awayTeamIntelligenceRaw,
+    ]=await Promise.all([
+      leagueId && season
+        ? optionalAsync(cachedTeamStanding,homeId,comparisonCompetition,cfg)
+        : Promise.resolve(null),
+      leagueId && season
+        ? optionalAsync(cachedTeamStanding,awayId,comparisonCompetition,cfg)
+        : Promise.resolve(null),
+      leagueId && season
+        ? optionalAsync(cachedTeamIntelligenceForAnalysis,homeId,leagueId,season,cfg)
+        : Promise.resolve(null),
+      leagueId && season
+        ? optionalAsync(cachedTeamIntelligenceForAnalysis,awayId,leagueId,season,cfg)
+        : Promise.resolve(null),
     ]);
-    const homePlayerStats = homeRoleHydration.playerStats;
-    const awayPlayerStats = awayRoleHydration.playerStats;
-    if (baseAbsences.home.length && !homePlayerStats?.available) skipped.push('Роль отсутствующих игроков хозяев не уточнена: сезонная статистика недоступна или сохранена квота.');
-    if (baseAbsences.away.length && !awayPlayerStats?.available) skipped.push('Роль отсутствующих игроков гостей не уточнена: сезонная статистика недоступна или сохранена квота.');
-    const absences = enrichFixtureAbsencesWithSeasonRole(baseAbsences, { homePlayerStats, awayPlayerStats });
-    const lineupImpact = buildLineupImpact({ absences, lineups, homeName, awayName, reliability:providerReliability });
-    const recentFormProb = formProbabilities(homeForm, awayForm);
-    const h2hProb = h2hProbabilities(h2h);
-    const calibrationProfile = await getCalibrationProfile(cfg).catch(() => baselineCalibrationProfile());
-    const baselineBlend = blendProbabilitySignals({ market:analysisMarket, model: apiPrediction, form: recentFormProb, h2h: h2hProb, weightOverrides: MODEL_BASE_WEIGHTS });
-    const blended = calibrationProfile.weightsActive
-      ? blendProbabilitySignals({ market:analysisMarket, model: apiPrediction, form: recentFormProb, h2h: h2hProb, weightOverrides: calibrationProfile.signalWeights })
-      : baselineBlend;
-    const rawProbabilities = applyAbsenceAdjustment(baselineBlend.probabilities, absences);
-    const weightedProbabilities = applyAbsenceAdjustment(blended.probabilities, absences);
-    const probabilities = calibrationProfile.temperatureActive
-      ? temperatureScaleProbabilities(weightedProbabilities, calibrationProfile.temperature)
-      : weightedProbabilities;
-    const goalModel = poissonGoalModel(homeForm, awayForm);
-    const comparison = buildMatchComparison({
-      homeName, awayName, homeForm, awayForm, homeStanding, awayStanding, homeSeasonStats, awaySeasonStats,
-      goalModel, h2h, absences, hasInjuryData: Boolean(providerReliability.features?.injuries?.available),
-    });
-    const confidence = confidenceModel(blended.signals, probabilities, homeForm, awayForm);
-    const notes = buildAnalysisNotes({
-      probabilities, market:analysisMarket, model: apiPrediction, homeForm, awayForm, h2h, absences, lineups, news: web,
-      homeName, awayName, minutesToKickoff, confidence,
-    });
-    notes.risks.push(...providerReliability.warnings);
-    notes.risks = [...new Set(notes.risks)].slice(0, 7);
-    if (calibrationProfile.mode === 'active') {
-      notes.factors.unshift(`Калибратор вероятностей активен (${String(calibrationProfile.fingerprint || '').slice(0, 8) || 'базовый'}) на базе ${Number(calibrationProfile.sample || 0)} доверенных прогнозов.`);
-    } else if (calibrationProfile.mode === 'shadow') {
-      notes.risks.push('Калибратор пока работает в теневом режиме: выборка собирается, но итоговые вероятности ещё не корректируются автоматически.');
+    const homeStanding=objectValue(homeStandingRaw);
+    const awayStanding=objectValue(awayStandingRaw);
+    const homeTeamIntelligence=objectValue(homeTeamIntelligenceRaw) || {};
+    const awayTeamIntelligence=objectValue(awayTeamIntelligenceRaw) || {};
+    const homeSeasonStats=objectValue(homeTeamIntelligence.stats);
+    const awaySeasonStats=objectValue(awayTeamIntelligence.stats);
+    const cachedHomePlayerStats=objectValue(homeTeamIntelligence.playerStats);
+    const cachedAwayPlayerStats=objectValue(awayTeamIntelligence.playerStats);
+
+    const previousMarketSnapshots=analysisMarket
+      ? rowsOrEmpty(await optionalAsync(getOddsSnapshots,fixtureId,cfg,8),20)
+      : [];
+    let marketMovement=null;
+    try {
+      marketMovement=objectValue(buildOddsMovement(previousMarketSnapshots,analysisMarket));
+    } catch {}
+    if (analysisMarket) {
+      try { await saveOddsSnapshot(fixtureId,analysisMarket,cfg); } catch {}
     }
-  
-    const availableSignals = [
+
+    const featureTrusted=feature=>{
+      const meta=objectValue(analysisFeatureMeta?.[feature]);
+      return meta?.confidenceBearing === true && meta?.stale !== true;
+    };
+
+    let apiPrediction=null;
+    try { apiPrediction=objectValue(extractPrediction(predictions)); } catch {}
+    const trustedApiPrediction=featureTrusted('predictions') ? apiPrediction : null;
+
+    let h2h=null;
+    try { h2h=objectValue(formatH2H(h2hRows,homeId,awayId)); } catch {}
+    const trustedH2h=featureTrusted('h2h') ? h2h : null;
+    const trustedLineups=featureTrusted('lineups') ? lineups : {};
+
+    let normalizedAbsences=null;
+    try {
+      normalizedAbsences=objectValue(
+        formatAbsences(trustedInjuries,homeId,awayId,trustedLineups),
+      );
+    } catch {}
+
+    const baseAbsences=normalizedAbsences
+      && Array.isArray(normalizedAbsences.home)
+      && Array.isArray(normalizedAbsences.away)
+      ? {
+          ...normalizedAbsences,
+          home:normalizedAbsences.home.slice(0,200),
+          away:normalizedAbsences.away.slice(0,200),
+        }
+      : {
+          home:[],
+          away:[],
+          summary:{home:{total:0},away:{total:0},resolvedByLineup:0},
+          resolvedByLineup:{home:[],away:[]},
+          source:'unavailable',
+          methodology:'Данные о потерях недоступны; анализ продолжен без этого сигнала.',
+        };
+
+    const roleHydrationMaxPages=paid ? 2 : 1;
+    const [homeRoleRaw,awayRoleRaw]=await Promise.all([
+      optionalAsync(hydratePlayerRolesForAnalysis,{
+        teamId:homeId,
+        teamName:homeName,
+        leagueId,
+        leagueName,
+        season,
+        cachedPlayerStats:cachedHomePlayerStats,
+        needed:baseAbsences.home.length>0,
+        cfg,
+        maxPages:roleHydrationMaxPages,
+      }),
+      optionalAsync(hydratePlayerRolesForAnalysis,{
+        teamId:awayId,
+        teamName:awayName,
+        leagueId,
+        leagueName,
+        season,
+        cachedPlayerStats:cachedAwayPlayerStats,
+        needed:baseAbsences.away.length>0,
+        cfg,
+        maxPages:roleHydrationMaxPages,
+      }),
+    ]);
+    const homeRoleHydration=objectValue(homeRoleRaw) || {
+      playerStats:null,
+      source:'unavailable',
+      network:false,
+      stale:false,
+      reason:'hydration_unavailable',
+    };
+    const awayRoleHydration=objectValue(awayRoleRaw) || {
+      playerStats:null,
+      source:'unavailable',
+      network:false,
+      stale:false,
+      reason:'hydration_unavailable',
+    };
+    const homePlayerStats=objectValue(homeRoleHydration.playerStats);
+    const awayPlayerStats=objectValue(awayRoleHydration.playerStats);
+    if (baseAbsences.home.length && homePlayerStats?.available !== true) {
+      skipped.push('Роль отсутствующих игроков хозяев не уточнена: сезонная статистика недоступна или сохранена квота.');
+    }
+    if (baseAbsences.away.length && awayPlayerStats?.available !== true) {
+      skipped.push('Роль отсутствующих игроков гостей не уточнена: сезонная статистика недоступна или сохранена квота.');
+    }
+
+    let absences=baseAbsences;
+    try {
+      const enriched=objectValue(enrichFixtureAbsencesWithSeasonRole(
+        baseAbsences,
+        {homePlayerStats,awayPlayerStats},
+      ));
+      if (enriched && Array.isArray(enriched.home) && Array.isArray(enriched.away)) {
+        absences=enriched;
+      }
+    } catch {}
+
+    let lineupImpact={
+      homeConfirmed:false,
+      awayConfirmed:false,
+      note:'Подтверждение стартовых составов недоступно.',
+    };
+    try {
+      lineupImpact=objectValue(buildLineupImpact({
+        absences,
+        lineups,
+        homeName,
+        awayName,
+        reliability:providerReliability,
+      })) || lineupImpact;
+    } catch {}
+
+    let recentFormProb=null;
+    try { recentFormProb=objectValue(formProbabilities(homeForm,awayForm)); } catch {}
+    let h2hProb=null;
+    if (trustedH2h) {
+      try { h2hProb=objectValue(h2hProbabilities(trustedH2h)); } catch {}
+    }
+
+    const calibrationProfile=calibrationProfileValue(
+      await optionalAsync(getCalibrationProfile,cfg),
+    );
+
+    let baselineBlend;
+    try {
+      baselineBlend=objectValue(blendProbabilitySignals({
+        market:analysisMarket,
+        model:trustedApiPrediction,
+        form:recentFormProb,
+        h2h:h2hProb,
+        weightOverrides:normalizedModelBaseWeights(),
+      }));
+    } catch {}
+    const baselineProbabilities=probabilityVector(baselineBlend?.probabilities);
+    if (!baselineBlend || !baselineProbabilities) {
+      return await trackedFullAiFailureResponse({
+        error:'Модель не смогла построить корректные вероятности для этого матча.',
+        code:'ANALYSIS_MODEL_INVALID',
+        quota:quotaBefore,
+      },503,'model_invalid');
+    }
+    baselineBlend={...baselineBlend,probabilities:baselineProbabilities};
+
+    let blended=baselineBlend;
+    if (calibrationProfile.weightsActive) {
+      try {
+        const candidate=objectValue(blendProbabilitySignals({
+          market:analysisMarket,
+          model:trustedApiPrediction,
+          form:recentFormProb,
+          h2h:h2hProb,
+          weightOverrides:calibrationProfile.signalWeights,
+        }));
+        const candidateProbabilities=probabilityVector(candidate?.probabilities);
+        if (candidate && candidateProbabilities) {
+          blended={...candidate,probabilities:candidateProbabilities};
+        } else {
+          calibrationProfile.weightsActive=false;
+        }
+      } catch {
+        calibrationProfile.weightsActive=false;
+      }
+    }
+
+    let rawProbabilities;
+    try {
+      rawProbabilities=probabilityVector(
+        applyAbsenceAdjustment(baselineBlend.probabilities,absences),
+      );
+    } catch {}
+    if (!rawProbabilities) {
+      return await trackedFullAiFailureResponse({
+        error:'Корректировка вероятностей по составу вернула некорректный результат.',
+        code:'ANALYSIS_ABSENCE_MODEL_INVALID',
+        quota:quotaBefore,
+      },503,'model_invalid');
+    }
+
+    let weightedProbabilities;
+    try {
+      weightedProbabilities=probabilityVector(
+        applyAbsenceAdjustment(blended.probabilities,absences),
+      );
+    } catch {}
+    if (!weightedProbabilities) weightedProbabilities=rawProbabilities;
+
+    let probabilities=weightedProbabilities;
+    if (calibrationProfile.temperatureActive) {
+      try {
+        const calibrated=probabilityVector(temperatureScaleProbabilities(
+          weightedProbabilities,
+          calibrationProfile.temperature,
+        ));
+        if (calibrated) probabilities=calibrated;
+        else calibrationProfile.temperatureActive=false;
+      } catch {
+        calibrationProfile.temperatureActive=false;
+      }
+    }
+
+    let goalModel=null;
+    try { goalModel=objectValue(poissonGoalModel(homeForm,awayForm)); } catch {}
+
+    let comparison={
+      metrics:[],
+      advantages:{home:[],away:[]},
+      score:{home:0,away:0,even:0},
+      balanceLabel:'Недостаточно данных для сравнения',
+      dataReuse:{separateApiRequests:0,sources:[]},
+    };
+    try {
+      comparison=objectValue(buildMatchComparison({
+        homeName,
+        awayName,
+        homeForm,
+        awayForm,
+        homeStanding,
+        awayStanding,
+        homeSeasonStats,
+        awaySeasonStats,
+        goalModel,
+        h2h:trustedH2h,
+        absences,
+        hasInjuryData:featureTrusted('injuries'),
+      })) || comparison;
+    } catch {}
+
+    let confidence={
+      score:0,
+      signalCount:0,
+      disagreement:100,
+      agreement:0,
+    };
+    try {
+      confidence=objectValue(confidenceModel(
+        rowsOrEmpty(blended.signals,20),
+        probabilities,
+        homeForm,
+        awayForm,
+      )) || confidence;
+    } catch {}
+
+    let notes={factors:[],risks:[]};
+    try {
+      notes=objectValue(buildAnalysisNotes({
+        probabilities,
+        market:analysisMarket,
+        model:trustedApiPrediction,
+        homeForm,
+        awayForm,
+        h2h:trustedH2h,
+        absences,
+        lineups,
+        news:web,
+        homeName,
+        awayName,
+        minutesToKickoff,
+        confidence,
+      })) || notes;
+    } catch {}
+    notes.factors=rowsOrEmpty(notes.factors,20)
+      .map(value=>safeText(value,500))
+      .filter(Boolean);
+    notes.risks=rowsOrEmpty(notes.risks,20)
+      .map(value=>safeText(value,500))
+      .filter(Boolean);
+    notes.risks.push(...providerReliability.warnings);
+    notes.risks=[...new Set(notes.risks)].slice(0,7);
+
+    if (calibrationProfile.mode==='active') {
+      notes.factors.unshift(
+        `Калибратор вероятностей активен (${safeText(calibrationProfile.fingerprint,8) || 'базовый'}) на базе ${calibrationProfile.sample} доверенных прогнозов.`,
+      );
+    } else if (calibrationProfile.mode==='shadow') {
+      notes.risks.push(
+        'Калибратор пока работает в теневом режиме: выборка собирается, но итоговые вероятности ещё не корректируются автоматически.',
+      );
+    }
+    notes.factors=[...new Set(notes.factors)].slice(0,7);
+    notes.risks=[...new Set(notes.risks)].slice(0,7);
+
+    const availableSignals=[
       analysisMarket && 'market',
-      apiPrediction && 'apiPrediction',
+      trustedApiPrediction && 'apiPrediction',
       homeForm?.overall && awayForm?.overall && 'recentForm',
-      h2hRows.length && 'h2h',
-      trustedInjuries.length && 'injuries',
-      lineupQuality.bothConfirmed && 'lineups',
-      web.answer && 'web',
+      trustedH2h && 'h2h',
+      trustedInjuries.length && featureTrusted('injuries') && 'injuries',
+      lineupQuality.bothConfirmed === true && featureTrusted('lineups') && 'lineups',
+      safeText(web.answer,1) && 'web',
     ].filter(Boolean);
-  
-    const completenessPreview = {
-      score: [fixture, analysisMarket, apiPrediction, trustedInjuries.length, h2hRows.length, lineupQuality.bothConfirmed, web.answer, homeForm?.overall, awayForm?.overall, goalModel].filter(Boolean).length,
-      max: 10,
-      providerReliability: {
-        state: providerReliability.state,
-        trustCap: providerReliability.trustCap,
-        available: providerReliability.available,
-        checked: providerReliability.checked,
+
+    const completenessPreview={
+      score:[
+        fixture,
+        analysisMarket,
+        trustedApiPrediction,
+        trustedInjuries.length>0 && featureTrusted('injuries'),
+        trustedH2h,
+        lineupQuality.bothConfirmed === true && featureTrusted('lineups'),
+        Boolean(safeText(web.answer,1)),
+        homeForm?.overall,
+        awayForm?.overall,
+        goalModel,
+      ].filter(Boolean).length,
+      max:10,
+      providerReliability:{
+        state:safeText(providerReliability.state,40) || 'degraded',
+        trustCap:finiteNumber(providerReliability.trustCap) ?? 0,
+        available:nonNegativeSafeInteger(providerReliability.available,1000) ?? 0,
+        checked:nonNegativeSafeInteger(providerReliability.checked,1000) ?? 0,
       },
     };
-    const preMatchIntelligence = buildPreMatchIntelligence({
-      probabilities,
-      rawProbabilities,
-      market:analysisMarket,
-      apiPrediction,
-      homeForm,
-      awayForm,
-      h2h,
-      absences,
-      lineups,
-      goalModel,
-      comparison,
-      confidence,
-      modelBreakdown: { weights: blended.weights, signals: blended.signals },
-      homeName,
-      awayName,
-      minutesToKickoff,
-      news: web,
-      completeness: completenessPreview,
-    });
-  
+
+    let preMatchIntelligence=null;
+    try {
+      preMatchIntelligence=objectValue(buildPreMatchIntelligence({
+        probabilities,
+        rawProbabilities,
+        market:analysisMarket,
+        apiPrediction:trustedApiPrediction,
+        homeForm,
+        awayForm,
+        h2h:trustedH2h,
+        absences,
+        lineups,
+        goalModel,
+        comparison,
+        confidence,
+        modelBreakdown:{
+          weights:objectValue(blended.weights) || {},
+          signals:rowsOrEmpty(blended.signals,20),
+        },
+        homeName,
+        awayName,
+        minutesToKickoff,
+        news:web,
+        completeness:completenessPreview,
+      }));
+    } catch {}
+
     const dataCapabilities = publicDataCapabilities();
     const payload = {
       generatedAt: new Date().toISOString(),
