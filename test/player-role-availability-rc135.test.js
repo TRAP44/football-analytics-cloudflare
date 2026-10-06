@@ -61,7 +61,7 @@ test('RC135 small samples shrink toward neutral', () => {
   assert.ok(Math.abs(weight-1)<0.10);
 });
 
-const worker=fs.readFileSync('src/worker.js','utf8');
+const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/analysis-runtime.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const runtime=fs.readFileSync('public/modules/app-runtime.js','utf8');
 
