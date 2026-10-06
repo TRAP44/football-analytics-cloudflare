@@ -42,6 +42,17 @@ begin
     raise exception 'Supabase integration contract: required table is missing';
   end if;
 
+  select public.personal_write_guard_contract() into v_contract;
+  if coalesce((v_contract->>'ok')::boolean, false) is not true
+     or coalesce((v_contract->>'favoritesLimit')::integer, 0) <> 50
+     or coalesce((v_contract->>'favoritePlayersLimit')::integer, 0) <> 50
+     or coalesce((v_contract->>'remindersLimit')::integer, 0) <> 50
+     or coalesce((v_contract->>'canonicalReminders')::boolean, false) is not true
+     or coalesce((v_contract->>'explicitRearm')::boolean, false) is not true
+     or coalesce((v_contract->>'reminderRetentionDays')::integer, 0) <> 90 then
+    raise exception 'Supabase integration contract: personal write guard contract drifted: %', v_contract;
+  end if;
+
   if not exists (
     select 1
     from pg_class c
