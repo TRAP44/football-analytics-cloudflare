@@ -122,9 +122,16 @@ export function createAdminOperationalApi(deps) {
     weightedTopCalibrationError,
   } = deps;
 
+  function positiveSafeIntegerQueryParam(url, name) {
+    const raw = url.searchParams.get(name);
+    if (typeof raw !== 'string' || !/^\d+$/.test(raw.trim())) return null;
+    const value = Number(raw.trim());
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+
   async function apiCalibrationControl(request, cfg, user) {
     const schema = await probeCalibrationLifecycleSchema(cfg);
-    if (!schema.ok) return json({ available: false, reason: 'Нужна supabase_migration_v6_10.sql.' }, 503);
+    if (!schema.ok) return json({ available: false, reason: SUPABASE_SCHEMA_GUIDANCE }, 503);
   
     let lifecycle = await loadCalibrationLifecycleState(cfg);
     if (request.method === 'GET') {
@@ -316,7 +323,7 @@ export function createAdminOperationalApi(deps) {
     if (request.method === 'GET') return json(await buildModelRemediationReport(cfg));
     if (request.method !== 'POST') return json({ error: 'Метод не поддерживается.' }, 405);
     const body = await request.json().catch(() => ({}));
-    const requestedAction = String(body?.action || '');
+    const requestedAction = String(body?.action || '').trim().toLowerCase();
     const reason = redactOpsString(body?.reason || '', 220).trim();
     if (reason.length < 5) return json({ error: 'Укажите причину действия (минимум 5 символов).' }, 400);
     if (requestedAction === 'reset_circuit') {
@@ -555,8 +562,8 @@ export function createAdminOperationalApi(deps) {
 
   async function apiProviderE2EValidation(request, cfg) {
     const url = new URL(request.url);
-    const fixtureId = Number(url.searchParams.get('fixtureId') || 0);
-    if (!fixtureId) return json({ error: 'Укажите номер матча для сквозной проверки.' }, 400);
+    const fixtureId = positiveSafeIntegerQueryParam(url, 'fixtureId');
+    if (fixtureId === null) return json({ error: 'Укажите корректный положительный целый номер матча для сквозной проверки.' }, 400);
   
     const startedAt = Date.now();
     const steps = [];
@@ -908,9 +915,9 @@ export function createAdminOperationalApi(deps) {
 
   async function apiProviderCoverageAudit(request, cfg) {
     const url = new URL(request.url);
-    const fixtureId = Number(url.searchParams.get('fixtureId') || 0);
+    const fixtureId = positiveSafeIntegerQueryParam(url, 'fixtureId');
     const force = url.searchParams.get('refresh') === '1';
-    if (!fixtureId) return json({ error: 'Укажите номер матча для проверки покрытия.' }, 400);
+    if (fixtureId === null) return json({ error: 'Укажите корректный положительный целый номер матча для проверки покрытия.' }, 400);
   
     const cacheKey = `provider-coverage-audit:${fixtureId}:v4.8`;
     if (!force) {
@@ -1053,6 +1060,12 @@ export function createAdminOperationalApi(deps) {
     const runtime = runtimeState.value;
     const provider = diagnostics.provider || {};
     const watchdogSelfTest = settlementWatchdogSelfTest();
+    const modelIntegrityCheck = modelIntegritySelfTest();
+    const settlementRunLedgerCheck = settlementRunLedgerSelfTest();
+    const settlementFinalityCheck = settlementFinalitySelfTest();
+    const settlementAdjudicationCheck = settlementDriftAdjudicationSelfTest();
+    const trustedMetricsCheck = trustedMetricsGateSelfTest();
+    const calibrationPromotionCheck = calibrationPromotionSelfTest();
     const schemaDriftSelfTest = supabaseSchemaDriftSelfTest();
     const providerReliabilitySelfTest = providerDataReliabilitySelfTest();
     const aiQualityGateSelfTest = analysisQualityGateSelfTest();
@@ -1115,15 +1128,15 @@ export function createAdminOperationalApi(deps) {
               : 'pass',
         diagnostics.telegramWebhook?.available
           ? `state=${diagnostics.telegramWebhook.state}; claims=${Number(diagnostics.telegramWebhook.claimsRecent || 0)}; duplicates=${Number(diagnostics.telegramWebhook.duplicateAttemptsRetained || 0)}; stale=${Number(diagnostics.telegramWebhook.staleProcessing || 0)}; failed=${Number(diagnostics.telegramWebhook.failedCurrent || 0)}.`
-          : 'Health RPC недоступен; примените supabase_migration_v6_17.sql.',
+          : `Health RPC недоступен. ${SUPABASE_SCHEMA_GUIDANCE}`,
         true),
       releaseCheck('backend_security_contract', 'Контракт безопасности Supabase', backendSecurity.ok ? 'pass' : 'fail',
         backendSecurity.ok
           ? 'Все публичные таблицы защищены правилами доступа; анонимный и авторизованный клиент не имеют прямых прав; серверные процедуры закрыты.'
           : `Контракт безопасности текущей версии: ${backendSecurity.status || 'ошибка'}.`, true),
       releaseCheck('model_backtest', 'Схема исторической проверки', modelTable.ok ? 'pass' : 'fail', modelTable.ok ? 'Таблица прогнозов модели доступна.' : `model_predictions: ${modelTable.status}.`, true),
-      releaseCheck('prediction_integrity', 'Самопроверка целостности прогнозов', modelIntegritySelfTest().pass ? 'pass' : 'fail',
-        modelIntegritySelfTest().pass ? 'Вероятности, время снимка и согласованность результата проходят синтетическую самопроверку.' : 'Самопроверка целостности прогнозов не прошла.', true),
+      releaseCheck('prediction_integrity', 'Самопроверка целостности прогнозов', modelIntegrityCheck.pass ? 'pass' : 'fail',
+        modelIntegrityCheck.pass ? 'Вероятности, время снимка и согласованность результата проходят синтетическую самопроверку.' : 'Самопроверка целостности прогнозов не прошла.', true),
       releaseCheck('prediction_remediation', 'Восстановление прогнозов v6.1', remediationTable.ok ? 'pass' : 'fail',
         remediationTable.ok ? 'Журнал действий восстановления доступен.' : SUPABASE_SCHEMA_GUIDANCE, true),
       releaseCheck('settlement_watchdog_schema', 'Схема контроля результатов v6.4', watchdogSchema.ok ? 'pass' : 'fail',
@@ -1132,26 +1145,26 @@ export function createAdminOperationalApi(deps) {
         watchdogSelfTest.pass ? `shadow=${watchdogSelfTest.shadow}, runtime=${watchdogSelfTest.runtime}, quota=${watchdogSelfTest.quota}, active=${watchdogSelfTest.active}.` : 'Самопроверка решения контролёра результатов не прошла.', true),
       releaseCheck('settlement_run_ledger_schema', 'Схема журнала запусков v6.4', runLedgerSchema.ok ? 'pass' : 'fail',
         runLedgerSchema.ok ? 'Время прерванных запусков, счётчик попыток и связь повторных запусков доступны.' : SUPABASE_SCHEMA_GUIDANCE, true),
-      releaseCheck('settlement_run_ledger_selftest', 'Самопроверка журнала запусков', settlementRunLedgerSelfTest().pass ? 'pass' : 'fail',
-        settlementRunLedgerSelfTest().pass ? 'Fresh=1, interrupted retry=2, attempt 3 exhausts lineage, different batch starts fresh.' : 'Самопроверка журнала запусков не прошла.', true),
+      releaseCheck('settlement_run_ledger_selftest', 'Самопроверка журнала запусков', settlementRunLedgerCheck.pass ? 'pass' : 'fail',
+        settlementRunLedgerCheck.pass ? 'Fresh=1, interrupted retry=2, attempt 3 exhausts lineage, different batch starts fresh.' : 'Самопроверка журнала запусков не прошла.', true),
       releaseCheck('settlement_finality_schema', 'Схема подтверждения результата v6.5', finalitySchema.ok ? 'pass' : 'fail',
         finalitySchema.ok ? 'Состояние проверки и журнал расхождений доступны.' : SUPABASE_SCHEMA_GUIDANCE, true),
-      releaseCheck('settlement_finality_selftest', 'Самопроверка подтверждения результата', settlementFinalitySelfTest().pass ? 'pass' : 'fail',
-        settlementFinalitySelfTest().pass ? 'First matching pass verifies; second matching pass confirms; late score/status changes become drift.' : 'Самопроверка окончательности результата не прошла.', true),
+      releaseCheck('settlement_finality_selftest', 'Самопроверка подтверждения результата', settlementFinalityCheck.pass ? 'pass' : 'fail',
+        settlementFinalityCheck.pass ? 'First matching pass verifies; second matching pass confirms; late score/status changes become drift.' : 'Самопроверка окончательности результата не прошла.', true),
       releaseCheck('settlement_adjudication_schema', 'Схема разбора расхождений v6.6', adjudicationSchema.ok ? 'pass' : 'fail',
         adjudicationSchema.ok ? 'Журнал решений и поля разрешения модели доступны.' : SUPABASE_SCHEMA_GUIDANCE, true),
-      releaseCheck('settlement_adjudication_selftest', 'Самопроверка разбора расхождений', settlementDriftAdjudicationSelfTest().pass ? 'pass' : 'fail',
-        settlementDriftAdjudicationSelfTest().pass ? 'Keep/accept/void transitions valid; unsafe provider acceptance blocked.' : 'Самопроверка ручного разбора результатов не прошла.', true),
+      releaseCheck('settlement_adjudication_selftest', 'Самопроверка разбора расхождений', settlementAdjudicationCheck.pass ? 'pass' : 'fail',
+        settlementAdjudicationCheck.pass ? 'Keep/accept/void transitions valid; unsafe provider acceptance blocked.' : 'Самопроверка ручного разбора результатов не прошла.', true),
       releaseCheck('settlement_trust_schema', 'Схема доверенных метрик v6.7', trustSchema.ok ? 'pass' : 'fail',
         trustSchema.ok ? 'Количество проверок и время первой проверки доступны.' : SUPABASE_SCHEMA_GUIDANCE, true),
-      releaseCheck('trusted_metrics_gate_selftest', 'Самопроверка доверенных метрик', trustedMetricsGateSelfTest().pass ? 'pass' : 'fail',
-        trustedMetricsGateSelfTest().pass ? 'В метрики и калибровку допускаются только подтверждённые или вручную разобранные завершённые записи.' : 'Самопроверка допуска доверенных метрик не прошла.', true),
+      releaseCheck('trusted_metrics_gate_selftest', 'Самопроверка доверенных метрик', trustedMetricsCheck.pass ? 'pass' : 'fail',
+        trustedMetricsCheck.pass ? 'В метрики и калибровку допускаются только подтверждённые или вручную разобранные завершённые записи.' : 'Самопроверка допуска доверенных метрик не прошла.', true),
       releaseCheck('calibration_promotion_schema', 'Схема продвижения калибровки v6.8', calibrationPromotionSchema.ok ? 'pass' : 'fail',
         calibrationPromotionSchema.ok ? 'Журнал решений по отложенной выборке доступен.' : SUPABASE_SCHEMA_GUIDANCE, true),
-      releaseCheck('calibration_promotion_selftest', 'Самопроверка продвижения калибровки', calibrationPromotionSelfTest().pass ? 'pass' : 'fail',
-        calibrationPromotionSelfTest().pass ? 'Устойчивое улучшение проходит проверку, синтетическое переобучение блокируется.' : 'Самопроверка продвижения калибровки не прошла.', true),
+      releaseCheck('calibration_promotion_selftest', 'Самопроверка продвижения калибровки', calibrationPromotionCheck.pass ? 'pass' : 'fail',
+        calibrationPromotionCheck.pass ? 'Устойчивое улучшение проходит проверку, синтетическое переобучение блокируется.' : 'Самопроверка продвижения калибровки не прошла.', true),
       releaseCheck('calibration_lifecycle_schema', 'Atomic calibration lifecycle v6.10', calibrationLifecycleSchema.ok ? 'pass' : 'fail',
-        calibrationLifecycleSchema.ok ? 'Атомарное состояние, журнал переходов и состояние отката доступны.' : 'Нужна supabase_migration_v6_10.sql.', true),
+        calibrationLifecycleSchema.ok ? 'Атомарное состояние, журнал переходов и состояние отката доступны.' : SUPABASE_SCHEMA_GUIDANCE, true),
       releaseCheck('automatic_settlement_recovery', 'Автоматическое восстановление результатов', 'pass',
         runtime.autoSettlementRecoveryEnabled ? 'Автовосстановление включено: запуск по расписанию разрешён защитными правилами.' : 'Автовосстановление выключено: контролёр результатов работает в режиме наблюдения и только сигнализирует.', false),
       releaseCheck('runtime_controls_schema', 'Схема управления функциями', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : SUPABASE_SCHEMA_GUIDANCE, true),
@@ -1253,7 +1266,7 @@ export function createAdminOperationalApi(deps) {
       backendSecurity.ok ? 'pass' : 'fail',
       backendSecurity.ok
         ? 'Правила доступа включены; прямые права анонимного и авторизованного клиента, а также публичный запуск процедур отсутствуют.'
-        : `Контракт безопасности: ${backendSecurity.status || 'ошибка'}; примените supabase_migration_v6_11.sql.`,
+        : `Контракт безопасности: ${backendSecurity.status || 'ошибка'}. ${SUPABASE_SCHEMA_GUIDANCE}`,
       true
     ));
   
