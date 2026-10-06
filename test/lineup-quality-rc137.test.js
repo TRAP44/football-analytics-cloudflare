@@ -82,7 +82,8 @@ const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 
 test('RC137 uses lineup quality in Match Center and AI quality gate', () => {
-  assert.match(worker, /lineup\.quality = assessLineupQuality\(lineup\)/);
+  assert.match(worker, /const quality=assessLineupQuality\(lineup\)/);
+  assert.match(worker, /lineup\.quality=quality/);
   assert.match(worker, /const lineupQuality=assessMatchLineups\(lineups\)/);
   assert.match(worker, /const homeConfirmed=Boolean\(structuralHomeConfirmed && lineupSourceTrusted\)/);
   assert.match(worker, /const awayConfirmed=Boolean\(structuralAwayConfirmed && lineupSourceTrusted\)/);
