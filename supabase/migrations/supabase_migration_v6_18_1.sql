@@ -1,5 +1,12 @@
 -- Football Analytics v6.18.1 / RC127 hotfix
 -- Make atomic analysis quota resilient to the first-request users FK race.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this hotfix in the legacy upgrade chain. It introduces the minimal users
+-- upsert required before writing usage_daily, closing the first-request FK race.
+-- Fresh installs receive this behavior through the v6.19 baseline; v6.28 later
+-- extends the quota lifecycle while preserving this user-row safeguard.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 create or replace function public.consume_analysis_quota(
   p_telegram_id bigint,
