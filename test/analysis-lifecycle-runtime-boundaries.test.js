@@ -94,6 +94,14 @@ test('future or invalid generation timestamps force a recheck', () => {
   },now);
   assert.equal(invalid.needsRecheck,true);
   assert.equal(invalid.reasonCode,'generated_time_invalid');
+
+  const unknownKickoff=runtime.analysisFreshness({
+    generatedAt:'2026-09-23T17:58:00Z',
+    match:{date:'not-a-date',status:'NS'},
+  },now);
+  assert.equal(unknownKickoff.needsRecheck,true);
+  assert.equal(unknownKickoff.kickoffAtValid,false);
+  assert.equal(unknownKickoff.reasonCode,'kickoff_time_invalid');
 });
 
 test('kickoff handoff fails closed when kickoff time is not trustworthy', () => {
@@ -170,6 +178,19 @@ test('malformed probability snapshots never produce a false stable delta', () =>
   assert.equal(result.available,true);
   assert.equal(result.incomplete,true);
   assert.equal(result.stable,false);
+});
+
+test('malformed market snapshots do not become a false stable comparison', () => {
+  const runtime=createAnalysisLifecycleRuntime(deps());
+  const result=runtime.analysisRecheckDelta(
+    snapshot({market:{probabilities:{home:Infinity,draw:0,away:0}}}),
+    snapshot({market:{probabilities:{home:Infinity,draw:0,away:0}}}),
+  );
+
+  assert.equal(result.available,true);
+  assert.equal(result.incomplete,true);
+  assert.equal(result.stable,false);
+  assert.equal(result.codes.includes('market'),false);
 });
 
 test('loss of lineup confirmation is a material lifecycle change', () => {
