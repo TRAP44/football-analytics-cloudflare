@@ -50,6 +50,7 @@ begin
 
   select coalesce((
     select has_schema_privilege('service_role', n.oid, 'USAGE')
+      and not has_schema_privilege('service_role', n.oid, 'CREATE')
       and not has_schema_privilege('anon', n.oid, 'USAGE')
       and not has_schema_privilege('anon', n.oid, 'CREATE')
       and not has_schema_privilege('authenticated', n.oid, 'USAGE')
@@ -65,14 +66,23 @@ begin
       and has_table_privilege('service_role', c.oid, 'INSERT')
       and has_table_privilege('service_role', c.oid, 'UPDATE')
       and has_table_privilege('service_role', c.oid, 'DELETE')
+      and not has_table_privilege('service_role', c.oid, 'TRUNCATE')
+      and not has_table_privilege('service_role', c.oid, 'REFERENCES')
+      and not has_table_privilege('service_role', c.oid, 'TRIGGER')
       and not has_table_privilege('anon', c.oid, 'SELECT')
       and not has_table_privilege('anon', c.oid, 'INSERT')
       and not has_table_privilege('anon', c.oid, 'UPDATE')
       and not has_table_privilege('anon', c.oid, 'DELETE')
+      and not has_table_privilege('anon', c.oid, 'TRUNCATE')
+      and not has_table_privilege('anon', c.oid, 'REFERENCES')
+      and not has_table_privilege('anon', c.oid, 'TRIGGER')
       and not has_table_privilege('authenticated', c.oid, 'SELECT')
       and not has_table_privilege('authenticated', c.oid, 'INSERT')
       and not has_table_privilege('authenticated', c.oid, 'UPDATE')
       and not has_table_privilege('authenticated', c.oid, 'DELETE')
+      and not has_table_privilege('authenticated', c.oid, 'TRUNCATE')
+      and not has_table_privilege('authenticated', c.oid, 'REFERENCES')
+      and not has_table_privilege('authenticated', c.oid, 'TRIGGER')
     from pg_catalog.pg_class c
     join pg_catalog.pg_namespace n on n.oid=c.relnamespace
     where n.nspname='private'
@@ -134,6 +144,11 @@ begin
   select
     count(*) = 3
     and bool_and(not p.prosecdef)
+    and bool_and(pg_get_function_result(p.oid)='jsonb')
+    and bool_and(
+      (p.proname='analysis_usage_request_headers' and p.provolatile='s')
+      or (p.proname in ('finalize_analysis_usage_reservation','reconcile_analysis_usage_reservations') and p.provolatile='v')
+    )
     and bool_and(exists (
       select 1
       from pg_catalog.unnest(coalesce(p.proconfig, array[]::text[])) cfg(setting)
