@@ -1,5 +1,11 @@
 -- Football Analytics v6.15 / RC53
 -- First-party media-launch attribution and conversion funnel.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. Current growth/referral runtimes use
+-- the acquisition fields, growth_events deduplication key and channel contract,
+-- while v6.21 includes these objects in the schema contract.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 alter table public.users
   add column if not exists acquisition_source text not null default '',
