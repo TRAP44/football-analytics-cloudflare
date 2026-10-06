@@ -1,5 +1,35 @@
+function integerCandidate(value) {
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const raw=value.trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const number=Number(raw);
+  return Number.isSafeInteger(number) ? number : null;
+}
+
+function positiveInteger(value) {
+  const number=integerCandidate(value);
+  return number !== null && number>0 ? number : 0;
+}
+
+function numberCandidate(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const raw=value.trim();
+  if (!/^-?(?:\d+|\d+\.\d+|\.\d+)$/.test(raw)) return null;
+  const number=Number(raw);
+  return Number.isFinite(number) ? number : null;
+}
+
 function boundedText(value, max = 180) {
-  return String(value ?? '').slice(0, Math.max(0, Number(max || 0)));
+  if (typeof value !== 'string') return '';
+  const limit=integerCandidate(max);
+  const safeMax=limit !== null ? Math.max(0,Math.min(4096,limit)) : 180;
+  return value.trim().slice(0,safeMax);
+}
+
+function plainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
 }
 
 export function createUserHistoryService({
@@ -10,44 +40,83 @@ export function createUserHistoryService({
   recordOpsEvent = async () => null,
   bumpTelemetry = () => {},
   redactOpsString = boundedText,
-  correlationId = async (_userId, fixtureId) => `fixture-${Number(fixtureId || 0)}`,
+  correlationId = async (_userId, fixtureId) => `fixture-${positiveInteger(fixtureId)}`,
   retryDelayMs = 300,
   sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
 }) {
+  const runtimeMemory=plainObject(memory) || {};
+  if (!(runtimeMemory.history instanceof Map)) runtimeMemory.history=new Map();
+
+  function supabaseEnabled(cfg) {
+    try {
+      return typeof hasSupabase === 'function' && hasSupabase(cfg) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  function noteTelemetry(key, amount = 1) {
+    if (typeof bumpTelemetry !== 'function') return;
+    try { bumpTelemetry(key,amount); } catch {}
+  }
+
+  function safeRedact(value, max = 180) {
+    try {
+      const redacted=typeof redactOpsString === 'function'
+        ? redactOpsString(value,max)
+        : boundedText(value,max);
+      return boundedText(typeof redacted === 'string' ? redacted : '',max);
+    } catch {
+      return '';
+    }
+  }
+
   function historyRow(userId, payload) {
-    const match = payload?.match;
-    const instructor = payload?.aiInstructor || {};
-    const verdict = instructor?.verdict || {};
-    const signal = instructor?.betSignal || {};
-    if (!match?.fixtureId) return null;
+    const telegramId=positiveInteger(userId);
+    const source=plainObject(payload);
+    const match=plainObject(source?.match);
+    const fixtureId=positiveInteger(match?.fixtureId);
+    if (!telegramId || !fixtureId) return null;
+
+    const instructor=plainObject(source?.aiInstructor) || {};
+    const verdict=plainObject(instructor.verdict) || {};
+    const signal=plainObject(instructor.betSignal) || {};
+    const home=plainObject(match.home) || {};
+    const away=plainObject(match.away) || {};
+    const confidence=numberCandidate(instructor.confidenceScore);
+
     return {
-      telegram_id: Number(userId),
-      fixture_id: Number(match.fixtureId),
-      home_name: match.home?.name || '',
-      away_name: match.away?.name || '',
-      league_name: match.league || '',
-      fixture_date: match.date || null,
-      home_logo: match.home?.logo || null,
-      away_logo: match.away?.logo || null,
-      ai_signal_code: String(signal.code || '').slice(0,40),
-      ai_signal_label: String(signal.label || '').slice(0,160),
-      ai_confidence: Number.isFinite(Number(instructor.confidenceScore))
-        ? Math.max(0, Math.min(100, Math.round(Number(instructor.confidenceScore))))
+      telegram_id:telegramId,
+      fixture_id:fixtureId,
+      home_name:boundedText(home.name,180),
+      away_name:boundedText(away.name,180),
+      league_name:boundedText(match.league,180),
+      fixture_date:boundedText(match.date,80) || null,
+      home_logo:boundedText(home.logo,2048) || null,
+      away_logo:boundedText(away.logo,2048) || null,
+      ai_signal_code:boundedText(signal.code,40),
+      ai_signal_label:boundedText(signal.label,160),
+      ai_confidence:confidence !== null
+        ? Math.max(0,Math.min(100,Math.round(confidence)))
         : null,
-      ai_risk: String(instructor.riskLabel || '').slice(0,60),
-      ai_outcome: String(verdict.outcome || '').slice(0,80),
-      ai_total: String(verdict.total || '').slice(0,80),
-      ai_btts: String(verdict.btts || '').slice(0,80),
-      analysis_version: String(payload?.analysisVersion || '').slice(0,80),
-      viewed_at: new Date().toISOString(),
+      ai_risk:boundedText(instructor.riskLabel,60),
+      ai_outcome:boundedText(verdict.outcome,80),
+      ai_total:boundedText(verdict.total,80),
+      ai_btts:boundedText(verdict.btts,80),
+      analysis_version:boundedText(source.analysisVersion,80),
+      viewed_at:new Date().toISOString(),
     };
   }
 
   async function safeCorrelationId(userId, fixtureId, cfg) {
+    const fallback=`fixture-${positiveInteger(fixtureId)}`;
     try {
-      return boundedText(await correlationId(userId, fixtureId, cfg), 64) || `fixture-${Number(fixtureId || 0)}`;
+      const value=typeof correlationId === 'function'
+        ? await correlationId(userId,fixtureId,cfg)
+        : '';
+      return boundedText(value,64) || fallback;
     } catch {
-      return `fixture-${Number(fixtureId || 0)}`;
+      return fallback;
     }
   }
 
@@ -61,21 +130,22 @@ export function createUserHistoryService({
     recovered = false,
     acceptedDataLoss = false,
   }) {
+    if (typeof recordOpsEvent !== 'function') return;
     try {
-      await recordOpsEvent(cfg, {
-        severity,
-        source: 'history',
-        eventType: 'analysis_history_persistence',
-        code,
-        message,
-        transitionKey: `${code.toLowerCase()}:${correlation}`,
-        meta: {
-          correlationId: correlation,
-          fixtureId: Number(row.fixture_id || 0),
-          analysisVersion: boundedText(row.analysis_version || '', 80),
-          recovered,
-          acceptedDataLoss,
-          error: redactOpsString(error?.message || error || '', 180),
+      await recordOpsEvent(cfg,{
+        severity:boundedText(severity,16) || 'info',
+        source:'history',
+        eventType:'analysis_history_persistence',
+        code:boundedText(code,80) || 'ANALYSIS_HISTORY_EVENT',
+        message:boundedText(message,500),
+        transitionKey:`${(boundedText(code,80) || 'analysis_history_event').toLowerCase()}:${boundedText(correlation,64)}`,
+        meta:{
+          correlationId:boundedText(correlation,64),
+          fixtureId:positiveInteger(row?.fixture_id),
+          analysisVersion:boundedText(row?.analysis_version,80),
+          recovered:recovered === true,
+          acceptedDataLoss:acceptedDataLoss === true,
+          error:safeRedact(error?.message ?? error,180),
         },
       });
     } catch {
@@ -84,62 +154,69 @@ export function createUserHistoryService({
   }
 
   async function retryHistoryWrite(row, cfg, correlation, firstError) {
-    bumpTelemetry('analysisHistoryRetryAttempts');
+    noteTelemetry('analysisHistoryRetryAttempts');
     try {
-      const delay = Math.max(0, Math.min(1500, Number(retryDelayMs || 0)));
-      if (delay) await sleep(delay);
-      await supaUpsert(cfg, 'analysis_history', row, 'telegram_id,fixture_id');
-      bumpTelemetry('analysisHistoryWriteRecovered');
-      await emitHistoryOps(cfg, {
-        severity: 'info',
-        code: 'ANALYSIS_HISTORY_WRITE_RECOVERED',
-        message: 'Analysis history persistence recovered on the idempotent retry.',
+      const requestedDelay=integerCandidate(retryDelayMs);
+      const delay=requestedDelay !== null ? Math.max(0,Math.min(1500,requestedDelay)) : 300;
+      if (delay && typeof sleep === 'function') await sleep(delay);
+      if (typeof supaUpsert !== 'function') throw new Error('Analysis history persistence transport is unavailable.');
+      await supaUpsert(cfg,'analysis_history',row,'telegram_id,fixture_id');
+      noteTelemetry('analysisHistoryWriteRecovered');
+      await emitHistoryOps(cfg,{
+        severity:'info',
+        code:'ANALYSIS_HISTORY_WRITE_RECOVERED',
+        message:'Analysis history persistence recovered on the idempotent retry.',
         row,
         correlation,
-        error: firstError,
-        recovered: true,
+        error:firstError,
+        recovered:true,
       });
     } catch (retryError) {
-      bumpTelemetry('analysisHistoryWriteLosses');
-      await emitHistoryOps(cfg, {
-        severity: 'error',
-        code: 'ANALYSIS_HISTORY_WRITE_LOST',
-        message: 'Analysis history could not be persisted after an idempotent retry; the analysis response remains successful and this row is classified as accepted data loss.',
+      noteTelemetry('analysisHistoryWriteLosses');
+      await emitHistoryOps(cfg,{
+        severity:'error',
+        code:'ANALYSIS_HISTORY_WRITE_LOST',
+        message:'Analysis history could not be persisted after an idempotent retry; the analysis response remains successful and this row is classified as accepted data loss.',
         row,
         correlation,
-        error: retryError,
-        acceptedDataLoss: true,
+        error:retryError,
+        acceptedDataLoss:true,
       });
     } finally {
-      bumpTelemetry('analysisHistoryRetryPending', -1);
+      noteTelemetry('analysisHistoryRetryPending',-1);
     }
   }
 
   async function recordHistory(userId, payload, cfg) {
-    const row = historyRow(userId, payload);
+    const row=historyRow(userId,payload);
     if (!row) return;
 
-    if (hasSupabase(cfg)) {
+    if (supabaseEnabled(cfg)) {
       try {
-        await supaUpsert(cfg, 'analysis_history', row, 'telegram_id,fixture_id');
+        if (typeof supaUpsert !== 'function') throw new Error('Analysis history persistence transport is unavailable.');
+        await supaUpsert(cfg,'analysis_history',row,'telegram_id,fixture_id');
       } catch (error) {
-        bumpTelemetry('analysisHistoryWriteErrors');
-        bumpTelemetry('analysisHistoryRetryPending');
-        const correlation = await safeCorrelationId(userId, row.fixture_id, cfg);
-        const recoveryTask = (async () => {
-          await emitHistoryOps(cfg, {
-            severity: 'warning',
-            code: 'ANALYSIS_HISTORY_WRITE_FAILED',
-            message: 'Analysis history persistence failed; an idempotent background retry was scheduled.',
+        noteTelemetry('analysisHistoryWriteErrors');
+        noteTelemetry('analysisHistoryRetryPending');
+        const correlation=await safeCorrelationId(row.telegram_id,row.fixture_id,cfg);
+        const recoveryTask=(async()=>{
+          await emitHistoryOps(cfg,{
+            severity:'warning',
+            code:'ANALYSIS_HISTORY_WRITE_FAILED',
+            message:'Analysis history persistence failed; an idempotent background retry was scheduled.',
             row,
             correlation,
             error,
           });
-          await retryHistoryWrite(row, cfg, correlation, error);
+          await retryHistoryWrite(row,cfg,correlation,error);
         })();
 
         if (typeof cfg?.waitUntil === 'function') {
-          cfg.waitUntil(recoveryTask);
+          try {
+            cfg.waitUntil(recoveryTask);
+          } catch {
+            await recoveryTask;
+          }
         } else {
           await recoveryTask;
         }
@@ -147,27 +224,38 @@ export function createUserHistoryService({
       return;
     }
 
-    const key = Number(userId);
-    const list = memory.history.get(key) || [];
-    const next = [row, ...list.filter(x => Number(x.fixture_id) !== Number(row.fixture_id))].slice(0,20);
-    memory.history.set(key, next);
+    const key=row.telegram_id;
+    const list=Array.isArray(runtimeMemory.history.get(key))
+      ? runtimeMemory.history.get(key).filter(item=>plainObject(item))
+      : [];
+    const next=[
+      row,
+      ...list.filter(item=>positiveInteger(item.fixture_id)!==row.fixture_id),
+    ].slice(0,20);
+    runtimeMemory.history.set(key,next);
   }
 
   async function getHistory(userId, cfg) {
-    if (hasSupabase(cfg)) {
+    const key=positiveInteger(userId);
+    if (!key) return [];
+
+    if (supabaseEnabled(cfg)) {
       try {
-        return await supaSelectMany(
+        if (typeof supaSelectMany !== 'function') throw new Error('Analysis history read transport is unavailable.');
+        const rows=await supaSelectMany(
           cfg,
           'analysis_history',
-          { telegram_id: `eq.${Number(userId)}` },
-          { limit:20, order:'viewed_at.desc' },
+          {telegram_id:`eq.${key}`},
+          {limit:20,order:'viewed_at.desc'},
         );
-      } catch (e) {
-        console.warn('history read skipped', e?.message || e);
+        return Array.isArray(rows) ? rows.filter(item=>plainObject(item)) : [];
+      } catch {
         return [];
       }
     }
-    return memory.history.get(Number(userId)) || [];
+
+    const rows=runtimeMemory.history.get(key);
+    return Array.isArray(rows) ? rows.filter(item=>plainObject(item)) : [];
   }
 
   return {
