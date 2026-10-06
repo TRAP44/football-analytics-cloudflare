@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { POST_BASELINE_MIGRATIONS } from '../scripts/prepare-supabase-ci-migrations.js';
 
 const sql = fs.readFileSync('supabase/migrations/supabase_migration_v6_21.sql', 'utf8');
 const contractV2Sql = fs.readFileSync('supabase/migrations/supabase_migration_v6_27_2.sql', 'utf8');
@@ -71,11 +72,35 @@ test('Issue #438 adds a complete versioned database contract without mutating th
   assert.doesNotMatch(v2Only, /proname\s+not\s+in/i);
   assert.match(contractV2Sql, /backend_schema_contract_v2'[\s\S]*backend_readiness_contract_v2'/);
   assert.match(compatibilitySql, /legacy schema fingerprint compatibility repair/i);
+
+  const freezeStart=contractV2Sql.indexOf(
+    'create or replace function public.backend_schema_fingerprint()',
+  );
+  const compatibilityStart=compatibilitySql.indexOf(
+    'create or replace function public.backend_schema_fingerprint()',
+  );
+  assert.ok(freezeStart>=0,'v6.27.2 legacy freeze definition must exist');
+  assert.ok(compatibilityStart>=0,'v6.27.3 compatibility repair definition must exist');
+
+  const normalizeSql=value=>value
+    .replace(/--.*$/gm,'')
+    .replace(/\s+/g,' ')
+    .trim();
+
+  assert.equal(
+    normalizeSql(contractV2Sql.slice(freezeStart)),
+    normalizeSql(compatibilitySql.slice(compatibilityStart)),
+    'v6.27.3 repair must remain SQL-equivalent to the v6.27.2 legacy freeze',
+  );
 });
 
 test('release contract and Worker require database contract v2 on schema v6.29', () => {
   assert.equal(releaseContract.productionSchema, '6.29');
-  assert.equal(releaseContract.latestMigration, 'supabase/migrations/supabase_migration_v6_29_1.sql');
+  assert.equal(
+    releaseContract.latestMigration,
+    POST_BASELINE_MIGRATIONS.at(-1),
+    'release contract latest migration must match the deterministic CI migration chain',
+  );
   assert.equal(releaseContract.databaseContract.version, 2);
   assert.equal(releaseContract.databaseContract.rpc, 'backend_readiness_contract_v2');
   assert.equal(releaseContract.databaseContract.fingerprint, '6a7f0fe444f49a2a52c4603e952ee9ea');
