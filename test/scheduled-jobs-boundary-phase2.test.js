@@ -104,6 +104,28 @@ function runtime(overrides = {}) {
   return { api: createScheduledJobsRuntime(deps), calls, events, leases };
 }
 
+test('scheduled result contract rejects coercion and forged normalized markers',()=>{
+  assert.equal(normalizeScheduledTaskResult('task',{failed:true}).status,'failed');
+  assert.equal(normalizeScheduledTaskResult('task',{failed:'1'}).status,'degraded');
+  assert.equal(normalizeScheduledTaskResult('task',{failed:[1]}).status,'degraded');
+  assert.equal(normalizeScheduledTaskResult('task',{ok:'false'}).status,'degraded');
+  assert.equal(normalizeScheduledTaskResult('task',[]).status,'degraded');
+
+  const forged={
+    __scheduledTaskResult:true,
+    task:'other',
+    ok:true,
+    status:'ok',
+    reason:'',
+    value:{failed:true},
+  };
+  const normalized=normalizeScheduledTaskResult('task',forged);
+  assert.equal(normalized.task,'task');
+  assert.equal(normalized.status,'ok');
+  assert.notEqual(normalized,forged);
+  assert.deepEqual(normalized.value,{failed:true});
+});
+
 test('scheduled result contract standardizes ok, failed, degraded and skipped shapes', () => {
   assert.equal(normalizeScheduledTaskResult('ok',{ok:true}).status,'ok');
   assert.equal(normalizeScheduledTaskResult('skip',{skipped:'already_checked'}).status,'skipped');
@@ -190,6 +212,52 @@ test('production monitor still waits for reminders completion even when reminder
   assert.equal(monitorStarted,true);
 });
 
+test('invalid scheduled timestamps fail closed before lease or task execution',async()=>{
+  let leaseCalls=0;
+  const rt=runtime({
+    claimScheduledJob:async()=>{leaseCalls+=1;return {claimed:true,persistent:false};},
+  });
+  for(const scheduledTime of [true,'2026-09-28T12:05:00Z',NaN,-1]){
+    const result=await rt.api.executeScheduledRun({scheduledTime},{});
+    assert.equal(result.length,1);
+    assert.equal(result[0].task,'scheduled_execution');
+    assert.equal(result[0].status,'failed');
+    assert.equal(result[0].reason,'invalid_scheduled_time');
+  }
+  assert.equal(leaseCalls,0);
+  assert.equal(rt.calls.length,0);
+  assert.equal(rt.events.every(event=>event.code==='CRON_SCHEDULE_INVALID'),true);
+});
+
+test('global lease exceptions fail closed without launching scheduled work',async()=>{
+  const rt=runtime({
+    claimScheduledJob:async()=>{throw new Error('lease backend exploded');},
+  });
+  const result=await rt.api.executeScheduledRun({
+    scheduledTime:Date.parse('2026-09-28T12:05:00.000Z'),
+  },{});
+  assert.equal(result.length,1);
+  assert.equal(result[0].status,'skipped');
+  assert.equal(result[0].reason,'lease_unavailable');
+  assert.equal(rt.calls.length,0);
+  assert.equal(rt.events.at(-1).code,'CRON_EXECUTION_LEASE_UNAVAILABLE');
+});
+
+test('truthy lease claims cannot launch scheduled work',async()=>{
+  const rt=runtime({
+    claimScheduledJob:async()=>({
+      claimed:'true',
+      persistent:'true',
+      reason:'claimed',
+    }),
+  });
+  const result=await rt.api.executeScheduledRun({
+    scheduledTime:Date.parse('2026-09-28T12:05:00.000Z'),
+  },{});
+  assert.equal(result[0].status,'skipped');
+  assert.equal(rt.calls.length,0);
+});
+
 test('daily cleanup executes once per UTC day across the 03:00/03:05/03:10 window', async () => {
   const leases=inMemoryLeaseBackend();
   const rt=runtime({leases});
@@ -228,6 +296,57 @@ test('failed daily cleanup is released for retry without repeating successful cl
   assert.equal(rt.calls.filter(x=>x==='scheduled_lease_cleanup').length,1);
   assert.equal(rt.calls.filter(x=>x==='growth_cleanup').length,1);
   assert.equal(rt.calls.filter(x=>x==='integrity_cleanup').length,2);
+});
+
+test('heartbeat requires strict persistent and renewed flags',async()=>{
+  let renewCalls=0;
+  const nonPersistent=runtime({
+    renewScheduledJob:async()=>{renewCalls+=1;return {renewed:true};},
+  });
+  const controller=await nonPersistent.api.startScheduledLeaseHeartbeat({},{
+    claimed:true,
+    persistent:'true',
+  });
+  assert.equal(controller.state.lost,false);
+  assert.equal(renewCalls,0);
+
+  const malformedRenewal=runtime({
+    renewScheduledJob:async()=>({renewed:'true'}),
+  });
+  const lost=await malformedRenewal.api.startScheduledLeaseHeartbeat({},{
+    claimed:true,
+    persistent:true,
+    jobKey:'cron:x',
+    groupKey:'cron-global',
+    leaseSeconds:720,
+  });
+  assert.equal(lost.state.lost,true);
+  assert.equal(lost.state.reason,'lease_renewal_failed');
+});
+
+test('persistent global completion requires strict true confirmation',async()=>{
+  const leases={
+    claimScheduledJob:async(_cfg,input)=>({
+      claimed:true,
+      persistent:true,
+      reason:'claimed',
+      jobKey:input.jobKey,
+      groupKey:input.groupKey,
+      leaseToken:'token',
+      leaseSeconds:720,
+    }),
+    renewScheduledJob:async()=>({renewed:true}),
+    completeScheduledJob:async()=> 'true',
+    releaseScheduledJob:async()=>true,
+  };
+  const rt=runtime({leases});
+  const result=await rt.api.executeScheduledRun({
+    scheduledTime:Date.parse('2026-09-28T12:05:00.000Z'),
+  },{});
+  assert.equal(
+    result.some(row=>row.task==='scheduled_execution' && row.status==='degraded' && row.reason==='execution_lease_completion_failed'),
+    true,
+  );
 });
 
 test('duplicate invocation and cross-isolate overlap are blocked by the shared global lease', async () => {
@@ -281,6 +400,25 @@ test('07 UTC provider-heavy tasks remain serialized after backtest failure', asy
   assert.equal(results.find(row=>row.task==='backtest').status,'failed');
   assert.equal(results.find(row=>row.task==='daily_digest').status,'ok');
   assert.equal(results.find(row=>row.task==='post_match_return').status,'ok');
+});
+
+test('scheduled handler returns execution when waitUntil throws synchronously',async()=>{
+  const rt=runtime();
+  const execution=rt.api.handleScheduled(
+    {scheduledTime:Date.parse('2026-09-28T12:05:00.000Z')},
+    {},
+    {waitUntil(){throw new Error('registration failed');}},
+  );
+  assert.ok(execution instanceof Promise);
+  const results=await execution;
+  assert.equal(results.some(row=>row.task==='backtest'),true);
+});
+
+test('run and daily keys reject coercible or invalid identities',()=>{
+  assert.throws(()=>scheduledRunKey(true),TypeError);
+  assert.throws(()=>scheduledRunKey('2026-09-28T03:05:00.000Z'),TypeError);
+  assert.throws(()=>dailyScheduledTaskKey({toString:()=> 'ops_cleanup'},new Date()),TypeError);
+  assert.throws(()=>dailyScheduledTaskKey('ops cleanup',new Date()),TypeError);
 });
 
 test('scheduled handler registers exactly one execution with waitUntil', async () => {
