@@ -14,10 +14,12 @@ test('CI usage policy keeps external monitoring hourly with immediate post-deplo
   assert.match(monitor,/workflows: \["Deploy Production"\]/);
 });
 
-test('Quality cancels superseded PR runs and skips docs-only changes',()=>{
+test('Quality cancels superseded PR runs, skips docs-only changes and protects the persistent runner',()=>{
   assert.match(quality,/group: quality-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/);
   assert.match(quality,/cancel-in-progress: true/);
   assert.match(quality,/paths-ignore:[\s\S]*"docs\/\*\*"[\s\S]*"\*\*\/\*\.md"/);
+  assert.match(quality,/database-integration:[\s\S]*runs-on: \[self-hosted, Linux, X64\]/);
+  assert.match(quality,/github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
 });
 
 test('CodeQL PR and main runs are scoped to runtime/security-relevant paths',()=>{
@@ -53,8 +55,13 @@ test('closed pull requests cancel queued self-hosted CI without consuming a runn
 
   assert.equal(
     (quality.match(/if: \$\{\{ github\.event_name != 'pull_request' \|\| github\.event\.action != 'closed' \}\}/g) || []).length,
-    2,
-    'both Quality jobs must skip on pull_request.closed',
+    1,
+    'the ephemeral Quality test job must skip on pull_request.closed',
+  );
+  assert.match(
+    quality,
+    /database-integration:[\s\S]*if: \$\{\{ github\.event_name != 'pull_request' \|\| \(github\.event\.action != 'closed' && github\.event\.pull_request\.head\.repo\.full_name == github\.repository\) \}\}/,
+    'the self-hosted Quality database job must both skip closed PRs and reject fork PR code',
   );
 });
 
