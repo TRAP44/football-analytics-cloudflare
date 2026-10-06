@@ -1534,113 +1534,363 @@ export function createAnalysisRuntime(deps) {
       }));
     } catch {}
 
-    const dataCapabilities = publicDataCapabilities();
-    const payload = {
-      generatedAt: new Date().toISOString(),
-      analysisVersion: '4.15.0-availability-quality',
-      match: {
-        fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
-        venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
-        referee: fixture.fixture?.referee || '',
-        leagueId, season, league: leagueName, country: fixture.league?.country || '',
-        home: { id: homeId, name: homeName, logo: fixture.teams?.home?.logo || '' },
-        away: { id: awayId, name: awayName, logo: fixture.teams?.away?.logo || '' },
-        integrity: { state: analysisIntegrity.state, score: analysisIntegrity.qualityScore, warnings: analysisIntegrity.warnings, issues: analysisIntegrity.issues.filter(x => x.severity !== 'info').slice(0, 3) },
+    let dataCapabilities={};
+    try { dataCapabilities=objectValue(publicDataCapabilities()) || {}; } catch {}
+
+    let likelyOutcome='Недостаточно данных';
+    try {
+      likelyOutcome=safeText(outcomeName(probabilities,homeName,awayName),240)
+        || 'Недостаточно данных';
+    } catch {}
+
+    let refereeData=null;
+    try {
+      refereeData=objectValue(refereeProfile(safeText(fixture?.fixture?.referee,180)));
+    } catch {}
+
+    const safeSkipped=[...new Set(
+      rowsOrEmpty(skipped,50).map(value=>safeText(value,500)).filter(Boolean),
+    )].slice(0,20);
+    const safeFeatureEntries=Object.entries(objectValue(analysisFeatureMeta) || {})
+      .slice(0,30)
+      .map(([feature,metaValue])=>{
+        const meta=objectValue(metaValue) || {};
+        const ageSeconds=nonNegativeSafeInteger(meta.ageSeconds,31_536_000);
+        const freshnessLimitSeconds=nonNegativeSafeInteger(
+          meta.freshnessLimitSeconds,
+          31_536_000,
+        );
+        return [
+          safeText(feature,40) || 'unknown',
+          {
+            provider:safeText(meta.provider,80) || 'api-football',
+            source:safeText(meta.source,80) || 'network',
+            state:safeText(meta.state,80) || 'unknown',
+            fetchedAt:safeText(meta.fetchedAt,80) || null,
+            ageSeconds,
+            sourceUpdatedAt:safeText(meta.sourceUpdatedAt,80) || null,
+            freshnessState:safeText(meta.freshnessState,80) || 'unknown',
+            provenanceState:safeText(meta.provenanceState,80) || 'unknown',
+            freshnessLimitSeconds,
+            confidenceBearing:meta.confidenceBearing === true,
+            stale:meta.stale === true,
+          },
+        ];
+      });
+
+    let aiInstructor={
+      role:'football-ai-instructor',
+      confidenceScore:0,
+      confidenceLabel:'Низкая',
+      riskLabel:'Высокий',
+      betSignal:{
+        code:'skip',
+        label:'Пропустить ставку',
+        strength:0,
+        reason:'AI-инструктор не смог подтвердить рабочий сигнал.',
+      },
+      verdict:{
+        outcome:'Нет данных',
+        total:'Нет данных',
+        btts:'Нет данных',
+      },
+      qualityGate:{
+        state:'blocked',
+        allowSignal:false,
+        reasons:[{
+          code:'instructor_unavailable',
+          level:'block',
+          text:'AI-инструктор временно недоступен.',
+        }],
+      },
+      matchPlan:{
+        checks:[],
+        cancel:'Рабочего сигнала нет: дождитесь обновления данных.',
+        liveWatch:'',
+      },
+    };
+    try {
+      aiInstructor=objectValue(buildAiInstructor({
+        probabilities,
+        goalModel,
+        confidence,
+        completeness:completenessPreview,
+        factors:notes.factors,
+        risks:[...notes.risks,...safeSkipped],
+        referee:safeText(fixture?.fixture?.referee,180),
+        refereeData,
+        refereeHistory,
+        lineupImpact,
+        marketMovement,
+        providerReliability,
+        minutesToKickoff,
+      })) || aiInstructor;
+    } catch {}
+
+    const generatedAt=new Date().toISOString();
+    const payload={
+      generatedAt,
+      analysisVersion:'4.15.0-availability-quality',
+      match:{
+        fixtureId,
+        date:kickoffRaw,
+        status,
+        venue:safeText(fixture?.fixture?.venue?.name,180),
+        city:safeText(fixture?.fixture?.venue?.city,180),
+        referee:safeText(fixture?.fixture?.referee,180),
+        leagueId,
+        season,
+        league:leagueName,
+        country:safeText(fixture?.league?.country,120),
+        home:{
+          id:homeId,
+          name:homeName,
+          logo:safeHttpUrl(fixture?.teams?.home?.logo,500),
+        },
+        away:{
+          id:awayId,
+          name:awayName,
+          logo:safeHttpUrl(fixture?.teams?.away?.logo,500),
+        },
+        integrity:{
+          state:safeText(analysisIntegrity.state,40) || 'unknown',
+          score:finiteNumber(analysisIntegrity.qualityScore),
+          warnings:integrityWarnings
+            .map(value=>safeText(value?.message ?? value,240))
+            .filter(Boolean)
+            .slice(0,6),
+          issues:integrityIssues
+            .filter(issue=>issue?.severity!=='info')
+            .map(issue=>({
+              severity:safeText(issue?.severity,40),
+              code:safeText(issue?.code,80),
+              message:safeText(issue?.message,240),
+            }))
+            .slice(0,3),
+        },
       },
       probabilities,
       rawProbabilities,
-      modelCalibration: {
-        version: calibrationProfile.version || CALIBRATION_PROFILE_VERSION,
-        fingerprint: calibrationProfile.fingerprint || '',
-        mode: calibrationProfile.mode || 'baseline',
-        sample: Number(calibrationProfile.sample || 0),
-        temperature: Number(calibrationProfile.temperature || 1),
-        temperatureActive: Boolean(calibrationProfile.temperatureActive),
-        weightsActive: Boolean(calibrationProfile.weightsActive),
-        signalWeights: calibrationProfile.signalWeights || { ...MODEL_BASE_WEIGHTS },
-        validation: calibrationProfile.temperatureValidation || null,
-        weightsValidation: calibrationProfile.weightsValidation || null,
-        promotionGate: calibrationProfile.promotionGate || null,
-        lifecycle: calibrationProfile.lifecycle || null,
-        note: calibrationProfile.note || '',
+      modelCalibration:{
+        version:calibrationProfile.version,
+        fingerprint:calibrationProfile.fingerprint,
+        mode:calibrationProfile.mode,
+        sample:calibrationProfile.sample,
+        temperature:calibrationProfile.temperature,
+        temperatureActive:calibrationProfile.temperatureActive === true,
+        weightsActive:calibrationProfile.weightsActive === true,
+        signalWeights:objectValue(calibrationProfile.signalWeights)
+          || normalizedModelBaseWeights(),
+        validation:objectValue(calibrationProfile.temperatureValidation),
+        weightsValidation:objectValue(calibrationProfile.weightsValidation),
+        promotionGate:objectValue(calibrationProfile.promotionGate),
+        lifecycle:objectValue(calibrationProfile.lifecycle),
+        note:safeText(calibrationProfile.note,1000),
       },
       confidence,
-      likelyOutcome: outcomeName(probabilities, homeName, awayName),
-      modelBreakdown: {
-        weights: blended.weights,
-        signals: blended.signals,
-        method: 'Рынок, прогноз источника данных, форма и очные встречи объединяются динамически. Активный профиль применяется только после двух окон отложенной выборки и атомарного сравнения кандидата с активной моделью. Потери состава корректируют итог ограниченно: роль игрока сначала берётся из Team Intelligence cache, а при реальной потере может точечно гидратироваться из сезонной статистики с отдельным кешем и quota guard; сомнительный статус даёт половинный вклад.',
+      likelyOutcome,
+      modelBreakdown:{
+        weights:objectValue(blended.weights) || {},
+        signals:rowsOrEmpty(blended.signals,20),
+        method:'Рынок, прогноз источника данных, форма и очные встречи объединяются динамически. Активный профиль применяется только после двух окон отложенной выборки и атомарного сравнения кандидата с активной моделью. Потери состава корректируют итог ограниченно: роль игрока сначала берётся из Team Intelligence cache, а при реальной потере может точечно гидратироваться из сезонной статистики с отдельным кешем и quota guard; сомнительный статус даёт половинный вклад.',
       },
-      dataPolicy: {
-        dataMode: paid ? 'expanded' : 'standard',
-        mode: paid ? 'full' : healthyFree ? 'balanced-free' : 'quota-saver',
+      dataPolicy:{
+        dataMode:paid ? 'expanded' : 'standard',
+        mode:paid ? 'full' : healthyFree ? 'balanced-free' : 'quota-saver',
         availableSignals,
-        skipped: [...new Set(skipped)],
-        featureReliability: analysisFeatureMeta,
-        reliability: providerReliability,
+        skipped:safeSkipped,
+        featureReliability:analysisFeatureMeta,
+        reliability:providerReliability,
       },
       dataCapabilities,
-      dataProvenance: {
+      dataProvenance:{
         primaryProvider:'api-football',
-        generatedAt:new Date().toISOString(),
-        features:Object.fromEntries(Object.entries(analysisFeatureMeta).map(([feature, meta]) => [feature, {
-          provider:String(meta?.provider || 'api-football'),
-          source:String(meta?.source || 'network'),
-          state:String(meta?.state || 'unknown'),
-          fetchedAt:meta?.fetchedAt || null,
-          ageSeconds:Number.isFinite(Number(meta?.ageSeconds)) ? Number(meta.ageSeconds) : null,
-          sourceUpdatedAt:meta?.sourceUpdatedAt || null,
-          freshnessState:String(meta?.freshnessState || 'unknown'),
-          provenanceState:String(meta?.provenanceState || 'unknown'),
-          freshnessLimitSeconds:Number.isFinite(Number(meta?.freshnessLimitSeconds)) ? Number(meta.freshnessLimitSeconds) : null,
-          confidenceBearing:Boolean(meta?.confidenceBearing),
-          stale:Boolean(meta?.stale),
-        }])),
+        generatedAt,
+        features:Object.fromEntries(safeFeatureEntries),
         playerRoleHydration:{
-          home:{source:homeRoleHydration.source,network:Boolean(homeRoleHydration.network),stale:Boolean(homeRoleHydration.stale),reason:String(homeRoleHydration.reason || '')},
-          away:{source:awayRoleHydration.source,network:Boolean(awayRoleHydration.network),stale:Boolean(awayRoleHydration.stale),reason:String(awayRoleHydration.reason || '')},
+          home:{
+            source:safeText(homeRoleHydration.source,80) || 'unavailable',
+            network:homeRoleHydration.network === true,
+            stale:homeRoleHydration.stale === true,
+            reason:safeText(homeRoleHydration.reason,160),
+          },
+          away:{
+            source:safeText(awayRoleHydration.source,80) || 'unavailable',
+            network:awayRoleHydration.network === true,
+            stale:awayRoleHydration.stale === true,
+            reason:safeText(awayRoleHydration.reason,160),
+          },
         },
         news:{
           provider:'tavily',
-          source:web?.answer || web?.results?.length ? 'network-or-cache' : 'unavailable',
-          state:web?.answer || web?.results?.length ? 'available' : 'unavailable',
+          source:safeText(web.answer,1) || rowsOrEmpty(web.results,5).length
+            ? 'network-or-cache'
+            : 'unavailable',
+          state:safeText(web.answer,1) || rowsOrEmpty(web.results,5).length
+            ? 'available'
+            : 'unavailable',
         },
       },
-      market:analysisMarket, marketMovement, oddsQuality, availabilityQuality, apiPrediction, recentForm: { home: homeForm, away: awayForm }, goalModel, comparison, absences, lineups, lineupQuality, lineupImpact, h2h,
+      market:analysisMarket,
+      marketMovement,
+      oddsQuality,
+      availabilityQuality,
+      apiPrediction:trustedApiPrediction,
+      recentForm:{home:homeForm,away:awayForm},
+      goalModel,
+      comparison,
+      absences,
+      lineups,
+      lineupQuality,
+      lineupImpact,
+      h2h:trustedH2h,
       preMatchIntelligence,
-      aiInstructor: buildAiInstructor({ probabilities, goalModel, confidence, completeness: completenessPreview, factors: notes.factors, risks: [...(notes.risks || []), ...skipped], referee: fixture.fixture?.referee || '', refereeData: refereeProfile(fixture.fixture?.referee || ''), refereeHistory, lineupImpact, marketMovement, providerReliability, minutesToKickoff }),
-      insights: notes.factors, risks: [...(notes.risks || []), ...skipped], news: web,
-      completeness: completenessPreview,
+      aiInstructor,
+      insights:notes.factors,
+      risks:[...new Set([...notes.risks,...safeSkipped])].slice(0,12),
+      news:web,
+      completeness:completenessPreview,
       providerReliability,
-      provider: dataCapabilities,
-      disclaimer: 'Расчёт основан на доступных статистических сигналах и не гарантирует исход матча. Это не финансовая рекомендация.',
+      provider:dataCapabilities,
+      disclaimer:'Расчёт основан на доступных статистических сигналах и не гарантирует исход матча. Это не финансовая рекомендация.',
     };
-  
-    let ttl = cfg.cacheMinutes;
-    if (isFinishedStatus(status)) ttl = 720;
-    else if (minutesToKickoff !== null && minutesToKickoff <= 15) ttl = 3;
-    else if (minutesToKickoff !== null && minutesToKickoff <= 45) ttl = 5;
-    else if (minutesToKickoff !== null && minutesToKickoff <= 120) ttl = 10;
-    else if (minutesToKickoff !== null && minutesToKickoff <= 360) ttl = 20;
-    else if (minutesToKickoff !== null && minutesToKickoff > 360) ttl = 45;
-    const recheckDelta=needsFreshnessRecheck ? analysisRecheckDelta(staleBefore,payload) : null;
-    const newsImpactRecheckDelta=!needsFreshnessRecheck && newsImpactEligible ? analysisRecheckDelta(staleBefore,payload) : null;
-    const effectiveRecheckDelta=recheckDelta || newsImpactRecheckDelta;
-    const newsImpact=newsImpactDeltaStatus(staleBefore,payload,effectiveRecheckDelta,{requested:newsImpactRecheck,eligible:newsImpactEligible,performed:shouldPerformRecheck,publishedAt:newsPublishedAt});
-    await setCache(cacheKey, fixtureId, payload, cfg, ttl);
-    await captureAnalysisTimelineSnapshot(payload, cfg, { delta: effectiveRecheckDelta });
-    await captureModelPrediction(payload, cfg);
-    await recordHistory(userId, payload, cfg);
-    if (newsImpactEligible && !needsFreshnessRecheck) {
-      void recordGrowthEvent(cfg,{userId:userId,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:'news_impact',material:Boolean(effectiveRecheckDelta?.material),stable:Boolean(effectiveRecheckDelta?.stable),changeCount:Number(effectiveRecheckDelta?.items?.length || 0),codes:(effectiveRecheckDelta?.codes || []).slice(0,6)}});
+
+    const configuredTtl=finiteNumber(cfg?.cacheMinutes);
+    let ttl=configuredTtl !== null && configuredTtl>=1 && configuredTtl<=1440
+      ? configuredTtl
+      : 45;
+    if (safePredicate(isFinishedStatus,status)) ttl=720;
+    else if (minutesToKickoff !== null && minutesToKickoff<=15) ttl=3;
+    else if (minutesToKickoff !== null && minutesToKickoff<=45) ttl=5;
+    else if (minutesToKickoff !== null && minutesToKickoff<=120) ttl=10;
+    else if (minutesToKickoff !== null && minutesToKickoff<=360) ttl=20;
+    else if (minutesToKickoff !== null && minutesToKickoff>360) ttl=45;
+
+    let recheckDelta=null;
+    if (needsFreshnessRecheck) {
+      try { recheckDelta=objectValue(analysisRecheckDelta(staleBefore,payload)); } catch {}
     }
-    if (needsFreshnessRecheck) void recordGrowthEvent(cfg,{userId:userId,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:previousFreshness?.reasonCode || 'age_window',material:Boolean(recheckDelta?.material),stable:Boolean(recheckDelta?.stable),changeCount:Number(recheckDelta?.items?.length || 0),codes:(recheckDelta?.codes || []).slice(0,6)}});
-    if (trackFullAi) void recordGrowthEvent(cfg,{userId:userId,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:false,recheck:shouldPerformRecheck}});
+    let newsImpactRecheckDelta=null;
+    if (!needsFreshnessRecheck && newsImpactEligible) {
+      try {
+        newsImpactRecheckDelta=objectValue(
+          analysisRecheckDelta(staleBefore,payload),
+        );
+      } catch {}
+    }
+    const effectiveRecheckDelta=recheckDelta || newsImpactRecheckDelta;
+
+    let newsImpact=null;
+    try {
+      newsImpact=newsImpactDeltaStatus(
+        staleBefore,
+        payload,
+        effectiveRecheckDelta,
+        {
+          requested:newsImpactRecheck,
+          eligible:newsImpactEligible,
+          performed:shouldPerformRecheck,
+          publishedAt:newsPublishedAt,
+        },
+      );
+    } catch {}
+
+    let cacheStored=true;
+    try {
+      const result=await setCache(cacheKey,fixtureId,payload,cfg,ttl);
+      if (result === false) cacheStored=false;
+    } catch {
+      cacheStored=false;
+    }
+    if (!cacheStored) {
+      await recordOpsEvent(cfg,{
+        severity:'warning',
+        source:'cache',
+        eventType:'analysis_cache_write',
+        code:'ANALYSIS_CACHE_WRITE_FAILED',
+        message:'AI analysis completed but could not be persisted in the shared cache.',
+        meta:{fixtureId,ttl},
+      }).catch(()=>null);
+    }
+
+    await optionalAsync(
+      captureAnalysisTimelineSnapshot,
+      payload,
+      cfg,
+      {delta:effectiveRecheckDelta},
+    );
+    await optionalAsync(captureModelPrediction,payload,cfg);
+    await safeRecordHistory(payload);
+
+    const deltaMetadata=delta=>({
+      material:delta?.material === true,
+      stable:delta?.stable === true,
+      changeCount:Math.min(6,rowsOrEmpty(delta?.items,6).length),
+      codes:rowsOrEmpty(delta?.codes,6)
+        .map(code=>safeText(code,40))
+        .filter(Boolean),
+    });
+    if (newsImpactEligible && !needsFreshnessRecheck) {
+      fireAndForget(recordGrowthEvent,cfg,{
+        userId,
+        eventName:'analysis_recheck',
+        channel:analysisOrigin==='telegram_quick' ? 'telegram' : 'miniapp',
+        fixtureId,
+        metadata:{
+          free:freeRecheck,
+          reason:'news_impact',
+          ...deltaMetadata(effectiveRecheckDelta),
+        },
+      });
+    }
+    if (needsFreshnessRecheck) {
+      fireAndForget(recordGrowthEvent,cfg,{
+        userId,
+        eventName:'analysis_recheck',
+        channel:analysisOrigin==='telegram_quick' ? 'telegram' : 'miniapp',
+        fixtureId,
+        metadata:{
+          free:freeRecheck,
+          reason:safeText(previousFreshness?.reasonCode,80) || 'age_window',
+          ...deltaMetadata(recheckDelta),
+        },
+      });
+    }
+    if (trackFullAi) {
+      fireAndForget(recordGrowthEvent,cfg,{
+        userId,
+        eventName:'full_ai',
+        channel:'miniapp',
+        fixtureId,
+        metadata:{cached:false,recheck:shouldPerformRecheck},
+      });
+    }
+
     await recordTrackedFullAiOutcome('fresh');
-    const responseQuotaFallback = reservationQuotaSnapshot(usageReservation, quotaBefore);
-    const responseQuota = await quotaSnapshotForResponse(userId, cfg, responseQuotaFallback);
+    const responseQuotaFallback=reservationQuotaSnapshot(
+      usageReservation,
+      quotaBefore,
+    );
+    const responseQuota=await quotaSnapshotForResponse(
+      userId,
+      cfg,
+      responseQuotaFallback,
+    );
     usageCommitted=true;
-    return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:responseQuota}));
+    return json(analysisResponsePayload(payload,{
+      cached:false,
+      stale:false,
+      persistence:{cacheStored},
+      recheck:{
+        requested:recheckRequested,
+        performed:shouldPerformRecheck,
+        free:freeRecheck,
+        reasonCode:recheckReasonCode,
+        delta:recheckDelta,
+      },
+      newsImpact,
+      quota:responseQuota,
+    }));
     } finally {
       try {
         const disposition=usageCommitted ? 'commit' : 'refund';
