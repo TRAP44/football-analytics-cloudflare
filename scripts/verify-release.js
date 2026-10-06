@@ -80,6 +80,9 @@ if (releaseContract.databaseContract?.version !== 2) failures.push('release-cont
 if (releaseContract.databaseContract?.rpc !== 'backend_readiness_contract_v2') failures.push('release-contract databaseContract.rpc must remain backend_readiness_contract_v2');
 if (!releaseContract.databaseContract?.compatibleFingerprints?.includes(releaseContract.databaseContract?.fingerprint)) failures.push('release-contract compatibleFingerprints must include the production fingerprint');
 if (!releaseContract.databaseContract?.compatibleFingerprints?.includes(releaseContract.databaseContract?.freshInstallFingerprint)) failures.push('release-contract compatibleFingerprints must include the fresh-install fingerprint');
+if (releaseContract.databaseContract?.privateContracts?.analysisUsage?.version !== 1) failures.push('release-contract private analysisUsage contract version must remain 1');
+if (releaseContract.databaseContract?.privateContracts?.analysisUsage?.readinessField !== 'schema.privateAnalysisUsage') failures.push('release-contract private analysisUsage readiness field must remain schema.privateAnalysisUsage');
+if (releaseContract.databaseContract?.privateContracts?.analysisUsage?.sourceMigration !== 'supabase/migrations/supabase_migration_v6_28.sql') failures.push('release-contract private analysisUsage source migration drifted');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
 if (!expectedRc || !worker.includes(`const RC_NAME = '${expectedRc}'`)) failures.push(`Worker RC name must be ${expectedRc || 'derived from runtimeVersion'}`);
