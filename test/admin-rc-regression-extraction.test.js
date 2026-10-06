@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createAdminRcRegressionModule } from '../public/modules/admin-rc-regression.js';
 
-const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-const rcRegression = readFileSync(new URL('../public/modules/admin-rc-regression.js', import.meta.url), 'utf8');
+function readRepoFile(relativePath) {
+  return readFileSync(new URL('../' + relativePath, import.meta.url), 'utf8');
+}
 
-function element() {
+function createElement() {
   return {
     textContent: '',
     innerHTML: '',
@@ -17,43 +18,60 @@ function element() {
 
 function createElements() {
   return new Map([
-    ['rcBadge', element()],
-    ['rcStatus', element()],
-    ['rcMeta', element()],
-    ['rcSummary', element()],
-    ['rcGroups', element()],
-    ['rcClient', element()],
-    ['rcChecks', element()],
-    ['rcRunBtn', element()],
+    ['rcBadge', createElement()],
+    ['rcStatus', createElement()],
+    ['rcMeta', createElement()],
+    ['rcSummary', createElement()],
+    ['rcGroups', createElement()],
+    ['rcClient', createElement()],
+    ['rcChecks', createElement()],
+    ['rcRunBtn', createElement()],
   ]);
 }
 
+function createState(overrides = {}) {
+  return {
+    rcRegression: null,
+    rcRegressionLoading: false,
+    ...overrides,
+  };
+}
+
 function createModule({
-  state,
+  state = createState(),
   elements = createElements(),
   isAdmin = () => true,
   runClientContractSmoke = () => ({ total: 2, passed: 2, failed: 0, checks: [] }),
   api = async () => ({}),
   toast = () => {},
 } = {}) {
-  return createAdminRcRegressionModule({
-    state,
-    elementById: id => elements.get(id) || null,
-    isAdmin,
-    runClientContractSmoke,
-    relativeAge: () => 'только что',
-    escapeHtml: value => String(value ?? ''),
-    humanizeTechnicalText: value => String(value ?? ''),
-    api,
-    toast,
-  });
+  return {
+    elements,
+    module: createAdminRcRegressionModule({
+      state,
+      elementById: id => elements.get(id) || null,
+      isAdmin,
+      runClientContractSmoke,
+      relativeAge: () => 'только что',
+      escapeHtml: value => String(value ?? ''),
+      humanizeTechnicalText: value => String(value ?? ''),
+      api,
+      toast,
+    }),
+  };
 }
 
-test('RC regression implementation lives outside app while client contract smoke stays in composition root', () => {
+const app = readRepoFile('public/app.js');
+const rcRegression = readRepoFile('public/modules/admin-rc-regression.js');
+const router = readRepoFile('src/router.js');
+
+test('RC regression implementation stays outside app while client contract smoke stays in composition root', () => {
   assert.match(rcRegression, /export function createAdminRcRegressionModule/);
   assert.match(rcRegression, /function rcStateText\(status\)/);
   assert.match(rcRegression, /function renderRcRegression\(\)/);
   assert.match(rcRegression, /async function loadRcRegression\(force = true\)/);
+  assert.match(rcRegression, /effectiveStatus = r\.status === 'blocked' \|\| clientFailed > 0 \? 'blocked' : r\.status/);
+
   assert.doesNotMatch(app, /function rcStateText\(status\)/);
   assert.doesNotMatch(app, /Запускаю безопасную регрессионную проверку/);
   assert.match(app, /function runClientContractSmoke\(\)/);
@@ -61,35 +79,47 @@ test('RC regression implementation lives outside app while client contract smoke
   assert.doesNotMatch(rcRegression, /window\.Telegram|document\.querySelector/);
 });
 
-test('app lazy-loads RC regression behind admin gate with explicit client smoke callback', () => {
-  const start = app.indexOf('async function ensureAdminRcRegressionModule()');
-  const end = app.indexOf('\nlet adminRuntimeControlsModule', start);
-  assert.ok(start >= 0 && end > start);
-  const boundary = app.slice(start, end);
-  assert.match(boundary, /if \(!isAdmin\(\)\) return null/);
-  assert.match(boundary, /import\('\.\/modules\/admin-rc-regression\.js'\)/);
-  assert.match(boundary, /runClientContractSmoke/);
-  assert.match(boundary, /relativeAge/);
-  assert.match(boundary, /humanizeTechnicalText/);
-  assert.match(boundary, /api/);
-  assert.match(boundary, /toast/);
+test('RC regression endpoint and lazy-loaded UI are both protected by admin gates', () => {
+  assert.match(
+    router,
+    /method === 'GET' && pathname === '\/api\/rc-regression'[\s\S]*?if \(!adminAllowed\(\)\) return adminForbidden\(\);[\s\S]*?apiRcRegression\(request, cfg, user\)/,
+  );
+  assert.match(
+    app,
+    /async function ensureAdminRcRegressionModule\(\)[\s\S]*?if \(!isAdmin\(\)\) return null;[\s\S]*?import\('\.\/modules\/admin-rc-regression\.js'\)/,
+  );
+  assert.match(
+    app,
+    /createAdminRcRegressionModule\(\{[\s\S]*?state,[\s\S]*?elementById: \$,[\s\S]*?isAdmin,[\s\S]*?runClientContractSmoke,[\s\S]*?relativeAge,[\s\S]*?escapeHtml,[\s\S]*?humanizeTechnicalText,[\s\S]*?api,[\s\S]*?toast,/,
+  );
 });
 
 test('non-admin RC regression fails closed without DOM, API, smoke or toast work', async () => {
-  const state = { rcRegression: null, rcRegressionLoading: false };
+  const state = createState();
   let apiCalls = 0;
   let smokeCalls = 0;
   let toastCalls = 0;
+
   const module = createAdminRcRegressionModule({
     state,
-    elementById: () => { throw new Error('DOM must not be touched'); },
+    elementById: () => {
+      throw new Error('DOM must not be touched');
+    },
     isAdmin: () => false,
-    runClientContractSmoke: () => { smokeCalls += 1; return {}; },
+    runClientContractSmoke: () => {
+      smokeCalls += 1;
+      return {};
+    },
     relativeAge: value => String(value ?? ''),
     escapeHtml: value => String(value ?? ''),
     humanizeTechnicalText: value => String(value ?? ''),
-    api: async () => { apiCalls += 1; return {}; },
-    toast: () => { toastCalls += 1; },
+    api: async () => {
+      apiCalls += 1;
+      return {};
+    },
+    toast: () => {
+      toastCalls += 1;
+    },
   });
 
   assert.doesNotThrow(() => module.renderRcRegression());
@@ -98,25 +128,25 @@ test('non-admin RC regression fails closed without DOM, API, smoke or toast work
   assert.equal(apiCalls, 0);
   assert.equal(smokeCalls, 0);
   assert.equal(toastCalls, 0);
-  assert.equal(state.rcRegression, null);
-  assert.equal(state.rcRegressionLoading, false);
+  assert.deepEqual(state, createState());
 });
 
 test('RC regression loader preserves refresh endpoint, request options and client contract attachment', async () => {
-  const state = { rcRegression: null, rcRegressionLoading: false };
+  const state = createState();
   const elements = createElements();
   const calls = [];
   const toasts = [];
   let smokeCalls = 0;
-  const module = createModule({
+
+  const { module } = createModule({
     state,
     elements,
     runClientContractSmoke: () => {
       smokeCalls += 1;
       return { total: 3, passed: 3, failed: 0, checks: [] };
     },
-    api: async (path, options) => {
-      calls.push({ path, options });
+    api: async (requestPath, options) => {
+      calls.push({ path: requestPath, options });
       return {
         status: 'rc_ready',
         label: 'ready',
@@ -134,9 +164,14 @@ test('RC regression loader preserves refresh endpoint, request options and clien
 
   await module.loadRcRegression(true);
 
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].path, '/api/rc-regression?refresh=1');
-  assert.deepEqual(calls[0].options, { retry: false, timeoutMs: 45000, dedupe: false });
+  assert.deepEqual(calls, [{
+    path: '/api/rc-regression?refresh=1',
+    options: {
+      retry: false,
+      timeoutMs: 45000,
+      dedupe: false,
+    },
+  }]);
   assert.equal(smokeCalls, 1);
   assert.equal(state.rcRegressionLoading, false);
   assert.equal(state.rcRegression.clientContract.failed, 0);
@@ -145,7 +180,50 @@ test('RC regression loader preserves refresh endpoint, request options and clien
   assert.match(elements.get('rcClient').innerHTML, /3\/3/);
 });
 
-test('cached RC regression render avoids API and keeps existing state', async () => {
+test('client contract failure blocks effective RC readiness even when server reports ready', async () => {
+  const state = createState();
+  const elements = createElements();
+  const toasts = [];
+
+  const { module } = createModule({
+    state,
+    elements,
+    runClientContractSmoke: () => ({
+      total: 3,
+      passed: 2,
+      failed: 1,
+      checks: [{
+        pass: false,
+        label: 'Client DOM contract',
+        detail: 'missing required node',
+      }],
+    }),
+    api: async () => ({
+      status: 'rc_ready',
+      label: 'Server checks passed',
+      score: 100,
+      generatedAt: '2026-09-30T10:00:00Z',
+      durationMs: 42,
+      summary: { total: 8, passed: 8, warnings: 0, blockers: 0 },
+      groups: {},
+      checks: [],
+      policy: {},
+    }),
+    toast: message => toasts.push(message),
+  });
+
+  await module.loadRcRegression(true);
+
+  assert.equal(state.rcRegression.status, 'rc_ready');
+  assert.equal(state.rcRegression.clientContract.failed, 1);
+  assert.equal(elements.get('rcBadge').textContent, 'ЗАБЛОКИРОВАНО');
+  assert.match(elements.get('rcBadge').className, /blocked/);
+  assert.equal(elements.get('rcStatus').textContent, 'Клиентский контракт не пройден: 1 ошибок.');
+  assert.match(elements.get('rcClient').innerHTML, /2\/3/);
+  assert.deepEqual(toasts, ['Регрессионная проверка RC: есть пункты для проверки']);
+});
+
+test('cached RC regression render avoids API and smoke rerun when client result already exists', async () => {
   const existing = {
     status: 'rc_with_holds',
     label: 'cached',
@@ -158,13 +236,20 @@ test('cached RC regression render avoids API and keeps existing state', async ()
     clientContract: { total: 1, passed: 1, failed: 0, checks: [] },
     policy: {},
   };
-  const state = { rcRegression: existing, rcRegressionLoading: false };
+  const state = createState({ rcRegression: existing });
   let apiCalls = 0;
   let smokeCalls = 0;
-  const module = createModule({
+
+  const { module } = createModule({
     state,
-    runClientContractSmoke: () => { smokeCalls += 1; return {}; },
-    api: async () => { apiCalls += 1; return {}; },
+    runClientContractSmoke: () => {
+      smokeCalls += 1;
+      return {};
+    },
+    api: async () => {
+      apiCalls += 1;
+      return {};
+    },
   });
 
   await module.loadRcRegression(false);
@@ -175,20 +260,23 @@ test('cached RC regression render avoids API and keeps existing state', async ()
 });
 
 test('RC regression API failure becomes blocked state and still captures client contract smoke', async () => {
-  const state = { rcRegression: null, rcRegressionLoading: false };
+  const state = createState();
   const elements = createElements();
   let smokeCalls = 0;
-  const module = createModule({
+
+  const { module } = createModule({
     state,
     elements,
     runClientContractSmoke: () => {
       smokeCalls += 1;
       return { total: 2, passed: 1, failed: 1, checks: [] };
     },
-    api: async () => { throw new Error('network unavailable'); },
+    api: async () => {
+      throw new Error('network unavailable');
+    },
   });
 
-  await module.loadRcRegression(true);
+  await assert.doesNotReject(() => module.loadRcRegression(true));
 
   assert.equal(smokeCalls, 1);
   assert.equal(state.rcRegressionLoading, false);
@@ -197,4 +285,5 @@ test('RC regression API failure becomes blocked state and still captures client 
   assert.equal(state.rcRegression.summary.blockers, 1);
   assert.equal(state.rcRegression.clientContract.failed, 1);
   assert.equal(elements.get('rcBadge').textContent, 'ЗАБЛОКИРОВАНО');
+  assert.match(elements.get('rcBadge').className, /blocked/);
 });
