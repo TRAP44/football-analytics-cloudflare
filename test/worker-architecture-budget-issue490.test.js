@@ -20,13 +20,14 @@ import { createRefereeIntelligenceRuntime } from '../src/referee-intelligence-ru
 import { createAnalysisQualityRuntime } from '../src/analysis-quality-runtime.js';
 import { createAnalysisLifecycleRuntime } from '../src/analysis-lifecycle-runtime.js';
 import { createAnalysisContextRuntime } from '../src/analysis-context-runtime.js';
+import { createFootballNewsRuntime } from '../src/football-news-runtime.js';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 
 test('Worker composition root stays below the post-audit architecture budget',()=>{
   const bytes=Buffer.byteLength(worker,'utf8');
   assert.ok(
-    bytes<=750_000,
+    bytes<=730_000,
     `src/worker.js grew to ${bytes} bytes; extract another cohesive runtime instead of growing the composition root`,
   );
 });
@@ -140,6 +141,7 @@ test('extracted runtime factories are executable contracts, not source-only plac
   const analysisQuality=createAnalysisQualityRuntime({absenceAdjustmentUnits:()=>0,assessMatchLineups:()=>({home:{confirmed:false},away:{confirmed:false},partialSides:0}),probabilityLeaderMargin:()=>10});
   const analysisLifecycle=createAnalysisLifecycleRuntime({hasSupabase:()=>false,isFinishedStatus:()=>false,isLiveStatus:()=>false,memory:{history:new Map()},supaSelectOne:async()=>null});
   const analysisContext=createAnalysisContextRuntime({analysisQualityGate:()=>({allowSignal:true,reasons:[]}),freeQuotaHealthy:()=>true,getCache:async()=>null,getStaleCache:async()=>null,marketMovementNote:()=>'',refereeProfile:()=>({}),resolveTeamSeasonPlayers:async()=>({available:false}),setCache:async()=>true});
+  const footballNews=createFootballNewsRuntime({NEWS_BLOCKED_HOST_RE:/^$/,NEWS_MAJOR_SOURCE_RE:/^$/,NEWS_OFFICIAL_SOURCE_RE:/^$/,TOP_TEAM_SEARCH_CATALOG:[],botTeamIdMatches:async()=>[],fetchWithTimeout:async()=>({ok:false}),getCache:async()=>null,getFavorites:async()=>[],normalizeBotFixtureCard:value=>value || {},recordGrowthEvent:async()=>{},searchText:value=>String(value||'').toLowerCase(),setCache:async()=>true,telegramApi:async()=>{},telegramHtmlEscape:value=>String(value||''),todayUtc:()=> '2026-10-06'});
   assert.equal(typeof settlement.runSettlementWatchdog,'function');
   assert.equal(typeof settlement.runSettlementFinalityVerification,'function');
   assert.equal(typeof providerData.providerDataState,'function');
@@ -172,6 +174,9 @@ test('extracted runtime factories are executable contracts, not source-only plac
   assert.equal(typeof analysisContext.cachedTeamIntelligenceForAnalysis,'function');
   assert.equal(typeof analysisContext.buildMatchComparison,'function');
   assert.equal(typeof analysisContext.buildAiInstructor,'function');
+  assert.equal(typeof footballNews.currentGeneralFootballNews,'function');
+  assert.equal(typeof footballNews.newsRelevantFixture,'function');
+  assert.equal(typeof footballNews.sendGeneralFootballNews,'function');
 });
 
 test('Worker composes extracted runtimes through explicit imports',()=>{
@@ -196,6 +201,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/import \{ createAnalysisQualityRuntime \} from '\.\/analysis-quality-runtime\.js'/);
   assert.match(worker,/import \{ createAnalysisLifecycleRuntime \} from '\.\/analysis-lifecycle-runtime\.js'/);
   assert.match(worker,/import \{ createAnalysisContextRuntime \} from '\.\/analysis-context-runtime\.js'/);
+  assert.match(worker,/import \{ createFootballNewsRuntime \} from '\.\/football-news-runtime\.js'/);
   assert.match(worker,/createDiagnosticsRuntime\(\{/);
   assert.match(worker,/createPublicHealthRuntime\(\{/);
   assert.match(worker,/createPublicStatusRuntime\(\{/);
@@ -218,6 +224,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/createAnalysisQualityRuntime\(\{/);
   assert.match(worker,/createAnalysisLifecycleRuntime\(\{/);
   assert.match(worker,/createAnalysisContextRuntime\(\{/);
+  assert.match(worker,/createFootballNewsRuntime\(\{/);
   assert.doesNotMatch(worker,/async function collectDiagnostics\(/);
   assert.doesNotMatch(worker,/async function readRecentOpsEvents\(/);
   assert.doesNotMatch(worker,/async function publicServiceStatus\(/);
@@ -276,4 +283,10 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.doesNotMatch(worker,/async function hydratePlayerRolesForAnalysis\(/);
   assert.doesNotMatch(worker,/function buildMatchComparison\(/);
   assert.doesNotMatch(worker,/function buildAiInstructor\(/);
+  assert.doesNotMatch(worker,/function externalNewsUrl\(/);
+  assert.doesNotMatch(worker,/function newsFixtureRelevance\(/);
+  assert.doesNotMatch(worker,/async function tavilyNewsSearch\(/);
+  assert.doesNotMatch(worker,/async function sendGeneralFootballNews\(/);
+  assert.doesNotMatch(worker,/async function sendFavoriteTeamNews\(/);
+  assert.doesNotMatch(worker,/async function tavilySearch\(/);
 });
