@@ -6,6 +6,7 @@ import {
 const MAX_BATCH_SIZE = 200;
 const MAX_ROWS_PER_USER = 50;
 const CONTEXT_TABLES = new Set(['users','user_preferences','favorite_players']);
+const EVENT_TYPE_RE = /^(?:match|team|player|ai|radar|market)\.[a-z0-9][a-z0-9_.-]{0,78}$/;
 
 function plainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
@@ -133,6 +134,39 @@ function sanitizeFavoriteRows(rows,userId) {
   return output;
 }
 
+function sanitizedUserForPlan(user) {
+  const source=plainObject(user) || {};
+  const plan=typeof source.plan === 'string' ? source.plan : 'FREE';
+  const subscriptionUntil=typeof source.subscription_until === 'string'
+    ? source.subscription_until
+    : typeof source.subscriptionUntil === 'string'
+      ? source.subscriptionUntil
+      : '';
+  return {
+    plan,
+    subscription_until:subscriptionUntil,
+  };
+}
+
+function preferencePayload(row) {
+  const source=plainObject(row);
+  if (!source) return {valid:false,value:{}};
+  const hasCamel=Object.hasOwn(source,'notificationPreferences');
+  const hasSnake=Object.hasOwn(source,'notification_preferences');
+  if (!hasCamel && !hasSnake) return {valid:true,value:{}};
+  const value=hasCamel ? source.notificationPreferences : source.notification_preferences;
+  return plainObject(value)
+    ? {valid:true,value}
+    : {valid:false,value:{}};
+}
+
+function normalizedEventType(value) {
+  if (typeof value !== 'string') return '';
+  const eventType=value.trim().toLowerCase();
+  return EVENT_TYPE_RE.test(eventType) ? eventType : '';
+}
+
+
 export function createSmartNotificationAudience({
   hasSupabase,
   supaSelectMany,
@@ -182,8 +216,8 @@ export function createSmartNotificationAudience({
 
     if (strictSupabaseAvailable(hasSupabase,cfg)) {
       const [userRows,preferenceRows]=await Promise.all([
-        loadRowsByUserIds('users',userIds,cfg,1),
-        loadRowsByUserIds('user_preferences',userIds,cfg,1),
+        loadRowsByUserIds('users',userIds,cfg,2),
+        loadRowsByUserIds('user_preferences',userIds,cfg,2),
       ]);
       const userContexts=collectSingleContext(userRows,userIds);
       const preferenceContexts=collectSingleContext(preferenceRows,userIds);
@@ -226,7 +260,8 @@ export function createSmartNotificationAudience({
 
   async function filterRecipients(rows = [], eventType, cfg) {
     const source=uniqueSourceRows(rows);
-    if (typeof eventType !== 'string' || !eventType.trim()) {
+    const safeEventType=normalizedEventType(eventType);
+    if (!safeEventType) {
       return {
         rows:[],
         checked:Array.isArray(rows) ? rows.length : 0,
@@ -260,11 +295,17 @@ export function createSmartNotificationAudience({
       }
 
       const user=ambiguousUsers.has(userId) ? {plan:'FREE'} : (users.get(userId) || {plan:'FREE'});
-      const prefs=preferences.get(userId) || {};
+      const prefs=preferences.get(userId);
+      const preference=preferencePayload(prefs || {});
+      if (!preference.valid) {
+        blockedByPreference+=1;
+        contextFailures+=1;
+        continue;
+      }
       const decision=notificationDecision({
-        eventType:eventType.trim(),
-        plan:effectiveNotificationPlan(user),
-        preferences:prefs.notificationPreferences ?? prefs.notification_preferences ?? {},
+        eventType:safeEventType,
+        plan:effectiveNotificationPlan(sanitizedUserForPlan(user)),
+        preferences:preference.value,
       });
       if (decision?.allowed === true) eligible.push(row);
       else if (decision?.reason === 'entitlement_required') blockedByEntitlement+=1;
