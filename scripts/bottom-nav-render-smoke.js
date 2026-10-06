@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const WIDTHS = [320, 360, 375, 390, 430, 768, 1280];
 const NAV_IDS = ['navMatches', 'navMyTeams', 'navHistory', 'navProfile'];
@@ -24,10 +25,17 @@ function browserExecutable() {
     'chromium',
     'chromium-browser',
   ].filter(Boolean);
+  const resolver = process.platform === 'win32' ? 'where' : 'which';
+
   for (const candidate of candidates) {
-    if (candidate.includes('/') && fs.existsSync(candidate)) return candidate;
-    const probe = spawnSync('sh', ['-lc', `command -v "${candidate}"`], { encoding: 'utf8' });
-    if (probe.status === 0 && probe.stdout.trim()) return probe.stdout.trim();
+    const name = String(candidate || '').trim();
+    if (!name) continue;
+    if ((name.includes('/') || name.includes('\\')) && fs.existsSync(name)) return name;
+
+    const probe = spawnSync(resolver, [name], { encoding: 'utf8' });
+    if (probe.status === 0 && probe.stdout.trim()) {
+      return probe.stdout.trim().split(/\r?\n/, 1)[0];
+    }
   }
   throw new Error('Chromium/Chrome executable is required for rendered navigation regression.');
 }
@@ -124,41 +132,83 @@ async function stopChrome(chrome) {
   }
 }
 
-async function launchChromeWithRetry(executable, attempts = 3) {
+export function normalizeRetryAttempts(attempts = 3, maxAttempts = 3) {
+  const max = Number(maxAttempts);
+  const boundedMax = Number.isSafeInteger(max) && max >= 1 ? max : 3;
+  const value = Number(attempts);
+  if (!Number.isSafeInteger(value) || value < 1) return boundedMax;
+  return Math.min(boundedMax, value);
+}
+
+export async function launchChromeWithRetry(executable, attempts = 3, runtime = {}) {
+  const options = runtime && typeof runtime === 'object' && !Array.isArray(runtime) ? runtime : {};
+  const spawnProcess = typeof options.spawnProcess === 'function' ? options.spawnProcess : spawn;
+  const makeTempDir = typeof options.makeTempDir === 'function'
+    ? options.makeTempDir
+    : prefix => fsp.mkdtemp(prefix);
+  const waitForPort = typeof options.waitForPort === 'function'
+    ? options.waitForPort
+    : waitForDevToolsPort;
+  const stopProcess = typeof options.stopProcess === 'function' ? options.stopProcess : stopChrome;
+  const removeProfile = typeof options.removeProfile === 'function'
+    ? options.removeProfile
+    : profileDir => fsp.rm(profileDir, { recursive:true, force:true, maxRetries:5, retryDelay:100 });
+  const sleep = typeof options.sleep === 'function'
+    ? options.sleep
+    : ms => new Promise(resolve => setTimeout(resolve, ms));
+
   let lastError = null;
-  const totalAttempts = Math.max(1, Math.min(3, Number(attempts || 3)));
+  const totalAttempts = normalizeRetryAttempts(attempts, 3);
 
   for (let attempt = 1; attempt <= totalAttempts; attempt += 1) {
-    const profileDir = await fsp.mkdtemp(path.join(os.tmpdir(), `matchradar-nav-render-${attempt}-`));
+    const profileDir = await makeTempDir(path.join(os.tmpdir(), `matchradar-nav-render-${attempt}-`));
     let stderrText = '';
-    const chrome = spawn(executable, [
-      '--headless=new',
-      '--no-sandbox',
-      '--disable-gpu',
-      '--disable-dev-shm-usage',
-      '--no-proxy-server',
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--remote-debugging-port=0',
-      `--user-data-dir=${profileDir}`,
-      'about:blank',
-    ], { stdio: ['ignore', 'ignore', 'pipe'] });
-
-    chrome.stderr?.setEncoding('utf8');
-    chrome.stderr?.on('data', chunk => {
-      stderrText = (stderrText + String(chunk)).slice(-8000);
-    });
+    let chrome = null;
 
     try {
-      const debugPort = await waitForDevToolsPort(profileDir, chrome, () => stderrText, 120);
+      chrome = spawnProcess(executable, [
+        '--headless=new',
+        '--no-sandbox',
+        '--disable-gpu',
+        '--disable-dev-shm-usage',
+        '--no-proxy-server',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--remote-debugging-port=0',
+        `--user-data-dir=${profileDir}`,
+        'about:blank',
+      ], { stdio: ['ignore', 'ignore', 'pipe'] });
+
+      chrome.stderr?.setEncoding?.('utf8');
+      chrome.stderr?.on?.('data', chunk => {
+        stderrText = (stderrText + String(chunk)).slice(-8000);
+      });
+
+      const portWait = waitForPort(profileDir, chrome, () => stderrText, 120);
+      let debugPort;
+      if (typeof chrome?.once === 'function') {
+        let spawnErrorHandler;
+        const spawnFailure = new Promise((_, reject) => {
+          spawnErrorHandler = error => reject(error);
+          chrome.once('error', spawnErrorHandler);
+        });
+        try {
+          debugPort = await Promise.race([portWait, spawnFailure]);
+        } finally {
+          if (spawnErrorHandler) chrome.off?.('error', spawnErrorHandler);
+        }
+      } else {
+        debugPort = await portWait;
+      }
       return { chrome, profileDir, debugPort };
     } catch (error) {
       lastError = error;
-      await stopChrome(chrome);
-      await fsp.rm(profileDir, { recursive:true, force:true, maxRetries:5, retryDelay:100 }).catch(() => {});
-      if (attempt < totalAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 250 * attempt));
+      try {
+        await stopProcess(chrome);
+      } finally {
+        try { await removeProfile(profileDir); } catch {}
       }
+      if (attempt < totalAttempts) await sleep(250 * attempt);
     }
   }
 
@@ -198,21 +248,27 @@ class Cdp {
   }
 }
 
-function isTransientNavigationError(errorText = '') {
-  return /^net::ERR_(?:CONNECTION_CLOSED|CONNECTION_RESET|TIMED_OUT|NETWORK_CHANGED|HTTP2_PROTOCOL_ERROR)$/.test(String(errorText || ''));
+export function isTransientNavigationError(errorText = '') {
+  return /^net::ERR_(?:CONNECTION_CLOSED|CONNECTION_RESET|TIMED_OUT|NETWORK_CHANGED|HTTP2_PROTOCOL_ERROR)$/.test(String(errorText || '').trim());
 }
 
-async function navigateWithRetry(cdp, url, attempts = 3) {
-  const totalAttempts = Math.max(1, Math.min(3, Number(attempts || 3)));
+export async function navigateWithRetry(cdp, url, attempts = 3, sleep = ms => new Promise(resolve => setTimeout(resolve, ms))) {
+  if (!cdp || typeof cdp.call !== 'function') throw new TypeError('CDP client with call() is required.');
+  const wait = typeof sleep === 'function' ? sleep : ms => new Promise(resolve => setTimeout(resolve, ms));
+  const totalAttempts = normalizeRetryAttempts(attempts, 3);
   let lastError = '';
 
   for (let attempt = 1; attempt <= totalAttempts; attempt += 1) {
-    const navResult = await cdp.call('Page.navigate', { url });
-    if (!navResult.errorText) return navResult;
+    try {
+      const navResult = await cdp.call('Page.navigate', { url });
+      if (!navResult?.errorText) return navResult || {};
+      lastError = String(navResult.errorText || '').trim();
+    } catch (error) {
+      lastError = String(error?.message || error || '').trim();
+    }
 
-    lastError = String(navResult.errorText);
     if (!isTransientNavigationError(lastError) || attempt >= totalAttempts) break;
-    await new Promise(resolve => setTimeout(resolve, 250 * attempt));
+    await wait(250 * attempt);
   }
 
   throw new Error(`Page.navigate failed after ${totalAttempts} attempt(s): ${lastError || 'unknown error'}`);
@@ -783,7 +839,14 @@ async function main() {
   }
 }
 
-main().catch(error => {
-  console.error(error?.stack || error?.message || String(error));
-  process.exitCode = 1;
-});
+const isDirectRun = Boolean(
+  process.argv[1]
+  && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+);
+
+if (isDirectRun) {
+  main().catch(error => {
+    console.error(error?.stack || error?.message || String(error));
+    process.exitCode = 1;
+  });
+}
