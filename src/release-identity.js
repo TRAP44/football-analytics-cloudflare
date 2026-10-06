@@ -1,10 +1,11 @@
 const SHA_RE = /^[0-9a-f]{40}$/i;
 const CLOUDFLARE_VERSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const APP_VERSION_RE = /^([0-9]+)\.([0-9]+)\.([0-9]+)-rc([0-9]+)$/i;
+const APP_VERSION_RE = /^([0-9]+)\.([0-9]+)\.([0-9]+)-rc([0-9]+)$/;
 const RELEASE_CANDIDATE_RE = /^RC([0-9]+)$/;
 const STRICT_ISO_UTC_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/;
 const DEFAULT_MIN_TIMESTAMP_MS = Date.parse('2020-01-01T00:00:00.000Z');
 const DEFAULT_MAX_FUTURE_SKEW_MS = 10 * 60_000;
+const MAX_TIMESTAMP_MS = 8.64e15;
 
 export const RELEASE_IDENTITY_CODES = Object.freeze({
   VALID: 'RELEASE_IDENTITY_VALID',
@@ -26,8 +27,40 @@ export const RELEASE_IDENTITY_CODES = Object.freeze({
   CLOUDFLARE_VERSION_TIMESTAMP_FUTURE_SKEW: 'RELEASE_IDENTITY_CLOUDFLARE_VERSION_TIMESTAMP_FUTURE_SKEW',
 });
 
+function plainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
 function clean(value, max = 120) {
-  return String(value ?? '').trim().slice(0, max);
+  if (typeof value !== 'string') return '';
+  const raw=value.trim();
+  if (!raw || raw.length > max || /[\u0000-\u001f\u007f-\u009f]/u.test(raw)) return '';
+  return raw;
+}
+
+function integerCandidate(value) {
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const raw=value.trim();
+  if (!/^-?\d+$/.test(raw)) return null;
+  const number=Number(raw);
+  return Number.isSafeInteger(number) ? number : null;
+}
+
+function timestampOption(value,fallback) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const number=integerCandidate(value);
+  return number !== null && number >= 0 && number <= MAX_TIMESTAMP_MS
+    ? number
+    : fallback;
+}
+
+function nonNegativeDuration(value,fallback) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const number=integerCandidate(value);
+  return number !== null && number >= 0
+    ? number
+    : fallback;
 }
 
 function canonicalIsoUtc(value) {
@@ -57,16 +90,18 @@ function failure(code, field) {
   return { ok:false, code, field };
 }
 
-export function runtimeReleaseIdentity(metadata, { appVersion = '', releaseCandidate = '' } = {}) {
-  const versionId = clean(metadata?.id, 80);
-  const versionTag = clean(metadata?.tag, 120);
-  const rawTimestamp = clean(metadata?.timestamp, 80);
+export function runtimeReleaseIdentity(metadata, options = {}) {
+  const source=plainObject(metadata);
+  const optionSource=plainObject(options);
+  const versionId = clean(source.id, 80);
+  const versionTag = clean(source.tag, 120);
+  const rawTimestamp = clean(source.timestamp, 80);
   const timestamp = canonicalIsoUtc(rawTimestamp);
   const deploySha = SHA_RE.test(versionTag) ? versionTag.toLowerCase() : null;
 
   return {
-    appVersion: clean(appVersion, 80),
-    releaseCandidate: clean(releaseCandidate, 40),
+    appVersion: clean(optionSource.appVersion, 80),
+    releaseCandidate: clean(optionSource.releaseCandidate, 40),
     deploySha,
     cloudflareVersionId: versionId || null,
     cloudflareVersionTag: versionTag || null,
@@ -75,12 +110,15 @@ export function runtimeReleaseIdentity(metadata, { appVersion = '', releaseCandi
 }
 
 export function validateReleaseIdentity(identity = {}, options = {}) {
-  const appVersion = clean(identity.appVersion, 80);
+  const source=plainObject(identity);
+  const optionSource=plainObject(options);
+
+  const appVersion = clean(source.appVersion, 80);
   if (!appVersion) return failure(RELEASE_IDENTITY_CODES.APP_VERSION_REQUIRED, 'appVersion');
   const appVersionMatch = APP_VERSION_RE.exec(appVersion);
   if (!appVersionMatch) return failure(RELEASE_IDENTITY_CODES.APP_VERSION_INVALID, 'appVersion');
 
-  const releaseCandidate = clean(identity.releaseCandidate, 40);
+  const releaseCandidate = clean(source.releaseCandidate, 40);
   if (!releaseCandidate) return failure(RELEASE_IDENTITY_CODES.RELEASE_CANDIDATE_REQUIRED, 'releaseCandidate');
   const releaseCandidateMatch = RELEASE_CANDIDATE_RE.exec(releaseCandidate);
   if (!releaseCandidateMatch) return failure(RELEASE_IDENTITY_CODES.RELEASE_CANDIDATE_INVALID, 'releaseCandidate');
@@ -88,17 +126,17 @@ export function validateReleaseIdentity(identity = {}, options = {}) {
     return failure(RELEASE_IDENTITY_CODES.RELEASE_CANDIDATE_MISMATCH, 'releaseCandidate');
   }
 
-  const deploySha = clean(identity.deploySha, 80);
+  const deploySha = clean(source.deploySha, 80);
   if (!deploySha) return failure(RELEASE_IDENTITY_CODES.DEPLOY_SHA_REQUIRED, 'deploySha');
   if (!SHA_RE.test(deploySha)) return failure(RELEASE_IDENTITY_CODES.DEPLOY_SHA_INVALID, 'deploySha');
 
-  const versionId = clean(identity.cloudflareVersionId, 80);
+  const versionId = clean(source.cloudflareVersionId, 80);
   if (!versionId) return failure(RELEASE_IDENTITY_CODES.CLOUDFLARE_VERSION_ID_REQUIRED, 'cloudflareVersionId');
   if (!cloudflareVersionIdValid(versionId)) {
     return failure(RELEASE_IDENTITY_CODES.CLOUDFLARE_VERSION_ID_INVALID, 'cloudflareVersionId');
   }
 
-  const versionTag = clean(identity.cloudflareVersionTag, 120);
+  const versionTag = clean(source.cloudflareVersionTag, 120);
   if (!versionTag) return failure(RELEASE_IDENTITY_CODES.CLOUDFLARE_VERSION_TAG_REQUIRED, 'cloudflareVersionTag');
   if (!SHA_RE.test(versionTag)) {
     return failure(RELEASE_IDENTITY_CODES.CLOUDFLARE_VERSION_TAG_INVALID, 'cloudflareVersionTag');
@@ -107,7 +145,7 @@ export function validateReleaseIdentity(identity = {}, options = {}) {
     return failure(RELEASE_IDENTITY_CODES.CLOUDFLARE_VERSION_TAG_MISMATCH, 'cloudflareVersionTag');
   }
 
-  const rawTimestamp = clean(identity.cloudflareVersionTimestamp, 80);
+  const rawTimestamp = clean(source.cloudflareVersionTimestamp, 80);
   if (!rawTimestamp) {
     return failure(RELEASE_IDENTITY_CODES.CLOUDFLARE_VERSION_TIMESTAMP_REQUIRED, 'cloudflareVersionTimestamp');
   }
@@ -117,15 +155,14 @@ export function validateReleaseIdentity(identity = {}, options = {}) {
   }
 
   const timestampMs = Date.parse(canonicalTimestamp);
-  const nowMs = Number.isFinite(Number(options.nowMs)) ? Number(options.nowMs) : Date.now();
-  const minTimestampMs = Number.isFinite(Number(options.minTimestampMs))
-    ? Number(options.minTimestampMs)
-    : DEFAULT_MIN_TIMESTAMP_MS;
-  const maxFutureSkewMs = Math.max(
-    0,
-    Number.isFinite(Number(options.maxFutureSkewMs))
-      ? Number(options.maxFutureSkewMs)
-      : DEFAULT_MAX_FUTURE_SKEW_MS,
+  const nowMs = timestampOption(optionSource.nowMs,Date.now());
+  const minTimestampMs = timestampOption(
+    optionSource.minTimestampMs,
+    DEFAULT_MIN_TIMESTAMP_MS,
+  );
+  const maxFutureSkewMs = nonNegativeDuration(
+    optionSource.maxFutureSkewMs,
+    DEFAULT_MAX_FUTURE_SKEW_MS,
   );
 
   if (timestampMs < minTimestampMs) {
