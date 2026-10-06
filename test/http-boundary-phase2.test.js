@@ -32,6 +32,10 @@ test('HTTP boundary prevents callers from overriding invariant response headers'
     'Content-Type':'text/html',
     'Cache-Control':'public, max-age=3600',
     'X-Content-Type-Options':'off',
+    'Content-Security-Policy':"default-src *",
+    'Cross-Origin-Opener-Policy':'unsafe-none',
+    'Cross-Origin-Resource-Policy':'cross-origin',
+    'X-Frame-Options':'SAMEORIGIN',
     'X-App-Version':'spoofed',
     'X-Api-Contract':'999',
     'X-Min-Client-Version':'0',
@@ -45,6 +49,13 @@ test('HTTP boundary prevents callers from overriding invariant response headers'
   assert.equal(response.headers.get('content-type'),'application/json; charset=utf-8');
   assert.equal(response.headers.get('cache-control'),'no-store');
   assert.equal(response.headers.get('x-content-type-options'),'nosniff');
+  assert.equal(
+    response.headers.get('content-security-policy'),
+    "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  );
+  assert.equal(response.headers.get('cross-origin-opener-policy'),'same-origin');
+  assert.equal(response.headers.get('cross-origin-resource-policy'),'same-origin');
+  assert.equal(response.headers.get('x-frame-options'),'DENY');
   assert.equal(response.headers.get('x-app-version'),'6.120.0-rc144');
   assert.equal(response.headers.get('x-api-contract'),'5');
   assert.equal(response.headers.get('x-min-client-version'),'5.8.0');
