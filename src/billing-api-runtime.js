@@ -352,9 +352,6 @@ export function createBillingApiRuntime(deps = {}) {
     setCache,
     telegramApi,
   });
-  
-  
-  const CHANNEL_PUBLISH_IDEMPOTENCY_MINUTES = 7 * 24 * 60;
 
   return {
     apiBillingPlans,
