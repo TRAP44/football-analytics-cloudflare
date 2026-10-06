@@ -108,19 +108,21 @@ export function createAppCapabilitiesRuntime({
     } catch {}
     const publicBudget=normalizedPublicBudget();
     const runtime=normalizedRuntimeControls();
+    const locked=securityLockdown(runtime);
     const expandedAllowed=runtimeFeatureEnabled(runtime.expandedDataEnabled);
-    const liveAllowed=runtimeFeatureEnabled(runtime.liveEnabled);
+    const liveAllowed=runtimeFeatureEnabled(runtime.liveEnabled) && !locked;
     const canEnrich=Boolean(
       paid
       && healthy
       && expandedAllowed
+      && !locked
       && !['conserve','emergency'].includes(publicBudget.mode)
     );
 
     return {
       visibility:'public',
       mode:paid ? 'expanded' : 'standard',
-      label:securityLockdown(runtime)
+      label:locked
         ? 'Security Lockdown'
         : runtime.maintenanceMode
           ? 'Техническое обслуживание'
@@ -131,13 +133,13 @@ export function createAppCapabilitiesRuntime({
         events:true,
         matchStatistics:true,
         liveRefresh:liveAllowed,
-        lineupsFallback:Boolean(paid && healthy && expandedAllowed),
+        lineupsFallback:Boolean(paid && healthy && expandedAllowed && !locked),
         playerStats:canEnrich,
         injuries:canEnrich,
         liveOdds:Boolean(canEnrich && liveAllowed),
         oddsMovement:Boolean(canEnrich && liveAllowed),
       },
-      note:securityLockdown(runtime)
+      note:locked
         ? (runtime.message || 'Аварийный режим безопасности: изменения и внешние запросы временно остановлены.')
         : runtime.maintenanceMode
           ? (runtime.message || 'Часть футбольных функций временно приостановлена.')
