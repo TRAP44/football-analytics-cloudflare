@@ -455,6 +455,16 @@ test('malformed memory object fails closed before sensitive execution',async()=>
   assert.equal(calls,0);
 });
 
+test('v6.29.11 requires active lease ownership for sensitive mutation settlement', () => {
+  const sql=fs.readFileSync('supabase/migrations/supabase_migration_v6_29_11.sql','utf8').toLowerCase();
+  assert.match(sql,/create or replace function public\.complete_sensitive_mutation/);
+  assert.match(sql,/create or replace function public\.fail_sensitive_mutation/);
+  assert.ok((sql.match(/and locked_until is not null/g) || []).length >= 2);
+  assert.ok((sql.match(/and locked_until>v_now/g) || []).length >= 2);
+  assert.match(sql,/sensitive_mutation_finalizer_lease_guard_drift/);
+  assert.match(sql,/pg_get_functiondef/);
+});
+
 test('v6.27 migration provides backend-only atomic distributed mutation idempotency', () => {
   const sql=fs.readFileSync('supabase/migrations/supabase_migration_v6_27.sql','utf8').toLowerCase();
   for (const marker of [
