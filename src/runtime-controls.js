@@ -404,10 +404,16 @@ export function createRuntimeControlsRuntime({
       const snapshotInspection=inspectRuntimeControls(row.snapshot,defaults,{requireComplete:true});
       if (!id || !revision || !snapshotInspection.valid || snapshotInspection.value.revision !== revision) continue;
       const sourceRevision=positiveRevision(row.source_revision,0);
+      const persistedAction=RUNTIME_ACTIONS.has(row.action) ? row.action : 'update';
+      const requestedAction=cleanText(plainObject(row.snapshot).requestedAction,'',40);
+      const action=persistedAction === 'update'
+        && (requestedAction === 'lockdown' || requestedAction === 'lockdown_release')
+        ? requestedAction
+        : persistedAction;
       output.push({
         id,
         revision,
-        action:RUNTIME_ACTIONS.has(row.action) ? row.action : 'update',
+        action,
         reason:cleanText(row.reason,'',240),
         appVersion:cleanText(row.app_version,'',120),
         sourceRevision:sourceRevision || null,
