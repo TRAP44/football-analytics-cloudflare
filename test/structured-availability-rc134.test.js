@@ -86,8 +86,8 @@ const worker = fs.readFileSync('src/worker.js', 'utf8');
 
 test('RC134 both Match Center and AI analysis reconcile absences against lineups', () => {
   assert.match(worker, /const absences = formatAbsences\(trustedInjuryRows, homeId, awayId, lineupSourceTrusted \? lineups : null\)/);
-  assert.match(worker, /const baseAbsences = formatAbsences\(trustedInjuries, homeId, awayId, lineups\)/);
-  assert.match(worker, /const absences = enrichFixtureAbsencesWithSeasonRole\(baseAbsences, \{ homePlayerStats, awayPlayerStats \}\)/);
+  assert.match(worker, /formatAbsences\(trustedInjuries,homeId,awayId,trustedLineups\)/);
+  assert.match(worker, /enrichFixtureAbsencesWithSeasonRole\([\s\S]{0,160}?baseAbsences,[\s\S]{0,160}?\{homePlayerStats,awayPlayerStats\}/);
   assert.match(worker, /return normalizeFixtureAbsences\(rows, \{ homeId, awayId, lineups \}\)/);
 });
 
