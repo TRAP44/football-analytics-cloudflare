@@ -49,7 +49,8 @@ export function createLiveMatchIntelligenceRuntime(deps) {
   }
 
   function displayText(value,fallback='',max=160) {
-    const text=String(value ?? '').trim();
+    if (!['string','number','bigint'].includes(typeof value)) return String(fallback || '').slice(0,max);
+    const text=String(value).trim();
     return (text || fallback).slice(0,max);
   }
 
@@ -264,10 +265,15 @@ export function createLiveMatchIntelligenceRuntime(deps) {
   function liveMarketShift(oddsMovement = null) {
     const changes=oddsMovement?.probabilityChange;
     if (!changes || typeof changes !== 'object' || Array.isArray(changes)) return null;
-    const candidates=['home','draw','away']
-      .map(side=>[side,boundedNumber(changes[side],-100,100)])
-      .filter(([,delta])=>delta !== null)
-      .sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
+    const values={
+      home:boundedNumber(changes.home,-100,100),
+      draw:boundedNumber(changes.draw,-100,100),
+      away:boundedNumber(changes.away,-100,100),
+    };
+    if (Object.values(values).some(value=>value === null)) return null;
+    const net=values.home+values.draw+values.away;
+    if (!Number.isFinite(net) || Math.abs(net)>1) return null;
+    const candidates=Object.entries(values).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
     const [side,delta]=candidates[0] || [];
     if (!side || Math.abs(delta)<3) return null;
     return {side,delta:Math.round(delta*10)/10};
