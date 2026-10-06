@@ -127,7 +127,7 @@ test('RC142 routes sanitized statistics into comparative live analytics', () => 
   assert.match(worker,/livePressure\(analyticalStatistics\)/);
   assert.match(worker,/statistics:analyticalStatistics/);
   assert.match(worker,/statisticsQuality,/);
-  assert.match(worker,/statisticsSemanticQualityGuard: 'enabled'/);
+  assert.match(worker,/statistics:statisticsQuality\?\.confidenceBearing===true/);
 });
 
 test('RC142 exposes statistics quality in Match Center and release health contracts', () => {
