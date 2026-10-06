@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
+const analysisRuntime=fs.readFileSync('src/analysis-runtime.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 
 function block(source,start,end){
@@ -44,7 +45,7 @@ test('P0 FREE Match Center preserves provider minute budget for AI',()=>{
 });
 
 test('P0 AI optional availability data fails soft instead of dereferencing null',()=>{
-  const analyze=block(worker,'async function apiAnalyze','async function publicServiceStatus');
+  const analyze=block(analysisRuntime,'async function apiAnalyze','  return { apiAnalyze };');
   assert.match(analyze,/const normalizedAbsences = formatAbsences/);
   assert.match(analyze,/normalizedAbsences && Array\.isArray\(normalizedAbsences\.home\) && Array\.isArray\(normalizedAbsences\.away\)/);
   assert.match(analyze,/methodology: 'Данные о потерях недоступны; анализ продолжен без этого сигнала\.'/);
