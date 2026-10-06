@@ -49,6 +49,53 @@ test('Phase 2 gateway fails closed immediately when configured distributed Supab
   assert.equal(counters.providerDistributedBlocks,1);
 });
 
+test('Phase 2 gateway fails closed when Supabase capability detection itself throws',async()=>{
+  const {gateway,counters,opsEvents}=runtime({
+    hasSupabase:()=>{ throw new Error('config probe failed'); },
+  });
+
+  const blocked=await gateway.claimDistributedProviderBudget({});
+
+  assert.deepEqual(
+    {
+      allowed:blocked.allowed,
+      degraded:blocked.degraded,
+      local:blocked.local,
+      reason:blocked.reason,
+      retryAfter:blocked.retryAfter,
+    },
+    {
+      allowed:false,
+      degraded:true,
+      local:false,
+      reason:'guard_unavailable',
+      retryAfter:15,
+    },
+  );
+  assert.equal(counters.providerDistributedFallbacks,1);
+  assert.equal(counters.providerDistributedBlocks,1);
+  assert.equal(opsEvents.length,1);
+  assert.equal(opsEvents[0].code,'PROVIDER_RATE_GUARD_DEGRADED');
+  assert.equal(opsEvents[0].meta.reason,'supabase_probe_failed');
+});
+
+test('Phase 2 gateway never reaches API-Football when Supabase capability detection throws',async()=>{
+  let networkCalls=0;
+  const {gateway}=runtime({
+    hasSupabase:()=>{ throw new Error('config probe failed'); },
+    fetchWithTimeout:async()=>{
+      networkCalls+=1;
+      return new Response(JSON.stringify({response:[]}),{status:200});
+    },
+  });
+
+  await assert.rejects(
+    ()=>gateway.apiFootball('/fixtures',{id:1},{apiFootballKey:'test-key'},{transportRetries:0}),
+    error=>error?.code==='FOOTBALL_GUARD_DEGRADED' && error?.retryAfter===15,
+  );
+  assert.equal(networkCalls,0);
+});
+
 test('Phase 2 gateway fails closed on malformed distributed guard responses',async()=>{
   const {gateway,counters}=runtime({
     hasSupabase:()=>true,
@@ -125,6 +172,34 @@ test('Phase 2 guard failure is safe across independent Worker-isolate gateway in
 test('Phase 2 gateway keeps request keys deterministic',()=>{
   const {gateway}=runtime();
   assert.equal(gateway.providerRequestKey('/fixtures',{team:7,season:2026,empty:''},{responseType:'envelope'}),'football:/fixtures?season=2026&team=7:type=envelope:retries=1:timeout=10000:dailyReserve=protect');
+});
+
+test('Phase 2 gateway request keys cannot collide through query separators',()=>{
+  const {gateway}=runtime();
+
+  const embedded=gateway.providerRequestKey(
+    '/fixtures',
+    {a:'1&b=2'},
+    {transportRetries:0},
+  );
+  const separate=gateway.providerRequestKey(
+    '/fixtures',
+    {a:'1',b:'2'},
+    {transportRetries:0},
+  );
+
+  assert.notEqual(embedded,separate);
+  assert.match(embedded,/a=1%26b%3D2/);
+  assert.match(separate,/a=1&b=2/);
+});
+
+test('Phase 2 gateway request keys canonicalize parameter ordering after escaping',()=>{
+  const {gateway}=runtime();
+  const left=gateway.providerRequestKey('/fixtures',{z:'a b',a:'x=y'},{transportRetries:0});
+  const right=gateway.providerRequestKey('/fixtures',{a:'x=y',z:'a b'},{transportRetries:0});
+
+  assert.equal(left,right);
+  assert.match(left,/a=x%3Dy&z=a%20b/);
 });
 
 test('Phase 2 gateway centralizes the retryable HTTP status policy', () => {
@@ -304,6 +379,45 @@ test('Phase 2 gateway keeps 429 separate, respects Retry-After and does not auto
   );
   assert.equal(attempts, 1);
   assert.equal(counters.providerRateLimits, 1);
+});
+
+test('Phase 2 gateway normalizes malformed envelope paging to bounded positive integers', async () => {
+  const {gateway}=runtime({
+    fetchWithTimeout:async()=>new Response(JSON.stringify({
+      response:[{id:1}],
+      paging:{current:1.5,total:Infinity},
+    }),{status:200}),
+  });
+
+  const result=await gateway.apiFootball(
+    '/fixtures',
+    {date:'2026-10-07'},
+    {apiFootballKey:'test-key'},
+    {responseType:'envelope',transportRetries:0},
+  );
+
+  assert.deepEqual(result,{
+    response:[{id:1}],
+    paging:{current:1,total:1},
+  });
+});
+
+test('Phase 2 gateway never reports envelope total below the current page', async () => {
+  const {gateway}=runtime({
+    fetchWithTimeout:async()=>new Response(JSON.stringify({
+      response:[{id:1}],
+      paging:{current:5,total:2},
+    }),{status:200}),
+  });
+
+  const result=await gateway.apiFootball(
+    '/fixtures',
+    {date:'2026-10-07'},
+    {apiFootballKey:'test-key'},
+    {responseType:'envelope',transportRetries:0},
+  );
+
+  assert.deepEqual(result.paging,{current:5,total:5});
 });
 
 test('Phase 2 gateway rejects invalid JSON instead of treating it as empty data', async () => {
