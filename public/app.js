@@ -593,7 +593,7 @@ async function recoverActiveView({ automatic = false } = {}) {
       const data = await requestMatchCenter(fixtureId, { recovery: Date.now() }, { dedupe: false });
       if (data) renderMatchCenter(data);
     } else if (view === 'historyView') {
-      await Promise.allSettled([loadHistory(false),loadAiTrackRecord(false)]);
+      await Promise.allSettled([loadHistory(false),loadAiTrackRecord()]);
     } else if (view === 'profileView') {
       await loadProfile();
     } else {
@@ -5096,13 +5096,13 @@ function rememberHistoryAnalysis(data) {
 }
 
 
-async function loadAiTrackRecord(force = false) {
+async function loadAiTrackRecord() {
   if (state.aiTrackRecordLoading) return;
   state.aiTrackRecordLoading=true;
   state.aiTrackRecordError='';
   renderAiTrackRecord();
   try {
-    const data=await api(`/api/ai-track-record?days=180${force?'&refresh=1':''}`,{retry:false,timeoutMs:9000});
+    const data=await api('/api/ai-track-record?days=180',{retry:false,timeoutMs:9000});
     state.aiTrackRecord=data;
     state.aiTrackRecordLoaded=true;
   } catch (error) {
@@ -5124,7 +5124,7 @@ async function ensureAiTrackRecordRenderer() {
         elementById: $,
         escapeHtml,
         dateTime,
-        onRetry: force => loadAiTrackRecord(force),
+        onRetry: () => loadAiTrackRecord(),
       });
       return aiTrackRecordRenderer;
     });
@@ -5790,7 +5790,7 @@ function applyLaunchIntent() {
     if (query) void runGlobalSearch();
   } else if (view === 'history') {
     showView('historyView');
-    void Promise.allSettled([loadHistory(false),loadAiTrackRecord(false)]);
+    void Promise.allSettled([loadHistory(false),loadAiTrackRecord()]);
   } else if (fixtureId > 0 && ['analysis','center'].includes(action)) {
     showView('searchView');
     void openLaunchFixture(fixtureId, action, tab, handoff, newsImpactDecision, newsImpactAction, newsImpactRecoveryCode, newsImpactRecoveryFrom);
@@ -6481,7 +6481,7 @@ $('matchSearch').addEventListener('input', e => {
 bindGlobalSearchControls();
 $('clearRecentTeamsBtn')?.addEventListener('click', clearRecentTeams);
 $('refreshBtn').addEventListener('click', () => loadMatches({ force: true }));
-$('historyRefreshBtn').addEventListener('click', () => Promise.allSettled([loadHistory(true), loadAiTrackRecord(true)]));
+$('historyRefreshBtn').addEventListener('click', () => Promise.allSettled([loadHistory(true), loadAiTrackRecord()]));
 $('backBtn').addEventListener('click', handleBackNavigation);
 $('tournamentBackBtn')?.addEventListener('click', handleBackNavigation);
 $('teamBackBtn')?.addEventListener('click', handleBackNavigation);
@@ -6510,7 +6510,7 @@ $('navHistory').addEventListener('click', async () => {
   showView('historyView');
   const tasks=[];
   if (!state.historyLoaded) tasks.push(loadHistory(true)); else renderHistory();
-  if (!state.aiTrackRecordLoaded) tasks.push(loadAiTrackRecord(false)); else renderAiTrackRecord();
+  if (!state.aiTrackRecordLoaded) tasks.push(loadAiTrackRecord()); else renderAiTrackRecord();
   if (tasks.length) await Promise.allSettled(tasks);
 });
 $('navProfile').addEventListener('click', () => {
