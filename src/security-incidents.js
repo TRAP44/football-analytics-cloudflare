@@ -281,6 +281,21 @@ function persistedIncidentSeverity(item = {}) {
   return normalizeSecurityIncidentSeverity(metadata(item).severity, 'error');
 }
 
+function normalizedCounts(value) {
+  const source=plainObject(value) || {};
+  return {
+    total:nonNegativeCount(source.total),
+    invalidAuthBursts:nonNegativeCount(source.invalidAuthBursts),
+    adminInvalidAuthBursts:nonNegativeCount(source.adminInvalidAuthBursts),
+    crossSiteBlocks:nonNegativeCount(source.crossSiteBlocks),
+    oversizedBlocks:nonNegativeCount(source.oversizedBlocks),
+    methodBlocks:nonNegativeCount(source.methodBlocks),
+    webhookAnomalies:nonNegativeCount(source.webhookAnomalies),
+    billingAnomalies:nonNegativeCount(source.billingAnomalies),
+    criticalSignals:nonNegativeCount(source.criticalSignals),
+  };
+}
+
 function normalizedAssessment(value) {
   const source=plainObject(value) || {};
   const state=['incident','watch','healthy'].includes(source.state) ? source.state : 'healthy';
@@ -288,7 +303,7 @@ function normalizedAssessment(value) {
     source.severity,
     state === 'watch' ? 'warning' : state === 'healthy' ? 'warning' : 'error',
   );
-  const counts=plainObject(source.counts) || {};
+  const counts=normalizedCounts(source.counts);
   return {
     state,
     severity,
