@@ -83,6 +83,42 @@ test('truthy Supabase availability does not silently enable persistent coordinat
   assert.equal(calls,0);
 });
 
+test('claim response cannot rewrite the scheduled execution timestamp',async()=>{
+  const api=runtime({
+    supaRpc:async()=>({
+      claimed:true,
+      reason:'claimed',
+      jobKey:'cron:test',
+      groupKey:'cron-global',
+      leaseToken:'lease-token-123456',
+      scheduledAt:'2026-09-28T12:10:00Z',
+      lockedUntil:'2026-09-28T12:17:00Z',
+    }),
+  });
+  const claim=await api.claimScheduledJob({},{
+    jobKey:'cron:test',
+    groupKey:'cron-global',
+    scheduledAt:new Date('2026-09-28T12:05:00Z'),
+  });
+  assert.equal(claim.claimed,false);
+  assert.equal(claim.reason,'malformed_response');
+});
+
+test('memory-only renewal rejects fabricated claim identity',async()=>{
+  const api=runtime({
+    hasSupabase:()=>false,
+    supaRpc:async()=>{throw new Error('must not run');},
+  });
+  const renewal=await api.renewScheduledJob({},{
+    claimed:true,
+    persistent:false,
+    jobKey:{toString:()=> 'cron:dev'},
+    groupKey:'cron-global',
+  });
+  assert.equal(renewal.renewed,false);
+  assert.equal(renewal.reason,'invalid_claim');
+});
+
 test('claim response requires strict boolean ownership and matching lease identity',async()=>{
   const cases=[
     {
