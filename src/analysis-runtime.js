@@ -648,6 +648,7 @@ export function createAnalysisRuntime(deps) {
     if (!freeRecheck && !passCandidate && quotaBefore.left<=0) {
       return await trackedFullAiFailureResponse({
         error:`Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`,
+        code:'ANALYSIS_QUOTA_EXHAUSTED',
         quota:quotaBefore,
       },429,'quota_exhausted');
     }
@@ -737,6 +738,7 @@ export function createAnalysisRuntime(deps) {
         const rejectedQuota=quotaSnapshot(usageReservation,quotaBefore) || quotaBefore;
         return await trackedFullAiFailureResponse({
           error:`Лимит исчерпан: ${rejectedQuota.used}/${rejectedQuota.limit} анализов сегодня.`,
+          code:'ANALYSIS_QUOTA_EXHAUSTED',
           quota:rejectedQuota,
         },429,'quota_exhausted');
       }
