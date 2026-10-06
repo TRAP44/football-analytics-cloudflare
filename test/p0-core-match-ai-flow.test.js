@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const worker=fs.readFileSync('src/worker.js','utf8');
 const matchCenterRuntime=fs.readFileSync('src/match-center-runtime.js','utf8');
 const analysisRuntime=fs.readFileSync('src/analysis-runtime.js','utf8');
+const providerFixtureRuntime=fs.readFileSync('src/provider-fixture-runtime.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 
 function block(source,start,end){
@@ -20,7 +21,7 @@ test('P0 capped public feed ranks competition relevance before LIVE status',()=>
   assert.doesNotMatch(rank,/if \(match\?\.live\)/);
   assert.match(rank,/featured.*return 0/s);
 
-  const matches=block(worker,'async function apiMatches','function normalizeStandingRow');
+  const matches=block(providerFixtureRuntime,'async function apiMatches','  return {');
   const sortIndex=matches.indexOf('catalogRank(a) - catalogRank(b)');
   const statusIndex=matches.indexOf('matchStatusRank(a.status) - matchStatusRank(b.status)');
   assert.ok(sortIndex >= 0 && statusIndex > sortIndex,'status must only break relevance ties');
