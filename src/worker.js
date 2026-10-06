@@ -932,6 +932,7 @@ function getTelegramBotUiRuntime() {
     telegramBotUiRuntime = createTelegramBotUiRuntime({
       apiAnalyze,
       botAiHandoffText,
+      createRequest: (url, init) => new Request(url, init),
       freeQuotaHealthy,
       getCache,
       getFavorites,
