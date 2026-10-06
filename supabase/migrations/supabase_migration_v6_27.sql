@@ -1,6 +1,15 @@
 -- MatchRadar v6.27 / distributed sensitive mutation idempotency
 -- Additive, backward-compatible migration. This must be applied before the
 -- Worker starts requiring persistent sensitive-mutation coordination.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. sensitive_mutation_idempotency and
+-- all four RPCs remain active parts of the current sensitive mutation guard.
+-- The current Worker uses a 300s lease and 300s retention, but this historical
+-- RPC allowed callers to request retention shorter than the active lease.
+-- v6.29.4 hardens that boundary so active inflight ownership cannot expire from
+-- retention/cleanup before locked_until, including for legacy rows.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 create table if not exists public.sensitive_mutation_idempotency (
   operation_key text primary key,
