@@ -14,13 +14,14 @@ import { createLiveMatchIntelligenceRuntime } from '../src/live-match-intelligen
 import { createCompetitionIntegrityRuntime } from '../src/competition-integrity-runtime.js';
 import { createMatchFormattingRuntime } from '../src/match-formatting-runtime.js';
 import { createSearchDiscoveryRuntime } from '../src/search-discovery-runtime.js';
+import { createTeamTournamentRuntime } from '../src/team-tournament-runtime.js';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 
 test('Worker composition root stays below the post-audit architecture budget',()=>{
   const bytes=Buffer.byteLength(worker,'utf8');
   assert.ok(
-    bytes<=830_000,
+    bytes<=795_000,
     `src/worker.js grew to ${bytes} bytes; extract another cohesive runtime instead of growing the composition root`,
   );
 });
@@ -128,6 +129,7 @@ test('extracted runtime factories are executable contracts, not source-only plac
   const competitionIntegrity=createCompetitionIntegrityRuntime(new Proxy({}, {get:()=>()=>null}));
   const matchFormatting=createMatchFormattingRuntime({assessLineupQuality:()=>({}),normalizeFixtureAbsences:()=>({home:[],away:[]})});
   const searchDiscovery=createSearchDiscoveryRuntime(new Proxy({}, {get:()=>()=>null}));
+  const teamTournament=createTeamTournamentRuntime(new Proxy({}, {get:()=>()=>null}));
   assert.equal(typeof settlement.runSettlementWatchdog,'function');
   assert.equal(typeof settlement.runSettlementFinalityVerification,'function');
   assert.equal(typeof providerData.providerDataState,'function');
@@ -144,6 +146,8 @@ test('extracted runtime factories are executable contracts, not source-only plac
   assert.equal(typeof matchFormatting.formatLiveEvents,'function');
   assert.equal(typeof searchDiscovery.loadSearchTeamMatches,'function');
   assert.equal(typeof searchDiscovery.apiSearch,'function');
+  assert.equal(typeof teamTournament.apiTournament,'function');
+  assert.equal(typeof teamTournament.apiTeam,'function');
 });
 
 test('Worker composes extracted runtimes through explicit imports',()=>{
@@ -162,6 +166,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/import \{ createCompetitionIntegrityRuntime \} from '\.\/competition-integrity-runtime\.js'/);
   assert.match(worker,/import \{ createMatchFormattingRuntime \} from '\.\/match-formatting-runtime\.js'/);
   assert.match(worker,/import \{ createSearchDiscoveryRuntime \} from '\.\/search-discovery-runtime\.js'/);
+  assert.match(worker,/import \{ createTeamTournamentRuntime \} from '\.\/team-tournament-runtime\.js'/);
   assert.match(worker,/createDiagnosticsRuntime\(\{/);
   assert.match(worker,/createPublicHealthRuntime\(\{/);
   assert.match(worker,/createPublicStatusRuntime\(\{/);
@@ -178,6 +183,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/createCompetitionIntegrityRuntime\(\{/);
   assert.match(worker,/createMatchFormattingRuntime\(\{/);
   assert.match(worker,/createSearchDiscoveryRuntime\(\{/);
+  assert.match(worker,/createTeamTournamentRuntime\(\{/);
   assert.doesNotMatch(worker,/async function collectDiagnostics\(/);
   assert.doesNotMatch(worker,/async function readRecentOpsEvents\(/);
   assert.doesNotMatch(worker,/async function publicServiceStatus\(/);
@@ -211,4 +217,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.doesNotMatch(worker,/function formatLiveEvents\(/);
   assert.doesNotMatch(worker,/async function loadSearchTeamMatches\(/);
   assert.doesNotMatch(worker,/async function apiSearch\(/);
+  assert.doesNotMatch(worker,/async function apiTournament\(/);
+  assert.doesNotMatch(worker,/async function apiTeam\(/);
+  assert.doesNotMatch(worker,/async function resolveTournamentStandings\(/);
 });
