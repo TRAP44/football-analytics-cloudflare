@@ -99,6 +99,22 @@ export function createTeamIntelligenceRuntime(deps) {
     catch { return {}; }
   }
 
+  function teamIntelligenceCacheValue(value, teamId, leagueId, season) {
+    const cached=objectValue(value);
+    const stats=objectValue(cached?.stats);
+    if (!cached || !stats) return null;
+    if (positiveSafeInteger(stats?.team?.id)!==teamId) return null;
+    if (positiveSafeInteger(stats?.league?.id)!==leagueId) return null;
+    if (safeSeason(stats?.league?.season)!==season) return null;
+    return cached;
+  }
+
+  function squadCacheValue(value, teamId) {
+    const cached=objectValue(value);
+    if (!cached) return null;
+    return positiveSafeInteger(cached?.team?.id)===teamId ? cached : null;
+  }
+
   function compactError(error) {
     try {
       const compact=compactProviderError(error);
@@ -141,13 +157,23 @@ export function createTeamIntelligenceRuntime(deps) {
     }
 
     const cacheKey=`team:intelligence:${teamId}:${leagueId}:${season}:v2`;
-    const cached=objectValue(await getCache(cacheKey,cfg).catch(()=>null));
+    const cached=teamIntelligenceCacheValue(
+      await getCache(cacheKey,cfg).catch(()=>null),
+      teamId,
+      leagueId,
+      season,
+    );
     if (cached) {
       return json({...cached,cached:true,stale:false,provider:capabilities()});
     }
 
     if (!quotaHealthy(15,2)) {
-      const stale=objectValue(await getStaleCache(cacheKey,cfg).catch(()=>null));
+      const stale=teamIntelligenceCacheValue(
+        await getStaleCache(cacheKey,cfg).catch(()=>null),
+        teamId,
+        leagueId,
+        season,
+      );
       if (stale) {
         return json({
           ...stale,
@@ -264,7 +290,12 @@ export function createTeamIntelligenceRuntime(deps) {
       }
       return json({...payload,cached:false,stale:false,provider:capabilities()});
     } catch {
-      const stale=objectValue(await getStaleCache(cacheKey,cfg).catch(()=>null));
+      const stale=teamIntelligenceCacheValue(
+        await getStaleCache(cacheKey,cfg).catch(()=>null),
+        teamId,
+        leagueId,
+        season,
+      );
       if (stale) {
         return json({
           ...stale,
@@ -395,13 +426,19 @@ export function createTeamIntelligenceRuntime(deps) {
     if (!teamId) return json({error:'Номер команды обязателен.'},400);
 
     const cacheKey=`team:squad:${teamId}:v1`;
-    const cached=objectValue(await getCache(cacheKey,cfg).catch(()=>null));
+    const cached=squadCacheValue(
+      await getCache(cacheKey,cfg).catch(()=>null),
+      teamId,
+    );
     if (cached) {
       return json({...cached,cached:true,stale:false,provider:capabilities()});
     }
 
     if (!quotaHealthy(10,2)) {
-      const stale=objectValue(await getStaleCache(cacheKey,cfg).catch(()=>null));
+      const stale=squadCacheValue(
+        await getStaleCache(cacheKey,cfg).catch(()=>null),
+        teamId,
+      );
       if (stale) {
         return json({
           ...stale,
@@ -441,7 +478,10 @@ export function createTeamIntelligenceRuntime(deps) {
       await setCache(cacheKey,teamId,payload,cfg,ttlMinutes).catch(()=>null);
       return json({...payload,cached:false,stale:false,provider:capabilities()});
     } catch {
-      const stale=objectValue(await getStaleCache(cacheKey,cfg).catch(()=>null));
+      const stale=squadCacheValue(
+        await getStaleCache(cacheKey,cfg).catch(()=>null),
+        teamId,
+      );
       if (stale) {
         return json({
           ...stale,
@@ -513,18 +553,29 @@ export function createTeamIntelligenceRuntime(deps) {
       context:{mode:'upcoming',limitedCoverage:false},
     })) || {};
 
+    const lineupScore=lineup=>{
+      const starters=rows(lineup?.startXI);
+      const identities=new Set(starters.map(player=>{
+        const id=positiveSafeInteger(player?.id);
+        return id
+          ? `id:${id}`
+          : safeText(player?.name,120).toLocaleLowerCase('ru');
+      }).filter(Boolean));
+      const exactBonus=starters.length===11 ? 100000 : 0;
+      const distancePenalty=Math.abs(11-starters.length)*1000;
+      return exactBonus-distancePenalty+identities.size*100+rows(lineup?.substitutes).length;
+    };
+
     const distinct=new Map();
-    for (const providerRow of rows(result?.data)) {
+    for (const providerRow of rows(result?.data).slice(0,20)) {
       const teamId=positiveSafeInteger(providerRow?.team?.id);
       if (!teamId) continue;
 
       const candidate=normalizeLineupNotificationRow(providerRow);
       const current=distinct.get(teamId);
-      const candidateScore=candidate.startXI.length*10+candidate.substitutes.length;
-      const currentScore=current
-        ? current.startXI.length*10+current.substitutes.length
-        : -1;
-      if (!current || candidateScore>currentScore) distinct.set(teamId,candidate);
+      if (!current || lineupScore(candidate)>lineupScore(current)) {
+        distinct.set(teamId,candidate);
+      }
     }
 
     const teams=[...distinct.values()];
@@ -602,7 +653,7 @@ export function createTeamIntelligenceRuntime(deps) {
       context:{mode:'live',limitedCoverage:false},
     })) || {};
 
-    const rawRows=rows(result?.data);
+    const rawRows=rows(result?.data).slice(0,500);
     const formatted=rows(formatLiveEvents(rawRows,0,0));
     const fallbackMeta={
       feature:'events',
