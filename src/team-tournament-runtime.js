@@ -270,38 +270,41 @@ export function createTeamTournamentRuntime(deps) {
     return { available:false, reason:'openligadb_empty' };
   }
 
-  function openLigaEventFeatureMeta(events, sourceMeta = {}, { source = 'network', fetchedAt = null, expiresAt = null, context = {} } = {}) {
+  function openLigaEventFeatureMeta(events, providerSourceMeta = {}, { source = 'network', fetchedAt = null, expiresAt = null, context = {} } = {}) {
+    const parsedFetchedAt=Date.parse(String(fetchedAt || ''));
     return {
       feature:'events',
       provider:'openligadb',
-      source,
+      source:safeText(source, 40) || 'network',
       fetchedAt,
-      ageSeconds:fetchedAt && Number.isFinite(Date.parse(String(fetchedAt)))
-        ? Math.max(0, Math.floor((Date.now() - Date.parse(String(fetchedAt))) / 1000))
+      ageSeconds:Number.isFinite(parsedFetchedAt)
+        ? Math.max(0, Math.floor((Date.now() - parsedFetchedAt) / 1000))
         : null,
       expiresAt,
       policy:providerFeaturePolicy('events', context),
       fallback:true,
-      attribution:String(sourceMeta?.attribution || 'OpenLigaDB · ODbL'),
-      ...providerDataState(events, { attempted:true }),
+      attribution:safeText(providerSourceMeta?.attribution, 240) || 'OpenLigaDB · ODbL',
+      ...providerDataState(rows(events), { attempted:true }),
     };
   }
-  
+
   async function secondaryOpenLigaEvents(fixture, cfg, context = {}) {
-    const fixtureId=Number(fixture?.fixture?.id || 0);
-    const leagueId=Number(fixture?.league?.id || 0);
-    const season=Number(fixture?.league?.season || 0);
-    const homeName=String(fixture?.teams?.home?.name || '');
-    const awayName=String(fixture?.teams?.away?.name || '');
-    const urls=openLigaMatchDataUrls(leagueId, season, homeName);
-    if (!fixtureId || !urls.length) return { available:false, reason:'competition_not_supported', events:[], meta:null };
-  
+    const fixtureId=positiveSafeInteger(fixture?.fixture?.id);
+    const leagueId=positiveSafeInteger(fixture?.league?.id);
+    const season=nonNegativeInteger(fixture?.league?.season);
+    const homeName=safeText(fixture?.teams?.home?.name, 180);
+    const awayName=safeText(fixture?.teams?.away?.name, 180);
+    const urls=rows(openLigaMatchDataUrls(leagueId || 0, season, homeName));
+    if (!fixtureId || !urls.length) {
+      return { available:false, reason:'competition_not_supported', events:[], meta:null };
+    }
+
     const cacheKey=`secondary-events:${fixtureId}:openligadb:v1`;
     const fresh=await getCacheEntry(cacheKey, cfg, false).catch(() => null);
-    if (fresh?.payload?.events?.length) {
+    if (rows(fresh?.payload?.events).length) {
       return {
         available:true,
-        events:fresh.payload.events,
+        events:rows(fresh.payload.events),
         meta:openLigaEventFeatureMeta(fresh.payload.events, fresh.payload.sourceMeta || {}, {
           source:'cache',
           fetchedAt:fresh.payload.fetchedAt || null,
@@ -310,34 +313,43 @@ export function createTeamTournamentRuntime(deps) {
         }),
       };
     }
-  
+
     const budget=await claimSecondaryProviderBudget(cfg, 'openligadb', 50);
     if (!budget.allowed) return { available:false, reason:budget.reason || 'secondary_rate_limit', events:[], meta:null };
-  
+
     for (const candidate of urls) {
+      const candidateUrl=safeText(candidate?.url, 2000);
+      if (!candidateUrl) continue;
       try {
-        const rows=await secondaryProviderJson(candidate.url, cfg, { provider:'OpenLigaDB', operation:'match_events', timeoutMs:6500 });
-        const normalized=normalizeOpenLigaMatchEvents(rows, {
-          homeId:Number(fixture?.teams?.home?.id || 0),
-          awayId:Number(fixture?.teams?.away?.id || 0),
+        const payload=await secondaryProviderJson(candidateUrl, cfg, {
+          provider:'OpenLigaDB',
+          operation:'match_events',
+          timeoutMs:6500,
+        });
+        const normalized=normalizeOpenLigaMatchEvents(payload, {
+          homeId:positiveSafeInteger(fixture?.teams?.home?.id) || 0,
+          awayId:positiveSafeInteger(fixture?.teams?.away?.id) || 0,
           homeName,
           awayName,
-          kickoffAt:fixture?.fixture?.date || '',
+          kickoffAt:safeText(fixture?.fixture?.date, 80),
         });
-        if (!normalized.available) continue;
-        const fetchedAt=normalized.updatedAt && Number.isFinite(Date.parse(String(normalized.updatedAt)))
-          ? String(normalized.updatedAt)
+        if (!normalized?.available || !rows(normalized?.events).length) continue;
+
+        const parsedUpdatedAt=Date.parse(String(normalized?.updatedAt || ''));
+        const fetchedAt=Number.isFinite(parsedUpdatedAt)
+          ? new Date(parsedUpdatedAt).toISOString()
           : new Date().toISOString();
-        const policy=providerFeaturePolicy('events', context);
-        const ttlSeconds=Math.max(45, Number(policy.ttlSeconds || 60));
+        const policy=providerFeaturePolicy('events', context) || {};
+        const ttlSeconds=Math.max(45, Math.min(3600, nonNegativeInteger(policy?.ttlSeconds, 60) || 60));
         await setCache(cacheKey, fixtureId, {
-          events:normalized.events,
+          events:rows(normalized.events),
           sourceMeta:normalized.sourceMeta,
           fetchedAt,
         }, cfg, ttlSeconds / 60).catch(() => null);
+
         return {
           available:true,
-          events:normalized.events,
+          events:rows(normalized.events),
           meta:openLigaEventFeatureMeta(normalized.events, normalized.sourceMeta, {
             source:'network',
             fetchedAt,
@@ -349,29 +361,30 @@ export function createTeamTournamentRuntime(deps) {
         await recordOpsEvent(cfg, {
           severity:'info', source:'provider', eventType:'fallback_provider_failure',
           code:'OPENLIGADB_EVENTS', message:error?.message || error,
-          meta:{ fixtureId, leagueId, season, shortcut:candidate.shortcut },
+          meta:{ fixtureId, leagueId:leagueId || 0, season, shortcut:safeText(candidate?.shortcut, 80) },
         }).catch(() => null);
       }
     }
     return { available:false, reason:'openligadb_events_unavailable', events:[], meta:null };
   }
-  
+
   async function footballDataStandingsProvider(leagueId, season, cfg) {
-    const url = footballDataStandingsUrl(leagueId, season);
-    if (!cfg.footballDataToken) return { available:false, reason:'token_not_configured' };
+    const token=safeText(cfg?.footballDataToken, 500);
+    if (!token) return { available:false, reason:'token_not_configured' };
+    const url=footballDataStandingsUrl(leagueId, season);
     if (!url) return { available:false, reason:'competition_not_supported' };
-    const budget = await claimSecondaryProviderBudget(cfg, 'football-data', 9);
+    const budget=await claimSecondaryProviderBudget(cfg, 'football-data', 9);
     if (!budget.allowed) return { available:false, reason:budget.reason || 'secondary_rate_limit' };
-  
-    const payload = await secondaryProviderJson(url, cfg, {
+
+    const payload=await secondaryProviderJson(url, cfg, {
       provider:'football-data.org',
       operation:'standings',
       timeoutMs:6500,
-      headers:{ 'x-auth-token':cfg.footballDataToken },
+      headers:{ 'x-auth-token':token },
     });
     return normalizeFootballDataStandings(payload, { leagueId, season });
   }
-  
+
   function oddsFallbackMeta(feature, market, { source = 'network', fetchedAt = null, expiresAt = null } = {}) {
     const sourceUpdatedAt = Number.isFinite(Date.parse(String(market?.updatedAt || ''))) ? String(market.updatedAt) : null;
     const ageAnchor = sourceUpdatedAt || fetchedAt;
@@ -392,45 +405,50 @@ export function createTeamTournamentRuntime(deps) {
   
   function usableOddsFeatureMeta(meta = {}, market = null, fallbackReason = '') {
     if (market) {
-      const sourceUpdatedAt = Number.isFinite(Date.parse(String(market?.updatedAt || ''))) ? String(market.updatedAt) : (meta?.sourceUpdatedAt || null);
+      const sourceUpdatedAt=Number.isFinite(Date.parse(String(market?.updatedAt || '')))
+        ? String(market.updatedAt)
+        : (meta?.sourceUpdatedAt || null);
       return {
         ...meta,
-        provider: String(market.provider || meta?.provider || 'api-football'),
+        provider:safeText(market?.provider || meta?.provider, 80) || 'api-football',
         sourceUpdatedAt,
-        state: 'available',
-        available: true,
-        observed: true,
-        usable: true,
-        degraded: false,
-        reason: '',
-        count: Number(market.sources || market.bookmakers || 1),
+        state:'available',
+        available:true,
+        observed:true,
+        usable:true,
+        degraded:false,
+        reason:'',
+        count:Math.max(1, nonNegativeInteger(market?.sources ?? market?.bookmakers, 1)),
       };
     }
-    if (meta?.degraded) return { ...meta, usable:false, fallbackReason:String(fallbackReason || '') };
+    if (meta?.degraded) return { ...meta, usable:false, fallbackReason:safeText(fallbackReason, 240) };
     return {
       ...meta,
-      state: 'empty_response',
-      available: false,
-      observed: Boolean(meta?.observed ?? true),
-      usable: false,
-      degraded: false,
-      reason: String(meta?.reason || '1x2_market_missing'),
-      count: 0,
-      fallbackReason: String(fallbackReason || ''),
+      state:'empty_response',
+      available:false,
+      observed:Boolean(meta?.observed ?? true),
+      usable:false,
+      degraded:false,
+      reason:safeText(meta?.reason, 160) || '1x2_market_missing',
+      count:0,
+      fallbackReason:safeText(fallbackReason, 240),
     };
   }
-  
+
   async function secondaryOddsMarket(fixture, cfg, { mode = 'prematch' } = {}) {
-    const fixtureId = Number(fixture?.fixture?.id || 0);
-    const leagueId = Number(fixture?.league?.id || 0);
-    const feature = mode === 'live' ? 'liveOdds' : 'odds';
-    if (!cfg.theOddsApiKey) return { available:false, reason:'token_not_configured', market:null, meta:null };
-  
-    const baseUrl = theOddsApiUrl(leagueId);
+    const fixtureId=positiveSafeInteger(fixture?.fixture?.id);
+    const leagueId=positiveSafeInteger(fixture?.league?.id);
+    const feature=mode === 'live' ? 'liveOdds' : 'odds';
+    if (!fixtureId) return { available:false, reason:'invalid_fixture', market:null, meta:null };
+
+    const apiKey=safeText(cfg?.theOddsApiKey, 500);
+    if (!apiKey) return { available:false, reason:'token_not_configured', market:null, meta:null };
+
+    const baseUrl=theOddsApiUrl(leagueId || 0);
     if (!baseUrl) return { available:false, reason:'competition_not_supported', market:null, meta:null };
-  
-    const cacheKey = `secondary-odds:${fixtureId}:the-odds-api:v1`;
-    const fresh = await getCacheEntry(cacheKey, cfg, false).catch(() => null);
+
+    const cacheKey=`secondary-odds:${fixtureId}:the-odds-api:v1`;
+    const fresh=await getCacheEntry(cacheKey, cfg, false).catch(() => null);
     if (fresh?.payload?.market) {
       return {
         available:true,
@@ -442,33 +460,31 @@ export function createTeamTournamentRuntime(deps) {
         }),
       };
     }
-  
-    const budget = await claimSecondaryProviderBudget(cfg, 'the-odds-api', 8);
-    if (!budget.allowed) {
-      return { available:false, reason:budget.reason || 'secondary_rate_limit', market:null, meta:null };
-    }
-  
+
+    const budget=await claimSecondaryProviderBudget(cfg, 'the-odds-api', 8);
+    if (!budget.allowed) return { available:false, reason:budget.reason || 'secondary_rate_limit', market:null, meta:null };
+
     try {
-      const url = new URL(baseUrl);
-      url.searchParams.set('apiKey', cfg.theOddsApiKey);
-      const rows = await secondaryProviderJson(url.toString(), cfg, {
+      const url=new URL(baseUrl);
+      url.searchParams.set('apiKey', apiKey);
+      const payload=await secondaryProviderJson(url.toString(), cfg, {
         provider:'The Odds API',
         operation:'odds',
         timeoutMs:6500,
       });
-      const market = normalizeTheOddsApiMarket(rows, {
-        homeName:fixture?.teams?.home?.name || '',
-        awayName:fixture?.teams?.away?.name || '',
-        kickoffAt:fixture?.fixture?.date || '',
+      const market=normalizeTheOddsApiMarket(payload, {
+        homeName:safeText(fixture?.teams?.home?.name, 180),
+        awayName:safeText(fixture?.teams?.away?.name, 180),
+        kickoffAt:safeText(fixture?.fixture?.date, 80),
       });
       if (!market) return { available:false, reason:'fixture_not_matched', market:null, meta:null };
-  
-      const fetchedAt = new Date().toISOString();
-      const kickoffMs = Date.parse(String(fixture?.fixture?.date || ''));
-      const minutesToKickoff = Number.isFinite(kickoffMs) ? Math.round((kickoffMs - Date.now()) / 60000) : null;
-      const ttlMinutes = mode === 'live' ? 1 : minutesToKickoff !== null && minutesToKickoff <= 120 ? 3 : 5;
-      const expiresAt = new Date(Date.now() + ttlMinutes * 60000).toISOString();
-      const payload = {
+
+      const fetchedAt=new Date().toISOString();
+      const kickoffMs=Date.parse(String(fixture?.fixture?.date || ''));
+      const minutesToKickoff=Number.isFinite(kickoffMs) ? Math.round((kickoffMs-Date.now())/60000) : null;
+      const ttlMinutes=mode === 'live' ? 1 : minutesToKickoff !== null && minutesToKickoff<=120 ? 3 : 5;
+      const expiresAt=new Date(Date.now()+ttlMinutes*60000).toISOString();
+      const cachePayload={
         market,
         provider:'the-odds-api',
         fetchedAt,
@@ -480,14 +496,14 @@ export function createTeamTournamentRuntime(deps) {
           fallback:true,
         }),
       };
-      await setCache(cacheKey, fixtureId, payload, cfg, ttlMinutes).catch(() => null);
+      await setCache(cacheKey, fixtureId, cachePayload, cfg, ttlMinutes).catch(() => null);
       await recordOpsEvent(cfg, {
         severity:'info', source:'provider', eventType:'provider_fallback',
         code:'ODDS_FALLBACK_USED',
         message:'Для рынка 1X2 использован разрешённый резервный источник.',
-        meta:{ fixtureId, leagueId, mode, provider:'the-odds-api' },
+        meta:{ fixtureId, leagueId:leagueId || 0, mode, provider:'the-odds-api' },
       }).catch(() => null);
-  
+
       return {
         available:true,
         market,
@@ -498,12 +514,12 @@ export function createTeamTournamentRuntime(deps) {
         severity:'info', source:'provider', eventType:'fallback_provider_failure',
         code:'THE_ODDS_API_ODDS',
         message:error?.message || error,
-        meta:{ fixtureId, leagueId, mode },
+        meta:{ fixtureId, leagueId:leagueId || 0, mode },
       }).catch(() => null);
-      return { available:false, reason:String(error?.code || 'provider_error'), market:null, meta:null };
+      return { available:false, reason:safeText(error?.code, 120) || 'provider_error', market:null, meta:null };
     }
   }
-  
+
   async function resolveTournamentStandings(leagueId, season, cfg, { skipPrimary = false } = {}) {
     const result = await resolveProviderChain({
       feature:'standings',
