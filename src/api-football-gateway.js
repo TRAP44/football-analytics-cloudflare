@@ -60,6 +60,13 @@ export function createApiFootballGateway({
     return fallback;
   }
 
+  function positivePagingInteger(value, fallback = 1) {
+    const number=Number(value);
+    return Number.isSafeInteger(number) && number>0 && number<=10000
+      ? number
+      : fallback;
+  }
+
   function isFootballRateLimitError(error) {
     return ['FOOTBALL_RATE_LIMIT', 'FOOTBALL_COOLDOWN', 'FOOTBALL_DAILY_RESERVE'].includes(String(error?.code || ''))
       || /too many requests|rate.?limit|requests per minute|лимит запросов|дневной резерв/i.test(String(error?.message || ''));
@@ -556,12 +563,14 @@ export function createApiFootballGateway({
     memory.provider.lastSuccessAt = new Date().toISOString();
     bumpTelemetry('apiSuccess');
     if (options.responseType === 'envelope') {
+      const current=positivePagingInteger(body?.paging?.current,1);
+      const total=Math.max(
+        current,
+        positivePagingInteger(body?.paging?.total,current),
+      );
       return {
         response: body.response,
-        paging: {
-          current: Math.max(1, Number(body?.paging?.current || 1) || 1),
-          total: Math.max(1, Number(body?.paging?.total || 1) || 1),
-        },
+        paging:{current,total},
       };
     }
     if (options.responseType === 'any') return body.response ?? null;
