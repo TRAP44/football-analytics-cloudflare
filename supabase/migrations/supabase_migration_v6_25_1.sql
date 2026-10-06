@@ -1,6 +1,17 @@
 -- MatchRadar v6.25.1 / Smart Notification delivery ownership hardening
 -- Introduces an explicit pre-send CAS state so a successful Telegram send cannot
 -- be blindly replayed when final persistence is ambiguous.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. send_started_at,
+-- begin_smart_notification_delivery_send() and the replaced finalizer remain
+-- the current Smart Notification ownership boundary used by the Worker.
+-- The runtime sequence is claim -> begin-send CAS -> Telegram send -> finalize;
+-- once a row reaches sending, an ambiguous result is never treated as a safe
+-- automatic resend. Later migrations retain these RPCs without replacing them.
+-- The max-attempt check intentionally permits attempts 1..N and rejects a
+-- reclaimed claim only after it exceeds the configured send-attempt ceiling.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 alter table public.smart_notification_deliveries
   add column if not exists send_started_at timestamptz;
