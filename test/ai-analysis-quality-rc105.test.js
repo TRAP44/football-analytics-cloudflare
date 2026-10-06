@@ -339,6 +339,9 @@ test('RC105 UI exposes quality gate reason and goal-sample quality', () => {
   assert.match(appSource, /goal\.qualityLabel/);
   assert.match(appSource, /goal\.qualityScore/);
 
-  assert.match(analysisContextSource, /if \(!qualityGate\.allowSignal && betSignal\.code !== 'skip'\)/);
-  assert.match(analysisContextSource, /qualityGate, matchPlan/);
+  assert.match(
+    analysisContextSource,
+    /if \(!qualityGate\.allowSignal && betSignal\.code\s*!==\s*'skip'\)/,
+  );
+  assert.match(analysisContextSource, /qualityGate,[\s\S]{0,120}?matchPlan,/);
 });
