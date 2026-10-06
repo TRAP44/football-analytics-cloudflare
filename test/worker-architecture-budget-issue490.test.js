@@ -32,13 +32,14 @@ import { createSupabaseReadinessRuntime } from '../src/supabase-readiness-runtim
 import { createReleaseReadinessRuntime } from '../src/release-readiness-runtime.js';
 import { createProviderBudgetRuntime } from '../src/provider-budget-runtime.js';
 import { createReleaseMonitorApiRuntime } from '../src/release-monitor-api-runtime.js';
+import { createMarketParsingRuntime } from '../src/market-parsing-runtime.js';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 
 test('Worker composition root stays below the post-audit architecture budget',()=>{
   const bytes=Buffer.byteLength(worker,'utf8');
   assert.ok(
-    bytes<=555_000,
+    bytes<=552_000,
     `src/worker.js grew to ${bytes} bytes; extract another cohesive runtime instead of growing the composition root`,
   );
 });
@@ -164,6 +165,7 @@ test('extracted runtime factories are executable contracts, not source-only plac
   const releaseReadiness=createReleaseReadinessRuntime(new Proxy({}, {get:()=>()=>null}));
   const providerBudget=createProviderBudgetRuntime({clamp:(v,min,max)=>Math.max(min,Math.min(max,v)),freeQuotaHealthy:()=>true,getCache:async()=>null,hasSupabase:()=>false,memory:{provider:{},providerFeatureFetch:{},telemetry:{}},phase5ProviderUsage:()=>{},recordOpsEvent:async()=>{},runtimeControlsSnapshot:()=>({}),setCache:async()=>true});
   const releaseMonitorApi=createReleaseMonitorApiRuntime(new Proxy({}, {get:()=>()=>null}));
+  const marketParsing=createMarketParsingRuntime();
   assert.equal(typeof settlement.runSettlementWatchdog,'function');
   assert.equal(typeof settlement.runSettlementFinalityVerification,'function');
   assert.equal(typeof providerData.providerDataState,'function');
@@ -232,6 +234,9 @@ test('extracted runtime factories are executable contracts, not source-only plac
   assert.equal(typeof releaseMonitorApi.readOpsEventsRange,'function');
   assert.equal(typeof releaseMonitorApi.apiPostDeployRegressionResponse,'function');
   assert.equal(typeof releaseMonitorApi.apiReleaseMonitor,'function');
+  assert.equal(typeof marketParsing.normalizeThree,'function');
+  assert.equal(typeof marketParsing.extractMarket,'function');
+  assert.equal(typeof marketParsing.extractLiveMarket,'function');
 });
 
 test('Worker composes extracted runtimes through explicit imports',()=>{
@@ -268,6 +273,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/import \{ createReleaseReadinessRuntime \} from '\.\/release-readiness-runtime\.js'/);
   assert.match(worker,/import \{ createProviderBudgetRuntime \} from '\.\/provider-budget-runtime\.js'/);
   assert.match(worker,/import \{ createReleaseMonitorApiRuntime \} from '\.\/release-monitor-api-runtime\.js'/);
+  assert.match(worker,/import \{ createMarketParsingRuntime \} from '\.\/market-parsing-runtime\.js'/);
   assert.match(worker,/createDiagnosticsRuntime\(\{/);
   assert.match(worker,/createPublicHealthRuntime\(\{/);
   assert.match(worker,/createPublicStatusRuntime\(\{/);
@@ -302,6 +308,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/createReleaseReadinessRuntime\(\{/);
   assert.match(worker,/createProviderBudgetRuntime\(\{/);
   assert.match(worker,/createReleaseMonitorApiRuntime\(\{/);
+  assert.match(worker,/createMarketParsingRuntime\(\)/);
   assert.doesNotMatch(worker,/async function collectDiagnostics\(/);
   assert.doesNotMatch(worker,/async function readRecentOpsEvents\(/);
   assert.doesNotMatch(worker,/async function publicServiceStatus\(/);
@@ -416,4 +423,9 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.doesNotMatch(worker,/async function readDailyDigestSloEvents\(/);
   assert.doesNotMatch(worker,/async function apiPostDeployRegressionResponse\(/);
   assert.doesNotMatch(worker,/async function apiReleaseMonitor\(/);
+  assert.doesNotMatch(worker,/function parsePercent\(/);
+  assert.doesNotMatch(worker,/function normalizeThree\(/);
+  assert.doesNotMatch(worker,/function extractMarket\(/);
+  assert.doesNotMatch(worker,/function extractLiveMarket\(/);
+  assert.doesNotMatch(worker,/function numericValue\(/);
 });
