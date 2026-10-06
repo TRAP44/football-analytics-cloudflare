@@ -44,6 +44,7 @@ export function createServiceWiringRuntime(deps = {}) {
 
   const {
     claimScheduledJob,
+    renewScheduledJob,
     completeScheduledJob,
     releaseScheduledJob,
   } = createScheduledLeaseRuntime({
@@ -265,6 +266,7 @@ export function createServiceWiringRuntime(deps = {}) {
 
   return {
     claimScheduledJob,
+    renewScheduledJob,
     completeScheduledJob,
     releaseScheduledJob,
     getPreferences,
