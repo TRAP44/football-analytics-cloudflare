@@ -1,6 +1,16 @@
 -- Football Analytics v6.19.1 / personal write hardening
 -- Additive hotfix: atomic per-user caps and bounded payload validation for
 -- favorites and match reminders. No existing table/column is removed or renamed.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this hotfix in the upgrade chain. It introduces the original atomic
+-- favorites/reminders write guards and personal_write_guard_contract().
+-- save_favorite_guarded() remains directly used by the current Worker.
+-- v6.25.2 later replaces reminder persistence with save_match_reminder_guarded_v2()
+-- and keeps save_match_reminder_guarded() as a compatibility wrapper; the
+-- definitions here are therefore required replay steps, not removable duplicates.
+-- backend_schema_fingerprint() is intentionally updated again by later migrations.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 create or replace function public.save_favorite_guarded(
   p_telegram_id bigint,
