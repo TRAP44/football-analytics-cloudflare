@@ -7,7 +7,7 @@ const worker=(fs.readFileSync('src/worker.js','utf8')
   +'\n'+fs.readFileSync('src/telegram-bot-ui-runtime.js','utf8'));
 
 test('telegram match buttons answer inline instead of forcing the mini app',()=> {
-  assert.match(worker,/callback_data: `match:verdict:/);
+  assert.match(worker,/callback_data:\`match:verdict:/);
   assert.match(worker,/callback_data: `match:referee:/);
   assert.match(worker,/callback_data: `match:squads:/);
   assert.match(worker,/callback_data: `match:market:/);
@@ -41,9 +41,9 @@ test('find-match button prompts for natural text in chat',()=> {
   assert.match(worker,/Напишите клуб или конкретный матч/);
 });
 
-test('RC48 health exposes inline bot contracts',()=> {
-  assert.match(worker,/botInlineAiVerdict:\s*'enabled'/);
-  assert.match(worker,/botInlineMatchSections:\s*'enabled'/);
-  assert.match(worker,/botCachedAnalysisReuse:\s*'enabled'/);
-  assert.match(worker,/botMatchCardCallbacks:\s*'enabled'/);
+test('RC48 release contract preserves inline AI boundaries',()=> {
+  assert.match(worker,/TELEGRAM_ANALYSIS_FIXTURE_MISMATCH/);
+  assert.match(worker,/bot:fixture-card:\$\{id\}:v2/);
+  assert.match(worker,/match:menu:\$\{fixtureId\}/);
+  assert.match(worker,/return Object\.freeze\(\{/);
 });
