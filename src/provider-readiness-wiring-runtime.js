@@ -7,6 +7,10 @@ import { createReminderDeliveryRuntime } from './reminder-delivery-runtime.js';
 import { createSupabaseReadinessRuntime } from './supabase-readiness-runtime.js';
 
 export function createProviderReadinessWiringRuntime(deps = {}) {
+  if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
+    throw new TypeError('Provider readiness wiring dependencies are required.');
+  }
+
   const {
     APP_VERSION,
     COMPATIBLE_SCHEMA_FINGERPRINTS,
@@ -38,6 +42,38 @@ export function createProviderReadinessWiringRuntime(deps = {}) {
     withSingleFlight,
   } = deps;
 
+  if (!memory || typeof memory !== 'object' || Array.isArray(memory)) {
+    throw new TypeError('memory is required');
+  }
+
+  const requiredFunctions = {
+    bumpTelemetry,
+    clamp,
+    fetchWithTimeout,
+    getCache,
+    getCacheEntry,
+    hasSupabase,
+    isFinishedStatus,
+    isLiveStatus,
+    observeProviderRequest,
+    phase5ProviderUsage,
+    providerSloReport,
+    readIntegrityDiagnostics,
+    readTelegramDedupeHealth,
+    recordOpsEvent,
+    redactOpsString,
+    runtimeControlsSnapshot,
+    setCache,
+    sleepMs,
+    supaHeaders,
+    supaRpc,
+    telemetrySnapshot,
+    withSingleFlight,
+  };
+  for (const [name, fn] of Object.entries(requiredFunctions)) {
+    if (typeof fn !== 'function') throw new TypeError(`${name} is required`);
+  }
+
   const reminderDeliveryRuntime = createReminderDeliveryRuntime({
     fetchWithTimeout,
     hasSupabase,
@@ -51,9 +87,13 @@ export function createProviderReadinessWiringRuntime(deps = {}) {
   } = reminderDeliveryRuntime;
 
   let gatewayRuntime = null;
+  const freeQuotaHealthyProxy = (...args) => {
+    const fn = gatewayRuntime?.freeQuotaHealthy;
+    return typeof fn === 'function' ? fn(...args) : false;
+  };
   const providerBudgetRuntime = createProviderBudgetRuntime({
     clamp,
-    freeQuotaHealthy: (...args) => gatewayRuntime?.freeQuotaHealthy(...args),
+    freeQuotaHealthy: freeQuotaHealthyProxy,
     getCache,
     hasSupabase,
     memory,
@@ -201,7 +241,7 @@ export function createProviderReadinessWiringRuntime(deps = {}) {
     telemetrySnapshot,
   });
 
-  return {
+  return Object.freeze({
     sendTelegramMessage,
     probeReminderReliabilitySchema,
     PROVIDER_PLAN_LIMITS,
@@ -261,5 +301,5 @@ export function createProviderReadinessWiringRuntime(deps = {}) {
     readCompositeReadiness,
     readRecentOpsEvents,
     collectDiagnostics,
-  };
+  });
 }
