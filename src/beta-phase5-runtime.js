@@ -189,27 +189,41 @@ export function createBetaPhase5Runtime(deps) {
     };
   }
   
-  function betaExpansionDecision({
-    launchBlockers=[],
-    metrics={},
-    journey={},
-    timings={},
-    coverage={},
-    issues=[],
-    opsSampleLimited=false,
-    providerEvidence='insufficient_evidence',
-  } = {}) {
-    const betaUsers=Number(journey.betaUsers || 0);
-    const sessionStarts=Number(metrics.miniAppLaunch?.events || 0);
-    const fullJourneys=Number(journey.fullCompleted || 0);
-    const blockerCount=(issues || []).filter(issue=>issue?.classification==='BLOCKER').length;
-    const majorCount=(issues || []).filter(issue=>issue?.classification==='MAJOR').length;
-    const needsMoreEvidence=(issues || []).filter(issue=>issue?.classification==='NEEDS_MORE_EVIDENCE').length;
-    const coreTimingSamples={
-      search:Number(timings?.search?.samples || 0),
-      match:Number(timings?.match?.samples || 0),
-      ai:Number(timings?.ai?.samples || 0),
+  function betaExpansionDecision(input = {}) {
+    const source=input && typeof input==='object' && !Array.isArray(input) ? input : {};
+    const metrics=source.metrics && typeof source.metrics==='object' && !Array.isArray(source.metrics) ? source.metrics : {};
+    const journey=source.journey && typeof source.journey==='object' && !Array.isArray(source.journey) ? source.journey : {};
+    const timings=source.timings && typeof source.timings==='object' && !Array.isArray(source.timings) ? source.timings : {};
+    const coverage=source.coverage && typeof source.coverage==='object' && !Array.isArray(source.coverage) ? source.coverage : {};
+    const issues=Array.isArray(source.issues) ? source.issues : [];
+    const invalidIssues=source.issues!==undefined && !Array.isArray(source.issues);
+    const launchBlockers=Array.isArray(source.launchBlockers)
+      ? source.launchBlockers.filter(Boolean).map(value=>String(value))
+      : source.launchBlockers===undefined
+        ? []
+        : ['invalid_launch_blockers'];
+    const opsSampleLimited=source.opsSampleLimited===true;
+    const invalidOpsSampleFlag=source.opsSampleLimited!==undefined && typeof source.opsSampleLimited!=='boolean';
+    const providerEvidence=['insufficient_evidence','review_provider_options'].includes(String(source.providerEvidence || ''))
+      ? String(source.providerEvidence)
+      : 'insufficient_evidence';
+    const evidenceCount=value=>{
+      const count=Number(value);
+      return Number.isSafeInteger(count) && count>=0 ? count : 0;
     };
+
+    const betaUsers=evidenceCount(journey.betaUsers);
+    const sessionStarts=evidenceCount(metrics.miniAppLaunch?.events);
+    const fullJourneys=evidenceCount(journey.fullCompleted);
+    const blockerCount=issues.filter(issue=>issue?.classification==='BLOCKER').length;
+    const majorCount=issues.filter(issue=>issue?.classification==='MAJOR').length;
+    const needsMoreEvidence=issues.filter(issue=>issue?.classification==='NEEDS_MORE_EVIDENCE').length;
+    const coreTimingSamples={
+      search:evidenceCount(timings?.search?.samples),
+      match:evidenceCount(timings?.match?.samples),
+      ai:evidenceCount(timings?.ai?.samples),
+    };
+    const coverageSamples=evidenceCount(coverage?.samples);
     const requirements={
       verifiedUsers:{required:2,actual:betaUsers,pass:betaUsers>=2},
       verifiedSessionStarts:{required:7,actual:sessionStarts,pass:sessionStarts>=7},
@@ -217,16 +231,18 @@ export function createBetaPhase5Runtime(deps) {
       searchTimingSamples:{required:3,actual:coreTimingSamples.search,pass:coreTimingSamples.search>=3},
       matchTimingSamples:{required:3,actual:coreTimingSamples.match,pass:coreTimingSamples.match>=3},
       aiTimingSamples:{required:3,actual:coreTimingSamples.ai,pass:coreTimingSamples.ai>=3},
-      coverageSamples:{required:10,actual:Number(coverage?.samples || 0),pass:Number(coverage?.samples || 0)>=10},
+      coverageSamples:{required:10,actual:coverageSamples,pass:coverageSamples>=10},
     };
     const evidenceComplete=Object.values(requirements).every(item=>item.pass);
     const hardBlockers=[
-      ...(launchBlockers || []),
+      ...launchBlockers,
+      ...(invalidIssues ? ['invalid_issue_evidence'] : []),
+      ...(invalidOpsSampleFlag ? ['invalid_ops_sample_flag'] : []),
       ...(opsSampleLimited ? ['beta_ops_sample_truncated'] : []),
       ...(blockerCount>0 ? ['confirmed_blocker'] : []),
       ...(majorCount>0 ? ['confirmed_major'] : []),
     ];
-    const dataCoverageDecision=Number(coverage?.samples || 0)<10
+    const dataCoverageDecision=coverageSamples<10
       ? 'collect_more_coverage'
       : providerEvidence==='review_provider_options'
         ? 'review_new_or_paid_provider'
@@ -251,7 +267,6 @@ export function createBetaPhase5Runtime(deps) {
       sessionDefinition:'One verified beta session start equals an accepted server-side closed_beta_v1 BOOT_OK event after telemetry dedupe.',
     };
   }
-  
   
   function quotaRemainingPct(limit,remaining) {
     const l=Number(limit);
