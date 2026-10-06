@@ -2,7 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../src/api-football-gateway.js',import.meta.url),'utf8');
+const workerCore=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
+const providerDataRuntime=readFileSync(new URL('../src/provider-data-runtime.js',import.meta.url),'utf8');
+const analysisRuntime=readFileSync(new URL('../src/analysis-runtime.js',import.meta.url),'utf8');
+const matchCenterRuntime=readFileSync(new URL('../src/match-center-runtime.js',import.meta.url),'utf8');
+const gateway=readFileSync(new URL('../src/api-football-gateway.js',import.meta.url),'utf8');
+const worker=workerCore+'\n'+providerDataRuntime+'\n'+analysisRuntime+'\n'+matchCenterRuntime+'\n'+gateway;
 const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 const searchController=readFileSync(new URL('../public/modules/global-search-controller.js',import.meta.url),'utf8');
 const matchCenterController=readFileSync(new URL('../public/modules/match-center-controller.js',import.meta.url),'utf8');
@@ -49,10 +54,10 @@ test('fixtures are reused from persistent shared caches before provider calls',(
   const botFixture=block(worker,'async function loadBotFixtureCard','function botFixtureDateTime');
   assert.match(botFixture,/loadProviderFixture\(id,cfg\)/);
 
-  const matchCenter=block(worker,'async function apiMatchCenter','async function cachedTeamIntelligenceForAnalysis');
+  const matchCenter=block(matchCenterRuntime,'async function apiMatchCenter','  return { apiMatchCenter };');
   assert.match(matchCenter,/loadProviderFixture\(fixtureId,cfg\)/);
 
-  const analyze=block(worker,'async function apiAnalyze','async function publicServiceStatus');
+  const analyze=block(analysisRuntime,'async function apiAnalyze','  return { apiAnalyze };');
   assert.match(analyze,/loadProviderFixture\(fixtureId,cfg\)/);
 });
 
@@ -67,13 +72,13 @@ test('public match feed uses the shared provider-valid exact-date fixtures loade
 });
 
 test('FREE AI avoids optional network fan-out and reuses cached feature data',()=>{
-  const providerFetch=block(worker,'async function analysisProviderFetch','async function providerFeatureFetch');
+  const providerFetch=block(providerDataRuntime,'async function analysisProviderFetch','async function providerFeatureFetch');
   assert.match(providerFetch,/analysis-provider:/);
   assert.match(providerFetch,/provider-feature:/);
   assert.match(providerFetch,/source:'cache'/);
   assert.match(providerFetch,/source:'stale'/);
 
-  const analyze=block(worker,'async function apiAnalyze','async function publicServiceStatus');
+  const analyze=block(analysisRuntime,'async function apiAnalyze','  return { apiAnalyze };');
   assert.match(analyze,/const canFetchLineups = detailedCoverage && paid/);
   assert.match(analyze,/const canFetchFreshForm = detailedCoverage && paid/);
   assert.match(analyze,/const canFetchH2H = detailedCoverage && paid/);
