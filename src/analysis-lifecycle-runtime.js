@@ -111,6 +111,7 @@ export function createAnalysisLifecycleRuntime(deps) {
     const live=statusFlag(isLiveStatus,status);
     const finished=statusFlag(isFinishedStatus,status);
     const generatedValid=generatedMs !== null && generatedMs <= nowMs+5*60_000;
+    const kickoffValid=kickoffMs !== null;
     const ageMinutes=generatedValid
       ? Math.max(0,Math.round((nowMs-generatedMs)/60000))
       : 99999;
@@ -135,6 +136,7 @@ export function createAnalysisLifecycleRuntime(deps) {
         lineupsConfirmed,
         marketAvailable,
         generatedAtValid:generatedValid,
+        kickoffAtValid:kickoffValid,
         reasonCode:'match_started',
         reason:'Предматчевый AI больше не обновляется как pre-match: используйте центр матча.',
       };
@@ -151,13 +153,16 @@ export function createAnalysisLifecycleRuntime(deps) {
       maxAgeMinutes=Math.min(maxAgeMinutes,5);
     }
 
-    const needsRecheck=!generatedValid || ageMinutes>maxAgeMinutes;
+    const needsRecheck=!generatedValid || !kickoffValid || ageMinutes>maxAgeMinutes;
     let reasonCode='fresh';
     let reason=`AI обновлён ${ageMinutes} мин. назад; рабочее окно свежести — ${maxAgeMinutes} мин.`;
 
     if (!generatedValid) {
       reasonCode='generated_time_invalid';
       reason='Время формирования сохранённого AI-снимка не подтверждено; требуется новая проверка.';
+    } else if (!kickoffValid) {
+      reasonCode='kickoff_time_invalid';
+      reason='Время начала матча не подтверждено; динамическую свежесть AI нельзя определить надёжно.';
     } else if (needsRecheck && minutesToKickoff !== null && minutesToKickoff<=90 && !lineupsConfirmed) {
       reasonCode='lineups_window';
       reason='Матч близко: подтверждённые стартовые составы могли появиться после последнего расчёта.';
@@ -179,6 +184,7 @@ export function createAnalysisLifecycleRuntime(deps) {
       lineupsConfirmed,
       marketAvailable,
       generatedAtValid:generatedValid,
+      kickoffAtValid:kickoffValid,
       reasonCode,
       reason,
     };
