@@ -3,19 +3,21 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
+const providerFixtureRuntime=readFileSync(new URL('../src/provider-fixture-runtime.js',import.meta.url),'utf8');
 
-function block(start,end){
-  const a=worker.indexOf(start);
+function block(start,end,source=worker){
+  const a=source.indexOf(start);
   assert.notEqual(a,-1,start);
-  const b=worker.indexOf(end,a+start.length);
+  const b=source.indexOf(end,a+start.length);
   assert.notEqual(b,-1,end);
-  return worker.slice(a,b);
+  return source.slice(a,b);
 }
 
 test('Issue #330 shares team discovery fixtures across search and team page flows',()=>{
   const helper=block(
     'async function loadProviderTeamDiscoveryFixtures',
     'function providerFixtureDirectCacheKey',
+    providerFixtureRuntime,
   );
   assert.match(helper,/providerTeamDiscoveryCacheKey\(id\)/);
   assert.match(helper,/providerTeamFixtureReuses/);
