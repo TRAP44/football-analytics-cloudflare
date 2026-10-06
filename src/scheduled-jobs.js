@@ -5,60 +5,150 @@ const GLOBAL_CRON_HEARTBEAT_INTERVAL_MS = Math.floor(GLOBAL_CRON_LEASE_SECONDS *
 const GLOBAL_CRON_RETENTION_SECONDS = 2 * 24 * 60 * 60;
 const DAILY_TASK_LEASE_SECONDS = 10 * 60;
 const DAILY_TASK_RETENTION_SECONDS = 4 * 24 * 60 * 60;
+const MAX_TIMESTAMP_MS = 8.64e15;
+const MAX_HEARTBEAT_INTERVAL_MS = Math.floor(GLOBAL_CRON_LEASE_SECONDS * 1000 / 2);
+const TASK_NAME_RE = /^[a-z0-9][a-z0-9_.:-]{0,79}$/;
+
+function plainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+}
+
+function integerCandidate(value) {
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const raw=value.trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const number=Number(raw);
+  return Number.isSafeInteger(number) ? number : null;
+}
+
+function nonNegativeInteger(value) {
+  const number=integerCandidate(value);
+  return number !== null && number >= 0 ? number : null;
+}
 
 function shortReason(value, fallback='') {
-  const text=String(value ?? fallback ?? '').trim();
-  return text.slice(0,500);
+  const candidate=typeof value === 'string'
+    ? value
+    : typeof fallback === 'string'
+      ? fallback
+      : '';
+  const raw=candidate.trim();
+  if (!raw || /[\u0000-\u001f\u007f-\u009f]/u.test(raw)) {
+    return typeof fallback === 'string' ? fallback.trim().slice(0,500) : '';
+  }
+  return raw.replace(/\s+/gu,' ').slice(0,500);
+}
+
+function taskName(value,fallback='unknown') {
+  if (typeof value !== 'string') return fallback;
+  const task=value.trim().toLowerCase();
+  return TASK_NAME_RE.test(task) ? task : fallback;
+}
+
+function scheduledDate(value) {
+  if (value instanceof Date) {
+    const timestamp=value.getTime();
+    return Number.isFinite(timestamp) && timestamp >= 0 && timestamp <= MAX_TIMESTAMP_MS
+      ? new Date(timestamp)
+      : null;
+  }
+  if (
+    typeof value === 'number'
+    && Number.isSafeInteger(value)
+    && value >= 0
+    && value <= MAX_TIMESTAMP_MS
+  ) {
+    const date=new Date(value);
+    return Number.isFinite(date.getTime()) ? date : null;
+  }
+  return null;
+}
+
+function heartbeatInterval(value) {
+  const interval=integerCandidate(value);
+  if (interval === null || interval < 1000 || interval > MAX_HEARTBEAT_INTERVAL_MS) {
+    return GLOBAL_CRON_HEARTBEAT_INTERVAL_MS;
+  }
+  return interval;
 }
 
 export function normalizeScheduledTaskResult(task, value) {
-  if (value?.__scheduledTaskResult === true) return value;
-
-  const raw=value && typeof value==='object' ? value : {};
-  const state=String(raw.status || raw.state || '').toLowerCase();
-  const failedCount=Number(raw.failed || 0);
+  const raw=plainObject(value) || {};
+  const state=typeof raw.status === 'string'
+    ? raw.status.trim().toLowerCase()
+    : typeof raw.state === 'string'
+      ? raw.state.trim().toLowerCase()
+      : '';
+  const failedCount=nonNegativeInteger(raw.failed);
+  const invalidContract=Boolean(
+    value !== undefined
+    && value !== null
+    && !plainObject(value)
+  ) || (
+    Object.hasOwn(raw,'ok') && typeof raw.ok !== 'boolean'
+  ) || (
+    Object.hasOwn(raw,'failed')
+    && typeof raw.failed !== 'boolean'
+    && nonNegativeInteger(raw.failed) === null
+  ) || (
+    Object.hasOwn(raw,'degraded') && typeof raw.degraded !== 'boolean'
+  );
 
   let status='ok';
   if (
-    raw.ok===false
-    || raw.failed===true
+    raw.ok === false
+    || raw.failed === true
     || ['failed','failure','error'].includes(state)
   ) status='failed';
   else if (
-    raw.degraded===true
-    || state==='degraded'
-    || (Number.isFinite(failedCount) && failedCount>0)
+    raw.degraded === true
+    || state === 'degraded'
+    || (failedCount !== null && failedCount > 0)
+    || invalidContract
   ) status='degraded';
   else if (
-    raw.skipped===true
-    || typeof raw.skipped==='string'
-    || state==='skipped'
+    raw.skipped === true
+    || (typeof raw.skipped === 'string' && raw.skipped.trim())
+    || state === 'skipped'
   ) status='skipped';
 
   const reason=shortReason(
-    raw.error
-      || raw.reason
-      || (typeof raw.skipped==='string' ? raw.skipped : '')
-      || (status==='degraded' ? `partial_failures:${failedCount}` : ''),
+    typeof raw.error === 'string' ? raw.error
+      : typeof raw.reason === 'string' ? raw.reason
+        : typeof raw.skipped === 'string' ? raw.skipped
+          : invalidContract ? 'malformed_task_result'
+            : status === 'degraded' && failedCount !== null
+              ? `partial_failures:${failedCount}`
+              : '',
     status,
   );
 
   return Object.freeze({
     __scheduledTaskResult:true,
-    task:String(task || 'unknown'),
-    ok:status==='ok',
+    task:taskName(task),
+    ok:status === 'ok',
     status,
     reason,
-    value,
+    value:raw.__scheduledTaskResult === true && Object.hasOwn(raw,'value')
+      ? raw.value
+      : value,
   });
 }
 
 export function scheduledRunKey(scheduledAt) {
-  return `cron:${new Date(scheduledAt).toISOString()}`;
+  const date=scheduledDate(scheduledAt);
+  if (!date) throw new TypeError('scheduledAt must be a valid Date or epoch milliseconds');
+  return `cron:${date.toISOString()}`;
 }
 
 export function dailyScheduledTaskKey(task, scheduledAt) {
-  return `daily:${String(task || 'task')}:${new Date(scheduledAt).toISOString().slice(0,10)}`;
+  const safeTask=taskName(task,'');
+  const date=scheduledDate(scheduledAt);
+  if (!safeTask || !date) {
+    throw new TypeError('daily scheduled task identity is invalid');
+  }
+  return `daily:${safeTask}:${date.toISOString().slice(0,10)}`;
 }
 
 export function createScheduledJobsRuntime({
@@ -86,10 +176,23 @@ export function createScheduledJobsRuntime({
   setHeartbeatTimeout=setTimeout,
   clearHeartbeatTimeout=clearTimeout,
 } = {}) {
+  const timerSet=typeof setHeartbeatTimeout === 'function' ? setHeartbeatTimeout : setTimeout;
+  const timerClear=typeof clearHeartbeatTimeout === 'function' ? clearHeartbeatTimeout : clearTimeout;
+  const heartbeatMs=heartbeatInterval(leaseHeartbeatIntervalMs);
+
+  async function safeRecordOpsEvent(cfg,event) {
+    if (typeof recordOpsEvent !== 'function') return false;
+    try {
+      await recordOpsEvent(cfg,event);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function normalizedScheduledAt(controller) {
-    const value = Number(controller?.scheduledTime || Date.now());
-    const date = new Date(value);
-    return Number.isFinite(date.getTime()) ? date : new Date();
+    const source=plainObject(controller);
+    return source ? scheduledDate(source.scheduledTime) : null;
   }
 
   function explicitTaskFailure(value) {
@@ -132,7 +235,7 @@ export function createScheduledJobsRuntime({
       done:Promise.resolve(),
       stop:async()=>{},
     };
-    if (!claim?.persistent) return emptyController;
+    if (claim?.persistent !== true) return emptyController;
 
     const renew=typeof renewScheduledJob==='function'
       ? () => renewScheduledJob(cfg,claim,claim?.leaseSeconds || GLOBAL_CRON_LEASE_SECONDS)
@@ -144,7 +247,7 @@ export function createScheduledJobsRuntime({
       if (state.lost) return;
       state.lost=true;
       state.reason=shortReason(reason,'lease_renewal_failed');
-      await Promise.resolve(recordOpsEvent?.(cfg,{
+      await safeRecordOpsEvent(cfg,{
         severity:'error',
         source:'cron',
         eventType:'scheduled_execution',
@@ -157,7 +260,7 @@ export function createScheduledJobsRuntime({
           jobKey:String(claim?.jobKey || '').slice(0,180),
           groupKey:String(claim?.groupKey || '').slice(0,120),
         },
-      })).catch(()=>null);
+      });
     }
 
     async function renewOnce() {
@@ -171,28 +274,31 @@ export function createScheduledJobsRuntime({
       } catch {
         result={renewed:false,reason:'lease_unavailable'};
       }
-      if (!result?.renewed) {
+      if (result?.renewed !== true) {
         await markLost(result?.reason || 'lease_renewal_failed');
         return false;
       }
       state.renewals+=1;
-      if (result?.lockedUntil) claim.lockedUntil=result.lockedUntil;
+      if (
+        typeof result?.lockedUntil === 'string'
+        && Number.isFinite(Date.parse(result.lockedUntil))
+      ) claim.lockedUntil=result.lockedUntil;
       return true;
     }
 
     if (!await renewOnce()) return emptyController;
 
-    const intervalMs=Math.max(10,Number(leaseHeartbeatIntervalMs || GLOBAL_CRON_HEARTBEAT_INTERVAL_MS));
+    const intervalMs=heartbeatMs;
     let wakeSleep=null;
 
     function sleepUntilHeartbeat() {
       return new Promise(resolve=>{
-        const timer=setHeartbeatTimeout(()=>{
+        const timer=timerSet(()=>{
           wakeSleep=null;
           resolve();
         },intervalMs);
         wakeSleep=()=>{
-          clearHeartbeatTimeout(timer);
+          timerClear(timer);
           wakeSleep=null;
           resolve();
         };
@@ -222,15 +328,24 @@ export function createScheduledJobsRuntime({
     if (ownershipState?.lost) return ownershipLostResult(task,ownershipState);
     if (typeof claimScheduledJob!=='function') return await runOwnedTask(task,runner,ownershipState);
 
-    const claim=await claimScheduledJob(cfg,{
-      jobKey:dailyScheduledTaskKey(task,scheduledAt),
-      groupKey:`daily:${task}`,
-      scheduledAt,
-      leaseSeconds:DAILY_TASK_LEASE_SECONDS,
-      retentionSeconds:DAILY_TASK_RETENTION_SECONDS,
-    });
+    let claim;
+    try {
+      claim=await claimScheduledJob(cfg,{
+        jobKey:dailyScheduledTaskKey(task,scheduledAt),
+        groupKey:`daily:${taskName(task)}`,
+        scheduledAt,
+        leaseSeconds:DAILY_TASK_LEASE_SECONDS,
+        retentionSeconds:DAILY_TASK_RETENTION_SECONDS,
+      });
+    } catch (error) {
+      return normalizeScheduledTaskResult(task,{
+        ok:false,
+        status:'failed',
+        reason:shortReason(error?.message,'daily_task_lease_unavailable'),
+      });
+    }
 
-    if (!claim?.claimed) {
+    if (claim?.claimed !== true) {
       return normalizeScheduledTaskResult(task,{
         skipped:claim?.reason || 'daily_task_not_claimed',
         lease:claim || null,
@@ -248,7 +363,7 @@ export function createScheduledJobsRuntime({
       ? await Promise.resolve(releaseScheduledJob?.(cfg,claim)).catch(()=>false)
       : await Promise.resolve(completeScheduledJob?.(cfg,claim)).catch(()=>false);
 
-    if (claim.persistent && settled!==true) {
+    if (claim?.persistent === true && settled !== true) {
       return Object.freeze({
         ...result,
         ok:false,
@@ -311,11 +426,14 @@ export function createScheduledJobsRuntime({
   }
 
   async function observeScheduledTasks(cfg, tasks) {
-    const settled = await Promise.allSettled(tasks.map(([, promise]) => promise));
+    const safeTasks=Array.isArray(tasks) ? tasks : [];
+    const settled = await Promise.allSettled(
+      safeTasks.map(entry=>Array.isArray(entry) ? entry[1] : Promise.reject(new Error('malformed_scheduled_task'))),
+    );
     const results=[];
 
     for (let i = 0; i < settled.length; i += 1) {
-      const task = tasks[i]?.[0] || 'unknown';
+      const task = taskName(safeTasks[i]?.[0]);
       const entry = settled[i];
       const result = entry.status==='rejected'
         ? normalizeScheduledTaskResult(task,{ok:false,status:'failed',error:entry.reason?.message || entry.reason})
@@ -329,14 +447,14 @@ export function createScheduledJobsRuntime({
           : result.status==='degraded'
             ? 'CRON_TASK_DEGRADED'
             : 'CRON_TASK_SKIPPED';
-        await recordOpsEvent(cfg, {
+        await safeRecordOpsEvent(cfg,{
           severity,
-          source: 'cron',
-          eventType: 'scheduled_task',
+          source:'cron',
+          eventType:'scheduled_task',
           code,
-          message: result.reason || `Scheduled task reported ${result.status}`,
-          meta: { task, disposition: result.status },
-        }).catch(() => null);
+          message:result.reason || `Scheduled task reported ${result.status}`,
+          meta:{task,disposition:result.status},
+        });
       }
     }
     return results;
@@ -344,31 +462,60 @@ export function createScheduledJobsRuntime({
 
   async function executeScheduledRun(controller, cfg) {
     const scheduledAt=normalizedScheduledAt(controller);
+    if (!scheduledAt) {
+      const failed=normalizeScheduledTaskResult('scheduled_execution',{
+        ok:false,
+        status:'failed',
+        reason:'invalid_scheduled_time',
+      });
+      await safeRecordOpsEvent(cfg,{
+        severity:'error',
+        source:'cron',
+        eventType:'scheduled_execution',
+        code:'CRON_SCHEDULE_INVALID',
+        message:'Scheduled execution rejected an invalid scheduled timestamp.',
+        meta:{task:'scheduled_execution',disposition:'failed'},
+      });
+      return [failed];
+    }
+
+    const jobKey=scheduledRunKey(scheduledAt);
     let claim={
       claimed:true,
       persistent:false,
       reason:'lease_not_configured',
-      jobKey:scheduledRunKey(scheduledAt),
+      jobKey,
       groupKey:'cron-global',
     };
 
-    if (typeof claimScheduledJob==='function') {
-      claim=await claimScheduledJob(cfg,{
-        jobKey:scheduledRunKey(scheduledAt),
-        groupKey:'cron-global',
-        scheduledAt,
-        leaseSeconds:GLOBAL_CRON_LEASE_SECONDS,
-        retentionSeconds:GLOBAL_CRON_RETENTION_SECONDS,
-      });
+    if (typeof claimScheduledJob === 'function') {
+      try {
+        claim=await claimScheduledJob(cfg,{
+          jobKey,
+          groupKey:'cron-global',
+          scheduledAt,
+          leaseSeconds:GLOBAL_CRON_LEASE_SECONDS,
+          retentionSeconds:GLOBAL_CRON_RETENTION_SECONDS,
+        });
+      } catch (error) {
+        claim={
+          claimed:false,
+          persistent:true,
+          reason:'lease_unavailable',
+          jobKey,
+          groupKey:'cron-global',
+          error:shortReason(error?.message,'lease_unavailable'),
+        };
+      }
     }
 
-    if (!claim?.claimed) {
+    if (claim?.claimed !== true) {
       const skipped=normalizeScheduledTaskResult('scheduled_execution',{
         skipped:claim?.reason || 'lease_not_claimed',
         lease:claim || null,
       });
       const leaseUnavailable=claim?.reason==='lease_unavailable';
-      await recordOpsEvent(cfg,{
+      await safeRecordOpsEvent(cfg,{
         severity:leaseUnavailable ? 'error' : 'info',
         source:'cron',
         eventType:'scheduled_execution',
@@ -376,8 +523,12 @@ export function createScheduledJobsRuntime({
         message:leaseUnavailable
           ? 'Scheduled execution skipped because the distributed lease backend is unavailable.'
           : `Scheduled execution skipped: ${shortReason(claim?.reason,'lease_not_claimed')}.`,
-        meta:{task:'scheduled_execution',disposition:'skipped',reason:claim?.reason || 'lease_not_claimed'},
-      }).catch(()=>null);
+        meta:{
+          task:'scheduled_execution',
+          disposition:'skipped',
+          reason:shortReason(claim?.reason,'lease_not_claimed'),
+        },
+      });
       return [skipped];
     }
 
@@ -403,28 +554,35 @@ export function createScheduledJobsRuntime({
         return results;
       }
 
-      if (claim.persistent && typeof completeScheduledJob==='function') {
-        const completed=await completeScheduledJob(cfg,claim);
+      if (claim?.persistent === true) {
+        let completed=false;
+        if (typeof completeScheduledJob === 'function') {
+          try {
+            completed=await completeScheduledJob(cfg,claim) === true;
+          } catch {
+            completed=false;
+          }
+        }
         if (!completed) {
           const degraded=normalizeScheduledTaskResult('scheduled_execution',{
             degraded:true,
             reason:'execution_lease_completion_failed',
           });
           results.push(degraded);
-          await recordOpsEvent(cfg,{
+          await safeRecordOpsEvent(cfg,{
             severity:'warning',
             source:'cron',
             eventType:'scheduled_execution',
             code:'CRON_EXECUTION_LEASE_COMPLETE_FAILED',
             message:'Scheduled work completed but its distributed run marker could not be sealed.',
             meta:{task:'scheduled_execution',disposition:'degraded'},
-          }).catch(()=>null);
+          });
         }
       }
       return results;
     } catch (error) {
       await heartbeat.stop().catch(()=>{});
-      if (!heartbeat.state.lost && claim?.claimed && typeof releaseScheduledJob==='function') {
+      if (!heartbeat.state.lost && claim?.claimed === true && typeof releaseScheduledJob==='function') {
         await releaseScheduledJob(cfg,claim).catch(()=>false);
       }
       const failed=normalizeScheduledTaskResult('scheduled_execution',{
@@ -432,14 +590,14 @@ export function createScheduledJobsRuntime({
         status:'failed',
         error:error?.message || error,
       });
-      await recordOpsEvent(cfg,{
+      await safeRecordOpsEvent(cfg,{
         severity:'error',
         source:'cron',
         eventType:'scheduled_execution',
         code:'CRON_EXECUTION_FAILED',
         message:failed.reason,
         meta:{task:'scheduled_execution',disposition:'failed'},
-      }).catch(()=>null);
+      });
       return [failed];
     }
   }
@@ -447,8 +605,12 @@ export function createScheduledJobsRuntime({
   function handleScheduled(controller, cfg, ctx) {
     const execution=executeScheduledRun(controller,cfg);
     if (typeof ctx?.waitUntil === 'function') {
-      ctx.waitUntil(execution);
-      return undefined;
+      try {
+        ctx.waitUntil(execution);
+        return undefined;
+      } catch {
+        return execution;
+      }
     }
     return execution;
   }
