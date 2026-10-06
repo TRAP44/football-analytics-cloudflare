@@ -2296,10 +2296,11 @@ const {
   isLiveStatus,
   json,
   memory,
-  r });
-  }
-  return json({ error: 'Метод не поддерживается.' }, 405);
-}
+  recordOpsEvent,
+  safeOpsMetadata,
+  supaSelectMany,
+  supaUpsert,
+});
 
 
 let userDataApiRuntime = null;
