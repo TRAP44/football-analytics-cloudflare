@@ -2172,6 +2172,7 @@ let modelIntelligenceRuntime = null;
 function getModelIntelligenceRuntime() {
   if (!modelIntelligenceRuntime) {
     modelIntelligenceRuntime = createModelIntelligenceRuntime({
+      MODEL_BASE_WEIGHTS,
       apiFootball,
       getCache,
       isFinishedStatus,
