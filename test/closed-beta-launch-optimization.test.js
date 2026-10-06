@@ -1,110 +1,325 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import {
+  DEVELOPMENT_TELEGRAM_ID,
+  closedBetaAccessDecision,
+} from '../src/access-control.js';
+import { createBetaPhase5Runtime } from '../src/beta-phase5-runtime.js';
+import { createProviderBudgetRuntime } from '../src/provider-budget-runtime.js';
 
-const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
-const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
-const matchCenterController=readFileSync(new URL('../public/modules/match-center-controller.js',import.meta.url),'utf8');
-const betaDashboard=readFileSync(new URL('../public/modules/admin-beta-dashboard.js',import.meta.url),'utf8');
+const SUBJECT='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
-function block(source,start,end){
-  const a=source.indexOf(start);
-  assert.notEqual(a,-1,start);
-  const b=source.indexOf(end,a+start.length);
-  assert.notEqual(b,-1,end);
-  return source.slice(a,b);
+function betaRuntime(overrides = {}) {
+  return createBetaPhase5Runtime({
+    APP_VERSION:'6.120.0-rc144',
+    CLOSED_BETA_COHORT:'closed_beta_v1',
+    PHASE5_VALIDATION_COHORT:'phase5_public_v2',
+    RC_NAME:'RC144',
+    RELEASE_CHANNEL:'production',
+    billingWebhookStatus:async()=>({ready:true,pendingUpdates:0,reason:''}),
+    collectDiagnostics:async()=>({supabase:{ok:true},telegramWebhook:{state:'healthy'}}),
+    hasSupabase:()=>true,
+    isClosedBetaUser:()=>true,
+    json:(body,status=200)=>({body,status}),
+    providerSnapshot:()=>({}),
+    readOpsEventsRange:async()=>({items:[],persistent:true,truncated:false}),
+    recordOpsEvent:async()=>({}),
+    redactOpsString:value=>String(value ?? ''),
+    ...overrides,
+  });
 }
 
-test('closed beta issues expose NEEDS_MORE_EVIDENCE without promoting it to an active issue',()=>{
-  const issues=block(worker,'function buildBetaIssueGroups','function betaJourneyEventName');
-  assert.match(issues,/classification='NEEDS_MORE_EVIDENCE'/);
-  assert.match(issues,/\['BLOCKER','MAJOR','MINOR'\]\.includes\(classification\)/);
-  assert.match(issues,/clientErrorRows/);
-  assert.match(issues,/repeated_telemetry/);
-  assert.match(issues,/needs_more_evidence/);
+function clientRow(at, code, reason = '') {
+  return {
+    created_at:at,
+    source:'client',
+    event_type:'client_telemetry',
+    code,
+    metadata:{
+      betaSubject:SUBJECT,
+      betaCohort:'closed_beta_v1',
+      betaMembershipVerified:true,
+      ...(reason ? {reason} : {}),
+    },
+  };
+}
+
+function validQuotaRow(at, overrides = {}) {
+  return {
+    created_at:at,
+    source:'provider',
+    event_type:'quota_probe',
+    code:'PROVIDER_QUOTA_CONFIRMED',
+    metadata:{
+      plan:'PRO',
+      dailyLimit:7500,
+      dailyRemaining:7000,
+      minuteLimit:300,
+      minuteRemaining:280,
+      ...overrides,
+    },
+  };
+}
+
+function providerBudgetHarness(provider = {}) {
+  const events=[];
+  const memory={
+    provider:{...provider},
+    providerQuotaEvidenceAt:0,
+  };
+  const runtime=createProviderBudgetRuntime({
+    clamp:(value,min,max)=>Math.max(min,Math.min(max,value)),
+    freeQuotaHealthy:()=>true,
+    getCache:async()=>null,
+    hasSupabase:()=>false,
+    memory,
+    phase5ProviderUsage:()=>{},
+    recordOpsEvent:async(_cfg,event)=>{events.push(event);},
+    runtimeControlsSnapshot:()=>({}),
+    setCache:async()=>{},
+  });
+  return {runtime,memory,events};
+}
+
+test('closed beta access is public-by-default but strict mode requires a validated beta member', () => {
+  const signed={id:101,__telegramValidated:true};
+  assert.deepEqual(
+    closedBetaAccessDecision(signed,{betaAccessEnabled:false,betaTelegramIds:[]}),
+    {allowed:true,adminBypass:false,betaParticipant:false},
+  );
+  assert.deepEqual(
+    closedBetaAccessDecision(signed,{betaAccessEnabled:true,betaTelegramIds:[101]}),
+    {allowed:true,adminBypass:false,betaParticipant:true},
+  );
+  assert.deepEqual(
+    closedBetaAccessDecision(signed,{betaAccessEnabled:true,betaTelegramIds:[102]}),
+    {allowed:false,adminBypass:false,betaParticipant:false},
+  );
+
+  const admin={id:900,__telegramValidated:true};
+  assert.deepEqual(
+    closedBetaAccessDecision(admin,{betaAccessEnabled:true,adminTelegramIds:[900],betaTelegramIds:[900]}),
+    {allowed:true,adminBypass:true,betaParticipant:false},
+  );
+
+  const synthetic={id:DEVELOPMENT_TELEGRAM_ID,__developmentIdentity:true,__telegramValidated:false};
+  assert.deepEqual(
+    closedBetaAccessDecision(synthetic,{betaAccessEnabled:true,devMode:true,betaTelegramIds:[DEVELOPMENT_TELEGRAM_ID]}),
+    {allowed:true,adminBypass:true,betaParticipant:false},
+  );
 });
 
-test('closed beta full journey requires the exact ordered path and a real re-entry',()=>{
-  const journey=block(worker,'function betaJourneySummary','function latestConfirmedProviderQuota');
-  const ordered=[
-    "'miniapp_open'",
-    "'miniapp_search_used'",
-    "'miniapp_search_found'",
-    "'miniapp_match_open'",
-    "'miniapp_ai_start'",
-    "'miniapp_ai_complete'",
-    "'miniapp_history_open'",
-    "'miniapp_open'",
+test('single beta issue remains evidence-pending while repeated evidence becomes active', () => {
+  const runtime=betaRuntime();
+  const metrics={
+    searchUsed:{events:5},
+    matchOpen:{events:0},
+    aiStart:{events:0},
+    liveOpen:{events:0},
+    miniAppLaunch:{events:5},
+    historyOpen:{events:0},
+    profileOpen:{events:0},
+  };
+  const one=runtime.buildBetaIssueGroups({
+    metrics,
+    errorRows:[{metadata:{action:'search',errorKind:'provider'}}],
+    feedbackRows:[],
+    timings:{},
+    clientErrorRows:[],
+  }).find(issue=>issue.category==='search');
+
+  assert.equal(one.classification,'NEEDS_MORE_EVIDENCE');
+  assert.equal(one.active,false);
+  assert.equal(one.evidence,'needs_more_evidence');
+
+  const repeated=runtime.buildBetaIssueGroups({
+    metrics,
+    errorRows:[
+      {metadata:{action:'search',errorKind:'provider'}},
+      {metadata:{action:'search',errorKind:'provider'}},
+    ],
+    feedbackRows:[],
+    timings:{},
+    clientErrorRows:[],
+  }).find(issue=>issue.category==='search');
+
+  assert.equal(repeated.classification,'MAJOR');
+  assert.equal(repeated.active,true);
+});
+
+test('closed beta full journey requires the exact ordered path and a later re-entry', () => {
+  const runtime=betaRuntime();
+  const rows=[
+    clientRow('2026-10-06T10:00:00.000Z','BOOT_OK'),
+    clientRow('2026-10-06T10:01:00.000Z','PRODUCT_ACTION','search_used'),
+    clientRow('2026-10-06T10:02:00.000Z','PRODUCT_ACTION','search_found'),
+    clientRow('2026-10-06T10:03:00.000Z','PRODUCT_ACTION','match_open'),
+    clientRow('2026-10-06T10:04:00.000Z','PRODUCT_ACTION','ai_start'),
+    clientRow('2026-10-06T10:05:00.000Z','PRODUCT_ACTION','ai_complete'),
+    clientRow('2026-10-06T10:06:00.000Z','PRODUCT_ACTION','history_open'),
+    clientRow('2026-10-06T10:07:00.000Z','BOOT_OK'),
   ];
-  let at=-1;
-  for (const token of ordered) {
-    const next=journey.indexOf(token,at+1);
-    assert.ok(next>at,token);
-    at=next;
+  const completed=runtime.betaJourneySummary([...rows].reverse());
+
+  assert.equal(completed.betaUsers,1);
+  assert.equal(completed.analysisCompleted,1);
+  assert.equal(completed.fullCompleted,1);
+  assert.equal(completed.stages.reentry,1);
+
+  const wrongOrder=runtime.betaJourneySummary([
+    rows[0],
+    rows[2],
+    rows[1],
+    ...rows.slice(3),
+  ]);
+  assert.equal(wrongOrder.fullCompleted,0);
+
+  const malformed=runtime.betaJourneySummary([
+    ...rows.slice(0,7),
+    clientRow('not-a-date','BOOT_OK'),
+  ]);
+  assert.equal(malformed.fullCompleted,0);
+});
+
+test('provider quota launch evidence rejects future, ambiguous and impossible quota facts', () => {
+  const runtime=betaRuntime();
+  const now=Date.parse('2026-10-07T12:00:00.000Z');
+  const validAt='2026-10-07T11:30:00.000Z';
+
+  assert.equal(runtime.latestConfirmedProviderQuota([
+    validQuotaRow(validAt),
+  ],now).confirmed,true);
+
+  for (const row of [
+    validQuotaRow('2026-10-07T12:05:00.000Z'),
+    validQuotaRow(validAt,{dailyRemaining:false}),
+    validQuotaRow(validAt,{minuteLimit:null}),
+    validQuotaRow(validAt,{dailyRemaining:-1}),
+    validQuotaRow(validAt,{dailyRemaining:8000}),
+    validQuotaRow(validAt,{plan:'UNKNOWN'}),
+  ]) {
+    assert.equal(runtime.latestConfirmedProviderQuota([row],now).confirmed,false);
   }
-  assert.match(journey,/fullCompleted/);
-  assert.match(journey,/analysisCompleted/);
-  assert.match(journey,/sort\(\(a,b\)=>Date\.parse/);
+
+  const fallback=runtime.latestConfirmedProviderQuota([
+    validQuotaRow('2026-10-07T11:45:00.000Z',{dailyRemaining:false}),
+    validQuotaRow(validAt),
+  ],now);
+  assert.equal(fallback.confirmed,true);
+  assert.equal(fallback.confirmedAt,validAt);
 });
 
-test('beta launch readiness uses server config, Telegram getWebhookInfo and persistent provider quota evidence',()=>{
-  const dashboard=block(worker,'async function apiBetaDashboard','async function readOpsEventsRange');
-  assert.match(dashboard,/billingWebhookStatus\(request,cfg\)/);
-  assert.match(dashboard,/cfg\.betaTelegramIds/);
-  assert.match(dashboard,/cfg\.adminTelegramIds/);
-  assert.match(dashboard,/strictBetaAccess:Boolean\(cfg\.betaAccessEnabled\)/);
-  assert.match(dashboard,/beta_admin_overlap/);
-  assert.match(dashboard,/telegram_webhook_unconfirmed/);
-  assert.match(dashboard,/provider_quota_unconfirmed/);
-  assert.match(dashboard,/idsReturned:false/);
-  assert.match(dashboard,/LIVE field validation and CI\/release evidence remain separate evidence gates/);
+test('provider header parsing cannot fabricate zero quota values from missing headers', async () => {
+  const {runtime,memory,events}=providerBudgetHarness();
+  const partialHeaders=new Map([
+    ['x-ratelimit-requests-limit','7500'],
+    ['x-ratelimit-requests-remaining','7000'],
+  ]);
+  runtime.updateProviderFromHeaders({
+    headers:{get:name=>partialHeaders.get(name) ?? null},
+  });
+
+  assert.equal(memory.provider.plan,'PRO');
+  assert.equal(memory.provider.minuteLimit,null);
+  assert.equal(memory.provider.minuteRemaining,null);
+  assert.equal(memory.provider.updatedAt,null);
+  assert.equal(runtime.completeProviderQuotaSnapshot(memory.provider),false);
+
+  runtime.providerQuotaEvidence({});
+  await Promise.resolve();
+  assert.equal(events.length,0);
+
+  const completeHeaders=new Map([
+    ['x-ratelimit-requests-limit','7500'],
+    ['x-ratelimit-requests-remaining','7000'],
+    ['x-ratelimit-limit','300'],
+    ['x-ratelimit-remaining','280'],
+  ]);
+  runtime.updateProviderFromHeaders({
+    headers:{get:name=>completeHeaders.get(name) ?? null},
+  });
+  assert.equal(runtime.completeProviderQuotaSnapshot(memory.provider),true);
+  assert.match(memory.provider.updatedAt,/^\d{4}-\d{2}-\d{2}T/);
+
+  runtime.providerQuotaEvidence({});
+  await Promise.resolve();
+  assert.equal(events.length,1);
+  assert.equal(events[0].code,'PROVIDER_QUOTA_CONFIRMED');
+  assert.deepEqual(events[0].meta,{
+    plan:'PRO',
+    dailyLimit:7500,
+    dailyRemaining:7000,
+    minuteLimit:300,
+    minuteRemaining:280,
+    evidenceSource:'response_headers',
+  });
+  assert.doesNotMatch(JSON.stringify(events[0]),/apiFootballKey|x-apisports-key|TELEGRAM_BOT_TOKEN/);
 });
 
-test('provider probe persists only bounded quota facts for later launch evidence',()=>{
-  const probe=block(worker,'async function apiProviderProbe','async function apiProviderCoverageAudit');
-  assert.match(probe,/PROVIDER_QUOTA_CONFIRMED/);
-  assert.match(probe,/PROVIDER_QUOTA_INCOMPLETE/);
-  for (const key of ['plan','dailyLimit','dailyRemaining','minuteLimit','minuteRemaining']) {
-    assert.match(probe,new RegExp(key));
-  }
-  assert.doesNotMatch(probe,/apiFootballKey|x-apisports-key|TELEGRAM_BOT_TOKEN/);
+test('beta launch dashboard uses only fresh complete provider quota evidence and never returns member ids', async () => {
+  const now=new Date();
+  const persistedAt=new Date(now.getTime()-5*60_000).toISOString();
+  const ops=[validQuotaRow(persistedAt)];
+  const runtime=betaRuntime({
+    readOpsEventsRange:async()=>({items:ops,persistent:true,truncated:false}),
+    providerSnapshot:()=>({
+      plan:'PRO',
+      dailyLimit:7500,
+      dailyRemaining:false,
+      minuteLimit:300,
+      minuteRemaining:280,
+      updatedAt:new Date(now.getTime()+5*60_000).toISOString(),
+    }),
+  });
+
+  const result=await runtime.apiBetaDashboard(
+    {url:'https://example.test/api/admin/beta-dashboard?days=7'},
+    {
+      betaAccessEnabled:true,
+      betaTelegramIds:[101,102],
+      adminTelegramIds:[],
+      botToken:'configured',
+    },
+  );
+
+  assert.equal(result.status,200);
+  assert.equal(result.body.launchReadiness.status,'runtime_prerequisites_confirmed');
+  assert.deepEqual(result.body.launchReadiness.blockers,[]);
+  assert.equal(result.body.launchReadiness.providerQuota.source,'provider_monitor');
+  assert.equal(result.body.launchReadiness.betaAssignments.assigned,2);
+  assert.equal(result.body.launchReadiness.betaAssignments.idsReturned,false);
+  assert.equal(result.body.privacy.telegramIdsReturned,false);
+  assert.doesNotMatch(JSON.stringify(result.body),/"101"|"102"/);
 });
 
-test('closed-beta launch evidence stays historical while primary admin UI shows Phase 5 public validation',()=>{
-  const legacy=block(worker,'async function apiBetaDashboard','async function readOpsEventsRange');
-  assert.match(legacy,/betaAssignments/);
-  assert.match(legacy,/telegramWebhook/);
-  assert.match(legacy,/providerQuota/);
-  const render=block(betaDashboard,'function renderBetaDashboard','async function loadBetaDashboard');
-  assert.match(render,/Verified normal users/);
-  assert.match(render,/API-Football quota/);
-  assert.match(render,/Phase 5 status/);
-  assert.match(render,/COLLECT MORE EVIDENCE/);
-  assert.doesNotMatch(render,/Beta-01\/Beta-02/);
-});
+test('beta launch dashboard fails closed when quota, webhook or strict access evidence is missing', async () => {
+  const runtime=betaRuntime({
+    billingWebhookStatus:async()=>({ready:false,pendingUpdates:0,reason:'not_configured'}),
+    providerSnapshot:()=>({
+      plan:'PRO',
+      dailyLimit:7500,
+      dailyRemaining:null,
+      minuteLimit:300,
+      minuteRemaining:280,
+      updatedAt:new Date().toISOString(),
+    }),
+  });
 
+  const result=await runtime.apiBetaDashboard(
+    {url:'https://example.test/api/admin/beta-dashboard?days=garbage'},
+    {
+      betaAccessEnabled:false,
+      betaTelegramIds:[101],
+      adminTelegramIds:[],
+      botToken:'',
+    },
+  );
 
-test('beta data coverage stays inside existing privacy-safe telemetry and tracks required football gaps',()=>{
-  const telemetry=block(worker,'const CLIENT_TELEMETRY_EVENTS','const BETA_FEEDBACK_CATEGORIES');
-  assert.match(telemetry,/'data_coverage'/);
-  for (const key of ['lineupsAvailable','injuriesAvailable','statisticsAvailable','xgAvailable','oddsAvailable']) {
-    assert.match(telemetry,new RegExp(key));
-  }
-  assert.doesNotMatch(telemetry,/fixtureId.*data_coverage|teamName.*data_coverage|searchText.*data_coverage/);
-  const dashboard=block(worker,'async function apiBetaDashboard','async function readOpsEventsRange');
-  assert.match(dashboard,/dataCoverage:coverage/);
-  for (const key of ['lineups','injuries','statistics','xg','odds']) {
-    assert.match(dashboard,new RegExp(key));
-  }
-  assert.match(app,/sendMatchDataCoverage,/);
-  assert.match(matchCenterController,/coverage\(data, sourceView\)/);
-  assert.match(app,/sendClientTelemetry\('data_coverage'/);
-});
-
-test('new provider review still requires systematic beta evidence rather than one missing field',()=>{
-  const dashboard=block(worker,'async function apiBetaDashboard','async function readOpsEventsRange');
-  assert.match(dashboard,/coverage\.samples>=10/);
-  assert.match(dashboard,/systematicMissingCategories>=2/);
-  assert.match(dashboard,/dataSourceFeedback>=2/);
-  assert.match(dashboard,/insufficient_evidence/);
+  assert.equal(result.status,200);
+  assert.equal(result.body.periodDays,7);
+  assert.equal(result.body.launchReadiness.status,'blocked');
+  assert.ok(result.body.launchReadiness.blockers.includes('beta_accounts_not_assigned'));
+  assert.ok(result.body.launchReadiness.blockers.includes('strict_beta_access_disabled'));
+  assert.ok(result.body.launchReadiness.blockers.includes('telegram_webhook_unconfirmed'));
+  assert.ok(result.body.launchReadiness.blockers.includes('provider_quota_unconfirmed'));
 });
