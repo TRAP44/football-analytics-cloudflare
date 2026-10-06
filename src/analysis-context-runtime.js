@@ -561,11 +561,16 @@ export function createAnalysisContextRuntime(deps) {
     try {
       const gate=objectValue(analysisQualityGate(input));
       if (!gate) throw new Error('invalid quality gate');
+      const reasons=rows(gate.reasons,20).filter(reason=>objectValue(reason));
+      const hasBlockingReason=reasons.some(
+        reason=>reason?.level==='block' || reason?.level==='hold',
+      );
+      const allowSignal=gate.allowSignal === true && !hasBlockingReason;
       return {
         ...gate,
-        allowSignal:gate.allowSignal === true,
-        state:safeText(gate.state,40) || (gate.allowSignal === true ? 'ready' : 'blocked'),
-        reasons:rows(gate.reasons,20).filter(reason=>objectValue(reason)),
+        allowSignal,
+        state:safeText(gate.state,40) || (allowSignal ? 'ready' : 'blocked'),
+        reasons,
       };
     } catch {
       return {
@@ -676,7 +681,14 @@ export function createAnalysisContextRuntime(deps) {
         : 'Расчётные вероятности не прошли проверку качества.',
     };
 
-    if (confidenceScore<56 || completenessScore<6) {
+    if (!safeProbabilities) {
+      betSignal={
+        code:'skip',
+        label:'Пропустить ставку',
+        strength:0,
+        reason:'Расчётные вероятности не прошли проверку качества.',
+      };
+    } else if (confidenceScore<56 || completenessScore<6) {
       betSignal={
         code:'skip',
         label:'Пропустить ставку',
