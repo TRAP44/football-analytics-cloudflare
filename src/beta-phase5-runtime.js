@@ -23,6 +23,41 @@ export function createBetaPhase5Runtime(deps) {
 
   const BETA_FEEDBACK_CATEGORIES = new Set(['search','matches','ai','live','ux','data_sources','performance']);
   const BETA_FEEDBACK_SEVERITIES = new Set(['BLOCKER','MAJOR','MINOR']);
+
+  function finiteEvidenceNumber(value) {
+    if (value === null || value === undefined || typeof value === 'boolean') return null;
+    if (typeof value === 'string' && !value.trim()) return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function normalizedProviderQuota(value = {}) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const plan = String(source.plan || 'UNKNOWN').trim().toUpperCase();
+    const dailyLimit = finiteEvidenceNumber(source.dailyLimit);
+    const dailyRemaining = finiteEvidenceNumber(source.dailyRemaining);
+    const minuteLimit = finiteEvidenceNumber(source.minuteLimit);
+    const minuteRemaining = finiteEvidenceNumber(source.minuteRemaining);
+    const complete = ['FREE','PRO','ULTRA','MEGA'].includes(plan)
+      && dailyLimit !== null && dailyLimit > 0
+      && dailyRemaining !== null && dailyRemaining >= 0 && dailyRemaining <= dailyLimit
+      && minuteLimit !== null && minuteLimit > 0
+      && minuteRemaining !== null && minuteRemaining >= 0 && minuteRemaining <= minuteLimit;
+    return {
+      complete,
+      plan: complete ? plan : '',
+      dailyLimit: complete ? dailyLimit : null,
+      dailyRemaining: complete ? dailyRemaining : null,
+      minuteLimit: complete ? minuteLimit : null,
+      minuteRemaining: complete ? minuteRemaining : null,
+    };
+  }
+
+  function trustedEventTime(value) {
+    if (typeof value !== 'string' || !value.trim()) return null;
+    const parsed = Date.parse(value.trim());
+    return Number.isFinite(parsed) ? parsed : null;
+  }
   
   function betaPercentileMs(values = [], percentile = 0.5) {
     const sorted = values.map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
@@ -575,7 +610,11 @@ export function createBetaPhase5Runtime(deps) {
     let fullCompleted=0;
     let analysisCompleted=0;
     for (const subjectRows of subjects.values()) {
-      const ordered=[...subjectRows].sort((a,b)=>Date.parse(a?.created_at || 0)-Date.parse(b?.created_at || 0));
+      const ordered=subjectRows
+        .map(row=>({row,at:trustedEventTime(row?.created_at)}))
+        .filter(item=>item.at !== null)
+        .sort((a,b)=>a.at-b.at)
+        .map(item=>item.row);
       let index=0;
       for (const row of ordered) {
         const eventName=betaJourneyEventName(row);
@@ -601,29 +640,34 @@ export function createBetaPhase5Runtime(deps) {
   }
   
   function latestConfirmedProviderQuota(rows = [], nowMs = Date.now()) {
-    const candidates=(rows || [])
-      .filter(row=>row?.source==='provider' && row?.event_type==='quota_probe' && row?.code==='PROVIDER_QUOTA_CONFIRMED')
-      .filter(row=>{
-        const at=Date.parse(row?.created_at || '');
-        return Number.isFinite(at) && nowMs-at<=24*60*60_000;
-      })
-      .sort((a,b)=>Date.parse(b?.created_at || 0)-Date.parse(a?.created_at || 0));
-    const row=candidates[0] || null;
-    if (!row) return {confirmed:false,source:'none',confirmedAt:null};
-    const meta=row.metadata || {};
-    const complete=String(meta.plan || 'UNKNOWN')!=='UNKNOWN'
-      && [meta.dailyLimit,meta.dailyRemaining,meta.minuteLimit,meta.minuteRemaining]
-        .every(value=>Number.isFinite(Number(value)));
-    return {
-      confirmed:complete,
-      source:'provider_monitor',
-      confirmedAt:complete ? row.created_at : null,
-      plan:complete ? String(meta.plan || '') : '',
-      dailyLimit:complete ? Number(meta.dailyLimit) : null,
-      dailyRemaining:complete ? Number(meta.dailyRemaining) : null,
-      minuteLimit:complete ? Number(meta.minuteLimit) : null,
-      minuteRemaining:complete ? Number(meta.minuteRemaining) : null,
-    };
+    const now = finiteEvidenceNumber(nowMs);
+    if (now === null || now < 0) return {confirmed:false,source:'none',confirmedAt:null};
+    const candidates=(Array.isArray(rows) ? rows : [])
+      .map(row=>({row,at:trustedEventTime(row?.created_at)}))
+      .filter(item=>
+        item.row?.source==='provider'
+        && item.row?.event_type==='quota_probe'
+        && item.row?.code==='PROVIDER_QUOTA_CONFIRMED'
+        && item.at !== null
+        && item.at <= now + 60_000
+        && now-item.at <= 24*60*60_000
+      )
+      .sort((a,b)=>b.at-a.at);
+    for (const item of candidates) {
+      const normalized=normalizedProviderQuota(item.row?.metadata);
+      if (!normalized.complete) continue;
+      return {
+        confirmed:true,
+        source:'provider_monitor',
+        confirmedAt:item.row.created_at,
+        plan:normalized.plan,
+        dailyLimit:normalized.dailyLimit,
+        dailyRemaining:normalized.dailyRemaining,
+        minuteLimit:normalized.minuteLimit,
+        minuteRemaining:normalized.minuteRemaining,
+      };
+    }
+    return {confirmed:false,source:'none',confirmedAt:null};
   }
   
   
@@ -785,7 +829,8 @@ export function createBetaPhase5Runtime(deps) {
   
   async function apiPhase5Dashboard(request,cfg) {
     const url=new URL(request.url);
-    const days=Math.max(1,Math.min(30,Number(url.searchParams.get('days') || 7)));
+    const requestedDays=finiteEvidenceNumber(url.searchParams.get('days'));
+    const days=requestedDays === null ? 7 : Math.max(1,Math.min(30,Math.floor(requestedDays)));
     if (!hasSupabase(cfg)) return json({available:false,reason:'Для Phase 5 validation нужен Supabase.',days});
     const now=Date.now();
     const since=new Date(now-days*86400_000).toISOString();
@@ -820,15 +865,18 @@ export function createBetaPhase5Runtime(deps) {
     const evidenceGate=phase5EvidenceGate({journey,timings,coverage,opsSampleLimited:allOpsRows.length>=1000});
     const provider=phase5ProviderSummary(phase5Rows,{sessions:journey.sessions,users:journey.verifiedNormalUsers,fullJourneys:journey.fullCompleted});
     const persistedQuota=latestConfirmedProviderQuota(allOpsRows,now);
-    const providerNow=providerSnapshot();
-    const providerNowFresh=Boolean(providerNow.updatedAt && now-Date.parse(providerNow.updatedAt)<=10*60_000);
-    const providerNowComplete=providerNowFresh
-      && String(providerNow.plan || 'UNKNOWN')!=='UNKNOWN'
-      && [providerNow.dailyLimit,providerNow.dailyRemaining,providerNow.minuteLimit,providerNow.minuteRemaining].every(value=>Number.isFinite(Number(value)));
+    let providerNow={};
+    try { providerNow=providerSnapshot() || {}; } catch { providerNow={}; }
+    const providerNowAt=trustedEventTime(providerNow.updatedAt);
+    const providerNowFresh=providerNowAt !== null
+      && providerNowAt <= now + 60_000
+      && now-providerNowAt <= 10*60_000;
+    const normalizedProviderNow=normalizedProviderQuota(providerNow);
+    const providerNowComplete=providerNowFresh && normalizedProviderNow.complete;
     const quotaState=providerNowComplete ? {
-      confirmed:true,source:'provider_runtime',confirmedAt:providerNow.updatedAt,plan:String(providerNow.plan || ''),
-      dailyLimit:Number(providerNow.dailyLimit),dailyRemaining:Number(providerNow.dailyRemaining),
-      minuteLimit:Number(providerNow.minuteLimit),minuteRemaining:Number(providerNow.minuteRemaining),
+      confirmed:true,source:'provider_runtime',confirmedAt:providerNow.updatedAt,plan:normalizedProviderNow.plan,
+      dailyLimit:normalizedProviderNow.dailyLimit,dailyRemaining:normalizedProviderNow.dailyRemaining,
+      minuteLimit:normalizedProviderNow.minuteLimit,minuteRemaining:normalizedProviderNow.minuteRemaining,
     } : persistedQuota;
     const errorRows=betaClientEventRows(clientRows,'miniapp_error');
     const errorKinds={};
@@ -1023,21 +1071,23 @@ export function createBetaPhase5Runtime(deps) {
     const betaAdminOverlap=betaIds.filter(id=>adminIds.has(id)).length;
     const assignedBetaUsers=betaIds.filter(id=>!adminIds.has(id)).length;
     const persistedQuota=latestConfirmedProviderQuota(allOpsRows,now);
-    const providerNow=providerSnapshot();
-    const providerNowFresh=Boolean(providerNow.updatedAt && now-Date.parse(providerNow.updatedAt)<=10*60_000);
-    const providerNowComplete=providerNowFresh
-      && String(providerNow.plan || 'UNKNOWN')!=='UNKNOWN'
-      && [providerNow.dailyLimit,providerNow.dailyRemaining,providerNow.minuteLimit,providerNow.minuteRemaining]
-        .every(value=>Number.isFinite(Number(value)));
+    let providerNow={};
+    try { providerNow=providerSnapshot() || {}; } catch { providerNow={}; }
+    const providerNowAt=trustedEventTime(providerNow.updatedAt);
+    const providerNowFresh=providerNowAt !== null
+      && providerNowAt <= now + 60_000
+      && now-providerNowAt <= 10*60_000;
+    const normalizedProviderNow=normalizedProviderQuota(providerNow);
+    const providerNowComplete=providerNowFresh && normalizedProviderNow.complete;
     const providerQuota=providerNowComplete ? {
       confirmed:true,
       source:'provider_runtime',
       confirmedAt:providerNow.updatedAt,
-      plan:String(providerNow.plan || ''),
-      dailyLimit:Number(providerNow.dailyLimit),
-      dailyRemaining:Number(providerNow.dailyRemaining),
-      minuteLimit:Number(providerNow.minuteLimit),
-      minuteRemaining:Number(providerNow.minuteRemaining),
+      plan:normalizedProviderNow.plan,
+      dailyLimit:normalizedProviderNow.dailyLimit,
+      dailyRemaining:normalizedProviderNow.dailyRemaining,
+      minuteLimit:normalizedProviderNow.minuteLimit,
+      minuteRemaining:normalizedProviderNow.minuteRemaining,
     } : persistedQuota;
     const launchBlockers=[];
     if (assignedBetaUsers<2) launchBlockers.push('beta_accounts_not_assigned');
