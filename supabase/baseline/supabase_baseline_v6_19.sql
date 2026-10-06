@@ -3,7 +3,21 @@
 -- USE ONLY FOR A NEW SUPABASE PROJECT.
 -- Existing production databases must keep their applied migration history and
 -- apply only missing numbered migrations. Do not run this baseline on production.
--- Fresh-install baseline includes persistent Telegram dedupe, atomic quota, distributed provider budget, digest claims, full schema fingerprint and v6.19 source-provenance columns.
+--
+-- HISTORICAL / FROZEN BOOTSTRAP CONTRACT:
+-- Keep schema-producing SQL in this file semantically stable. Corrections after
+-- v6.19.1 belong in numbered forward migrations. Do not back-port later schema
+-- changes here unless the fresh-install schema fingerprint is regenerated and
+-- release-contract.json is updated and verified at the same time.
+--
+-- Repeated CREATE OR REPLACE FUNCTION blocks are intentional: this baseline
+-- replays the proven migration sequence and preserves fresh-install parity.
+-- They must not be deduplicated merely because a later section replaces the
+-- same function definition.
+--
+-- Fresh-install baseline includes persistent Telegram dedupe, atomic quota,
+-- distributed provider budget, digest claims, full schema fingerprint and
+-- v6.19 source-provenance columns.
 
 -- RC101 safety guard: refuse to bootstrap over an established application schema.
 -- This is intentionally read-only and runs before any CREATE/ALTER statements.
@@ -685,6 +699,9 @@ notify pgrst, 'reload schema';
 revoke create on schema public from public, anon, authenticated;
 grant usage on schema public to anon, authenticated, service_role;
 
+-- This pass intentionally hardens every public table that already exists at
+-- this point in the replay. Tables introduced by later consolidated migration
+-- sections enable RLS explicitly in their own section.
 do $$
 declare
   relation record;
