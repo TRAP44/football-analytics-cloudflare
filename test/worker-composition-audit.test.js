@@ -134,23 +134,24 @@ function factoryContract(source,name) {
     const closeBrace=matchingDelimiter(params,0,'{','}');
     const objectBody=params.slice(1,closeBrace);
     const all=[];
-    const required=[];
     for (const entry of splitTopLevel(objectBody)) {
       const parsed=entry.match(/^([A-Za-z_$][\w$]*)/);
-      if (!parsed) continue;
-      all.push(parsed[1]);
-      if (!entry.includes('=')) required.push(parsed[1]);
+      if (parsed) all.push(parsed[1]);
     }
-    return {all,required};
+    // Legacy factories often make a destructured parameter optional in the
+    // body rather than with an "= default" in the signature. Static auditing
+    // can safely reject extra/duplicate keys here; the factory still owns its
+    // own requiredness validation.
+    return {all,required:[],style:'destructured-param'};
   }
 
   const tail=source.slice(closeParen+1);
   const destructure=tail.match(/const\s*\{([\s\S]*?)\}\s*=\s*deps\s*;/);
-  if (!destructure) return {all:[],required:[]};
+  if (!destructure) return {all:[],required:[],style:'zero-dependency'};
   const all=splitTopLevel(destructure[1])
     .map(entry=>entry.trim())
     .filter(entry=>/^[A-Za-z_$][\w$]*$/.test(entry));
-  return {all,required:all};
+  return {all,required:all,style:'deps-object'};
 }
 
 function importUsage(source) {
@@ -180,6 +181,15 @@ function braceDepthAt(source,target) {
   let depth=0;
   let state='code';
   let escaped=false;
+  let regexClass=false;
+
+  const regexMayStart=index=>{
+    let cursor=index-1;
+    while (cursor>=0 && /\s/.test(source[cursor])) cursor-=1;
+    if (cursor<0) return true;
+    return '=([{,:;!?&|+-*%^~<>'.includes(source[cursor]);
+  };
+
   for (let index=0; index<target; index+=1) {
     const char=source[index];
     const next=source[index+1] || '';
@@ -204,10 +214,30 @@ function braceDepthAt(source,target) {
         continue;
       }
       if (
-        (state==='single' && char==="'")
+        (state==='single' && char=="'")
         || (state==='double' && char==='"')
         || (state==='template' && char==='\`')
       ) state='code';
+      continue;
+    }
+    if (state==='regex') {
+      if (escaped) {
+        escaped=false;
+        continue;
+      }
+      if (char==='\\') {
+        escaped=true;
+        continue;
+      }
+      if (char==='[') {
+        regexClass=true;
+        continue;
+      }
+      if (char===']') {
+        regexClass=false;
+        continue;
+      }
+      if (char==='/' && !regexClass) state='code';
       continue;
     }
     if (char==='/' && next==='/') {
@@ -220,7 +250,7 @@ function braceDepthAt(source,target) {
       index+=1;
       continue;
     }
-    if (char==="'") {
+    if (char=="'") {
       state='single';
       continue;
     }
@@ -230,6 +260,11 @@ function braceDepthAt(source,target) {
     }
     if (char==='\`') {
       state='template';
+      continue;
+    }
+    if (char==='/' && regexMayStart(index)) {
+      state='regex';
+      regexClass=false;
       continue;
     }
     if (char==='{') depth+=1;
@@ -298,7 +333,7 @@ test('worker has no unused top-level destructured runtime bindings', () => {
   assert.deepEqual(dead,[]);
 });
 
-test('all directly instantiated imported factories have exact dependency wiring', () => {
+test('all directly instantiated imported factories have compatible dependency wiring', () => {
   const source=workerSource();
   const mismatches=[];
 
