@@ -98,7 +98,7 @@ test('RC141 fails closed when freshness/provenance is not trusted', () => {
 });
 
 
-const worker = fs.readFileSync('src/worker.js', 'utf8');
+const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/match-center-runtime.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 
 test('RC141 routes sanitized events into live and post-match analytics', () => {
