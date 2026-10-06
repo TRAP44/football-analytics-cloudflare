@@ -55,13 +55,30 @@ export function createSettlementRuntime(deps) {
     todayUtc,
   } = deps;
 
+  function positiveSafeInteger(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number > 0 ? number : null;
+  }
+
+  function nonNegativeSafeInteger(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number >= 0 ? number : null;
+  }
+
   async function captureModelPrediction(payload, cfg) {
     const match = payload?.match;
     const probabilities = payload?.probabilities;
-    const fixtureId = Number(match?.fixtureId || 0);
+    const fixtureId = positiveSafeInteger(match?.fixtureId);
     const kickoffMs = Date.parse(match?.date || '');
     const status = String(match?.status || '').toUpperCase();
-    if (!fixtureId || !probabilities || !Number.isFinite(kickoffMs)) return false;
+    const probabilityCheck = predictionProbabilityIntegrity({
+      home_prob: probabilities?.home,
+      draw_prob: probabilities?.draw,
+      away_prob: probabilities?.away,
+    });
+    if (fixtureId === null || !probabilityCheck.valid || !Number.isFinite(kickoffMs)) return false;
     if (!['NS', 'TBD'].includes(status)) return false;
     // Backtest only genuine pre-match snapshots, never a prediction captured after kickoff.
     if (kickoffMs <= Date.now() + 120_000) return false;
@@ -73,10 +90,10 @@ export function createSettlementRuntime(deps) {
       analysis_version: String(payload.analysisVersion || '3.7.0-model-calibration'),
       captured_at: new Date().toISOString(),
       kickoff_at: new Date(kickoffMs).toISOString(),
-      league_id: Number(match.leagueId || 0) || null,
+      league_id: positiveSafeInteger(match.leagueId),
       league_name: String(match.league || ''),
-      home_id: Number(match.home?.id || 0) || null,
-      away_id: Number(match.away?.id || 0) || null,
+      home_id: positiveSafeInteger(match.home?.id),
+      away_id: positiveSafeInteger(match.away?.id),
       home_name: String(match.home?.name || ''),
       away_name: String(match.away?.name || ''),
       home_prob: Number(probabilities.home),
@@ -113,17 +130,11 @@ export function createSettlementRuntime(deps) {
         await supaInsertIgnore(cfg, 'model_predictions', row, 'fixture_id');
         return true;
       } catch (error) {
-        // Keep v3.6 installations functional until the optional v3.7 ALTER migration is applied.
-        try {
-          const legacyRow = { ...row };
-          for (const key of ['signal_probabilities','raw_home_prob','raw_draw_prob','raw_away_prob','calibration_mode','calibration_profile_fingerprint','calibration_temperature','calibration_sample','calibration_weights','data_provenance','model_inputs_version']) delete legacyRow[key];
-          await supaInsertIgnore(cfg, 'model_predictions', legacyRow, 'fixture_id');
-          console.warn('v3.7 calibration columns are not available yet; prediction stored in legacy format');
-          return true;
-        } catch (legacyError) {
-          console.warn('model prediction capture skipped', legacyError?.message || error?.message || error);
-          return false;
-        }
+        // Current releases require the current schema. Do not retry a failed write
+        // with a legacy shape: auth/network/provider failures must not masquerade
+        // as schema compatibility and trigger a second database write.
+        console.warn('model prediction capture skipped', error?.message || error);
+        return false;
       }
     }
     if (!memory.modelPredictions.has(fixtureId)) memory.modelPredictions.set(fixtureId, row);
@@ -131,9 +142,12 @@ export function createSettlementRuntime(deps) {
   }
 
   async function settlePredictionsFromFixtures(fixtures, cfg) {
-    const finished = (fixtures || []).filter(f => isFinishedStatus(fixtureStatusShort(f)) && fixtureIdentity(f));
+    const finished = (fixtures || []).filter(f => {
+      const fixtureId = positiveSafeInteger(fixtureIdentity(f));
+      return fixtureId !== null && isFinishedStatus(fixtureStatusShort(f));
+    });
     if (!finished.length) return { checked: 0, settled: 0 };
-    const ids = [...new Set(finished.map(fixtureIdentity).filter(Boolean))];
+    const ids = [...new Set(finished.map(f => positiveSafeInteger(fixtureIdentity(f))).filter(id => id !== null))];
     let rows = [];
     if (hasSupabase(cfg)) {
       try {
@@ -150,10 +164,16 @@ export function createSettlementRuntime(deps) {
     }
     if (!rows.length) return { checked: 0, settled: 0 };
   
-    const fixtureMap = new Map(finished.map(f => [fixtureIdentity(f), f]));
+    const fixtureMap = new Map(
+      finished
+        .map(f => [positiveSafeInteger(fixtureIdentity(f)), f])
+        .filter(([id]) => id !== null)
+    );
     let settled = 0;
     for (const row of rows) {
-      const fixture = fixtureMap.get(Number(row.fixture_id));
+      const rowFixtureId = positiveSafeInteger(row?.fixture_id);
+      if (rowFixtureId === null) continue;
+      const fixture = fixtureMap.get(rowFixtureId);
       const score = regulationScore(fixture);
       if (!score) continue;
       const actualOutcome = actualOutcomeFromGoals(score.home, score.away);
@@ -179,13 +199,13 @@ export function createSettlementRuntime(deps) {
       };
       if (hasSupabase(cfg)) {
         try {
-          await supaPatch(cfg, 'model_predictions', { fixture_id: `eq.${Number(row.fixture_id)}`, status: 'eq.pending' }, patch);
+          await supaPatch(cfg, 'model_predictions', { fixture_id: `eq.${rowFixtureId}`, status: 'eq.pending' }, patch);
           settled++;
         } catch (error) {
           console.warn('model prediction settle patch skipped', error?.message || error);
         }
       } else {
-        memory.modelPredictions.set(Number(row.fixture_id), { ...row, ...patch });
+        memory.modelPredictions.set(rowFixtureId, { ...row, ...patch });
         settled++;
       }
     }
@@ -615,11 +635,11 @@ export function createSettlementRuntime(deps) {
     if (!isFinishedStatus(status)) return { state: 'wait', reason: 'provider_not_final', status, score: null };
     const score = regulationScore(fixture);
     if (!score) return { state: 'wait', reason: 'score_unavailable', status, score: null };
-    const storedHome = Number(row?.actual_home_goals);
-    const storedAway = Number(row?.actual_away_goals);
+    const storedHome = nonNegativeSafeInteger(row?.actual_home_goals);
+    const storedAway = nonNegativeSafeInteger(row?.actual_away_goals);
     const storedOutcome = String(row?.actual_outcome || '');
     const providerOutcome = actualOutcomeFromGoals(score.home, score.away);
-    if (!Number.isFinite(storedHome) || !Number.isFinite(storedAway) || !providerOutcome) {
+    if (storedHome === null || storedAway === null || !['home', 'draw', 'away'].includes(storedOutcome) || !providerOutcome) {
       return { state: 'drift', reason: 'stored_settlement_incomplete', status, score, providerOutcome };
     }
     const same = storedHome === score.home && storedAway === score.away && storedOutcome === providerOutcome;
@@ -732,8 +752,8 @@ export function createSettlementRuntime(deps) {
   function settlementDriftBeforeSnapshot(row = {}) {
     return {
       status: String(row.status || ''),
-      homeGoals: Number.isFinite(Number(row.actual_home_goals)) ? Number(row.actual_home_goals) : null,
-      awayGoals: Number.isFinite(Number(row.actual_away_goals)) ? Number(row.actual_away_goals) : null,
+      homeGoals: nonNegativeSafeInteger(row.actual_home_goals),
+      awayGoals: nonNegativeSafeInteger(row.actual_away_goals),
       outcome: String(row.actual_outcome || ''),
       correct: typeof row.correct === 'boolean' ? row.correct : null,
       brierScore: Number.isFinite(Number(row.brier_score)) ? Number(row.brier_score) : null,
@@ -747,8 +767,8 @@ export function createSettlementRuntime(deps) {
   function settlementDriftProviderSnapshot(event = {}) {
     return {
       status: String(event.provider_status || ''),
-      homeGoals: Number.isFinite(Number(event.provider_home_goals)) ? Number(event.provider_home_goals) : null,
-      awayGoals: Number.isFinite(Number(event.provider_away_goals)) ? Number(event.provider_away_goals) : null,
+      homeGoals: nonNegativeSafeInteger(event.provider_home_goals),
+      awayGoals: nonNegativeSafeInteger(event.provider_away_goals),
       outcome: String(event.provider_outcome || ''),
       observedAt: event.observed_at || null,
       reason: String(event.reason || ''),
@@ -823,7 +843,7 @@ export function createSettlementRuntime(deps) {
     }, { limit: Math.max(1, Math.min(20, Number(limit || 20))), order: 'kickoff_at.desc' });
     if (!rows.length) return { schemaReady: true, schemaStatus: 'ok', items: [], unresolved: 0 };
   
-    const ids = [...new Set(rows.map(row => Number(row.fixture_id)).filter(x => Number.isInteger(x) && x > 0))];
+    const ids = [...new Set(rows.map(row => positiveSafeInteger(row?.fixture_id)).filter(id => id !== null))];
     const events = await supaSelectMany(cfg, 'settlement_verification_events', {
       state: 'eq.drift',
       fixture_id: `in.(${ids.join(',')})`,
@@ -833,7 +853,7 @@ export function createSettlementRuntime(deps) {
       const id = Number(event.fixture_id);
       if (!eventByFixture.has(id)) eventByFixture.set(id, event);
     }
-    const eventIds = [...new Set([...eventByFixture.values()].map(event => Number(event.id)).filter(Boolean))];
+    const eventIds = [...new Set([...eventByFixture.values()].map(event => positiveSafeInteger(event?.id)).filter(id => id !== null))];
     let resolutions = [];
     if (eventIds.length) {
       resolutions = await supaSelectMany(cfg, 'settlement_drift_resolutions', {
@@ -846,19 +866,21 @@ export function createSettlementRuntime(deps) {
       const event = eventByFixture.get(Number(row.fixture_id)) || null;
       const locked = event ? resolutionByEvent.get(Number(event.id)) || null : null;
       const providerStatus = String(event?.provider_status || '').toUpperCase();
-      const providerHome = Number(event?.provider_home_goals);
-      const providerAway = Number(event?.provider_away_goals);
-      const providerOutcome = actualOutcomeFromGoals(providerHome, providerAway);
+      const providerHome = nonNegativeSafeInteger(event?.provider_home_goals);
+      const providerAway = nonNegativeSafeInteger(event?.provider_away_goals);
+      const providerOutcome = providerHome === null || providerAway === null
+        ? ''
+        : actualOutcomeFromGoals(providerHome, providerAway);
       const providerAcceptable = Boolean(event && isFinishedStatus(providerStatus) &&
-        Number.isFinite(providerHome) && Number.isFinite(providerAway) &&
+        providerHome !== null && providerAway !== null &&
         providerOutcome && (!event.provider_outcome || String(event.provider_outcome) === providerOutcome));
       return {
-        fixtureId: Number(row.fixture_id),
+        fixtureId: positiveSafeInteger(row?.fixture_id),
         league: String(row.league_name || ''),
         home: String(row.home_name || ''),
         away: String(row.away_name || ''),
         kickoffAt: row.kickoff_at || null,
-        eventId: Number(event?.id || 0) || null,
+        eventId: positiveSafeInteger(event?.id),
         observedAt: event?.observed_at || null,
         driftReason: String(event?.reason || ''),
         stored: settlementDriftBeforeSnapshot(row),
@@ -885,11 +907,11 @@ export function createSettlementRuntime(deps) {
       error.code = 'SETTLEMENT_ADJUDICATION_SCHEMA';
       throw error;
     }
-    const fixtureId = Number(input.fixtureId || 0);
-    const eventId = Number(input.eventId || 0);
-    const action = String(input.resolutionAction || '');
+    const fixtureId = positiveSafeInteger(input.fixtureId);
+    const eventId = positiveSafeInteger(input.eventId);
+    const action = String(input.resolutionAction || '').trim().toLowerCase();
     const reason = redactOpsString(input.reason || '', 220).trim();
-    if (!Number.isInteger(fixtureId) || fixtureId <= 0 || !Number.isInteger(eventId) || eventId <= 0) {
+    if (fixtureId === null || eventId === null) {
       const error = new Error('Некорректная запись расхождения.');
       error.code = 'SETTLEMENT_DRIFT_CASE';
       throw error;
@@ -928,6 +950,21 @@ export function createSettlementRuntime(deps) {
       throw error;
     }
   
+    if (action === 'accept_provider') {
+      const providerStatus = String(event?.provider_status || '').toUpperCase();
+      const providerHome = nonNegativeSafeInteger(event?.provider_home_goals);
+      const providerAway = nonNegativeSafeInteger(event?.provider_away_goals);
+      const providerOutcome = providerHome === null || providerAway === null
+        ? ''
+        : actualOutcomeFromGoals(providerHome, providerAway);
+      if (!isFinishedStatus(providerStatus) || providerHome === null || providerAway === null || !providerOutcome ||
+          (event?.provider_outcome && String(event.provider_outcome) !== providerOutcome)) {
+        const error = new Error('Исправление источника данных нельзя безопасно принять для этого статуса или счёта.');
+        error.code = 'SETTLEMENT_DRIFT_UNSAFE';
+        throw error;
+      }
+    }
+
     const resolution = buildSettlementDriftResolution(row, event, action);
     if (!resolution.valid) {
       const error = new Error(action === 'accept_provider'
@@ -1045,7 +1082,7 @@ export function createSettlementRuntime(deps) {
       if (selected.length >= SETTLEMENT_FINALITY_MAX_FIXTURES) break;
     }
   
-    const fixtureIds = new Set(selected.map(row => Number(row.fixture_id)).filter(Boolean));
+    const fixtureIds = new Set(selected.map(row => positiveSafeInteger(row?.fixture_id)).filter(id => id !== null));
     const fixtureMap = new Map();
     for (const date of dates) {
       const fixtures = await loadProviderFixturesForDate(date, cfg);
@@ -1247,7 +1284,7 @@ export function createSettlementRuntime(deps) {
   }
 
   function settlementBatchKey(fixtureIds = []) {
-    return [...new Set((fixtureIds || []).map(Number).filter(x => Number.isInteger(x) && x > 0))]
+    return [...new Set((fixtureIds || []).map(positiveSafeInteger).filter(id => id !== null))]
       .sort((a, b) => a - b)
       .join(',');
   }
@@ -1499,7 +1536,7 @@ export function createSettlementRuntime(deps) {
       inspected_count: Number(action.inspectedCount || 0),
       settled_count: Number(action.settledCount || 0),
       skipped_count: Number(action.skippedCount || 0),
-      fixture_ids: (action.fixtureIds || []).map(Number).filter(Number.isFinite).slice(0, 20),
+      fixture_ids: (action.fixtureIds || []).map(positiveSafeInteger).filter(id => id !== null).slice(0, 20),
       detail: action.detail || {},
     };
     if (hasSupabase(cfg)) await supaInsertIgnore(cfg, 'prediction_integrity_actions', row, 'action_id');
