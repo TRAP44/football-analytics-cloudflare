@@ -138,17 +138,24 @@ test('router blocks exact replay of a successful sensitive admin mutation', asyn
     claim:async identity=>{
       const existing=distributed.get(identity.operationKey);
       if (existing) return {claimed:false,state:existing.state,reason:existing.state==='completed'?'duplicate_completed':'duplicate_inflight'};
-      const leaseToken='router-lease-'+(++lease);
+      const leaseToken='router-lease-'+String(++lease).padStart(8,'0');
       distributed.set(identity.operationKey,{state:'inflight',leaseToken});
       return {claimed:true,state:'inflight',reason:'claimed',leaseToken};
     },
     complete:async (identity,claim)=>{
       const row=distributed.get(identity.operationKey);
-      if (!row || row.leaseToken!==claim.leaseToken) return {ok:false};
+      if (!row || row.leaseToken!==claim.leaseToken) {
+        return {ok:false,updated:false,state:'completed'};
+      }
       distributed.set(identity.operationKey,{...row,state:'completed'});
-      return {ok:true};
+      return {ok:true,updated:true,state:'completed'};
     },
-    fail:async()=>({ok:true}),
+    fail:async(_identity,_claim,retryable)=>({
+      ok:true,
+      updated:true,
+      state:'failed',
+      retryable,
+    }),
   };
   const deps={
     ...baseDeps(),
