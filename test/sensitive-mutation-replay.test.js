@@ -224,7 +224,7 @@ test('replay identity rejects coercible actors, malformed bodies and oversized i
   const longKey='x'.repeat(129);
   const withLongKey=request('/api/runtime-controls',{idempotencyKey:longKey});
   const identity=await sensitiveMutationReplayIdentity(withLongKey,new URL(withLongKey.url),{id:7});
-  assert.equal(identity.idempotencyKeyHash,'');
+  assert.equal(identity,null);
 });
 
 test('different actors, bodies and explicit keys receive independent distributed identities', async () => {
