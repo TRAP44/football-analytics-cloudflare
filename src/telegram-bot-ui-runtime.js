@@ -265,14 +265,12 @@ export function createTelegramBotUiRuntime(deps = {}) {
   }
 
   function favoriteMatchTeamRow(match={},favorites=[]) {
-    const fixtureId=positiveSafeInteger(objectValue(match)?.fixtureId);
-    if (fixtureId===null) return [];
+    const card=normalizeBotFixtureCard(match);
+    if (!card.fixtureId) return [];
 
     const fav=favoriteTeamIdSet(favorites);
-    const teams=[
-      safeTeam(objectValue(match)?.home,'Хозяева'),
-      safeTeam(objectValue(match)?.away,'Гости'),
-    ].filter(team=>team.id>0 && team.name);
+    const teams=[card.home,card.away]
+      .filter(team=>team.id>0 && team.name);
 
     const seen=new Set();
     return teams
@@ -283,7 +281,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
       })
       .map(team=>({
         text:`${fav.has(team.id)?'★':'☆'} ${safeText(team.name,22,'Команда')}`,
-        callback_data:`favorite:toggle:${team.id}:${fixtureId}`,
+        callback_data:`favorite:toggle:${team.id}:${card.fixtureId}`,
       }));
   }
 
@@ -315,12 +313,13 @@ export function createTelegramBotUiRuntime(deps = {}) {
     favorites=[],
   ) {
     const source=objectValue(match) || {};
-    const fixtureId=positiveSafeInteger(source.fixtureId);
-    if (fixtureId===null) return footballBotKeyboard(request);
+    const card=normalizeBotFixtureCard(source);
+    const fixtureId=card.fixtureId;
+    if (!fixtureId) return footballBotKeyboard(request);
 
-    const favoriteRow=favoriteMatchTeamRow(source,favorites);
-    const finished=source.finished===true;
-    const live=!finished && source.live===true;
+    const favoriteRow=favoriteMatchTeamRow(card,favorites);
+    const finished=card.finished;
+    const live=card.live;
     const search=trustedSearchUrl(request,searchUrl);
     const center=centerUrl(request,fixtureId);
     const full=fullAnalysisUrl(request,fixtureId);
@@ -402,8 +401,9 @@ export function createTelegramBotUiRuntime(deps = {}) {
     searchUrl='',
   ) {
     const source=objectValue(match) || {};
-    const fixtureId=positiveSafeInteger(source.fixtureId);
-    if (fixtureId===null) return footballBotKeyboard(request);
+    const card=normalizeBotFixtureCard(source);
+    const fixtureId=card.fixtureId;
+    if (!fixtureId) return footballBotKeyboard(request);
 
     const rows=[];
     const full=fullAnalysisUrl(request,fixtureId);
@@ -414,7 +414,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
       }]);
     }
 
-    const favoriteRow=favoriteMatchTeamRow(source,favorites);
+    const favoriteRow=favoriteMatchTeamRow(card,favorites);
     if (favoriteRow.length) rows.push(favoriteRow);
 
     rows.push(
@@ -444,11 +444,12 @@ export function createTelegramBotUiRuntime(deps = {}) {
 
   function footballSearchHandoffKeyboard(request,match={},searchUrl='') {
     const source=objectValue(match) || {};
-    const fixtureId=positiveSafeInteger(source.fixtureId);
-    if (fixtureId===null) return footballBotKeyboard(request);
+    const card=normalizeBotFixtureCard(source);
+    const fixtureId=card.fixtureId;
+    if (!fixtureId) return footballBotKeyboard(request);
 
-    if (source.live===true || source.finished===true) {
-      return footballMatchActionKeyboard(request,source,searchUrl,[]);
+    if (card.live || card.finished) {
+      return footballMatchActionKeyboard(request,card,searchUrl,[]);
     }
 
     const selection=objectValue(source.selection);
@@ -549,11 +550,22 @@ export function createTelegramBotUiRuntime(deps = {}) {
     };
   }
 
+  function validBotFixtureCard(card,expectedFixtureId=null) {
+    const value=objectValue(card);
+    const fixtureId=positiveSafeInteger(value?.fixtureId);
+    if (fixtureId===null) return false;
+    if (expectedFixtureId!==null && fixtureId!==expectedFixtureId) return false;
+    const homeId=positiveSafeInteger(value?.home?.id);
+    const awayId=positiveSafeInteger(value?.away?.id);
+    if (homeId!==null && awayId!==null && homeId===awayId) return false;
+    return true;
+  }
+
   async function rememberBotFixtureCards(matches=[],cfg) {
     const tasks=[];
     for (const match of rowsOrEmpty(matches,100)) {
       const card=normalizeBotFixtureCard(match);
-      if (!card.fixtureId) continue;
+      if (!validBotFixtureCard(card)) continue;
 
       const savedAt=new Date().toISOString();
       tasks.push(optionalAsync(
@@ -621,7 +633,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
     );
     if (objectValue(saved?.match)) {
       const card=normalizeBotFixtureCard(saved.match);
-      if (card.fixtureId===id) return card;
+      if (validBotFixtureCard(card,id)) return card;
     }
 
     const analyzed=objectValue(
@@ -629,7 +641,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
     );
     if (objectValue(analyzed?.match)) {
       const card=normalizeBotFixtureCard(analyzed.match);
-      if (card.fixtureId===id) {
+      if (validBotFixtureCard(card,id)) {
         await rememberBotFixtureCards([card],cfg);
         return card;
       }
@@ -645,7 +657,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
     if (!fixture) return null;
 
     const card=normalizeBotFixtureCard(fixture);
-    if (card.fixtureId!==id) return null;
+    if (!validBotFixtureCard(card,id)) return null;
     await rememberBotFixtureCards([card],cfg);
     return card;
   }
