@@ -31,6 +31,7 @@ function runtime(overrides = {}) {
     }),
     finishReminderDelivery:overrides.finishReminderDelivery || (async(row,kind,claimAt,cfg)=>{
       calls.finishes.push({row,kind,claimAt,cfg});
+      return {finalized:true,reconciled:false};
     }),
     releaseReminderClaim:overrides.releaseReminderClaim || (async(row,kind,claimAt,errorMessage,cfg,options)=>{
       calls.releases.push({row,kind,claimAt,errorMessage,cfg,options});
@@ -42,6 +43,92 @@ function runtime(overrides = {}) {
   });
   return {service,calls,events};
 }
+
+test('delivery rejects malformed identity, kind and text before persistence or Telegram side effects',async()=>{
+  const rt=runtime();
+  assert.deepEqual(
+    await rt.service.deliverClaimedReminder({telegram_id:true,fixture_id:77},'prematch','text',{botToken:'token'}),
+    {state:'invalid',reason:'invalid_reminder_identity'},
+  );
+  assert.deepEqual(
+    await rt.service.deliverClaimedReminder({telegram_id:15,fixture_id:77},'other','text',{botToken:'token'}),
+    {state:'invalid',reason:'invalid_reminder_kind'},
+  );
+  assert.deepEqual(
+    await rt.service.deliverClaimedReminder({telegram_id:15,fixture_id:77},'prematch',{text:'x'},{botToken:'token'}),
+    {state:'invalid',reason:'invalid_reminder_text'},
+  );
+  assert.equal(rt.calls.claims.length,0);
+  assert.equal(rt.calls.messages.length,0);
+});
+
+test('delivery requires strict claim ownership and a valid claim timestamp',async()=>{
+  const truthy=runtime({
+    claimReminderDelivery:async()=>({claimed:'true',claimAt:'2026-09-27T12:00:00.000Z'}),
+  });
+  assert.deepEqual(
+    await truthy.service.deliverClaimedReminder({telegram_id:15,fixture_id:77},'prematch','text',{botToken:'token'}),
+    {state:'already_claimed'},
+  );
+  assert.equal(truthy.calls.messages.length,0);
+
+  const malformed=runtime({
+    claimReminderDelivery:async()=>({claimed:true,claimAt:true}),
+  });
+  await assert.rejects(
+    ()=>malformed.service.deliverClaimedReminder({telegram_id:15,fixture_id:77},'prematch','text',{botToken:'token'}),
+    error=>error?.code==='REMINDER_DELIVERY_CLAIM_INVALID',
+  );
+  assert.equal(malformed.calls.messages.length,0);
+});
+
+test('truthy Telegram success cannot bypass strict delivery confirmation',async()=>{
+  const rt=runtime({
+    sendTelegramMessage:async()=>({ok:'true',status:'200',outcome:'sent'}),
+  });
+  const result=await rt.service.deliverClaimedReminder(
+    {telegram_id:15,fixture_id:77},
+    'prematch',
+    'text',
+    {botToken:'token'},
+  );
+  assert.equal(result.state,'unknown');
+  assert.equal(rt.calls.finishes.length,0);
+  assert.equal(rt.calls.unknownHolds.length,1);
+  assert.equal(rt.calls.releases.length,0);
+});
+
+test('successful Telegram transport without confirmed finish becomes sent_unconfirmed',async()=>{
+  const rt=runtime({
+    finishReminderDelivery:async()=>({finalized:false,reconciled:false}),
+  });
+  const result=await rt.service.deliverClaimedReminder(
+    {telegram_id:15,fixture_id:77},
+    'prematch',
+    'text',
+    {botToken:'token'},
+  );
+  assert.equal(result.state,'sent_unconfirmed');
+  assert.equal(result.persistenceFailed,true);
+  assert.equal(rt.calls.unknownHolds.length,1);
+  assert.equal(rt.calls.releases.length,0);
+});
+
+test('thrown Telegram transport is treated as unknown and never blindly released',async()=>{
+  const rt=runtime({
+    sendTelegramMessage:async()=>{throw new Error('socket reset');},
+  });
+  const result=await rt.service.deliverClaimedReminder(
+    {telegram_id:15,fixture_id:77},
+    'prematch',
+    'text',
+    {botToken:'token'},
+  );
+  assert.equal(result.state,'unknown');
+  assert.equal(rt.calls.unknownHolds.length,1);
+  assert.equal(rt.calls.releases.length,0);
+  assert.equal(rt.events.at(-1).code,'REMINDER_DELIVERY_UNKNOWN');
+});
 
 test('delivery success preserves claim, finish and ops semantics', async () => {
   const {service,calls,events}=runtime();
@@ -91,6 +178,50 @@ test('successful Telegram send with finish failure is held fail-closed for recon
   assert.equal(calls.releases.length,0);
   assert.equal(events.some(event=>event.code==='REMINDER_SENT_PREMATCH'),false);
   assert.equal(events.some(event=>event.code==='REMINDER_SENT_PERSISTENCE_AMBIGUOUS'),true);
+});
+
+test('confirmed failure release persistence failure stays fail-closed',async()=>{
+  const rt=runtime({
+    sendTelegramMessage:async()=>({
+      ok:false,
+      status:503,
+      outcome:'confirmed_failure',
+      errorCode:503,
+      description:'down',
+      retryAfter:0,
+    }),
+    releaseReminderClaim:async()=>{throw new Error('release persistence unavailable');},
+  });
+  const result=await rt.service.deliverClaimedReminder(
+    {telegram_id:15,fixture_id:77},
+    'prematch',
+    'text',
+    {botToken:'token'},
+  );
+  assert.equal(result.state,'release_failed');
+  assert.equal(result.persistenceFailed,true);
+  assert.equal(rt.events.some(event=>event.code==='REMINDER_RELEASE_FAILED'),true);
+});
+
+test('Telegram retry_after is bounded before release persistence',async()=>{
+  const rt=runtime({
+    sendTelegramMessage:async()=>({
+      ok:false,
+      status:'429',
+      outcome:'confirmed_failure',
+      errorCode:429,
+      description:'Too Many Requests',
+      retryAfter:999999999,
+    }),
+  });
+  const result=await rt.service.deliverClaimedReminder(
+    {telegram_id:15,fixture_id:77},
+    'prematch',
+    'text',
+    {botToken:'token'},
+  );
+  assert.equal(result.state,'rate_limited');
+  assert.equal(rt.calls.releases[0].options.retryAfter,604800);
 });
 
 test('403 delivery preserves disable and release semantics', async () => {
@@ -164,6 +295,102 @@ test('an already claimed reminder is not sent again', async () => {
   assert.equal(calls.messages.length,0);
   assert.equal(calls.finishes.length,0);
   assert.equal(calls.releases.length,0);
+});
+
+test('scheduler requires strict Supabase, bot token and runtime-control booleans',async()=>{
+  const noSupabase=runtime({hasSupabase:()=> 'true'});
+  assert.equal((await noSupabase.service.processDueReminders({botToken:'token'})).checked,0);
+  assert.equal(noSupabase.calls.selects.length,0);
+
+  const noToken=runtime();
+  assert.equal((await noToken.service.processDueReminders({botToken:{secret:true}})).checked,0);
+  assert.equal(noToken.calls.selects.length,0);
+
+  const malformedRuntime=runtime({
+    loadRuntimeControls:async()=>({value:{remindersEnabled:'true'}}),
+  });
+  const summary=await malformedRuntime.service.processDueReminders({botToken:'token'});
+  assert.equal(summary.ok,false);
+  assert.equal(summary.reason,'runtime_controls_invalid');
+  assert.equal(summary.dependencyFailures,1);
+  assert.equal(malformedRuntime.calls.selects.length,0);
+});
+
+test('scheduler rejects coercible reminder rows and kickoff flags',async()=>{
+  const originalNow=Date.now;
+  const now=Date.parse('2026-09-27T12:00:00.000Z');
+  Date.now=()=>now;
+  try {
+    const rows=[
+      {
+        telegram_id:true,
+        fixture_id:101,
+        fixture_date:new Date(now+30*60_000).toISOString(),
+        home_name:'Invalid',
+        away_name:'User',
+        kickoff_notify:true,
+        remind_before_minutes:30,
+      },
+      {
+        telegram_id:2,
+        fixture_id:[102],
+        fixture_date:new Date(now+30*60_000).toISOString(),
+        home_name:'Invalid',
+        away_name:'Fixture',
+        kickoff_notify:true,
+        remind_before_minutes:30,
+      },
+      {
+        telegram_id:3,
+        fixture_id:103,
+        fixture_date:new Date(now+2*60_000).toISOString(),
+        home_name:'String',
+        away_name:'False',
+        kickoff_notify:'false',
+        remind_before_minutes:true,
+      },
+    ];
+    const rt=runtime({rows});
+    const summary=await rt.service.processDueReminders({botToken:'token'});
+    assert.equal(summary.checked,1);
+    assert.equal(summary.candidates,0);
+    assert.equal(rt.calls.messages.length,0);
+  } finally {
+    Date.now=originalNow;
+  }
+});
+
+test('audience filter cannot inject recipients outside the requested batch',async()=>{
+  const originalNow=Date.now;
+  const now=Date.parse('2026-09-27T12:00:00.000Z');
+  Date.now=()=>now;
+  try {
+    const row={
+      telegram_id:7,
+      fixture_id:707,
+      fixture_date:new Date(now+30*60_000).toISOString(),
+      home_name:'A',
+      away_name:'B',
+      kickoff_notify:true,
+      remind_before_minutes:30,
+    };
+    const rt=runtime({
+      rows:[row],
+      filterNotificationRecipients:async()=>({
+        rows:[{...row,telegram_id:999},{...row},{...row}],
+        blockedByPreference:true,
+        blockedByEntitlement:[1],
+      }),
+    });
+    const summary=await rt.service.processDueReminders({botToken:'token'});
+    assert.equal(summary.eligible,1);
+    assert.equal(summary.sent,1);
+    assert.equal(summary.blockedByPreference,0);
+    assert.equal(summary.blockedByEntitlement,0);
+    assert.equal(rt.calls.messages[0][0],7);
+  } finally {
+    Date.now=originalNow;
+  }
 });
 
 test('scheduler preserves kickoff, prematch and retry-window behavior', async () => {
