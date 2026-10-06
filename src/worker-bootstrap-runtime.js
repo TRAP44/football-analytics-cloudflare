@@ -1,4 +1,8 @@
 export function createWorkerBootstrapRuntime(deps = {}) {
+  if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
+    throw new TypeError('Worker bootstrap dependencies are required.');
+  }
+
   const {
     API_ROUTE_DEPS,
     bumpTelemetry,
@@ -33,18 +37,141 @@ export function createWorkerBootstrapRuntime(deps = {}) {
     supaRpc
   } = deps;
 
-  return {
+  if (!API_ROUTE_DEPS || typeof API_ROUTE_DEPS !== 'object' || Array.isArray(API_ROUTE_DEPS)) {
+    throw new TypeError('API_ROUTE_DEPS is required');
+  }
+  if (!memory || typeof memory !== 'object' || Array.isArray(memory)) {
+    throw new TypeError('memory is required');
+  }
+  if (!publicStatusRouter || typeof publicStatusRouter.handle !== 'function') {
+    throw new TypeError('publicStatusRouter is required');
+  }
+
+  const requiredFunctions={
+    bumpTelemetry,
+    closedBetaAccessDecision,
+    cloudflareEdgeGuard,
+    config,
+    createPreAuthAbuseGuard,
+    dispatchApiRoute,
+    enforceDistributedAccountRateLimit,
+    enforceDistributedPreAuthRateLimit,
+    enforceRouteBurst,
+    getRequestUser,
+    handleScheduled,
+    handleTelegramWebhook,
+    hasSupabase,
+    isAdminSensitivePath,
+    isFootballRateLimitError,
+    isSecurityLockdownControls,
+    json,
+    loadRuntimeControls,
+    phase5ValidationContext,
+    preAuthRequestShapeDecision,
+    publicDataCapabilities,
+    publicRouteError,
+    reconcileAnalysisUsageReservations,
+    recordOpsEvent,
+    recordPhase5ProviderRequestSummary,
+    redactOpsString,
+    runtimeGuard,
+    supaRpc,
+  };
+  for (const [name,fn] of Object.entries(requiredFunctions)) {
+    if (typeof fn !== 'function') throw new TypeError(`${name} is required`);
+  }
+
+  function plainObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  }
+
+  function safeTelemetry(key) {
+    try { bumpTelemetry(key); } catch {}
+  }
+
+  async function safeRecord(cfg,event) {
+    try {
+      await recordOpsEvent(cfg,event);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function safeRedact(value,max=240) {
+    try {
+      const redacted=redactOpsString(value,max);
+      return typeof redacted === 'string' ? redacted.slice(0,max) : 'Worker boundary error';
+    } catch {
+      return 'Worker boundary error';
+    }
+  }
+
+  function boundedStatus(value,fallback=500) {
+    const number=typeof value === 'number'
+      ? value
+      : typeof value === 'string' && /^\d+$/.test(value.trim())
+        ? Number(value.trim())
+        : NaN;
+    return Number.isSafeInteger(number) && number>=100 && number<=599 ? number : fallback;
+  }
+
+  function boundedRetryAfter(value,fallback=null,max=604800) {
+    const number=typeof value === 'number'
+      ? value
+      : typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value.trim())
+        ? Number(value.trim())
+        : NaN;
+    if (!Number.isFinite(number) || number<=0) return fallback;
+    return Math.min(max,Math.max(1,Math.ceil(number)));
+  }
+
+  function buildConfig(env,ctx) {
+    const raw=config(env);
+    if (!plainObject(raw)) throw new TypeError('config() must return an object');
+    const cfg={...raw};
+    if (typeof ctx?.waitUntil === 'function') {
+      cfg.waitUntil=promise=>ctx.waitUntil(Promise.resolve(promise));
+    }
+    return cfg;
+  }
+
+  function scheduledTimestamp(controller) {
+    const value=controller?.scheduledTime;
+    if (typeof value === 'number' && Number.isFinite(value) && value>=0 && value<=8.64e15) return value;
+    if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
+      const number=Number(value.trim());
+      if (Number.isSafeInteger(number) && number>=0 && number<=8.64e15) return number;
+    }
+    return null;
+  }
+
+  function safeProviderCapabilities() {
+    try {
+      const value=publicDataCapabilities();
+      return plainObject(value) || {};
+    } catch {
+      return {};
+    }
+  }
+
+  return Object.freeze({
     async fetch(request, env, ctx) {
-      const cfg = config(env);
-      if (ctx?.waitUntil) cfg.waitUntil = promise => ctx.waitUntil(Promise.resolve(promise));
+      const cfg = buildConfig(env,ctx);
       const url = new URL(request.url);
   
-      const edgeGuard = await cloudflareEdgeGuard(request, env);
+      let edgeGuard;
+      try {
+        edgeGuard=plainObject(await cloudflareEdgeGuard(request,env));
+      } catch {
+        edgeGuard=null;
+      }
+      if (!edgeGuard) edgeGuard={blocked:false,degraded:true,configured:false,policy:'edge_guard_unavailable'};
       if (edgeGuard.blocked) {
-        if (edgeGuard.kind === 'scanner') bumpTelemetry('edgeScannerBlocks');
-        else bumpTelemetry('edgeRateLimitBlocks');
+        if (edgeGuard.kind === 'scanner') safeTelemetry('edgeScannerBlocks');
+        else safeTelemetry('edgeRateLimitBlocks');
         const minuteBucket = new Date().toISOString().slice(0, 16);
-        await recordOpsEvent(cfg, {
+        await safeRecord(cfg, {
           severity: 'warning',
           source: 'security',
           eventType: edgeGuard.kind === 'scanner' ? 'edge_scanner_block' : 'edge_rate_limit',
@@ -56,24 +183,26 @@ export function createWorkerBootstrapRuntime(deps = {}) {
           status: edgeGuard.status,
           transitionKey: `edge-security:${edgeGuard.policy || edgeGuard.kind}:${url.pathname}:${minuteBucket}`,
           meta: {
-            policy: edgeGuard.policy || '',
-            kind: edgeGuard.kind || '',
-            retryAfter: Number(edgeGuard.retryAfter || 0) || null,
+            policy: String(edgeGuard.policy || '').slice(0,80),
+            kind: String(edgeGuard.kind || '').slice(0,40),
+            retryAfter: boundedRetryAfter(edgeGuard.retryAfter,null),
             minuteBucket,
           },
-        }).catch(() => {});
+        });
+        const retryAfter=boundedRetryAfter(edgeGuard.retryAfter,null);
+        const status=boundedStatus(edgeGuard.status,edgeGuard.kind === 'scanner' ? 404 : 429);
         return json({
           error: edgeGuard.kind === 'scanner' ? 'Not found.' : 'Слишком много запросов. Повторите позже.',
-          code: edgeGuard.code,
-          retryAfter: Number(edgeGuard.retryAfter || 0) || undefined,
-        }, edgeGuard.status, edgeGuard.retryAfter ? { 'retry-after': String(edgeGuard.retryAfter) } : {});
+          code: String(edgeGuard.code || (edgeGuard.kind === 'scanner' ? 'EDGE_SCANNER_BLOCKED' : 'EDGE_RATE_LIMIT_BLOCKED')).slice(0,80),
+          ...(retryAfter ? {retryAfter} : {}),
+        }, status, retryAfter ? { 'retry-after': String(retryAfter) } : {});
       }
       if (edgeGuard.degraded) {
-        bumpTelemetry('edgeRateLimitFallbacks');
+        safeTelemetry('edgeRateLimitFallbacks');
         const now = Date.now();
         if (now - Number(memory.edgeRateLimitWarningAt || 0) >= 60_000) {
           memory.edgeRateLimitWarningAt = now;
-          await recordOpsEvent(cfg, {
+          await safeRecord(cfg, {
             severity: 'warning',
             source: 'security',
             eventType: 'edge_rate_limit',
@@ -85,16 +214,38 @@ export function createWorkerBootstrapRuntime(deps = {}) {
         }
       }
   
-      const securityShape=await preAuthRequestShapeDecision(request,{
-        api:url.pathname.startsWith('/api/'),
-        webhook:url.pathname==='/telegram/webhook',
-      });
+      let securityShape;
+      try {
+        securityShape=plainObject(await preAuthRequestShapeDecision(request,{
+          api:url.pathname.startsWith('/api/'),
+          webhook:url.pathname==='/telegram/webhook',
+        }));
+      } catch {
+        securityShape=null;
+      }
+      if (!securityShape || typeof securityShape.allowed !== 'boolean') {
+        safeTelemetry('securityShapeBlocks');
+        await safeRecord(cfg,{
+          severity:'error',
+          source:'security',
+          eventType:'request_guard',
+          code:'REQUEST_GUARD_UNAVAILABLE',
+          message:'Pre-auth request guard returned an invalid decision.',
+          endpoint:url.pathname,
+          status:503,
+        });
+        return json({
+          error:'Защитный контур временно недоступен. Повторите позже.',
+          code:'REQUEST_GUARD_UNAVAILABLE',
+          retryAfter:5,
+        },503,{'retry-after':'5'});
+      }
       if (!securityShape.allowed) {
-        if (securityShape.code==='REQUEST_TOO_LARGE' || securityShape.code==='TELEGRAM_INIT_DATA_TOO_LARGE') bumpTelemetry('securityOversizeBlocks');
-        else if (String(securityShape.code || '').includes('CROSS_')) bumpTelemetry('securityCrossOriginBlocks');
-        else bumpTelemetry('securityShapeBlocks');
+        if (securityShape.code==='REQUEST_TOO_LARGE' || securityShape.code==='TELEGRAM_INIT_DATA_TOO_LARGE') safeTelemetry('securityOversizeBlocks');
+        else if (String(securityShape.code || '').includes('CROSS_')) safeTelemetry('securityCrossOriginBlocks');
+        else safeTelemetry('securityShapeBlocks');
         const minuteBucket=new Date().toISOString().slice(0,16);
-        await recordOpsEvent(cfg,{
+        await safeRecord(cfg,{
           severity:'warning',
           source:'security',
           eventType:'request_guard',
@@ -107,14 +258,33 @@ export function createWorkerBootstrapRuntime(deps = {}) {
             method:String(request.method || 'GET').toUpperCase(),
             minuteBucket,
           },
-        }).catch(()=>{});
+        });
         return json({
           error:securityShape.error || 'Запрос отклонён.',
           code:securityShape.code || 'REQUEST_REJECTED',
-        },securityShape.status || 400);
+        },boundedStatus(securityShape.status,400));
       }
   
-      const publicStatusResponse=await publicStatusRouter.handle(request,url,cfg);
+      let publicStatusResponse;
+      try {
+        publicStatusResponse=await publicStatusRouter.handle(request,url,cfg);
+      } catch (error) {
+        safeTelemetry('routeErrors');
+        await safeRecord(cfg,{
+          severity:'error',
+          source:'api',
+          eventType:'public_status_error',
+          code:'PUBLIC_STATUS_UNAVAILABLE',
+          message:safeRedact(error?.message || error,200),
+          endpoint:url.pathname,
+          status:503,
+        });
+        return json({
+          error:'Статус сервиса временно недоступен. Повторите позже.',
+          code:'PUBLIC_STATUS_UNAVAILABLE',
+          retryAfter:5,
+        },503,{'retry-after':'5'});
+      }
       if (publicStatusResponse) return publicStatusResponse;
   
       if (request.method === 'POST' && url.pathname === '/telegram/webhook') {
@@ -124,9 +294,9 @@ export function createWorkerBootstrapRuntime(deps = {}) {
           const retry = Boolean(error?.telegramWebhookRetry);
           const disposition = error?.telegramWebhookDisposition || {};
           const status = retry ? 503 : 200;
-          console.error('telegram webhook', redactOpsString(error?.message || error, 240));
-          bumpTelemetry('routeErrors');
-          await recordOpsEvent(cfg, {
+          console.error('telegram webhook', safeRedact(error?.message || error,240));
+          safeTelemetry('routeErrors');
+          await safeRecord(cfg, {
             severity: 'error',
             source: 'telegram',
             eventType: 'webhook',
@@ -143,29 +313,47 @@ export function createWorkerBootstrapRuntime(deps = {}) {
               lastMutation: String(disposition?.lastMutation || ''),
             },
           });
+          const retryAfter=retry ? boundedRetryAfter(disposition?.retryAfter,null,3600) : null;
           return json(
             retry ? { ok: false, retry: true } : { ok: false },
             status,
-            retry && Number(disposition?.retryAfter || 0) > 0
-              ? { 'retry-after': String(Math.max(1, Number(disposition.retryAfter))) }
-              : {},
+            retryAfter ? { 'retry-after': String(retryAfter) } : {},
           );
         }
       }
   
       if (!url.pathname.startsWith('/api/')) return new Response('Not found', { status: 404 });
   
-      const distributedPreAuthResponse=await enforceDistributedPreAuthRateLimit({
-        request,
-        cfg,
-        adminSensitive:isAdminSensitivePath(url.pathname),
-        fingerprintSecret:cfg.botToken,
-        hasSupabase,
-        supaRpc,
-        bumpTelemetry,
-        recordOpsEvent,
-        json,
-      });
+      let distributedPreAuthResponse;
+      try {
+        distributedPreAuthResponse=await enforceDistributedPreAuthRateLimit({
+          request,
+          cfg,
+          adminSensitive:isAdminSensitivePath(url.pathname),
+          fingerprintSecret:cfg.botToken,
+          hasSupabase,
+          supaRpc,
+          bumpTelemetry,
+          recordOpsEvent,
+          json,
+        });
+      } catch (error) {
+        safeTelemetry('securityPreAuthFailClosed');
+        await safeRecord(cfg,{
+          severity:'error',
+          source:'security',
+          eventType:'preauth_rate_limit',
+          code:'PREAUTH_RATE_GUARD_UNAVAILABLE',
+          message:safeRedact(error?.message || error,200),
+          endpoint:url.pathname,
+          status:503,
+        });
+        return json({
+          error:'Защитный контур временно недоступен. Повторите немного позже.',
+          code:'PREAUTH_RATE_GUARD_UNAVAILABLE',
+          retryAfter:5,
+        },503,{'retry-after':'5'});
+      }
       if (distributedPreAuthResponse) return distributedPreAuthResponse;
   
       try {
@@ -180,12 +368,13 @@ export function createWorkerBootstrapRuntime(deps = {}) {
           const abuse=await abuseGuard.registerInvalidAuthFailure(request,{
             adminSensitive:isAdminSensitivePath(url.pathname),
           });
-          if (abuse.blocked) {
+          if (abuse?.blocked === true) {
+            const retryAfter=boundedRetryAfter(abuse.retryAfter,30,3600);
             return json({
               error:'Слишком много неуспешных попыток авторизации. Повторите позже.',
               code:'INVALID_AUTH_BURST',
-              retryAfter:abuse.retryAfter,
-            },429,{'retry-after':String(abuse.retryAfter)});
+              retryAfter,
+            },429,{'retry-after':String(retryAfter)});
           }
         }
         if (!user) return json({ error: 'Откройте мини-приложение внутри Telegram.' }, 401);
@@ -214,7 +403,7 @@ export function createWorkerBootstrapRuntime(deps = {}) {
         cfg.phase5Validation = await phase5ValidationContext(request,user,cfg,url);
         cfg.phase5ProviderUsage = {networkRequests:0,cacheHits:0,staleCacheHits:0,quotaBlocks:0,sharedCooldowns:0};
   
-        const runtimeState = await loadRuntimeControls(cfg);
+        const runtimeState = plainObject(await loadRuntimeControls(cfg)) || {};
         const runtimeResponse = runtimeGuard(request, user, cfg, runtimeState.value);
         if (runtimeResponse) return runtimeResponse;
   
@@ -240,31 +429,70 @@ export function createWorkerBootstrapRuntime(deps = {}) {
           await recordPhase5ProviderRequestSummary(cfg).catch(()=>null);
         }
       } catch (error) {
-        console.error('api route', redactOpsString(error?.message || error, 240));
-        const rateLimited = isFootballRateLimitError(error);
-        const publicError = publicRouteError(error, rateLimited);
+        console.error('api route',safeRedact(error?.message || error,240));
+        let rateLimited=false;
+        try { rateLimited=isFootballRateLimitError(error) === true; } catch {}
+        let mapped;
+        try { mapped=plainObject(publicRouteError(error,rateLimited)); } catch {}
+        const body=plainObject(mapped?.body) || {
+          error:'Сервис временно недоступен. Попробуйте повторить действие через несколько секунд.',
+          code:'SERVER_ERROR',
+          category:'service',
+          recoverable:true,
+        };
+        const status=boundedStatus(mapped?.status,502);
         if (!rateLimited) {
-          bumpTelemetry('routeErrors');
-          await recordOpsEvent(cfg, {
-            severity: 'error', source: 'api', eventType: 'route_error', code: error?.code || 'SERVER_ERROR',
-            message: error?.message || 'Ошибка сервера.', endpoint: url.pathname, status: publicError.status,
+          safeTelemetry('routeErrors');
+          await safeRecord(cfg,{
+            severity:'error',
+            source:'api',
+            eventType:'route_error',
+            code:String(error?.code || 'SERVER_ERROR').slice(0,80),
+            message:safeRedact(error?.message || 'Ошибка сервера.',240),
+            endpoint:url.pathname,
+            status,
           });
         }
+        const retryAfter=boundedRetryAfter(body.retryAfter,null);
         return json({
-          ...publicError.body,
+          ...body,
           ...(error?.newsImpactRecovery ? {newsImpactRecovery:error.newsImpactRecovery} : {}),
-          provider: publicDataCapabilities(),
-        }, publicError.status, publicError.body.retryAfter ? { 'retry-after': String(publicError.body.retryAfter) } : {});
+          provider:safeProviderCapabilities(),
+        },status,retryAfter ? {'retry-after':String(retryAfter)} : {});
       }
     },
   
     async scheduled(controller, env, ctx) {
-      const cfg = config(env);
-      if (ctx?.waitUntil) cfg.waitUntil = promise => ctx.waitUntil(Promise.resolve(promise));
-      const runtimeState = await loadRuntimeControls(cfg, { force: true });
+      const cfg = buildConfig(env,ctx);
+      let runtimeState;
+      try {
+        runtimeState=plainObject(await loadRuntimeControls(cfg,{force:true}));
+      } catch (error) {
+        await safeRecord(cfg,{
+          severity:'error',
+          source:'release',
+          eventType:'scheduled_control_plane',
+          code:'SCHEDULED_CONTROL_PLANE_UNAVAILABLE',
+          message:safeRedact(error?.message || error,200),
+          status:503,
+        });
+        return undefined;
+      }
+      if (!runtimeState) {
+        await safeRecord(cfg,{
+          severity:'error',
+          source:'release',
+          eventType:'scheduled_control_plane',
+          code:'SCHEDULED_CONTROL_PLANE_INVALID',
+          message:'Scheduled execution skipped because runtime controls returned an invalid state.',
+          status:503,
+        });
+        return undefined;
+      }
       if (isSecurityLockdownControls(runtimeState.value)) {
-        const hourBucket = new Date(Number(controller?.scheduledTime || Date.now())).toISOString().slice(0, 13);
-        await recordOpsEvent(cfg, {
+        const timestamp=scheduledTimestamp(controller);
+        const hourBucket = new Date(timestamp ?? Date.now()).toISOString().slice(0,13);
+        await safeRecord(cfg, {
           severity: 'warning',
           source: 'release',
           eventType: 'security_lockdown_cron',
@@ -276,18 +504,32 @@ export function createWorkerBootstrapRuntime(deps = {}) {
             controlPlaneFailClosed: Boolean(runtimeState.value?.controlPlaneFailClosed),
             runtimeSource: String(runtimeState.source || ''),
           },
-        }).catch(() => {});
+        });
         return undefined;
       }
   
-      const scheduledAt = new Date(Number(controller?.scheduledTime || Date.now()));
-      if (Number.isFinite(scheduledAt.getTime()) && scheduledAt.getUTCMinutes() % 15 === 0) {
-        const reconciliation = reconcileAnalysisUsageReservations(cfg);
-        if (typeof ctx?.waitUntil === 'function') ctx.waitUntil(reconciliation);
-        else await reconciliation;
+      const timestamp=scheduledTimestamp(controller);
+      if (timestamp !== null) {
+        const scheduledAt=new Date(timestamp);
+        if (scheduledAt.getUTCMinutes() % 15 === 0) {
+          const reconciliation=Promise.resolve()
+            .then(()=>reconcileAnalysisUsageReservations(cfg))
+            .catch(async error=>{
+              await safeRecord(cfg,{
+                severity:'warning',
+                source:'quota',
+                eventType:'analysis_usage_reconciliation',
+                code:'ANALYSIS_USAGE_RECONCILIATION_FAILED',
+                message:safeRedact(error?.message || error,200),
+              });
+              return false;
+            });
+          if (typeof ctx?.waitUntil === 'function') ctx.waitUntil(reconciliation);
+          else await reconciliation;
+        }
       }
   
-      return handleScheduled(controller, cfg, ctx);
+      return handleScheduled(controller,cfg,ctx);
     },
-  };
+  });
 }
