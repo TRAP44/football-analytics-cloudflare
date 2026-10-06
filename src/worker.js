@@ -2534,6 +2534,7 @@ function getTeamIntelligenceRuntime() {
       getCache,
       getStaleCache,
       json,
+      normalizeLineupPlayer,
       normalizeTeamSeasonStatistics,
       providerFeatureFetch,
       publicDataCapabilities,
