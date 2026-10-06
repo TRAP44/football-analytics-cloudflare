@@ -354,7 +354,10 @@ export function createScheduledLeaseRuntime({
     const safeGroupKey=cleanLeasePart(groupKey,'group');
     const scheduledAtIso=scheduledIso(scheduledAt);
     const safeLeaseSeconds=boundedLeaseSeconds(leaseSeconds);
-    const safeRetentionSeconds=boundedRetentionSeconds(retentionSeconds);
+    const safeRetentionSeconds=Math.max(
+      boundedRetentionSeconds(retentionSeconds),
+      safeLeaseSeconds,
+    );
 
     if (!safeJobKey || !safeGroupKey || !scheduledAtIso) {
       return {
