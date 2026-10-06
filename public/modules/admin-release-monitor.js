@@ -39,11 +39,19 @@ export function createAdminReleaseMonitorModule(deps) {
     }
   
     const r = state.releaseMonitor;
-    if (!r?.available) {
+    if (!r) {
       badge.className = 'release-monitor-badge';
       badge.textContent = 'ОЖИДАНИЕ';
       title.textContent = 'Мониторинг выпуска ещё не запускался.';
       meta.textContent = 'Показывает ошибки, восстановление клиента и операционные лимиты.';
+      kpis.innerHTML = client.innerHTML = digest.innerHTML = regression.innerHTML = issues.innerHTML = incidents.innerHTML = '';
+      return;
+    }
+    if (r.available === false) {
+      badge.className = 'release-monitor-badge blocked';
+      badge.textContent = 'НЕДОСТУПНО';
+      title.textContent = r.reason || 'Мониторинг выпуска недоступен.';
+      meta.textContent = 'Повторите проверку после восстановления операционного API.';
       kpis.innerHTML = client.innerHTML = digest.innerHTML = regression.innerHTML = issues.innerHTML = incidents.innerHTML = '';
       return;
     }
