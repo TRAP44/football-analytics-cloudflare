@@ -60,12 +60,12 @@ test('security occurrence volume is bounded without Number coercion',()=>{
   const row=event(1,'CROSS_SITE_MUTATION_BLOCKED',{nowMs});
   row.occurrence_count='999999999999999';
   const result=assessSecuritySignals([row],{nowMs});
-  assert.equal(result.signalCount,1);
+  assert.equal(result.signalCount,1000000);
+  assert.equal(result.state,'incident');
 
-  row.occurrence_count='1000000';
-  const bounded=assessSecuritySignals([row],{nowMs});
-  assert.equal(bounded.signalCount,1000000);
-  assert.equal(bounded.state,'incident');
+  row.occurrence_count=true;
+  const coercionRejected=assessSecuritySignals([row],{nowMs});
+  assert.equal(coercionRejected.signalCount,1);
 });
 
 test('single blocked request is watch noise, not an incident', () => {
@@ -201,6 +201,35 @@ test('security lifecycle stays open through watch and recovers only on a clean w
   const recovered=securityIncidentTimeline(healthy,[storedOpen],{nowMs:nowMs+30*60_000});
   assert.equal(recovered.transition?.kind,'recovered');
   assert.equal(securityIncidentOpsEvent(recovered.transition)?.code,'SECURITY_INCIDENT_RECOVERED');
+});
+
+test('security timeline persists only allowlisted aggregate counters',()=>{
+  const nowMs=Date.parse('2026-10-02T21:00:00Z');
+  const timeline=securityIncidentTimeline({
+    state:'incident',
+    severity:'error',
+    startedAt:new Date(nowMs-60_000).toISOString(),
+    primaryCode:'CROSS_SITE_MUTATION_BLOCKED',
+    signalCount:3,
+    recordCount:1,
+    windowMinutes:15,
+    counts:{
+      total:3,
+      crossSiteBlocks:3,
+      clientIp:'203.0.113.9',
+      telegramId:123,
+      nested:{secret:true},
+    },
+  },[],{nowMs});
+  const diagnostics=timeline.activeIncident.diagnostics;
+  assert.equal(diagnostics.counts.crossSiteBlocks,3);
+  assert.equal(Object.hasOwn(diagnostics.counts,'clientIp'),false);
+  assert.equal(Object.hasOwn(diagnostics.counts,'telegramId'),false);
+  assert.equal(Object.hasOwn(diagnostics.counts,'nested'),false);
+
+  const event=securityIncidentOpsEvent(timeline.transition);
+  assert.equal(JSON.stringify(event).includes('203.0.113.9'),false);
+  assert.equal(JSON.stringify(event).includes('telegramId'),false);
 });
 
 test('security ops event and alert formatting reject coercible incident fields',()=>{
