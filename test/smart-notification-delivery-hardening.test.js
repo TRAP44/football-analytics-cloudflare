@@ -43,6 +43,54 @@ function supabaseRuntime({ finalizeResult={updated:true,reason:'finalized'}, fin
   return {service,events,get sends(){return sends;}};
 }
 
+test('delivery binds category and dedupe key to the actual event identity',async()=>{
+  let sends=0;
+  const service=createSmartNotificationDeliveryService({
+    memory:{},
+    hasSupabase:()=>false,
+    supaRpc:async()=>{throw new Error('unexpected rpc');},
+    sendTelegramMessage:async()=>{sends+=1;return {ok:true,status:200,outcome:'sent'};},
+  });
+
+  for(const bad of [
+    {...input(),category:'players'},
+    {...input(),dedupeKey:'v1:421:match.goal:55'},
+    {...input(),dedupeKey:'v1:420:player.goal:55'},
+    {...input(),eventType:'player.goal',category:'players',dedupeKey:'v1:420:match.goal:55'},
+  ]){
+    assert.equal((await service.deliverSmartNotification(bad,{})).state,'invalid');
+  }
+  assert.equal(sends,0);
+});
+
+test('contradictory Telegram success is treated as unknown outcome',async()=>{
+  let finalizedStatus='';
+  const service=createSmartNotificationDeliveryService({
+    memory:{},
+    hasSupabase:()=>true,
+    supaRpc:async(_cfg,name,args)=>{
+      if(name==='claim_smart_notification_delivery') {
+        return {allowed:true,reason:'created',claimAt:'2026-10-03T12:00:00.000Z'};
+      }
+      if(name==='begin_smart_notification_delivery_send') return {started:true,reason:'sending'};
+      if(name==='finalize_smart_notification_delivery') {
+        finalizedStatus=args.p_status;
+        return {updated:true,reason:'finalized'};
+      }
+      throw new Error('unexpected rpc '+name);
+    },
+    sendTelegramMessage:async()=>({
+      ok:true,
+      status:200,
+      errorCode:500,
+      outcome:'confirmed_failure',
+    }),
+  });
+  const result=await service.deliverSmartNotification(input(),{});
+  assert.equal(result.state,'unknown');
+  assert.equal(finalizedStatus,'unknown');
+});
+
 test('delivery rejects JavaScript coercion before claim or Telegram side effects',async()=>{
   let rpcCalls=0;
   let sends=0;
