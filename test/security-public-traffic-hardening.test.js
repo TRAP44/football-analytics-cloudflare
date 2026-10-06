@@ -123,6 +123,25 @@ test('cross-origin and cross-site API mutations are rejected before auth/busines
   assert.equal(siteDecision.code,'CROSS_SITE_MUTATION_BLOCKED');
 });
 
+test('request-shape gate rejects malformed method and option coercion',async()=>{
+  const malformed={
+    method:{toString:()=> 'GET'},
+    url:'https://example.com/api/me',
+    headers:new Headers(),
+  };
+  const decision=await preAuthRequestShapeDecision(malformed,{api:true});
+  assert.equal(decision.allowed,false);
+  assert.equal(decision.status,405);
+
+  const ignored=await preAuthRequestShapeDecision(malformed,{api:'true'});
+  assert.equal(ignored.allowed,true);
+});
+
+test('JSON media type rejects object coercion',()=>{
+  assert.equal(isJsonMediaType({toString:()=> 'application/json'}),false);
+  assert.equal(isJsonMediaType(['application/json']),false);
+});
+
 test('unsupported API methods fail before Telegram authentication', async () => {
   const fake={
     method:'TRACE',
@@ -207,6 +226,57 @@ test('normal-sized Telegram initData preserves the existing validator boundary',
   const user=await auth.getRequestUser(req,{botToken:'secret',devMode:false});
   assert.equal(Number(user?.id),123);
   assert.equal(validationCalls,1);
+});
+
+test('invalid-auth guard requires valid memory and ignores truthy admin coercion',async()=>{
+  assert.throws(()=>createPreAuthAbuseGuard({memory:null}),/memory is required/);
+
+  const memory={authFailureBurst:new Map()};
+  const guard=createPreAuthAbuseGuard({memory});
+  const req=request('https://example.com/api/diagnostics',{
+    headers:{'cf-connecting-ip':'198.51.100.9'},
+  });
+  for(let i=0;i<13;i+=1) {
+    const result=await guard.registerInvalidAuthFailure(req,{adminSensitive:'true'});
+    if(i<13) assert.equal(result.scope,'public');
+  }
+  assert.equal(memory.authFailureBurst.size,1);
+});
+
+test('invalid-auth guard resets malformed buckets and survives clock rollback',async()=>{
+  let clock=100_000;
+  const memory={authFailureBurst:new Map()};
+  const guard=createPreAuthAbuseGuard({memory,now:()=>clock});
+  const req=request('https://example.com/api/me',{
+    headers:{'cf-connecting-ip':'203.0.113.91'},
+  });
+  await guard.registerInvalidAuthFailure(req);
+  const [key]=memory.authFailureBurst.keys();
+  memory.authFailureBurst.set(key,{scope:'public',startedAt:true,count:'29',reported:'true'});
+  const repaired=await guard.registerInvalidAuthFailure(req);
+  assert.equal(repaired.blocked,false);
+  assert.equal(repaired.remaining,29);
+
+  clock=50_000;
+  const rollback=await guard.registerInvalidAuthFailure(req);
+  assert.equal(rollback.blocked,false);
+  assert.equal(rollback.remaining,29);
+});
+
+test('invalid-auth guard observability failures do not bypass throttling',async()=>{
+  const memory={authFailureBurst:new Map()};
+  const guard=createPreAuthAbuseGuard({
+    memory,
+    bumpTelemetry:()=>{throw new Error('telemetry down');},
+    recordOpsEvent:()=>{throw new Error('ops down');},
+  });
+  const req=request('https://example.com/api/me',{
+    headers:{'cf-connecting-ip':'203.0.113.92'},
+  });
+  for(let i=0;i<30;i+=1) await guard.registerInvalidAuthFailure(req);
+  const blocked=await guard.registerInvalidAuthFailure(req);
+  assert.equal(blocked.blocked,true);
+  assert.ok(blocked.retryAfter>=1);
 });
 
 test('invalid-auth burst guard throttles repeated failures without retaining raw IP', async () => {
