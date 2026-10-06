@@ -203,6 +203,43 @@ test('team intelligence rejects statistics returned for another provider scope',
   assert.equal(writes.length,0);
 });
 
+test('team intelligence and squad caches are rejected when entity identity does not match', async () => {
+  const runtime=createTeamIntelligenceRuntime(deps({
+    getCache:async key=>String(key).startsWith('team:intelligence:')
+      ? {
+          available:true,
+          stats:{team:{id:99},league:{id:39,season:2026}},
+          refreshedAt:'2026-10-06T00:00:00Z',
+        }
+      : {
+          available:true,
+          team:{id:99,name:'Wrong Team'},
+          players:[{id:1,name:'Wrong Player'}],
+        },
+    apiFootball:async path=>path==='/players/squads'
+      ? [{
+          team:{id:10,name:'Team'},
+          players:[{id:1,name:'Keeper',age:25,number:1,position:'Goalkeeper'}],
+        }]
+      : {
+          team:{id:10,name:'Team'},
+          league:{id:39,name:'League',season:2026},
+        },
+  }));
+
+  const intelligence=await runtime.apiTeamIntelligence({
+    url:'https://example.test/api/team-intelligence?teamId=10&leagueId=39&season=2026',
+  },{});
+  assert.equal(intelligence.body.cached,false);
+  assert.equal(intelligence.body.stats.team.id,10);
+
+  const squad=await runtime.apiTeamSquad({
+    url:'https://example.test/api/team-squad?teamId=10',
+  },{});
+  assert.equal(squad.body.cached,false);
+  assert.equal(squad.body.team.id,10);
+});
+
 test('successful provider data survives cache write failure', async () => {
   const runtime=createTeamIntelligenceRuntime(deps({
     apiFootball:async path=>path==='/players/squads'
@@ -291,6 +328,31 @@ test('lineup normalization preserves duplicate starters so integrity checks can 
   assert.equal(snapshot.reason,'lineup_incomplete');
 });
 
+test('lineup snapshot prefers an exact eleven over a richer malformed duplicate row', async () => {
+  const ids=Array.from({length:11},(_,index)=>index+1);
+  const runtime=createTeamIntelligenceRuntime(deps({
+    providerFeatureFetch:async()=>({
+      data:[
+        lineup(10,Array.from({length:12},(_,index)=>index+1)),
+        lineup(10,ids),
+        lineup(20,ids.map(id=>id+20)),
+      ],
+      meta:{
+        confidenceBearing:true,
+        available:true,
+        usable:true,
+        source:'network',
+        freshnessState:'fresh',
+        provenanceState:'verified',
+      },
+    }),
+  }));
+
+  const snapshot=await runtime.loadLineupNotificationSnapshot(100,{});
+  assert.equal(snapshot.confirmed,true);
+  assert.equal(snapshot.teams[0].startXI.length,11);
+});
+
 test('lineup snapshot fails closed when the provider returns more than two teams', async () => {
   const ids=Array.from({length:11},(_,index)=>index+1);
   const runtime=createTeamIntelligenceRuntime(deps({
@@ -350,6 +412,32 @@ test('event snapshot preserves raw player ids after formatted events are time-so
   assert.equal(snapshot.events[1].minute,80);
   assert.equal(snapshot.events[1].playerId,200);
   assert.equal(snapshot.events[1].assistPlayerId,201);
+});
+
+test('event snapshot bounds hostile provider collections', async () => {
+  const rawRows=Array.from({length:600},(_,index)=>({
+    time:{elapsed:index%121},
+    team:{id:10},
+    player:{id:index+1,name:`Player ${index+1}`},
+    type:'Goal',
+    detail:'Normal Goal',
+  }));
+  const runtime=createTeamIntelligenceRuntime(deps({
+    providerFeatureFetch:async()=>({
+      data:rawRows,
+      meta:{
+        confidenceBearing:true,
+        available:true,
+        usable:true,
+        source:'network',
+        freshnessState:'fresh',
+        provenanceState:'verified',
+      },
+    }),
+  }));
+
+  const snapshot=await runtime.loadSmartNotificationEventSnapshot(100,{});
+  assert.equal(snapshot.events.length,500);
 });
 
 test('live notification snapshot respects runtime live disable before provider access', async () => {
