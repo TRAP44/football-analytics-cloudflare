@@ -866,215 +866,324 @@ export function createTeamTournamentRuntime(deps) {
 
 
   function teamStatsNum(value) {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : 0;
+    return finiteNumber(value, 0);
   }
   
   function teamStatsAvg(value) {
-    const n = Number(String(value ?? '').replace(',', '.'));
-    return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
+    const normalized=safeText(value,40).replace(',', '.');
+    if (!normalized) return null;
+    const number=finiteNumber(normalized,NaN);
+    return Number.isFinite(number) ? Math.round(number*100)/100 : null;
   }
-  
+
   function teamStatsRate(part, total) {
     const p = teamStatsNum(part), t = teamStatsNum(total);
     return t > 0 ? Math.round((p / t) * 1000) / 10 : null;
   }
   
   function normalizeTeamSeasonStatistics(row, fallback = {}) {
-    const fixtures = row?.fixtures || {};
-    const played = fixtures.played || {};
-    const wins = fixtures.wins || {};
-    const draws = fixtures.draws || {};
-    const loses = fixtures.loses || {};
-    const goalsFor = row?.goals?.for || {};
-    const goalsAgainst = row?.goals?.against || {};
-    const totalPlayed = teamStatsNum(played.total);
-    const points = teamStatsNum(wins.total) * 3 + teamStatsNum(draws.total);
-    const homePlayed = teamStatsNum(played.home), awayPlayed = teamStatsNum(played.away);
-    const homePoints = teamStatsNum(wins.home) * 3 + teamStatsNum(draws.home);
-    const awayPoints = teamStatsNum(wins.away) * 3 + teamStatsNum(draws.away);
-    const gf = teamStatsNum(goalsFor?.total?.total), ga = teamStatsNum(goalsAgainst?.total?.total);
-    const clean = row?.clean_sheet || {}, failed = row?.failed_to_score || {};
-    const biggest = row?.biggest || {};
-    const penalties = row?.penalty || {};
-    const lineups = Array.isArray(row?.lineups) ? row.lineups : [];
-    const mostUsedLineup = [...lineups].sort((a,b) => teamStatsNum(b?.played) - teamStatsNum(a?.played))[0] || null;
+    const source=row && typeof row === 'object' && !Array.isArray(row) ? row : {};
+    const fixtures=source?.fixtures && typeof source.fixtures === 'object' ? source.fixtures : {};
+    const played=fixtures?.played && typeof fixtures.played === 'object' ? fixtures.played : {};
+    const wins=fixtures?.wins && typeof fixtures.wins === 'object' ? fixtures.wins : {};
+    const draws=fixtures?.draws && typeof fixtures.draws === 'object' ? fixtures.draws : {};
+    const loses=fixtures?.loses && typeof fixtures.loses === 'object' ? fixtures.loses : {};
+    const goalsFor=source?.goals?.for && typeof source.goals.for === 'object' ? source.goals.for : {};
+    const goalsAgainst=source?.goals?.against && typeof source.goals.against === 'object' ? source.goals.against : {};
+
+    const totalPlayed=nonNegativeInteger(played?.total);
+    const homePlayed=nonNegativeInteger(played?.home);
+    const awayPlayed=nonNegativeInteger(played?.away);
+    const totalWins=nonNegativeInteger(wins?.total);
+    const totalDraws=nonNegativeInteger(draws?.total);
+    const points=totalWins*3+totalDraws;
+    const homePoints=nonNegativeInteger(wins?.home)*3+nonNegativeInteger(draws?.home);
+    const awayPoints=nonNegativeInteger(wins?.away)*3+nonNegativeInteger(draws?.away);
+    const gf=nonNegativeInteger(goalsFor?.total?.total);
+    const ga=nonNegativeInteger(goalsAgainst?.total?.total);
+
+    const clean=source?.clean_sheet && typeof source.clean_sheet === 'object' ? source.clean_sheet : {};
+    const failed=source?.failed_to_score && typeof source.failed_to_score === 'object' ? source.failed_to_score : {};
+    const biggest=source?.biggest && typeof source.biggest === 'object' ? source.biggest : {};
+    const penalties=source?.penalty && typeof source.penalty === 'object' ? source.penalty : {};
+    const lineups=rows(source?.lineups);
+    const mostUsedLineup=[...lineups].sort(
+      (a,b)=>nonNegativeInteger(b?.played)-nonNegativeInteger(a?.played),
+    )[0] || null;
+
+    const teamId=positiveSafeInteger(source?.team?.id) || positiveSafeInteger(fallback?.teamId) || 0;
+    const leagueId=positiveSafeInteger(source?.league?.id) || positiveSafeInteger(fallback?.leagueId) || 0;
+    const leagueSeason=positiveSafeInteger(source?.league?.season) || positiveSafeInteger(fallback?.season);
+
     return {
-      available: Boolean(row && (row.team?.id || fallback.teamId)),
-      team: {
-        id: Number(row?.team?.id || fallback.teamId || 0),
-        name: String(row?.team?.name || fallback.teamName || ''),
-        logo: String(row?.team?.logo || fallback.teamLogo || ''),
+      available:Boolean(teamId),
+      team:{
+        id:teamId,
+        name:safeText(source?.team?.name || fallback?.teamName,180),
+        logo:safeText(source?.team?.logo || fallback?.teamLogo,500),
       },
-      league: {
-        id: Number(row?.league?.id || fallback.leagueId || 0),
-        name: String(row?.league?.name || fallback.leagueName || ''),
-        country: normalizeCountryName(row?.league?.country || fallback.country || ''),
-        logo: String(row?.league?.logo || fallback.leagueLogo || ''),
-        season: Number(row?.league?.season || fallback.season || 0),
+      league:{
+        id:leagueId,
+        name:safeText(source?.league?.name || fallback?.leagueName,180),
+        country:normalizeCountryName(source?.league?.country || fallback?.country || ''),
+        logo:safeText(source?.league?.logo || fallback?.leagueLogo,500),
+        season:leagueSeason || 0,
       },
-      form: String(row?.form || ''),
-      fixtures: {
-        played: { home: homePlayed, away: awayPlayed, total: totalPlayed },
-        wins: { home: teamStatsNum(wins.home), away: teamStatsNum(wins.away), total: teamStatsNum(wins.total) },
-        draws: { home: teamStatsNum(draws.home), away: teamStatsNum(draws.away), total: teamStatsNum(draws.total) },
-        losses: { home: teamStatsNum(loses.home), away: teamStatsNum(loses.away), total: teamStatsNum(loses.total) },
+      form:safeText(source?.form,80),
+      fixtures:{
+        played:{home:homePlayed,away:awayPlayed,total:totalPlayed},
+        wins:{
+          home:nonNegativeInteger(wins?.home),
+          away:nonNegativeInteger(wins?.away),
+          total:totalWins,
+        },
+        draws:{
+          home:nonNegativeInteger(draws?.home),
+          away:nonNegativeInteger(draws?.away),
+          total:totalDraws,
+        },
+        losses:{
+          home:nonNegativeInteger(loses?.home),
+          away:nonNegativeInteger(loses?.away),
+          total:nonNegativeInteger(loses?.total),
+        },
       },
-      goals: {
-        for: { home: teamStatsNum(goalsFor?.total?.home), away: teamStatsNum(goalsFor?.total?.away), total: gf, average: teamStatsAvg(goalsFor?.average?.total) },
-        against: { home: teamStatsNum(goalsAgainst?.total?.home), away: teamStatsNum(goalsAgainst?.total?.away), total: ga, average: teamStatsAvg(goalsAgainst?.average?.total) },
-        difference: gf - ga,
+      goals:{
+        for:{
+          home:nonNegativeInteger(goalsFor?.total?.home),
+          away:nonNegativeInteger(goalsFor?.total?.away),
+          total:gf,
+          average:teamStatsAvg(goalsFor?.average?.total),
+        },
+        against:{
+          home:nonNegativeInteger(goalsAgainst?.total?.home),
+          away:nonNegativeInteger(goalsAgainst?.total?.away),
+          total:ga,
+          average:teamStatsAvg(goalsAgainst?.average?.total),
+        },
+        difference:gf-ga,
       },
-      cleanSheets: { home: teamStatsNum(clean.home), away: teamStatsNum(clean.away), total: teamStatsNum(clean.total) },
-      failedToScore: { home: teamStatsNum(failed.home), away: teamStatsNum(failed.away), total: teamStatsNum(failed.total) },
-      biggest: {
-        winHome: String(biggest?.wins?.home || ''), winAway: String(biggest?.wins?.away || ''),
-        lossHome: String(biggest?.loses?.home || ''), lossAway: String(biggest?.loses?.away || ''),
-        goalsForHome: teamStatsNum(biggest?.goals?.for?.home), goalsForAway: teamStatsNum(biggest?.goals?.for?.away),
-        goalsAgainstHome: teamStatsNum(biggest?.goals?.against?.home), goalsAgainstAway: teamStatsNum(biggest?.goals?.against?.away),
+      cleanSheets:{
+        home:nonNegativeInteger(clean?.home),
+        away:nonNegativeInteger(clean?.away),
+        total:nonNegativeInteger(clean?.total),
       },
-      penalties: {
-        scored: teamStatsNum(penalties?.scored?.total), missed: teamStatsNum(penalties?.missed?.total), total: teamStatsNum(penalties?.total),
+      failedToScore:{
+        home:nonNegativeInteger(failed?.home),
+        away:nonNegativeInteger(failed?.away),
+        total:nonNegativeInteger(failed?.total),
       },
-      mostUsedLineup: mostUsedLineup ? { formation: String(mostUsedLineup.formation || ''), played: teamStatsNum(mostUsedLineup.played) } : null,
-      derived: {
+      biggest:{
+        winHome:safeText(biggest?.wins?.home,40),
+        winAway:safeText(biggest?.wins?.away,40),
+        lossHome:safeText(biggest?.loses?.home,40),
+        lossAway:safeText(biggest?.loses?.away,40),
+        goalsForHome:nonNegativeInteger(biggest?.goals?.for?.home),
+        goalsForAway:nonNegativeInteger(biggest?.goals?.for?.away),
+        goalsAgainstHome:nonNegativeInteger(biggest?.goals?.against?.home),
+        goalsAgainstAway:nonNegativeInteger(biggest?.goals?.against?.away),
+      },
+      penalties:{
+        scored:nonNegativeInteger(penalties?.scored?.total),
+        missed:nonNegativeInteger(penalties?.missed?.total),
+        total:nonNegativeInteger(penalties?.total),
+      },
+      mostUsedLineup:mostUsedLineup ? {
+        formation:safeText(mostUsedLineup?.formation,40),
+        played:nonNegativeInteger(mostUsedLineup?.played),
+      } : null,
+      derived:{
         points,
-        ppg: totalPlayed ? Math.round((points / totalPlayed) * 100) / 100 : null,
-        homePpg: homePlayed ? Math.round((homePoints / homePlayed) * 100) / 100 : null,
-        awayPpg: awayPlayed ? Math.round((awayPoints / awayPlayed) * 100) / 100 : null,
-        winRate: teamStatsRate(wins.total, totalPlayed),
-        cleanSheetRate: teamStatsRate(clean.total, totalPlayed),
-        failedToScoreRate: teamStatsRate(failed.total, totalPlayed),
-        goalsForPerMatch: totalPlayed ? Math.round((gf / totalPlayed) * 100) / 100 : null,
-        goalsAgainstPerMatch: totalPlayed ? Math.round((ga / totalPlayed) * 100) / 100 : null,
+        ppg:totalPlayed ? Math.round((points/totalPlayed)*100)/100 : null,
+        homePpg:homePlayed ? Math.round((homePoints/homePlayed)*100)/100 : null,
+        awayPpg:awayPlayed ? Math.round((awayPoints/awayPlayed)*100)/100 : null,
+        winRate:teamStatsRate(totalWins,totalPlayed),
+        cleanSheetRate:teamStatsRate(clean?.total,totalPlayed),
+        failedToScoreRate:teamStatsRate(failed?.total,totalPlayed),
+        goalsForPerMatch:totalPlayed ? Math.round((gf/totalPlayed)*100)/100 : null,
+        goalsAgainstPerMatch:totalPlayed ? Math.round((ga/totalPlayed)*100)/100 : null,
       },
     };
   }
-  
+
   function playerStatNumber(value) {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : 0;
+    return finiteNumber(value, 0);
   }
   
   function playerStatNullable(value) {
-    const cleaned = String(value ?? '').replaceAll('%', '').trim();
+    const cleaned=safeText(value,40).replaceAll('%','').trim();
     if (!cleaned) return null;
-    const n = Number(cleaned);
-    return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
+    const number=finiteNumber(cleaned,NaN);
+    return Number.isFinite(number) ? Math.round(number*100)/100 : null;
   }
-  
-  function normalizeApiFootballTeamPlayers(rows = [], context = {}) {
-    const teamId=Number(context.teamId || 0);
-    const leagueId=Number(context.leagueId || 0);
-    const season=Number(context.season || 0);
-    const players=(Array.isArray(rows) ? rows : []).map(row => {
-      const stats=(Array.isArray(row?.statistics) ? row.statistics : []).find(s =>
-        (!teamId || Number(s?.team?.id || 0)===teamId)
-        && (!leagueId || Number(s?.league?.id || 0)===leagueId)
-      ) || (Array.isArray(row?.statistics) ? row.statistics[0] : null);
+
+  function normalizeApiFootballTeamPlayers(providerRows = [], context = {}) {
+    const teamId=positiveSafeInteger(context?.teamId);
+    const leagueId=positiveSafeInteger(context?.leagueId);
+    const season=positiveSafeInteger(context?.season);
+    const seen=new Set();
+
+    const players=rows(providerRows).map(row=>{
+      const statistics=rows(row?.statistics);
+      const stats=statistics.find(stat=>
+        (!teamId || positiveSafeInteger(stat?.team?.id)===teamId)
+        && (!leagueId || positiveSafeInteger(stat?.league?.id)===leagueId)
+      ) || statistics[0] || null;
       if (!stats) return null;
-      const p=row?.player || {};
+
+      const player=row?.player && typeof row.player === 'object' ? row.player : {};
+      const providerId=positiveSafeInteger(player?.id);
+      const name=safeText(
+        player?.name || [player?.firstname,player?.lastname].filter(Boolean).join(' '),
+        180,
+      );
+      if (!name) return null;
+
       return {
-        id:Number(p.id || 0),
-        providerId:Number(p.id || 0) || null,
-        name:String(p.name || [p.firstname,p.lastname].filter(Boolean).join(' ') || ''),
-        age:Number(p.age || 0) || null,
-        nationality:String(p.nationality || ''),
-        photo:String(p.photo || ''),
-        injured:Boolean(p.injured),
+        id:providerId || 0,
+        providerId,
+        name,
+        age:positiveSafeInteger(player?.age),
+        nationality:safeText(player?.nationality,120),
+        photo:safeText(player?.photo,500),
+        injured:player?.injured === true,
         team:{
-          id:Number(stats?.team?.id || teamId || 0),
-          providerId:Number(stats?.team?.id || 0) || null,
-          name:String(stats?.team?.name || context.teamName || ''),
+          id:positiveSafeInteger(stats?.team?.id) || teamId || 0,
+          providerId:positiveSafeInteger(stats?.team?.id),
+          name:safeText(stats?.team?.name || context?.teamName,180),
         },
         league:{
-          id:Number(stats?.league?.id || leagueId || 0),
-          name:String(stats?.league?.name || context.leagueName || ''),
-          season:Number(stats?.league?.season || season || 0) || null,
+          id:positiveSafeInteger(stats?.league?.id) || leagueId || 0,
+          name:safeText(stats?.league?.name || context?.leagueName,180),
+          season:positiveSafeInteger(stats?.league?.season) || season,
         },
         games:{
-          appearances:playerStatNumber(stats?.games?.appearences),
-          lineups:playerStatNumber(stats?.games?.lineups),
-          minutes:playerStatNumber(stats?.games?.minutes),
+          appearances:nonNegativeInteger(stats?.games?.appearences),
+          lineups:nonNegativeInteger(stats?.games?.lineups),
+          minutes:nonNegativeInteger(stats?.games?.minutes),
           rating:playerStatNullable(stats?.games?.rating),
-          position:String(stats?.games?.position || ''),
+          position:safeText(stats?.games?.position,80),
         },
         goals:{
-          total:playerStatNumber(stats?.goals?.total),
-          assists:playerStatNumber(stats?.goals?.assists),
-          conceded:playerStatNumber(stats?.goals?.conceded),
-          saves:playerStatNumber(stats?.goals?.saves),
-          penalties:playerStatNumber(stats?.penalty?.scored),
+          total:nonNegativeInteger(stats?.goals?.total),
+          assists:nonNegativeInteger(stats?.goals?.assists),
+          conceded:nonNegativeInteger(stats?.goals?.conceded),
+          saves:nonNegativeInteger(stats?.goals?.saves),
+          penalties:nonNegativeInteger(stats?.penalty?.scored),
         },
         shots:{
-          total:playerStatNumber(stats?.shots?.total),
-          on:playerStatNumber(stats?.shots?.on),
+          total:nonNegativeInteger(stats?.shots?.total),
+          on:nonNegativeInteger(stats?.shots?.on),
         },
         passes:{
-          total:playerStatNumber(stats?.passes?.total),
-          key:playerStatNumber(stats?.passes?.key),
+          total:nonNegativeInteger(stats?.passes?.total),
+          key:nonNegativeInteger(stats?.passes?.key),
           accuracy:playerStatNullable(stats?.passes?.accuracy),
         },
         tackles:{
-          total:playerStatNumber(stats?.tackles?.total),
-          blocks:playerStatNumber(stats?.tackles?.blocks),
-          interceptions:playerStatNumber(stats?.tackles?.interceptions),
+          total:nonNegativeInteger(stats?.tackles?.total),
+          blocks:nonNegativeInteger(stats?.tackles?.blocks),
+          interceptions:nonNegativeInteger(stats?.tackles?.interceptions),
         },
         duels:{
-          total:playerStatNumber(stats?.duels?.total),
-          won:playerStatNumber(stats?.duels?.won),
+          total:nonNegativeInteger(stats?.duels?.total),
+          won:nonNegativeInteger(stats?.duels?.won),
         },
         dribbles:{
-          attempts:playerStatNumber(stats?.dribbles?.attempts),
-          success:playerStatNumber(stats?.dribbles?.success),
+          attempts:nonNegativeInteger(stats?.dribbles?.attempts),
+          success:nonNegativeInteger(stats?.dribbles?.success),
         },
         fouls:{
-          drawn:playerStatNumber(stats?.fouls?.drawn),
-          committed:playerStatNumber(stats?.fouls?.committed),
+          drawn:nonNegativeInteger(stats?.fouls?.drawn),
+          committed:nonNegativeInteger(stats?.fouls?.committed),
         },
         cards:{
-          yellow:playerStatNumber(stats?.cards?.yellow),
-          yellowRed:playerStatNumber(stats?.cards?.yellowred),
-          red:playerStatNumber(stats?.cards?.red),
+          yellow:nonNegativeInteger(stats?.cards?.yellow),
+          yellowRed:nonNegativeInteger(stats?.cards?.yellowred),
+          red:nonNegativeInteger(stats?.cards?.red),
         },
         source:'api-football',
       };
-    }).filter(row => row?.name);
-  
-    players.sort((a,b) =>
-      Number(b.goals.total || 0) - Number(a.goals.total || 0)
-      || Number(b.goals.assists || 0) - Number(a.goals.assists || 0)
-      || Number(b.games.appearances || 0) - Number(a.games.appearances || 0)
-      || Number(b.games.minutes || 0) - Number(a.games.minutes || 0)
-      || a.name.localeCompare(b.name)
+    }).filter(player=>{
+      if (!player?.name) return false;
+      const key=player.providerId ? `id:${player.providerId}` : `name:${player.name.toLocaleLowerCase('ru')}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    players.sort((a,b)=>
+      b.goals.total-a.goals.total
+      || b.goals.assists-a.goals.assists
+      || b.games.appearances-a.games.appearances
+      || b.games.minutes-a.games.minutes
+      || a.name.localeCompare(b.name,'ru')
     );
-  
+
     return players;
   }
-  
+
   async function apiFootballTeamSeasonPlayers(teamId, leagueId, season, cfg, context = {}) {
-    const rows=[];
+    const normalizedTeamId=positiveSafeInteger(teamId);
+    const normalizedLeagueId=positiveSafeInteger(leagueId);
+    const normalizedSeason=positiveSafeInteger(season);
+    if (!normalizedTeamId || !normalizedLeagueId || !normalizedSeason) {
+      return {
+        available:false,
+        complete:false,
+        partial:false,
+        scope:'team-season',
+        players:[],
+        summary:{count:0,complete:false,pagesLoaded:0,pagesTotal:0,sourceScope:'team-season'},
+        reason:'invalid_team_season_scope',
+        sourceMeta:sourceMeta({
+          provider:'api-football',
+          label:'API-Football',
+          freshness:'unavailable',
+          fallback:false,
+        }),
+      };
+    }
+
+    const collected=[];
     let totalPages=1;
     let currentPage=0;
     let stopReason='';
-    const maxPages=Math.max(1,Math.min(3,Number(context.maxPages || 3)));
-  
-    for (let page=1; page<=maxPages; page+=1) {
-      if (page>1 && !freeQuotaHealthy(8,1)) {
-        stopReason='quota_guard';
-        break;
+    const maxPages=Math.min(3,positiveSafeInteger(context?.maxPages) || 3);
+
+    for (let page=1;page<=maxPages;page+=1) {
+      if (page>1) {
+        let quotaOk=false;
+        try { quotaOk=freeQuotaHealthy(8,1)===true; } catch { quotaOk=false; }
+        if (!quotaOk) {
+          stopReason='quota_guard';
+          break;
+        }
       }
-      const envelope=await apiFootball('/players', { team:teamId, league:leagueId, season, page }, cfg, { responseType:'envelope' });
-      const pageRows=Array.isArray(envelope?.response) ? envelope.response : [];
-      rows.push(...pageRows);
-      currentPage=Math.max(page, Number(envelope?.paging?.current || page));
-      totalPages=Math.max(currentPage, Number(envelope?.paging?.total || currentPage));
+
+      const envelope=await apiFootball('/players',{
+        team:normalizedTeamId,
+        league:normalizedLeagueId,
+        season:normalizedSeason,
+        page,
+      },cfg,{responseType:'envelope'});
+      const pageRows=rows(envelope?.response);
+      collected.push(...pageRows);
+
+      currentPage=Math.max(page,positiveSafeInteger(envelope?.paging?.current) || page);
+      totalPages=Math.max(currentPage,positiveSafeInteger(envelope?.paging?.total) || currentPage);
       if (currentPage>=totalPages || !pageRows.length) break;
     }
-  
-    const players=normalizeApiFootballTeamPlayers(rows, { teamId, leagueId, season, ...context });
+
+    const players=normalizeApiFootballTeamPlayers(collected,{
+      teamId:normalizedTeamId,
+      leagueId:normalizedLeagueId,
+      season:normalizedSeason,
+      ...context,
+    });
     const complete=currentPage>=totalPages;
     if (!complete && !stopReason && totalPages>maxPages) stopReason='page_cap';
+
     return {
       available:players.length>0,
       complete,
@@ -1097,25 +1206,39 @@ export function createTeamTournamentRuntime(deps) {
       }),
     };
   }
-  
+
   async function footballDataTeamScorersProvider(teamId, teamName, leagueId, leagueName, season, cfg) {
-    if (!cfg.footballDataToken) return { available:false, reason:'token_not_configured', players:[], sourceMeta:null };
-    const url=footballDataScorersUrl(leagueId, season, { limit:50 });
-    if (!url) return { available:false, reason:'competition_not_supported', players:[], sourceMeta:null };
-    const budget=await claimSecondaryProviderBudget(cfg, 'football-data', 9);
-    if (!budget.allowed) return { available:false, reason:budget.reason || 'secondary_rate_limit', players:[], sourceMeta:null };
+    const token=safeText(cfg?.footballDataToken,500);
+    if (!token) return {available:false,reason:'token_not_configured',players:[],sourceMeta:null};
+
+    const url=footballDataScorersUrl(leagueId,season,{limit:50});
+    if (!url) return {available:false,reason:'competition_not_supported',players:[],sourceMeta:null};
+
+    const budget=await claimSecondaryProviderBudget(cfg,'football-data',9);
+    if (!budget.allowed) return {
+      available:false,
+      reason:budget.reason || 'secondary_rate_limit',
+      players:[],
+      sourceMeta:null,
+    };
+
     try {
-      const payload=await secondaryProviderJson(url, cfg, {
+      const payload=await secondaryProviderJson(url,cfg,{
         provider:'football-data.org',
         operation:'scorers',
         timeoutMs:6500,
-        headers:{ 'x-auth-token':cfg.footballDataToken },
+        headers:{'x-auth-token':token},
       });
-      const normalized=normalizeFootballDataTeamScorers(payload, { teamId, teamName, leagueId, leagueName, season });
+      const normalized=normalizeFootballDataTeamScorers(
+        payload,
+        {teamId,teamName,leagueId,leagueName,season},
+      ) || {};
       return {
         ...normalized,
+        players:rows(normalized?.players),
+        available:normalized?.available === true && rows(normalized?.players).length>0,
         sourceMeta:sourceMeta({
-          ...(normalized.sourceMeta || {}),
+          ...(normalized?.sourceMeta || {}),
           provider:'football-data',
           label:'football-data.org',
           freshness:'fresh',
@@ -1123,36 +1246,74 @@ export function createTeamTournamentRuntime(deps) {
         }),
       };
     } catch (error) {
-      await recordOpsEvent(cfg, {
-        severity:'info', source:'provider', eventType:'fallback_provider_failure',
-        code:'FOOTBALL_DATA_SCORERS', message:error?.message || error,
-        meta:{ teamId:Number(teamId), leagueId:Number(leagueId), season:Number(season) },
-      }).catch(() => null);
-      return { available:false, reason:String(error?.code || 'provider_error'), players:[], sourceMeta:null };
+      await recordOpsEvent(cfg,{
+        severity:'info',
+        source:'provider',
+        eventType:'fallback_provider_failure',
+        code:'FOOTBALL_DATA_SCORERS',
+        message:error?.message || error,
+        meta:{
+          teamId:integer(teamId),
+          leagueId:integer(leagueId),
+          season:integer(season),
+        },
+      }).catch(()=>null);
+      return {
+        available:false,
+        reason:safeText(error?.code,120) || 'provider_error',
+        players:[],
+        sourceMeta:null,
+      };
     }
   }
-  
+
   async function resolveTeamSeasonPlayers(teamId, teamName, leagueId, leagueName, season, cfg, options = {}) {
     const attempts=[];
     try {
-      const primary=await apiFootballTeamSeasonPlayers(teamId, leagueId, season, cfg, { ...options, teamName, leagueName });
-      attempts.push({provider:'api-football',state:primary.available?'available':'unavailable',reason:String(primary.reason || '')});
-      if (primary.available) {
+      const primary=await apiFootballTeamSeasonPlayers(
+        teamId,
+        leagueId,
+        season,
+        cfg,
+        {...options,teamName,leagueName},
+      );
+      attempts.push({
+        provider:'api-football',
+        state:primary?.available ? 'available' : 'unavailable',
+        reason:safeText(primary?.reason,160),
+      });
+      if (primary?.available) {
         primary.sourceMeta={...(primary.sourceMeta || {}),attempts};
         return primary;
       }
     } catch (error) {
-      const compact=compactProviderError(error);
-      attempts.push({provider:'api-football',state:'error',reason:compact.code,status:compact.status});
+      const compact=compactProviderError(error) || {};
+      attempts.push({
+        provider:'api-football',
+        state:'error',
+        reason:safeText(compact?.code || error?.code,120) || 'provider_error',
+        status:positiveSafeInteger(compact?.status || error?.status),
+      });
     }
-  
-    const fallback=await footballDataTeamScorersProvider(teamId, teamName, leagueId, leagueName, season, cfg);
-    attempts.push({provider:'football-data',state:fallback.available?'available':'unavailable',reason:String(fallback.reason || '')});
-    if (fallback.available) {
+
+    const fallback=await footballDataTeamScorersProvider(
+      teamId,
+      teamName,
+      leagueId,
+      leagueName,
+      season,
+      cfg,
+    );
+    attempts.push({
+      provider:'football-data',
+      state:fallback?.available ? 'available' : 'unavailable',
+      reason:safeText(fallback?.reason,160),
+    });
+    if (fallback?.available) {
       fallback.sourceMeta={...(fallback.sourceMeta || {}),attempts};
       return fallback;
     }
-  
+
     return {
       available:false,
       complete:false,
@@ -1169,8 +1330,8 @@ export function createTeamTournamentRuntime(deps) {
       }),
     };
   }
-  
-  
+
+
   return Object.freeze({
     normalizeStandingRow,
     normalizeApiFootballStandings,
