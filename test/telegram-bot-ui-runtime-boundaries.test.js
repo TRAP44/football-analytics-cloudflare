@@ -250,6 +250,39 @@ test('fixture cache rejects cross-fixture and duplicate-team identities', async 
   assert.equal(providerCalls,2);
 });
 
+test('Telegram UI reuses only the current analysis cache revision', async () => {
+  let providerCalls=0;
+  const {api,cache}=runtime({
+    loadProviderFixture:async()=>{
+      providerCalls+=1;
+      return providerFixture();
+    },
+  });
+
+  cache.set('fixture:123:v15-availability-quality-rc144',{
+    match:{
+      fixtureId:123,
+      home:{id:1,name:'Cached Home'},
+      away:{id:2,name:'Cached Away'},
+    },
+  });
+  const current=await api.loadBotFixtureCard(123,{});
+  assert.equal(current.homeName,'Cached Home');
+  assert.equal(providerCalls,0);
+
+  cache.clear();
+  cache.set('fixture:123:v10-ai-instructor',{
+    match:{
+      fixtureId:123,
+      home:{id:1,name:'Legacy Home'},
+      away:{id:2,name:'Legacy Away'},
+    },
+  });
+  const legacy=await api.loadBotFixtureCard(123,{});
+  assert.equal(legacy.homeName,'Home FC');
+  assert.equal(providerCalls,1);
+});
+
 test('provider fixture identity mismatch is rejected and quota probe failures fail closed', async () => {
   let providerCalls=0;
   const mismatch=runtime({
@@ -366,6 +399,17 @@ test('send menu isolates growth telemetry failures and preserves multiline AI co
   assert.equal(ok,true);
   const message=sent.find(row=>row.method==='sendMessage');
   assert.match(message.payload.text,/first line\nsecond line/);
+});
+
+test('oversized HTML handoff copy fails soft instead of truncating markup', async () => {
+  const {api,sent}=runtime({
+    botAiHandoffText:()=>`<b>${'x'.repeat(5000)}</b>`,
+  });
+
+  const ok=await api.sendBotFixtureMenu(request,{},7,700,123);
+  assert.equal(ok,true);
+  const message=sent.find(row=>row.method==='sendMessage');
+  assert.equal(message.payload.text,'AI-разбор готов.');
 });
 
 test('send menu validates Telegram identities before side effects', async () => {
