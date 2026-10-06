@@ -20,103 +20,233 @@ export const DEFAULT_NOTIFICATION_PREFERENCES = Object.freeze({
   aiRadar: true,
 });
 
-const PAID_PLANS = new Set(['PRO', 'PREMIUM']);
+const PAID_PLANS = new Set(['PRO','PREMIUM']);
 const PLAYER_EVENTS = new Set(PLAYER_FOLLOW_NOTIFICATION_CONTRACT.eventTypes);
+const EVENT_TYPE_RE = /^(?:match|team|player|ai|radar|market)\.[a-z0-9][a-z0-9_.-]{0,78}$/;
+const MAX_EVENT_KEY_LENGTH = 512;
+const MAX_TIMESTAMP_MS = 8.64e15;
 
-function safeBoolean(value, fallback) {
+function plainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+}
+
+function safeBoolean(value,fallback) {
   return typeof value === 'boolean' ? value : fallback;
 }
 
-export function normalizeNotificationPreferences(value = {}) {
-  let input = value;
-  if (typeof input === 'string') {
-    try { input = JSON.parse(input); } catch { input = {}; }
+function integerCandidate(value) {
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const raw=value.trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const number=Number(raw);
+  return Number.isSafeInteger(number) ? number : null;
+}
+
+function positiveSafeInteger(value) {
+  const valueNumber=integerCandidate(value);
+  return valueNumber !== null && valueNumber > 0 ? valueNumber : 0;
+}
+
+function normalizePlan(value) {
+  if (typeof value !== 'string') return 'FREE';
+  const plan=value.trim().toUpperCase();
+  return PAID_PLANS.has(plan) ? plan : 'FREE';
+}
+
+function normalizeNow(value) {
+  if (
+    typeof value === 'number'
+    && Number.isFinite(value)
+    && value >= 0
+    && value <= MAX_TIMESTAMP_MS
+  ) return value;
+  return Date.now();
+}
+
+function normalizeSubscriptionUntil(user) {
+  const source=plainObject(user);
+  if (!source) return null;
+  const value=typeof source.subscription_until === 'string'
+    ? source.subscription_until
+    : typeof source.subscriptionUntil === 'string'
+      ? source.subscriptionUntil
+      : '';
+  if (!value.trim()) return null;
+  const timestamp=Date.parse(value.trim());
+  return Number.isFinite(timestamp) && timestamp >= 0 && timestamp <= MAX_TIMESTAMP_MS
+    ? timestamp
+    : null;
+}
+
+function normalizeEventType(value) {
+  if (typeof value !== 'string') return '';
+  const type=value.trim().toLowerCase();
+  return EVENT_TYPE_RE.test(type) ? type : '';
+}
+
+function eventKeyHash(value) {
+  let hash=2166136261;
+  for (const byte of new TextEncoder().encode(value)) {
+    hash^=byte;
+    hash=Math.imul(hash,16777619)>>>0;
   }
-  if (!input || typeof input !== 'object' || Array.isArray(input)) input = {};
-  return Object.freeze({
-    enabled: safeBoolean(input.enabled, DEFAULT_NOTIFICATION_PREFERENCES.enabled),
-    match: safeBoolean(input.match, DEFAULT_NOTIFICATION_PREFERENCES.match),
-    teams: safeBoolean(input.teams, DEFAULT_NOTIFICATION_PREFERENCES.teams),
-    players: safeBoolean(input.players, DEFAULT_NOTIFICATION_PREFERENCES.players),
-    aiRadar: safeBoolean(input.aiRadar ?? input.ai_radar, DEFAULT_NOTIFICATION_PREFERENCES.aiRadar),
-  });
+  return hash.toString(16).padStart(8,'0');
 }
 
-export function effectiveNotificationPlan(user = {}, now = Date.now()) {
-  const plan = String(user?.plan || 'FREE').toUpperCase();
-  const normalized = PAID_PLANS.has(plan) ? plan : 'FREE';
-  const expiresAt = Date.parse(user?.subscription_until || user?.subscriptionUntil || '');
-  if (normalized !== 'FREE' && Number.isFinite(expiresAt) && expiresAt <= Number(now)) return 'FREE';
-  return normalized;
+function normalizeEventKey(value) {
+  if (typeof value !== 'string') return '';
+  const raw=value.trim();
+  if (
+    !raw
+    || raw.length > MAX_EVENT_KEY_LENGTH
+    || /[\u0000-\u001f\u007f-\u009f]/u.test(raw)
+  ) return '';
+  const prefix=raw
+    .toLowerCase()
+    .replace(/[^a-z0-9._:+-]+/g,'-')
+    .replace(/^-+|-+$/g,'')
+    .slice(0,96);
+  return `${prefix || 'event'}~${eventKeyHash(raw)}`;
 }
 
-export function notificationCategory(eventType = '') {
-  const type = String(eventType || '');
+function clonePreferences(input) {
+  return {
+    enabled:safeBoolean(input.enabled,DEFAULT_NOTIFICATION_PREFERENCES.enabled),
+    match:safeBoolean(input.match,DEFAULT_NOTIFICATION_PREFERENCES.match),
+    teams:safeBoolean(input.teams,DEFAULT_NOTIFICATION_PREFERENCES.teams),
+    players:safeBoolean(input.players,DEFAULT_NOTIFICATION_PREFERENCES.players),
+    aiRadar:safeBoolean(
+      input.aiRadar ?? input.ai_radar,
+      DEFAULT_NOTIFICATION_PREFERENCES.aiRadar,
+    ),
+  };
+}
+
+export function normalizeNotificationPreferences(value = {}) {
+  let input=value;
+  if (typeof input === 'string') {
+    try {
+      const parsed=JSON.parse(input);
+      input=plainObject(parsed) || {};
+    } catch {
+      input={};
+    }
+  }
+  input=plainObject(input) || {};
+  return Object.freeze(clonePreferences(input));
+}
+
+export function effectiveNotificationPlan(user = {},now=Date.now()) {
+  const source=plainObject(user) || {};
+  const plan=normalizePlan(source.plan);
+  if (plan === 'FREE') return 'FREE';
+
+  const expiresAt=normalizeSubscriptionUntil(source);
+  if (expiresAt !== null && expiresAt <= normalizeNow(now)) return 'FREE';
+  return plan;
+}
+
+export function notificationCategory(eventType='') {
+  const type=normalizeEventType(eventType);
+  if (!type) return '';
   if (PLAYER_EVENTS.has(type) || type.startsWith('player.')) return 'players';
   if (type.startsWith('ai.') || type.startsWith('radar.') || type.startsWith('market.')) return 'aiRadar';
   if (type.startsWith('team.')) return 'teams';
-  return 'match';
+  if (type.startsWith('match.')) return 'match';
+  return '';
 }
 
-export function notificationRequiredPlan(eventType = '') {
-  const type = String(eventType || '');
-  if (PLAYER_EVENTS.has(type) || type.startsWith('player.') || type.startsWith('ai.') || type.startsWith('radar.') || type.startsWith('market.')) {
-    return 'PRO';
+export function notificationRequiredPlan(eventType='') {
+  const type=normalizeEventType(eventType);
+  if (!type) return '';
+  if (
+    PLAYER_EVENTS.has(type)
+    || type.startsWith('player.')
+    || type.startsWith('ai.')
+    || type.startsWith('radar.')
+    || type.startsWith('market.')
+  ) return 'PRO';
+  if (type.startsWith('match.') || type.startsWith('team.')) return 'FREE';
+  return '';
+}
+
+export function notificationDecision({
+  eventType,
+  plan='FREE',
+  preferences=DEFAULT_NOTIFICATION_PREFERENCES,
+} = {}) {
+  const category=notificationCategory(eventType);
+  const requiredPlan=notificationRequiredPlan(eventType);
+  if (!category || !requiredPlan) {
+    return {allowed:false,reason:'invalid_event',category:'',requiredPlan:''};
   }
-  return 'FREE';
-}
 
-export function notificationDecision({ eventType, plan = 'FREE', preferences = DEFAULT_NOTIFICATION_PREFERENCES } = {}) {
-  const normalizedPreferences = normalizeNotificationPreferences(preferences);
-  const normalizedPlan = PAID_PLANS.has(String(plan || '').toUpperCase()) ? String(plan).toUpperCase() : 'FREE';
-  const category = notificationCategory(eventType);
-  const requiredPlan = notificationRequiredPlan(eventType);
+  const normalizedPreferences=normalizeNotificationPreferences(preferences);
+  const normalizedPlan=normalizePlan(plan);
 
   if (!normalizedPreferences.enabled) {
-    return { allowed: false, reason: 'preference_master_disabled', category, requiredPlan };
+    return {allowed:false,reason:'preference_master_disabled',category,requiredPlan};
   }
   if (normalizedPreferences[category] === false) {
-    return { allowed: false, reason: 'preference_category_disabled', category, requiredPlan };
+    return {allowed:false,reason:'preference_category_disabled',category,requiredPlan};
   }
   if (requiredPlan !== 'FREE' && !PAID_PLANS.has(normalizedPlan)) {
-    return { allowed: false, reason: 'entitlement_required', category, requiredPlan };
+    return {allowed:false,reason:'entitlement_required',category,requiredPlan};
   }
-  return { allowed: true, reason: 'allowed', category, requiredPlan };
+  return {allowed:true,reason:'allowed',category,requiredPlan};
 }
 
-export function publicSmartNotificationCapabilities(plan = 'FREE') {
-  const normalizedPlan = PAID_PLANS.has(String(plan || '').toUpperCase()) ? String(plan).toUpperCase() : 'FREE';
-  const paid = PAID_PLANS.has(normalizedPlan);
+export function publicSmartNotificationCapabilities(plan='FREE') {
+  const normalizedPlan=normalizePlan(plan);
+  const paid=PAID_PLANS.has(normalizedPlan);
   return Object.freeze({
-    policyVersion: SMART_NOTIFICATION_POLICY.version,
-    plan: normalizedPlan,
-    smartAlerts: paid,
-    categories: Object.freeze({
-      match: Object.freeze({ available: true, requiredPlan: 'FREE' }),
-      teams: Object.freeze({ available: true, requiredPlan: 'FREE' }),
-      players: Object.freeze({ available: paid, requiredPlan: 'PRO' }),
-      aiRadar: Object.freeze({ available: paid, requiredPlan: 'PRO' }),
+    policyVersion:SMART_NOTIFICATION_POLICY.version,
+    plan:normalizedPlan,
+    smartAlerts:paid,
+    categories:Object.freeze({
+      match:Object.freeze({available:true,requiredPlan:'FREE'}),
+      teams:Object.freeze({available:true,requiredPlan:'FREE'}),
+      players:Object.freeze({available:paid,requiredPlan:'PRO'}),
+      aiRadar:Object.freeze({available:paid,requiredPlan:'PRO'}),
     }),
-    thresholds: Object.freeze({
-      marketPp: SMART_NOTIFICATION_POLICY.marketThresholdPp,
-      aiProbabilityPp: SMART_NOTIFICATION_POLICY.aiProbabilityThresholdPp,
-      aiCooldownMinutes: Math.round(SMART_NOTIFICATION_POLICY.aiCooldownSeconds / 60),
-      radarConfidence: SMART_NOTIFICATION_POLICY.radarConfidenceThreshold,
-      radarOutcomeProbability: SMART_NOTIFICATION_POLICY.radarOutcomeThreshold,
-      radarCooldownMinutes: Math.round(SMART_NOTIFICATION_POLICY.radarCooldownSeconds / 60),
+    thresholds:Object.freeze({
+      marketPp:SMART_NOTIFICATION_POLICY.marketThresholdPp,
+      aiProbabilityPp:SMART_NOTIFICATION_POLICY.aiProbabilityThresholdPp,
+      aiCooldownMinutes:Math.round(SMART_NOTIFICATION_POLICY.aiCooldownSeconds/60),
+      radarConfidence:SMART_NOTIFICATION_POLICY.radarConfidenceThreshold,
+      radarOutcomeProbability:SMART_NOTIFICATION_POLICY.radarOutcomeThreshold,
+      radarCooldownMinutes:Math.round(SMART_NOTIFICATION_POLICY.radarCooldownSeconds/60),
     }),
-    playerContract: Object.freeze({
-      version: PLAYER_FOLLOW_NOTIFICATION_CONTRACT.version,
-      eventTypes: Object.freeze([...PLAYER_FOLLOW_NOTIFICATION_CONTRACT.eventTypes]),
+    playerContract:Object.freeze({
+      version:PLAYER_FOLLOW_NOTIFICATION_CONTRACT.version,
+      eventTypes:Object.freeze([...PLAYER_FOLLOW_NOTIFICATION_CONTRACT.eventTypes]),
     }),
   });
 }
 
-export function smartNotificationDedupeKey({ fixtureId, eventType, eventKey, playerId = null } = {}) {
-  const fixture = Number(fixtureId || 0);
-  const type = String(eventType || '').trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').slice(0, 80);
-  const key = String(eventKey || '').trim().toLowerCase().replace(/[^a-z0-9._:+-]+/g, '-').slice(0, 140);
-  const player = Number(playerId || 0);
+export function smartNotificationDedupeKey({
+  fixtureId,
+  eventType,
+  eventKey,
+  playerId=null,
+} = {}) {
+  const fixture=positiveSafeInteger(fixtureId);
+  const type=normalizeEventType(eventType);
+  const key=normalizeEventKey(eventKey);
+  const player=playerId === null || playerId === undefined || playerId === ''
+    ? 0
+    : positiveSafeInteger(playerId);
+
   if (!fixture || !type || !key) return '';
-  return [`v1`, fixture, type, player > 0 ? `p${player}` : '', key].filter(Boolean).join(':').slice(0, 240);
+  if (
+    (type.startsWith('player.') && !player)
+    || (!type.startsWith('player.') && playerId !== null && playerId !== undefined && playerId !== '' && !player)
+  ) return '';
+
+  const parts=['v1',String(fixture),type];
+  if (player) parts.push(`p${player}`);
+  parts.push(key);
+  const output=parts.join(':');
+  return output.length <= 240 ? output : '';
 }
