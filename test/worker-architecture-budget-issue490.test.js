@@ -29,13 +29,14 @@ import { createClientTelemetryRuntime } from '../src/client-telemetry-runtime.js
 import { createUserDataApiRuntime } from '../src/user-data-api-runtime.js';
 import { createOddsSnapshotRuntime } from '../src/odds-snapshot-runtime.js';
 import { createSupabaseReadinessRuntime } from '../src/supabase-readiness-runtime.js';
+import { createReleaseReadinessRuntime } from '../src/release-readiness-runtime.js';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 
 test('Worker composition root stays below the post-audit architecture budget',()=>{
   const bytes=Buffer.byteLength(worker,'utf8');
   assert.ok(
-    bytes<=595_000,
+    bytes<=585_000,
     `src/worker.js grew to ${bytes} bytes; extract another cohesive runtime instead of growing the composition root`,
   );
 });
@@ -158,6 +159,7 @@ test('extracted runtime factories are executable contracts, not source-only plac
   const userDataApi=createUserDataApiRuntime(new Proxy({}, {get:()=>()=>null}));
   const oddsSnapshot=createOddsSnapshotRuntime({hasSupabase:()=>false,memory:{oddsSnapshots:new Map()},normalizeThree:()=>({home:33.3,draw:33.3,away:33.4}),sanitizeOddsSnapshotsForMovement:x=>x || [],supaSelectMany:async()=>[],supaUpsert:async()=>{}});
   const supabaseReadiness=createSupabaseReadinessRuntime({bumpTelemetry:()=>{},fetchWithTimeout:async()=>({ok:true,headers:{get:()=>''},json:async()=>[]}),hasSupabase:()=>false,redactOpsString:value=>String(value||''),sleepMs:async()=>{},supaHeaders:()=>({})});
+  const releaseReadiness=createReleaseReadinessRuntime(new Proxy({}, {get:()=>()=>null}));
   assert.equal(typeof settlement.runSettlementWatchdog,'function');
   assert.equal(typeof settlement.runSettlementFinalityVerification,'function');
   assert.equal(typeof providerData.providerDataState,'function');
@@ -217,6 +219,9 @@ test('extracted runtime factories are executable contracts, not source-only plac
   assert.equal(typeof oddsSnapshot.buildOddsMovement,'function');
   assert.equal(typeof supabaseReadiness.probeSupabase,'function');
   assert.equal(typeof supabaseReadiness.probeSupabaseReadinessConfirmed,'function');
+  assert.equal(typeof releaseReadiness.apiProductionReadiness,'function');
+  assert.equal(typeof releaseReadiness.runSingleFlightSelfTest,'function');
+  assert.equal(typeof releaseReadiness.rcReadRoute,'function');
 });
 
 test('Worker composes extracted runtimes through explicit imports',()=>{
@@ -250,6 +255,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/import \{ createUserDataApiRuntime \} from '\.\/user-data-api-runtime\.js'/);
   assert.match(worker,/import \{ createOddsSnapshotRuntime \} from '\.\/odds-snapshot-runtime\.js'/);
   assert.match(worker,/import \{ createSupabaseReadinessRuntime \} from '\.\/supabase-readiness-runtime\.js'/);
+  assert.match(worker,/import \{ createReleaseReadinessRuntime \} from '\.\/release-readiness-runtime\.js'/);
   assert.match(worker,/createDiagnosticsRuntime\(\{/);
   assert.match(worker,/createPublicHealthRuntime\(\{/);
   assert.match(worker,/createPublicStatusRuntime\(\{/);
@@ -281,6 +287,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/createUserDataApiRuntime\(\{/);
   assert.match(worker,/createOddsSnapshotRuntime\(\{/);
   assert.match(worker,/createSupabaseReadinessRuntime\(\{/);
+  assert.match(worker,/createReleaseReadinessRuntime\(\{/);
   assert.doesNotMatch(worker,/async function collectDiagnostics\(/);
   assert.doesNotMatch(worker,/async function readRecentOpsEvents\(/);
   assert.doesNotMatch(worker,/async function publicServiceStatus\(/);
@@ -381,4 +388,9 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.doesNotMatch(worker,/async function probeSupabaseConfirmed\(/);
   assert.doesNotMatch(worker,/async function probeSupabaseReadiness\(/);
   assert.doesNotMatch(worker,/async function probeSupabaseReadinessConfirmed\(/);
+  assert.doesNotMatch(worker,/function releaseCheck\(/);
+  assert.doesNotMatch(worker,/async function runSingleFlightSelfTest\(/);
+  assert.doesNotMatch(worker,/async function apiProductionReadiness\(/);
+  assert.doesNotMatch(worker,/function rcCheck\(/);
+  assert.doesNotMatch(worker,/async function rcReadRoute\(/);
 });
