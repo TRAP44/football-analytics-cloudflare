@@ -268,15 +268,23 @@ export function createModelIntelligenceRuntime(deps) {
     return probabilityObject(normalizeThree(remaining*homeShare,draw,remaining*(1-homeShare)));
   }
   
-  function h2hProbabilities(h2h) {
+  function h2hCounts(h2h) {
     const values=[h2h?.homeWins,h2h?.draws,h2h?.awayWins].map(value=>
       value === null || value === undefined || value === '' ? 0 : nonNegativeSafeInteger(value)
     );
     if (values.some(value=>value === null)) return null;
     const [homeWins,draws,awayWins]=values;
-    const total=homeWins+draws+awayWins;
-    if (total <= 0) return null;
-    return probabilityObject(normalizeThree(homeWins+1,draws+1,awayWins+1));
+    return {homeWins,draws,awayWins,total:homeWins+draws+awayWins};
+  }
+
+  function h2hProbabilities(h2h) {
+    const counts=h2hCounts(h2h);
+    if (!counts || counts.total <= 0) return null;
+    return probabilityObject(normalizeThree(
+      counts.homeWins+1,
+      counts.draws+1,
+      counts.awayWins+1,
+    ));
   }
   
   function blendProbabilitySignals({ market, model, form, h2h, weightOverrides = null } = {}) {
@@ -294,8 +302,8 @@ export function createModelIntelligenceRuntime(deps) {
       const probabilities=probabilityObject(input);
       if (!probabilities) continue;
       const hasOverride=Object.prototype.hasOwnProperty.call(configured,name);
-      const override=hasOverride ? finiteNumber(configured[name]) : null;
-      const rawWeight=hasOverride && override !== null && override >= 0 ? override : baseWeights[name];
+      const override=hasOverride ? finiteRange(configured[name],0,1) : null;
+      const rawWeight=hasOverride && override !== null ? override : baseWeights[name];
       if (!(rawWeight > 0)) continue;
       candidates.push([name,probabilities,rawWeight]);
     }
@@ -466,14 +474,17 @@ export function createModelIntelligenceRuntime(deps) {
   }
   
   function buildAnalysisNotes({ probabilities, market, model, homeForm, awayForm, h2h, absences, lineups, news, homeName, awayName, minutesToKickoff, confidence }) {
-    const factors = [];
-    const risks = [];
-    const hp = homeForm?.overall?.ppg, ap = awayForm?.overall?.ppg;
+    const factors=[];
+    const risks=[];
+    const finalProbabilities=probabilityObject(probabilities);
+    const marketProbabilities=probabilityObject(market?.probabilities);
+    const counts=h2hCounts(h2h);
+    const hp=homeForm?.overall?.ppg, ap=awayForm?.overall?.ppg;
     if (Number.isFinite(hp) && Number.isFinite(ap) && Math.abs(hp - ap) >= 0.35) {
       factors.push(`${hp > ap ? homeName : awayName} лучше по форме последних матчей: ${Math.max(hp, ap).toFixed(1)} против ${Math.min(hp, ap).toFixed(1)} очка за игру.`);
     }
-    if (market?.probabilities) {
-      const leader = outcomeName(market.probabilities, homeName, awayName);
+    if (marketProbabilities) {
+      const leader=outcomeName(marketProbabilities,homeName,awayName);
       factors.push(`Коэффициенты П1 / Н / П2 сильнее всего оценивают вариант «${leader}».`);
     }
     if (model?.winner) factors.push(`Прогноз API-Football указывает: ${model.winner}.`);
@@ -482,15 +493,18 @@ export function createModelIntelligenceRuntime(deps) {
     const awaySuspensions = Number(absences?.summary?.away?.suspension || 0);
     if (Math.abs(homeAbs - awayAbs) >= 2) factors.push(`${homeAbs > awayAbs ? homeName : awayName} имеет больше актуальных отметок о потерях состава (${Math.max(homeAbs, awayAbs)} против ${Math.min(homeAbs, awayAbs)}).`);
     if (homeSuspensions || awaySuspensions) factors.push(`Дисквалификации по данным источника: ${homeName} — ${homeSuspensions}, ${awayName} — ${awaySuspensions}.`);
-    const h2hTotal = (h2h?.homeWins || 0) + (h2h?.draws || 0) + (h2h?.awayWins || 0);
-    if (h2hTotal >= 3 && Math.abs((h2h.homeWins || 0) - (h2h.awayWins || 0)) >= 2) factors.push(`В последних очных матчах преимущество по победам у ${h2h.homeWins > h2h.awayWins ? homeName : awayName}.`);
-    if (!market) risks.push('Нет доступной линии 1X2 — итог сильнее зависит от статистических источников.');
+    if (counts?.total >= 3 && Math.abs(counts.homeWins-counts.awayWins) >= 2) {
+      factors.push(`В последних очных матчах преимущество по победам у ${counts.homeWins > counts.awayWins ? homeName : awayName}.`);
+    }
+    if (!marketProbabilities) risks.push('Нет доступной линии 1X2 — итог сильнее зависит от статистических источников.');
     if (!model?.probabilities) risks.push('API-Football не вернул процентный прогноз для этого матча.');
     if ((homeForm?.overall?.sample || 0) < 4 || (awayForm?.overall?.sample || 0) < 4) risks.push('Небольшая выборка недавних матчей одной из команд.');
     if (confidence?.disagreement >= 10) risks.push('Источники заметно расходятся между собой — уверенность модели снижена.');
     if (minutesToKickoff !== null && minutesToKickoff <= 120 && !lineups?.home && !lineups?.away) risks.push('Подтверждённые стартовые составы ещё не доступны.');
     if (!news?.answer) risks.push('Не удалось получить свежий новостной контекст из веб-поиска.');
-    if (!factors.length && probabilities) factors.push(`Наибольшая расчётная вероятность сейчас у варианта «${outcomeName(probabilities, homeName, awayName)}».`);
+    if (!factors.length && finalProbabilities) {
+      factors.push(`Наибольшая расчётная вероятность сейчас у варианта «${outcomeName(finalProbabilities,homeName,awayName)}».`);
+    }
     return { factors: factors.slice(0, 5), risks: risks.slice(0, 5) };
   }
   
@@ -533,6 +547,16 @@ export function createModelIntelligenceRuntime(deps) {
     homeName, awayName, minutesToKickoff, news, completeness,
   }) {
     probabilities=probabilityObject(probabilities);
+    const marketProbabilities=probabilityObject(market?.probabilities);
+    const h2hSummary=h2hCounts(h2h);
+    const modelSignals=(Array.isArray(modelBreakdown?.signals) ? modelBreakdown.signals : [])
+      .map(signal=>{
+        const signalProbabilities=probabilityObject(signal?.probabilities);
+        const weight=finiteRange(signal?.weight,0,100);
+        if (!signalProbabilities || weight === null) return null;
+        return {...signal,probabilities:signalProbabilities,weight};
+      })
+      .filter(Boolean);
     const ranking=probabilityRanking(probabilities,homeName,awayName);
     const top = ranking[0] || { key: '', label: 'Недостаточно данных', value: 0 };
     const second = ranking[1] || { value: 0 };
@@ -556,9 +580,7 @@ export function createModelIntelligenceRuntime(deps) {
     const drivers = [];
     const finalLeaderKey = top.key;
   
-    for (const signal of (Array.isArray(modelBreakdown?.signals) ? modelBreakdown.signals : []).slice().sort(
-      (a,b)=>(finiteRange(b?.weight,0,100) ?? 0)-(finiteRange(a?.weight,0,100) ?? 0),
-    )) {
+    for (const signal of modelSignals.slice().sort((a,b)=>b.weight-a.weight)) {
       const sr = probabilityRanking(signal.probabilities, homeName, awayName);
       const sTop = sr[0];
       if (!sTop) continue;
@@ -619,25 +641,21 @@ export function createModelIntelligenceRuntime(deps) {
       }
     }
   
-    const h2hTotal = Number(h2h?.homeWins || 0) + Number(h2h?.draws || 0) + Number(h2h?.awayWins || 0);
-    if (h2hTotal >= 3) {
-      const hw = Number(h2h?.homeWins || 0), aw = Number(h2h?.awayWins || 0);
-      if (Math.abs(hw - aw) >= 2) {
-        const side = hw > aw ? 'home' : 'away';
-        drivers.push(preMatchDriver({
-          type: 'h2h_context',
-          icon: '🤝',
-          side,
-          title: 'Контекст очных встреч',
-          text: `${side === 'home' ? homeName : awayName} выиграл больше из последних ${h2hTotal} очных матчей (${hw}:${aw} по победам). Очные встречи имеют небольшой вес и не считаются главным сигналом.`,
-          strength: 'low',
-          source: 'h2h',
-        }));
-      }
+    if (h2hSummary?.total >= 3 && Math.abs(h2hSummary.homeWins-h2hSummary.awayWins) >= 2) {
+      const side=h2hSummary.homeWins > h2hSummary.awayWins ? 'home' : 'away';
+      drivers.push(preMatchDriver({
+        type:'h2h_context',
+        icon:'🤝',
+        side,
+        title:'Контекст очных встреч',
+        text:`${side === 'home' ? homeName : awayName} выиграл больше из последних ${h2hSummary.total} очных матчей (${h2hSummary.homeWins}:${h2hSummary.awayWins} по победам). Очные встречи имеют небольшой вес и не считаются главным сигналом.`,
+        strength:'low',
+        source:'h2h',
+      }));
     }
   
-    if (market?.probabilities && probabilities) {
-      const marketRanking = probabilityRanking(market.probabilities, homeName, awayName);
+    if (marketProbabilities && probabilities) {
+      const marketRanking=probabilityRanking(marketProbabilities,homeName,awayName);
       const marketTop = marketRanking[0];
       const finalTop = ranking[0];
       if (marketTop && finalTop && marketTop.key !== finalTop.key) {
@@ -740,7 +758,7 @@ export function createModelIntelligenceRuntime(deps) {
     if (Math.abs(homeAbs - awayAbs) >= 2) {
       watch.push('Статус травмированных/дисквалифицированных: разница по потерям сейчас заметная.');
     }
-    if (!market?.probabilities) {
+    if (!marketProbabilities) {
       watch.push('Линия 1X2 отсутствует: пока нет рыночного якоря для сравнения с моделью.');
     } else if (drivers.some(x => x.type === 'market_divergence')) {
       watch.push('Движение рынка: рынок и итоговая модель сейчас выбирают разные основные сценарии.');
@@ -759,7 +777,7 @@ export function createModelIntelligenceRuntime(deps) {
       (100 - confidenceScore) * 0.72 +
       Math.min(30, disagreement * 1.2) +
       (closeMatch ? 10 : 0) +
-      (!market?.probabilities ? 8 : 0) +
+      (!marketProbabilities ? 8 : 0) +
       ((!lineups?.home && !lineups?.away && minutesToKickoff !== null && minutesToKickoff <= 120) ? 6 : 0),
       10, 90
     ));
@@ -773,7 +791,7 @@ export function createModelIntelligenceRuntime(deps) {
     const completenessMax=Math.max(1,finiteNumber(completeness?.max) ?? 10);
     const dataScore=Math.round(clamp(completenessScore/completenessMax*100,0,100));
   
-    const sourceRows=(Array.isArray(modelBreakdown?.signals) ? modelBreakdown.signals : []).map(signal => {
+    const sourceRows=modelSignals.map(signal => {
       const sr = probabilityRanking(signal.probabilities, homeName, awayName);
       const lead = sr[0] || {};
       return {
