@@ -21,7 +21,7 @@ test('Issue #484 keeps rollback and save as distinct runtime-control functions',
     'async function saveRuntimeControls',
   );
   assert.match(rollback, /historyId/);
-  assert.match(rollback, /supaSelectOne\(cfg, 'runtime_control_history'/);
+  assert.match(rollback, /supaSelectOne\(cfg\s*,\s*'runtime_control_history'/);
   assert.match(rollback, /action:\s*'rollback'/);
   assert.match(rollback, /return await saveRuntimeControls\(/);
   assert.doesNotMatch(rollback, /X-Runtime-Action/);
@@ -34,12 +34,12 @@ test('Issue #484 save owns current-state CAS and atomic-history mutation', () =>
     'function runtimeFeatureResponse',
   );
 
-  assert.match(save, /const currentState = await loadRuntimeControls\(cfg, \{ force: true \}\)/);
-  assert.match(save, /const current = currentState\.value/);
+  assert.match(save, /const currentState\s*=\s*await loadRuntimeControls\(cfg\s*,\s*\{\s*force\s*:\s*true\s*\}\)/);
+  assert.match(save, /const current\s*=\s*currentState\.value/);
   assert.match(save, /const expectedRevision=positiveRevision\(source\.expectedRevision,0\)/);
   assert.match(save, /RUNTIME_CONTROLS_CONFLICT/);
   assert.match(save, /RUNTIME_HISTORY_REQUIRED/);
-  assert.match(save, /await ensureRuntimeHistoryBaseline\(cfg, current, user\)/);
+  assert.match(save, /await ensureRuntimeHistoryBaseline\(cfg\s*,\s*current\s*,\s*user\)/);
   assert.match(save, /X-Runtime-Action/);
   assert.match(save, /X-Runtime-Reason-Hex/);
   assert.match(save, /method:\s*'PATCH'/);
@@ -48,7 +48,7 @@ test('Issue #484 save owns current-state CAS and atomic-history mutation', () =>
 });
 
 test('Issue #484 API mutation and rollback routes call the restored functions', () => {
-  const api = section('async function apiRuntimeControls', 'return {\n    runtimeControlsSnapshot');
-  assert.match(api, /const result = await saveRuntimeControls\(cfg, user, body\)/);
-  assert.match(api, /const result = await rollbackRuntimeControls\(cfg, user, body\)/);
+  const api = section('async function apiRuntimeControls', 'return Object.freeze({\n    runtimeControlsSnapshot');
+  assert.match(api, /const result\s*=\s*await saveRuntimeControls\(cfg\s*,\s*user\s*,\s*body\)/);
+  assert.match(api, /const result\s*=\s*await rollbackRuntimeControls\(cfg\s*,\s*user\s*,\s*body\)/);
 });
