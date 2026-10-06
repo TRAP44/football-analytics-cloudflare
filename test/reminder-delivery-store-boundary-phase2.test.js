@@ -21,9 +21,17 @@ function runtime(overrides = {}) {
     supaHeaders:overrides.supaHeaders || ((_cfg,extra)=>({...extra,'x-test':'1'})),
     recordOpsEvent:overrides.recordOpsEvent || (async(_cfg,event)=>{events.push(event);}),
     redactOpsString:overrides.redactOpsString || ((value,limit)=>String(value || '').slice(0,limit)),
+    now:overrides.now || (()=>Date.parse('2026-09-27T18:00:05.000Z')),
   });
   return {store,calls,events};
 }
+
+test('reminder delivery status rejects coercion and malformed timestamps',()=>{
+  const {store}=runtime();
+  assert.equal(store.reminderDeliveryStatus({notified_at:true}),'scheduled');
+  assert.equal(store.reminderDeliveryStatus({notified_at:'not-a-date'}),'scheduled');
+  assert.equal(store.reminderDeliveryStatus({delivery_last_error:true}),'scheduled');
+});
 
 test('reminder delivery status preserves public state mapping', () => {
   const {store}=runtime();
@@ -36,8 +44,62 @@ test('reminder delivery status preserves public state mapping', () => {
   assert.equal(store.reminderDeliveryStatus({lineup_notified_at:'2026-01-01'}),'lineup_sent');
 });
 
+test('store rejects coercible reminder identity and attempt counters before network mutation',async()=>{
+  const {store,calls}=runtime();
+  await assert.rejects(
+    store.claimReminderDelivery({telegram_id:true,fixture_id:77},'prematch',{supabaseUrl:'https://db.test'}),
+    error=>error?.code==='REMINDER_DELIVERY_IDENTITY_INVALID',
+  );
+  await assert.rejects(
+    store.claimReminderDelivery({telegram_id:15,fixture_id:77,prematch_attempts:true},'prematch',{supabaseUrl:'https://db.test'}),
+    error=>error?.code==='REMINDER_DELIVERY_ATTEMPTS_INVALID',
+  );
+  assert.equal(calls.length,0);
+});
+
+test('store requires strict Supabase availability and confirmed HTTP success',async()=>{
+  const truthy=runtime({hasSupabase:()=> 'true'});
+  const claim=await truthy.store.claimReminderDelivery(
+    {telegram_id:15,fixture_id:77},
+    'prematch',
+    {},
+  );
+  assert.equal(claim.claimed,true);
+  assert.equal(truthy.calls.length,0);
+
+  const response=runtime({responses:[{ok:'true',status:200,json:[{telegram_id:15,fixture_id:77}]}]});
+  await assert.rejects(
+    response.store.claimReminderDelivery(
+      {telegram_id:15,fixture_id:77},
+      'prematch',
+      {supabaseUrl:'https://db.test'},
+    ),
+    /Supabase reminder claim: HTTP 200/,
+  );
+});
+
+test('claim requires returned ownership identity and claim marker',async()=>{
+  const mismatch=runtime({responses:[{
+    ok:true,
+    status:200,
+    json:[{
+      telegram_id:16,
+      fixture_id:77,
+      prematch_claimed_at:'2026-09-27T18:00:05.000Z',
+    }],
+  }]});
+  await assert.rejects(
+    mismatch.store.claimReminderDelivery(
+      {telegram_id:15,fixture_id:77},
+      'prematch',
+      {supabaseUrl:'https://db.test'},
+    ),
+    error=>error?.code==='REMINDER_DELIVERY_IDENTITY_MISMATCH',
+  );
+});
+
 test('claim preserves atomic Supabase PATCH filters and attempt increment', async () => {
-  const {store,calls}=runtime({responses:[{ok:true,status:200,json:[{fixture_id:77}]}]});
+  const {store,calls}=runtime({responses:[{ok:true,status:200,json:[{telegram_id:15,fixture_id:77,prematch_claimed_at:'2026-09-27T18:00:05.000Z'}]}]});
   const row={telegram_id:15,fixture_id:77,prematch_attempts:2};
   const result=await store.claimReminderDelivery(row,'prematch',{supabaseUrl:'https://db.test'});
   assert.equal(result.claimed,true);
@@ -63,8 +125,8 @@ test('claim preserves atomic Supabase PATCH filters and attempt increment', asyn
 test('sending and unknown states preserve the claim for at-most-once delivery', async () => {
   const {store,calls}=runtime({
     responses:[
-      {ok:true,status:200,json:[{fixture_id:77}]},
-      {ok:true,status:200,json:[{fixture_id:77}]},
+      {ok:true,status:200,json:[{telegram_id:15,fixture_id:77,prematch_claimed_at:'2026-09-27T18:00:00.000Z'}]},
+      {ok:true,status:200,json:[{telegram_id:15,fixture_id:77,prematch_claimed_at:'2026-09-27T18:00:00.000Z'}]},
     ],
   });
   const row={telegram_id:15,fixture_id:77};
@@ -86,7 +148,7 @@ test('sending and unknown states preserve the claim for at-most-once delivery', 
 });
 
 test('finish kickoff preserves claim identity and marks prematch sent when needed', async () => {
-  const {store,calls}=runtime({responses:[{ok:true,status:200,json:[{fixture_id:88}]}]});
+  const {store,calls}=runtime({responses:[{ok:true,status:200,json:[{telegram_id:7,fixture_id:88,kickoff_notified_at:'2026-09-27T18:00:05.000Z',kickoff_claimed_at:null,notified_at:'2026-09-27T18:00:05.000Z'}]}]});
   const claimAt='2026-09-27T18:00:00.000Z';
   await store.finishReminderDelivery({telegram_id:7,fixture_id:88,notified_at:null},'kickoff',claimAt,{supabaseUrl:'https://db.test'});
   assert.equal(calls.length,1);
@@ -101,6 +163,50 @@ test('finish kickoff preserves claim identity and marks prematch sent when neede
   assert.equal(body.notified_at,body.kickoff_notified_at);
   assert.equal(body.delivery_last_error,null);
   assert.equal(body.delivery_retry_after,null);
+});
+
+test('finish refuses a single malformed row that does not confirm sent state',async()=>{
+  const {store}=runtime({responses:[{
+    ok:true,
+    status:200,
+    json:[{
+      telegram_id:7,
+      fixture_id:88,
+      notified_at:null,
+      prematch_claimed_at:null,
+    }],
+  }]});
+  await assert.rejects(
+    store.finishReminderDelivery(
+      {telegram_id:7,fixture_id:88},
+      'prematch',
+      '2026-09-27T18:00:00.000Z',
+      {supabaseUrl:'https://db.test'},
+    ),
+    error=>error?.code==='REMINDER_DELIVERY_FINISH_UNCONFIRMED',
+  );
+});
+
+test('reconciliation ignores a row with mismatched identity or malformed done timestamp',async()=>{
+  const {store}=runtime({
+    responses:[
+      {ok:false,status:503,json:null},
+      {ok:true,status:200,json:[{
+        telegram_id:999,
+        fixture_id:88,
+        notified_at:'2026-09-27T18:00:05.000Z',
+      }]},
+    ],
+  });
+  await assert.rejects(
+    store.finishReminderDelivery(
+      {telegram_id:7,fixture_id:88},
+      'prematch',
+      '2026-09-27T18:00:00.000Z',
+      {supabaseUrl:'https://db.test'},
+    ),
+    /Supabase reminder finish: HTTP 503/,
+  );
 });
 
 test('Issue #408 finish reconciles a lost write response by reading committed sent state', async () => {
@@ -156,8 +262,25 @@ test('Issue #408 finish remains fail-closed when reconciliation cannot confirm s
   );
 });
 
+test('release retry and disable options reject coercion and bound retry_after',async()=>{
+  const {store,calls}=runtime({
+    responses:[{ok:true,status:200,json:[{telegram_id:9,fixture_id:99,prematch_claimed_at:null}]}],
+  });
+  await store.releaseReminderClaim(
+    {telegram_id:9,fixture_id:99},
+    'prematch',
+    '2026-09-27T18:00:00.000Z',
+    'failed',
+    {supabaseUrl:'https://db.test'},
+    {disable:'true',retryAfter:999999999},
+  );
+  const body=JSON.parse(calls[0].init.body);
+  assert.equal(Object.hasOwn(body,'enabled'),false);
+  assert.equal(body.delivery_retry_after,'2026-10-04T18:00:05.000Z');
+});
+
 test('release preserves retry and disable semantics', async () => {
-  const {store,calls}=runtime({responses:[{ok:true,status:200,json:[{fixture_id:99}]}]});
+  const {store,calls}=runtime({responses:[{ok:true,status:200,json:[{telegram_id:9,fixture_id:99,prematch_claimed_at:null}]}]});
   await store.releaseReminderClaim(
     {telegram_id:9,fixture_id:99},
     'prematch',
@@ -179,6 +302,7 @@ test('release preserves retry and disable semantics', async () => {
 test('finish, unknown hold and release reject a lost claim instead of reporting success', async () => {
   const {store}=runtime({
     responses:[
+      {ok:true,status:200,json:[]},
       {ok:true,status:200,json:[]},
       {ok:true,status:200,json:[]},
       {ok:true,status:200,json:[]},
