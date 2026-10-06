@@ -691,10 +691,17 @@ export function createAnalysisLifecycleRuntime(deps) {
     return {pass:delta.available && delta.material && delta.codes.includes('signal') && delta.codes.includes('probability') && delta.codes.includes('lineups') && delta.codes.includes('market'),count:delta.items.length};
   }
   function analysisResponsePayload(payload = {}, extra = {}) {
-    return {...payload,freshness:analysisFreshness(payload),kickoffHandoff:analysisKickoffHandoff(payload),...extra};
+    const source=objectValue(payload) || {};
+    const additions=objectValue(extra) || {};
+    return {
+      ...source,
+      freshness:analysisFreshness(source),
+      kickoffHandoff:analysisKickoffHandoff(source),
+      ...additions,
+    };
   }
 
-  return {
+  return Object.freeze({
     analysisFreshness,
     analysisKickoffHandoff,
     analysisKickoffHandoffDrill,
@@ -706,5 +713,5 @@ export function createAnalysisLifecycleRuntime(deps) {
     newsImpactDeltaDrill,
     analysisDeltaDrill,
     analysisResponsePayload,
-  };
+  });
 }
