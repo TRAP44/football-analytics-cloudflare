@@ -1,0 +1,56 @@
+name: Security lock refresh
+
+on:
+  push:
+    branches: [security-sharp-0355]
+    paths:
+      - "package.json"
+      - ".github/workflows/security-lock-refresh.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout security branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Refresh lockfile without lifecycle scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts
+          node -e "const p=require('./package-lock.json'); const v=p.packages?.['node_modules/sharp']?.version; if(v!=='0.35.5'){console.error('expected sharp 0.35.5, got',v); process.exit(1)}"
+
+      - name: Prove clean install and audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm ls sharp --all
+          npm audit --audit-level=high
+
+      - name: Commit regenerated lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          if git diff --cached --quiet; then
+            echo "package-lock.json did not change after applying the security override." >&2
+            exit 1
+          fi
+          git commit -m "security: refresh lockfile for sharp 0.35.5"
+          git push origin HEAD:security-sharp-0355
