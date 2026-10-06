@@ -1,6 +1,17 @@
 -- MatchRadar v6.25.2 / Reminder canonicalization, explicit rearm and retention
 -- Backward-compatible hardening for user reminders. Production callers resolve
 -- canonical fixture metadata from server-populated cache before persistence.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. resolve_match_reminder_fixture(),
+-- prune_match_reminders_for_user() and save_match_reminder_guarded_v2() remain
+-- active parts of the current reminder persistence boundary.
+-- This historical definition of personal_write_guard_contract() accidentally
+-- omitted favoritePlayersLimit introduced in v6.23. Do not rewrite the applied
+-- SQL here; v6.29.2 restores that field with a forward-compatible hotfix.
+-- The legacy save_match_reminder_guarded() wrapper remains for compatibility
+-- and delegates to v2 with p_rearm=false so ordinary updates preserve delivery state.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 create or replace function public.resolve_match_reminder_fixture(
   p_fixture_id bigint
