@@ -340,6 +340,7 @@ export function createAdminRuntimeControlsModule(deps) {
   }
   
   async function restoreRuntimeDefaults() {
+    if (!isAdmin() || state.runtimeControlsSaving) return;
     const current = state.runtimeControlsAdmin?.controls;
     if (!current) { await loadRuntimeControlsAdmin(true); return; }
     if (!window.confirm('Вернуть безопасные настройки: основные функции включены, техническое обслуживание выключено, автоматическое восстановление остаётся в режиме наблюдения?')) return;
