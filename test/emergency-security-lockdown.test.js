@@ -92,8 +92,8 @@ test('runtime-controls domain never falls back to normal defaults when controls 
 
   assert.match(block, /activateFailClosed\('supabase_not_configured'\)/);
   assert.match(block, /activateFailClosed\('runtime_controls_missing'\)/);
-  assert.match(block, /activateFailClosed\('runtime_controls_unavailable', error\)/);
-  assert.match(block, /source: 'fail_closed'/);
+  assert.match(block, /activateFailClosed\('runtime_controls_unavailable'\s*,\s*error\)/);
+  assert.match(block, /source\s*:\s*'fail_closed'/);
   assert.doesNotMatch(block, /previous \|\| \{ \.\.\.DEFAULT_RUNTIME_CONTROLS \}/);
   assert.doesNotMatch(block, /normalizeRuntimeControls\(row \|\| DEFAULT_RUNTIME_CONTROLS\)/);
 });
@@ -200,7 +200,7 @@ test('worker and admin surface wire lockdown into history, rollback-safe runtime
   const admin = fs.readFileSync('public/admin.html', 'utf8');
   const module = fs.readFileSync('public/modules/admin-runtime-controls.js', 'utf8');
 
-  assert.match(runtimeControls, /securityLockdown: isSecurityLockdownControls\(value\)/);
+  assert.match(runtimeControls, /securityLockdown\s*:\s*isSecurityLockdownControls\(normalized\)/);
   assert.match(runtimeControls, /SECURITY_LOCKDOWN_EXPLICIT_RELEASE_REQUIRED/);
   assert.match(runtimeControls, /SECURITY_LOCKDOWN_ENABLED/);
   assert.match(runtimeControls, /SECURITY_LOCKDOWN_RELEASED/);
