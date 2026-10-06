@@ -44,6 +44,7 @@ function createBotUi({
   return createTelegramBotUiRuntime({
     apiAnalyze,
     botAiHandoffText: () => '',
+    createRequest: (url, init) => new Request(url, init),
     freeQuotaHealthy: () => true,
     getCache: async () => null,
     getFavorites: async () => [],
