@@ -84,26 +84,26 @@ test('RC133 API-Football player stats preserve paging metadata and bound user-fa
   assert.match(worker, /options\.responseType === 'envelope'/);
   assert.match(worker, /paging:\s*\{\s*current:/);
   assert.match(worker, /async function apiFootballTeamSeasonPlayers\(/);
-  assert.match(worker, /const maxPages=Math\.max\(1,Math\.min\(3,Number\(context\.maxPages \|\| 3\)\)\)/);
-  assert.match(worker, /if \(page>1 && !freeQuotaHealthy\(8,1\)\)/);
+  assert.match(worker, /const maxPages=Math\.min\(3,positiveSafeInteger\(context\?\.maxPages\) \|\| 3\)/);
+  assert.match(worker, /quotaOk=freeQuotaHealthy\(8,1\)===true/);
   assert.match(worker, /responseType:'envelope'/);
   assert.match(worker, /complete=currentPage>=totalPages/);
 });
 
 test('RC133 team intelligence keeps player stats fail-soft and cached separately by contract version', () => {
   assert.match(worker, /team:intelligence:\$\{teamId\}:\$\{leagueId\}:\$\{season\}:v2/);
-  assert.match(worker, /playerStats=await resolveTeamSeasonPlayers/);
+  assert.match(worker, /await resolveTeamSeasonPlayers\(/);
   assert.match(worker, /reason:'all_player_sources_unavailable'/);
   assert.match(worker, /footballDataTeamScorersProvider/);
   assert.match(worker, /sourceMeta:sourceMeta\(\{[\s\S]{0,220}provider:'football-data'[\s\S]{0,220}fallback:true/);
 });
 
 test('RC133 normalizes useful season fields without inventing missing data', () => {
-  assert.match(worker, /appearances:playerStatNumber\(stats\?\.games\?\.appearences\)/);
+  assert.match(worker, /appearances:nonNegativeInteger\(stats\?\.games\?\.appearences\)/);
   assert.match(worker, /rating:playerStatNullable\(stats\?\.games\?\.rating\)/);
-  assert.match(worker, /assists:playerStatNumber\(stats\?\.goals\?\.assists\)/);
+  assert.match(worker, /assists:nonNegativeInteger\(stats\?\.goals\?\.assists\)/);
   assert.match(worker, /accuracy:playerStatNullable\(stats\?\.passes\?\.accuracy\)/);
-  assert.match(worker, /yellowRed:playerStatNumber\(stats\?\.cards\?\.yellowred\)/);
+  assert.match(worker, /yellowRed:nonNegativeInteger\(stats\?\.cards\?\.yellowred\)/);
   assert.doesNotMatch(worker, /playerImpactScore|playerQualityScore/);
 });
 
