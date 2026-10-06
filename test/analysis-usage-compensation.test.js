@@ -5,6 +5,7 @@ import {
   createAnalysisUsageCompensationRuntime,
   durableAnalysisUsageHeaders,
 } from '../src/analysis-usage-compensation.js';
+import { POST_BASELINE_MIGRATIONS } from '../scripts/prepare-supabase-ci-migrations.js';
 
 const CFG = { supabaseUrl: 'https://example.supabase.co', supabaseKey: 'secret' };
 const QUOTA_OPERATION = '11111111-1111-4111-8111-111111111111';
@@ -324,6 +325,22 @@ test('v6.28 migration keeps the public contract stable and durable state private
   assert.doesNotMatch(sql, /create or replace function public\.backend_schema_contract_v2/i);
   assert.doesNotMatch(sql, /security definer/i);
   assert.equal(release.productionSchema, '6.29');
-  assert.equal(release.latestMigration, 'supabase/migrations/supabase_migration_v6_29_1.sql');
+  assert.equal(
+    release.latestMigration,
+    POST_BASELINE_MIGRATIONS.at(-1),
+    'durable usage test must follow the deterministic latest migration chain',
+  );
   assert.equal(release.databaseContract.fingerprint, '6a7f0fe444f49a2a52c4603e952ee9ea');
+});
+
+test('v6.29.7 gates readiness on the private durable usage contract without changing the public fingerprint', () => {
+  const sql=fs.readFileSync('supabase/migrations/supabase_migration_v6_29_7.sql','utf8');
+  assert.match(sql,/create or replace function public\.backend_readiness_contract_v2/);
+  assert.match(sql,/analysis_usage_private_contract/);
+  assert.match(sql,/'privateAnalysisUsage'/);
+  assert.match(sql,/analysis_usage_reservations/);
+  assert.match(sql,/analysis_usage_request_headers/);
+  assert.match(sql,/finalize_analysis_usage_reservation/);
+  assert.match(sql,/reconcile_analysis_usage_reservations/);
+  assert.doesNotMatch(sql,/create or replace function public\.backend_schema_contract_v2/);
 });
