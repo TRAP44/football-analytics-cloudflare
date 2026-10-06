@@ -175,6 +175,29 @@ test('runtime-controls domain default clock uses Date.now and does not crash pro
   assert.equal(Number.isFinite(Number(memory.runtimeControls.loadedAt)), true);
 });
 
+test('default public snapshot preserves control-plane fail-closed state',async()=>{
+  const {api}=runtime({hasSupabase:()=>false});
+  await api.loadRuntimeControls({});
+  const snapshot=api.runtimeControlsSnapshot();
+  const publicSnapshot=api.publicRuntimeControls();
+  assert.equal(snapshot.controlPlaneFailClosed,true);
+  assert.equal(snapshot.controlPlaneReason,'supabase_not_configured');
+  assert.equal(publicSnapshot.controlPlaneFailClosed,true);
+  assert.equal(publicSnapshot.securityLockdown,true);
+});
+
+test('persisted runtime rows missing control flags fail closed instead of defaulting enabled',async()=>{
+  const {api}=runtime({
+    hasSupabase:()=>true,
+    supaSelectOne:async()=>({id:'global',revision:4,analysis_enabled:true}),
+  });
+  const state=await api.loadRuntimeControls({});
+  assert.equal(state.schemaReady,false);
+  assert.equal(state.source,'fail_closed');
+  assert.equal(state.value.analysisEnabled,false);
+  assert.equal(state.value.searchEnabled,false);
+});
+
 test('runtime-controls domain fails closed when the control plane cannot be verified', async () => {
   const { api, memory } = runtime({ hasSupabase: () => false });
   const state = await api.loadRuntimeControls({});
@@ -193,7 +216,17 @@ test('runtime-controls domain caches a verified control row for the configured T
     hasSupabase: () => true,
     supaSelectOne: async () => {
       reads += 1;
-      return { id:'global', revision:4, analysis_enabled:true };
+      return {
+        id:'global',
+        revision:4,
+        maintenance_mode:false,
+        analysis_enabled:true,
+        search_enabled:true,
+        live_enabled:true,
+        reminders_enabled:true,
+        expanded_data_enabled:true,
+        auto_settlement_recovery_enabled:false,
+      };
     },
   });
 
