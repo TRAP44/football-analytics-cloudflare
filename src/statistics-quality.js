@@ -7,7 +7,26 @@ const RULES = new Map([
 ]);
 
 const cellId = (key, side) => `${key}:${side}`;
-const state = value => String(value || '').trim().toLowerCase().replace(/\s+/g, '_');
+
+function asRows(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function plainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+}
+
+function textValue(value, fallback = '') {
+  return typeof value === 'string' ? value.trim() : fallback;
+}
+
+function statisticKey(value) {
+  return textValue(value);
+}
+
+function state(value) {
+  return textValue(value).toLowerCase().replace(/\s+/g, '_');
+}
 
 function sourceTrusted(meta = {}) {
   return meta?.confidenceBearing === true
@@ -19,20 +38,32 @@ function sourceTrusted(meta = {}) {
 }
 
 function parseNumber(value, percent = false) {
-  if (value === null || value === undefined || value === '') return { observed:false, value:null, reason:'missing' };
-  if (typeof value === 'boolean') return { observed:true, value:null, reason:'invalid_type' };
-  const raw = (typeof value === 'number' ? String(value) : String(value).trim().replace(',', '.'));
-  if (!(percent ? /^\d+(?:\.\d+)?%?$/ : /^\d+(?:\.\d+)?$/).test(raw)) {
-    return { observed:true, value:null, reason:'invalid_format' };
+  if (value === null || value === undefined || value === '') {
+    return { observed:false, value:null, reason:'missing' };
   }
-  const numeric = Number(raw.replaceAll('%',''));
+  if (typeof value === 'number') {
+    return Number.isFinite(value)
+      ? { observed:true, value, reason:'ok' }
+      : { observed:true, value:null, reason:'not_finite' };
+  }
+  if (typeof value !== 'string') {
+    return { observed:true, value:null, reason:'invalid_type' };
+  }
+
+  const raw = value.trim().replace(',', '.');
+  if (!raw) return { observed:false, value:null, reason:'missing' };
+  const pattern = percent ? /^-?\d+(?:\.\d+)?%?$/ : /^-?\d+(?:\.\d+)?$/;
+  if (!pattern.test(raw)) return { observed:true, value:null, reason:'invalid_format' };
+
+  const numericText = percent && raw.endsWith('%') ? raw.slice(0, -1) : raw;
+  const numeric = Number(numericText);
   return Number.isFinite(numeric)
     ? { observed:true, value:numeric, reason:'ok' }
     : { observed:true, value:null, reason:'not_finite' };
 }
 
 export function inspectStatisticValue(key = '', value = null) {
-  const rule = RULES.get(String(key || ''));
+  const rule = RULES.get(statisticKey(key));
   if (!rule) return { guarded:false, observed:value !== null && value !== undefined && value !== '', valid:true, value:null, reason:'external_guard' };
   const [kind,min,max] = rule;
   const parsed = parseNumber(value, kind === 'percent');
@@ -54,21 +85,43 @@ function reject(issues, invalidCells, code, key, side, relatedKey = '', detail =
 }
 
 export function assessMatchStatisticsQuality(statistics = {}, { statisticsMeta = {}, mode = 'live' } = {}) {
-  const rows = Array.isArray(statistics?.items) ? statistics.items : [];
-  const trusted = sourceTrusted(statisticsMeta);
+  const rows = asRows(plainObject(statistics)?.items);
+  const trusted = sourceTrusted(plainObject(statisticsMeta) || {});
   const inspections = new Map();
   const invalidCells = new Set();
   const issues = [];
   let guardedObservedCells = 0;
   let guardedValidCells = 0;
   let partialPairCount = 0;
+  let invalidRowCount = 0;
+  let duplicateMetricCount = 0;
+  const seenGuardedKeys = new Set();
 
   for (const row of rows) {
-    const key = String(row?.key || '');
+    const sourceRow = plainObject(row);
+    if (!sourceRow) {
+      invalidRowCount += 1;
+      issues.push({ code:'invalid_row', key:'', side:'', relatedKey:'', detail:'statistics row must be an object' });
+      continue;
+    }
+    const key = statisticKey(sourceRow.key);
+    if (!key) {
+      invalidRowCount += 1;
+      issues.push({ code:'invalid_key', key:'', side:'', relatedKey:'', detail:'statistics key must be a non-empty string' });
+      continue;
+    }
     if (!RULES.has(key)) continue;
+    if (seenGuardedKeys.has(key)) {
+      duplicateMetricCount += 1;
+      invalidCells.add(cellId(key,'home'));
+      invalidCells.add(cellId(key,'away'));
+      issues.push({ code:'duplicate_metric', key, side:'', relatedKey:'', detail:'duplicate guarded statistic row' });
+      continue;
+    }
+    seenGuardedKeys.add(key);
     let observedSides = 0;
     for (const side of ['home','away']) {
-      const inspected = inspectStatisticValue(key, row?.[side]);
+      const inspected = inspectStatisticValue(key, sourceRow[side]);
       inspections.set(cellId(key, side), inspected);
       if (inspected.observed) {
         observedSides += 1;
@@ -117,19 +170,36 @@ export function assessMatchStatisticsQuality(statistics = {}, { statisticsMeta =
 
   const displayRowKeys = [];
   const analyticalRowKeys = [];
+  const displaySeen = new Set();
+  const analyticalSeen = new Set();
   for (const row of rows) {
-    const key = String(row?.key || '');
+    const sourceRow = plainObject(row);
+    if (!sourceRow) continue;
+    const key = statisticKey(sourceRow.key);
+    if (!key) continue;
     if (!RULES.has(key)) {
-      displayRowKeys.push(key);
-      analyticalRowKeys.push(key);
+      if (!displaySeen.has(key)) {
+        displaySeen.add(key);
+        displayRowKeys.push(key);
+      }
+      if (!analyticalSeen.has(key)) {
+        analyticalSeen.add(key);
+        analyticalRowKeys.push(key);
+      }
       continue;
     }
-    const home = inspections.get(cellId(key,'home')) || inspectStatisticValue(key,row?.home);
-    const away = inspections.get(cellId(key,'away')) || inspectStatisticValue(key,row?.away);
+    const home = inspections.get(cellId(key,'home')) || inspectStatisticValue(key,sourceRow.home);
+    const away = inspections.get(cellId(key,'away')) || inspectStatisticValue(key,sourceRow.away);
     const homeOk = home.observed && home.valid && !invalidCells.has(cellId(key,'home'));
     const awayOk = away.observed && away.valid && !invalidCells.has(cellId(key,'away'));
-    if (homeOk || awayOk) displayRowKeys.push(key);
-    if (homeOk && awayOk) analyticalRowKeys.push(key);
+    if ((homeOk || awayOk) && !displaySeen.has(key)) {
+      displaySeen.add(key);
+      displayRowKeys.push(key);
+    }
+    if (homeOk && awayOk && !analyticalSeen.has(key)) {
+      analyticalSeen.add(key);
+      analyticalRowKeys.push(key);
+    }
   }
 
   const observed = rows.length > 0;
@@ -140,9 +210,11 @@ export function assessMatchStatisticsQuality(statistics = {}, { statisticsMeta =
   let reason = 'no_statistics';
   if (observed && !trusted) {
     qualityState = 'source_untrusted'; label = 'Статистика не используется'; reason = 'statistics_source_untrusted';
+  } else if (observed && invalidRowCount === rows.length) {
+    qualityState = 'invalid'; label = 'Статистика отклонена'; reason = 'no_valid_statistics_rows';
   } else if (observed && guardedObservedCells > 0 && guardedValidCells === 0) {
     qualityState = 'invalid'; label = 'Статистика отклонена'; reason = 'no_valid_guarded_statistics';
-  } else if (observed && (invalidCellCount > 0 || partialPairCount > 0)) {
+  } else if (observed && (invalidCellCount > 0 || partialPairCount > 0 || invalidRowCount > 0 || duplicateMetricCount > 0)) {
     qualityState = 'sanitized'; label = 'Статистика очищена'; reason = 'inconsistent_statistics_removed';
   } else if (observed) {
     qualityState = 'verified'; label = 'Статистика подтверждена'; reason = 'verified_statistics';
@@ -151,55 +223,129 @@ export function assessMatchStatisticsQuality(statistics = {}, { statisticsMeta =
   return {
     state:qualityState, label, reason, mode:String(mode || 'live'), observed, sourceTrusted:trusted,
     guardedObservedCells, guardedValidCells, invalidCellCount, partialPairCount,
+    invalidRowCount, duplicateMetricCount,
     analyticalRowCount:comparativeRows, confidenceBearing:trusted && comparativeRows > 0,
     displayRowKeys, analyticalRowKeys, invalidCells:[...invalidCells], issues,
     warnings:[
       ...(invalidCellCount ? [`Исключены некорректные значения статистики: ${invalidCellCount}.`] : []),
       ...(partialPairCount ? [`Неполные пары метрик не используются для сравнения: ${partialPairCount}.`] : []),
+      ...(invalidRowCount ? [`Отклонены повреждённые строки статистики: ${invalidRowCount}.`] : []),
+      ...(duplicateMetricCount ? [`Отклонены дубли защищённых метрик: ${duplicateMetricCount}.`] : []),
       ...(observed && !trusted ? ['Источник статистики не прошёл freshness/provenance guard.'] : []),
     ],
-    provider:String(statisticsMeta?.provider || ''), source:String(statisticsMeta?.source || ''),
-    freshnessState:String(statisticsMeta?.freshnessState || 'unknown'),
-    provenanceState:String(statisticsMeta?.provenanceState || 'unknown'),
+    provider:textValue(statisticsMeta?.provider), source:textValue(statisticsMeta?.source),
+    freshnessState:textValue(statisticsMeta?.freshnessState,'unknown'),
+    provenanceState:textValue(statisticsMeta?.provenanceState,'unknown'),
     methodology:'Live-статистика допускается в сравнительную аналитику только после проверки диапазонов, пар home/away и связей между ударами, передачами и владением. xG проверяется отдельным специализированным guard.',
   };
 }
 
 function sanitizeValues(values = {}, side = '', invalidCells = new Set()) {
-  const result = { ...(values || {}) };
-  for (const key of RULES.keys()) if (invalidCells.has(cellId(key,side))) result[key] = null;
+  const source = plainObject(values) || {};
+  const result = { ...source };
+  for (const key of RULES.keys()) {
+    if (invalidCells.has(cellId(key,side))) result[key] = null;
+  }
   return result;
 }
 
 export function sanitizeStatisticsForDisplay(statistics = {}, quality = {}) {
-  if (!quality?.sourceTrusted) return { ...statistics, items:[] };
-  const invalidCells = new Set(Array.isArray(quality?.invalidCells) ? quality.invalidCells : []);
-  return {
-    ...statistics,
-    home:statistics?.home ? { ...statistics.home, values:sanitizeValues(statistics.home.values,'home',invalidCells) } : statistics?.home,
-    away:statistics?.away ? { ...statistics.away, values:sanitizeValues(statistics.away.values,'away',invalidCells) } : statistics?.away,
-    items:(statistics?.items || []).map(row => {
-      const key = String(row?.key || '');
-      if (!RULES.has(key)) return row;
-      return { ...row,
-        home:invalidCells.has(cellId(key,'home')) ? null : row?.home ?? null,
-        away:invalidCells.has(cellId(key,'away')) ? null : row?.away ?? null,
+  const source = plainObject(statistics) || {};
+  const qualityState = plainObject(quality) || {};
+  if (qualityState.sourceTrusted !== true) return { ...source, items:[] };
+
+  const invalidCells = new Set(
+    asRows(qualityState.invalidCells).filter(value => typeof value === 'string'),
+  );
+  const home = plainObject(source.home);
+  const away = plainObject(source.away);
+  const items = asRows(source.items)
+    .filter(row => plainObject(row))
+    .map(row => {
+      const key = statisticKey(row.key);
+      if (!key) return null;
+      if (!RULES.has(key)) return { ...row, key };
+      return {
+        ...row,
+        key,
+        home:invalidCells.has(cellId(key,'home')) ? null : row.home ?? null,
+        away:invalidCells.has(cellId(key,'away')) ? null : row.away ?? null,
       };
-    }).filter(row => row?.home !== null || row?.away !== null),
+    })
+    .filter(row => row && (row.home !== null || row.away !== null));
+
+  return {
+    ...source,
+    home:home ? { ...home, values:sanitizeValues(home.values,'home',invalidCells) } : source.home,
+    away:away ? { ...away, values:sanitizeValues(away.values,'away',invalidCells) } : source.away,
+    items,
   };
 }
 
 export function statisticsForTrustedAnalytics(statistics = {}, quality = {}) {
-  if (!quality?.sourceTrusted) return { ...statistics, items:[] };
-  const allowed = new Set(Array.isArray(quality?.analyticalRowKeys) ? quality.analyticalRowKeys : []);
-  return { ...statistics, items:(statistics?.items || []).filter(row => allowed.has(String(row?.key || ''))) };
+  const source = plainObject(statistics) || {};
+  const qualityState = plainObject(quality) || {};
+  if (qualityState.sourceTrusted !== true) return { ...source, items:[] };
+
+  const allowed = new Set(
+    asRows(qualityState.analyticalRowKeys)
+      .map(statisticKey)
+      .filter(Boolean),
+  );
+  return {
+    ...source,
+    items:asRows(source.items)
+      .filter(row => {
+        const sourceRow = plainObject(row);
+        return sourceRow && allowed.has(statisticKey(sourceRow.key));
+      }),
+  };
 }
 
 export function annotateStatisticsReliability(meta = {}, quality = {}) {
-  const base = { ...meta, semanticState:String(quality?.state || 'unavailable'), statisticsQuality:quality, partial:quality?.state === 'sanitized' };
-  if (!quality?.observed) return { ...base, available:false, usable:false, confidenceBearing:false };
-  if (!quality?.sourceTrusted) return { ...base, transportState:String(meta?.state || 'available'), available:false, usable:false, observed:true, degraded:true, confidenceBearing:false, reason:'statistics_source_untrusted' };
-  if (!(quality?.displayRowKeys || []).length) return { ...base, transportState:String(meta?.state || 'available'), state:'invalid_data', available:false, usable:false, observed:true, degraded:true, confidenceBearing:false, reason:'no_valid_statistics' };
-  return { ...base, state:'available', available:true, usable:true, observed:true, degraded:quality?.state === 'sanitized',
-    confidenceBearing:Boolean(quality?.confidenceBearing), reason:quality?.state === 'sanitized' ? 'statistics_sanitized' : '' };
+  const sourceMeta = plainObject(meta) || {};
+  const qualityState = plainObject(quality) || {};
+  const displayRowKeys = asRows(qualityState.displayRowKeys);
+  const base = {
+    ...sourceMeta,
+    semanticState:textValue(qualityState.state,'unavailable'),
+    statisticsQuality:qualityState,
+    partial:qualityState.state === 'sanitized',
+  };
+  if (!qualityState.observed) return { ...base, available:false, usable:false, confidenceBearing:false };
+  if (qualityState.sourceTrusted !== true) {
+    return {
+      ...base,
+      transportState:textValue(sourceMeta.state,'available'),
+      available:false,
+      usable:false,
+      observed:true,
+      degraded:true,
+      confidenceBearing:false,
+      reason:'statistics_source_untrusted',
+    };
+  }
+  if (!displayRowKeys.length) {
+    return {
+      ...base,
+      transportState:textValue(sourceMeta.state,'available'),
+      state:'invalid_data',
+      available:false,
+      usable:false,
+      observed:true,
+      degraded:true,
+      confidenceBearing:false,
+      reason:'no_valid_statistics',
+    };
+  }
+  return {
+    ...base,
+    state:'available',
+    available:true,
+    usable:true,
+    observed:true,
+    degraded:qualityState.state === 'sanitized',
+    confidenceBearing:qualityState.confidenceBearing === true,
+    reason:qualityState.state === 'sanitized' ? 'statistics_sanitized' : '',
+  };
 }
