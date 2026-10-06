@@ -122,7 +122,6 @@ test('admin launch funnel module fails closed for non-admin callers', async () =
 
 test('launch funnel loader preserves period, request options and loading lifecycle', async () => {
   const { elements, elementById } = createElements();
-  elements.get('launchFunnelPeriod')?.value;
   elementById('launchFunnelPeriod').value = '14';
   const state = createState();
   const calls = [];
