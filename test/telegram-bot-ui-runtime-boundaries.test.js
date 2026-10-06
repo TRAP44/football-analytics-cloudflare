@@ -190,6 +190,23 @@ test('keyboard drops cross-origin search links and unsafe generated web-app link
   assert.ok(buttons.some(button=>button.callback_data==='match:verdict:123'));
 });
 
+test('Telegram Web App buttons require same-origin HTTPS links', () => {
+  const {api}=runtime();
+  const keyboard=api.footballMatchActionKeyboard(
+    {url:'http://app.example/webhook'},
+    {
+      fixtureId:123,
+      home:{id:1,name:'Home'},
+      away:{id:2,name:'Away'},
+    },
+  );
+  const buttons=keyboard.inline_keyboard.flat();
+  assert.equal(
+    buttons.some(button=>button.web_app),
+    false,
+  );
+});
+
 test('live and finished keyboard state derives from canonical status', () => {
   const {api}=runtime();
   const live=api.footballMatchActionKeyboard(request,{
