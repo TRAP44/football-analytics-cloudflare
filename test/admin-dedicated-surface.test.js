@@ -8,13 +8,13 @@ function readPublicFile(relativePath) {
 }
 
 function metaContent(html, name) {
-  const pattern = '<meta\\s+name=["\\']' + name + '["\\']\\s+content=["\\']([^"\\']+)["\\']';
-  return html.match(new RegExp(pattern))?.[1] || '';
+  const pattern = new RegExp('<meta\\s+name="' + name + '"\\s+content="([^"]+)"');
+  return html.match(pattern)?.[1] || '';
 }
 
 function assetRevision(html, assetPath) {
   const escapedPath = assetPath.replace(/\./g, '\\.');
-  return html.match(new RegExp(escapedPath + '\\?v=([^"\\'\\s>]+)'))?.[1] || '';
+  return html.match(new RegExp(escapedPath + '\\?v=([^"\\s>]+)'))?.[1] || '';
 }
 
 const publicHtml = readPublicFile('index.html');
