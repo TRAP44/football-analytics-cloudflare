@@ -2250,6 +2250,7 @@ const scoreSnapshot = (...args) => getMatchFormattingRuntime().scoreSnapshot(...
 const embeddedLiveData = (...args) => getMatchFormattingRuntime().embeddedLiveData(...args);
 
 const {
+  COMPETITIONS,
   normalizeCountryName,
   isYouthReserveMatch,
   normalizeCompetition,
@@ -2333,11 +2334,13 @@ let searchDiscoveryRuntime = null;
 function getSearchDiscoveryRuntime() {
   if (!searchDiscoveryRuntime) {
     searchDiscoveryRuntime = createSearchDiscoveryRuntime({
+      COMPETITIONS,
       apiFootball,
       freeQuotaHealthy,
       getCache,
       getStaleCache,
       isFootballRateLimitError,
+      isRetryableFootballTransportError,
       isYouthReserveMatch,
       json,
       loadProviderTeamDiscoveryFixtures,
@@ -2350,13 +2353,17 @@ function getSearchDiscoveryRuntime() {
   return searchDiscoveryRuntime;
 }
 
-const SEARCH_COMPETITION_ALIASES = (...args) => getSearchDiscoveryRuntime().SEARCH_COMPETITION_ALIASES(...args);
-const TOP_TEAM_SEARCH_CATALOG = (...args) => getSearchDiscoveryRuntime().TOP_TEAM_SEARCH_CATALOG(...args);
+const TOP_TEAM_SEARCH_CATALOG = new Proxy([], {
+  get(_target, prop) {
+    const catalog=getSearchDiscoveryRuntime().TOP_TEAM_SEARCH_CATALOG;
+    const value=catalog[prop];
+    return typeof value === 'function' ? value.bind(catalog) : value;
+  },
+});
 const topTeamSearchCandidates = (...args) => getSearchDiscoveryRuntime().topTeamSearchCandidates(...args);
 const topTeamSearchPlan = (...args) => getSearchDiscoveryRuntime().topTeamSearchPlan(...args);
 const knownTopTeamFallbacks = (...args) => getSearchDiscoveryRuntime().knownTopTeamFallbacks(...args);
 const searchText = (...args) => getSearchDiscoveryRuntime().searchText(...args);
-const SEARCH_QUALITY_DRILL_CASES = (...args) => getSearchDiscoveryRuntime().SEARCH_QUALITY_DRILL_CASES(...args);
 const searchQualityDrill = (...args) => getSearchDiscoveryRuntime().searchQualityDrill(...args);
 const competitionCountryByGroup = (...args) => getSearchDiscoveryRuntime().competitionCountryByGroup(...args);
 const searchKnownCompetitions = (...args) => getSearchDiscoveryRuntime().searchKnownCompetitions(...args);
@@ -2364,13 +2371,10 @@ const normalizeSearchTeam = (...args) => getSearchDiscoveryRuntime().normalizeSe
 const loadSearchCompetitionMatches = (...args) => getSearchDiscoveryRuntime().loadSearchCompetitionMatches(...args);
 const preferCompetitionSearch = (...args) => getSearchDiscoveryRuntime().preferCompetitionSearch(...args);
 const mergeSearchWarnings = (...args) => getSearchDiscoveryRuntime().mergeSearchWarnings(...args);
-const TEAM_DISCOVERY_PAST_DAYS = (...args) => getSearchDiscoveryRuntime().TEAM_DISCOVERY_PAST_DAYS(...args);
-const TEAM_DISCOVERY_FUTURE_DAYS = (...args) => getSearchDiscoveryRuntime().TEAM_DISCOVERY_FUTURE_DAYS(...args);
 const teamDiscoveryWindow = (...args) => getSearchDiscoveryRuntime().teamDiscoveryWindow(...args);
 const matchSelectionProfile = (...args) => getSearchDiscoveryRuntime().matchSelectionProfile(...args);
 const compareMatchSelection = (...args) => getSearchDiscoveryRuntime().compareMatchSelection(...args);
 const rankTeamDiscoveryMatches = (...args) => getSearchDiscoveryRuntime().rankTeamDiscoveryMatches(...args);
-const MATCH_SELECTION_DRILL_NOW = (...args) => getSearchDiscoveryRuntime().MATCH_SELECTION_DRILL_NOW(...args);
 const matchSelectionDrill = (...args) => getSearchDiscoveryRuntime().matchSelectionDrill(...args);
 const splitTeamDiscoveryMatches = (...args) => getSearchDiscoveryRuntime().splitTeamDiscoveryMatches(...args);
 const teamSearchFixturePayload = (...args) => getSearchDiscoveryRuntime().teamSearchFixturePayload(...args);
