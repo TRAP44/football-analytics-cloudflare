@@ -9,10 +9,42 @@ function asRows(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function integerCandidate(value) {
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const number = Number(raw);
+  return Number.isSafeInteger(number) ? number : null;
+}
+
+function positiveSafeInteger(value) {
+  const number = integerCandidate(value);
+  return number !== null && number > 0 ? number : 0;
+}
+
+function numberCandidate(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+  if (!/^-?(?:\d+|\d+\.\d+|\.\d+)$/.test(raw)) return null;
+  const number = Number(raw);
+  return Number.isFinite(number) ? number : null;
+}
+
+function numberInRange(value, min, max, fallback) {
+  const number = numberCandidate(value);
+  return number !== null && number >= min && number <= max ? number : fallback;
+}
+
+function textCandidate(value, fallback = '') {
+  return typeof value === 'string' ? value.trim() : fallback;
+}
+
 function groupByFixture(rows = []) {
   const groups = new Map();
   for (const row of asRows(rows)) {
-    const fixtureId = Number(row?.fixture_id || 0);
+    const fixtureId = positiveSafeInteger(row?.fixture_id ?? row?.fixtureId);
     if (!fixtureId || row?.enabled === false) continue;
     const list = groups.get(fixtureId) || [];
     list.push(row);
@@ -22,25 +54,25 @@ function groupByFixture(rows = []) {
 }
 
 function validProbability(value) {
-  const n = Number(value);
-  return Number.isFinite(n) && n >= 0 && n <= 100 ? n : null;
+  const number = numberCandidate(value);
+  return number !== null && number >= 0 && number <= 100 ? number : null;
 }
 
 function probabilityRow(row = {}) {
   const home = validProbability(row.home_prob ?? row.homeProb);
   const draw = validProbability(row.draw_prob ?? row.drawProb);
   const away = validProbability(row.away_prob ?? row.awayProb);
-  const capturedAt = row.captured_at ?? row.capturedAt ?? '';
-  if (home === null || draw === null || away === null || !Number.isFinite(Date.parse(String(capturedAt || '')))) return null;
+  const capturedAt = textCandidate(row.captured_at ?? row.capturedAt);
+  if (home === null || draw === null || away === null || !Number.isFinite(Date.parse(capturedAt))) return null;
   if (Math.abs(home + draw + away - 100) > 2.5) return null;
   return {
     home,
     draw,
     away,
     confidence: validProbability(row.confidence_score ?? row.confidenceScore),
-    triggerCategory: String(row.trigger_category ?? row.triggerCategory ?? ''),
-    capturedAt: String(capturedAt),
-    snapshotKey: String(row.snapshot_key ?? row.snapshotKey ?? capturedAt),
+    triggerCategory: textCandidate(row.trigger_category ?? row.triggerCategory),
+    capturedAt,
+    snapshotKey: textCandidate(row.snapshot_key ?? row.snapshotKey, capturedAt),
   };
 }
 
@@ -58,8 +90,29 @@ export function radarStrongSignalState(snapshots = [], {
   if (!valid.length) return { significant:false, strong:false, reason:'insufficient_history', sample:0 };
   const latest = valid[valid.length - 1];
   const baseline = valid.length > 1 ? valid[valid.length - 2] : null;
-  const ageMinutes = Math.max(0, (Number(now) - Date.parse(latest.capturedAt)) / 60000);
-  if (!Number.isFinite(ageMinutes) || ageMinutes > Number(maxSignalAgeMinutes || 180)) {
+  const nowMs = numberCandidate(now);
+  const maxAge = numberInRange(
+    maxSignalAgeMinutes,
+    0,
+    Number.MAX_SAFE_INTEGER,
+    SMART_NOTIFICATION_POLICY.maxSignalAgeMinutes,
+  );
+  const confidenceLimit = numberInRange(
+    confidenceThreshold,
+    0,
+    100,
+    SMART_NOTIFICATION_POLICY.radarConfidenceThreshold,
+  );
+  const outcomeLimit = numberInRange(
+    outcomeThreshold,
+    0,
+    100,
+    SMART_NOTIFICATION_POLICY.radarOutcomeThreshold,
+  );
+  const ageMinutes = nowMs === null
+    ? Number.NaN
+    : Math.max(0, (nowMs - Date.parse(latest.capturedAt)) / 60000);
+  if (!Number.isFinite(ageMinutes) || ageMinutes > maxAge) {
     return { significant:false, strong:false, reason:'stale_signal', sample:valid.length, ageMinutes, latest };
   }
 
@@ -67,8 +120,8 @@ export function radarStrongSignalState(snapshots = [], {
     .map(side => ({ side, probability:latest[side] }))
     .sort((a,b) => b.probability - a.probability);
   const strongest = ranked[0] || { side:'', probability:0 };
-  const strong = Number(latest.confidence ?? -1) >= Number(confidenceThreshold || 75)
-    && Number(strongest.probability || 0) >= Number(outcomeThreshold || 55);
+  const strong = (latest.confidence ?? -1) >= confidenceLimit
+    && strongest.probability >= outcomeLimit;
 
   let baselineStrong = false;
   let baselineSide = '';
@@ -78,8 +131,8 @@ export function radarStrongSignalState(snapshots = [], {
       .sort((a,b) => b.probability - a.probability);
     const priorStrongest = priorRanked[0] || { side:'', probability:0 };
     baselineSide = priorStrongest.side;
-    baselineStrong = Number(baseline.confidence ?? -1) >= Number(confidenceThreshold || 75)
-      && Number(priorStrongest.probability || 0) >= Number(outcomeThreshold || 55);
+    baselineStrong = (baseline.confidence ?? -1) >= confidenceLimit
+      && priorStrongest.probability >= outcomeLimit;
   }
 
   return {
@@ -92,8 +145,8 @@ export function radarStrongSignalState(snapshots = [], {
     latest,
     strongest,
     thresholds:{
-      confidence:Number(confidenceThreshold || 75),
-      outcome:Number(outcomeThreshold || 55),
+      confidence:confidenceLimit,
+      outcome:outcomeLimit,
     },
   };
 }
@@ -111,8 +164,23 @@ export function aiProbabilityMovement(snapshots = [], {
   if (valid.length < 2) return { significant: false, reason: 'insufficient_history', sample: valid.length };
   const latest = valid[valid.length - 1];
   const baseline = valid[valid.length - 2];
-  const ageMinutes = Math.max(0, (Number(now) - Date.parse(latest.capturedAt)) / 60000);
-  if (!Number.isFinite(ageMinutes) || ageMinutes > Number(maxSignalAgeMinutes || 180)) {
+  const nowMs = numberCandidate(now);
+  const maxAge = numberInRange(
+    maxSignalAgeMinutes,
+    0,
+    Number.MAX_SAFE_INTEGER,
+    SMART_NOTIFICATION_POLICY.maxSignalAgeMinutes,
+  );
+  const threshold = numberInRange(
+    thresholdPp,
+    0,
+    100,
+    SMART_NOTIFICATION_POLICY.aiProbabilityThresholdPp,
+  );
+  const ageMinutes = nowMs === null
+    ? Number.NaN
+    : Math.max(0, (nowMs - Date.parse(latest.capturedAt)) / 60000);
+  if (!Number.isFinite(ageMinutes) || ageMinutes > maxAge) {
     return { significant: false, reason: 'stale_signal', sample: valid.length, ageMinutes };
   }
 
@@ -125,7 +193,7 @@ export function aiProbabilityMovement(snapshots = [], {
   const strongest = sides.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))[0];
 
   return {
-    significant: Boolean(strongest && Math.abs(strongest.delta) >= Number(thresholdPp || 8)),
+    significant: Boolean(strongest && Math.abs(strongest.delta) >= threshold),
     reason: 'evaluated',
     sample: valid.length,
     ageMinutes,
@@ -136,15 +204,18 @@ export function aiProbabilityMovement(snapshots = [], {
 }
 
 function normalizedEventKey(event = {}) {
-  if (event.eventKey) return String(event.eventKey);
+  const explicitKey = textCandidate(event?.eventKey);
+  if (explicitKey) return explicitKey;
+  const minute = integerCandidate(event?.minute);
+  const extra = integerCandidate(event?.extra ?? 0);
   return [
-    Number.isFinite(Number(event.minute)) ? Number(event.minute) : 'na',
-    Number.isFinite(Number(event.extra)) ? Number(event.extra) : 0,
-    String(event.type || '').toLowerCase(),
-    String(event.detail || '').toLowerCase(),
-    Number(event.teamId || 0),
-    Number(event.playerId || 0),
-    Number(event.assistPlayerId || 0),
+    minute ?? 'na',
+    extra ?? 0,
+    textCandidate(event?.type).toLowerCase(),
+    textCandidate(event?.detail).toLowerCase(),
+    positiveSafeInteger(event?.teamId ?? event?.team_id),
+    positiveSafeInteger(event?.playerId ?? event?.player_id),
+    positiveSafeInteger(event?.assistPlayerId ?? event?.assist_player_id),
   ].join(':');
 }
 
@@ -157,7 +228,11 @@ export function notificationEventsFromSnapshot(snapshot = {}, { elapsed = null }
     ? snapshot.eventQuality
     : null;
   const explicitAllowed = !sanitized && Array.isArray(quality?.displayEventIndices)
-    ? new Set(quality.displayEventIndices.map(Number))
+    ? new Set(
+      quality.displayEventIndices
+        .map(integerCandidate)
+        .filter(index => index !== null && index >= 0),
+    )
     : null;
 
   if (quality?.sourceTrusted === false) return [];
@@ -204,10 +279,10 @@ function playerEventType(event = {}) {
 }
 
 function minuteLabel(event = {}) {
-  const minute = Number(event.minute);
-  const extra = Number(event.extra || 0);
-  if (!Number.isFinite(minute)) return '';
-  return extra > 0 ? `${minute}+${extra}′` : `${minute}′`;
+  const minute = integerCandidate(event?.minute);
+  const extra = integerCandidate(event?.extra ?? 0);
+  if (minute === null) return '';
+  return extra !== null && extra > 0 ? `${minute}+${extra}′` : `${minute}′`;
 }
 
 function matchEventMessage(row, event, eventType) {
@@ -292,20 +367,24 @@ function radarSignalMessage(row, signal) {
 }
 
 function playerIdsForEvent(event = {}) {
-  const ids = [Number(event.playerId || 0)];
-  if (String(event.type || '').toLowerCase() === 'subst') ids.push(Number(event.assistPlayerId || 0));
-  return [...new Set(ids.filter(id => Number.isSafeInteger(id) && id > 0))];
+  const ids = [positiveSafeInteger(event?.playerId ?? event?.player_id)];
+  if (textCandidate(event?.type).toLowerCase() === 'subst') {
+    ids.push(positiveSafeInteger(event?.assistPlayerId ?? event?.assist_player_id));
+  }
+  return [...new Set(ids.filter(Boolean))];
 }
 
 function favoritesForEvent(favorites = [], event = {}) {
   const ids = new Set(playerIdsForEvent(event));
-  return asRows(favorites).filter(item => ids.has(Number(item?.player_id || item?.playerId || 0)));
+  return asRows(favorites).filter(item => ids.has(
+    positiveSafeInteger(item?.player_id ?? item?.playerId),
+  ));
 }
 
 function lineupsByTeam(snapshot = {}) {
   const map = new Map();
   for (const team of asRows(snapshot?.teams)) {
-    const teamId = Number(team?.teamId || team?.team_id || 0);
+    const teamId = positiveSafeInteger(team?.teamId ?? team?.team_id);
     if (teamId) map.set(teamId, team);
   }
   return map;
@@ -313,8 +392,16 @@ function lineupsByTeam(snapshot = {}) {
 
 function lineupPlayerIds(team = {}) {
   return {
-    starters: new Set(asRows(team?.startXI).map(item => Number(item?.id || item?.playerId || 0)).filter(Boolean)),
-    substitutes: new Set(asRows(team?.substitutes).map(item => Number(item?.id || item?.playerId || 0)).filter(Boolean)),
+    starters: new Set(
+      asRows(team?.startXI)
+        .map(item => positiveSafeInteger(item?.id ?? item?.playerId))
+        .filter(Boolean),
+    ),
+    substitutes: new Set(
+      asRows(team?.substitutes)
+        .map(item => positiveSafeInteger(item?.id ?? item?.playerId))
+        .filter(Boolean),
+    ),
   };
 }
 
@@ -347,7 +434,21 @@ export function createSmartNotificationService({
     if (!hasSupabase?.(cfg) || !cfg?.botToken) {
       return { ok: true, checked: 0, fixturesChecked: 0, sent: 0, duplicate: 0, cooldown: 0, failed: 0, unknown: 0 };
     }
-    const runtime = await loadRuntimeControls(cfg);
+    let runtime;
+    try {
+      if (typeof loadRuntimeControls !== 'function') throw new Error('runtime controls loader unavailable');
+      runtime = await loadRuntimeControls(cfg);
+    } catch (error) {
+      await recordOpsEvent?.(cfg, {
+        severity: 'error',
+        source: 'smart_notifications',
+        eventType: 'smart_notification_scheduler',
+        code: 'SMART_NOTIFICATION_RUNTIME_CONTROLS_FAILED',
+        message: error?.message || error,
+        endpoint: 'cron:smart-notifications',
+      }).catch(() => {});
+      return { ok: false, checked: 0, fixturesChecked: 0, sent: 0, duplicate: 0, cooldown: 0, failed: 1, unknown: 0, runtimeUnavailable: true };
+    }
     if (runtime?.value?.remindersEnabled === false) {
       return { ok: true, checked: 0, fixturesChecked: 0, sent: 0, duplicate: 0, cooldown: 0, failed: 0, unknown: 0, disabled: true };
     }
@@ -378,11 +479,11 @@ export function createSmartNotificationService({
     }
 
     const rows = asRows(page?.rows);
-    const groups = [...groupByFixture(rows).entries()].slice(0, Math.max(1, Number(maxFixturesPerRun || 6)));
-    const truncated = Boolean(page?.truncated || groupByFixture(rows).size > groups.length);
-    const favoritesByUser = typeof loadFavoritePlayersByUser === 'function'
-      ? await loadFavoritePlayersByUser(rows, cfg)
-      : new Map();
+    const groupedRows = groupByFixture(rows);
+    const fixtureLimit = positiveSafeInteger(maxFixturesPerRun)
+      || SMART_NOTIFICATION_POLICY.maxFixturesPerRun;
+    const groups = [...groupedRows.entries()].slice(0, fixtureLimit);
+    const truncated = Boolean(page?.truncated || groupedRows.size > groups.length);
 
     const summary = {
       ok: true,
@@ -400,6 +501,25 @@ export function createSmartNotificationService({
       truncated,
     };
 
+    let favoritesByUser = new Map();
+    if (typeof loadFavoritePlayersByUser === 'function') {
+      try {
+        const loadedFavorites = await loadFavoritePlayersByUser(rows, cfg);
+        if (loadedFavorites instanceof Map) favoritesByUser = loadedFavorites;
+        else summary.failed += 1;
+      } catch (error) {
+        summary.failed += 1;
+        await recordOpsEvent?.(cfg, {
+          severity: 'warning',
+          source: 'smart_notifications',
+          eventType: 'smart_notification_probe',
+          code: 'SMART_NOTIFICATION_FAVORITES_READ_FAILED',
+          message: error?.message || error,
+          endpoint: 'cron:smart-notifications',
+        }).catch(() => {});
+      }
+    }
+
     const noteAudience = result => {
       summary.blockedByPreference += Number(result?.blockedByPreference || 0);
       summary.blockedByEntitlement += Number(result?.blockedByEntitlement || 0);
@@ -414,13 +534,52 @@ export function createSmartNotificationService({
       else if (state === 'unknown') summary.unknown += 1;
       else if (state && state !== 'invalid') summary.failed += 1;
     };
+    const safeAudience = async (inputRows, eventType) => {
+      try {
+        return noteAudience(await audience(inputRows, eventType, cfg));
+      } catch (error) {
+        summary.failed += 1;
+        await recordOpsEvent?.(cfg, {
+          severity: 'warning',
+          source: 'smart_notifications',
+          eventType: 'smart_notification_probe',
+          code: 'SMART_NOTIFICATION_AUDIENCE_FILTER_FAILED',
+          message: error?.message || error,
+          endpoint: 'cron:smart-notifications',
+          meta: { eventType },
+        }).catch(() => {});
+        return [];
+      }
+    };
+    const safeDeliver = async input => {
+      try {
+        if (typeof deliverSmartNotification !== 'function') {
+          throw new Error('smart notification delivery unavailable');
+        }
+        noteDelivery(await deliverSmartNotification(input, cfg));
+      } catch (error) {
+        summary.failed += 1;
+        await recordOpsEvent?.(cfg, {
+          severity: 'warning',
+          source: 'smart_notifications',
+          eventType: 'smart_notification_delivery',
+          code: 'SMART_NOTIFICATION_DELIVERY_FAILED',
+          message: error?.message || error,
+          endpoint: 'cron:smart-notifications',
+          meta: {
+            fixtureId: positiveSafeInteger(input?.row?.fixture_id ?? input?.row?.fixtureId),
+            notificationType: textCandidate(input?.eventType),
+          },
+        }).catch(() => {});
+      }
+    };
 
     for (const [fixtureId, recipients] of groups) {
       const fixtureDate = Date.parse(recipients[0]?.fixture_date || '');
       const minutesToKickoff = Number.isFinite(fixtureDate) ? (fixtureDate - now) / 60000 : null;
-      const matchGoalAudience = noteAudience(await audience(recipients, 'match.goal', cfg));
-      const playerAudience = noteAudience(await audience(recipients, 'player.goal', cfg));
-      const aiAudience = noteAudience(await audience(recipients, 'ai.probability_change', cfg));
+      const matchGoalAudience = await safeAudience(recipients, 'match.goal');
+      const playerAudience = await safeAudience(recipients, 'player.goal');
+      const aiAudience = await safeAudience(recipients, 'ai.probability_change');
 
       if (minutesToKickoff !== null && minutesToKickoff <= 5 && minutesToKickoff >= -240
           && (matchGoalAudience.length || playerAudience.length)) {
@@ -447,21 +606,20 @@ export function createSmartNotificationService({
             if (basicType) {
               const eligible = basicType === 'match.goal'
                 ? matchGoalAudience
-                : noteAudience(await audience(recipients, basicType, cfg));
+                : await safeAudience(recipients, basicType);
               for (const row of eligible) {
                 const dedupeKey = smartNotificationDedupeKey({
                   fixtureId,
                   eventType: basicType,
                   eventKey: normalizedEventKey(event),
                 });
-                const result = await deliverSmartNotification({
+                await safeDeliver({
                   row,
                   eventType: basicType,
                   category: notificationCategory(basicType),
                   text: matchEventMessage(row, event, basicType),
                   dedupeKey,
-                }, cfg);
-                noteDelivery(result);
+                });
               }
             }
 
@@ -470,31 +628,37 @@ export function createSmartNotificationService({
             const eventPlayerIds = new Set(playerIdsForEvent(event));
             if (!eventPlayerIds.size) continue;
             const candidateRows = playerAudience.filter(row => {
-              const favorites = favoritesByUser.get(Number(row.telegram_id)) || [];
-              return favorites.some(item => eventPlayerIds.has(Number(item?.player_id || item?.playerId || 0)));
+              const favorites = favoritesByUser.get(
+                positiveSafeInteger(row?.telegram_id ?? row?.telegramId),
+              ) || [];
+              return favorites.some(item => eventPlayerIds.has(
+                positiveSafeInteger(item?.player_id ?? item?.playerId),
+              ));
             });
             const eligiblePlayers = followedType === 'player.goal'
               ? candidateRows
-              : noteAudience(await audience(candidateRows, followedType, cfg));
+              : await safeAudience(candidateRows, followedType);
 
             for (const row of eligiblePlayers) {
-              const favorites = favoritesForEvent(favoritesByUser.get(Number(row.telegram_id)) || [], event);
+              const favorites = favoritesForEvent(
+                favoritesByUser.get(positiveSafeInteger(row?.telegram_id ?? row?.telegramId)) || [],
+                event,
+              );
               for (const favorite of favorites) {
-                const playerId = Number(favorite?.player_id || favorite?.playerId || 0);
+                const playerId = positiveSafeInteger(favorite?.player_id ?? favorite?.playerId);
                 const dedupeKey = smartNotificationDedupeKey({
                   fixtureId,
                   eventType: followedType,
                   playerId,
                   eventKey: normalizedEventKey(event),
                 });
-                const result = await deliverSmartNotification({
+                await safeDeliver({
                   row,
                   eventType: followedType,
                   category: 'players',
                   text: playerEventMessage(row, event, followedType, favorite),
                   dedupeKey,
-                }, cfg);
-                noteDelivery(result);
+                });
               }
             }
           }
@@ -507,10 +671,12 @@ export function createSmartNotificationService({
         if (lineupSnapshot?.confirmed === true) {
           const byTeam = lineupsByTeam(lineupSnapshot);
           for (const row of playerAudience) {
-            const favorites = favoritesByUser.get(Number(row.telegram_id)) || [];
+            const favorites = favoritesByUser.get(
+              positiveSafeInteger(row?.telegram_id ?? row?.telegramId),
+            ) || [];
             for (const favorite of favorites) {
-              const teamId = Number(favorite?.team_id || favorite?.teamId || 0);
-              const playerId = Number(favorite?.player_id || favorite?.playerId || 0);
+              const teamId = positiveSafeInteger(favorite?.team_id ?? favorite?.teamId);
+              const playerId = positiveSafeInteger(favorite?.player_id ?? favorite?.playerId);
               const team = byTeam.get(teamId);
               if (!team || !playerId) continue;
               const ids = lineupPlayerIds(team);
@@ -520,7 +686,7 @@ export function createSmartNotificationService({
                   ? ''
                   : 'player.absence';
               if (!eventType) continue;
-              const eligible = noteAudience(await audience([row], eventType, cfg));
+              const eligible = await safeAudience([row], eventType);
               if (!eligible.length) continue;
               const dedupeKey = smartNotificationDedupeKey({
                 fixtureId,
@@ -528,14 +694,13 @@ export function createSmartNotificationService({
                 playerId,
                 eventKey: 'confirmed-lineup',
               });
-              const result = await deliverSmartNotification({
+              await safeDeliver({
                 row,
                 eventType,
                 category: 'players',
                 text: lineupPlayerMessage(row, favorite, eventType),
                 dedupeKey,
-              }, cfg);
-              noteDelivery(result);
+              });
             }
           }
         }
@@ -558,15 +723,14 @@ export function createSmartNotificationService({
               eventType: 'ai.probability_change',
               eventKey,
             });
-            const result = await deliverSmartNotification({
+            await safeDeliver({
               row,
               eventType: 'ai.probability_change',
               category: 'aiRadar',
               text: aiMovementMessage(row, movement),
               dedupeKey,
               cooldownSeconds: aiCooldownSeconds,
-            }, cfg);
-            noteDelivery(result);
+            });
           }
         }
 
@@ -585,15 +749,14 @@ export function createSmartNotificationService({
               eventType: 'radar.strong_signal',
               eventKey,
             });
-            const result = await deliverSmartNotification({
+            await safeDeliver({
               row,
               eventType: 'radar.strong_signal',
               category: 'aiRadar',
               text: radarSignalMessage(row, radarSignal),
               dedupeKey,
               cooldownSeconds: radarCooldownSeconds,
-            }, cfg);
-            noteDelivery(result);
+            });
           }
         }
       }
