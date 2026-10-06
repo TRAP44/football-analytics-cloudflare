@@ -250,6 +250,55 @@ test('match comparison reports only provenance that is actually present', () => 
   assert.ok(result.metrics.some(metric=>metric.key==='expected_goals'));
 });
 
+test('malformed seasonal metrics fall back to bounded recent form instead of suppressing it', () => {
+  const runtime=createAnalysisContextRuntime(deps());
+  const result=runtime.buildMatchComparison({
+    homeName:'Home',
+    awayName:'Away',
+    homeForm:{
+      overall:{ppg:2.1,gfAvg:1.8,gaAvg:0.9,cleanSheetPct:45},
+      venue:{ppg:2.2},
+    },
+    awayForm:{
+      overall:{ppg:1.2,gfAvg:1.0,gaAvg:1.7,cleanSheetPct:20},
+      venue:{ppg:1.1},
+    },
+    homeSeasonStats:{
+      derived:{
+        goalsForPerMatch:Infinity,
+        goalsAgainstPerMatch:-1,
+        cleanSheetRate:500,
+      },
+    },
+    awaySeasonStats:{
+      derived:{
+        goalsForPerMatch:Infinity,
+        goalsAgainstPerMatch:-1,
+        cleanSheetRate:500,
+      },
+    },
+    homeStanding:{rank:-5},
+    awayStanding:{rank:2},
+    goalModel:{homeExpected:100,awayExpected:1},
+  });
+
+  const attack=result.metrics.find(metric=>metric.key==='attack');
+  const defense=result.metrics.find(metric=>metric.key==='defense');
+  const clean=result.metrics.find(metric=>metric.key==='clean_sheets');
+
+  assert.equal(attack?.homeValue,1.8);
+  assert.equal(attack?.awayValue,1);
+  assert.equal(defense?.homeValue,0.9);
+  assert.equal(defense?.awayValue,1.7);
+  assert.equal(clean?.homeValue,45);
+  assert.equal(clean?.awayValue,20);
+  assert.equal(result.metrics.some(metric=>metric.key==='table_rank'),false);
+  assert.equal(result.metrics.some(metric=>metric.key==='expected_goals'),false);
+  assert.equal(result.dataReuse.seasonStatsCached,false);
+  assert.equal(result.dataReuse.standingsCached,false);
+  assert.equal(result.dataReuse.sources.includes('сохранённая сезонная статистика'),false);
+});
+
 test('AI instructor fails closed on hostile probability, confidence and trust values', () => {
   const runtime=createAnalysisContextRuntime(deps());
   const result=runtime.buildAiInstructor({
