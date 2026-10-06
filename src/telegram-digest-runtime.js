@@ -1,4 +1,8 @@
 export function createTelegramDigestRuntime(deps = {}) {
+  if (!deps || typeof deps!=='object' || Array.isArray(deps)) {
+    throw new TypeError('Telegram digest runtime dependencies are required.');
+  }
+
   const {
     DAILY_DIGEST_POLICY,
     SMART_NOTIFICATION_POLICY,
@@ -43,6 +47,120 @@ export function createTelegramDigestRuntime(deps = {}) {
     todayUtc
   } = deps;
 
+  const requiredFunctions={
+    apiFootball,
+    assessDailyDigestRun,
+    botMatchButtonText,
+    bumpTelemetry,
+    currentMorningFootballNews,
+    filterSmartNotificationRecipients,
+    footballBotKeyboard,
+    freeQuotaHealthy,
+    getAnalysisTimelineSnapshots,
+    getCache,
+    getFavorites,
+    getStaleCache,
+    hasSupabase,
+    isFootballRateLimitError,
+    isLiveStatus,
+    isYouthReserveMatch,
+    loadProviderFixturesForDate,
+    markTelegramWebhookMutation,
+    matchInterestScore,
+    morningNewsText,
+    newsConversionKeyboard,
+    normalizeBotFixtureCard,
+    normalizeCompetition,
+    planDailyDigestRecipients,
+    radarStrongSignalState,
+    recordOpsEvent,
+    rememberBotFixtureCards,
+    runBoundedDailyDigest,
+    setCache,
+    sleepMs,
+    supaPatch,
+    supaRpc,
+    supaSelectOne,
+    supaSelectPaged,
+    supaUpsert,
+    telegramApi,
+    telegramHtmlEscape,
+    todayUtc,
+  };
+  for (const [name,dependency] of Object.entries(requiredFunctions)) {
+    if (typeof dependency!=='function') {
+      throw new TypeError(`Telegram digest runtime dependency ${name} is required.`);
+    }
+  }
+  if (!DAILY_DIGEST_POLICY || typeof DAILY_DIGEST_POLICY!=='object' || Array.isArray(DAILY_DIGEST_POLICY)) {
+    throw new TypeError('Telegram digest runtime DAILY_DIGEST_POLICY is required.');
+  }
+  if (!SMART_NOTIFICATION_POLICY || typeof SMART_NOTIFICATION_POLICY!=='object' || Array.isArray(SMART_NOTIFICATION_POLICY)) {
+    throw new TypeError('Telegram digest runtime SMART_NOTIFICATION_POLICY is required.');
+  }
+  if (!memory || typeof memory!=='object' || !(memory.botDigestSubscriptions instanceof Map)) {
+    throw new TypeError('Telegram digest runtime memory store is required.');
+  }
+
+  const CANCELLED_FIXTURE_STATUSES=new Set(['CANC','PST','ABD','AWD','WO']);
+
+  function rowsOf(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  function positiveSafeInteger(value) {
+    if (typeof value==='number') {
+      return Number.isSafeInteger(value) && value>0 ? value : 0;
+    }
+    if (typeof value!=='string') return 0;
+    const raw=value.trim();
+    if (!/^\d+$/.test(raw)) return 0;
+    const parsed=Number(raw);
+    return Number.isSafeInteger(parsed) && parsed>0 ? parsed : 0;
+  }
+
+  function telegramChatId(value) {
+    if (typeof value==='number') {
+      return Number.isSafeInteger(value) && value!==0 ? value : 0;
+    }
+    if (typeof value!=='string') return 0;
+    const raw=value.trim();
+    if (!/^-?\d+$/.test(raw)) return 0;
+    const parsed=Number(raw);
+    return Number.isSafeInteger(parsed) && parsed!==0 ? parsed : 0;
+  }
+
+  function boundedLimit(value,fallback=3,max=20) {
+    const parsed=Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(1,Math.min(max,Math.trunc(parsed)));
+  }
+
+  function plainText(value,max=120) {
+    if (!['string','number','bigint'].includes(typeof value)) return '';
+    try {
+      return String(value)
+        .replace(/[\u0000-\u001F\u007F]/g,' ')
+        .replace(/\s+/g,' ')
+        .trim()
+        .slice(0,max);
+    } catch {
+      return '';
+    }
+  }
+
+  function htmlText(value,max=120,fallback='') {
+    const text=plainText(value,max) || fallback;
+    return telegramHtmlEscape(text);
+  }
+
+  function deliveryDate(value) {
+    const raw=typeof value==='string' ? value.trim() : '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return '';
+    const parsed=new Date(`${raw}T00:00:00.000Z`);
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0,10)===raw ? raw : '';
+  }
+
   async function sendDigestControls(request, cfg, chatId) {
     await telegramApi('sendMessage', cfg, {
       chat_id: chatId,
@@ -55,28 +173,43 @@ export function createTelegramDigestRuntime(deps = {}) {
   }
   
   function digestFixtureRows(fixtures = [], limit = 3) {
-    return (fixtures || []).filter(f => {
-      const status = String(f.fixture?.status?.short || '');
-      const home = String(f.teams?.home?.name || '');
-      const away = String(f.teams?.away?.name || '');
-      return !['CANC','PST','ABD','AWD','WO'].includes(status) && !isYouthReserveMatch(f.league?.name || '', home, away);
+    return rowsOf(fixtures).filter(f => {
+      if (!f || typeof f!=='object' || Array.isArray(f)) return false;
+      const status=plainText(f.fixture?.status?.short,16);
+      const home=plainText(f.teams?.home?.name,120);
+      const away=plainText(f.teams?.away?.name,120);
+      return !CANCELLED_FIXTURE_STATUSES.has(status) && !isYouthReserveMatch(plainText(f.league?.name,120),home,away);
     }).map(f => {
-      const leagueId = Number(f.league?.id || 0);
-      const homeName = f.teams?.home?.name || '';
-      const awayName = f.teams?.away?.name || '';
-      const competition = normalizeCompetition(leagueId, f.league?.name || '', f.league?.country || '', homeName, awayName);
-      const status = String(f.fixture?.status?.short || '');
-      return {
-        fixtureId:Number(f.fixture?.id || 0), date:f.fixture?.date || '', status, live:isLiveStatus(status),
-        home:{id:Number(f.teams?.home?.id || 0),name:homeName,logo:String(f.teams?.home?.logo || '')},
-        away:{id:Number(f.teams?.away?.id || 0),name:awayName,logo:String(f.teams?.away?.logo || '')},
-        homeName, awayName, league:competition.shortName || competition.name || f.league?.name || 'Турнир',
-        score:matchInterestScore({ competition, leagueId, leagueName:f.league?.name || '', country:f.league?.country || '', homeName, awayName, status, date:f.fixture?.date || '' }),
-        priority:Number(competition.priority || 0), featured:Boolean(competition.featured),
-      };
-    }).filter(x => x.fixtureId)
+      try {
+        const leagueId=positiveSafeInteger(f.league?.id);
+        const homeName=plainText(f.teams?.home?.name,120);
+        const awayName=plainText(f.teams?.away?.name,120);
+        const leagueName=plainText(f.league?.name,120);
+        const country=plainText(f.league?.country,80);
+        const competition=normalizeCompetition(leagueId,leagueName,country,homeName,awayName) || {};
+        const status=plainText(f.fixture?.status?.short,16);
+        const date=plainText(f.fixture?.date,64);
+        const score=Number(matchInterestScore({competition,leagueId,leagueName,country,homeName,awayName,status,date}));
+        return {
+          fixtureId:positiveSafeInteger(f.fixture?.id),
+          date,
+          status,
+          live:isLiveStatus(status)===true,
+          home:{id:positiveSafeInteger(f.teams?.home?.id),name:homeName,logo:plainText(f.teams?.home?.logo,500)},
+          away:{id:positiveSafeInteger(f.teams?.away?.id),name:awayName,logo:plainText(f.teams?.away?.logo,500)},
+          homeName,
+          awayName,
+          league:plainText(competition.shortName || competition.name || leagueName,120) || 'Турнир',
+          score:Number.isFinite(score) ? score : 0,
+          priority:Number.isFinite(Number(competition.priority)) ? Number(competition.priority) : 0,
+          featured:competition.featured===true,
+        };
+      } catch {
+        return null;
+      }
+    }).filter(x => positiveSafeInteger(x?.fixtureId))
       .sort((a,b) => Number(b.live)-Number(a.live) || Number(b.featured)-Number(a.featured) || b.score-a.score || b.priority-a.priority || String(a.date).localeCompare(String(b.date)))
-      .slice(0, Math.max(1, Math.min(20, Number(limit || 3))));
+      .slice(0,boundedLimit(limit,3,20));
   }
   
   function digestTime(iso) {
@@ -86,14 +219,23 @@ export function createTelegramDigestRuntime(deps = {}) {
   }
   
   function dailyDigestText(rows = []) {
-    if (!rows.length) return '⚽ Сегодня пока нет подходящих матчей для короткой AI-подборки.';
-    return ['🧠 <b>3 матча дня · AI-подборка</b>','',...rows.map((x,i)=>`${i+1}. <b>${x.homeName} — ${x.awayName}</b>\n${x.league} · ${x.live ? '🔴 идёт сейчас' : digestTime(x.date)}`),'','Нажмите на матч — короткая AI-оценка придёт сразу в Telegram. Полный разбор откроется одним нажатием.'].join('\n');
+    const matches=rowsOf(rows);
+    if (!matches.length) return '⚽ Сегодня пока нет подходящих матчей для короткой AI-подборки.';
+    return [
+      '🧠 <b>3 матча дня · AI-подборка</b>',
+      '',
+      ...matches.map((x,i)=>`${i+1}. <b>${htmlText(x?.homeName,120,'Хозяева')} — ${htmlText(x?.awayName,120,'Гости')}</b>\n${htmlText(x?.league,120,'Турнир')} · ${x?.live===true ? '🔴 идёт сейчас' : digestTime(x?.date)}`),
+      '',
+      'Нажмите на матч — короткая AI-оценка придёт сразу в Telegram. Полный разбор откроется одним нажатием.',
+    ].join('\n');
   }
   
   function expandedDailyDigestText(rows = [], radarByFixture = new Map()) {
-    const base=dailyDigestText(rows);
-    const radarLines=(rows || []).slice(0,3).map(match=>{
-      const state=radarByFixture.get(Number(match?.fixtureId || 0));
+    const matches=rowsOf(rows);
+    const radar=radarByFixture && typeof radarByFixture.get==='function' ? radarByFixture : new Map();
+    const base=dailyDigestText(matches);
+    const radarLines=matches.slice(0,3).map(match=>{
+      const state=radar.get(positiveSafeInteger(match?.fixtureId));
       if (!state || state.reason!=='evaluated' || !state.latest || !state.strongest) return '';
       const sideName=state.strongest.side==='home'
         ? String(match?.homeName || 'Хозяева')
@@ -101,7 +243,11 @@ export function createTelegramDigestRuntime(deps = {}) {
           ? String(match?.awayName || 'Гости')
           : 'Ничья';
       const confidence=Number(state.latest.confidence);
-      return `• <b>${telegramHtmlEscape(match?.homeName || 'Хозяева')} — ${telegramHtmlEscape(match?.awayName || 'Гости')}</b>: ${telegramHtmlEscape(sideName)} ${Number(state.strongest.probability || 0).toFixed(1)}%${Number.isFinite(confidence) ? ` · Radar ${Math.round(confidence)}/100` : ''}`;
+      const probability=Number(state.strongest.probability);
+      const probabilityLabel=Number.isFinite(probability)
+        ? Math.max(0,Math.min(100,probability)).toFixed(1)
+        : '—';
+      return `• <b>${htmlText(match?.homeName,120,'Хозяева')} — ${htmlText(match?.awayName,120,'Гости')}</b>: ${htmlText(sideName,120,'Ничья')} ${probabilityLabel}%${Number.isFinite(confidence) ? ` · Radar ${Math.max(0,Math.min(100,Math.round(confidence)))}/100` : ''}`;
     }).filter(Boolean);
     if (!radarLines.length) return base;
     return [
@@ -114,7 +260,7 @@ export function createTelegramDigestRuntime(deps = {}) {
   }
   
   async function getBotDigestSubscription(userId, cfg) {
-    const telegramId=Number(userId || 0);
+    const telegramId=positiveSafeInteger(userId);
     if (!telegramId) return null;
     if (hasSupabase(cfg)) {
       return await supaSelectOne(cfg,'bot_digest_subscriptions',{telegram_id:`eq.${telegramId}`});
@@ -123,15 +269,22 @@ export function createTelegramDigestRuntime(deps = {}) {
   }
   
   async function setBotDigestSubscription(userId, chatId, enabled, cfg, appUrl = '') {
-    markTelegramWebhookMutation(cfg, 'digest_subscription');
-    const telegramId=Number(userId || 0);
+    const telegramId=positiveSafeInteger(userId);
+    const requestedChatId=telegramChatId(chatId) || telegramId;
+    if (!telegramId || !requestedChatId) {
+      throw new TypeError('Telegram digest subscription identity is invalid.');
+    }
+    if (typeof enabled!=='boolean') {
+      throw new TypeError('Telegram digest subscription enabled must be boolean.');
+    }
+    markTelegramWebhookMutation(cfg,'digest_subscription');
     const previous=await getBotDigestSubscription(telegramId,cfg);
     const row = {
       telegram_id:telegramId,
-      chat_id:Number(previous?.chat_id || chatId || telegramId),
-      enabled:Boolean(enabled),
+      chat_id:telegramChatId(previous?.chat_id) || requestedChatId,
+      enabled,
       hour_utc:DAILY_DIGEST_POLICY.deliveryHourUtc,
-      app_url:String(appUrl || previous?.app_url || '').slice(0,500),
+      app_url:plainText(appUrl || previous?.app_url,500),
       updated_at:new Date().toISOString(),
     };
     if (hasSupabase(cfg)) await supaUpsert(cfg,'bot_digest_subscriptions',row,'telegram_id');
@@ -141,8 +294,9 @@ export function createTelegramDigestRuntime(deps = {}) {
   
   function publicDigestSettings(row = null, plan = 'FREE', favorites = []) {
     const hourUtc=DAILY_DIGEST_POLICY.deliveryHourUtc;
-    const normalizedPlan=['FREE','PRO','PREMIUM'].includes(String(plan || '').toUpperCase())
-      ? String(plan).toUpperCase()
+    const requestedPlan=plainText(plan,16).toUpperCase();
+    const normalizedPlan=['FREE','PRO','PREMIUM'].includes(requestedPlan)
+      ? requestedPlan
       : 'FREE';
     return {
       enabled:row?.enabled === true,
@@ -155,9 +309,9 @@ export function createTelegramDigestRuntime(deps = {}) {
         editable:false,
         executionWindow:`${String(hourUtc).padStart(2,'0')}:00–${String(hourUtc).padStart(2,'0')}:55 UTC`,
       },
-      favoriteTeams:(favorites || []).map(item=>({
-        teamId:Number(item.team_id || item.teamId || 0),
-        teamName:String(item.team_name || item.teamName || '').slice(0,80),
+      favoriteTeams:rowsOf(favorites).map(item=>({
+        teamId:positiveSafeInteger(item?.team_id ?? item?.teamId),
+        teamName:plainText(item?.team_name ?? item?.teamName,80),
       })).filter(item=>item.teamId && item.teamName).slice(0,6),
       capabilities:{
         baseDigest:true,
@@ -173,34 +327,45 @@ export function createTelegramDigestRuntime(deps = {}) {
   
   async function loadBotDigestSubscriptions(cfg) {
     if (hasSupabase(cfg)) {
-      return await supaSelectPaged(cfg,'bot_digest_subscriptions',{enabled:'eq.true'},{
+      const page=await supaSelectPaged(cfg,'bot_digest_subscriptions',{enabled:'eq.true'},{
         pageSize:500,
         maxRows:10000,
         order:'telegram_id.asc',
       });
+      return {
+        rows:rowsOf(page?.rows).filter(row=>positiveSafeInteger(row?.telegram_id) && telegramChatId(row?.chat_id)),
+        truncated:page?.truncated===true,
+      };
     }
     return {
-      rows:[...memory.botDigestSubscriptions.values()].filter(x=>x.enabled),
+      rows:[...memory.botDigestSubscriptions.values()].filter(row=>
+        row?.enabled===true
+        && positiveSafeInteger(row?.telegram_id)
+        && telegramChatId(row?.chat_id)
+      ),
       truncated:false,
     };
   }
   
   async function claimDigestDelivery(row,date,cfg) {
+    const telegramId=positiveSafeInteger(row?.telegram_id);
+    const normalizedDate=deliveryDate(date);
+    if (!telegramId || !normalizedDate) return false;
     if (hasSupabase(cfg)) {
-      const claimed=Boolean(await supaRpc(cfg,'claim_daily_digest',{p_telegram_id:Number(row.telegram_id),p_delivery_date:date,p_lease_seconds:DAILY_DIGEST_POLICY.claimLeaseSeconds},2500));
+      const claimed=(await supaRpc(cfg,'claim_daily_digest',{p_telegram_id:telegramId,p_delivery_date:normalizedDate,p_lease_seconds:DAILY_DIGEST_POLICY.claimLeaseSeconds},2500))===true;
       if (claimed) bumpTelemetry('digestDeliveryClaims'); else bumpTelemetry('digestDeliveryDuplicates');
       return claimed;
     }
-    const current=memory.botDigestSubscriptions.get(Number(row.telegram_id)) || row;
+    const current=memory.botDigestSubscriptions.get(telegramId) || row;
     const lockedUntil=Date.parse(String(current.delivery_locked_until || ''));
-    const activeClaim=String(current.delivery_claim_date || '')===date && Number.isFinite(lockedUntil) && lockedUntil>Date.now();
-    if (String(current.last_sent_date || '')===date || activeClaim) {
+    const activeClaim=String(current.delivery_claim_date || '')===normalizedDate && Number.isFinite(lockedUntil) && lockedUntil>Date.now();
+    if (String(current.last_sent_date || '')===normalizedDate || activeClaim) {
       bumpTelemetry('digestDeliveryDuplicates');
       return false;
     }
-    memory.botDigestSubscriptions.set(Number(row.telegram_id),{
+    memory.botDigestSubscriptions.set(telegramId,{
       ...current,
-      delivery_claim_date:date,
+      delivery_claim_date:normalizedDate,
       delivery_claimed_at:new Date().toISOString(),
       delivery_locked_until:new Date(Date.now()+DAILY_DIGEST_POLICY.claimLeaseSeconds*1000).toISOString(),
     });
@@ -216,37 +381,68 @@ export function createTelegramDigestRuntime(deps = {}) {
   }
   
   async function armDigestDelivery(row,date,cfg) {
-    const lockedUntil=digestDeliverySealUntil(date);
+    const telegramId=positiveSafeInteger(row?.telegram_id);
+    const normalizedDate=deliveryDate(date);
+    if (!telegramId || !normalizedDate) return false;
+    const lockedUntil=digestDeliverySealUntil(normalizedDate);
     if (hasSupabase(cfg)) {
       await supaPatch(cfg,'bot_digest_subscriptions',{
-        telegram_id:`eq.${Number(row.telegram_id)}`,
-        delivery_claim_date:`eq.${date}`,
+        telegram_id:`eq.${telegramId}`,
+        delivery_claim_date:`eq.${normalizedDate}`,
       },{
         delivery_locked_until:lockedUntil,
         updated_at:new Date().toISOString(),
       });
       return true;
     }
-    const current=memory.botDigestSubscriptions.get(Number(row.telegram_id)) || row;
-    if (String(current.delivery_claim_date || '')!==date || String(current.last_sent_date || '')===date) return false;
-    memory.botDigestSubscriptions.set(Number(row.telegram_id),{...current,delivery_locked_until:lockedUntil});
+    const current=memory.botDigestSubscriptions.get(telegramId) || row;
+    if (String(current.delivery_claim_date || '')!==normalizedDate || String(current.last_sent_date || '')===normalizedDate) return false;
+    memory.botDigestSubscriptions.set(telegramId,{...current,delivery_locked_until:lockedUntil});
     return true;
   }
   
-  async function markDigestSent(row, date, cfg) {
-    if (hasSupabase(cfg)) return await supaRpc(cfg,'complete_daily_digest',{p_telegram_id:Number(row.telegram_id),p_delivery_date:date},2500);
-    memory.botDigestSubscriptions.set(Number(row.telegram_id),{...row,last_sent_date:date,delivery_claim_date:null,delivery_locked_until:null,updated_at:new Date().toISOString()});
+  async function markDigestSent(row,date,cfg) {
+    const telegramId=positiveSafeInteger(row?.telegram_id);
+    const normalizedDate=deliveryDate(date);
+    if (!telegramId || !normalizedDate) return false;
+    if (hasSupabase(cfg)) {
+      return (await supaRpc(cfg,'complete_daily_digest',{p_telegram_id:telegramId,p_delivery_date:normalizedDate},2500))===true;
+    }
+    const current=memory.botDigestSubscriptions.get(telegramId) || row;
+    if (String(current.delivery_claim_date || '')!==normalizedDate) return false;
+    memory.botDigestSubscriptions.set(telegramId,{
+      ...current,
+      last_sent_date:normalizedDate,
+      delivery_claim_date:null,
+      delivery_claimed_at:null,
+      delivery_locked_until:null,
+      updated_at:new Date().toISOString(),
+    });
+    return true;
   }
   
   async function releaseDigestDelivery(row,date,cfg) {
-    if (hasSupabase(cfg)) return await supaRpc(cfg,'release_daily_digest',{p_telegram_id:Number(row.telegram_id),p_delivery_date:date},2500).catch(()=>false);
-    const current=memory.botDigestSubscriptions.get(Number(row.telegram_id)) || row;
-    memory.botDigestSubscriptions.set(Number(row.telegram_id),{...current,delivery_claim_date:null,delivery_locked_until:null});
+    const telegramId=positiveSafeInteger(row?.telegram_id);
+    const normalizedDate=deliveryDate(date);
+    if (!telegramId || !normalizedDate) return false;
+    if (hasSupabase(cfg)) {
+      return (await supaRpc(cfg,'release_daily_digest',{p_telegram_id:telegramId,p_delivery_date:normalizedDate},2500).catch(()=>false))===true;
+    }
+    const current=memory.botDigestSubscriptions.get(telegramId) || row;
+    if (String(current.delivery_claim_date || '')!==normalizedDate || String(current.last_sent_date || '')===normalizedDate) return false;
+    memory.botDigestSubscriptions.set(telegramId,{
+      ...current,
+      delivery_claim_date:null,
+      delivery_claimed_at:null,
+      delivery_locked_until:null,
+    });
     return true;
   }
   
   function digestRowsFromMatchCache(matches = [], limit = 3) {
-    return (matches || []).map(normalizeBotFixtureCard).filter(match => match.fixtureId).map(match => ({
+    return rowsOf(matches).map(match=>{
+      try { return normalizeBotFixtureCard(match); } catch { return null; }
+    }).filter(match=>positiveSafeInteger(match?.fixtureId)).map(match => ({
       fixtureId:Number(match.fixtureId || 0),
       date:String(match.date || ''),
       status:String(match.status || ''),
@@ -265,18 +461,18 @@ export function createTelegramDigestRuntime(deps = {}) {
       || b.score-a.score
       || b.priority-a.priority
       || String(a.date).localeCompare(String(b.date))
-    ).slice(0,Math.max(1,Math.min(20,Number(limit || 3))));
+    ).slice(0,boundedLimit(limit,3,20));
   }
   
   async function currentDailyDigest(cfg) {
     const date=todayUtc();
     const cacheKey=`bot:digest:${date}:v1`;
     const cached=await getCache(cacheKey,cfg);
-    if (cached?.rows) return cached;
+    if (Array.isArray(cached?.rows)) return cached;
     try {
       const fixtures=await loadProviderFixturesForDate(date,cfg);
       const payload={date,rows:digestFixtureRows(fixtures),generatedAt:new Date().toISOString(),source:'provider',providerDegraded:false};
-      await setCache(cacheKey,0,payload,cfg,10);
+      await setCache(cacheKey,0,payload,cfg,10).catch(()=>null);
       return payload;
     } catch (error) {
       const matchCacheKey=`matches:${date}:v6-integrity`;
@@ -300,10 +496,14 @@ export function createTelegramDigestRuntime(deps = {}) {
   async function loadBotDayMatches(cfg, { liveOnly = false, limit = 8 } = {}) {
     const date=todayUtc();
     const cached=await getCache(`matches:${date}:v6-integrity`,cfg).catch(()=>null);
-    let matches=(cached?.matches || []).map(normalizeBotFixtureCard).filter(x=>x.fixtureId);
+    let matches=rowsOf(cached?.matches).map(match=>{
+      try { return normalizeBotFixtureCard(match); } catch { return null; }
+    }).filter(x=>positiveSafeInteger(x?.fixtureId));
     if (!matches.length && freeQuotaHealthy(8,1)) {
       const fixtures=await loadProviderFixturesForDate(date,cfg).catch(()=>[]);
-      matches=digestFixtureRows(fixtures,20).map(normalizeBotFixtureCard).filter(x=>x.fixtureId);
+      matches=digestFixtureRows(fixtures,20).map(match=>{
+        try { return normalizeBotFixtureCard(match); } catch { return null; }
+      }).filter(x=>positiveSafeInteger(x?.fixtureId));
     }
     if (liveOnly) matches=matches.filter(x=>x.live);
     matches.sort((a,b)=>Number(b.live)-Number(a.live) || Date.parse(a.date || 0)-Date.parse(b.date || 0));
@@ -311,11 +511,12 @@ export function createTelegramDigestRuntime(deps = {}) {
   }
   
   function botDayMatchesText(matches = [], { liveOnly = false } = {}) {
-    if (!matches.length) return liveOnly
+    const rows=rowsOf(matches);
+    if (!rows.length) return liveOnly
       ? '🔴 Сейчас в доступных данных нет матчей в прямом эфире.'
       : '⚽ На сегодня подходящие матчи пока не найдены.';
     const title=liveOnly ? '🔴 <b>LIVE сейчас</b>' : '⚽ <b>Матчи сегодня</b>';
-    return [title,'',...matches.map((m,i)=>`${i+1}. <b>${telegramHtmlEscape(m.homeName)} — ${telegramHtmlEscape(m.awayName)}</b>\n${telegramHtmlEscape(m.league || 'Турнир')} · ${m.live ? telegramHtmlEscape(m.statusLabel || 'идёт сейчас') : digestTime(m.date)}`),'','Нажмите на матч — сразу покажу короткую AI-оценку и кнопку полного разбора.'].join('\n');
+    return [title,'',...rows.map((m,i)=>`${i+1}. <b>${telegramHtmlEscape(m.homeName)} — ${telegramHtmlEscape(m.awayName)}</b>\n${telegramHtmlEscape(m.league || 'Турнир')} · ${m.live ? telegramHtmlEscape(m.statusLabel || 'идёт сейчас') : digestTime(m.date)}`),'','Нажмите на матч — сразу покажу короткую AI-оценку и кнопку полного разбора.'].join('\n');
   }
   
   async function sendBotDayMatches(request,cfg,chatId,{liveOnly=false}={}) {
@@ -327,18 +528,24 @@ export function createTelegramDigestRuntime(deps = {}) {
   }
   
   async function botTeamIdMatches(teamId,cfg) {
-    const id=Number(teamId || 0);
+    const id=positiveSafeInteger(teamId);
     if (!id) return [];
     const fromDate=new Date(); fromDate.setUTCDate(fromDate.getUTCDate()-7);
     const toDate=new Date(); toDate.setUTCDate(toDate.getUTCDate()+30);
     const from=fromDate.toISOString().slice(0,10), to=toDate.toISOString().slice(0,10);
     const cacheKey=`bot:team-id-matches:${id}:${from}:${to}:v1`;
     const cached=await getCache(cacheKey,cfg).catch(()=>null);
-    if (cached?.matches) return cached.matches.map(normalizeBotFixtureCard);
+    if (Array.isArray(cached?.matches)) {
+      return cached.matches.map(match=>{
+        try { return normalizeBotFixtureCard(match); } catch { return null; }
+      }).filter(match=>positiveSafeInteger(match?.fixtureId));
+    }
     if (!freeQuotaHealthy(8,1)) return [];
     let fixtures=await apiFootball('/fixtures',{team:id,next:8},cfg).catch(()=>[]);
     if (!fixtures.length) fixtures=await apiFootball('/fixtures',{team:id,last:6},cfg).catch(()=>[]);
-    const matches=(fixtures || []).filter(f=>!['CANC','PST','ABD','AWD','WO'].includes(String(f.fixture?.status?.short||''))).map(f=>normalizeBotFixtureCard(f)).filter(x=>x.fixtureId)
+    const matches=rowsOf(fixtures).filter(f=>!CANCELLED_FIXTURE_STATUSES.has(String(f?.fixture?.status?.short||''))).map(f=>{
+      try { return normalizeBotFixtureCard(f); } catch { return null; }
+    }).filter(x=>positiveSafeInteger(x?.fixtureId))
       .sort((a,b)=>Number(b.live)-Number(a.live) || Number(a.finished)-Number(b.finished) || Date.parse(a.date||0)-Date.parse(b.date||0)).slice(0,6);
     await setCache(cacheKey,id,{matches,refreshedAt:new Date().toISOString()},cfg,120).catch(()=>null);
     await rememberBotFixtureCards(matches,cfg);
@@ -346,7 +553,7 @@ export function createTelegramDigestRuntime(deps = {}) {
   }
   
   async function sendBotFavoriteTeams(request,cfg,userId,chatId) {
-    const favorites=await getFavorites(userId,cfg);
+    const favorites=rowsOf(await getFavorites(userId,cfg));
     if (!favorites.length) {
       await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'⭐ <b>Мои команды пока пусты</b>\n\nОткройте любой матч и нажмите ☆ рядом с нужным клубом. После этого здесь появятся его ближайшие игры, а в MatchRadar AI · Новости — персональные новости.',parse_mode:'HTML',reply_markup:footballBotKeyboard(request)});
       return;
@@ -356,51 +563,60 @@ export function createTelegramDigestRuntime(deps = {}) {
   }
   
   async function sendBotFavoriteTeamMatches(request,cfg,userId,chatId,teamId) {
-    const favorites=await getFavorites(userId,cfg);
-    const team=favorites.find(x=>Number(x.team_id)===Number(teamId));
+    const id=positiveSafeInteger(teamId);
+    if (!id) {
+      await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'Команда не найдена в вашем избранном.'});
+      return;
+    }
+    const favorites=rowsOf(await getFavorites(userId,cfg));
+    const team=favorites.find(x=>positiveSafeInteger(x?.team_id)===id);
     if (!team) {
       await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'Команда не найдена в вашем избранном.'});
       return;
     }
-    const matches=await botTeamIdMatches(teamId,cfg);
+    const matches=await botTeamIdMatches(id,cfg);
     const rows=matches.map(m=>[{text:botMatchButtonText(m),callback_data:`match:menu:${Number(m.fixtureId)}`}]);
     const body=matches.length
       ? matches.map((m,i)=>`${i+1}. <b>${telegramHtmlEscape(m.homeName)} — ${telegramHtmlEscape(m.awayName)}</b> · ${m.live?'LIVE':digestTime(m.date)}`).join('\n')
       : 'Ближайшие матчи сейчас не найдены или источник данных временно ограничен.';
-    const buttons=rows.length?rows:[[{text:'🔄 Повторить',callback_data:`favorite:team:${Number(teamId)}`}]];
+    const buttons=rows.length?rows:[[{text:'🔄 Повторить',callback_data:`favorite:team:${id}`}]];
     buttons.push([{text:'📰 Новости клуба',callback_data:`news:team:${Number(teamId)}`}]);
     await telegramApi('sendMessage',cfg,{chat_id:chatId,parse_mode:'HTML',text:`⭐ <b>${telegramHtmlEscape(team.team_name || 'Команда')}</b>\n\n${body}`,reply_markup:{inline_keyboard:buttons}});
   }
   
   async function sendDailyPicks(request,cfg,chatId) {
     const digest=await currentDailyDigest(cfg);
-    await rememberBotFixtureCards(digest.rows || [], cfg);
-    const rows=(digest.rows || []).map(match => [{
+    const digestRows=rowsOf(digest?.rows).filter(match=>positiveSafeInteger(match?.fixtureId));
+    await rememberBotFixtureCards(digestRows,cfg);
+    const rows=digestRows.map(match => [{
       text:`⚽ ${String(match.homeName || 'Хозяева').slice(0,20)} — ${String(match.awayName || 'Гости').slice(0,20)}`,
       callback_data:`match:menu:${Number(match.fixtureId)}`,
     }]);
     rows.push([{text:'⚽ Все матчи сегодня',callback_data:'feed:today'}]);
     await telegramApi('sendMessage',cfg,{
-      chat_id:chatId, parse_mode:'HTML', text:dailyDigestText(digest.rows),
+      chat_id:chatId, parse_mode:'HTML', text:dailyDigestText(digestRows),
       reply_markup:{inline_keyboard:rows},
     });
   }
   
   async function processDailyDigests(cfg,scheduledAt=new Date()) {
-    if (!cfg.botToken) return {sent:0,skipped:'bot_token_missing'};
+    if (!cfg?.botToken) return {sent:0,skipped:'bot_token_missing'};
+    const scheduledDate=scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt);
+    if (!Number.isFinite(scheduledDate.getTime())) return {sent:0,skipped:'invalid_schedule'};
     const startedAt=Date.now();
-    const hour=scheduledAt.getUTCHours();
-    const date=scheduledAt.toISOString().slice(0,10);
+    const hour=scheduledDate.getUTCHours();
+    const date=scheduledDate.toISOString().slice(0,10);
     const subscriptionPage=await loadBotDigestSubscriptions(cfg);
-    const plan=planDailyDigestRecipients(subscriptionPage.rows || [],{
+    const subscriptionRows=rowsOf(subscriptionPage?.rows);
+    const plan=planDailyDigestRecipients(subscriptionRows,{
       date,
       hourUtc:hour,
       pageSize:DAILY_DIGEST_POLICY.pageSize,
       maxRecipients:DAILY_DIGEST_POLICY.maxRecipientsPerRun,
-      truncated:Boolean(subscriptionPage.truncated),
+      truncated:Boolean(subscriptionPage?.truncated),
     });
   
-    if (subscriptionPage.truncated) {
+    if (subscriptionPage?.truncated) {
       await recordOpsEvent(cfg,{
         severity:'warning',
         source:'telegram',
@@ -420,7 +636,7 @@ export function createTelegramDigestRuntime(deps = {}) {
         expiredClaims:plan.expiredClaims,failed:0,rateLimited:0,deferred:0,remaining:0,backlog:0,
         truncated:Boolean(plan.truncated),duration:Date.now()-startedAt,
       };
-      const health=assessDailyDigestRun(summary,scheduledAt);
+      const health=assessDailyDigestRun(summary,scheduledDate);
       await recordOpsEvent(cfg,{
         severity:health.severity,
         source:'telegram',
@@ -468,7 +684,7 @@ export function createTelegramDigestRuntime(deps = {}) {
         completionRate:null,
         duration:Date.now()-startedAt,
       };
-      const health=assessDailyDigestRun(summary,scheduledAt);
+      const health=assessDailyDigestRun(summary,scheduledDate);
       await recordOpsEvent(cfg,{
         severity:'warning',
         source:'telegram',
@@ -489,20 +705,22 @@ export function createTelegramDigestRuntime(deps = {}) {
       generatedAt:new Date().toISOString(),
       degraded:true,
     }));
-    const matchButtons=(digest.rows || []).slice(0,3).map(match=>[{
+    const digestRows=rowsOf(digest?.rows).filter(match=>positiveSafeInteger(match?.fixtureId));
+    const morningNewsItems=rowsOf(morningNews?.items);
+    const matchButtons=digestRows.slice(0,3).map(match=>[{
       text:`⚽ ${String(match.homeName || '').slice(0,18)} — ${String(match.awayName || '').slice(0,18)}`,
       callback_data:`match:menu:${Number(match.fixtureId)}`,
     }]);
     matchButtons.push([{text:'⚽ Все матчи сегодня',callback_data:'feed:today'}]);
-    const digestText=dailyDigestText(digest.rows);
+    const digestText=dailyDigestText(digestRows);
     let expandedDigestText=digestText;
     let expandedDigestRecipientIds=new Set();
     let expandedDigestMatches=0;
     try {
-      const paidDigestAudience=await filterSmartNotificationRecipients(plan.pending || [],'ai.digest_expanded',cfg);
-      expandedDigestRecipientIds=new Set((paidDigestAudience?.rows || []).map(row=>Number(row?.telegram_id || 0)).filter(Boolean));
+      const paidDigestAudience=await filterSmartNotificationRecipients(rowsOf(plan?.pending),'ai.digest_expanded',cfg);
+      expandedDigestRecipientIds=new Set(rowsOf(paidDigestAudience?.rows).map(row=>positiveSafeInteger(row?.telegram_id)).filter(Boolean));
       if (expandedDigestRecipientIds.size) {
-        const radarEntries=await Promise.all((digest.rows || []).slice(0,3).map(async match=>{
+        const radarEntries=await Promise.all(digestRows.slice(0,3).map(async match=>{
           const fixtureId=Number(match?.fixtureId || 0);
           if (!fixtureId) return [0,null];
           const snapshots=await getAnalysisTimelineSnapshots(fixtureId,cfg,10).catch(()=>[]);
@@ -510,13 +728,13 @@ export function createTelegramDigestRuntime(deps = {}) {
             confidenceThreshold:SMART_NOTIFICATION_POLICY.radarConfidenceThreshold,
             outcomeThreshold:SMART_NOTIFICATION_POLICY.radarOutcomeThreshold,
             maxSignalAgeMinutes:SMART_NOTIFICATION_POLICY.maxSignalAgeMinutes,
-            now:scheduledAt.getTime(),
+            now:scheduledDate.getTime(),
           });
           return [fixtureId,state];
         }));
         const radarByFixture=new Map(radarEntries.filter(([fixtureId,state])=>fixtureId && state?.reason==='evaluated'));
         expandedDigestMatches=radarByFixture.size;
-        expandedDigestText=expandedDailyDigestText(digest.rows,radarByFixture);
+        expandedDigestText=expandedDailyDigestText(digestRows,radarByFixture);
       }
     } catch (error) {
       await recordOpsEvent(cfg,{
@@ -529,9 +747,9 @@ export function createTelegramDigestRuntime(deps = {}) {
         meta:{date},
       }).catch(()=>null);
     }
-    const newsText=morningNews.items?.length ? morningNewsText(morningNews.items) : '';
-    const newsKeyboard=morningNews.items?.length
-      ? newsConversionKeyboard(morningNews.items,[[{text:'📰 Новости MatchRadar AI',callback_data:'news:general'}]])
+    const newsText=morningNewsItems.length ? morningNewsText(morningNewsItems) : '';
+    const newsKeyboard=morningNewsItems.length
+      ? newsConversionKeyboard(morningNewsItems,[[{text:'📰 Новости MatchRadar AI',callback_data:'news:general'}]])
       : null;
   
     const result=await runBoundedDailyDigest({
@@ -570,7 +788,7 @@ export function createTelegramDigestRuntime(deps = {}) {
       sealedClaims:plan.sealedClaims,
       oldestActiveClaimAgeMs:plan.oldestActiveClaimAgeMs,
       expiredClaims:plan.expiredClaims,
-      news:Number(morningNews.items?.length || 0),
+      news:morningNewsItems.length,
       newsDegraded:Boolean(morningNews.degraded),
       expandedDigestRecipients:expandedDigestRecipientIds.size,
       expandedDigestMatches,
@@ -580,7 +798,7 @@ export function createTelegramDigestRuntime(deps = {}) {
       completionRate:result.claimed>0 ? Number((result.sent/result.claimed).toFixed(4)) : 1,
       duration:Date.now()-startedAt,
     };
-    const health=assessDailyDigestRun(summary,scheduledAt);
+    const health=assessDailyDigestRun(summary,scheduledDate);
     await recordOpsEvent(cfg,{
       severity:health.severity,
       source:'telegram',
@@ -599,7 +817,7 @@ export function createTelegramDigestRuntime(deps = {}) {
     return summary;
   }
 
-  return {
+  return Object.freeze({
     sendDigestControls,
     digestFixtureRows,
     digestTime,
@@ -624,5 +842,5 @@ export function createTelegramDigestRuntime(deps = {}) {
     sendBotFavoriteTeamMatches,
     sendDailyPicks,
     processDailyDigests
-  };
+  });
 }
