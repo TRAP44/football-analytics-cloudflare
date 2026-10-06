@@ -67,10 +67,10 @@ const runtime=fs.readFileSync('public/modules/app-runtime.js','utf8');
 
 test('RC135 weighting remains cache-first while RC136 hydrates only missing roles', () => {
   assert.match(worker,/async function cachedTeamIntelligenceForAnalysis/);
-  assert.match(worker,/const baseAbsences = formatAbsences\(trustedInjuries, homeId, awayId, lineups\)/);
-  assert.match(worker,/cachedPlayerStats:cachedHomePlayerStats, needed:baseAbsences\.home\.length>0/);
-  assert.match(worker,/cachedPlayerStats:cachedAwayPlayerStats, needed:baseAbsences\.away\.length>0/);
-  assert.match(worker,/enrichFixtureAbsencesWithSeasonRole\(baseAbsences, \{ homePlayerStats, awayPlayerStats \}\)/);
+  assert.match(worker,/formatAbsences\(trustedInjuries,homeId,awayId,trustedLineups\)/);
+  assert.match(worker,/cachedPlayerStats:cachedHomePlayerStats,[\s\S]{0,160}?needed:baseAbsences\.home\.length>0/);
+  assert.match(worker,/cachedPlayerStats:cachedAwayPlayerStats,[\s\S]{0,160}?needed:baseAbsences\.away\.length>0/);
+  assert.match(worker,/enrichFixtureAbsencesWithSeasonRole\([\s\S]{0,160}?baseAbsences,[\s\S]{0,160}?\{homePlayerStats,awayPlayerStats\}/);
 });
 
 test('RC135 keeps weighted availability bounded and doubtful at half weight', () => {
@@ -88,7 +88,7 @@ test('RC135 exposes methodology without a player quality score', () => {
 });
 
 test('RC135 updates model-input and health identity', () => {
-  assert.match(worker,/analysisVersion: '4\.15\.0-availability-quality'/);
+  assert.match(worker,/analysisVersion:\s*'4\.15\.0-availability-quality'/);
   assert.match(worker,/playerRoleAvailability: 'enabled'/);
   assert.match(worker,/const APP_VERSION = '6\.120\.0-rc144'/);
   assert.match(worker,/const RC_NAME = 'RC144'/);
