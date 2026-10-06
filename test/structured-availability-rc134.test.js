@@ -95,7 +95,7 @@ test('RC134 both Match Center and AI analysis reconcile absences against lineups
   assert.match(worker, /formatAbsences\([\s\S]{0,160}?trustedInjuryRows,[\s\S]{0,160}?lineupSourceTrusted \? lineups : null/);
   assert.match(worker, /formatAbsences\(trustedInjuries,homeId,awayId,trustedLineups\)/);
   assert.match(worker, /enrichFixtureAbsencesWithSeasonRole\([\s\S]{0,160}?baseAbsences,[\s\S]{0,160}?\{homePlayerStats,awayPlayerStats\}/);
-  assert.match(worker, /return normalizeFixtureAbsences\(rows, \{ homeId, awayId, lineups \}\)/);
+  assert.match(worker, /return normalizeFixtureAbsences\(rows\(rowsInput\),\{[\s\S]{0,180}?homeId:teams\.home \|\| 0,[\s\S]{0,180}?awayId:teams\.away \|\| 0,[\s\S]{0,220}?lineups:/);
 });
 
 test('RC134 doubtful players have reduced model adjustment instead of full confirmed-out weight', () => {
