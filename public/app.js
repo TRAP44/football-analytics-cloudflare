@@ -5062,8 +5062,8 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
 
 function historyItemFromAnalysis(data = {}) {
   const match = data?.match || {};
-  const fixtureId = Number(match.fixtureId || 0);
-  if (!fixtureId) return null;
+  const fixtureId = Number(match.fixtureId);
+  if (!Number.isSafeInteger(fixtureId) || fixtureId <= 0) return null;
   return {
     fixtureId,
     homeName: match.home?.name || '',
