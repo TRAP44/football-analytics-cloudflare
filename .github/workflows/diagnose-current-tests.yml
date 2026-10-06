@@ -1,0 +1,31 @@
+name: Diagnose changed tests
+
+on:
+  push:
+    branches: [diag-tests-eee9d54f]
+    paths:
+      - ".github/workflows/diagnose-current-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Use Node.js 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Run recently changed tests only
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test             test/auth-user-boundary-phase2.test.js             test/availability-quality-rc144.test.js             test/event-quality-rc141.test.js             test/match-center-runtime-boundaries.test.js             test/odds-quality-rc143.test.js             test/statistics-quality-rc142.test.js
