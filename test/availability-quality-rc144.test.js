@@ -131,15 +131,16 @@ test('RC144 gates Match Center and prematch availability before absence analytic
   assert.match(worker, /assessFixtureAvailabilityQuality\(injuryRows,/);
   assert.match(worker, /const trustedInjuryRows = sanitizeAvailabilityRows\(injuryRows, availabilityQuality\)/);
   assert.match(worker, /assessFixtureAvailabilityQuality\(injuries,/);
-  assert.match(worker, /const trustedInjuries = sanitizeAvailabilityRows\(injuries, availabilityQuality\)/);
-  assert.match(worker, /const baseAbsences = formatAbsences\(trustedInjuries, homeId, awayId, lineups\)/);
+  assert.match(worker, /sanitizeAvailabilityRows\(injuries,availabilityQuality\)/);
+  assert.match(worker, /const trustedLineups=featureTrusted\('lineups'\) \? lineups : \{\}/);
+  assert.match(worker, /formatAbsences\(trustedInjuries,homeId,awayId,trustedLineups\)/);
   assert.match(worker, /availabilityQuality,/);
 });
 
 test('RC144 exposes availability quality through UI and release contracts', () => {
   assert.match(worker, /match-center:\$\{fixtureId\}:v16-availability-quality-rc144/);
   assert.match(worker, /fixture:\$\{fixtureId\}:v15-availability-quality-rc144/);
-  assert.match(worker, /analysisVersion: '4\.15\.0-availability-quality'/);
+  assert.match(worker, /analysisVersion:\s*'4\.15\.0-availability-quality'/);
   assert.match(worker, /availabilitySemanticQualityGuard: 'enabled'/);
   assert.match(app, /function availabilityQualityHintHtml/);
   assert.match(app, /availabilityQualityHintHtml\(d\.availabilityQuality\)/);
