@@ -49,11 +49,18 @@ test('expired plan handling uses strict timestamps and clock input',()=>{
       plan:'PRO',
       subscription_until:{toString:()=> '2026-10-01T10:00:00.000Z'},
     },Date.parse('2026-10-01T11:00:00.000Z')),
-    'PRO',
+    'FREE',
+  );
+  assert.equal(
+    effectiveNotificationPlan({
+      plan:'PRO',
+      subscription_until:'not-a-date',
+    },Date.parse('2026-10-01T11:00:00.000Z')),
+    'FREE',
   );
   assert.equal(
     effectiveNotificationPlan(expired,{valueOf:()=>Date.parse('2026-10-01T11:00:00.000Z')}),
-    'PRO',
+    'FREE',
   );
 });
 
@@ -104,6 +111,9 @@ test('dedupe identity rejects coercion and prevents lossy event-key collisions',
   assert.notEqual(slash,space);
   assert.match(slash,/^v1:12:match\.goal:/);
   assert.match(space,/^v1:12:match\.goal:/);
+  assert.match(slash,/-[a-f0-9]{16}$/);
+  assert.match(space,/-[a-f0-9]{16}$/);
+  assert.equal(slash.includes('~'),false);
 });
 
 test('server policy keeps basic match alerts FREE and gates player/AI/market alerts', () => {
