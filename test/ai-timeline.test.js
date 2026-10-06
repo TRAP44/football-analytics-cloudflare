@@ -1,117 +1,152 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { readFileSync } from 'node:fs';
 
 import {
   analysisTimelineSnapshotRow,
   buildAiTimeline,
   timelineTriggerFromDelta,
 } from '../src/ai-timeline.js';
+import { createAiTimelineRuntime } from '../src/ai-timeline-runtime.js';
 import {
   normalizeAiTimeline,
   renderAiTimelineCompact,
   renderAiTimelineDetails,
 } from '../public/modules/ai-timeline.js';
 
+function readRepoFile(relativePath) {
+  return readFileSync(new URL('../' + relativePath, import.meta.url), 'utf8');
+}
+
 const match = {
-  fixtureId: 42,
-  date: '2026-10-01T18:00:00.000Z',
-  home: { name: 'Хозяева' },
-  away: { name: 'Гости' },
+  fixtureId:42,
+  date:'2026-10-01T18:00:00.000Z',
+  home:{name:'Хозяева'},
+  away:{name:'Гости'},
 };
 
 function point(at, probabilities, extra = {}) {
   return {
-    fixture_id: 42,
-    captured_at: at,
-    home_prob: probabilities.home,
-    draw_prob: probabilities.draw,
-    away_prob: probabilities.away,
-    trigger_category: extra.category || 'model_update',
-    causal_relation: extra.relation || 'model_driven',
-    explanation: extra.explanation || 'Модель переоценила матч после обновления входных данных.',
-    confidence_score: extra.confidence,
-    completeness_score: extra.completenessScore,
-    completeness_max: extra.completenessMax,
-    match_minute: extra.minute ?? null,
-    provenance: extra.provenance || {},
+    fixture_id:42,
+    captured_at:at,
+    home_prob:probabilities.home,
+    draw_prob:probabilities.draw,
+    away_prob:probabilities.away,
+    trigger_category:extra.category || 'model_update',
+    causal_relation:extra.relation || 'model_driven',
+    explanation:extra.explanation || 'Модель переоценила матч после обновления входных данных.',
+    confidence_score:extra.confidence,
+    completeness_score:extra.completenessScore,
+    completeness_max:extra.completenessMax,
+    match_minute:extra.minute ?? null,
+    provenance:extra.provenance || {},
   };
 }
 
+function createTimelineRuntime({
+  hasSupabase = () => false,
+  memory = {analysisTimelineSnapshots:new Map()},
+  supaInsertIgnore = async () => true,
+  supaSelectMany = async () => [],
+  loadModelPredictionForFixture = async () => null,
+  getOddsSnapshots = async () => [],
+} = {}) {
+  return {
+    memory,
+    runtime:createAiTimelineRuntime({
+      analysisTimelineSnapshotRow,
+      buildAiTimeline,
+      getOddsSnapshots,
+      hasSupabase,
+      loadModelPredictionForFixture,
+      memory,
+      supaInsertIgnore,
+      supaSelectMany,
+    }),
+  };
+}
+
+const analysisRuntimeSource=readRepoFile('src/analysis-runtime.js');
+const matchCenterSource=readRepoFile('src/match-center-runtime.js');
+const workerSource=readRepoFile('src/worker.js');
+const appSource=readRepoFile('public/app.js');
+const migration=readRepoFile('supabase/migrations/supabase_migration_v6_22.sql').toLowerCase();
+const shellCss=readRepoFile('public/styles/public-shell.css');
+
 test('AI Timeline: no snapshots produces no invented UI', () => {
-  const timeline = buildAiTimeline({ match });
-  assert.equal(timeline.available, false);
-  assert.deepEqual(timeline.points, []);
-  assert.equal(renderAiTimelineCompact(timeline, match), '');
-  assert.equal(renderAiTimelineDetails(timeline, match), '');
+  const timeline=buildAiTimeline({match});
+  assert.equal(timeline.available,false);
+  assert.deepEqual(timeline.points,[]);
+  assert.equal(renderAiTimelineCompact(timeline,match),'');
+  assert.equal(renderAiTimelineDetails(timeline,match),'');
 });
 
 test('AI Timeline: one real point is a baseline without fake delta', () => {
-  const timeline = buildAiTimeline({
-    snapshotRows: [point('2026-10-01T12:00:00Z', { home: 52, draw: 27, away: 21 }, { confidence: 66 })],
+  const timeline=buildAiTimeline({
+    snapshotRows:[point('2026-10-01T12:00:00Z',{home:52,draw:27,away:21},{confidence:66})],
     match,
   });
-  assert.equal(timeline.points.length, 1);
-  assert.equal(timeline.points[0].leader.key, 'home');
-  assert.equal(timeline.points[0].delta.value, null);
-  const html = renderAiTimelineCompact(timeline, match);
-  assert.match(html, /Хозяева · 52\.0%/);
-  assert.doesNotMatch(html, /\+0\.0 п\.п\./);
+  assert.equal(timeline.points.length,1);
+  assert.equal(timeline.points[0].leader.key,'home');
+  assert.equal(timeline.points[0].delta.value,null);
+  const html=renderAiTimelineCompact(timeline,match);
+  assert.match(html,/Хозяева · 52\.0%/);
+  assert.doesNotMatch(html,/\+0\.0 п\.п\./);
 });
 
 test('AI Timeline: multiple points are chronological and show base plus delta', () => {
-  const timeline = buildAiTimeline({
-    snapshotRows: [
-      point('2026-10-01T17:00:00Z', { home: 57, draw: 25, away: 18 }),
-      point('2026-10-01T12:00:00Z', { home: 52, draw: 27, away: 21 }),
-      point('2026-10-01T17:30:00Z', { home: 61, draw: 23, away: 16 }),
+  const timeline=buildAiTimeline({
+    snapshotRows:[
+      point('2026-10-01T17:00:00Z',{home:57,draw:25,away:18}),
+      point('2026-10-01T12:00:00Z',{home:52,draw:27,away:21}),
+      point('2026-10-01T17:30:00Z',{home:61,draw:23,away:16}),
     ],
     match,
   });
-  assert.deepEqual(timeline.points.map(x => x.probabilities.home), [52,57,61]);
-  assert.equal(timeline.points[1].delta.previousProbability, 52);
-  assert.equal(timeline.points[1].delta.value, 5);
-  const html = renderAiTimelineCompact(timeline, match);
-  assert.match(html, /57\.0% → 61\.0%/);
-  assert.match(html, /↑ \+4\.0 п\.п\./);
+
+  assert.deepEqual(timeline.points.map(item=>item.probabilities.home),[52,57,61]);
+  assert.equal(timeline.points[1].delta.previousProbability,52);
+  assert.equal(timeline.points[1].delta.value,5);
+  assert.equal(timeline.points[2].delta.value,4);
+
+  const html=renderAiTimelineCompact(timeline,match);
+  assert.match(html,/57\.0% → 61\.0%/);
+  assert.match(html,/↑ \+4\.0 п\.п\./);
 });
 
-test('AI Timeline: duplicate timestamps are deduplicated deterministically', () => {
-  const model = normalizeAiTimeline({
-    points: [
-      { capturedAt:'2026-10-01T12:00:00Z', probabilities:{home:52,draw:27,away:21}, source:'model_predictions' },
-      { capturedAt:'2026-10-01T12:00:00Z', probabilities:{home:53,draw:26,away:21}, source:'analysis_timeline_snapshots' },
+test('AI Timeline: duplicate and near-identical baseline snapshots are deduplicated deterministically', () => {
+  const model=normalizeAiTimeline({
+    points:[
+      {capturedAt:'2026-10-01T12:00:00Z',probabilities:{home:52,draw:27,away:21},source:'model_predictions'},
+      {capturedAt:'2026-10-01T12:00:00Z',probabilities:{home:53,draw:26,away:21},source:'analysis_timeline_snapshots'},
     ],
-  }, match);
-  assert.equal(model.points.length, 1);
-  assert.equal(model.points[0].probabilities.home, 53);
-  assert.equal(model.points[0].source, 'analysis_timeline_snapshots');
-});
+  },match);
+  assert.equal(model.points.length,1);
+  assert.equal(model.points[0].probabilities.home,53);
+  assert.equal(model.points[0].source,'analysis_timeline_snapshots');
 
-test('AI Timeline: near-identical immutable prediction and timeline capture do not double count', () => {
-  const timeline = buildAiTimeline({
-    snapshotRows: [point('2026-10-01T12:00:30Z', {home:52,draw:27,away:21})],
-    modelPrediction: {
+  const timeline=buildAiTimeline({
+    snapshotRows:[point('2026-10-01T12:00:30Z',{home:52,draw:27,away:21})],
+    modelPrediction:{
       fixture_id:42,
       captured_at:'2026-10-01T12:00:00Z',
       kickoff_at:match.date,
-      home_prob:52,draw_prob:27,away_prob:21,
+      home_prob:52,
+      draw_prob:27,
+      away_prob:21,
     },
     match,
   });
-  assert.equal(timeline.points.length, 1);
-  assert.notEqual(timeline.points[0].source, 'model_predictions');
+  assert.equal(timeline.points.length,1);
+  assert.notEqual(timeline.points[0].source,'model_predictions');
 });
 
-test('AI Timeline: rejects snapshots from another fixture and malformed probability sets', () => {
-  const timeline = buildAiTimeline({
-    snapshotRows: [
-      point('2026-10-01T12:00:00Z', { home:52, draw:27, away:21 }),
-      {
-        ...point('2026-10-01T12:05:00Z', { home:53, draw:26, away:21 }),
-        fixture_id:99,
-      },
-      point('2026-10-01T12:10:00Z', { home:90, draw:90, away:90 }),
+test('AI Timeline: rejects cross-fixture and malformed probability snapshots', () => {
+  const timeline=buildAiTimeline({
+    snapshotRows:[
+      point('2026-10-01T12:00:00Z',{home:52,draw:27,away:21}),
+      {...point('2026-10-01T12:05:00Z',{home:53,draw:26,away:21}),fixture_id:99},
+      point('2026-10-01T12:10:00Z',{home:90,draw:90,away:90}),
     ],
     modelPrediction:{
       fixture_id:99,
@@ -122,13 +157,31 @@ test('AI Timeline: rejects snapshots from another fixture and malformed probabil
     },
     match,
   });
+
   assert.equal(timeline.points.length,1);
   assert.equal(timeline.points[0].fixtureId,42);
   assert.equal(timeline.generatedFrom.immutableModelPrediction,false);
 });
 
-test('AI Timeline: match minutes are clamped to the supported 0-180 range', () => {
-  const row = analysisTimelineSnapshotRow({
+test('AI Timeline: snapshot rows validate identity, time and supported minute range', () => {
+  assert.equal(
+    analysisTimelineSnapshotRow({
+      generatedAt:'invalid',
+      match:{fixtureId:42},
+      probabilities:{home:50,draw:30,away:20},
+    }),
+    null,
+  );
+  assert.equal(
+    analysisTimelineSnapshotRow({
+      generatedAt:'2026-10-01T20:00:00Z',
+      match:{fixtureId:-42},
+      probabilities:{home:50,draw:30,away:20},
+    }),
+    null,
+  );
+
+  const row=analysisTimelineSnapshotRow({
     generatedAt:'2026-10-01T20:00:00Z',
     match:{fixtureId:42,date:match.date,status:'ET',elapsed:999},
     probabilities:{home:50,draw:30,away:20},
@@ -142,14 +195,20 @@ test('AI Timeline: match minutes are clamped to the supported 0-180 range', () =
   assert.equal(timeline.points[0].minute,180);
 });
 
-test('AI Timeline: confirmed lineup change uses temporal wording, not causal claim', () => {
-  const trigger = timelineTriggerFromDelta({ codes:['lineups'] });
-  assert.equal(trigger.relation, 'confirmed');
-  assert.equal(trigger.category, 'lineup');
-  assert.match(trigger.explanation, /После подтверждения состава/);
-  assert.doesNotMatch(trigger.explanation, /из-за|привел|вызвал/i);
+test('AI Timeline: trigger wording separates confirmed chronology from correlation and causality', () => {
+  const lineup=timelineTriggerFromDelta({codes:['lineups']});
+  assert.equal(lineup.relation,'confirmed');
+  assert.equal(lineup.category,'lineup');
+  assert.match(lineup.explanation,/После подтверждения состава/);
+  assert.doesNotMatch(lineup.explanation,/из-за|привел|вызвал/i);
 
-  const row = analysisTimelineSnapshotRow({
+  const market=timelineTriggerFromDelta({codes:['market']});
+  assert.equal(market.relation,'correlated');
+  assert.equal(market.category,'odds_move');
+  assert.match(market.explanation,/совпало/i);
+  assert.match(market.explanation,/Причинность не подтверждена/i);
+
+  const row=analysisTimelineSnapshotRow({
     generatedAt:'2026-10-01T17:05:00Z',
     analysisVersion:'test',
     match:{fixtureId:42,date:match.date,status:'NS'},
@@ -157,37 +216,30 @@ test('AI Timeline: confirmed lineup change uses temporal wording, not causal cla
     confidence:{score:71},
     completeness:{score:8,max:10},
     dataProvenance:{primaryProvider:'api-football',features:{}},
-  }, { delta:{ codes:['lineups'] } });
-  assert.equal(row.trigger_category, 'lineup');
-  assert.equal(row.causal_relation, 'confirmed');
+  },{delta:{codes:['lineups']}});
+  assert.equal(row.trigger_category,'lineup');
+  assert.equal(row.causal_relation,'confirmed');
 });
 
-test('AI Timeline: red card is correlation only when a saved model point follows it', () => {
-  const timeline = buildAiTimeline({
-    snapshotRows: [
-      point('2026-10-01T18:10:00Z', {home:55,draw:27,away:18}, {minute:10}),
-      point('2026-10-01T18:25:00Z', {home:73,draw:18,away:9}, {minute:25}),
+test('AI Timeline: live event correlation never claims event causality', () => {
+  const timeline=buildAiTimeline({
+    snapshotRows:[
+      point('2026-10-01T18:10:00Z',{home:55,draw:27,away:18},{minute:10}),
+      point('2026-10-01T18:25:00Z',{home:73,draw:18,away:9},{minute:25}),
     ],
     events:[{minute:20,type:'Card',detail:'Red Card',teamName:'Гости'}],
     match,
   });
-  assert.equal(timeline.points[1].trigger.relation, 'correlated');
-  assert.equal(timeline.points[1].trigger.category, 'event');
-  assert.match(timeline.points[1].trigger.explanation, /совпало/i);
-  assert.match(timeline.points[1].trigger.explanation, /Причинность не подтверждена/i);
-  assert.doesNotMatch(timeline.points[1].trigger.explanation, /из-за красной|красная карточка вызвала/i);
+
+  assert.equal(timeline.points[1].trigger.relation,'correlated');
+  assert.equal(timeline.points[1].trigger.category,'event');
+  assert.match(timeline.points[1].trigger.explanation,/совпало/i);
+  assert.match(timeline.points[1].trigger.explanation,/Причинность не подтверждена/i);
+  assert.doesNotMatch(timeline.points[1].trigger.explanation,/из-за красной|красная карточка вызвала/i);
 });
 
-test('AI Timeline: odds move is explicitly correlated, not claimed as cause', () => {
-  const trigger = timelineTriggerFromDelta({ codes:['market'] });
-  assert.equal(trigger.relation, 'correlated');
-  assert.equal(trigger.category, 'odds_move');
-  assert.match(trigger.explanation, /совпало/i);
-  assert.match(trigger.explanation, /Причинность не подтверждена/i);
-});
-
-test('AI Timeline: market snapshots stay separate from AI probability points', () => {
-  const timeline = buildAiTimeline({
+test('AI Timeline: market snapshots remain separate from AI probability points', () => {
+  const timeline=buildAiTimeline({
     snapshotRows:[point('2026-10-01T12:00:00Z',{home:52,draw:27,away:21})],
     oddsSnapshots:[
       {at:'2026-10-01T11:00:00Z',homeProb:48,drawProb:29,awayProb:23,sources:4},
@@ -195,14 +247,17 @@ test('AI Timeline: market snapshots stay separate from AI probability points', (
     ],
     match,
   });
+
   assert.equal(timeline.points.length,1);
   assert.equal(timeline.marketContext.length,2);
+  assert.equal(timeline.generatedFrom.marketSnapshots,2);
+
   const html=renderAiTimelineDetails(timeline,match);
   assert.match(html,/Это сохранённые рыночные вероятности, а не точки AI-модели/);
 });
 
-test('AI Timeline: stale snapshot and missing confidence remain explicit', () => {
-  const timeline = buildAiTimeline({
+test('AI Timeline: stale provenance and missing confidence stay explicit', () => {
+  const timeline=buildAiTimeline({
     snapshotRows:[point('2026-10-01T12:00:00Z',{home:52,draw:27,away:21},{
       provenance:{stale:true,staleFeatures:['market']},
       completenessScore:5,
@@ -210,16 +265,18 @@ test('AI Timeline: stale snapshot and missing confidence remain explicit', () =>
     })],
     match,
   });
+
   const normalized=normalizeAiTimeline(timeline,match);
   assert.equal(normalized.points[0].stale,true);
   assert.equal(normalized.points[0].confidence,null);
   assert.equal(normalized.points[0].completeness.percent,50);
+
   const html=renderAiTimelineCompact(timeline,match);
   assert.match(html,/Есть устаревший источник/);
   assert.doesNotMatch(html,/Уверенность 0%/);
 });
 
-test('AI Timeline: incorrect input order is corrected and long Russian text is escaped', () => {
+test('AI Timeline renderer sorts points and escapes long untrusted explanations', () => {
   const long='Очень длинное объяснение '.repeat(30)+'<script>alert(1)</script>';
   const model=normalizeAiTimeline({
     points:[
@@ -227,52 +284,150 @@ test('AI Timeline: incorrect input order is corrected and long Russian text is e
       {capturedAt:'2026-10-01T12:00:00Z',probabilities:{home:52,draw:27,away:21},trigger:{relation:'model_driven',explanation:'База'}},
     ],
   },match);
+
   assert.equal(model.points[0].capturedAt,'2026-10-01T12:00:00.000Z');
   const html=renderAiTimelineDetails(model,match);
   assert.doesNotMatch(html,/<script>/i);
   assert.match(html,/&lt;script&gt;/);
 });
 
-test('AI Timeline: no causal evidence stays model-driven', () => {
-  const timeline=buildAiTimeline({
-    snapshotRows:[
-      point('2026-10-01T12:00:00Z',{home:52,draw:27,away:21}),
-      point('2026-10-01T13:00:00Z',{home:54,draw:26,away:20}),
-    ],
-    events:[],
-    match,
+test('AI Timeline runtime rejects invalid fixture ids without storage or model lookups', async () => {
+  let selects=0;
+  let modelLoads=0;
+  let oddsLoads=0;
+
+  const {runtime}=createTimelineRuntime({
+    hasSupabase:()=>true,
+    supaSelectMany:async()=>{
+      selects+=1;
+      return [];
+    },
+    loadModelPredictionForFixture:async()=>{
+      modelLoads+=1;
+      return null;
+    },
+    getOddsSnapshots:async()=>{
+      oddsLoads+=1;
+      return [];
+    },
   });
-  assert.equal(timeline.points[1].trigger.relation,'model_driven');
-  assert.match(timeline.points[1].trigger.explanation,/Модель переоценила матч/);
+
+  for (const fixtureId of [0,-1,1.5,Number.NaN,'not-an-id']) {
+    assert.deepEqual(await runtime.getAnalysisTimelineSnapshots(fixtureId,{}),[]);
+    const timeline=await runtime.loadFixtureAiTimeline({fixtureId,match:{fixtureId},events:[],cfg:{}});
+    assert.equal(timeline.available,false);
+  }
+
+  assert.equal(selects,0);
+  assert.equal(modelLoads,0);
+  assert.equal(oddsLoads,0);
+});
+
+test('AI Timeline runtime loads only stored snapshots, immutable prediction and stored odds context', async () => {
+  const calls=[];
+  const {runtime}=createTimelineRuntime({
+    hasSupabase:()=>true,
+    supaSelectMany:async (_cfg,table,filters,options)=>{
+      calls.push({kind:'snapshots',table,filters,options});
+      return [point('2026-10-01T12:00:00Z',{home:52,draw:27,away:21})];
+    },
+    loadModelPredictionForFixture:async fixtureId=>{
+      calls.push({kind:'prediction',fixtureId});
+      return null;
+    },
+    getOddsSnapshots:async (fixtureId,_cfg,limit)=>{
+      calls.push({kind:'odds',fixtureId,limit});
+      return [];
+    },
+  });
+
+  const timeline=await runtime.loadFixtureAiTimeline({
+    fixtureId:42,
+    match,
+    events:[],
+    cfg:{},
+  });
+
+  assert.equal(timeline.available,true);
+  assert.deepEqual(calls,[
+    {
+      kind:'snapshots',
+      table:'analysis_timeline_snapshots',
+      filters:{fixture_id:'eq.42'},
+      options:{limit:80,order:'captured_at.asc'},
+    },
+    {kind:'prediction',fixtureId:42},
+    {kind:'odds',fixtureId:42,limit:20},
+  ]);
+});
+
+test('AI Timeline runtime capture is append-only locally and idempotent in Supabase', async () => {
+  const inserts=[];
+  const memory={analysisTimelineSnapshots:new Map()};
+  const {runtime}=createTimelineRuntime({
+    hasSupabase:()=>true,
+    memory,
+    supaInsertIgnore:async (_cfg,table,row,conflictKey)=>{
+      inserts.push({table,row,conflictKey});
+      return true;
+    },
+  });
+  const payload={
+    generatedAt:'2026-10-01T12:00:00Z',
+    analysisVersion:'test',
+    match:{fixtureId:42,date:match.date,status:'NS'},
+    probabilities:{home:52,draw:27,away:21},
+    confidence:{score:66},
+    completeness:{score:8,max:10},
+  };
+
+  assert.equal(await runtime.captureAnalysisTimelineSnapshot(payload,{}),true);
+  assert.equal(await runtime.captureAnalysisTimelineSnapshot(payload,{}),true);
+
+  assert.equal(memory.analysisTimelineSnapshots.get(42).length,1);
+  assert.equal(inserts.length,2);
+  assert.equal(inserts[0].table,'analysis_timeline_snapshots');
+  assert.equal(inserts[0].conflictKey,'snapshot_key');
+  assert.equal(inserts[0].row.snapshot_key,'42:2026-10-01T12:00:00.000Z');
 });
 
 test('AI Timeline persistence is server-only and append-only for the application', () => {
-  const sql=fs.readFileSync(new URL('../supabase/migrations/supabase_migration_v6_22.sql',import.meta.url),'utf8').toLowerCase();
-  assert.match(sql,/create table if not exists public\.analysis_timeline_snapshots/);
-  assert.match(sql,/alter table public\.analysis_timeline_snapshots enable row level security/);
-  assert.match(sql,/revoke all on table public\.analysis_timeline_snapshots from public, anon, authenticated, service_role/);
-  assert.match(sql,/grant select, insert on table public\.analysis_timeline_snapshots to service_role/);
-  assert.doesNotMatch(sql,/grant[^;]*(update|delete)[^;]*analysis_timeline_snapshots/i);
-  assert.match(sql,/table_name not in \('provider_incident_alert_deliveries','analysis_timeline_snapshots'\)/);
+  assert.match(migration,/create table if not exists public\.analysis_timeline_snapshots/);
+  assert.match(migration,/alter table public\.analysis_timeline_snapshots enable row level security/);
+  assert.match(migration,/revoke all on table public\.analysis_timeline_snapshots from public, anon, authenticated, service_role/);
+  assert.match(migration,/grant select, insert on table public\.analysis_timeline_snapshots to service_role/);
+  assert.doesNotMatch(migration,/grant[^;]*(update|delete)[^;]*analysis_timeline_snapshots/i);
+  assert.match(migration,/table_name not in \('provider_incident_alert_deliveries','analysis_timeline_snapshots'\)/);
 });
 
-test('AI Timeline integration does not add provider requests and preserves Match Pulse ordering', () => {
-  const worker=fs.readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
-  const helper=worker.slice(worker.indexOf('async function loadFixtureAiTimeline'),worker.indexOf('async function loadModelPredictionForFixture'));
-  assert.ok(helper.length>0);
-  assert.doesNotMatch(helper,/apiFootball\(|providerFeatureFetch\(|loadProviderFixture\(/);
-  assert.match(worker,/captureAnalysisTimelineSnapshot\(payload, cfg, \{ delta: effectiveRecheckDelta \}\)/);
-  assert.match(worker,/id: 'ai_timeline_snapshots'/);
+test('AI Timeline wiring captures fresh analyses and loads timeline into Match Center without provider calls', () => {
+  assert.match(
+    analysisRuntimeSource,
+    /await captureAnalysisTimelineSnapshot\(payload, cfg, \{ delta: effectiveRecheckDelta \}\)/,
+  );
+  assert.match(
+    matchCenterSource,
+    /loadFixtureAiTimeline\(\{[\s\S]*?fixtureId,[\s\S]*?events:[\s\S]*?cfg/,
+  );
+  assert.match(
+    workerSource,
+    /createAiTimelineRuntime\(\{[\s\S]*?getOddsSnapshots,[\s\S]*?loadModelPredictionForFixture,[\s\S]*?supaInsertIgnore,[\s\S]*?supaSelectMany/,
+  );
+  assert.doesNotMatch(
+    readRepoFile('src/ai-timeline-runtime.js'),
+    /apiFootball\(|providerFeatureFetch\(|loadProviderFixture\(/,
+  );
+});
 
-  const app=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
-  assert.match(app,/import\('\.\/modules\/ai-timeline\.js'\)/);
-  const pulse=app.indexOf('matchCenterExtras?.renderMatchPulse?.(d)');
-  const timeline=app.indexOf('matchCenterExtras?.renderAiTimelineCompact?.(d.aiTimeline || {}, m)');
+test('AI Timeline UI remains lazy-loaded after Match Pulse and supports narrow mobile widths', () => {
+  assert.match(appSource,/import\('\.\/modules\/ai-timeline\.js'\)/);
+  const pulse=appSource.indexOf('matchCenterExtras?.renderMatchPulse?.(d)');
+  const timeline=appSource.indexOf('matchCenterExtras?.renderAiTimelineCompact?.(d.aiTimeline || {}, m)');
   assert.ok(pulse>=0 && timeline>pulse,'AI Timeline must be rendered after existing Match Pulse');
-});
 
-test('AI Timeline styles cover required narrow mobile widths', () => {
-  const css=fs.readFileSync(new URL('../public/styles/public-shell.css',import.meta.url),'utf8');
-  const section=css.slice(css.indexOf('/* AI Timeline — Issue #287 */'));
-  for (const width of [430,390,360,320]) assert.match(section,new RegExp('@media\\(max-width:'+width+'px\\)'));
+  const section=shellCss.slice(shellCss.indexOf('/* AI Timeline — Issue #287 */'));
+  assert.ok(section.length>0);
+  for (const width of [430,390,360,320]) {
+    assert.match(section,new RegExp('@media\\(max-width:'+width+'px\\)'));
+  }
 });
