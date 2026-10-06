@@ -13,8 +13,12 @@ function metaContent(html, name) {
 }
 
 function assetRevision(html, assetPath) {
-  const escapedPath = assetPath.replace(/\./g, '\\.');
-  return html.match(new RegExp(escapedPath + '\\?v=([^"\\s>]+)'))?.[1] || '';
+  const marker = `${assetPath}?v=`;
+  const markerIndex = html.indexOf(marker);
+  if (markerIndex < 0) return '';
+  const value = html.slice(markerIndex + marker.length);
+  const endIndex = value.search(/["\\s>]/);
+  return endIndex < 0 ? value : value.slice(0, endIndex);
 }
 
 const publicHtml = readPublicFile('index.html');
