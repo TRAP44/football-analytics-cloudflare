@@ -10,7 +10,7 @@
 
 - production schema: `6.29`;
 - fresh-install baseline: `supabase/baseline/supabase_baseline_v6_19.sql`;
-- latest migration: `supabase/migrations/supabase_migration_v6_29_10.sql`;
+- latest migration: `supabase/migrations/supabase_migration_v6_29_11.sql`;
 - database contract: `databaseContract.version = 2`;
 - readiness RPC: `backend_readiness_contract_v2`.
 
@@ -26,7 +26,7 @@
 
 `supabase/baseline/supabase_baseline_v6_19.sql`
 
-После baseline для новой БД последовательно применяются все numbered migrations начиная с `supabase_migration_v6_20.sql` и заканчивая текущей `supabase_migration_v6_29_10.sql`.
+После baseline для новой БД последовательно применяются все numbered migrations начиная с `supabase_migration_v6_20.sql` и заканчивая текущей `supabase_migration_v6_29_11.sql`.
 
 **Никогда не запускайте fresh-install baseline поверх существующей production БД.** Baseline содержит дополнительный guard, который должен остановить bootstrap при обнаружении рабочей схемы.
 
@@ -75,6 +75,7 @@ Production fingerprint остаётся primary. Fresh-install fingerprint пр�
 - Atomic runtime-control history rule живёт в `pg_rewrite`, поэтому отдельно проверяется `backend_security_contract()`/readiness и не считается частью public fingerprint v2.
 - `personal_write_guard_contract()` v2 проверяется целиком в Worker и `backend_readiness_contract_v2`: три лимита, canonical reminders, explicit rearm и retention 90 дней.
 - `read_provider_slo_buckets()` обязан сохранять `STABLE`-совместимую границу чтения через `statement_timestamp()`; body-level drift отдельно блокирует readiness.
+- Sensitive mutation `complete/fail` допускаются только при ещё активном `locked_until`; body-level drift этого ownership guard блокирует readiness.
 - Schema-changing SQL должен оставаться идемпотентным там, где это требуется rollout-контрактом.
 - После DDL/RLS/grants изменений необходимо запускать schema/readiness checks и Supabase security/performance advisors.
 - Executable CI schema checks являются обязательной частью release contract.
