@@ -1362,6 +1362,7 @@ function getDistributedAnalysisLockRuntime() {
       getCacheEntry,
       hasSupabase,
       memory,
+      randomUUID: () => crypto.randomUUID(),
       recordOpsEvent,
       sleepMs,
       supaDelete,
