@@ -1,7 +1,11 @@
 export function createTelegramBotUiRuntime(deps = {}) {
+  if (!deps || typeof deps!=='object' || Array.isArray(deps)) {
+    throw new TypeError('Telegram bot UI runtime dependencies are required.');
+  }
   const {
     apiAnalyze,
     botAiHandoffText,
+    createRequest,
     freeQuotaHealthy,
     getCache,
     getFavorites,
@@ -19,6 +23,183 @@ export function createTelegramBotUiRuntime(deps = {}) {
     telegramHtmlEscape,
     telegramWebAppUrl
   } = deps;
+
+  const requiredFunctions={
+    apiAnalyze,
+    botAiHandoffText,
+    createRequest,
+    freeQuotaHealthy,
+    getCache,
+    getFavorites,
+    isFinishedStatus,
+    isLiveStatus,
+    loadProviderFixture,
+    markTelegramWebhookMutation,
+    newsImpactDecisionCard,
+    newsImpactDecisionKeyboard,
+    recordGrowthEvent,
+    setCache,
+    statusLabel,
+    telegramApi,
+    telegramFullAnalysisUrl,
+    telegramHtmlEscape,
+    telegramWebAppUrl,
+  };
+  for (const [name,fn] of Object.entries(requiredFunctions)) {
+    if (typeof fn!=='function') throw new TypeError(`${name} is required`);
+  }
+
+  function objectValue(value) {
+    return value && typeof value==='object' && !Array.isArray(value)
+      ? value
+      : null;
+  }
+
+  function safeText(value,max=240,fallback='') {
+    if (!['string','number','bigint'].includes(typeof value)) return fallback;
+    try {
+      const text=String(value)
+        .normalize('NFKC')
+        .replace(/[\u0000-\u001F\u007F]/g,' ')
+        .replace(/\s+/g,' ')
+        .trim()
+        .slice(0,max);
+      return text || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  function finiteNumber(value) {
+    if (typeof value==='number') return Number.isFinite(value) ? value : null;
+    if (typeof value!=='string') return null;
+    const raw=value.trim();
+    if (!/^-?(?:\d+|\d+\.\d+|\.\d+)$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function positiveSafeInteger(value) {
+    const number=finiteNumber(value);
+    return number!==null && Number.isSafeInteger(number) && number>0
+      ? number
+      : null;
+  }
+
+  function nonNegativeSafeInteger(value,max=Number.MAX_SAFE_INTEGER) {
+    const number=finiteNumber(value);
+    return number!==null
+      && Number.isSafeInteger(number)
+      && number>=0
+      && number<=max
+      ? number
+      : null;
+  }
+
+  function chatIdValue(value) {
+    const number=finiteNumber(value);
+    return number!==null && Number.isSafeInteger(number) && number!==0
+      ? number
+      : null;
+  }
+
+  function rowsOrEmpty(value,limit=500) {
+    return Array.isArray(value) ? value.slice(0,limit) : [];
+  }
+
+  function safePredicate(fn,...args) {
+    try { return fn(...args)===true; }
+    catch { return false; }
+  }
+
+  async function optionalAsync(fn,...args) {
+    try { return await fn(...args); }
+    catch { return null; }
+  }
+
+  function backgroundCall(fn,...args) {
+    try {
+      Promise.resolve(fn(...args)).catch(()=>{});
+    } catch {}
+  }
+
+  function escapeHtml(value,max=1200) {
+    const text=safeText(value,max);
+    try {
+      return String(telegramHtmlEscape(text));
+    } catch {
+      return text
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;');
+    }
+  }
+
+  function requestUrl(request) {
+    const raw=safeText(request?.url,2000);
+    if (!raw) return null;
+    try {
+      const url=new URL(raw);
+      if (!['http:','https:'].includes(url.protocol)) return null;
+      if (url.username || url.password) return null;
+      return url;
+    } catch {
+      return null;
+    }
+  }
+
+  function sameOriginWebAppUrl(request,value) {
+    const base=requestUrl(request);
+    const raw=safeText(value,2000);
+    if (!base || !raw) return '';
+    try {
+      const url=new URL(raw);
+      if (!['http:','https:'].includes(url.protocol)) return '';
+      if (url.username || url.password || url.origin!==base.origin) return '';
+      return url.toString();
+    } catch {
+      return '';
+    }
+  }
+
+  function generatedWebAppUrl(request,factory,...args) {
+    try {
+      return sameOriginWebAppUrl(request,factory(request,...args));
+    } catch {
+      return '';
+    }
+  }
+
+  function safeStatusLabel(status,elapsed) {
+    try {
+      return safeText(statusLabel(status,elapsed),120,safeText(status,24));
+    } catch {
+      return safeText(status,24);
+    }
+  }
+
+  function safeTeam(value,fallbackName='Команда') {
+    const source=objectValue(value) || {};
+    return {
+      id:positiveSafeInteger(source.id) || 0,
+      name:safeText(source.name,120,fallbackName),
+      logo:sameOriginOrHttpsAsset(source.logo),
+    };
+  }
+
+  function sameOriginOrHttpsAsset(value) {
+    const raw=safeText(value,1000);
+    if (!raw) return '';
+    try {
+      const url=new URL(raw);
+      return url.protocol==='https:' && !url.username && !url.password
+        ? url.toString().slice(0,1000)
+        : '';
+    } catch {
+      return '';
+    }
+  }
 
   function publicSiteUrl(request, pathname = '/') {
     const url=new URL(request.url);
