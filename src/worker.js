@@ -145,6 +145,7 @@ import { createSmartNotificationAudience } from './smart-notification-audience.j
 import { createSmartNotificationDeliveryService } from './smart-notification-delivery.js';
 import { SMART_NOTIFICATION_POLICY, publicSmartNotificationCapabilities } from './smart-notification-policy.js';
 import { createSmartNotificationService, radarStrongSignalState } from './smart-notification-service.js';
+import { createServiceWiringRuntime } from './service-wiring-runtime.js';
 import { createScheduledJobsRuntime } from './scheduled-jobs.js';
 import { createScheduledLeaseRuntime } from './scheduled-lease.js';
 import { DAILY_DIGEST_POLICY, assessDailyDigestRun, planDailyDigestRecipients, runBoundedDailyDigest } from './daily-digest-delivery.js';
@@ -512,72 +513,18 @@ const {
   claimScheduledJob,
   completeScheduledJob,
   releaseScheduledJob,
-} = createScheduledLeaseRuntime({
-  hasSupabase,
-  supaRpc,
-  recordOpsEvent,
-  redactOpsString,
-});
-
-const {
   getPreferences,
   savePreferences,
-} = createUserPreferencesService({
-  memory,
-  hasSupabase,
-  supaSelectOne,
-  supaUpsert,
-});
-
-const {
   recordHistory,
   getHistory,
-} = createUserHistoryService({
-  memory,
-  hasSupabase,
-  supaUpsert,
-  supaSelectMany,
-  recordOpsEvent,
-  bumpTelemetry,
-  redactOpsString,
-  correlationId: async (userId, fixtureId, cfg) => {
-    if (!cfg?.botToken) return `fixture-${Number(fixtureId || 0)}`;
-    const digest = await hmacSha256(
-      enc.encode(cfg.botToken),
-      `analysis-history:${Number(userId)}:${Number(fixtureId)}`,
-    );
-    return bytesToHex(digest).slice(0, 24);
-  },
-});
-
-const {
   activatePassPurchase,
   listUserEntitlements,
   refundEntitlementUsage,
   refundPassByCharge,
   reserveEntitlementUsage,
   resolveUserEntitlements,
-} = createEntitlementService({
-  memory,
-  hasSupabase,
-  supaSelectMany,
-  supaRpc,
-  getUserRecord: (...args) => getUserRecord(...args),
-  markWebhookMutation: markTelegramWebhookMutation,
-});
-
-const {
-  filterRecipients: filterSmartNotificationRecipients,
-  loadFavoritePlayersByUser: loadFavoritePlayersForSmartNotifications,
-} = createSmartNotificationAudience({
-  hasSupabase,
-  supaSelectMany,
-  getPreferences,
-  getUserRecord: (...args) => getUserRecord(...args),
-  getFavoritePlayers: (...args) => getFavoritePlayers(...args),
-});
-
-const {
+  filterSmartNotificationRecipients,
+  loadFavoritePlayersForSmartNotifications,
   reminderDeliveryStatus,
   clearStaleReminderClaims,
   claimReminderDelivery,
@@ -585,131 +532,21 @@ const {
   holdReminderDeliveryUnknown,
   finishReminderDelivery,
   releaseReminderClaim,
-} = createReminderDeliveryStore({
-  hasSupabase,
-  fetchWithTimeout,
-  supaHeaders,
-  recordOpsEvent,
-  redactOpsString,
-});
-
-const {
   deliverClaimedReminder,
   processDueReminders,
-} = createReminderDeliveryService({
-  hasSupabase,
-  loadRuntimeControls,
-  clearStaleReminderClaims,
-  supaSelectPaged,
-  recordOpsEvent,
-  sendTelegramMessage,
-  claimReminderDelivery,
-  markReminderDeliverySending,
-  holdReminderDeliveryUnknown,
-  finishReminderDelivery,
-  releaseReminderClaim,
-  filterNotificationRecipients: filterSmartNotificationRecipients,
-});
-
-const {
   processLineupNotifications,
-} = createLineupNotificationService({
-  hasSupabase,
-  loadRuntimeControls,
-  supaSelectPaged,
-  loadLineupNotificationSnapshot,
-  deliverClaimedReminder,
-  filterNotificationRecipients: filterSmartNotificationRecipients,
-  recordOpsEvent,
-  maxFixturesPerRun: 4,
-});
-
-const {
   processImportantChangeNotifications,
-} = createImportantChangeNotificationService({
-  hasSupabase,
-  loadRuntimeControls,
-  supaSelectPaged,
-  getOddsSnapshots,
-  deliverClaimedReminder,
-  filterNotificationRecipients: filterSmartNotificationRecipients,
-  recordOpsEvent,
-  maxFixturesPerRun: 12,
-  thresholdPp: SMART_NOTIFICATION_POLICY.marketThresholdPp,
-});
-
-const {
   getFavorites,
   addFavorite,
   removeFavorite,
-} = createUserFavoritesService({
-  memory,
-  hasSupabase,
-  supaSelectMany,
-  supaRpc,
-  fetchWithTimeout,
-  supaHeaders,
-});
-
-const {
   getFavoritePlayers,
   addFavoritePlayer,
   removeFavoritePlayer,
-} = createFavoritePlayersService({
-  memory,
-  hasSupabase,
-  supaSelectMany,
-  supaRpc,
-  fetchWithTimeout,
-  supaHeaders,
-});
-
-const {
   deliverSmartNotification,
-} = createSmartNotificationDeliveryService({
-  memory,
-  hasSupabase,
-  supaRpc,
-  sendTelegramMessage,
-  recordOpsEvent,
-});
-
-const {
   processSmartNotifications,
-} = createSmartNotificationService({
-  hasSupabase,
-  loadRuntimeControls,
-  supaSelectPaged,
-  filterRecipients: filterSmartNotificationRecipients,
-  loadFavoritePlayersByUser: loadFavoritePlayersForSmartNotifications,
-  loadLiveNotificationSnapshot: loadSmartNotificationEventSnapshot,
-  loadLineupSnapshot: loadLineupNotificationSnapshot,
-  getAnalysisTimelineSnapshots,
-  deliverSmartNotification,
-  recordOpsEvent,
-  maxFixturesPerRun: SMART_NOTIFICATION_POLICY.maxFixturesPerRun,
-  aiThresholdPp: SMART_NOTIFICATION_POLICY.aiProbabilityThresholdPp,
-  aiCooldownSeconds: SMART_NOTIFICATION_POLICY.aiCooldownSeconds,
-  radarConfidenceThreshold: SMART_NOTIFICATION_POLICY.radarConfidenceThreshold,
-  radarOutcomeThreshold: SMART_NOTIFICATION_POLICY.radarOutcomeThreshold,
-  radarCooldownSeconds: SMART_NOTIFICATION_POLICY.radarCooldownSeconds,
-});
-
-const {
   getReminders,
   addReminder,
   removeReminder,
-} = createUserRemindersService({
-  memory,
-  hasSupabase,
-  supaSelectMany,
-  supaRpc,
-  fetchWithTimeout,
-  supaHeaders,
-  getPreferences,
-});
-
-const {
   claimTelegramUpdate,
   completeTelegramUpdate,
   releaseTelegramUpdate,
@@ -720,35 +557,48 @@ const {
   readTelegramDedupeHealth,
   telegramDedupeObservabilitySelfTest,
   enforceTelegramBurst,
-} = createTelegramDedupeRuntime({
+} = createServiceWiringRuntime({
+  SMART_NOTIFICATION_POLICY,
+  bumpTelemetry: (...args) => bumpTelemetry(...args),
+  bytesToHex,
+  createEntitlementService,
+  createFavoritePlayersService,
+  createImportantChangeNotificationService,
+  createLineupNotificationService,
+  createReminderDeliveryService,
+  createReminderDeliveryStore,
+  createScheduledLeaseRuntime,
+  createSmartNotificationAudience,
+  createSmartNotificationDeliveryService,
+  createSmartNotificationService,
+  createTelegramDedupeRuntime,
+  createUserFavoritesService,
+  createUserHistoryService,
+  createUserPreferencesService,
+  createUserRemindersService,
+  enc,
+  fetchWithTimeout: (...args) => fetchWithTimeout(...args),
+  getAnalysisTimelineSnapshots: (...args) => getAnalysisTimelineSnapshots(...args),
+  getOddsSnapshots: (...args) => getOddsSnapshots(...args),
+  getUserRecord: (...args) => getUserRecord(...args),
+  hasSupabase: (...args) => hasSupabase(...args),
+  hmacSha256,
+  loadLineupNotificationSnapshot: (...args) => loadLineupNotificationSnapshot(...args),
+  loadRuntimeControls: (...args) => loadRuntimeControls(...args),
+  loadSmartNotificationEventSnapshot: (...args) => loadSmartNotificationEventSnapshot(...args),
+  markTelegramWebhookMutation: (...args) => markTelegramWebhookMutation(...args),
   memory,
-  pruneMemoryState,
-  bumpTelemetry,
-  hasSupabase,
-  supaRpc,
-  redactOpsString,
+  pruneMemoryState: (...args) => pruneMemoryState(...args),
+  recordOpsEvent: (...args) => recordOpsEvent(...args),
+  redactOpsString: (...args) => redactOpsString(...args),
+  sendTelegramMessage: (...args) => sendTelegramMessage(...args),
+  supaHeaders: (...args) => supaHeaders(...args),
+  supaRpc: (...args) => supaRpc(...args),
+  supaSelectMany: (...args) => supaSelectMany(...args),
+  supaSelectOne: (...args) => supaSelectOne(...args),
+  supaSelectPaged: (...args) => supaSelectPaged(...args),
+  supaUpsert: (...args) => supaUpsert(...args),
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 let maintenanceRuntime = null;
 function getMaintenanceRuntime() {
