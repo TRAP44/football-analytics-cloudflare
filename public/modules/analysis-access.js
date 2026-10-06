@@ -2,13 +2,25 @@ function entitlementPayload(value = {}) {
   return value?.entitlement || value || {};
 }
 
+function positiveSafeInteger(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? number : null;
+}
+
+function nonNegativeSafeInteger(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : fallback;
+}
+
 function normalizedPass(row = {}) {
+  const type = String(row.type || '').toUpperCase();
+  const usageLimit = row.usageLimit == null ? null : positiveSafeInteger(row.usageLimit);
   return {
-    id: row.id ?? null,
-    type: String(row.type || '').toUpperCase(),
-    fixtureId: Number(row.fixtureId || 0),
-    usageLimit: row.usageLimit == null ? null : Number(row.usageLimit),
-    usageCount: Math.max(0, Number(row.usageCount || 0)),
+    id: positiveSafeInteger(row.id),
+    type: ['MATCH_PASS', 'DAY_PASS', 'WEEKEND_PASS'].includes(type) ? type : '',
+    fixtureId: nonNegativeSafeInteger(row.fixtureId),
+    usageLimit,
+    usageCount: nonNegativeSafeInteger(row.usageCount),
   };
 }
 
@@ -16,8 +28,16 @@ function passCandidate(entitlement = {}, fixtureId = 0) {
   const rows = Array.isArray(entitlement?.passes?.active)
     ? entitlement.passes.active.map(normalizedPass)
     : [];
-  const fid = Number(fixtureId || 0);
-  const eligible = rows.filter(row => row.type !== 'MATCH_PASS' || (fid > 0 && row.fixtureId === fid));
+  const fid = positiveSafeInteger(fixtureId);
+  const eligible = rows.filter(row =>
+    row.id &&
+    row.type &&
+    (row.type !== 'WEEKEND_PASS' || row.usageLimit !== null) &&
+    (row.type === 'WEEKEND_PASS' || row.usageLimit === null) &&
+    (row.type !== 'MATCH_PASS' || (fid !== null && row.fixtureId === fid)) &&
+    (row.type === 'MATCH_PASS' || row.fixtureId === 0) &&
+    (row.usageLimit == null || row.usageCount < row.usageLimit)
+  );
   return eligible.find(row => row.usageLimit == null) || eligible[0] || null;
 }
 
@@ -28,10 +48,10 @@ function updatedDecision(after = {}, candidate = null) {
 }
 
 function quotaLabel(plan, quota = {}) {
-  const used = Number(quota?.used);
-  const limit = Number(quota?.limit);
-  if (Number.isFinite(used) && Number.isFinite(limit) && limit > 0) {
-    return `Использовано: ${plan} · ${Math.max(0, used)}/${Math.max(0, limit)} сегодня`;
+  const used = nonNegativeSafeInteger(quota?.used, null);
+  const limit = positiveSafeInteger(quota?.limit);
+  if (used !== null && limit !== null) {
+    return `Использовано: ${plan} · ${Math.min(used, limit)}/${limit} сегодня`;
   }
   return `Использовано: ${plan}`;
 }
@@ -59,7 +79,9 @@ export function buildAnalysisAccessUsage({
     return {
       kind: 'cached',
       label: 'Открыт сохранённый AI-разбор',
-      detail: Number.isFinite(Number(quota?.left)) ? `Осталось по дневной квоте: ${Number(quota.left)}.` : '',
+      detail: nonNegativeSafeInteger(quota?.left, null) !== null
+        ? `Осталось по дневной квоте: ${nonNegativeSafeInteger(quota.left, 0)}.`
+        : '',
     };
   }
 
@@ -76,10 +98,12 @@ export function buildAnalysisAccessUsage({
     const candidate = passCandidate(before, fixtureId);
     if (candidate) {
       const decision = updatedDecision(after, candidate);
-      const usageLimit = decision?.usageLimit == null ? candidate.usageLimit : Number(decision.usageLimit);
-      const usageCount = decision?.usageCount == null
+      const decisionLimit = decision?.usageLimit == null ? null : positiveSafeInteger(decision.usageLimit);
+      const usageLimit = decision?.usageLimit == null ? candidate.usageLimit : decisionLimit;
+      const decisionCount = decision?.usageCount == null ? null : nonNegativeSafeInteger(decision.usageCount, null);
+      const usageCount = decisionCount == null
         ? (usageLimit == null ? candidate.usageCount : Math.min(usageLimit, candidate.usageCount + 1))
-        : Math.max(0, Number(decision.usageCount || 0));
+        : (usageLimit == null ? decisionCount : Math.min(usageLimit, decisionCount));
 
       if (candidate.type === 'MATCH_PASS') {
         return {
@@ -122,7 +146,16 @@ export function buildAnalysisAccessUsage({
   };
 }
 
-export function analysisAccessUsageHtml(access = {}, escapeHtml = value => String(value ?? '')) {
+function defaultEscapeHtml(value = '') {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+export function analysisAccessUsageHtml(access = {}, escapeHtml = defaultEscapeHtml) {
   const label = String(access?.label || '').trim();
   if (!label) return '';
   const detail = String(access?.detail || '').trim();
