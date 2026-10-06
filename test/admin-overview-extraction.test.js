@@ -190,7 +190,7 @@ test('admin overview exposes loading states instead of stale health assumptions'
   assert.equal(elements.get('adminOverviewAi').textContent, 'Включён');
 });
 
-test('admin overview surfaces disabled runtime controls and unavailable model quality explicitly', () => {
+test('admin overview surfaces disabled runtime controls explicitly', () => {
   const state = {
     runtimeControlsAdmin: {
       controls: {
@@ -223,4 +223,27 @@ test('admin overview surfaces disabled runtime controls and unavailable model qu
   assert.equal(elements.get('adminOverviewNotificationsDetail').textContent, 'Отключены Runtime Control');
   assert.equal(elements.get('adminOverviewAi').textContent, 'Выключен');
   assert.equal(elements.get('adminOverviewAiDetail').textContent, 'Отключён Runtime Control');
+});
+
+
+test('admin overview surfaces unavailable model quality while analysis remains enabled', () => {
+  const state = {
+    runtimeStatus: {
+      analysisEnabled: true,
+      searchEnabled: true,
+      liveEnabled: true,
+      remindersEnabled: true,
+      maintenanceMode: false,
+    },
+    modelQuality: {
+      available: false,
+      reason: 'quality backend unavailable',
+    },
+  };
+
+  const { elements, module } = createModule({ state });
+  module.renderAdminOverview();
+
+  assert.equal(elements.get('adminOverviewAi').textContent, 'Проверить');
+  assert.equal(elements.get('adminOverviewAiDetail').textContent, 'quality backend unavailable');
 });
