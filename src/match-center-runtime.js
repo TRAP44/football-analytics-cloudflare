@@ -1271,36 +1271,86 @@ export function createMatchCenterRuntime(deps) {
     try { quotaMode=safeText(providerPublicBudgetMode(),40) || 'unknown'; }
     catch {}
 
-    const payload = {
-      generatedAt: new Date().toISOString(),
-      mode: centerMode,
-      match: {
+    let publicStatusLabel=status;
+    try {
+      publicStatusLabel=safeText(statusLabel(status,elapsed),120) || status;
+    } catch {}
+
+    const integrityScore=finiteNumber(centerIntegrity.qualityScore);
+    const publicIntegrityWarnings=integrityWarnings
+      .map(value=>safeText(value?.message ?? value,240))
+      .filter(Boolean)
+      .slice(0,6);
+    const publicIntegrityIssues=integrityIssues
+      .filter(issue=>issue?.severity!=='info')
+      .map(issue=>({
+        severity:safeText(issue?.severity,40),
+        code:safeText(issue?.code,80),
+        message:safeText(issue?.message,240),
+      }))
+      .slice(0,3);
+
+    const lineupTrusted=trustedFeature(featureMeta.lineups);
+    const injuriesTrusted=trustedFeature(featureMeta.injuries);
+    const playersTrusted=trustedFeature(featureMeta.players);
+    const liveOddsTrusted=trustedFeature(featureMeta.liveOdds)
+      && liveOddsQuality?.confidenceBearing===true
+      && Boolean(liveOdds);
+
+    const finalBudgetMode=safeText(finalBudget?.mode,40);
+    const note=limitedCoverage
+      ? 'Молодёжный или резервный турнир: дополнительные запросы данных ограничены для экономии квоты.'
+      : finalBudgetMode==='emergency'
+        ? 'Квота источника данных в защитном резерве: часть расширенных данных временно берётся из сохранённых данных или пропускается.'
+        : finalBudgetMode==='conserve'
+          ? 'Включён сберегающий режим: тяжёлые дополнительные запросы обновляются реже.'
+          : (!events.length && !statistics.length)
+            ? 'Для этого турнира или матча источник данных не отдаёт детальные события/статистику.'
+            : '';
+
+    const payload={
+      generatedAt:new Date().toISOString(),
+      mode:centerMode,
+      match:{
         fixtureId,
-        date: fixture.fixture?.date || '',
+        date:kickoffRaw,
         status,
-        statusLong: fixture.fixture?.status?.long || '',
-        statusLabel: statusLabel(status, elapsed),
+        statusLong:safeText(fixture?.fixture?.status?.long,120),
+        statusLabel:publicStatusLabel,
         elapsed,
-        venue: fixture.fixture?.venue?.name || '',
-        city: fixture.fixture?.venue?.city || '',
-        referee: fixture.fixture?.referee || '',
-        timezone: fixture.fixture?.timezone || '',
-        league: leagueName,
-        leagueId: Number(fixture.league?.id || 0),
-        leagueLogo: fixture.league?.logo || '',
-        country: fixture.league?.country || '',
-        round: fixture.league?.round || '',
-        score: scoreSnapshot(fixture),
-        integrity: { state: centerIntegrity.state, score: centerIntegrity.qualityScore, warnings: centerIntegrity.warnings, issues: centerIntegrity.issues.filter(x => x.severity !== 'info').slice(0, 3) },
-        home: { id: homeId, name: homeName, logo: fixture.teams?.home?.logo || '' },
-        away: { id: awayId, name: awayName, logo: fixture.teams?.away?.logo || '' },
+        venue:safeText(fixture?.fixture?.venue?.name,180),
+        city:safeText(fixture?.fixture?.venue?.city,180),
+        referee,
+        timezone:safeText(fixture?.fixture?.timezone,80),
+        league:leagueName,
+        leagueId:leagueId || 0,
+        leagueLogo:safeHttpUrl(fixture?.league?.logo,500),
+        country:safeText(fixture?.league?.country,120),
+        round:safeText(fixture?.league?.round,120),
+        score:currentScore,
+        integrity:{
+          state:safeText(centerIntegrity.state,40) || 'unknown',
+          score:integrityScore,
+          warnings:publicIntegrityWarnings,
+          issues:publicIntegrityIssues,
+        },
+        home:{
+          id:homeId,
+          name:homeName,
+          logo:safeHttpUrl(fixture?.teams?.home?.logo,500),
+        },
+        away:{
+          id:awayId,
+          name:awayName,
+          logo:safeHttpUrl(fixture?.teams?.away?.logo,500),
+        },
       },
-      events: formattedEvents,
+      events:formattedEvents,
       eventQuality,
-      statistics: publicStatistics,
+      statistics:publicStatistics,
       statisticsQuality,
       xgQuality,
-      livePressure: pressure,
+      livePressure:pressure,
       smartInsights,
       liveAiCoach,
       aiTimeline,
@@ -1310,41 +1360,74 @@ export function createMatchCenterRuntime(deps) {
       lineupQuality,
       availabilityQuality,
       absences,
-      dataFreshness: featureMeta,
-      quotaMode: providerPublicBudgetMode(),
-      availability: {
-        events: Boolean(eventQuality?.confidenceBearing && formattedEvents.length > 0),
-        statistics: Boolean(statisticsQuality?.confidenceBearing),
-        xg: Boolean(xgQuality?.confidenceBearing),
-        lineups: lineupQuality.anyPublished,
-        lineupsTrusted: Boolean(featureMeta.lineups?.confidenceBearing),
-        lineupsConfirmed: lineupQuality.bothConfirmed,
-        lineupsPartial: lineupQuality.partialSides > 0,
-        players: Boolean(featureMeta.players?.confidenceBearing && (playerLeaders.home.length > 0 || playerLeaders.away.length > 0)),
-        injuries: Boolean(availabilityQuality?.confidenceBearing && trustedInjuryRows.length > 0),
-        liveOdds: Boolean(liveOddsQuality?.confidenceBearing && liveOdds),
+      dataFreshness:featureMeta,
+      quotaMode,
+      availability:{
+        events:eventQuality?.confidenceBearing===true
+          && formattedEvents.length>0,
+        statistics:statisticsQuality?.confidenceBearing===true,
+        xg:xgQuality?.confidenceBearing===true,
+        lineups:lineupQuality.anyPublished===true,
+        lineupsTrusted:lineupTrusted,
+        lineupsConfirmed:lineupTrusted
+          && lineupQuality.bothConfirmed===true,
+        lineupsPartial:lineupQuality.partialSides>0,
+        players:playersTrusted
+          && (
+            rowsOrEmpty(playerLeaders.home,100).length>0
+            || rowsOrEmpty(playerLeaders.away,100).length>0
+          ),
+        injuries:injuriesTrusted
+          && availabilityQuality?.confidenceBearing===true
+          && trustedInjuryRows.length>0,
+        liveOdds:liveOddsTrusted,
         limitedCoverage,
       },
       dataCapabilities,
       liveOddsQuality,
       liveOdds,
       oddsMovement,
-      provider: dataCapabilities,
+      provider:dataCapabilities,
       refreshSeconds,
-      note: limitedCoverage
-        ? 'Молодёжный или резервный турнир: дополнительные запросы данных ограничены для экономии квоты.'
-        : finalBudget.mode === 'emergency'
-          ? 'Квота источника данных в защитном резерве: часть расширенных данных временно берётся из сохранённых данных или пропускается.'
-          : finalBudget.mode === 'conserve'
-            ? 'Включён сберегающий режим: тяжёлые дополнительные запросы обновляются реже.'
-            : (!events.length && !statistics.length)
-              ? 'Для этого турнира или матча источник данных не отдаёт детальные события/статистику.'
-              : '',
+      note,
     };
-  
-    await setCache(baseCacheKey, fixtureId, payload, cfg, live ? Math.max(1/6, refreshSeconds / 60) : finished ? 720 : 5);
-    return json({ ...payload, cached: false });
+
+    const ttlMinutes=live
+      ? Math.max(1/6,refreshSeconds/60)
+      : finished
+        ? 720
+        : 5;
+    let cacheStored=true;
+    try {
+      const result=await setCache(
+        baseCacheKey,
+        fixtureId,
+        payload,
+        cfg,
+        ttlMinutes,
+      );
+      if (result===false) cacheStored=false;
+    } catch {
+      cacheStored=false;
+    }
+    if (!cacheStored) {
+      await safeRecordOps(cfg,{
+        severity:'warning',
+        source:'cache',
+        eventType:'match_center_cache_write',
+        code:'MATCH_CENTER_CACHE_WRITE_FAILED',
+        message:'Match Center completed but the shared cache write failed.',
+        meta:{fixtureId,mode:centerMode},
+      });
+    }
+
+    return json({
+      ...payload,
+      cached:false,
+      persistence:{cacheStored},
+    });
   }
 
-  return { apiMatchCenter };
+
+  return Object.freeze({apiMatchCenter});
 }
