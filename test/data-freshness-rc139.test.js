@@ -79,7 +79,7 @@ test('RC139 freshness limits remain at least as permissive as active provider TT
   assert.equal(limit, 150);
 });
 
-const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/analysis-runtime.js', 'utf8');
+const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/analysis-runtime.js', 'utf8') + '\n' + fs.readFileSync('src/match-center-runtime.js', 'utf8') + '\n' + fs.readFileSync('src/provider-data-runtime.js', 'utf8');
 const lineup = fs.readFileSync('src/lineup-quality.js', 'utf8');
 
 test('RC139 Match Center rejects stale live data from derived analytics', () => {
