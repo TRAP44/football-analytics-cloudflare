@@ -15,6 +15,95 @@ export function createAnalysisContextRuntime(deps) {
     setCache,
   } = deps;
 
+  const requiredFunctions={
+    analysisQualityGate,
+    freeQuotaHealthy,
+    getCache,
+    getStaleCache,
+    marketMovementNote,
+    refereeProfile,
+    resolveTeamSeasonPlayers,
+    setCache,
+  };
+  for (const [name,fn] of Object.entries(requiredFunctions)) {
+    if (typeof fn !== 'function') throw new TypeError(`${name} is required`);
+  }
+
+  function objectValue(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  }
+
+  function rows(value, limit = 200) {
+    return Array.isArray(value) ? value.slice(0,limit) : [];
+  }
+
+  function safeText(value, max = 240) {
+    if (!['string','number','bigint'].includes(typeof value)) return '';
+    return String(value)
+      .normalize('NFKC')
+      .replace(/[\u0000-\u001F\u007F]/g,' ')
+      .replace(/\s+/g,' ')
+      .trim()
+      .slice(0,max);
+  }
+
+  function finiteNumber(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value !== 'string') return null;
+    const raw=value.trim();
+    if (!/^-?(?:\d+|\d+\.\d+|\.\d+)$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function finiteRange(value,min,max) {
+    const number=finiteNumber(value);
+    return number !== null && number>=min && number<=max ? number : null;
+  }
+
+  function positiveSafeInteger(value) {
+    const number=finiteNumber(value);
+    return number !== null && Number.isSafeInteger(number) && number>0 ? number : null;
+  }
+
+  function safeSeason(value) {
+    const season=positiveSafeInteger(value);
+    return season !== null && season>=1900 && season<=2200 ? season : null;
+  }
+
+  function quotaHealthy(reserve,cost) {
+    try { return freeQuotaHealthy(reserve,cost) === true; }
+    catch { return false; }
+  }
+
+  function playerStatsValue(value) {
+    const stats=objectValue(value);
+    if (!stats || stats.available !== true) return null;
+    const players=rows(stats.players,500);
+    if (!players.length) return null;
+    return {...stats,players};
+  }
+
+  function teamIntelligenceCacheValue(value, teamId, leagueId, season) {
+    const cached=objectValue(value);
+    const stats=objectValue(cached?.stats);
+    if (!cached || !stats) return null;
+    if (positiveSafeInteger(stats?.team?.id)!==teamId) return null;
+    if (positiveSafeInteger(stats?.league?.id)!==leagueId) return null;
+    if (safeSeason(stats?.league?.season)!==season) return null;
+    return cached;
+  }
+
+  function playerRoleCacheValue(value, teamId, leagueId, season) {
+    const cached=objectValue(value);
+    if (!cached) return null;
+    if (positiveSafeInteger(cached.teamId)!==teamId) return null;
+    if (positiveSafeInteger(cached.leagueId)!==leagueId) return null;
+    if (safeSeason(cached.season)!==season) return null;
+    const playerStats=playerStatsValue(cached.playerStats);
+    return playerStats ? {...cached,playerStats} : null;
+  }
+
   async function cachedTeamIntelligenceForAnalysis(teamId, leagueId, season, cfg) {
     if (!teamId || !leagueId || !season) return { stats: null, playerStats: null };
     const cached = await getStaleCache(`team:intelligence:${Number(teamId)}:${Number(leagueId)}:${Number(season)}:v2`, cfg);
