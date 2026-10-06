@@ -177,6 +177,18 @@ test('rejected backtest cannot suppress watchdog or finality safety work', async
   assert.equal(finalityResults.find(row=>row.task==='settlement_finality').status,'ok');
 });
 
+test('observer fails malformed task entries instead of treating them as success',async()=>{
+  const rt=runtime();
+  const results=await rt.api.observeScheduledTasks({},[
+    ['valid',Promise.resolve({ok:true})],
+    ['missing_promise',undefined],
+    [{toString:()=> 'forged'},Promise.resolve({ok:true})],
+  ]);
+  assert.deepEqual(results.map(row=>row.status),['ok','failed','failed']);
+  assert.equal(results[1].reason,'malformed_scheduled_task');
+  assert.equal(results[2].task,'unknown');
+});
+
 test('degraded, skipped and failed results are all observable with distinct dispositions', async () => {
   const rt=runtime();
   const tasks=[
@@ -276,6 +288,29 @@ test('daily cleanup executes once per UTC day across the 03:00/03:05/03:10 windo
   }
 });
 
+test('daily task refuses a malformed persistent lease claim',async()=>{
+  const rt=runtime({
+    claimScheduledJob:async(_cfg,input)=>({
+      claimed:true,
+      persistent:true,
+      reason:'claimed',
+      jobKey:input.jobKey,
+      groupKey:input.groupKey,
+      leaseToken:'',
+    }),
+  });
+  const tasks=rt.api.buildScheduledTaskPlan(
+    {},
+    new Date('2026-09-28T03:05:00.000Z'),
+    {lost:false},
+  );
+  const results=await rt.api.observeScheduledTasks({},tasks);
+  const cleanup=results.find(row=>row.task==='ops_cleanup');
+  assert.equal(cleanup.status,'failed');
+  assert.equal(cleanup.reason,'invalid_daily_task_lease_claim');
+  assert.equal(rt.calls.includes('ops_cleanup'),false);
+});
+
 test('failed daily cleanup is released for retry without repeating successful cleanup jobs', async () => {
   const leases=inMemoryLeaseBackend();
   let integrityAttempts=0;
@@ -296,6 +331,64 @@ test('failed daily cleanup is released for retry without repeating successful cl
   assert.equal(rt.calls.filter(x=>x==='scheduled_lease_cleanup').length,1);
   assert.equal(rt.calls.filter(x=>x==='growth_cleanup').length,1);
   assert.equal(rt.calls.filter(x=>x==='integrity_cleanup').length,2);
+});
+
+test('malformed persistent claim cannot bypass global lease heartbeat',async()=>{
+  const rt=runtime({
+    claimScheduledJob:async(_cfg,input)=>({
+      claimed:true,
+      persistent:'true',
+      reason:'claimed',
+      jobKey:input.jobKey,
+      groupKey:input.groupKey,
+      leaseToken:'token',
+    }),
+  });
+  const result=await rt.api.executeScheduledRun({
+    scheduledTime:Date.parse('2026-09-28T12:05:00.000Z'),
+  },{});
+  assert.equal(result[0].status,'skipped');
+  assert.equal(result[0].reason,'invalid_lease_claim');
+  assert.equal(rt.calls.length,0);
+  assert.equal(rt.events.at(-1).code,'CRON_EXECUTION_LEASE_UNAVAILABLE');
+});
+
+test('persistent claim identity must match the scheduled run',async()=>{
+  const rt=runtime({
+    claimScheduledJob:async()=>({
+      claimed:true,
+      persistent:true,
+      reason:'claimed',
+      jobKey:'cron:wrong',
+      groupKey:'cron-global',
+      leaseToken:'token',
+    }),
+  });
+  const result=await rt.api.executeScheduledRun({
+    scheduledTime:Date.parse('2026-09-28T12:05:00.000Z'),
+  },{});
+  assert.equal(result[0].reason,'invalid_lease_claim');
+  assert.equal(rt.calls.length,0);
+});
+
+test('heartbeat timer failure marks lease ownership lost',async()=>{
+  const rt=runtime({
+    renewScheduledJob:async()=>({renewed:true}),
+    setHeartbeatTimeout:()=>{throw new Error('timer unavailable');},
+    leaseHeartbeatIntervalMs:1000,
+  });
+  const heartbeat=await rt.api.startScheduledLeaseHeartbeat({},{
+    claimed:true,
+    persistent:true,
+    reason:'claimed',
+    jobKey:'cron:2026-09-28T12:05:00.000Z',
+    groupKey:'cron-global',
+    leaseToken:'token',
+    leaseSeconds:720,
+  });
+  await heartbeat.done;
+  assert.equal(heartbeat.state.lost,true);
+  assert.equal(heartbeat.state.reason,'heartbeat_timer_failed');
 });
 
 test('heartbeat requires strict persistent and renewed flags',async()=>{
