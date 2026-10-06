@@ -331,6 +331,11 @@ test('v6.28 migration keeps the public contract stable and durable state private
     'durable usage test must follow the deterministic latest migration chain',
   );
   assert.equal(release.databaseContract.fingerprint, '6a7f0fe444f49a2a52c4603e952ee9ea');
+  assert.deepEqual(release.databaseContract.privateContracts?.analysisUsage,{
+    version:1,
+    readinessField:'schema.privateAnalysisUsage',
+    sourceMigration:'supabase/migrations/supabase_migration_v6_28.sql',
+  });
 });
 
 test('v6.29.7 gates readiness on the private durable usage contract without changing the public fingerprint', () => {
