@@ -15617,7 +15617,9 @@ function buildAiInstructor({ probabilities, goalModel, confidence, completeness,
     referee:String(referee || ''), refereeProfile:refereeData || refereeProfile(referee), refereeHistory:refereeHistory || null,
     refereeNote: referee ? 'Арбитр назначен; имя учитывается как контекст матча.' : 'Назначение судьи ещё не опубликовано источником данных.',
     lineupImpact:lineupImpact || null,
-    marketNote:marketMovementNote(marketMovement || {}ysisFreshness(payload),kickoffHandoff:analysisKickoffHandoff(payload),...extra};
+    marketNote:marketMovementNote(marketMovement || {}),
+    factors:(factors || []).slice(0,4), risks:(risks || []).slice(0,3),
+  };
 }
 let analysisRuntime = null;
 function getAnalysisRuntime() {
