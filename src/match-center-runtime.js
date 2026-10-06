@@ -71,32 +71,255 @@ export function createMatchCenterRuntime(deps) {
     validateFixtureIntegrity,
   } = deps;
 
+  const requiredFunctions={
+    annotateAvailabilityReliability,
+    annotateEventReliability,
+    annotateLineupReliability,
+    annotateOddsReliability,
+    annotateStatisticsReliability,
+    applyFeatureFreshness,
+    applyFeatureFreshnessMap,
+    assessExpectedGoalsQuality,
+    assessFixtureAvailabilityQuality,
+    assessMatchEventQuality,
+    assessMatchLineups,
+    assessMatchStatisticsQuality,
+    assessOddsMarketQuality,
+    buildAiTimeline,
+    buildLiveAiCoach,
+    buildOddsMovement,
+    buildPostMatchReview,
+    buildSmartMatchInsights,
+    embeddedLiveData,
+    eventsForTrustedAnalytics,
+    extractLiveMarket,
+    formatAbsences,
+    formatLineups,
+    formatLiveEvents,
+    formatLiveStatistics,
+    formatPlayerLeaders,
+    getCache,
+    getOddsSnapshots,
+    getStaleCache,
+    isFinishedStatus,
+    isFootballRateLimitError,
+    isRetryableFootballTransportError,
+    isLiveStatus,
+    isYouthReserveMatch,
+    json,
+    livePressure,
+    loadFixtureAiTimeline,
+    loadModelPredictionForFixture,
+    loadProviderFixture,
+    oddsMarketForTrustedAnalytics,
+    providerBudgetProfile,
+    providerDataState,
+    providerFeatureFetch,
+    providerFeaturePolicy,
+    providerPublicBudgetMode,
+    publicDataCapabilities,
+    recordOpsEvent,
+    runtimeControlsSnapshot,
+    sanitizeAvailabilityRows,
+    sanitizeEventsForDisplay,
+    sanitizeExpectedGoalsForDisplay,
+    sanitizeStatisticsForDisplay,
+    saveOddsSnapshot,
+    saveRefereeMatchHistory,
+    scoreSnapshot,
+    secondaryOddsMarket,
+    secondaryOpenLigaEvents,
+    setCache,
+    settlePredictionsFromFixtures,
+    statisticsForTrustedAnalytics,
+    statisticsForTrustedExpectedGoals,
+    statusLabel,
+    usableOddsFeatureMeta,
+    validateFixtureIntegrity,
+  };
+  for (const [name,fn] of Object.entries(requiredFunctions)) {
+    if (typeof fn!=='function') throw new TypeError(`${name} is required`);
+  }
+
+  function objectValue(value) {
+    return value && typeof value==='object' && !Array.isArray(value)
+      ? value
+      : null;
+  }
+
+  function safeText(value,max=240) {
+    if (!['string','number','bigint'].includes(typeof value)) return '';
+    try {
+      return String(value)
+        .normalize('NFKC')
+        .replace(/[\u0000-\u001F\u007F]/g,' ')
+        .replace(/\s+/g,' ')
+        .trim()
+        .slice(0,max);
+    } catch {
+      return '';
+    }
+  }
+
+  function finiteNumber(value) {
+    if (typeof value==='number') return Number.isFinite(value) ? value : null;
+    if (typeof value!=='string') return null;
+    const raw=value.trim();
+    if (!/^-?(?:\d+|\d+\.\d+|\.\d+)$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isFinite(number) ? number : null;
+  }
+
   function positiveSafeInteger(value) {
-    if (value === null || value === undefined || value === '') return null;
-    const number = Number(value);
-    return Number.isSafeInteger(number) && number > 0 ? number : null;
+    const number=finiteNumber(value);
+    return number !== null && Number.isSafeInteger(number) && number>0
+      ? number
+      : null;
   }
 
-  function nonNegativeSafeInteger(value) {
-    if (value === null || value === undefined || value === '') return null;
-    const number = Number(value);
-    return Number.isSafeInteger(number) && number >= 0 ? number : null;
+  function nonNegativeSafeInteger(value,max=Number.MAX_SAFE_INTEGER) {
+    const number=finiteNumber(value);
+    return number !== null
+      && Number.isSafeInteger(number)
+      && number>=0
+      && number<=max
+      ? number
+      : null;
   }
 
-  function boundedRetryAfter(value, fallback = 60) {
-    const number = Number(value);
-    return Number.isSafeInteger(number) && number >= 1 && number <= 3600 ? number : fallback;
+  function boundedRetryAfter(value,fallback=60) {
+    const number=positiveSafeInteger(value);
+    return number !== null && number<=3600 ? number : fallback;
   }
 
-  function rowsOrEmpty(value) {
-    return Array.isArray(value) ? value : [];
+  function rowsOrEmpty(value,limit=1000) {
+    return Array.isArray(value) ? value.slice(0,limit) : [];
   }
 
-  function matchCenterCachePayload(value, fixtureId) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-    if (positiveSafeInteger(value?.match?.fixtureId) !== fixtureId) return null;
-    if (!['live', 'finished', 'upcoming'].includes(String(value.mode || ''))) return null;
-    return value;
+  function safePredicate(fn,...args) {
+    try { return fn(...args)===true; }
+    catch { return false; }
+  }
+
+  async function optionalAsync(fn,...args) {
+    try { return await fn(...args); }
+    catch { return null; }
+  }
+
+  async function safeRecordOps(cfg,event) {
+    try { await recordOpsEvent(cfg,event); } catch {}
+  }
+
+  function safeHttpUrl(value,max=500) {
+    const raw=safeText(value,max);
+    if (!raw) return '';
+    try {
+      const parsed=new URL(raw);
+      return ['http:','https:'].includes(parsed.protocol)
+        ? parsed.toString().slice(0,max)
+        : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function requestFixtureId(request) {
+    const raw=safeText(request?.url,2000);
+    if (!raw) return null;
+    try {
+      const url=new URL(raw);
+      return positiveSafeInteger(url.searchParams.get('fixtureId'));
+    } catch {
+      return null;
+    }
+  }
+
+  function matchCenterCachePayload(value,fixtureId) {
+    const payload=objectValue(value);
+    if (!payload) return null;
+    if (positiveSafeInteger(payload?.match?.fixtureId)!==fixtureId) return null;
+    const mode=safeText(payload.mode,24);
+    if (!['live','finished','upcoming'].includes(mode)) return null;
+    return payload;
+  }
+
+  function prematchAnalysisPayload(value,fixtureId) {
+    const payload=objectValue(value);
+    if (!payload) return null;
+    return positiveSafeInteger(payload?.match?.fixtureId)===fixtureId
+      ? payload
+      : null;
+  }
+
+  function unavailableFeatureMeta(feature,reason='provider_unavailable') {
+    return {
+      feature:safeText(feature,40) || 'unknown',
+      provider:'api-football',
+      source:'network',
+      state:'unavailable',
+      available:false,
+      usable:false,
+      observed:false,
+      attempted:true,
+      confidenceBearing:false,
+      stale:false,
+      reason:safeText(reason,120) || 'provider_unavailable',
+    };
+  }
+
+  function safeProviderDataState(rows,options={}) {
+    try {
+      return objectValue(providerDataState(rows,options))
+        || unavailableFeatureMeta(options?.feature || 'unknown','invalid_provider_state');
+    } catch {
+      return unavailableFeatureMeta(options?.feature || 'unknown','provider_state_error');
+    }
+  }
+
+  function safeFeaturePolicy(feature,context) {
+    try { return objectValue(providerFeaturePolicy(feature,context)) || {}; }
+    catch { return {}; }
+  }
+
+  function safeFeatureFreshness(meta,options) {
+    try {
+      return objectValue(applyFeatureFreshness(objectValue(meta) || {},options))
+        || unavailableFeatureMeta(options?.feature || meta?.feature,'freshness_invalid');
+    } catch {
+      return unavailableFeatureMeta(options?.feature || meta?.feature,'freshness_error');
+    }
+  }
+
+  function safeFeatureFreshnessMap(meta,options) {
+    try { return objectValue(applyFeatureFreshnessMap(objectValue(meta) || {},options)) || {}; }
+    catch { return {}; }
+  }
+
+  async function safeProviderFeatureFetch(input) {
+    const request=objectValue(input) || {};
+    const feature=safeText(request.feature,40) || 'unknown';
+    try {
+      const result=objectValue(await providerFeatureFetch(request));
+      return {
+        data:rowsOrEmpty(result?.data,1000),
+        meta:objectValue(result?.meta) || unavailableFeatureMeta(feature,'invalid_provider_response'),
+      };
+    } catch (error) {
+      return {
+        data:[],
+        meta:unavailableFeatureMeta(
+          feature,
+          safeText(error?.code,120) || 'provider_error',
+        ),
+      };
+    }
+  }
+
+  function trustedFeature(meta) {
+    const value=objectValue(meta);
+    return value?.confidenceBearing===true
+      && value?.stale!==true
+      && value?.provenanceState==='verified';
   }
 
   async function apiMatchCenter(request, cfg) {
