@@ -18,6 +18,101 @@ export function createCompetitionIntegrityRuntime(deps) {
     supaUpsert,
   } = deps;
 
+  const requiredFunctions={
+    bumpTelemetry,
+    hasSupabase,
+    isFinishedStatus,
+    isLiveStatus,
+    json,
+    recordOpsEvent,
+    safeOpsMetadata,
+    supaSelectMany,
+    supaUpsert,
+  };
+  for (const [name,fn] of Object.entries(requiredFunctions)) {
+    if (typeof fn !== 'function') throw new TypeError(`${name} is required`);
+  }
+  if (!memory || typeof memory !== 'object' || Array.isArray(memory)) {
+    throw new TypeError('memory is required');
+  }
+
+  function rows(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  function positiveSafeInteger(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number=Number(value);
+    return Number.isSafeInteger(number) && number > 0 ? number : null;
+  }
+
+  function nonNegativeSafeInteger(value, max = Number.MAX_SAFE_INTEGER) {
+    if (value === null || value === undefined || value === '') return null;
+    const number=Number(value);
+    return Number.isSafeInteger(number) && number >= 0 && number <= max ? number : null;
+  }
+
+  function safeText(value, max = 160) {
+    if (!['string','number','bigint'].includes(typeof value)) return '';
+    return String(value).trim().slice(0,max);
+  }
+
+  function strictUtcDate(value) {
+    const raw=safeText(value,10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return '';
+    const timestamp=Date.parse(`${raw}T00:00:00.000Z`);
+    if (!Number.isFinite(timestamp)) return '';
+    try {
+      return new Date(timestamp).toISOString().slice(0,10) === raw ? raw : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function scoreInteger(value) {
+    return nonNegativeSafeInteger(value,30);
+  }
+
+  function safeTelemetry(key, amount = 1) {
+    try { bumpTelemetry(key,amount); } catch {}
+  }
+
+  async function safeOps(cfg,event) {
+    try {
+      await recordOpsEvent(cfg,event);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function safeMetadata(value) {
+    try {
+      const result=safeOpsMetadata(value && typeof value === 'object' && !Array.isArray(value) ? value : {});
+      return result && typeof result === 'object' && !Array.isArray(result) ? result : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function boundedCount(value, fallback = 0, max = 1_000_000) {
+    const number=nonNegativeSafeInteger(value,max);
+    return number === null ? fallback : number;
+  }
+
+  function boundedQuality(value, fallback = 0) {
+    const number=Number(value);
+    return Number.isFinite(number) ? Math.max(0,Math.min(100,number)) : fallback;
+  }
+
+  function ensureIntegrityMemory() {
+    if (!memory.integrity || typeof memory.integrity !== 'object' || Array.isArray(memory.integrity)) {
+      memory.integrity={lastRun:null,recentIssues:[]};
+    }
+    if (!Array.isArray(memory.integrity.recentIssues)) memory.integrity.recentIssues=[];
+    return memory.integrity;
+  }
+
   const COMPETITIONS = new Map([
     [1,   { name: 'Чемпионат мира', short: 'ЧМ', group: 'international', category: 'national', tier: 'elite', priority: 100 }],
     [2,   { name: 'Лига чемпионов УЕФА', short: 'ЛЧ', group: 'international', category: 'continental', tier: 'elite', priority: 100 }],
@@ -216,56 +311,84 @@ export function createCompetitionIntegrityRuntime(deps) {
   
   function finiteNonNegative(value) {
     if (value === null || value === undefined || value === '') return null;
-    const n = Number(value);
-    return Number.isFinite(n) && n >= 0 ? n : null;
+    const number=Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : null;
   }
   
   function fixtureScorePair(fixture) {
-    const home = finiteNonNegative(fixture?.goals?.home);
-    const away = finiteNonNegative(fixture?.goals?.away);
-    return { home, away };
+    return {
+      home:scoreInteger(fixture?.goals?.home),
+      away:scoreInteger(fixture?.goals?.away),
+    };
   }
   
   function previousMatchMap(payload) {
-    const map = new Map();
-    for (const row of payload?.matches || []) {
-      const id = Number(row?.fixtureId || 0);
-      if (id > 0) map.set(id, row);
+    const map=new Map();
+    for (const row of rows(payload?.matches)) {
+      const id=positiveSafeInteger(row?.fixtureId);
+      if (id) map.set(id,row);
     }
     return map;
   }
   
   function validateFixtureIntegrity(fixture, requestedDate = '', previous = null) {
-    const issues = [];
-    const add = (severity, code, message, meta = {}) => issues.push({ severity, code, message, meta });
-    const fixtureId = Number(fixture?.fixture?.id || 0);
-    const date = String(fixture?.fixture?.date || '');
-    const kickoffMs = Date.parse(date);
-    const status = String(fixture?.fixture?.status?.short || '').toUpperCase();
-    const elapsedRaw = fixture?.fixture?.status?.elapsed;
-    const elapsed = elapsedRaw === null || elapsedRaw === undefined ? null : Number(elapsedRaw);
-    const leagueId = Number(fixture?.league?.id || 0);
-    const leagueName = String(fixture?.league?.name || '').trim();
-    const homeId = Number(fixture?.teams?.home?.id || 0);
-    const awayId = Number(fixture?.teams?.away?.id || 0);
-    const homeName = String(fixture?.teams?.home?.name || '').trim();
-    const awayName = String(fixture?.teams?.away?.name || '').trim();
-    const score = fixtureScorePair(fixture);
+    const issues=[];
+    const add=(severity,code,message,meta={})=>issues.push({
+      severity,
+      code,
+      message,
+      meta:meta && typeof meta === 'object' && !Array.isArray(meta) ? meta : {},
+    });
+    const fixtureId=positiveSafeInteger(fixture?.fixture?.id);
+    const date=safeText(fixture?.fixture?.date,80);
+    const kickoffMs=Date.parse(date);
+    const status=safeText(fixture?.fixture?.status?.short,16).toUpperCase();
+    const elapsedRaw=fixture?.fixture?.status?.elapsed;
+    const elapsed=nonNegativeSafeInteger(elapsedRaw,180);
+    const leagueId=positiveSafeInteger(fixture?.league?.id);
+    const leagueName=safeText(fixture?.league?.name,160);
+    const homeId=positiveSafeInteger(fixture?.teams?.home?.id);
+    const awayId=positiveSafeInteger(fixture?.teams?.away?.id);
+    const homeName=safeText(fixture?.teams?.home?.name,160);
+    const awayName=safeText(fixture?.teams?.away?.name,160);
+    const score=fixtureScorePair(fixture);
+    const requested=strictUtcDate(requestedDate);
   
-    if (!Number.isFinite(fixtureId) || fixtureId <= 0) add('error', 'FIXTURE_ID_MISSING', 'Матч не имеет корректного номера.');
+    if (!fixtureId) add('error','FIXTURE_ID_MISSING','Матч не имеет корректного номера.');
     if (!Number.isFinite(kickoffMs)) add('error', 'KICKOFF_INVALID', 'Некорректное время начала матча.', { date });
     if (!homeName || !awayName) add('error', 'TEAM_NAME_MISSING', 'У одной из команд отсутствует название.');
-    if (homeId <= 0 || awayId <= 0) add('error', 'TEAM_ID_MISSING', 'У одной из команд отсутствует корректный номер команды.');
-    if ((homeId > 0 && homeId === awayId) || (homeName && awayName && homeName.toLowerCase() === awayName.toLowerCase())) add('error', 'SAME_TEAM', 'Хозяева и гости определены как одна команда.');
-    if (!leagueId || !leagueName) add('warning', 'LEAGUE_INCOMPLETE', 'Неполные данные турнира.', { leagueId, leagueName });
+    if (!homeId || !awayId) add('error','TEAM_ID_MISSING','У одной из команд отсутствует корректный номер команды.');
+    if ((homeId && homeId===awayId) || (homeName && awayName && homeName.toLowerCase()===awayName.toLowerCase())) {
+      add('error','SAME_TEAM','Хозяева и гости определены как одна команда.');
+    }
+    if (!leagueId || !leagueName) add('warning','LEAGUE_INCOMPLETE','Неполные данные турнира.',{leagueId:leagueId || null,leagueName});
     if (!status || !KNOWN_FIXTURE_STATUSES.has(status)) add('warning', 'STATUS_UNKNOWN', 'Неизвестный статус матча.', { status });
   
-    const rawScores = [fixture?.goals?.home, fixture?.goals?.away, fixture?.score?.halftime?.home, fixture?.score?.halftime?.away, fixture?.score?.fulltime?.home, fixture?.score?.fulltime?.away];
-    if (rawScores.some(v => v !== null && v !== undefined && Number.isFinite(Number(v)) && Number(v) < 0)) add('error', 'SCORE_NEGATIVE', 'Обнаружено отрицательное значение счёта.');
+    const rawScores=[
+      fixture?.goals?.home,
+      fixture?.goals?.away,
+      fixture?.score?.halftime?.home,
+      fixture?.score?.halftime?.away,
+      fixture?.score?.fulltime?.home,
+      fixture?.score?.fulltime?.away,
+      fixture?.score?.extratime?.home,
+      fixture?.score?.extratime?.away,
+      fixture?.score?.penalty?.home,
+      fixture?.score?.penalty?.away,
+    ];
+    const suppliedScores=rawScores.filter(value=>value !== null && value !== undefined && value !== '');
+    if (suppliedScores.some(value=>Number.isFinite(Number(value)) && Number(value)<0)) {
+      add('error','SCORE_NEGATIVE','Обнаружено отрицательное значение счёта.');
+    }
+    if (suppliedScores.some(value=>scoreInteger(value) === null && !(Number.isFinite(Number(value)) && Number(value)<0))) {
+      add('error','SCORE_INVALID','Обнаружено некорректное значение счёта.');
+    }
   
     if (isLiveStatus(status)) {
       if (Number.isFinite(kickoffMs) && kickoffMs > Date.now() + 20 * 60000) add('error', 'LIVE_BEFORE_KICKOFF', 'Статус «идёт матч» получен задолго до времени начала.', { minutesAhead: Math.round((kickoffMs - Date.now()) / 60000) });
-      if (elapsed !== null && (!Number.isFinite(elapsed) || elapsed < 0 || elapsed > 150)) add('warning', 'ELAPSED_INVALID', 'Подозрительное значение игровой минуты.', { elapsed });
+      if (elapsedRaw !== null && elapsedRaw !== undefined && elapsedRaw !== '' && elapsed === null) {
+        add('warning','ELAPSED_INVALID','Подозрительное значение игровой минуты.',{elapsed:elapsedRaw});
+      }
       if (score.home === null || score.away === null) add('warning', 'LIVE_SCORE_MISSING', 'Матч в реальном времени пришёл без полного текущего счёта.');
     }
   
@@ -273,8 +396,8 @@ export function createCompetitionIntegrityRuntime(deps) {
       if (Number.isFinite(kickoffMs) && kickoffMs > Date.now() + 20 * 60000) add('error', 'FINISHED_BEFORE_KICKOFF', 'Завершённый статус получен до времени начала.');
       if (score.home === null || score.away === null) add('warning', 'FINAL_SCORE_MISSING', 'Завершённый матч пришёл без итогового счёта.');
       if (status === 'FT') {
-        const ftHome = finiteNonNegative(fixture?.score?.fulltime?.home);
-        const ftAway = finiteNonNegative(fixture?.score?.fulltime?.away);
+        const ftHome=scoreInteger(fixture?.score?.fulltime?.home);
+        const ftAway=scoreInteger(fixture?.score?.fulltime?.away);
         if (ftHome !== null && ftAway !== null && score.home !== null && score.away !== null && (ftHome !== score.home || ftAway !== score.away)) {
           add('warning', 'FINAL_SCORE_CONFLICT', 'Текущий и финальный счёт не совпадают.', { goals: `${score.home}:${score.away}`, fulltime: `${ftHome}:${ftAway}` });
         }
@@ -289,20 +412,30 @@ export function createCompetitionIntegrityRuntime(deps) {
     if (!fixture?.teams?.home?.logo || !fixture?.teams?.away?.logo) add('info', 'TEAM_LOGO_MISSING', 'У одной из команд отсутствует логотип.');
     if (!fixture?.league?.logo) add('info', 'LEAGUE_LOGO_MISSING', 'У турнира отсутствует логотип.');
   
-    if (Number.isFinite(kickoffMs) && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
-      const requestedNoon = Date.parse(`${requestedDate}T12:00:00Z`);
-      if (Number.isFinite(requestedNoon) && Math.abs(kickoffMs - requestedNoon) > 38 * 3600000) add('warning', 'DATE_WINDOW_MISMATCH', 'Время матча сильно выходит за запрошенную дату.', { requestedDate, fixtureDate: date });
+    if (Number.isFinite(kickoffMs) && requested) {
+      const requestedNoon=Date.parse(`${requested}T12:00:00Z`);
+      if (Number.isFinite(requestedNoon) && Math.abs(kickoffMs-requestedNoon)>38*3600000) {
+        add('warning','DATE_WINDOW_MISMATCH','Время матча сильно выходит за запрошенную дату.',{requestedDate:requested,fixtureDate:date});
+      }
     }
   
-    if (previous) {
-      const prevStatus = String(previous.status || '').toUpperCase();
-      const prevElapsed = Number(previous.elapsed);
-      const prevHome = finiteNonNegative(previous?.score?.home);
-      const prevAway = finiteNonNegative(previous?.score?.away);
-      if ((isLiveStatus(prevStatus) || isFinishedStatus(prevStatus)) && ['NS','TBD'].includes(status)) add('warning', 'STATUS_REGRESSION', 'Статус матча откатился к предматчевому.', { previousStatus: prevStatus, currentStatus: status });
-      if (isFinishedStatus(prevStatus) && !isFinishedStatus(status)) add('warning', 'FINISHED_STATUS_REGRESSION', 'Ранее завершённый матч вернулся в незавершённый статус.', { previousStatus: prevStatus, currentStatus: status });
-      if (isLiveStatus(prevStatus) && isLiveStatus(status) && Number.isFinite(prevElapsed) && Number.isFinite(elapsed) && elapsed + 3 < prevElapsed) add('warning', 'ELAPSED_REGRESSION', 'Игровая минута уменьшилась относительно предыдущего снимка.', { previousElapsed: prevElapsed, currentElapsed: elapsed });
-      if (prevHome !== null && prevAway !== null && score.home !== null && score.away !== null && (score.home < prevHome || score.away < prevAway)) add('warning', 'SCORE_REGRESSION', 'Счёт уменьшился относительно предыдущего снимка; возможна коррекция после видеопросмотра или конфликт данных.', { previous: `${prevHome}:${prevAway}`, current: `${score.home}:${score.away}` });
+    if (previous && typeof previous === 'object' && !Array.isArray(previous)) {
+      const prevStatus=safeText(previous.status,16).toUpperCase();
+      const prevElapsed=nonNegativeSafeInteger(previous.elapsed,180);
+      const prevHome=scoreInteger(previous?.score?.home);
+      const prevAway=scoreInteger(previous?.score?.away);
+      if ((isLiveStatus(prevStatus) || isFinishedStatus(prevStatus)) && ['NS','TBD'].includes(status)) {
+        add('warning','STATUS_REGRESSION','Статус матча откатился к предматчевому.',{previousStatus:prevStatus,currentStatus:status});
+      }
+      if (isFinishedStatus(prevStatus) && !isFinishedStatus(status)) {
+        add('warning','FINISHED_STATUS_REGRESSION','Ранее завершённый матч вернулся в незавершённый статус.',{previousStatus:prevStatus,currentStatus:status});
+      }
+      if (isLiveStatus(prevStatus) && isLiveStatus(status) && prevElapsed !== null && elapsed !== null && elapsed+3<prevElapsed) {
+        add('warning','ELAPSED_REGRESSION','Игровая минута уменьшилась относительно предыдущего снимка.',{previousElapsed:prevElapsed,currentElapsed:elapsed});
+      }
+      if (prevHome !== null && prevAway !== null && score.home !== null && score.away !== null && (score.home<prevHome || score.away<prevAway)) {
+        add('warning','SCORE_REGRESSION','Счёт уменьшился относительно предыдущего снимка; возможна коррекция после видеопросмотра или конфликт данных.',{previous:`${prevHome}:${prevAway}`,current:`${score.home}:${score.away}`});
+      }
     }
   
     const quarantine = issues.some(x => x.severity === 'error');
@@ -311,30 +444,33 @@ export function createCompetitionIntegrityRuntime(deps) {
     const infos = issues.filter(x => x.severity === 'info').length;
     const qualityScore = Math.max(0, Math.min(100, 100 - warnings * INTEGRITY_SEVERITY_WEIGHT.warning - errors * INTEGRITY_SEVERITY_WEIGHT.error - infos * INTEGRITY_SEVERITY_WEIGHT.info));
     const state = quarantine ? 'error' : warnings ? 'warning' : infos ? 'incomplete' : 'clean';
-    return { fixtureId, state, qualityScore, quarantine, warnings, errors, infos, issues };
+    return {fixtureId:fixtureId || null,state,qualityScore,quarantine,warnings,errors,infos,issues};
   }
   
   function integritySignature(fixture) {
-    const leagueId = Number(fixture?.league?.id || 0);
-    const homeId = Number(fixture?.teams?.home?.id || 0);
-    const awayId = Number(fixture?.teams?.away?.id || 0);
-    const ms = Date.parse(fixture?.fixture?.date || '');
-    const minute = Number.isFinite(ms) ? Math.floor(ms / 60000) : 0;
-    return `${leagueId}:${homeId}:${awayId}:${minute}`;
+    const leagueId=positiveSafeInteger(fixture?.league?.id);
+    const homeId=positiveSafeInteger(fixture?.teams?.home?.id);
+    const awayId=positiveSafeInteger(fixture?.teams?.away?.id);
+    const ms=Date.parse(safeText(fixture?.fixture?.date,80));
+    if (!homeId || !awayId || !Number.isFinite(ms)) return '';
+    const minute=Math.floor(ms/60000);
+    return `${leagueId || 0}:${homeId}:${awayId}:${minute}`;
   }
   
   function runMatchIntegrityGuard(fixtures, requestedDate, previousPayload = null) {
-    const previous = previousMatchMap(previousPayload);
-    const accepted = [];
-    const issues = [];
-    const seenIds = new Set();
+    const fixtureRows=rows(fixtures);
+    const requested=strictUtcDate(requestedDate);
+    const previous=previousMatchMap(previousPayload);
+    const accepted=[];
+    const issues=[];
+    const seenIds=new Set();
     const seenSignatures = new Map();
     let quarantined = 0, duplicates = 0, warningMatches = 0, incompleteMatches = 0, cleanMatches = 0, repaired = 0;
   
-    for (const fixture of fixtures || []) {
-      const fixtureId = Number(fixture?.fixture?.id || 0);
-      let result = validateFixtureIntegrity(fixture, requestedDate, previous.get(fixtureId));
-      if (fixtureId > 0 && seenIds.has(fixtureId)) {
+    for (const fixture of fixtureRows) {
+      const fixtureId=positiveSafeInteger(fixture?.fixture?.id);
+      let result=validateFixtureIntegrity(fixture,requested,fixtureId ? previous.get(fixtureId) : null);
+      if (fixtureId && seenIds.has(fixtureId)) {
         duplicates++;
         result = { ...result, state: 'error', quarantine: true, errors: result.errors + 1, qualityScore: 0, issues: [...result.issues, { severity: 'error', code: 'DUPLICATE_FIXTURE_ID', message: 'Повтор номера матча в одном ответе источника данных.', meta: { fixtureId } }] };
       }
@@ -344,7 +480,7 @@ export function createCompetitionIntegrityRuntime(deps) {
         const firstId = seenSignatures.get(signature);
         result = { ...result, state: 'error', quarantine: true, errors: result.errors + 1, qualityScore: 0, issues: [...result.issues, { severity: 'error', code: 'DUPLICATE_MATCH_SIGNATURE', message: 'Найден дубликат того же матча с другим номером матча.', meta: { firstFixtureId: firstId, duplicateFixtureId: fixtureId } }] };
       }
-      if (fixtureId > 0) seenIds.add(fixtureId);
+      if (fixtureId) seenIds.add(fixtureId);
       if (!result.quarantine && signature) seenSignatures.set(signature, fixtureId);
   
       for (const issue of result.issues) {
@@ -362,7 +498,7 @@ export function createCompetitionIntegrityRuntime(deps) {
       accepted.push({ fixture, integrity: { state: result.state, score: result.qualityScore, warnings: result.warnings, infos: result.infos, issues: result.issues.filter(x => x.severity !== 'info').slice(0, 3).map(x => ({ severity: x.severity, code: x.code, message: x.message })) } });
     }
   
-    const inspected = (fixtures || []).length;
+    const inspected=fixtureRows.length;
     const errors = issues.filter(x => x.severity === 'error').length;
     const warnings = issues.filter(x => x.severity === 'warning').length;
     const qualityScore = inspected ? Math.round((accepted.reduce((sum, x) => sum + Number(x.integrity?.score || 0), 0) / inspected) * 10) / 10 : 100;
@@ -370,57 +506,128 @@ export function createCompetitionIntegrityRuntime(deps) {
     const health = quarantinePct >= 10 || errors >= 5 ? 'critical' : (quarantined || warnings ? 'warning' : 'ok');
     return {
       accepted,
-      report: { requestedDate, inspected, accepted: accepted.length, clean: cleanMatches, incomplete: incompleteMatches, warningMatches, quarantined, duplicates, repaired, warnings, errors, qualityScore, health },
+      report:{requestedDate:requested,inspected,accepted:accepted.length,clean:cleanMatches,incomplete:incompleteMatches,warningMatches,quarantined,duplicates,repaired,warnings,errors,qualityScore,health},
       issues,
     };
   }
   
   async function persistIntegrityRun(cfg, report, issues) {
-    const runId = crypto.randomUUID();
-    const observedAt = new Date().toISOString();
-    const run = { runId, observedAt, ...report };
-    memory.integrity.lastRun = run;
-    memory.integrity.recentIssues = (issues || []).slice(0, 30).map(x => ({ observed_at: observedAt, run_id: runId, ...x }));
-    bumpTelemetry('integrityRuns');
-    bumpTelemetry('integrityWarnings', Number(report?.warnings || 0));
-    bumpTelemetry('integrityErrors', Number(report?.errors || 0));
-    bumpTelemetry('integrityQuarantined', Number(report?.quarantined || 0));
-    bumpTelemetry('integrityDuplicates', Number(report?.duplicates || 0));
-    if (!hasSupabase(cfg)) return run;
+    const runId=crypto.randomUUID();
+    const observedAt=new Date().toISOString();
+    const safeReport={
+      requestedDate:strictUtcDate(report?.requestedDate),
+      inspected:boundedCount(report?.inspected),
+      accepted:boundedCount(report?.accepted),
+      clean:boundedCount(report?.clean),
+      incomplete:boundedCount(report?.incomplete),
+      warningMatches:boundedCount(report?.warningMatches),
+      quarantined:boundedCount(report?.quarantined),
+      duplicates:boundedCount(report?.duplicates),
+      repaired:boundedCount(report?.repaired),
+      warnings:boundedCount(report?.warnings),
+      errors:boundedCount(report?.errors),
+      qualityScore:boundedQuality(report?.qualityScore,0),
+      health:['ok','warning','critical'].includes(report?.health) ? report.health : 'warning',
+    };
+    const run={runId,observedAt,...safeReport};
+    const integrityMemory=ensureIntegrityMemory();
+    integrityMemory.lastRun=run;
+    integrityMemory.recentIssues=rows(issues).slice(0,30).map(issue=>({
+      observed_at:observedAt,
+      run_id:runId,
+      ...issue,
+    }));
+    safeTelemetry('integrityRuns');
+    safeTelemetry('integrityWarnings',safeReport.warnings);
+    safeTelemetry('integrityErrors',safeReport.errors);
+    safeTelemetry('integrityQuarantined',safeReport.quarantined);
+    safeTelemetry('integrityDuplicates',safeReport.duplicates);
+    let persistent=false;
+    try { persistent=hasSupabase(cfg) === true; } catch {}
+    if (!persistent) return run;
     try {
-      await supaUpsert(cfg, 'match_integrity_runs', {
-        run_id: runId,
-        observed_at: observedAt,
-        fixture_date: report?.requestedDate || null,
-        inspected: Number(report?.inspected || 0), accepted: Number(report?.accepted || 0), clean: Number(report?.clean || 0), incomplete: Number(report?.incomplete || 0),
-        warning_matches: Number(report?.warningMatches || 0), quarantined: Number(report?.quarantined || 0), duplicates: Number(report?.duplicates || 0), repaired: Number(report?.repaired || 0),
-        warning_count: Number(report?.warnings || 0), error_count: Number(report?.errors || 0), quality_score: Number(report?.qualityScore || 0), health: report?.health || 'ok', metadata: {},
-      }, 'run_id');
-      const rows = (issues || []).slice(0, 60).map(issue => ({
-        run_id: runId, observed_at: observedAt, fixture_date: report?.requestedDate || null, fixture_id: issue.fixtureId ? Number(issue.fixtureId) : null,
-        severity: issue.severity || 'warning', issue_code: issue.code || 'DATA_QUALITY', message: String(issue.message || '').slice(0, 400),
-        home_name: String(issue.home || '').slice(0, 120), away_name: String(issue.away || '').slice(0, 120), league_name: String(issue.league || '').slice(0, 160), metadata: safeOpsMetadata(issue.meta || {}),
+      await supaUpsert(cfg,'match_integrity_runs',{
+        run_id:runId,
+        observed_at:observedAt,
+        fixture_date:safeReport.requestedDate || null,
+        inspected:safeReport.inspected,
+        accepted:safeReport.accepted,
+        clean:safeReport.clean,
+        incomplete:safeReport.incomplete,
+        warning_matches:safeReport.warningMatches,
+        quarantined:safeReport.quarantined,
+        duplicates:safeReport.duplicates,
+        repaired:safeReport.repaired,
+        warning_count:safeReport.warnings,
+        error_count:safeReport.errors,
+        quality_score:safeReport.qualityScore,
+        health:safeReport.health,
+        metadata:{},
+      },'run_id');
+      const eventRows=rows(issues).slice(0,60).map(issue=>({
+        run_id:runId,
+        observed_at:observedAt,
+        fixture_date:safeReport.requestedDate || null,
+        fixture_id:positiveSafeInteger(issue?.fixtureId),
+        severity:['info','warning','error'].includes(issue?.severity) ? issue.severity : 'warning',
+        issue_code:safeText(issue?.code,80) || 'DATA_QUALITY',
+        message:safeText(issue?.message,400),
+        home_name:safeText(issue?.home,120),
+        away_name:safeText(issue?.away,120),
+        league_name:safeText(issue?.league,160),
+        metadata:safeMetadata(issue?.meta),
       }));
-      if (rows.length) await supaUpsert(cfg, 'match_integrity_events', rows);
+      if (eventRows.length) await supaUpsert(cfg,'match_integrity_events',eventRows);
     } catch (error) {
-      bumpTelemetry('supabaseErrors');
-      await recordOpsEvent(cfg, { severity: 'warning', source: 'integrity', eventType: 'persistence', code: 'INTEGRITY_DB_WRITE', message: error?.message || error, meta: { inspected: report?.inspected, quarantined: report?.quarantined } }).catch(() => {});
+      safeTelemetry('supabaseErrors');
+      await safeOps(cfg,{
+        severity:'warning',
+        source:'integrity',
+        eventType:'persistence',
+        code:'INTEGRITY_DB_WRITE',
+        message:safeText(error?.message || error,400) || 'Integrity persistence failed.',
+        meta:{inspected:safeReport.inspected,quarantined:safeReport.quarantined},
+      });
     }
     return run;
   }
   
   async function readIntegrityDiagnostics(cfg, limit = 12) {
-    const fallback = () => ({ persistent: false, migrationReady: false, lastRun: memory.integrity.lastRun, recentIssues: memory.integrity.recentIssues.slice(0, limit) });
-    if (!hasSupabase(cfg)) return { ...fallback(), migrationReady: true };
+    const safeLimit=Math.max(1,Math.min(30,positiveSafeInteger(limit) || 12));
+    const fallback=()=>{
+      const integrityMemory=ensureIntegrityMemory();
+      return {
+        persistent:false,
+        migrationReady:false,
+        lastRun:integrityMemory.lastRun || null,
+        recentIssues:integrityMemory.recentIssues.slice(0,safeLimit),
+      };
+    };
+    let persistent=false;
+    try { persistent=hasSupabase(cfg) === true; } catch {}
+    if (!persistent) return {...fallback(),migrationReady:true};
     try {
-      const runs = await supaSelectMany(cfg, 'match_integrity_runs', {}, { limit: 1, order: 'observed_at.desc' });
-      const events = await supaSelectMany(cfg, 'match_integrity_events', {}, { limit: Math.max(1, Math.min(30, limit)), order: 'observed_at.desc' });
-      const row = runs?.[0] || null;
-      const lastRun = row ? {
-        runId: row.run_id, observedAt: row.observed_at, requestedDate: row.fixture_date, inspected: Number(row.inspected || 0), accepted: Number(row.accepted || 0), clean: Number(row.clean || 0), incomplete: Number(row.incomplete || 0),
-        warningMatches: Number(row.warning_matches || 0), quarantined: Number(row.quarantined || 0), duplicates: Number(row.duplicates || 0), repaired: Number(row.repaired || 0), warnings: Number(row.warning_count || 0), errors: Number(row.error_count || 0), qualityScore: Number(row.quality_score || 0), health: row.health || 'ok',
+      const runRows=rows(await supaSelectMany(cfg,'match_integrity_runs',{}, {limit:1,order:'observed_at.desc'}));
+      const eventRows=rows(await supaSelectMany(cfg,'match_integrity_events',{}, {limit:safeLimit,order:'observed_at.desc'}));
+      const row=runRows[0] || null;
+      const lastRun=row ? {
+        runId:safeText(row.run_id,100),
+        observedAt:safeText(row.observed_at,80),
+        requestedDate:strictUtcDate(row.fixture_date),
+        inspected:boundedCount(row.inspected),
+        accepted:boundedCount(row.accepted),
+        clean:boundedCount(row.clean),
+        incomplete:boundedCount(row.incomplete),
+        warningMatches:boundedCount(row.warning_matches),
+        quarantined:boundedCount(row.quarantined),
+        duplicates:boundedCount(row.duplicates),
+        repaired:boundedCount(row.repaired),
+        warnings:boundedCount(row.warning_count),
+        errors:boundedCount(row.error_count),
+        qualityScore:boundedQuality(row.quality_score,0),
+        health:['ok','warning','critical'].includes(row.health) ? row.health : 'warning',
       } : null;
-      return { persistent: true, migrationReady: true, lastRun, recentIssues: events || [] };
+      return {persistent:true,migrationReady:true,lastRun,recentIssues:eventRows};
     } catch {
       return fallback();
     }
@@ -428,11 +635,11 @@ export function createCompetitionIntegrityRuntime(deps) {
   
   async function apiDataIntegrity(request, cfg) {
     const data = await readIntegrityDiagnostics(cfg, 24);
-    return json({ available: true, version: APP_VERSION, generatedAt: new Date().toISOString(), ...data });
+    return json({available:true,version:safeText(APP_VERSION,80),generatedAt:new Date().toISOString(),...data});
   }
   
   
-  return {
+  return Object.freeze({
     COMPETITIONS,
     BIG_TEAM_RE,
     YOUTH_RESERVE_RE,
@@ -462,5 +669,5 @@ export function createCompetitionIntegrityRuntime(deps) {
     persistIntegrityRun,
     readIntegrityDiagnostics,
     apiDataIntegrity,
-  };
+  });
 }
