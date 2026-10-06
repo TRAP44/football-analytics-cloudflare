@@ -7,7 +7,6 @@ export function createTeamTournamentRuntime(deps) {
   const {
     apiFootball,
     compactProviderError,
-    createProviderRequestBoundary,
     footballDataScorersUrl,
     footballDataStandingsUrl,
     freeQuotaHealthy,
@@ -32,7 +31,57 @@ export function createTeamTournamentRuntime(deps) {
     openLigaCompetition,
     openLigaMatchDataUrls,
     openLigaTableUrls,
+    providerDataState,
     providerFeaturePolicy,
+    providerMinuteRemaining,
+    publicDataCapabilities,
+    recordOpsEvent,
+    resolveProviderChain,
+    scoreSnapshot,
+    secondaryProviderJson,
+    setCache,
+    sourceMeta,
+    splitTeamDiscoveryMatches,
+    statusLabel,
+    summarizeFormRows,
+    supaRpc,
+    teamDiscoveryFutureDays,
+    teamDiscoveryPastDays,
+    teamDiscoveryWindow,
+    teamResult,
+    theOddsApiUrl,
+  } = deps;
+
+  const requiredFunctions = {
+    apiFootball,
+    compactProviderError,
+    footballDataScorersUrl,
+    footballDataStandingsUrl,
+    freeQuotaHealthy,
+    getCache,
+    getCacheEntry,
+    getStaleCache,
+    hasSupabase,
+    isFinishedStatus,
+    isFootballRateLimitError,
+    isLiveStatus,
+    json,
+    loadProviderTeamDiscoveryFixtures,
+    markCachedSourceMeta,
+    normalizeCompetition,
+    normalizeCountryName,
+    normalizeFootballDataStandings,
+    normalizeFootballDataTeamScorers,
+    normalizeOpenLigaMatchEvents,
+    normalizeOpenLigaStandings,
+    normalizeRoundLabel,
+    normalizeTheOddsApiMarket,
+    openLigaCompetition,
+    openLigaMatchDataUrls,
+    openLigaTableUrls,
+    providerDataState,
+    providerFeaturePolicy,
+    providerMinuteRemaining,
     publicDataCapabilities,
     recordOpsEvent,
     resolveProviderChain,
@@ -47,7 +96,19 @@ export function createTeamTournamentRuntime(deps) {
     teamDiscoveryWindow,
     teamResult,
     theOddsApiUrl,
-  } = deps;
+  };
+  for (const [name, fn] of Object.entries(requiredFunctions)) {
+    if (typeof fn !== 'function') throw new TypeError(`${name} is required`);
+  }
+
+  const normalizedPastDays = Number(teamDiscoveryPastDays);
+  const normalizedFutureDays = Number(teamDiscoveryFutureDays);
+  if (!Number.isSafeInteger(normalizedPastDays) || normalizedPastDays < 0) {
+    throw new TypeError('teamDiscoveryPastDays is required');
+  }
+  if (!Number.isSafeInteger(normalizedFutureDays) || normalizedFutureDays < 0) {
+    throw new TypeError('teamDiscoveryFutureDays is required');
+  }
 
   function normalizeStandingRow(row = {}) {
     const all = row?.all || {};
@@ -122,15 +183,6 @@ export function createTeamTournamentRuntime(deps) {
       return { allowed:false, reason:'shared_rate_guard_unavailable' };
     }
   }
-  
-  const { providerRequestJson: secondaryProviderJson } = createProviderRequestBoundary({
-    fetchWithTimeout,
-    withSingleFlight,
-    sleepMs,
-    recordOpsEvent,
-    bumpTelemetry,
-    observeProviderRequest,
-  });
   
   async function openLigaStandingsProvider(leagueId, season, cfg) {
     const competition = openLigaCompetition(leagueId, season);
@@ -444,7 +496,7 @@ export function createTeamTournamentRuntime(deps) {
       cached:true, stale:false, provider:publicDataCapabilities(),
     });
   
-    const minuteRemaining = Number(memory.provider?.minuteRemaining);
+    const minuteRemaining = Number(providerMinuteRemaining());
     const skipPrimary = Number.isFinite(minuteRemaining) && minuteRemaining <= 1;
     const resolved = await resolveTournamentStandings(leagueId, season, cfg, { skipPrimary });
   
@@ -560,7 +612,7 @@ export function createTeamTournamentRuntime(deps) {
     const form = summarizeFormRows(completedRaw, teamId, 'home')?.overall || null;
     const primaryCompetition = choosePrimaryTeamCompetition(normalized);
     const standing = await cachedTeamStanding(teamId, primaryCompetition, cfg);
-    const payload = { team, primaryCompetition, standing, form, recent, upcoming, primaryFixtureId:Number(discovery.primary?.fixtureId || 0) || null, discovery:{mode:discovery.mode,primaryFixtureId:Number(discovery.primary?.fixtureId || 0) || null,primaryReason:String(discovery.primary?.selection?.reason || ''),windowPastDays:TEAM_DISCOVERY_PAST_DAYS,windowFutureDays:TEAM_DISCOVERY_FUTURE_DAYS}, liveNow:upcoming.find(x=>x.live)||null, nextMatch:upcoming.find(x=>!x.live)||upcoming[0]||null, refreshedAt:new Date().toISOString(), sourceMeta:sourceMeta({provider:'api-football',label:'API-Football'}) };
+    const payload = { team, primaryCompetition, standing, form, recent, upcoming, primaryFixtureId:Number(discovery.primary?.fixtureId || 0) || null, discovery:{mode:discovery.mode,primaryFixtureId:Number(discovery.primary?.fixtureId || 0) || null,primaryReason:String(discovery.primary?.selection?.reason || ''),windowPastDays:normalizedPastDays,windowFutureDays:normalizedFutureDays}, liveNow:upcoming.find(x=>x.live)||null, nextMatch:upcoming.find(x=>!x.live)||upcoming[0]||null, refreshedAt:new Date().toISOString(), sourceMeta:sourceMeta({provider:'api-football',label:'API-Football'}) };
     await setCache(cacheKey, teamId, payload, cfg, 120);
     return json({ ...payload, cached:false, stale:false, provider:publicDataCapabilities() });
   }
@@ -872,7 +924,7 @@ export function createTeamTournamentRuntime(deps) {
   }
   
   
-  return {
+  return Object.freeze({
     normalizeStandingRow,
     normalizeApiFootballStandings,
     claimSecondaryProviderBudget,
@@ -899,5 +951,5 @@ export function createTeamTournamentRuntime(deps) {
     apiFootballTeamSeasonPlayers,
     footballDataTeamScorersProvider,
     resolveTeamSeasonPlayers,
-  };
+  });
 }
