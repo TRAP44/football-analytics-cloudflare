@@ -249,6 +249,8 @@ export function createSmartNotificationAudience({
         } catch {
           preferenceFailures.add(userId);
         }
+      } else {
+        preferenceFailures.add(userId);
       }
 
       if (user) users.set(userId,user);
