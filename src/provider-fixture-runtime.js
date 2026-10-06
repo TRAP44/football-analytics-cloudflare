@@ -12,6 +12,7 @@ export function createProviderFixtureRuntime(deps) {
     getStaleCache,
     isFinishedStatus,
     isFootballRateLimitError,
+    isRetryableFootballTransportError,
     isLiveStatus,
     isTopLeague,
     json,
@@ -33,129 +34,268 @@ export function createProviderFixtureRuntime(deps) {
     todayUtc,
   } = deps;
 
+  function positiveSafeInteger(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number=Number(value);
+    return Number.isSafeInteger(number) && number > 0 ? number : null;
+  }
+
+  function nonNegativeSafeInteger(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number=Number(value);
+    return Number.isSafeInteger(number) && number >= 0 ? number : null;
+  }
+
+  function strictUtcDate(value) {
+    const raw=String(value || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return '';
+    const timestamp=Date.parse(`${raw}T00:00:00.000Z`);
+    if (!Number.isFinite(timestamp)) return '';
+    try {
+      return new Date(timestamp).toISOString().slice(0,10) === raw ? raw : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function providerRows(value, label = 'fixtures') {
+    if (Array.isArray(value)) return value;
+    const error=new Error(`API-Football returned an invalid ${label} payload.`);
+    error.code='FOOTBALL_INVALID_RESPONSE';
+    throw error;
+  }
+
+  function recoverableProviderError(error) {
+    return isFootballRateLimitError(error)
+      || isRetryableFootballTransportError(error)
+      || String(error?.code || '') === 'FOOTBALL_INVALID_RESPONSE';
+  }
+
+  function boundedRetryAfter(value, fallback = 60) {
+    const number=Number(value);
+    const safeFallback=Number.isFinite(Number(fallback)) && Number(fallback)>0
+      ? Math.min(86400,Math.max(1,Math.ceil(Number(fallback))))
+      : 60;
+    return Number.isFinite(number) && number>0
+      ? Math.min(86400,Math.max(1,Math.ceil(number)))
+      : safeFallback;
+  }
+
+  function cacheMinutes(value, fallback = 10) {
+    const number=Number(value);
+    const safeFallback=Number.isFinite(Number(fallback)) && Number(fallback)>0
+      ? Math.min(1440,Math.max(1/6,Number(fallback)))
+      : 10;
+    return Number.isFinite(number) && number>0
+      ? Math.min(1440,Math.max(1/6,number))
+      : safeFallback;
+  }
+
+  function fixtureDateCachePayload(value, date) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    if (String(value.date || '') !== date || !Array.isArray(value.fixtures)) return null;
+    return value;
+  }
+
+  function teamDiscoveryCachePayload(value, teamId) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    if (positiveSafeInteger(value.teamId) !== teamId || !Array.isArray(value.fixtures)) return null;
+    return value;
+  }
+
+  function directFixtureCachePayload(value, fixtureId) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    if (positiveSafeInteger(value.fixtureId) !== fixtureId) return null;
+    if (positiveSafeInteger(value.fixture?.fixture?.id) !== fixtureId) return null;
+    return value;
+  }
+
+  function matchFeedCachePayload(value, date) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    if (String(value.date || '') !== date || !Array.isArray(value.matches)) return null;
+    return value;
+  }
+
   function providerFixtureDateCacheKey(date) {
-    return `provider-fixtures:${String(date || '')}:v1`;
+    const normalized=strictUtcDate(date);
+    return normalized ? `provider-fixtures:${normalized}:v2` : '';
   }
   
   async function loadProviderFixturesForDate(date, cfg, { allowNetwork = true, forceRefresh = false } = {}) {
-    const normalized=String(date || '').trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return [];
+    const normalized=strictUtcDate(date);
+    if (!normalized) return [];
     const cacheKey=providerFixtureDateCacheKey(normalized);
     if (!forceRefresh) {
-      const cached=await getCache(cacheKey,cfg).catch(()=>null);
-      if (Array.isArray(cached?.fixtures)) {
+      const cached=fixtureDateCachePayload(await getCache(cacheKey,cfg).catch(()=>null),normalized);
+      if (cached) {
         bumpTelemetry('providerFixtureDateReuses');
         return cached.fixtures;
       }
     }
     if (!allowNetwork) return [];
-    const fixtures=await apiFootball('/fixtures',{date:normalized},cfg);
+    const fixtures=providerRows(await apiFootball('/fixtures',{date:normalized},cfg),'fixtures-by-date');
     const fetchedAt=new Date().toISOString();
-    await setCache(cacheKey,0,{fixtures,fetchedAt},cfg,providerFeedDateTtl(normalized,cfg)).catch(()=>null);
+    await setCache(
+      cacheKey,
+      0,
+      {date:normalized,fixtures,fetchedAt},
+      cfg,
+      providerFeedDateTtl(normalized,cfg),
+    ).catch(()=>null);
     return fixtures;
   }
   
   function providerTeamDiscoveryCacheKey(teamId) {
-    return `provider-team-discovery:${Number(teamId || 0)}:v1`;
+    const id=positiveSafeInteger(teamId);
+    return id ? `provider-team-discovery:${id}:v2` : '';
   }
   
   async function loadProviderTeamDiscoveryFixtures(teamId, cfg, { allowNetwork = true, forceRefresh = false } = {}) {
-    const id=Number(teamId || 0);
+    const id=positiveSafeInteger(teamId);
     if (!id) return [];
     const cacheKey=providerTeamDiscoveryCacheKey(id);
     if (!forceRefresh) {
-      const cached=await getCache(cacheKey,cfg).catch(()=>null);
-      if (Array.isArray(cached?.fixtures)) {
+      const cached=teamDiscoveryCachePayload(await getCache(cacheKey,cfg).catch(()=>null),id);
+      if (cached) {
         bumpTelemetry('providerTeamFixtureReuses');
         return cached.fixtures;
       }
     }
     if (!allowNetwork) return [];
   
-    const [upcomingRows,recentRows]=await Promise.all([
+    const results=await Promise.allSettled([
       apiFootball('/fixtures',{team:id,next:12},cfg),
       apiFootball('/fixtures',{team:id,last:8},cfg),
     ]);
-    const seenFixtures=new Set();
-    const fixtures=[...(upcomingRows || []),...(recentRows || [])].filter(fixture=>{
-      const fixtureId=Number(fixture?.fixture?.id || 0);
-      return fixtureId && !seenFixtures.has(fixtureId) && seenFixtures.add(fixtureId);
+    const errors=[];
+    const rows=results.map((result,index)=>{
+      if (result.status === 'rejected') {
+        errors.push(result.reason);
+        return [];
+      }
+      try {
+        return providerRows(result.value,index===0 ? 'team-upcoming-fixtures' : 'team-recent-fixtures');
+      } catch (error) {
+        errors.push(error);
+        return [];
+      }
     });
+    if (errors.length===2) throw errors[0];
+    const [upcomingRows,recentRows]=rows;
+    const seenFixtures=new Set();
+    const fixtures=[...upcomingRows,...recentRows].filter(fixture=>{
+      const fixtureId=positiveSafeInteger(fixture?.fixture?.id);
+      if (!fixtureId || seenFixtures.has(fixtureId)) return false;
+      seenFixtures.add(fixtureId);
+      return true;
+    });
+    const partial=errors.length>0;
+    if (partial) bumpTelemetry('providerTeamFixturePartial');
     const hasLive=fixtures.some(fixture=>isLiveStatus(fixture?.fixture?.status?.short));
-    const ttlMinutes=hasLive ? Math.max(1,Math.ceil(liveRefreshSeconds()/60)) : 120;
-    await setCache(cacheKey,id,{fixtures,fetchedAt:new Date().toISOString()},cfg,ttlMinutes).catch(()=>null);
+    const liveTtl=cacheMinutes(Math.ceil(Number(liveRefreshSeconds())/60),1);
+    const ttlMinutes=partial ? 5 : hasLive ? liveTtl : 120;
+    await setCache(
+      cacheKey,
+      id,
+      {teamId:id,fixtures,fetchedAt:new Date().toISOString(),partial},
+      cfg,
+      ttlMinutes,
+    ).catch(()=>null);
     return fixtures;
   }
   
   function providerFixtureDirectCacheKey(fixtureId) {
-    return `provider-fixture:${Number(fixtureId || 0)}:v1`;
+    const id=positiveSafeInteger(fixtureId);
+    return id ? `provider-fixture:${id}:v2` : '';
   }
   
   async function cachedProviderFixture(fixtureId,cfg) {
-    const id=Number(fixtureId || 0);
+    const id=positiveSafeInteger(fixtureId);
     if (!id) return null;
-    const direct=await getCache(providerFixtureDirectCacheKey(id),cfg).catch(()=>null);
-    if (direct?.fixture && Number(direct.fixture?.fixture?.id || 0)===id) return direct.fixture;
+    const direct=directFixtureCachePayload(
+      await getCache(providerFixtureDirectCacheKey(id),cfg).catch(()=>null),
+      id,
+    );
+    if (direct) return direct.fixture;
   
     for (const offset of [-1,0,1]) {
       const date=new Date(Date.now()+offset*86400_000).toISOString().slice(0,10);
-      const batch=await getCache(providerFixtureDateCacheKey(date),cfg).catch(()=>null);
-      const fixture=(Array.isArray(batch?.fixtures) ? batch.fixtures : []).find(row=>Number(row?.fixture?.id || 0)===id);
+      const batch=fixtureDateCachePayload(
+        await getCache(providerFixtureDateCacheKey(date),cfg).catch(()=>null),
+        date,
+      );
+      const fixture=(batch?.fixtures || []).find(row=>positiveSafeInteger(row?.fixture?.id)===id);
       if (fixture) return fixture;
     }
     return null;
   }
   
   async function loadProviderFixture(fixtureId,cfg) {
-    const id=Number(fixtureId || 0);
+    const id=positiveSafeInteger(fixtureId);
     if (!id) return null;
     const cached=await cachedProviderFixture(id,cfg);
     if (cached) return cached;
-    const fixture=(await apiFootball('/fixtures',{id},cfg))[0] || null;
+    const rows=providerRows(await apiFootball('/fixtures',{id},cfg),'fixture-by-id');
+    const fixture=rows.find(row=>positiveSafeInteger(row?.fixture?.id)===id) || null;
     if (!fixture) return null;
     const status=String(fixture.fixture?.status?.short || '');
-    const ttlMinutes=isFinishedStatus(status) ? 720 : isLiveStatus(status) ? Math.max(1,liveRefreshSeconds()/60) : 5;
-    await setCache(providerFixtureDirectCacheKey(id),id,{fixture,fetchedAt:new Date().toISOString()},cfg,ttlMinutes).catch(()=>null);
+    const liveTtl=cacheMinutes(Number(liveRefreshSeconds())/60,1);
+    const ttlMinutes=isFinishedStatus(status) ? 720 : isLiveStatus(status) ? liveTtl : 5;
+    await setCache(
+      providerFixtureDirectCacheKey(id),
+      id,
+      {fixtureId:id,fixture,fetchedAt:new Date().toISOString()},
+      cfg,
+      ttlMinutes,
+    ).catch(()=>null);
     return fixture;
   }
   
   function utcDateShift(date, offsetDays = 0) {
-    const parsed = new Date(`${String(date || '')}T00:00:00.000Z`);
-    if (!Number.isFinite(parsed.getTime())) return '';
-    parsed.setUTCDate(parsed.getUTCDate() + Number(offsetDays || 0));
-    return parsed.toISOString().slice(0, 10);
+    const normalized=strictUtcDate(date);
+    const offset=Number(offsetDays);
+    if (!normalized || !Number.isSafeInteger(offset) || Math.abs(offset)>3660) return '';
+    const parsed=new Date(`${normalized}T00:00:00.000Z`);
+    parsed.setUTCDate(parsed.getUTCDate()+offset);
+    return parsed.toISOString().slice(0,10);
   }
   
   function providerFeedDateTtl(date, cfg) {
-    const today = todayUtc();
-    const yesterday = utcDateShift(today, -1);
-    if (date === today) return 2;
-    if (date === yesterday) return 720;
-    return cfg.cacheMinutes;
+    const normalized=strictUtcDate(date);
+    const today=strictUtcDate(todayUtc());
+    const yesterday=utcDateShift(today,-1);
+    if (normalized && normalized===today) return 2;
+    if (normalized && normalized===yesterday) return 720;
+    return cacheMinutes(cfg?.cacheMinutes,10);
   }
   
   async function apiMatches(request, cfg) {
     const url = new URL(request.url);
-    const requested = url.searchParams.get('date') || '';
-    const date = /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : todayUtc();
-    const isToday = date === todayUtc();
-    const yesterday = new Date(); yesterday.setUTCDate(yesterday.getUTCDate() - 1);
-    const isYesterday = date === yesterday.toISOString().slice(0, 10);
-    const cacheKey = `matches:${date}:v6-integrity`;
+    const requested=url.searchParams.get('date') || '';
+    const today=strictUtcDate(todayUtc()) || new Date().toISOString().slice(0,10);
+    const requestedDate=strictUtcDate(requested);
+    const date=requestedDate || today;
+    const isToday=date===today;
+    const yesterday=utcDateShift(today,-1);
+    const isYesterday=date===yesterday;
+    const cacheKey=`matches:${date}:v7-integrity`;
   
-    const cached = await getCache(cacheKey, cfg);
-    if (cached?.matches) return json({ ...cached, sourceMeta: markCachedSourceMeta(cached.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' })), cached: true, stale: false });
-    const previousPayload = await getStaleCache(cacheKey, cfg).catch(() => null);
+    const cached=matchFeedCachePayload(await getCache(cacheKey,cfg).catch(()=>null),date);
+    if (cached) return json({ ...cached, sourceMeta: markCachedSourceMeta(cached.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' })), cached: true, stale: false });
+    const previousPayload=matchFeedCachePayload(await getStaleCache(cacheKey,cfg).catch(()=>null),date);
   
     let fixtures;
     const providerBatchKey=providerFixtureDateCacheKey(date);
-    const providerBatch=await getCache(providerBatchKey,cfg).catch(()=>null);
-    const staleProviderBatch=Array.isArray(providerBatch?.fixtures)
+    const providerBatch=fixtureDateCachePayload(
+      await getCache(providerBatchKey,cfg).catch(()=>null),
+      date,
+    );
+    const staleProviderBatch=providerBatch
       ? null
-      : await getStaleCache(providerBatchKey,cfg).catch(()=>null);
+      : fixtureDateCachePayload(await getStaleCache(providerBatchKey,cfg).catch(()=>null),date);
     let providerFallback=null;
     try {
-      if (Array.isArray(providerBatch?.fixtures)) {
+      if (providerBatch) {
         fixtures=providerBatch.fixtures;
       } else {
         // API-Football accepts an all-competitions fixtures request by exact date.
@@ -165,20 +305,32 @@ export function createProviderFixtureRuntime(deps) {
       }
     } catch (error) {
       const rateLimited=isFootballRateLimitError(error);
-      const stale = previousPayload || await getStaleCache(cacheKey, cfg);
-      if (stale?.matches && rateLimited) {
+      const recoverable=recoverableProviderError(error);
+      const stale=previousPayload || matchFeedCachePayload(
+        await getStaleCache(cacheKey,cfg).catch(()=>null),
+        date,
+      );
+      const warning=rateLimited
+        ? 'Показаны последние сохранённые данные: источник матчей временно ограничил обновления.'
+        : 'Показаны последние сохранённые данные: источник матчей временно недоступен.';
+      if (stale && recoverable) {
         return json({
-          ...stale, cached: true, stale: true,
-          warning: 'Показаны последние сохранённые данные: источник матчей временно ограничил обновления.',
-          sourceMeta: markCachedSourceMeta(stale.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' }), { stale:true }),
-          retryAfter: Number(error?.retryAfter || 60),
+          ...stale,
+          cached:true,
+          stale:true,
+          warning,
+          sourceMeta:markCachedSourceMeta(
+            stale.sourceMeta || sourceMeta({provider:'api-football',label:'API-Football'}),
+            {stale:true},
+          ),
+          retryAfter:boundedRetryAfter(error?.retryAfter,rateLimited ? 60 : 15),
         });
       }
-      if (rateLimited && Array.isArray(staleProviderBatch?.fixtures)) {
+      if (recoverable && staleProviderBatch) {
         fixtures=staleProviderBatch.fixtures;
         providerFallback={
-          retryAfter:Number(error?.retryAfter || 60),
-          warning:'Показаны последние сохранённые данные: источник матчей временно ограничил обновления.',
+          retryAfter:boundedRetryAfter(error?.retryAfter,rateLimited ? 60 : 15),
+          warning,
         };
       } else {
         throw error;
@@ -198,7 +350,7 @@ export function createProviderFixtureRuntime(deps) {
         const f = entry.fixture;
         const integrity = entry.integrity;
         const status = f.fixture?.status?.short || '';
-        const elapsed = Number(f.fixture?.status?.elapsed ?? 0) || null;
+        const elapsed=nonNegativeSafeInteger(f.fixture?.status?.elapsed);
         const leagueId = Number(f.league?.id || 0);
         const leagueName = f.league?.name || '';
         const country = f.league?.country || '';
@@ -211,7 +363,7 @@ export function createProviderFixtureRuntime(deps) {
         const round = f.league?.round || '';
         const roundLabel = normalizeRoundLabel(round);
         return {
-          fixtureId: f.fixture?.id,
+          fixtureId: positiveSafeInteger(f.fixture?.id),
           date: f.fixture?.date,
           status,
           statusLong: f.fixture?.status?.long || '',
@@ -240,8 +392,8 @@ export function createProviderFixtureRuntime(deps) {
           coverageTier: competition.youth || competition.lower ? 'basic' : competition.tier === 'elite' ? 'enhanced' : 'standard',
           interestScore: matchInterestScore({ competition, leagueId, leagueName, country, homeName, awayName, status, date: f.fixture?.date }),
           integrity,
-          home: { id: f.teams?.home?.id, name: homeName, logo: f.teams?.home?.logo || '' },
-          away: { id: f.teams?.away?.id, name: awayName, logo: f.teams?.away?.logo || '' },
+          home: { id: positiveSafeInteger(f.teams?.home?.id), name: homeName, logo: f.teams?.home?.logo || '' },
+          away: { id: positiveSafeInteger(f.teams?.away?.id), name: awayName, logo: f.teams?.away?.logo || '' },
         };
       })
       .sort((a, b) =>
@@ -285,14 +437,16 @@ export function createProviderFixtureRuntime(deps) {
         retryAfter:providerFallback.retryAfter,
       });
     }
-    const ttl = isToday ? (providerBudgetProfile().paid ? 1 : 3) : isYesterday ? 720 : cfg.cacheMinutes;
-    await setCache(cacheKey, 0, payload, cfg, ttl);
-    return json({ ...payload, cached: false, stale: false });
+    let paid=false;
+    try { paid=providerBudgetProfile()?.paid === true; } catch {}
+    const ttl=isToday ? (paid ? 1 : 3) : isYesterday ? 720 : cacheMinutes(cfg?.cacheMinutes,10);
+    await setCache(cacheKey,0,payload,cfg,ttl).catch(()=>null);
+    return json({ ...payload, cached:false, stale:false });
   }
   
   
   
-  return {
+  return Object.freeze({
     providerFixtureDateCacheKey,
     loadProviderFixturesForDate,
     providerTeamDiscoveryCacheKey,
@@ -303,5 +457,5 @@ export function createProviderFixtureRuntime(deps) {
     utcDateShift,
     providerFeedDateTtl,
     apiMatches,
-  };
+  });
 }
