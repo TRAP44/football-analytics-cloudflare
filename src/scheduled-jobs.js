@@ -73,6 +73,33 @@ function heartbeatInterval(value) {
   return interval;
 }
 
+function leaseSeconds(value,fallback=GLOBAL_CRON_LEASE_SECONDS) {
+  const seconds=integerCandidate(value);
+  if (seconds === null || seconds < 30 || seconds > 1800) return fallback;
+  return seconds;
+}
+
+function cleanLeaseIdentity(value,maxLength) {
+  if (typeof value !== 'string') return '';
+  const raw=value.trim();
+  if (!raw || raw.length > maxLength || /[\u0000-\u001f\u007f-\u009f]/u.test(raw)) return '';
+  return raw;
+}
+
+function validExecutionClaim(claim,{jobKey='',groupKey=''}={}) {
+  const source=plainObject(claim);
+  if (!source || source.claimed !== true || typeof source.persistent !== 'boolean') return false;
+  const actualJobKey=cleanLeaseIdentity(source.jobKey,180);
+  const actualGroupKey=cleanLeaseIdentity(source.groupKey,120);
+  if (jobKey && actualJobKey !== jobKey) return false;
+  if (groupKey && actualGroupKey !== groupKey) return false;
+  if (source.persistent === true) {
+    const token=cleanLeaseIdentity(source.leaseToken,80);
+    if (!actualJobKey || !actualGroupKey || !token) return false;
+  }
+  return true;
+}
+
 export function normalizeScheduledTaskResult(task, value) {
   const raw=plainObject(value) || {};
   const state=typeof raw.status === 'string'
@@ -238,7 +265,7 @@ export function createScheduledJobsRuntime({
     if (claim?.persistent !== true) return emptyController;
 
     const renew=typeof renewScheduledJob==='function'
-      ? () => renewScheduledJob(cfg,claim,claim?.leaseSeconds || GLOBAL_CRON_LEASE_SECONDS)
+      ? () => renewScheduledJob(cfg,claim,leaseSeconds(claim?.leaseSeconds))
       : typeof claim?.renew==='function'
         ? () => claim.renew()
         : null;
@@ -261,6 +288,14 @@ export function createScheduledJobsRuntime({
           groupKey:String(claim?.groupKey || '').slice(0,120),
         },
       });
+    }
+
+    if (!validExecutionClaim(claim,{
+      jobKey:cleanLeaseIdentity(claim?.jobKey,180),
+      groupKey:cleanLeaseIdentity(claim?.groupKey,120),
+    })) {
+      await markLost('invalid_lease_claim');
+      return emptyController;
     }
 
     async function renewOnce() {
@@ -292,13 +327,19 @@ export function createScheduledJobsRuntime({
     let wakeSleep=null;
 
     function sleepUntilHeartbeat() {
-      return new Promise(resolve=>{
-        const timer=timerSet(()=>{
-          wakeSleep=null;
-          resolve();
-        },intervalMs);
+      return new Promise((resolve,reject)=>{
+        let timer;
+        try {
+          timer=timerSet(()=>{
+            wakeSleep=null;
+            resolve();
+          },intervalMs);
+        } catch (error) {
+          reject(error);
+          return;
+        }
         wakeSleep=()=>{
-          timerClear(timer);
+          try { timerClear(timer); } catch {}
           wakeSleep=null;
           resolve();
         };
@@ -307,7 +348,12 @@ export function createScheduledJobsRuntime({
 
     const done=(async()=>{
       while (!state.stopped && !state.lost) {
-        await sleepUntilHeartbeat();
+        try {
+          await sleepUntilHeartbeat();
+        } catch {
+          await markLost('heartbeat_timer_failed');
+          break;
+        }
         if (state.stopped || state.lost) break;
         await renewOnce();
       }
@@ -345,10 +391,22 @@ export function createScheduledJobsRuntime({
       });
     }
 
+    const expectedDailyJobKey=dailyScheduledTaskKey(task,scheduledAt);
+    const expectedDailyGroupKey=`daily:${taskName(task)}`;
     if (claim?.claimed !== true) {
       return normalizeScheduledTaskResult(task,{
-        skipped:claim?.reason || 'daily_task_not_claimed',
-        lease:claim || null,
+        skipped:typeof claim?.reason === 'string' ? claim.reason : 'daily_task_not_claimed',
+        lease:plainObject(claim),
+      });
+    }
+    if (!validExecutionClaim(claim,{
+      jobKey:expectedDailyJobKey,
+      groupKey:expectedDailyGroupKey,
+    })) {
+      return normalizeScheduledTaskResult(task,{
+        ok:false,
+        status:'failed',
+        reason:'invalid_daily_task_lease_claim',
       });
     }
 
@@ -375,6 +433,9 @@ export function createScheduledJobsRuntime({
   }
 
   function buildScheduledTaskPlan(cfg, scheduledAt, ownershipState) {
+    const normalizedDate=scheduledDate(scheduledAt);
+    if (!normalizedDate) throw new TypeError('scheduledAt is invalid');
+    scheduledAt=normalizedDate;
     const run=(task,runner)=>runOwnedTask(task,runner,ownershipState);
     const backtestTask = run('backtest', () => settleBacktestDaily(cfg));
     const remindersTask = run('reminders', () => processDueReminders(cfg));
@@ -428,7 +489,15 @@ export function createScheduledJobsRuntime({
   async function observeScheduledTasks(cfg, tasks) {
     const safeTasks=Array.isArray(tasks) ? tasks : [];
     const settled = await Promise.allSettled(
-      safeTasks.map(entry=>Array.isArray(entry) ? entry[1] : Promise.reject(new Error('malformed_scheduled_task'))),
+      safeTasks.map(entry=>{
+        if (
+          !Array.isArray(entry)
+          || !taskName(entry[0],'')
+          || !entry[1]
+          || typeof entry[1].then !== 'function'
+        ) return Promise.reject(new Error('malformed_scheduled_task'));
+        return entry[1];
+      }),
     );
     const results=[];
 
@@ -509,12 +578,25 @@ export function createScheduledJobsRuntime({
       }
     }
 
+    if (claim?.claimed === true && !validExecutionClaim(claim,{
+      jobKey,
+      groupKey:'cron-global',
+    })) {
+      claim={
+        claimed:false,
+        persistent:true,
+        reason:'invalid_lease_claim',
+        jobKey,
+        groupKey:'cron-global',
+      };
+    }
+
     if (claim?.claimed !== true) {
       const skipped=normalizeScheduledTaskResult('scheduled_execution',{
         skipped:claim?.reason || 'lease_not_claimed',
         lease:claim || null,
       });
-      const leaseUnavailable=claim?.reason==='lease_unavailable';
+      const leaseUnavailable=claim?.reason === 'lease_unavailable' || claim?.reason === 'invalid_lease_claim';
       await safeRecordOpsEvent(cfg,{
         severity:leaseUnavailable ? 'error' : 'info',
         source:'cron',
