@@ -271,72 +271,173 @@ export function createTeamIntelligenceRuntime(deps) {
   }
 
   function normalizeSquadPosition(position) {
-    const p = String(position || '').toLowerCase();
-    if (p.includes('goal')) return { key: 'goalkeeper', label: 'Вратари', order: 1 };
-    if (p.includes('def')) return { key: 'defender', label: 'Защитники', order: 2 };
-    if (p.includes('mid')) return { key: 'midfielder', label: 'Полузащитники', order: 3 };
-    if (p.includes('att')) return { key: 'attacker', label: 'Нападающие', order: 4 };
-    return { key: 'other', label: 'Другие', order: 5 };
-  }
-  
-  function normalizeTeamSquad(rows, teamId) {
-    const row = (Array.isArray(rows) ? rows : []).find(x => Number(x?.team?.id) === Number(teamId)) || rows?.[0] || null;
-    if (!row) return { available: false, team: { id: Number(teamId) }, players: [], groups: [], summary: { total: 0, averageAge: null } };
-    const players = (Array.isArray(row.players) ? row.players : []).map(p => {
-      const pos = normalizeSquadPosition(p.position);
-      return {
-        id: Number(p.id || 0), name: String(p.name || ''), age: Number(p.age || 0) || null,
-        number: Number(p.number || 0) || null, position: String(p.position || ''), positionKey: pos.key, positionLabel: pos.label,
-        photo: String(p.photo || ''), order: pos.order,
-      };
-    }).filter(p => p.id || p.name).sort((a,b) => a.order - b.order || (a.number || 999) - (b.number || 999) || a.name.localeCompare(b.name));
-    const ages = players.map(p => p.age).filter(Boolean);
-    const groupMap = new Map();
-    for (const p of players) {
-      if (!groupMap.has(p.positionKey)) groupMap.set(p.positionKey, { key: p.positionKey, label: p.positionLabel, order: p.order, players: [] });
-      groupMap.get(p.positionKey).players.push(p);
+    const value=safeText(position,80).toLowerCase();
+    if (value.includes('goal')) return {key:'goalkeeper',label:'Вратари',order:1};
+    if (value.includes('def')) return {key:'defender',label:'Защитники',order:2};
+    if (value.includes('mid')) return {key:'midfielder',label:'Полузащитники',order:3};
+    if (value.includes('att') || value.includes('forward')) {
+      return {key:'attacker',label:'Нападающие',order:4};
     }
-    const groups = [...groupMap.values()].sort((a,b) => a.order - b.order);
+    return {key:'other',label:'Другие',order:5};
+  }
+
+  function emptySquad(teamId) {
     return {
-      available: players.length > 0,
-      team: { id: Number(row.team?.id || teamId), name: String(row.team?.name || ''), logo: String(row.team?.logo || '') },
-      players, groups,
-      summary: {
-        total: players.length,
-        averageAge: ages.length ? Math.round((ages.reduce((a,b)=>a+b,0) / ages.length) * 10) / 10 : null,
-        goalkeepers: players.filter(p => p.positionKey === 'goalkeeper').length,
-        defenders: players.filter(p => p.positionKey === 'defender').length,
-        midfielders: players.filter(p => p.positionKey === 'midfielder').length,
-        attackers: players.filter(p => p.positionKey === 'attacker').length,
+      available:false,
+      team:{id:positiveSafeInteger(teamId) || 0,name:'',logo:''},
+      players:[],
+      groups:[],
+      summary:{
+        total:0,
+        averageAge:null,
+        goalkeepers:0,
+        defenders:0,
+        midfielders:0,
+        attackers:0,
       },
     };
   }
-  
-  async function apiTeamSquad(request, cfg) {
-    const url = new URL(request.url);
-    const teamId = Number(url.searchParams.get('teamId'));
-    if (!teamId) return json({ error: 'Номер команды обязателен.' }, 400);
-    const cacheKey = `team:squad:${teamId}:v1`;
-    const cached = await getCache(cacheKey, cfg);
-    if (cached) return json({ ...cached, cached: true, stale: false, provider: publicDataCapabilities() });
-    if (!freeQuotaHealthy(10, 2)) {
-      const stale = await getStaleCache(cacheKey, cfg);
-      if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Состав показан из сохранённых данных: бережём лимит API-Football.', provider: publicDataCapabilities() });
-      return json({ available: false, quotaGuard: true, reason: 'Состав временно не запрашивается: сохраняем остаток квоты API-Football.', provider: publicDataCapabilities() });
+
+  function normalizeTeamSquad(providerRows, teamId) {
+    const normalizedTeamId=positiveSafeInteger(teamId);
+    if (!normalizedTeamId) return emptySquad(teamId);
+
+    const row=rows(providerRows).find(
+      item=>positiveSafeInteger(item?.team?.id)===normalizedTeamId,
+    );
+    if (!row) return emptySquad(normalizedTeamId);
+
+    const seen=new Set();
+    const players=rows(row?.players).map(player=>{
+      const id=positiveSafeInteger(player?.id);
+      const name=safeText(player?.name,180);
+      if (!id && !name) return null;
+
+      const position=safeText(player?.position,80);
+      const normalizedPosition=normalizeSquadPosition(position);
+      return {
+        id:id || 0,
+        name,
+        age:positiveSafeInteger(player?.age,100),
+        number:positiveSafeInteger(player?.number,999),
+        position,
+        positionKey:normalizedPosition.key,
+        positionLabel:normalizedPosition.label,
+        photo:safeText(player?.photo,500),
+        order:normalizedPosition.order,
+      };
+    }).filter(player=>{
+      if (!player) return false;
+      const key=player.id
+        ? `id:${player.id}`
+        : `name:${player.name.toLocaleLowerCase('ru')}:${player.positionKey}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0,100).sort((a,b)=>
+      a.order-b.order
+      || (a.number || 999)-(b.number || 999)
+      || a.name.localeCompare(b.name,'ru')
+    );
+
+    const ages=players.map(player=>player.age).filter(age=>age !== null);
+    const groupMap=new Map();
+    for (const player of players) {
+      if (!groupMap.has(player.positionKey)) {
+        groupMap.set(player.positionKey,{
+          key:player.positionKey,
+          label:player.positionLabel,
+          order:player.order,
+          players:[],
+        });
+      }
+      groupMap.get(player.positionKey).players.push(player);
     }
+    const groups=[...groupMap.values()].sort((a,b)=>a.order-b.order);
+
+    return {
+      available:players.length>0,
+      team:{
+        id:normalizedTeamId,
+        name:safeText(row?.team?.name,180),
+        logo:safeText(row?.team?.logo,500),
+      },
+      players,
+      groups,
+      summary:{
+        total:players.length,
+        averageAge:ages.length
+          ? Math.round((ages.reduce((sum,age)=>sum+age,0)/ages.length)*10)/10
+          : null,
+        goalkeepers:players.filter(player=>player.positionKey==='goalkeeper').length,
+        defenders:players.filter(player=>player.positionKey==='defender').length,
+        midfielders:players.filter(player=>player.positionKey==='midfielder').length,
+        attackers:players.filter(player=>player.positionKey==='attacker').length,
+      },
+    };
+  }
+
+  async function apiTeamSquad(request, cfg) {
+    const url=new URL(request.url);
+    const teamId=positiveSafeInteger(url.searchParams.get('teamId'));
+    if (!teamId) return json({error:'Номер команды обязателен.'},400);
+
+    const cacheKey=`team:squad:${teamId}:v1`;
+    const cached=objectValue(await getCache(cacheKey,cfg).catch(()=>null));
+    if (cached) {
+      return json({...cached,cached:true,stale:false,provider:capabilities()});
+    }
+
+    if (!quotaHealthy(10,2)) {
+      const stale=objectValue(await getStaleCache(cacheKey,cfg).catch(()=>null));
+      if (stale) {
+        return json({
+          ...stale,
+          cached:true,
+          stale:true,
+          warning:'Состав показан из сохранённых данных: бережём лимит API-Football.',
+          provider:capabilities(),
+        });
+      }
+      return json({
+        available:false,
+        quotaGuard:true,
+        reason:'Состав временно не запрашивается: сохраняем остаток квоты API-Football.',
+        provider:capabilities(),
+      });
+    }
+
     try {
-      const rows = await apiFootball('/players/squads', { team: teamId }, cfg);
-      const squad = normalizeTeamSquad(rows, teamId);
-      const payload = { ...squad, refreshedAt: new Date().toISOString(), reason: squad.available ? '' : 'Источник данных не вернул текущий состав команды.' };
-      await setCache(cacheKey, teamId, payload, cfg, 720);
-      return json({ ...payload, cached: false, stale: false, provider: publicDataCapabilities() });
-    } catch (error) {
-      const stale = await getStaleCache(cacheKey, cfg);
-      if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Не удалось обновить состав — показана сохранённая версия.', provider: publicDataCapabilities() });
-      return json({ available: false, reason: `Состав сейчас недоступен: ${String(error?.message || error).slice(0, 180)}`, provider: publicDataCapabilities() });
+      const providerRows=await apiFootball('/players/squads',{team:teamId},cfg);
+      const squad=normalizeTeamSquad(providerRows,teamId);
+      const payload={
+        ...squad,
+        refreshedAt:new Date().toISOString(),
+        reason:squad.available
+          ? ''
+          : 'Источник данных не вернул текущий состав команды.',
+      };
+      await setCache(cacheKey,teamId,payload,cfg,720).catch(()=>null);
+      return json({...payload,cached:false,stale:false,provider:capabilities()});
+    } catch {
+      const stale=objectValue(await getStaleCache(cacheKey,cfg).catch(()=>null));
+      if (stale) {
+        return json({
+          ...stale,
+          cached:true,
+          stale:true,
+          warning:'Не удалось обновить состав — показана сохранённая версия.',
+          provider:capabilities(),
+        });
+      }
+      return json({
+        available:false,
+        reason:'Состав сейчас недоступен.',
+        provider:capabilities(),
+      });
     }
   }
-  
+
   function normalizeLineupNotificationRow(row = {}) {
     return {
       teamId: Number(row?.team?.id || 0),
