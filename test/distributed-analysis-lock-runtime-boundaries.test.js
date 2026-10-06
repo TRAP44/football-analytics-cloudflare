@@ -16,6 +16,7 @@ function baseDeps(overrides={}) {
     getCacheEntry:async()=>null,
     hasSupabase:()=>false,
     memory:{cache:new Map()},
+    randomUUID:()=> '33333333-3333-4333-8333-333333333333',
     recordOpsEvent:async()=>{},
     sleepMs:async()=>{},
     supaDelete:async()=>{},
@@ -297,7 +298,7 @@ test('worker keeps distributed analysis lock dependencies explicit', () => {
 
   assert.match(
     worker,
-    /createDistributedAnalysisLockRuntime\(\{[\s\S]*?APP_VERSION,[\s\S]*?DISTRIBUTED_ANALYSIS_LOCK_TTL_SECONDS,[\s\S]*?DISTRIBUTED_ANALYSIS_WAIT_ATTEMPTS,[\s\S]*?DISTRIBUTED_ANALYSIS_WAIT_MS,[\s\S]*?bumpTelemetry,[\s\S]*?fetchWithTimeout,[\s\S]*?getCache,[\s\S]*?getCacheEntry,[\s\S]*?hasSupabase,[\s\S]*?memory,[\s\S]*?recordOpsEvent,[\s\S]*?sleepMs,[\s\S]*?supaDelete,[\s\S]*?supaHeaders,[\s\S]*?supaSelectOne[\s\S]*?\}\);/,
+    /createDistributedAnalysisLockRuntime\(\{[\s\S]*?APP_VERSION,[\s\S]*?DISTRIBUTED_ANALYSIS_LOCK_TTL_SECONDS,[\s\S]*?DISTRIBUTED_ANALYSIS_WAIT_ATTEMPTS,[\s\S]*?DISTRIBUTED_ANALYSIS_WAIT_MS,[\s\S]*?bumpTelemetry,[\s\S]*?fetchWithTimeout,[\s\S]*?getCache,[\s\S]*?getCacheEntry,[\s\S]*?hasSupabase,[\s\S]*?memory,[\s\S]*?randomUUID:[\s\S]*?recordOpsEvent,[\s\S]*?sleepMs,[\s\S]*?supaDelete,[\s\S]*?supaHeaders,[\s\S]*?supaSelectOne[\s\S]*?\}\);/,
   );
   assert.match(source,/ANALYSIS_LOCK_FAIL_CLOSED/);
   assert.match(source,/'payload->>claimId'/);
