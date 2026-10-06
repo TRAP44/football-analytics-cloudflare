@@ -411,6 +411,35 @@ test('transient provider failure serves stale live data without stale AI signals
   assert.equal(response.body.retryAfter,12);
 });
 
+test('finished Match Center rejects a cross-fixture model prediction', async () => {
+  let predictionSeen='unset';
+  const finishedFixture=fixture({
+    fixture:{
+      ...fixture().fixture,
+      status:{short:'FT',long:'Match Finished',elapsed:90},
+      referee:'Referee',
+    },
+  });
+  const events=[];
+  const runtime=createMatchCenterRuntime(baseDeps({
+    loadProviderFixture:async()=>finishedFixture,
+    loadModelPredictionForFixture:async()=>({
+      fixture_id:999,
+      predicted_outcome:'home',
+    }),
+    buildPostMatchReview:input=>{
+      predictionSeen=input.prediction;
+      return {available:false};
+    },
+    recordOpsEvent:async(_cfg,event)=>events.push(event),
+  }));
+
+  const response=await runtime.apiMatchCenter(request(),{});
+  assert.equal(response.status,200);
+  assert.equal(predictionSeen,null);
+  assert.ok(events.some(event=>event.code==='POST_MATCH_PREDICTION_IDENTITY_MISMATCH'));
+});
+
 test('public Match Center payload sanitizes external image URLs', async () => {
   const runtime=createMatchCenterRuntime(baseDeps({
     loadProviderFixture:async()=>fixture({
@@ -432,6 +461,17 @@ test('public Match Center payload sanitizes external image URLs', async () => {
   assert.equal(response.body.match.leagueLogo,'');
   assert.equal(response.body.match.home.logo,'');
   assert.match(response.body.match.away.logo,/^https:/);
+
+  const credentials=createMatchCenterRuntime(baseDeps({
+    loadProviderFixture:async()=>fixture({
+      teams:{
+        home:{id:1,name:'Home',logo:'https://user:pass@example.test/home.png'},
+        away:{id:2,name:'Away',logo:'https://example.test/away.png'},
+      },
+    }),
+  }));
+  const credentialResponse=await credentials.apiMatchCenter(request(),{});
+  assert.equal(credentialResponse.body.match.home.logo,'');
 });
 
 test('worker keeps Match Center composition explicit and runtime export frozen', () => {
