@@ -1,133 +1,334 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createTelemetryOpsRuntime } from '../src/telemetry-ops-runtime.js';
 
-const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/router.js','utf8');
-const growthReferral=fs.readFileSync('src/growth-referral.js','utf8');
-const sourceFiles=walk('src').filter(file=>file.endsWith('.js'));
-const sourceText=sourceFiles.map(file=>fs.readFileSync(file,'utf8')).join('\n');
-const app=fs.readFileSync('public/app.js','utf8');
-const envExample=fs.readFileSync('.env.example','utf8');
-const assetHeaders=fs.readFileSync('public/_headers','utf8');
-const packageMeta=JSON.parse(fs.readFileSync('package.json','utf8'));
-const releaseContract=JSON.parse(fs.readFileSync('release-contract.json','utf8'));
-const indexHtml=fs.readFileSync('public/index.html','utf8');
-const statusHtml=fs.readFileSync('public/status.html','utf8');
-const wranglerConfig=fs.readFileSync('wrangler.jsonc','utf8');
+const repoRoot=fileURLToPath(new URL('../',import.meta.url));
 
-function walk(dir){
-  return fs.readdirSync(dir,{withFileTypes:true}).flatMap(entry=>{
-    const full=path.join(dir,entry.name);
-    return entry.isDirectory()?walk(full):[full];
+function repoPath(relativePath) {
+  return path.join(repoRoot,...String(relativePath).split('/'));
+}
+
+function read(relativePath) {
+  return readFileSync(repoPath(relativePath),'utf8');
+}
+
+function exists(relativePath) {
+  return existsSync(repoPath(relativePath));
+}
+
+function walk(relativeDir) {
+  const absolute=repoPath(relativeDir);
+  return readdirSync(absolute,{withFileTypes:true}).flatMap(entry=>{
+    const child=path.join(absolute,entry.name);
+    const relative=path.relative(repoRoot,child).split(path.sep).join('/');
+    return entry.isDirectory() ? walk(relative) : [relative];
   });
 }
 
-test('audit: release contract tracks the newest production migration',()=>{
-  const migrationDir=path.join('supabase','migrations');
-  const migrations=fs.readdirSync(migrationDir).filter(name=>/^supabase_migration_v\d+_\d+(?:_\d+)?\.sql$/.test(name));
-  const parts=name=>/^supabase_migration_v(\d+)_(\d+)(?:_(\d+))?\.sql$/.exec(name).slice(1).map(value=>Number(value||0));
-  const latest=[...migrations].sort((a,b)=>{
-    const av=parts(a), bv=parts(b);
-    for(let i=0;i<3;i++){ if(av[i]!==bv[i]) return av[i]-bv[i]; }
+function migrationParts(name) {
+  const match=/^supabase_migration_v(\d+)_(\d+)(?:_(\d+))?\.sql$/.exec(name);
+  return match ? match.slice(1).map(value=>Number(value || 0)) : null;
+}
+
+function latestMigrationName() {
+  const migrations=readdirSync(repoPath('supabase/migrations'))
+    .filter(name=>migrationParts(name));
+  return [...migrations].sort((left,right)=>{
+    const a=migrationParts(left);
+    const b=migrationParts(right);
+    for(let index=0;index<3;index+=1) {
+      if(a[index]!==b[index]) return a[index]-b[index];
+    }
     return 0;
   }).at(-1);
-  assert.equal(releaseContract.latestMigration,path.posix.join('supabase','migrations',latest));
-  const [major,minor]=parts(latest);
+}
+
+function assetHeaderBlock(asset) {
+  const headers=read('public/_headers');
+  return headers.split(asset+'\n')[1]?.split('\n\n')[0] || '';
+}
+
+function createTelemetryRuntime(overrides={}) {
+  const memory={
+    telemetry:{},
+    opsEvents:[],
+  };
+  return {
+    memory,
+    runtime:createTelemetryOpsRuntime({
+      MAX_MEMORY_OPS_EVENTS:50,
+      currentReleaseIdentity:()=>({deploySha:'a'.repeat(40)}),
+      fetchWithTimeout:async()=>new Response(null,{status:204}),
+      hasSupabase:()=>false,
+      memory,
+      observeProviderRequestLocal:()=>{},
+      supaHeaders:()=>({}),
+      supaRpc:async()=>({ok:true}),
+      ...overrides,
+    }),
+  };
+}
+
+const sourceFiles=walk('src').filter(file=>file.endsWith('.js'));
+const sourceText=sourceFiles.map(read).join('\n');
+const app=read('public/app.js');
+const envExample=read('.env.example');
+const packageMeta=JSON.parse(read('package.json'));
+const releaseContract=JSON.parse(read('release-contract.json'));
+const indexHtml=read('public/index.html');
+const statusHtml=read('public/status.html');
+const wranglerConfig=JSON.parse(read('wrangler.jsonc'));
+const telemetrySource=read('src/telemetry-ops-runtime.js');
+const infrastructureSource=read('src/common-infrastructure-runtime.js');
+const bootstrapSource=read('src/worker-bootstrap-runtime.js');
+const growthReferral=read('src/growth-referral.js');
+
+test('audit: release contract tracks the numerically newest production migration',()=>{
+  const latest=latestMigrationName();
+  assert.ok(latest,'at least one numbered migration must exist');
+
+  assert.equal(
+    releaseContract.latestMigration,
+    path.posix.join('supabase','migrations',latest),
+  );
+  assert.equal(exists(releaseContract.latestMigration),true);
+
+  const [major,minor]=migrationParts(latest);
   assert.equal(releaseContract.productionSchema,`${major}.${minor}`);
-  assert.equal(fs.existsSync(releaseContract.freshInstallBaseline),true);
+  assert.equal(exists(releaseContract.freshInstallBaseline),true);
 });
 
 test('audit: frontend literal API routes are represented in the backend source graph',()=>{
   const routes=[...app.matchAll(/[\x22\x27\x60](\/api\/[A-Za-z0-9_?=&/.\-:]*)/g)]
     .map(match=>match[1].split('?')[0].replace(/\/$/,''));
-  for(const route of new Set(routes)){
-    assert.ok(sourceText.includes(route), `Backend route missing: ${route}`);
+
+  assert.ok(routes.length>0,'frontend must expose at least one literal API route');
+  for(const route of new Set(routes)) {
+    assert.ok(sourceText.includes(route),`Backend route missing: ${route}`);
   }
 });
 
-test('audit: every operator-managed Worker env variable is documented in .env.example',()=>{
-  const used=new Set([...sourceText.matchAll(/\benv\.([A-Z][A-Z0-9_]*)\b/g)].map(match=>match[1]));
-  const documented=new Set([...envExample.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)].map(match=>match[1]));
-  const platformBindings=new Set([...wranglerConfig.matchAll(/"binding"\s*:\s*"([A-Z][A-Z0-9_]*)"/g)].map(match=>match[1]));
-  assert.deepEqual([...used].filter(name=>!documented.has(name) && !platformBindings.has(name)).sort(),[]);
-  assert.ok(platformBindings.has('CF_VERSION_METADATA'),'Cloudflare version metadata must remain a declared platform binding');
+test('audit: every operator-managed Worker env variable is declared by docs or platform config',()=>{
+  const used=new Set(
+    [...sourceText.matchAll(/\benv\.([A-Z][A-Z0-9_]*)\b/g)].map(match=>match[1]),
+  );
+  const documented=new Set(
+    [...envExample.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)].map(match=>match[1]),
+  );
+  const platformBindings=new Set([
+    wranglerConfig?.version_metadata?.binding,
+    ...((wranglerConfig?.ratelimits || []).map(item=>item?.name)),
+  ].filter(Boolean));
+  const configuredVars=new Set(Object.keys(wranglerConfig?.vars || {}));
+
+  assert.deepEqual(
+    [...used].filter(name=>!documented.has(name) && !platformBindings.has(name)).sort(),
+    [],
+  );
+  assert.deepEqual(
+    [...configuredVars].filter(name=>!documented.has(name)).sort(),
+    [],
+  );
+  assert.ok(platformBindings.has('CF_VERSION_METADATA'));
+  assert.ok(platformBindings.has('EDGE_ANALYZE_RATE_LIMIT'));
+  assert.ok(platformBindings.has('EDGE_SENSITIVE_RATE_LIMIT'));
+  assert.ok(platformBindings.has('EDGE_WEBHOOK_RATE_LIMIT'));
 });
 
-test('audit: shipped source does not instruct operators to run removed migration files',()=>{
+test('audit: shipped source does not reference removed migration files',()=>{
   const files=[
     ...walk('src').filter(file=>file.endsWith('.js')),
     ...walk('public').filter(file=>/\.(?:js|html)$/.test(file)),
     ...walk('supabase/migrations').filter(file=>file.endsWith('.sql')),
-    ...fs.readdirSync('.').filter(file=>file.endsWith('.md')),
+    ...readdirSync(repoRoot).filter(file=>file.endsWith('.md')),
   ];
+
   const missing=[];
-  for(const file of files){
-    const text=fs.readFileSync(file,'utf8');
-    for(const match of text.matchAll(/supabase_migration_(v\d+(?:_\d+)*)\.sql/g)){
-      const expected=path.join('supabase','migrations',`supabase_migration_${match[1]}.sql`);
-      if(!fs.existsSync(expected)) missing.push(`${file}: ${match[0]}`);
+  for(const file of files) {
+    const text=read(file);
+    for(const match of text.matchAll(/supabase_migration_(v\d+(?:_\d+)*)\.sql/g)) {
+      const expected=`supabase/migrations/supabase_migration_${match[1]}.sql`;
+      if(!exists(expected)) missing.push(`${file}: ${match[0]}`);
     }
   }
   assert.deepEqual(missing,[]);
 });
 
-test('audit: operational metadata recursively removes secrets and direct user identifiers',()=>{
-  assert.match(worker,/function sensitiveOpsMetadataKey/);
-  assert.match(worker,/telegram\.\?id\|user\.\?id\|chat\.\?id\|username/);
-  assert.match(worker,/function sanitizeOpsMetadataValue/);
-  assert.doesNotMatch(worker,/JSON\.parse\(redactOpsString\(JSON\.stringify\(value\)/);
-  assert.doesNotMatch(worker,/meta:\s*\{\s*telegramId:\s*Number\(user\.id\)/);
-});
+test('audit: operational metadata recursively removes identifiers and redacts embedded secrets',()=>{
+  const {runtime}=createTelemetryRuntime();
 
-
-test('audit: Worker external requests use the shared timeout transport',()=>{
-  assert.match(worker,/async function fetchWithTimeout/);
-  const directAwaitFetches=[...worker.matchAll(/await\s+fetch\s*\(/g)];
-  assert.equal(directAwaitFetches.length,1,'External Worker fetch must go through fetchWithTimeout');
-  assert.match(worker,/fetchWithTimeout\(\`https:\/\/api\.telegram\.org/);
-  assert.match(worker,/fetchWithTimeout\('https:\/\/api\.tavily\.com\/search'/);
-});
-
-
-test('audit: mutable entrypoint assets are never cached as immutable',()=>{
-  const appBlocks=['/app.js'].map(asset => {
-    const block=assetHeaders.split(asset+'\n')[1]?.split('\n\n')[0] || '';
-    return block;
+  const clean=runtime.safeOpsMetadata({
+    telegramId:123,
+    username:'private-user',
+    safe:'Bearer abc.def',
+    nested:{
+      user_id:456,
+      keep:'bot12345:secret_token',
+      deeper:{
+        apiKey:'private-key',
+        value:'x-apisports-key: provider-secret',
+      },
+    },
+    list:[
+      {chatId:789,ok:'sb_secret_private'},
+      {label:'visible'},
+    ],
   });
-  const cssBlock=assetHeaders.match(/\/styles\.css\n([\s\S]*?)(?:\n\n|$)/)?.[1] || '';
-  for (const appBlock of appBlocks) assert.doesNotMatch(appBlock,/immutable/i);
-  assert.doesNotMatch(cssBlock,/immutable/i);
-  for (const appBlock of appBlocks) assert.match(appBlock,/must-revalidate/i);
-  assert.match(cssBlock,/must-revalidate/i);
+
+  assert.equal('telegramId' in clean,false);
+  assert.equal('username' in clean,false);
+  assert.equal(clean.safe,'Bearer [redacted]');
+  assert.deepEqual(clean.nested,{
+    keep:'bot[redacted]',
+    deeper:{value:'x-apisports-key=[redacted]'},
+  });
+  assert.deepEqual(clean.list,[
+    {ok:'sb_secret_[redacted]'},
+    {label:'visible'},
+  ]);
+
+  assert.match(telemetrySource,/function sensitiveOpsMetadataKey/);
+  assert.doesNotMatch(
+    telemetrySource,
+    /JSON\.parse\(redactOpsString\(JSON\.stringify\(value\)/,
+  );
 });
 
+test('audit: operational telemetry remains fail-soft when helper hooks fail',async()=>{
+  const {runtime,memory}=createTelemetryRuntime({
+    currentReleaseIdentity:()=>{ throw new Error('identity unavailable'); },
+    hasSupabase:()=>{ throw new Error('supabase probe unavailable'); },
+    observeProviderRequestLocal:()=>{ throw new Error('local observer unavailable'); },
+  });
 
-test('audit: fire-and-forget observability is anchored to Cloudflare waitUntil',()=>{
-  assert.match(worker,/async fetch\(request, env, ctx\)/);
-  assert.match(worker,/cfg\.waitUntil = promise => ctx\.waitUntil\(Promise\.resolve\(promise\)\)/);
-  assert.match(growthReferral,/async function recordGrowthEvent\(cfg, event = \{\}\)[\s\S]{0,240}cfg\?\.waitUntil/);
-  assert.match(worker,/async function recordOpsEvent\(cfg, event = \{\}\)[\s\S]{0,240}cfg\?\.waitUntil/);
+  const row=await runtime.recordOpsEvent({
+    waitUntil:()=>{ throw new Error('bad waitUntil'); },
+  },{
+    severity:'warning',
+    source:'audit',
+    eventType:'boundary',
+    meta:{
+      telegramId:123,
+      safe:'Bearer secret',
+    },
+  });
+
+  assert.equal(row._persistenceStatus,'memory_only');
+  assert.equal(row.metadata.telegramId,undefined);
+  assert.equal(row.metadata.safe,'Bearer [redacted]');
+  assert.equal(memory.telemetry.opsWaitUntilErrors,1);
+
+  const provider=await runtime.observeProviderRequest({provider:'api-football'},{});
+  assert.deepEqual(provider,{
+    ok:true,
+    persistent:false,
+    reason:'supabase_not_configured',
+  });
+  assert.equal(memory.telemetry.providerObservabilityErrors,1);
+});
+
+test('audit: native external fetch ownership stays inside the shared timeout transport',()=>{
+  const owners=new Set();
+  for(const file of sourceFiles) {
+    if(/\bawait\s+fetch\s*\(/.test(read(file))) owners.add(file);
+  }
+
+  assert.deepEqual([...owners].sort(),['src/common-infrastructure-runtime.js']);
+  assert.match(
+    infrastructureSource,
+    /async function fetchWithTimeout\([\s\S]*?return await fetch\(input, \{ \.\.\.init, signal: controller\.signal \}\)/,
+  );
+  assert.match(telemetrySource,/fetchWithTimeout\(url,/);
+});
+
+test('audit: versioned public entrypoint assets are immutable while mutable shells revalidate',()=>{
+  const version=packageMeta.version;
+  const frontendRevision=/<meta name="frontend-asset-revision" content="([^"]+)" \/>/
+    .exec(indexHtml)?.[1] || '';
+
+  assert.ok(frontendRevision.startsWith(version+'-'));
+  for(const asset of [
+    '/app.js',
+    '/styles.css',
+    '/styles/public-shell.css',
+    '/styles/premium-ui.css',
+  ]) {
+    assert.ok(
+      indexHtml.includes(`${asset}?v=${frontendRevision}"`)
+        || indexHtml.includes(`${asset}?v=${frontendRevision}'`),
+      `${asset} must use the frontend revision`,
+    );
+    assert.match(assetHeaderBlock(asset),/immutable/i);
+  }
+
+  assert.ok(
+    statusHtml.includes(`/status.js?v=${frontendRevision}"`)
+      || statusHtml.includes(`/status.js?v=${frontendRevision}'`),
+  );
+  assert.match(assetHeaderBlock('/status.js'),/must-revalidate/i);
+  assert.match(assetHeaderBlock('/modules/*'),/must-revalidate/i);
+  for(const shell of ['/index.html','/admin.html','/status.html']) {
+    assert.match(assetHeaderBlock(shell),/must-revalidate/i);
+    assert.doesNotMatch(assetHeaderBlock(shell),/immutable/i);
+  }
+});
+
+test('audit: fire-and-forget observability is anchored to the Cloudflare lifecycle',()=>{
+  assert.match(
+    bootstrapSource,
+    /function buildConfig\(env,ctx\)[\s\S]*?cfg\.waitUntil=promise=>ctx\.waitUntil\(Promise\.resolve\(promise\)\)/,
+  );
+  assert.match(
+    bootstrapSource,
+    /async fetch\(request, env, ctx\)[\s\S]*?cfg=buildConfig\(env,ctx\)/,
+  );
+  assert.match(
+    bootstrapSource,
+    /async scheduled\(controller, env, ctx\)[\s\S]*?cfg=buildConfig\(env,ctx\)/,
+  );
+  assert.match(
+    growthReferral,
+    /async function recordGrowthEvent\(cfg, event = \{\}\)[\s\S]*?cfg\.waitUntil\(task\)[\s\S]*?return await task/,
+  );
+  assert.match(
+    telemetrySource,
+    /async function recordOpsEvent\(cfg, event = \{\}\)[\s\S]*?cfg\.waitUntil\(task\)[\s\S]*?return await task/,
+  );
 });
 
 test('audit: top-level route errors are redacted before console logging',()=>{
-  assert.doesNotMatch(worker,/console\.error\(error\)/);
-  assert.doesNotMatch(worker,/console\.error\('telegram webhook', error\)/);
-  assert.match(worker,/console\.error\('api route', redactOpsString/);
+  assert.match(
+    bootstrapSource,
+    /console\.error\('api route',safeRedact\(error\?\.message \|\| error,240\)\)/,
+  );
+  assert.match(
+    bootstrapSource,
+    /console\.error\('telegram webhook', safeRedact\(error\?\.message \|\| error,240\)\)/,
+  );
+  assert.doesNotMatch(bootstrapSource,/console\.error\(error\)/);
+  assert.doesNotMatch(bootstrapSource,/console\.error\('telegram webhook',\s*error\)/);
 });
 
-
-test('audit: public entrypoint asset revisions track the package release',()=>{
+test('audit: release/package/frontend revisions stay mutually consistent',()=>{
   const version=packageMeta.version;
-  const frontendRevision=/<meta name="frontend-asset-revision" content="([^"]+)" \/>/.exec(indexHtml)?.[1] || '';
+  const frontendRevision=/<meta name="frontend-asset-revision" content="([^"]+)" \/>/
+    .exec(indexHtml)?.[1] || '';
+
+  assert.equal(releaseContract.applicationVersion,version);
+  assert.ok(String(releaseContract.runtimeVersion || '').startsWith(version+'-'));
   assert.ok(frontendRevision.startsWith(version+'-'));
-  assert.ok(indexHtml.includes('/app.js?v='+frontendRevision+'"') || indexHtml.includes("/app.js?v="+frontendRevision+"'"));
-  assert.ok(indexHtml.includes('/styles.css?v='+frontendRevision+'"') || indexHtml.includes("/styles.css?v="+frontendRevision+"'"));
-  assert.ok(indexHtml.includes('/styles/public-shell.css?v='+frontendRevision+'"') || indexHtml.includes("/styles/public-shell.css?v="+frontendRevision+"'"));
-  assert.ok(statusHtml.includes('/status.js?v='+version+'"') || statusHtml.includes("/status.js?v="+version+"'"));
+  assert.ok(statusHtml.includes(`/status.js?v=${frontendRevision}"`));
 });
 
-
-test('audit: scheduled telemetry is anchored to the cron lifecycle',()=>{
-  assert.match(worker,/async scheduled\(controller, env, ctx\)[\s\S]{0,180}cfg\.waitUntil = promise => ctx\.waitUntil\(Promise\.resolve\(promise\)\)/);
+test('audit: Worker bootstrap owns both fetch and scheduled entrypoints',()=>{
+  assert.match(bootstrapSource,/return Object\.freeze\(\{/);
+  assert.match(bootstrapSource,/async fetch\(request, env, ctx\)/);
+  assert.match(bootstrapSource,/async scheduled\(controller, env, ctx\)/);
+  assert.match(
+    read('src/worker.js'),
+    /export default createWorkerBootstrapRuntime\(\{/,
+  );
 });
