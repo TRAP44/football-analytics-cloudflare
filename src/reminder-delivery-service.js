@@ -1,3 +1,82 @@
+const DELIVERY_KINDS=new Set(['prematch','kickoff','lineup','important_change']);
+const MAX_TELEGRAM_RETRY_AFTER_SECONDS=604800;
+
+function required(name,value) {
+  if (typeof value !== 'function') throw new TypeError(`${name} is required`);
+  return value;
+}
+
+function integerCandidate(value) {
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const raw=value.trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const number=Number(raw);
+  return Number.isSafeInteger(number) ? number : null;
+}
+
+function positiveSafeInteger(value) {
+  const number=integerCandidate(value);
+  return number !== null && number > 0 ? number : 0;
+}
+
+function nonNegativeInteger(value,fallback=0) {
+  const number=integerCandidate(value);
+  return number !== null && number >= 0 ? number : fallback;
+}
+
+function boundedPositiveInteger(value,fallback,max) {
+  const number=positiveSafeInteger(value);
+  return number ? Math.min(max,number) : fallback;
+}
+
+function cleanText(value,fallback='',maxLength=240) {
+  if (typeof value !== 'string') return fallback;
+  const raw=value.trim();
+  if (!raw || /[\u0000-\u001f\u007f-\u009f]/u.test(raw)) return fallback;
+  return raw.replace(/\s+/gu,' ').slice(0,maxLength);
+}
+
+function parseTimestamp(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const timestamp=Date.parse(value.trim());
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function telegramCode(value) {
+  const number=integerCandidate(value);
+  return number !== null && number >= 100 && number <= 599 ? number : null;
+}
+
+function normalizeTelegramResult(value) {
+  const source=value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const ok=source.ok === true;
+  const rawOutcome=typeof source.outcome === 'string' ? source.outcome.trim().toLowerCase() : '';
+  const outcome=ok
+    ? 'sent'
+    : ['unknown','confirmed_failure'].includes(rawOutcome)
+      ? rawOutcome
+      : 'unknown';
+  return {
+    ok,
+    status:telegramCode(source.status),
+    errorCode:telegramCode(source.errorCode),
+    description:cleanText(source.description,ok ? '' : 'Telegram delivery result is ambiguous.',240),
+    retryAfter:Math.min(MAX_TELEGRAM_RETRY_AFTER_SECONDS,positiveSafeInteger(source.retryAfter)),
+    outcome,
+  };
+}
+
+function validReminderRow(row) {
+  return Boolean(
+    row
+    && typeof row === 'object'
+    && !Array.isArray(row)
+    && positiveSafeInteger(row.telegram_id)
+    && positiveSafeInteger(row.fixture_id)
+  );
+}
+
 export function createReminderDeliveryService({
   hasSupabase,
   loadRuntimeControls,
@@ -15,6 +94,20 @@ export function createReminderDeliveryService({
   maxDeliveriesPerRun = 240,
   audienceBatchSize = 250,
 }) {
+  for (const [name,value] of Object.entries({
+    hasSupabase,
+    loadRuntimeControls,
+    clearStaleReminderClaims,
+    supaSelectPaged,
+    recordOpsEvent,
+    sendTelegramMessage,
+    claimReminderDelivery,
+    markReminderDeliverySending,
+    holdReminderDeliveryUnknown,
+    finishReminderDelivery,
+    releaseReminderClaim,
+  })) required(name,value);
+
   const successCodeByKind = Object.freeze({
     prematch: 'REMINDER_SENT_PREMATCH',
     kickoff: 'REMINDER_SENT_KICKOFF',
@@ -22,13 +115,17 @@ export function createReminderDeliveryService({
     important_change: 'REMINDER_SENT_IMPORTANT_CHANGE',
   });
 
-  const concurrency = Math.max(1, Math.min(8, Math.round(Number(deliveryConcurrency || 4))));
-  const maxPerRun = Math.max(concurrency, Math.min(1000, Math.round(Number(maxDeliveriesPerRun || 240))));
-  const audienceChunkSize = Math.max(1, Math.min(500, Math.round(Number(audienceBatchSize || 250))));
+  const concurrency=boundedPositiveInteger(deliveryConcurrency,4,8);
+  const maxPerRun=Math.max(
+    concurrency,
+    boundedPositiveInteger(maxDeliveriesPerRun,240,1000),
+  );
+  const audienceChunkSize=boundedPositiveInteger(audienceBatchSize,250,500);
 
   function chunkRows(rows = [], size = audienceChunkSize) {
     const output = [];
-    for (let index = 0; index < rows.length; index += size) output.push(rows.slice(index, index + size));
+    const source=Array.isArray(rows) ? rows : [];
+    for (let index = 0; index < source.length; index += size) output.push(source.slice(index, index + size));
     return output;
   }
 
@@ -53,9 +150,19 @@ export function createReminderDeliveryService({
       const batch = batches[index];
       try {
         const audience = await filterNotificationRecipients(batch, eventType, cfg);
-        if (Array.isArray(audience?.rows)) eligible.push(...audience.rows);
-        blockedByPreference += Number(audience?.blockedByPreference || 0);
-        blockedByEntitlement += Number(audience?.blockedByEntitlement || 0);
+        const batchKeys=new Set(batch.filter(validReminderRow).map(row=>`${positiveSafeInteger(row.telegram_id)}:${positiveSafeInteger(row.fixture_id)}`));
+        if (Array.isArray(audience?.rows)) {
+          const seen=new Set();
+          for (const row of audience.rows) {
+            if (!validReminderRow(row)) continue;
+            const key=`${positiveSafeInteger(row.telegram_id)}:${positiveSafeInteger(row.fixture_id)}`;
+            if (!batchKeys.has(key) || seen.has(key)) continue;
+            seen.add(key);
+            eligible.push(row);
+          }
+        }
+        blockedByPreference += nonNegativeInteger(audience?.blockedByPreference,0);
+        blockedByEntitlement += nonNegativeInteger(audience?.blockedByEntitlement,0);
       } catch (error) {
         failedBatches += 1;
         await recordOpsEvent(cfg, {
@@ -66,7 +173,7 @@ export function createReminderDeliveryService({
           message:error?.message || error,
           endpoint:'cron:reminders',
           meta:{
-            notificationType:String(eventType || ''),
+            notificationType:cleanText(eventType,'unknown',80),
             batchIndex:index,
             batchSize:batch.length,
           },
@@ -84,8 +191,10 @@ export function createReminderDeliveryService({
 
 
   async function recordReminderDelivery(cfg, { row, kind, result, success, disabled = false, uncertain = false, rateLimited = false }) {
+    const normalized=normalizeTelegramResult(result);
+    const safeKind=DELIVERY_KINDS.has(kind) ? kind : 'unknown';
     const code = success
-      ? (successCodeByKind[kind] || 'REMINDER_SENT')
+      ? (successCodeByKind[safeKind] || 'REMINDER_SENT')
       : uncertain
         ? 'REMINDER_DELIVERY_UNKNOWN'
         : rateLimited
@@ -100,28 +209,41 @@ export function createReminderDeliveryService({
       eventType: 'reminder_delivery',
       code,
       message: success
-        ? `Reminder ${kind} delivered.`
+        ? `Reminder ${safeKind} delivered.`
         : uncertain
-          ? `Reminder ${kind} delivery outcome is unknown; automatic retry is suppressed.`
+          ? `Reminder ${safeKind} delivery outcome is unknown; automatic retry is suppressed.`
           : rateLimited
-            ? `Reminder ${kind} delivery was rate-limited; retry is deferred using Telegram retry_after.`
-            : `Reminder ${kind} delivery failed: ${result?.description || 'unknown error'}`,
+            ? `Reminder ${safeKind} delivery was rate-limited; retry is deferred using Telegram retry_after.`
+            : `Reminder ${safeKind} delivery failed: ${normalized.description || 'unknown error'}`,
       endpoint: 'cron:reminders',
-      status: Number(result?.status || 0) || null,
+      status: normalized.status,
       meta: {
-        fixtureId: Number(row?.fixture_id || 0),
-        kind,
-        telegramStatus: Number(result?.status || 0) || null,
-        telegramErrorCode: Number(result?.errorCode || 0) || null,
-        retryAfter: Number(result?.retryAfter || 0) || null,
-        telegramOutcome: String(result?.outcome || (success ? 'sent' : 'confirmed_failure')),
+        fixtureId: positiveSafeInteger(row?.fixture_id) || null,
+        kind:safeKind,
+        telegramStatus:normalized.status,
+        telegramErrorCode:normalized.errorCode,
+        retryAfter:normalized.retryAfter || null,
+        telegramOutcome:normalized.outcome,
       },
     });
   }
 
   async function deliverClaimedReminder(row, kind, text, cfg) {
+    if (!validReminderRow(row)) return {state:'invalid',reason:'invalid_reminder_identity'};
+    if (!DELIVERY_KINDS.has(kind)) return {state:'invalid',reason:'invalid_reminder_kind'};
+    if (typeof text !== 'string' || !text.trim() || text.length > 4096) {
+      return {state:'invalid',reason:'invalid_reminder_text'};
+    }
+
     const claim = await claimReminderDelivery(row, kind, cfg);
-    if (!claim.claimed) return { state: 'already_claimed' };
+    if (!claim || typeof claim !== 'object' || Array.isArray(claim) || claim.claimed !== true) {
+      return { state: 'already_claimed' };
+    }
+    if (parseTimestamp(claim.claimAt) === null) {
+      const error=new Error('Reminder delivery claim returned an invalid timestamp.');
+      error.code='REMINDER_DELIVERY_CLAIM_INVALID';
+      throw error;
+    }
 
     try {
       await markReminderDeliverySending(row, kind, claim.claimAt, cfg);
@@ -136,12 +258,25 @@ export function createReminderDeliveryService({
       throw error;
     }
 
-    const result = await sendTelegramMessage(row.telegram_id, text, cfg);
+    let rawResult;
+    try {
+      rawResult=await sendTelegramMessage(positiveSafeInteger(row.telegram_id), text, cfg);
+    } catch (error) {
+      rawResult={
+        ok:false,
+        outcome:'unknown',
+        description:cleanText(error?.message,'Telegram sendMessage transport failed.',240),
+      };
+    }
+    const result=normalizeTelegramResult(rawResult);
 
-    if (result.ok) {
+    if (result.ok === true) {
       try {
         const finish = await finishReminderDelivery(row, kind, claim.claimAt, cfg);
-        if (finish?.reconciled) {
+        if (finish?.finalized !== true) {
+          throw new Error('Reminder sent-state persistence was not confirmed.');
+        }
+        if (finish.reconciled === true) {
           await recordOpsEvent(cfg, {
             severity:'warning',
             source:'reminders',
@@ -149,11 +284,11 @@ export function createReminderDeliveryService({
             code:'REMINDER_FINISH_RECONCILED',
             message:'Reminder finish response was ambiguous but persisted sent state was confirmed by read-after-write reconciliation.',
             endpoint:'cron:reminders',
-            meta:{ fixtureId:Number(row?.fixture_id || 0), kind },
+            meta:{ fixtureId:positiveSafeInteger(row.fixture_id) || null, kind },
           }).catch(() => {});
         }
         await recordReminderDelivery(cfg, { row, kind, result, success: true }).catch(() => {});
-        return { state: 'sent', result, reconciled:Boolean(finish?.reconciled) };
+        return { state: 'sent', result, reconciled:finish.reconciled === true };
       } catch (error) {
         let holdFailed = false;
         try {
@@ -165,9 +300,9 @@ export function createReminderDeliveryService({
             source:'reminders',
             eventType:'reminder_delivery',
             code:'REMINDER_SENT_AMBIGUOUS_HOLD_FAILED',
-            message:holdError?.message || holdError,
+            message:cleanText(holdError?.message,'Reminder unknown hold failed.',240),
             endpoint:'cron:reminders',
-            meta:{ fixtureId:Number(row?.fixture_id || 0), kind },
+            meta:{ fixtureId:positiveSafeInteger(row.fixture_id) || null, kind },
           }).catch(() => {});
         }
 
@@ -176,10 +311,14 @@ export function createReminderDeliveryService({
           source:'reminders',
           eventType:'reminder_delivery',
           code:'REMINDER_SENT_PERSISTENCE_AMBIGUOUS',
-          message:error?.message || 'Telegram accepted the reminder but sent-state persistence could not be confirmed.',
+          message:cleanText(
+            error?.message,
+            'Telegram accepted the reminder but sent-state persistence could not be confirmed.',
+            240,
+          ),
           endpoint:'cron:reminders',
           meta:{
-            fixtureId:Number(row?.fixture_id || 0),
+            fixtureId:positiveSafeInteger(row.fixture_id) || null,
             kind,
             holdFailed,
           },
@@ -194,7 +333,7 @@ export function createReminderDeliveryService({
       }
     }
 
-    if (result?.outcome === 'unknown') {
+    if (result.outcome !== 'confirmed_failure') {
       let persistenceFailed = false;
       try {
         await holdReminderDeliveryUnknown(row, kind, claim.claimAt, cfg);
@@ -205,9 +344,9 @@ export function createReminderDeliveryService({
           source: 'reminders',
           eventType: 'reminder_delivery',
           code: 'REMINDER_UNKNOWN_HOLD_FAILED',
-          message: error?.message || error,
+          message: cleanText(error?.message,'Reminder unknown hold failed.',240),
           endpoint: 'cron:reminders',
-          meta: { fixtureId: Number(row?.fixture_id || 0), kind },
+          meta: { fixtureId:positiveSafeInteger(row.fixture_id) || null, kind },
         }).catch(() => {});
       }
 
@@ -222,32 +361,53 @@ export function createReminderDeliveryService({
       return { state: 'unknown', result, persistenceFailed };
     }
 
-    const forbidden = Number(result.status) === 403 || Number(result.errorCode) === 403;
-    const rateLimited = Number(result.status) === 429 || Number(result.errorCode) === 429;
+    const forbidden = result.status === 403 || result.errorCode === 403;
+    const rateLimited = result.status === 429 || result.errorCode === 429;
+    let releaseFailed=false;
 
-    await releaseReminderClaim(
-      row,
-      kind,
-      claim.claimAt,
-      result.description || 'Telegram delivery failed.',
-      cfg,
-      {
-        disable: forbidden,
-        disableReason: forbidden ? 'telegram_forbidden' : '',
-        retryAfter: Number(result.retryAfter || 0),
-      },
-    ).catch(() => {});
+    try {
+      await releaseReminderClaim(
+        row,
+        kind,
+        claim.claimAt,
+        result.description || 'Telegram delivery failed.',
+        cfg,
+        {
+          disable: forbidden,
+          disableReason: forbidden ? 'telegram_forbidden' : '',
+          retryAfter:result.retryAfter,
+        },
+      );
+    } catch (error) {
+      releaseFailed=true;
+      await recordOpsEvent(cfg,{
+        severity:'error',
+        source:'reminders',
+        eventType:'reminder_delivery',
+        code:'REMINDER_RELEASE_FAILED',
+        message:cleanText(error?.message,'Reminder retry state could not be persisted.',240),
+        endpoint:'cron:reminders',
+        meta:{
+          fixtureId:positiveSafeInteger(row.fixture_id) || null,
+          kind,
+          rateLimited,
+          forbidden,
+        },
+      }).catch(()=>{});
+    }
 
     await recordReminderDelivery(cfg, {
       row,
       kind,
       result,
       success: false,
-      disabled: forbidden,
+      disabled: forbidden && !releaseFailed,
       rateLimited,
     }).catch(() => {});
 
-    return { state: rateLimited ? 'rate_limited' : forbidden ? 'disabled' : 'failed', result };
+    if (rateLimited) return {state:'rate_limited',result,persistenceFailed:releaseFailed};
+    if (releaseFailed) return {state:'release_failed',result,persistenceFailed:true};
+    return { state: forbidden ? 'disabled' : 'failed', result };
   }
 
   async function processDueReminders(cfg) {
@@ -276,7 +436,14 @@ export function createReminderDeliveryService({
       ...(extra || {}),
     });
 
-    if (!hasSupabase(cfg) || !cfg.botToken) return emptySummary();
+    let supabaseAvailable=false;
+    try {
+      supabaseAvailable=hasSupabase(cfg) === true;
+    } catch {
+      supabaseAvailable=false;
+    }
+    const botTokenConfigured=typeof cfg?.botToken === 'string' && cfg.botToken.trim().length > 0;
+    if (!supabaseAvailable || !botTokenConfigured) return emptySummary();
 
     let runtimeState;
     try {
@@ -298,8 +465,24 @@ export function createReminderDeliveryService({
       });
     }
 
-    if (runtimeState.value?.remindersEnabled === false) {
+    if (runtimeState?.value?.remindersEnabled === false) {
       return emptySummary({ disabled:true });
+    }
+    if (runtimeState?.value?.remindersEnabled !== true) {
+      await recordOpsEvent(cfg,{
+        severity:'error',
+        source:'reminders',
+        eventType:'reminder_scheduler',
+        code:'REMINDER_RUNTIME_CONTROLS_INVALID',
+        message:'Reminder runtime-control state is malformed; scheduler stayed fail-closed.',
+        endpoint:'cron:reminders',
+      }).catch(()=>{});
+      return emptySummary({
+        ok:false,
+        failed:1,
+        dependencyFailures:1,
+        reason:'runtime_controls_invalid',
+      });
     }
 
     let stale = { prematch:0, kickoff:0, lineup:0, important_change:0, failed:0 };
@@ -335,11 +518,12 @@ export function createReminderDeliveryService({
       });
       rows = Array.isArray(page?.rows)
         ? page.rows.filter(row => {
-          const fixtureMs = Date.parse(row?.fixture_date || '');
-          return Number.isFinite(fixtureMs) && fixtureMs >= Date.parse(from) && fixtureMs <= toMs;
+          if (!validReminderRow(row)) return false;
+          const fixtureMs=parseTimestamp(row.fixture_date);
+          return fixtureMs !== null && fixtureMs >= Date.parse(from) && fixtureMs <= toMs;
         })
         : [];
-      truncated = Boolean(page?.truncated);
+      truncated = page?.truncated === true;
 
       if (truncated) {
         await recordOpsEvent(cfg, {
@@ -364,32 +548,41 @@ export function createReminderDeliveryService({
       return emptySummary({
         ok:false,
         failed:1,
-        staleClaims:Number(stale.prematch || 0) + Number(stale.kickoff || 0) + Number(stale.lineup || 0) + Number(stale.important_change || 0),
-        staleCleanupFailed:Number(stale.failed || 0),
+        staleClaims:nonNegativeInteger(stale?.prematch,0)
+          + nonNegativeInteger(stale?.kickoff,0)
+          + nonNegativeInteger(stale?.lineup,0)
+          + nonNegativeInteger(stale?.important_change,0),
+        staleCleanupFailed:nonNegativeInteger(stale?.failed,0),
         reason:'reminder_read_failed',
       });
     }
 
     const candidates = [];
     for (const row of rows) {
-      const kickoffMs = Date.parse(row?.fixture_date || '');
-      if (!Number.isFinite(kickoffMs)) continue;
+      const kickoffMs=parseTimestamp(row.fixture_date);
+      if (kickoffMs === null) continue;
 
-      const retryAfterMs = Date.parse(row?.delivery_retry_after || '');
-      if (Number.isFinite(retryAfterMs) && retryAfterMs > now) continue;
+      const retryAfterMs=parseTimestamp(row?.delivery_retry_after);
+      if (retryAfterMs !== null && retryAfterMs > now) continue;
+
+      const homeName=cleanText(row?.home_name,'',120);
+      const awayName=cleanText(row?.away_name,'',120);
+      if (!homeName || !awayName) continue;
+      const leagueName=cleanText(row?.league_name,'',120);
 
       const deltaMinutes = (kickoffMs - now) / 60000;
-      const remindBefore = [15,30,60].includes(Number(row?.remind_before_minutes))
-        ? Number(row.remind_before_minutes)
-        : 30;
-      const kickoffEnabled = row?.kickoff_notify !== false;
+      const requestedReminder=integerCandidate(row?.remind_before_minutes);
+      const remindBefore = [15,30,60].includes(requestedReminder) ? requestedReminder : 30;
+      const kickoffEnabled = row?.kickoff_notify === undefined || row?.kickoff_notify === null
+        ? true
+        : row.kickoff_notify === true;
 
       if (kickoffEnabled && !row?.kickoff_notified_at && deltaMinutes <= 4 && deltaMinutes >= -7) {
         candidates.push({
           row,
           kind:'kickoff',
           eventType:'match.kickoff',
-          text:`🔴 Матч начинается\n\n${row.home_name} — ${row.away_name}${row.league_name ? `\n${row.league_name}` : ''}\n\nОткройте приложение: центр матча появится, когда источник данных обновит статус.`,
+          text:`🔴 Матч начинается\n\n${homeName} — ${awayName}${leagueName ? `\n${leagueName}` : ''}\n\nОткройте приложение: центр матча появится, когда источник данных обновит статус.`,
         });
         continue;
       }
@@ -401,7 +594,7 @@ export function createReminderDeliveryService({
           row,
           kind:'prematch',
           eventType:'match.prematch',
-          text:`⚽ Скоро матч\n\n${row.home_name} — ${row.away_name}${row.league_name ? `\n${row.league_name}` : ''}\nСтарт примерно через ${minutes} мин.\n\nОткройте приложение для свежего предматчевого анализа.`,
+          text:`⚽ Скоро матч\n\n${homeName} — ${awayName}${leagueName ? `\n${leagueName}` : ''}\nСтарт примерно через ${minutes} мин.\n\nОткройте приложение для свежего предматчевого анализа.`,
         });
       }
     }
@@ -413,7 +606,11 @@ export function createReminderDeliveryService({
       filterAudienceSafely(kickoffCandidates, 'match.kickoff', cfg),
     ]);
 
-    const reminderKey = row => `${Number(row?.telegram_id || 0)}:${Number(row?.fixture_id || 0)}`;
+    const reminderKey = row => {
+      const telegramId=positiveSafeInteger(row?.telegram_id);
+      const fixtureId=positiveSafeInteger(row?.fixture_id);
+      return telegramId && fixtureId ? `${telegramId}:${fixtureId}` : '';
+    };
     const prematchEligible = new Set((prematchAudience.rows || []).map(reminderKey));
     const kickoffEligible = new Set((kickoffAudience.rows || []).map(reminderKey));
     const eligibleJobs = candidates.filter(item => (
@@ -469,7 +666,7 @@ export function createReminderDeliveryService({
             message:error?.message || error,
             endpoint:'cron:reminders',
             meta:{
-              fixtureId:Number(job?.row?.fixture_id || 0),
+              fixtureId:positiveSafeInteger(job?.row?.fixture_id) || null,
               kind:job?.kind || '',
             },
           }).catch(() => {});
@@ -481,9 +678,13 @@ export function createReminderDeliveryService({
     await Promise.all(Array.from({ length:workerCount }, () => deliveryWorker()));
 
     const deferred = Math.max(0, eligibleJobs.length - started);
-    const dependencyFailures = Number(prematchAudience.failedBatches || 0) + Number(kickoffAudience.failedBatches || 0);
-    const staleClaims = Number(stale.prematch || 0) + Number(stale.kickoff || 0) + Number(stale.lineup || 0) + Number(stale.important_change || 0);
-    const staleCleanupFailed = Number(stale.failed || 0);
+    const dependencyFailures=nonNegativeInteger(prematchAudience.failedBatches,0)
+      + nonNegativeInteger(kickoffAudience.failedBatches,0);
+    const staleClaims=nonNegativeInteger(stale?.prematch,0)
+      + nonNegativeInteger(stale?.kickoff,0)
+      + nonNegativeInteger(stale?.lineup,0)
+      + nonNegativeInteger(stale?.important_change,0);
+    const staleCleanupFailed=nonNegativeInteger(stale?.failed,0);
     const backlog = Boolean(deferred || truncated);
     const ok = !(failed || unknown || ambiguous || rateLimited || dependencyFailures || staleCleanupFailed || backlog);
 
@@ -500,8 +701,10 @@ export function createReminderDeliveryService({
       rateLimited,
       claimed,
       deferred,
-      blockedByPreference:Number(prematchAudience.blockedByPreference || 0) + Number(kickoffAudience.blockedByPreference || 0),
-      blockedByEntitlement:Number(prematchAudience.blockedByEntitlement || 0) + Number(kickoffAudience.blockedByEntitlement || 0),
+      blockedByPreference:nonNegativeInteger(prematchAudience.blockedByPreference,0)
+        + nonNegativeInteger(kickoffAudience.blockedByPreference,0),
+      blockedByEntitlement:nonNegativeInteger(prematchAudience.blockedByEntitlement,0)
+        + nonNegativeInteger(kickoffAudience.blockedByEntitlement,0),
       dependencyFailures,
       staleClaims,
       staleCleanupFailed,
@@ -544,8 +747,8 @@ export function createReminderDeliveryService({
     return summary;
   }
 
-  return {
+  return Object.freeze({
     deliverClaimedReminder,
     processDueReminders,
-  };
+  });
 }
