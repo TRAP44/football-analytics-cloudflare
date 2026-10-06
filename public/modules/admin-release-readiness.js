@@ -37,9 +37,17 @@ export function createAdminReleaseReadinessModule({
       return;
     }
     const r = state.releaseReadiness;
-    if (!r?.available) {
+    if (!r) {
       badge.textContent = 'Нет данных'; badge.className = 'release-badge';
-      root.textContent = r?.reason || 'Проверка ещё не запускалась.';
+      root.textContent = 'Проверка ещё не запускалась.';
+      if (meta) meta.textContent = '';
+      checksEl.innerHTML = '';
+      return;
+    }
+    if (r.available === false) {
+      badge.textContent = 'Недоступно'; badge.className = 'release-badge blocked';
+      root.textContent = r.reason || 'Проверка готовности недоступна.';
+      if (meta) meta.textContent = 'Повторите проверку после восстановления административного API.';
       checksEl.innerHTML = '';
       return;
     }
@@ -67,6 +75,7 @@ export function createAdminReleaseReadinessModule({
         if (state.diagnostics?.provider) {
           state.provider = state.diagnostics.provider;
           state.providerObservability = state.diagnostics.providerObservability || state.providerObservability;
+          state.providerLoaded = true;
           refreshProvider();
         }
         refreshDiagnostics();
