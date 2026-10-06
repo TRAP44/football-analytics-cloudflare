@@ -29,14 +29,66 @@ export function createAppCapabilitiesRuntime({
     return value === undefined ? true : value === true;
   }
 
+  function plainObject(value) {
+    return value && typeof value==='object' && !Array.isArray(value) ? value : null;
+  }
+
+  function failClosedRuntimeControls() {
+    return {
+      maintenanceMode:true,
+      liveEnabled:false,
+      expandedDataEnabled:false,
+      message:'Публичные настройки функций временно недоступны.',
+    };
+  }
+
+  function normalizedPublicRuntimeControls(runtime) {
+    try {
+      return plainObject(publicRuntimeControls(runtime)) || {};
+    } catch {
+      return {};
+    }
+  }
+
+  function securityLockdown(runtime) {
+    try {
+      return securityLockdown(runtime) === true;
+    } catch {
+      return true;
+    }
+  }
+
+  function normalizedDeployment(cfg) {
+    try {
+      return plainObject(currentReleaseIdentity(cfg)) || {};
+    } catch {
+      return {};
+    }
+  }
+
+  function normalizedServerTime() {
+    try {
+      const value=now();
+      const date=value instanceof Date ? value : new Date(value);
+      return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+    } catch {
+      return null;
+    }
+  }
+
   function normalizedRuntimeControls() {
-    const value=runtimeControlsSnapshot();
-    return value && typeof value==='object' && !Array.isArray(value) ? value : {};
+    try {
+      return plainObject(runtimeControlsSnapshot()) || failClosedRuntimeControls();
+    } catch {
+      return failClosedRuntimeControls();
+    }
   }
 
   function normalizedPublicBudget() {
-    const value=providerPublicBudgetMode();
-    const budget=value && typeof value==='object' && !Array.isArray(value) ? value : {};
+    let budget={};
+    try {
+      budget=plainObject(providerPublicBudgetMode()) || {};
+    } catch {}
     const refresh=Number(budget.liveRefreshSeconds);
     return {
       ...budget,
@@ -50,7 +102,10 @@ export function createAppCapabilitiesRuntime({
 
   function publicDataCapabilities() {
     const paid=['PRO','ULTRA','MEGA'].includes(String(memory.provider?.plan || '').toUpperCase());
-    const healthy=paidQuotaHealthy() === true;
+    let healthy=false;
+    try {
+      healthy=paidQuotaHealthy() === true;
+    } catch {}
     const publicBudget=normalizedPublicBudget();
     const runtime=normalizedRuntimeControls();
     const expandedAllowed=runtimeFeatureEnabled(runtime.expandedDataEnabled);
@@ -65,13 +120,13 @@ export function createAppCapabilitiesRuntime({
     return {
       visibility:'public',
       mode:paid ? 'expanded' : 'standard',
-      label:isSecurityLockdownControls(runtime)
+      label:securityLockdown(runtime)
         ? 'Security Lockdown'
         : runtime.maintenanceMode
           ? 'Техническое обслуживание'
           : publicBudget.label,
       refreshSeconds:liveAllowed ? publicBudget.liveRefreshSeconds : 0,
-      runtime:publicRuntimeControls(runtime),
+      runtime:normalizedPublicRuntimeControls(runtime),
       features:{
         events:true,
         matchStatistics:true,
@@ -82,7 +137,7 @@ export function createAppCapabilitiesRuntime({
         liveOdds:Boolean(canEnrich && liveAllowed),
         oddsMovement:Boolean(canEnrich && liveAllowed),
       },
-      note:isSecurityLockdownControls(runtime)
+      note:securityLockdown(runtime)
         ? (runtime.message || 'Аварийный режим безопасности: изменения и внешние запросы временно остановлены.')
         : runtime.maintenanceMode
           ? (runtime.message || 'Часть футбольных функций временно приостановлена.')
@@ -108,10 +163,10 @@ export function createAppCapabilitiesRuntime({
       apiContract:Number(apiContractVersion || 0),
       releaseChannel:String(releaseChannel || ''),
       releaseCandidate:String(releaseCandidate || ''),
-      deployment:currentReleaseIdentity(cfg),
+      deployment:normalizedDeployment(cfg),
       maintenance:normalizedRuntimeControls().maintenanceMode === true,
       monetization:cfg?.monetizationEnabled === true ? 'enabled' : 'paused',
-      runtime:publicRuntimeControls(normalizedRuntimeControls()),
+      runtime:normalizedPublicRuntimeControls(normalizedRuntimeControls()),
       compatibility:{
         hardBlockBelowMinClient:true,
         contractRequired:Number(apiContractVersion || 0),
@@ -181,7 +236,7 @@ export function createAppCapabilitiesRuntime({
         calibrationChampionChallenger:true,
         calibrationAutomaticRollback:true,
       },
-      serverTime:now().toISOString(),
+      serverTime:normalizedServerTime(),
     };
   }
 
