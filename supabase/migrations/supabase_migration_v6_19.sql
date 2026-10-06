@@ -2,6 +2,16 @@
 -- Persistent source provenance without duplicate domain tables.
 -- Additive-only migration. The structural fingerprint intentionally ignores
 -- these operational metadata columns; explicit schema probes validate them.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. Current cache, odds and model
+-- persistence still use the provenance columns introduced here.
+-- The fingerprint exclusions are intentional compatibility behavior: these
+-- columns are validated separately by schema probes and are carried forward
+-- by later schema-contract migrations such as v6.21.
+-- backend_schema_fingerprint() is intentionally replaced again later; this
+-- definition remains a required replay step for upgrades crossing v6.19.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 alter table public.analysis_cache
   add column if not exists provider text not null default '',
