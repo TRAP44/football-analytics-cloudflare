@@ -270,6 +270,28 @@ test('AI instructor fails closed on hostile probability, confidence and trust va
   assert.equal(result.riskLabel,'Высокий');
 });
 
+test('invalid 1X2 probabilities cannot be rescued by an otherwise strong goal model', () => {
+  const runtime=createAnalysisContextRuntime(deps({
+    analysisQualityGate:()=>({
+      state:'ready',
+      allowSignal:true,
+      reasons:[],
+    }),
+  }));
+
+  const result=runtime.buildAiInstructor({
+    probabilities:{home:90,draw:30,away:20},
+    goalModel:{qualityScore:90,over25:80,btts:75},
+    confidence:{score:90,signalCount:4,disagreement:2,agreement:95},
+    completeness:{score:10,max:10},
+    providerReliability:{state:'healthy',trustCap:100},
+  });
+
+  assert.equal(result.betSignal.code,'skip');
+  assert.match(result.betSignal.reason,/вероятности не прошли проверку/i);
+  assert.equal(result.verdict.outcome,'Нет данных');
+});
+
 test('AI instructor quality-gate failures cannot leak a betting signal', () => {
   const runtime=createAnalysisContextRuntime(deps({
     analysisQualityGate:()=>{ throw new Error('gate down'); },
