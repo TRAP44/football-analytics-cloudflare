@@ -39,6 +39,7 @@ begin
   if p_operation_key is null or p_operation_key !~ '^[0-9a-f]{64}$'
      or p_request_digest is null or p_request_digest !~ '^[0-9a-f]{64}$'
      or p_actor_id is null or p_actor_id <= 0
+     or p_method is null
      or p_method not in ('POST','PUT','PATCH','DELETE')
      or p_path is null or p_path !~ '^/api/' or char_length(p_path) > 160
      or (
