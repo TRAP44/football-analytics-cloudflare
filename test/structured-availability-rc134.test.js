@@ -82,10 +82,15 @@ test('RC134 can reconcile by normalized player name when provider id is absent',
 });
 
 
-const worker = fs.readFileSync('src/worker.js', 'utf8');
+const worker = fs.readFileSync('src/worker.js', 'utf8')
+  + '\n' + fs.readFileSync('src/match-center-runtime.js', 'utf8')
+  + '\n' + fs.readFileSync('src/analysis-runtime.js', 'utf8')
+  + '\n' + fs.readFileSync('src/analysis-quality-runtime.js', 'utf8')
+  + '\n' + fs.readFileSync('src/availability.js', 'utf8');
 
 test('RC134 both Match Center and AI analysis reconcile absences against lineups', () => {
-  assert.match(worker, /const absences = formatAbsences\(trustedInjuryRows, homeId, awayId, lineupSourceTrusted \? lineups : null\)/);
+  assert.match(worker, /lineupSourceTrusted=trustedFeature\(featureMeta\.lineups\)/);
+  assert.match(worker, /formatAbsences\([\s\S]{0,160}?trustedInjuryRows,[\s\S]{0,160}?lineupSourceTrusted \? lineups : null/);
   assert.match(worker, /formatAbsences\(trustedInjuries,homeId,awayId,trustedLineups\)/);
   assert.match(worker, /enrichFixtureAbsencesWithSeasonRole\([\s\S]{0,160}?baseAbsences,[\s\S]{0,160}?\{homePlayerStats,awayPlayerStats\}/);
   assert.match(worker, /return normalizeFixtureAbsences\(rows, \{ homeId, awayId, lineups \}\)/);
