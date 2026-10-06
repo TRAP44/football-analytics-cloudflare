@@ -241,6 +241,57 @@ async function testScheduledLease() {
     "select count(*) from public.scheduled_job_leases where group_key='" + group + "';",
   ));
   assert.equal(rows, 2, 'reclaim should retain the stale audit row and create one current owner row');
+
+  const retentionGroup='ci-433-scheduled-retention-group';
+  const retentionJob='ci-433-scheduled-job-retention';
+  const retentionClaim=parseJson(await serviceRoleQuery(
+    "select public.claim_scheduled_job('" + retentionJob + "','"
+      + retentionGroup + "',clock_timestamp(),1800,300)::text;",
+  ),'claim_scheduled_job retention boundary');
+  assert.equal(retentionClaim.claimed,true,'long scheduled lease retention claim must succeed');
+
+  const initialRetentionOk=parsePgBoolean(await psql(
+    "select expires_at>=locked_until from public.scheduled_job_leases where job_key='"
+      + retentionJob + "';",
+  ),'scheduled lease initial retention');
+  assert.equal(
+    initialRetentionOk,
+    true,
+    'scheduled lease retention must cover the initial ownership window',
+  );
+
+  await psql(
+    "update public.scheduled_job_leases set expires_at=clock_timestamp()-interval '1 second'"
+      + " where job_key='" + retentionJob + "';",
+  );
+  await psql(
+    "delete from public.scheduled_job_leases where job_key='" + retentionJob
+      + "' and expires_at<clock_timestamp() and locked_until<clock_timestamp();",
+  );
+  const survivedCleanup=Number(await psql(
+    "select count(*) from public.scheduled_job_leases where job_key='" + retentionJob + "';",
+  ));
+  assert.equal(
+    survivedCleanup,
+    1,
+    'retention cleanup must preserve a row while its ownership lease is active',
+  );
+
+  const retentionRenew=parseJson(await serviceRoleQuery(
+    "select public.renew_scheduled_job('" + retentionJob + "','"
+      + retentionClaim.leaseToken + "',1800)::text;",
+  ),'renew_scheduled_job retention boundary');
+  assert.equal(retentionRenew.renewed,true,'active long lease must renew');
+
+  const renewedRetentionOk=parsePgBoolean(await psql(
+    "select expires_at>=locked_until from public.scheduled_job_leases where job_key='"
+      + retentionJob + "';",
+  ),'scheduled lease renewed retention');
+  assert.equal(
+    renewedRetentionOk,
+    true,
+    'heartbeat renewal must extend retention through the renewed ownership window',
+  );
 }
 
 async function testOpsEventOccurrence() {
@@ -421,7 +472,7 @@ async function cleanup() {
     'delete from public.users where telegram_id=900000000433',
     "delete from public.provider_rate_windows where bucket_key='ci-433-provider-budget'",
     "delete from public.telegram_update_claims where update_key='ci-433-telegram-update'",
-    "delete from public.scheduled_job_leases where group_key='ci-433-scheduled-group'",
+    "delete from public.scheduled_job_leases where group_key in ('ci-433-scheduled-group','ci-433-scheduled-retention-group')",
     "delete from public.ops_events where transition_key='ci-433-ops-occurrence'",
     "delete from public.sensitive_mutation_idempotency where actor_id=900000000435",
   ].join('; ') + ';');
