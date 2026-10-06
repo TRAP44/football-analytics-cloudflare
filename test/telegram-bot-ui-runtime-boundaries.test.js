@@ -63,7 +63,7 @@ function baseDeps(overrides={}) {
     newsImpactDecisionCard:()=>({code:'hold'}),
     newsImpactDecisionKeyboard:()=>({inline_keyboard:[]}),
     recordGrowthEvent:async(_cfg,event)=>{ growth.push(event); },
-    setCache:async key=>{ cache.set(key,arguments[2]); return true; },
+    setCache:async (key,_fixtureId,payload)=>{ cache.set(key,payload); return true; },
     statusLabel:status=>status,
     telegramApi:async (method,_cfg,payload)=>{
       sent.push({method,payload});
