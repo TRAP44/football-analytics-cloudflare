@@ -66,6 +66,16 @@ export function createAnalysisContextRuntime(deps) {
     return number !== null && Number.isSafeInteger(number) && number>0 ? number : null;
   }
 
+  function nonNegativeSafeInteger(value, max = Number.MAX_SAFE_INTEGER) {
+    const number=finiteNumber(value);
+    return number !== null
+      && Number.isSafeInteger(number)
+      && number>=0
+      && number<=max
+      ? number
+      : null;
+  }
+
   function safeSeason(value) {
     const season=positiveSafeInteger(value);
     return season !== null && season>=1900 && season<=2200 ? season : null;
@@ -340,10 +350,10 @@ export function createAnalysisContextRuntime(deps) {
   } = {}) {
     const homeLabel=safeText(homeName,120) || 'Хозяева';
     const awayLabel=safeText(awayName,120) || 'Гости';
-    const hOverall=objectValue(homeForm)?.overall;
-    const aOverall=objectValue(awayForm)?.overall;
-    const hVenue=objectValue(homeForm)?.venue;
-    const aVenue=objectValue(awayForm)?.venue;
+    const hOverall=objectValue(objectValue(homeForm)?.overall);
+    const aOverall=objectValue(objectValue(awayForm)?.overall);
+    const hVenue=objectValue(objectValue(homeForm)?.venue);
+    const aVenue=objectValue(objectValue(awayForm)?.venue);
     const hSeason=objectValue(objectValue(homeSeasonStats)?.derived);
     const aSeason=objectValue(objectValue(awaySeasonStats)?.derived);
     const model=objectValue(goalModel);
@@ -351,9 +361,9 @@ export function createAnalysisContextRuntime(deps) {
     const awayTable=objectValue(awayStanding);
 
     const h2hValue=objectValue(h2h);
-    const h2hHome=finiteRange(h2hValue?.homeWins,0,1000);
-    const h2hAway=finiteRange(h2hValue?.awayWins,0,1000);
-    const h2hDraws=finiteRange(h2hValue?.draws,0,1000);
+    const h2hHome=nonNegativeSafeInteger(h2hValue?.homeWins,1000);
+    const h2hAway=nonNegativeSafeInteger(h2hValue?.awayWins,1000);
+    const h2hDraws=nonNegativeSafeInteger(h2hValue?.draws,1000);
     const h2hValid=h2hHome !== null
       && h2hAway !== null
       && h2hDraws !== null
@@ -495,7 +505,9 @@ export function createAnalysisContextRuntime(deps) {
       balanceLabel=`${awayLabel} впереди по большему числу доступных метрик`;
     }
 
-    const sources=['последние матчи','дом/выезд'];
+    const sources=[];
+    if (hOverall && aOverall) sources.push('последние матчи');
+    if (hVenue && aVenue) sources.push('дом/выезд');
     if (hSeason && aSeason) sources.push('сохранённая сезонная статистика');
     if (homeTable && awayTable) sources.push('сохранённая таблица');
     if (h2hValid) sources.push('очные встречи');
