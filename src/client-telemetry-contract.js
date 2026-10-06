@@ -89,12 +89,14 @@ export function assessClientTelemetryEvidence(rows = [], options = {}) {
     return requiredMetadata.every(field => telemetryMetadataFieldValid(selector.code, field, metadata[field]));
   });
 
-  const missingMetadata = requiredMetadata.filter(field =>
-    !matching.some(row => {
-      const metadata = row?.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata) ? row.metadata : {};
-      return telemetryMetadataFieldValid(selector.code, field, metadata[field]);
-    })
-  );
+  const missingMetadata = complete.length
+    ? []
+    : requiredMetadata.filter(field =>
+        matching.some(row => {
+          const metadata = row?.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata) ? row.metadata : {};
+          return !telemetryMetadataFieldValid(selector.code, field, metadata[field]);
+        })
+      );
 
   return Object.freeze({
     status: complete.length ? 'confirmed' : 'incomplete_samples',
