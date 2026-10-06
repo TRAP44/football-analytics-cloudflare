@@ -608,14 +608,19 @@ export function createAnalysisContextRuntime(deps) {
       const gate=objectValue(analysisQualityGate(input));
       if (!gate) throw new Error('invalid quality gate');
       const reasons=rows(gate.reasons,20).filter(reason=>objectValue(reason));
+      const requestedState=safeText(gate.state,40).toLowerCase();
+      const state=['ready','caution','hold','blocked'].includes(requestedState)
+        ? requestedState
+        : 'blocked';
       const hasBlockingReason=reasons.some(
         reason=>reason?.level==='block' || reason?.level==='hold',
       );
-      const allowSignal=gate.allowSignal === true && !hasBlockingReason;
+      const stateAllowsSignal=state==='ready' || state==='caution';
+      const allowSignal=gate.allowSignal === true && stateAllowsSignal && !hasBlockingReason;
       return {
         ...gate,
         allowSignal,
-        state:safeText(gate.state,40) || (allowSignal ? 'ready' : 'blocked'),
+        state,
         reasons,
       };
     } catch {
