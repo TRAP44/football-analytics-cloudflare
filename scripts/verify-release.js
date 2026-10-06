@@ -100,6 +100,10 @@ if (releaseContract.databaseContract?.providerSloReadBoundary?.volatility !== 's
 if (releaseContract.databaseContract?.providerSloReadBoundary?.implicitUpperBound !== 'statement_timestamp') failures.push('release-contract providerSloReadBoundary implicit upper bound must remain statement_timestamp');
 if (releaseContract.databaseContract?.providerSloReadBoundary?.readinessField !== 'backendSecurity.function_violations') failures.push('release-contract providerSloReadBoundary readiness field drifted');
 if (releaseContract.databaseContract?.providerSloReadBoundary?.sourceMigration !== 'supabase/migrations/supabase_migration_v6_29_3.sql') failures.push('release-contract providerSloReadBoundary source migration drifted');
+if (releaseContract.databaseContract?.sensitiveMutationLeaseFinalization?.version !== 1) failures.push('release-contract sensitiveMutationLeaseFinalization version must remain 1');
+if (releaseContract.databaseContract?.sensitiveMutationLeaseFinalization?.activeLeaseRequired !== true) failures.push('release-contract sensitiveMutationLeaseFinalization active lease guard must remain enabled');
+if (releaseContract.databaseContract?.sensitiveMutationLeaseFinalization?.readinessField !== 'backendSecurity.function_violations') failures.push('release-contract sensitiveMutationLeaseFinalization readiness field drifted');
+if (releaseContract.databaseContract?.sensitiveMutationLeaseFinalization?.sourceMigration !== 'supabase/migrations/supabase_migration_v6_29_11.sql') failures.push('release-contract sensitiveMutationLeaseFinalization source migration drifted');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
 if (!expectedRc || !worker.includes(`const RC_NAME = '${expectedRc}'`)) failures.push(`Worker RC name must be ${expectedRc || 'derived from runtimeVersion'}`);
