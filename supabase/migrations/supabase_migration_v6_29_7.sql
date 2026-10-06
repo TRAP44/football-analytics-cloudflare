@@ -149,11 +149,13 @@ begin
       (p.proname='analysis_usage_request_headers' and p.provolatile='s')
       or (p.proname in ('finalize_analysis_usage_reservation','reconcile_analysis_usage_reservations') and p.provolatile='v')
     )
-    and bool_and(exists (
-      select 1
-      from pg_catalog.unnest(coalesce(p.proconfig, array[]::text[])) cfg(setting)
-      where cfg.setting like 'search_path=%'
-    ))
+    and bool_and(
+      (p.proname='analysis_usage_request_headers'
+        and p.proconfig = array['search_path=pg_catalog']::text[])
+      or
+      (p.proname in ('finalize_analysis_usage_reservation','reconcile_analysis_usage_reservations')
+        and p.proconfig = array['search_path=pg_catalog, public, private']::text[])
+    )
     and bool_and(has_function_privilege('service_role', p.oid, 'EXECUTE'))
     and bool_and(not has_function_privilege('anon', p.oid, 'EXECUTE'))
     and bool_and(not has_function_privilege('authenticated', p.oid, 'EXECUTE'))
