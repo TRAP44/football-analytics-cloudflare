@@ -1,4 +1,5 @@
 import { createTelegramWebhookHandler } from './telegram-transport.js';
+import { createRefereeIntelligenceRuntime } from './referee-intelligence-runtime.js';
 import { createTeamIntelligenceRuntime } from './team-intelligence-runtime.js';
 import { createTeamTournamentRuntime } from './team-tournament-runtime.js';
 import { createSearchDiscoveryRuntime } from './search-discovery-runtime.js';
@@ -15284,6 +15285,26 @@ const normalizeLineupNotificationRow = (...args) => getTeamIntelligenceRuntime()
 const loadLineupNotificationSnapshot = (...args) => getTeamIntelligenceRuntime().loadLineupNotificationSnapshot(...args);
 const loadSmartNotificationEventSnapshot = (...args) => getTeamIntelligenceRuntime().loadSmartNotificationEventSnapshot(...args);
 
+let refereeIntelligenceRuntime = null;
+function getRefereeIntelligenceRuntime() {
+  if (!refereeIntelligenceRuntime) {
+    refereeIntelligenceRuntime = createRefereeIntelligenceRuntime({
+      hasSupabase,
+      memory,
+      numericValue,
+      supaSelectMany,
+      supaUpsert,
+    });
+  }
+  return refereeIntelligenceRuntime;
+}
+
+const refereeProfile = (...args) => getRefereeIntelligenceRuntime().refereeProfile(...args);
+const refereeHistoryKey = (...args) => getRefereeIntelligenceRuntime().refereeHistoryKey(...args);
+const refereeCardSummary = (...args) => getRefereeIntelligenceRuntime().refereeCardSummary(...args);
+const saveRefereeMatchHistory = (...args) => getRefereeIntelligenceRuntime().saveRefereeMatchHistory(...args);
+const loadRefereeHistoryProfile = (...args) => getRefereeIntelligenceRuntime().loadRefereeHistoryProfile(...args);
+
 let matchCenterRuntime = null;
 function getMatchCenterRuntime() {
   if (!matchCenterRuntime) {
@@ -15471,13 +15492,6 @@ function buildMatchComparison({ homeName, awayName, homeForm, awayForm, homeStan
 }
 
 
-function refereeProfile(value = '') {
-  const raw=String(value || '').trim();
-  if(!raw) return {name:'',country:'',available:false};
-  const parts=raw.split(',').map(x=>x.trim()).filter(Boolean);
-  return {name:parts[0] || raw,country:parts.slice(1).join(', '),available:true};
-}
-
 function buildLineupImpact({absences,lineups,homeName='Хозяева',awayName='Гости',reliability=null}={}) {
   const homeRows=Array.isArray(absences?.home)?absences.home:[];
   const awayRows=Array.isArray(absences?.away)?absences.away:[];
@@ -15535,52 +15549,6 @@ function marketMovementNote(movement={}) {
   const [label,value]=rows[0];
   if(Math.abs(value)<1) return 'Существенного движения рынка по 1X2 пока нет.';
   return `Рынок сместился к ${label}: ${value>0?'+':''}${value.toFixed(1)} п.п. по подразумеваемой вероятности.`;
-}
-
-function refereeHistoryKey(value = '') {
-  const profile = refereeProfile(value);
-  return String(profile.name || '').trim().toLocaleLowerCase('en-US').replace(/\s+/g,' ');
-}
-
-function refereeCardSummary(events = [], statistics = null) {
-  let yellow = 0, red = 0;
-  for (const event of events || []) {
-    if (String(event?.type || '').toLowerCase() !== 'card') continue;
-    const detail = String(event?.detail || '').toLowerCase();
-    if (detail.includes('red') || detail.includes('second yellow')) red += 1;
-    else if (detail.includes('yellow')) yellow += 1;
-  }
-  const foulRow = (statistics?.items || []).find(x => x.key === 'Fouls');
-  const homeFouls = numericValue(foulRow?.home) || 0;
-  const awayFouls = numericValue(foulRow?.away) || 0;
-  return { yellow, red, fouls: Math.max(0, Math.round(homeFouls + awayFouls)) };
-}
-
-async function saveRefereeMatchHistory({ fixtureId, referee, kickoffAt, leagueId, events, statistics } = {}, cfg) {
-  const profile = refereeProfile(referee);
-  const key = refereeHistoryKey(referee);
-  if (!fixtureId || !profile.available || !key) return false;
-  const cards = refereeCardSummary(events, statistics);
-  if (!cards.yellow && !cards.red && !cards.fouls) return false;
-  const row = { fixture_id:Number(fixtureId), referee_key:key, referee_name:profile.name, referee_country:profile.country || '', kickoff_at:kickoffAt || null, league_id:Number(leagueId || 0) || null, yellow_cards:cards.yellow, red_cards:cards.red, fouls:cards.fouls, updated_at:new Date().toISOString() };
-  if (hasSupabase(cfg)) await supaUpsert(cfg,'referee_match_history',row,'fixture_id');
-  else memory.refereeMatchHistory.set(Number(fixtureId), { ...row, created_at:new Date().toISOString() });
-  return true;
-}
-
-async function loadRefereeHistoryProfile(referee, cfg, limit = 30) {
-  const profile = refereeProfile(referee);
-  const key = refereeHistoryKey(referee);
-  if (!profile.available || !key) return { available:false, sample:0, name:profile.name || '', country:profile.country || '' };
-  let rows=[];
-  try { rows = hasSupabase(cfg) ? await supaSelectMany(cfg,'referee_match_history',{ referee_key:`eq.${key}` },{ limit:Math.max(3,Math.min(50,Number(limit || 30))), order:'kickoff_at.desc' }) : [...memory.refereeMatchHistory.values()].filter(x=>x.referee_key===key).sort((a,b)=>Date.parse(b.kickoff_at || 0)-Date.parse(a.kickoff_at || 0)).slice(0,limit); } catch { rows=[]; }
-  const sample=rows.length;
-  if (!sample) return { available:false, sample:0, name:profile.name, country:profile.country || '' };
-  const avg=field=>Math.round((rows.reduce((sum,row)=>sum+Number(row?.[field] || 0),0)/sample)*10)/10;
-  const avgYellow=avg('yellow_cards'), avgRed=avg('red_cards'), avgFouls=avg('fouls');
-  const avgCards=Math.round((avgYellow+avgRed)*10)/10;
-  const styleLabel=avgCards>=5.5?'Строгий стиль':avgCards<=3.5?'Сдержанный стиль':'Средняя строгость';
-  return { available:sample>=3, sample, name:profile.name, country:profile.country || '', avgYellow, avgRed, avgFouls, avgCards, styleLabel, source:'verified-match-history' };
 }
 
 function analysisQualityGate({ probabilities, confidence, dataTrustScore, providerReliability = null, lineupImpact = null, minutesToKickoff = null } = {}) {

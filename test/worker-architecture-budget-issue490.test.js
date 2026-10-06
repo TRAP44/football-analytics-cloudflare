@@ -16,13 +16,14 @@ import { createMatchFormattingRuntime } from '../src/match-formatting-runtime.js
 import { createSearchDiscoveryRuntime } from '../src/search-discovery-runtime.js';
 import { createTeamTournamentRuntime } from '../src/team-tournament-runtime.js';
 import { createTeamIntelligenceRuntime } from '../src/team-intelligence-runtime.js';
+import { createRefereeIntelligenceRuntime } from '../src/referee-intelligence-runtime.js';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 
 test('Worker composition root stays below the post-audit architecture budget',()=>{
   const bytes=Buffer.byteLength(worker,'utf8');
   assert.ok(
-    bytes<=785_000,
+    bytes<=780_000,
     `src/worker.js grew to ${bytes} bytes; extract another cohesive runtime instead of growing the composition root`,
   );
 });
@@ -132,6 +133,7 @@ test('extracted runtime factories are executable contracts, not source-only plac
   const searchDiscovery=createSearchDiscoveryRuntime(new Proxy({}, {get:()=>()=>null}));
   const teamTournament=createTeamTournamentRuntime(new Proxy({}, {get:()=>()=>null}));
   const teamIntelligence=createTeamIntelligenceRuntime(new Proxy({}, {get:()=>()=>null}));
+  const refereeIntelligence=createRefereeIntelligenceRuntime({hasSupabase:()=>false,memory:{refereeMatchHistory:new Map()},numericValue:value=>Number(value),supaSelectMany:async()=>[],supaUpsert:async()=>{}});
   assert.equal(typeof settlement.runSettlementWatchdog,'function');
   assert.equal(typeof settlement.runSettlementFinalityVerification,'function');
   assert.equal(typeof providerData.providerDataState,'function');
@@ -152,6 +154,9 @@ test('extracted runtime factories are executable contracts, not source-only plac
   assert.equal(typeof teamTournament.apiTeam,'function');
   assert.equal(typeof teamIntelligence.apiTeamIntelligence,'function');
   assert.equal(typeof teamIntelligence.apiTeamSquad,'function');
+  assert.equal(typeof refereeIntelligence.refereeProfile,'function');
+  assert.equal(typeof refereeIntelligence.saveRefereeMatchHistory,'function');
+  assert.equal(typeof refereeIntelligence.loadRefereeHistoryProfile,'function');
 });
 
 test('Worker composes extracted runtimes through explicit imports',()=>{
