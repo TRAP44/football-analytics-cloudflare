@@ -1,6 +1,12 @@
 -- Football Analytics v6.12 / RC41
 -- Opt-in Telegram morning digest subscriptions. Only the Worker service role
 -- has table privileges; the browser never accesses this table directly.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. The current digest runtime still
+-- uses bot_digest_subscriptions, and v6.18 extends this table with durable
+-- delivery-claim fields.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 create table if not exists public.bot_digest_subscriptions (
   telegram_id bigint primary key,
