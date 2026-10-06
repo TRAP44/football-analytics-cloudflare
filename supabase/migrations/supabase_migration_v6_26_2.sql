@@ -1,6 +1,16 @@
 -- MatchRadar v6.26.2 / Provider distributed SLO aggregation and alert lease recovery
 -- Issue #405. Additive/backward-compatible with the already running v6.26/v6.26.1 Worker.
 -- Existing v1 alert claim RPC remains available for rollback compatibility.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. provider_slo_buckets plus its
+-- record/read RPCs remain the current distributed SLO persistence layer.
+-- claim_provider_incident_alert_delivery_v2() and the begin-send CAS RPC remain
+-- the current provider-alert ownership boundary; v1 claim stays for rollback.
+-- The STABLE read_provider_slo_buckets() defined here used clock_timestamp() as
+-- its implicit upper bound. v6.29.3 corrects that body to statement_timestamp()
+-- without changing the function signature, volatility or schema fingerprints.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 create table if not exists public.provider_slo_buckets (
   bucket_started_at timestamptz not null,
