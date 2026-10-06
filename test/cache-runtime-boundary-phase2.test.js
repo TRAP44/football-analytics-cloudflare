@@ -116,7 +116,7 @@ test('Phase 2 cache boundary treats a throwing Supabase capability probe as loca
 test('Phase 2 cache boundary keeps read failures fail-soft to L1',async()=>{
   const rt=runtime({
     hasSupabase:()=>true,
-    supaSelectOne:async()=>{throw new Error('db down for '+userKey);},
+    supaSelectOne:async()=>{throw new Error('db down');},
   });
   rt.memory.cache.set('fallback',{payload:{ok:'l1'},expiresAt:Date.now()-60_000});
   const entry=await rt.api.getCacheEntry('fallback',{},true);
@@ -191,7 +191,7 @@ test('Issue #494 redacts user-scoped cache keys from read failure ops metadata',
   const userKey='postmatch:return:disabled:123456789:v1';
   const rt=runtime({
     hasSupabase:()=>true,
-    supaSelectOne:async()=>{throw new Error('db down');},
+    supaSelectOne:async()=>{throw new Error('db down for '+userKey);},
   });
   await rt.api.getCacheEntry(userKey,{},false);
   assert.equal(rt.ops.length,1);
