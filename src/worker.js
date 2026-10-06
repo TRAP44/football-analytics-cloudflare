@@ -531,24 +531,33 @@ function routeBurstPolicy(pathname) {
 function enforceRouteBurst(request, user) {
   const path = new URL(request.url).pathname;
   const policy = routeBurstPolicy(path);
-  if (!policy || !user?.id) return null;
+  if (!policy) return null;
 
-  const now = Date.now();
-  const key = `${Number(user.id)}:${policy.label}`;
-  const current = memory.routeBurst.get(key);
-  let bucket = current;
-  if (!bucket || now - Number(bucket.startedAt || 0) >= policy.windowMs) {
-    bucket = { startedAt: now, count: 0 };
-  }
-  bucket.count += 1;
-  memory.routeBurst.set(key, bucket);
+  const rawId=user?.id;
+  const userId=typeof rawId==='number'
+    ? (Number.isSafeInteger(rawId) && rawId>0 ? rawId : 0)
+    : (typeof rawId==='string' && /^\d+$/.test(rawId.trim()) ? Number(rawId.trim()) : 0);
+  if (!Number.isSafeInteger(userId) || userId<=0) return null;
 
-  if (bucket.count <= policy.limit) {
-    if (memory.routeBurst.size > 2500) pruneMemoryState();
+  const now=Date.now();
+  const key=`${userId}:${policy.label}`;
+  const current=memory.routeBurst.get(key);
+  const startedAt=typeof current?.startedAt==='number' && Number.isFinite(current.startedAt)
+    ? current.startedAt
+    : 0;
+  const count=typeof current?.count==='number' && Number.isSafeInteger(current.count) && current.count>=0
+    ? current.count
+    : 0;
+  const expired=!startedAt || now<startedAt || now-startedAt>=policy.windowMs;
+  const bucket=expired ? {startedAt:now,count:1} : {startedAt,count:count+1};
+  memory.routeBurst.set(key,bucket);
+
+  if (bucket.count<=policy.limit) {
+    if (memory.routeBurst.size>2500) pruneMemoryState();
     return null;
   }
 
-  const retryAfter = Math.max(1, Math.ceil((policy.windowMs - (now - bucket.startedAt)) / 1000));
+  const retryAfter=Math.max(1,Math.ceil((policy.windowMs-(now-bucket.startedAt))/1000));
   bumpTelemetry('burstBlocks');
   return json({
     error: 'Слишком много одинаковых действий подряд. Подождите несколько секунд.',
