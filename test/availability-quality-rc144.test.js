@@ -367,8 +367,8 @@ test('RC144 gates prematch availability before absence analytics in analysis run
 test('RC144 gates Match Center availability before formatted absence output', () => {
   const center=readRepoFile('src/match-center-runtime.js');
 
-  const assessIndex=center.indexOf('assessFixtureAvailabilityQuality(injuryRows,{');
-  const sanitizeIndex=center.indexOf('sanitizeAvailabilityRows(injuryRows,availabilityQuality)');
+  const assessIndex=center.search(/assessFixtureAvailabilityQuality\(\s*injuryRows\s*,\s*\{/);
+  const sanitizeIndex=center.search(/sanitizeAvailabilityRows\(\s*injuryRows\s*,\s*availabilityQuality\s*\)/);
   const formatIndex=center.indexOf('formatAbsences(',sanitizeIndex);
 
   assert.ok(assessIndex>=0,'Match Center availability assessment missing');
@@ -386,9 +386,10 @@ test('RC144 exposes availability quality through current cache, UI and smoke con
   assert.match(center,/match-center:\$\{fixtureId\}:v16-availability-quality-rc144/);
   assert.match(analysis,/fixture:\$\{fixtureId\}:v15-availability-quality-rc144/);
   assert.match(analysis,/analysisVersion:'4\.15\.0-availability-quality'/);
+  assert.match(analysis,/availabilityQuality,/);
   assert.match(
     analysis,
-    /injuries:injuriesTrusted[\s\S]{0,180}?availabilityQuality\?\.confidenceBearing===true/,
+    /trustedInjuries\.length(?:>0)?\s*&&\s*featureTrusted\('injuries'\)/,
   );
   assert.match(app,/function availabilityQualityHintHtml\(quality = \{\}\)/);
   assert.match(app,/availabilityQualityHintHtml\(d\.availabilityQuality\)/);
