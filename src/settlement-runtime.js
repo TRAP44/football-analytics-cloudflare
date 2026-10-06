@@ -1133,14 +1133,14 @@ export function createSettlementRuntime(deps) {
       drift++;
       await supaInsertIgnore(cfg, 'settlement_verification_events', {
         observed_at: now,
-        fixture_id: Number(row.fixture_id),
+        fixture_id: positiveSafeInteger(row?.fixture_id),
         state: 'drift',
         reason: verdict.reason,
-        stored_home_goals: Number.isFinite(Number(row.actual_home_goals)) ? Number(row.actual_home_goals) : null,
-        stored_away_goals: Number.isFinite(Number(row.actual_away_goals)) ? Number(row.actual_away_goals) : null,
+        stored_home_goals: nonNegativeSafeInteger(row?.actual_home_goals),
+        stored_away_goals: nonNegativeSafeInteger(row?.actual_away_goals),
         stored_outcome: String(row.actual_outcome || ''),
-        provider_home_goals: Number.isFinite(Number(verdict.score?.home)) ? Number(verdict.score.home) : null,
-        provider_away_goals: Number.isFinite(Number(verdict.score?.away)) ? Number(verdict.score.away) : null,
+        provider_home_goals: nonNegativeSafeInteger(verdict.score?.home),
+        provider_away_goals: nonNegativeSafeInteger(verdict.score?.away),
         provider_outcome: String(verdict.providerOutcome || ''),
         provider_status: verdict.status,
         detail: {
