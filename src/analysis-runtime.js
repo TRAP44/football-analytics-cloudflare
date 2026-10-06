@@ -1962,12 +1962,19 @@ export function createAnalysisRuntime(deps) {
       if (usageReservation?.reserved) {
         if (usageReservation.durable) {
           try {
-            await finalizeAnalysisUsageReservation({
+            const finalization=objectValue(await finalizeAnalysisUsageReservation({
               reservation:usageReservation,
               disposition,
               cfg,
               userId,
-            });
+            }));
+            if (finalization?.ok !== true && finalization?.pending !== true) {
+              await logFinalizationFailure(
+                'ANALYSIS_QUOTA_FINALIZATION_REJECTED',
+                safeText(finalization?.reason,180) || 'finalization_not_confirmed',
+                {operationId:safeText(usageReservation.operationId,80)},
+              );
+            }
           } catch (error) {
             await logFinalizationFailure(
               'ANALYSIS_QUOTA_FINALIZATION_FAILED',
@@ -1998,12 +2005,22 @@ export function createAnalysisRuntime(deps) {
       if (passUsageReservation?.reserved) {
         if (passUsageReservation.durable) {
           try {
-            await finalizeAnalysisUsageReservation({
+            const finalization=objectValue(await finalizeAnalysisUsageReservation({
               reservation:passUsageReservation,
               disposition,
               cfg,
               userId,
-            });
+            }));
+            if (finalization?.ok !== true && finalization?.pending !== true) {
+              await logFinalizationFailure(
+                'ANALYSIS_PASS_FINALIZATION_REJECTED',
+                safeText(finalization?.reason,180) || 'finalization_not_confirmed',
+                {
+                  operationId:safeText(passUsageReservation.operationId,80),
+                  entitlementId:positiveSafeInteger(passUsageReservation.entitlementId),
+                },
+              );
+            }
           } catch (error) {
             await logFinalizationFailure(
               'ANALYSIS_PASS_FINALIZATION_FAILED',
