@@ -127,3 +127,67 @@ revoke all on function public.claim_scheduled_job(text,text,timestamptz,integer,
   from public, anon, authenticated, service_role;
 grant execute on function public.claim_scheduled_job(text,text,timestamptz,integer,integer)
   to service_role;
+
+create or replace function public.renew_scheduled_job(
+  p_job_key text,
+  p_lease_token text,
+  p_lease_seconds integer default 720
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_catalog, pg_temp
+as $$
+declare
+  v_job_key text := btrim(coalesce(p_job_key,''));
+  v_lease_token text := coalesce(p_lease_token,'');
+  v_now timestamptz := clock_timestamp();
+  v_lease_seconds integer := greatest(30, least(coalesce(p_lease_seconds,720),1800));
+  v_next_locked_until timestamptz;
+  v_locked_until timestamptz;
+begin
+  if v_job_key='' or char_length(v_job_key)>180
+     or v_lease_token='' or char_length(v_lease_token)>80 then
+    return jsonb_build_object('renewed',false,'reason','invalid_input');
+  end if;
+
+  v_next_locked_until := v_now + v_lease_seconds * interval '1 second';
+
+  update public.scheduled_job_leases
+  set locked_until=v_next_locked_until,
+      expires_at=greatest(expires_at,v_next_locked_until)
+  where job_key=v_job_key
+    and lease_token=v_lease_token
+    and status='running'
+    and locked_until>v_now
+  returning locked_until into v_locked_until;
+
+  if found then
+    return jsonb_build_object(
+      'renewed',true,
+      'reason','renewed',
+      'jobKey',v_job_key,
+      'lockedUntil',v_locked_until,
+      'leaseSeconds',v_lease_seconds
+    );
+  end if;
+
+  return jsonb_build_object(
+    'renewed',false,
+    'reason','ownership_lost',
+    'jobKey',v_job_key
+  );
+end;
+$$;
+
+revoke all on function public.renew_scheduled_job(text,text,integer)
+  from public, anon, authenticated, service_role;
+grant execute on function public.renew_scheduled_job(text,text,integer)
+  to service_role;
+
+comment on function public.claim_scheduled_job(text,text,timestamptz,integer,integer) is
+  'Atomic scheduled-job ownership claim with retention guaranteed to cover the initial lease.';
+comment on function public.renew_scheduled_job(text,text,integer) is
+  'Renews active scheduled-job ownership and extends retention through the renewed lease horizon.';
+
+notify pgrst, 'reload schema';
