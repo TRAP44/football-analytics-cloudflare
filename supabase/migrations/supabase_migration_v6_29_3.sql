@@ -8,6 +8,13 @@
 --
 -- The public signature, volatility, return shape and grants remain unchanged, so
 -- the established legacy and v2 schema fingerprints remain valid.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Function bodies are not part of schema-contract-v2 fingerprinting, so the old
+-- clock_timestamp() body can otherwise survive with a green structural contract.
+-- v6.29.10 therefore makes this statement-stable body an explicit readiness
+-- invariant without changing this applied/published function signature.
+-- Do not rewrite this migration's SQL semantics; corrections belong forward.
 
 create or replace function public.read_provider_slo_buckets(
   p_since timestamptz,
