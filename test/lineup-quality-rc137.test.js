@@ -73,7 +73,7 @@ test('RC137 does not treat same-name players with different explicit IDs as cros
   assert.equal(quality.bothConfirmed,true);
 });
 
-const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/analysis-runtime.js', 'utf8');
+const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/analysis-runtime.js', 'utf8') + '\n' + fs.readFileSync('src/match-formatting-runtime.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
