@@ -1730,6 +1730,7 @@ const CLIENT_PRODUCT_ACTIONS = new Set([
   'history_open',
   'history_item_open',
   'profile_open',
+  'player_open',
 ]);
 
 const CLIENT_ACTION_ERROR_REASONS = new Set([
@@ -1740,6 +1741,8 @@ const CLIENT_ACTION_ERROR_REASONS = new Set([
   'ai',
   'history',
   'profile',
+  'profile_modules',
+  'billing_ui',
 ]);
 
 const CLIENT_ACTION_ERROR_KINDS = new Set([
