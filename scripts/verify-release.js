@@ -86,6 +86,15 @@ if (releaseContract.databaseContract?.privateContracts?.analysisUsage?.sourceMig
 if (releaseContract.databaseContract?.runtimeControlAtomicHistory?.version !== 1) failures.push('release-contract runtimeControlAtomicHistory contract version must remain 1');
 if (releaseContract.databaseContract?.runtimeControlAtomicHistory?.readinessField !== 'backendSecurity.rule_violations') failures.push('release-contract runtimeControlAtomicHistory readiness field must remain backendSecurity.rule_violations');
 if (releaseContract.databaseContract?.runtimeControlAtomicHistory?.sourceMigration !== 'supabase/migrations/supabase_migration_v6_29_1.sql') failures.push('release-contract runtimeControlAtomicHistory source migration drifted');
+if (releaseContract.databaseContract?.personalWriteGuards?.version !== 'v2') failures.push('release-contract personalWriteGuards version must remain v2');
+if (releaseContract.databaseContract?.personalWriteGuards?.favoritesLimit !== 50) failures.push('release-contract personalWriteGuards favoritesLimit must remain 50');
+if (releaseContract.databaseContract?.personalWriteGuards?.favoritePlayersLimit !== 50) failures.push('release-contract personalWriteGuards favoritePlayersLimit must remain 50');
+if (releaseContract.databaseContract?.personalWriteGuards?.remindersLimit !== 50) failures.push('release-contract personalWriteGuards remindersLimit must remain 50');
+if (releaseContract.databaseContract?.personalWriteGuards?.canonicalReminders !== true) failures.push('release-contract personalWriteGuards canonicalReminders must remain enabled');
+if (releaseContract.databaseContract?.personalWriteGuards?.explicitRearm !== true) failures.push('release-contract personalWriteGuards explicitRearm must remain enabled');
+if (releaseContract.databaseContract?.personalWriteGuards?.reminderRetentionDays !== 90) failures.push('release-contract personalWriteGuards reminderRetentionDays must remain 90');
+if (releaseContract.databaseContract?.personalWriteGuards?.readinessField !== 'schema.personalWriteGuards') failures.push('release-contract personalWriteGuards readiness field drifted');
+if (releaseContract.databaseContract?.personalWriteGuards?.sourceMigration !== 'supabase/migrations/supabase_migration_v6_29_2.sql') failures.push('release-contract personalWriteGuards source migration drifted');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
 if (!expectedRc || !worker.includes(`const RC_NAME = '${expectedRc}'`)) failures.push(`Worker RC name must be ${expectedRc || 'derived from runtimeVersion'}`);
