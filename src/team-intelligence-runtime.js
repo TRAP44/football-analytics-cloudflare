@@ -17,6 +17,7 @@ export function createTeamIntelligenceRuntime(deps) {
     getCache,
     getStaleCache,
     json,
+    normalizeLineupPlayer,
     normalizeTeamSeasonStatistics,
     providerFeatureFetch,
     publicDataCapabilities,
@@ -25,6 +26,110 @@ export function createTeamIntelligenceRuntime(deps) {
     setCache,
     sourceMeta,
   } = deps;
+
+  const requiredFunctions = {
+    annotateEventReliability,
+    annotateLineupReliability,
+    apiFootball,
+    applyFeatureFreshness,
+    assessMatchEventQuality,
+    assessMatchLineups,
+    compactProviderError,
+    formatLiveEvents,
+    freeQuotaHealthy,
+    getCache,
+    getStaleCache,
+    json,
+    normalizeLineupPlayer,
+    normalizeTeamSeasonStatistics,
+    providerFeatureFetch,
+    publicDataCapabilities,
+    resolveTeamSeasonPlayers,
+    runtimeControlsSnapshot,
+    setCache,
+    sourceMeta,
+  };
+  for (const [name, fn] of Object.entries(requiredFunctions)) {
+    if (typeof fn !== 'function') throw new TypeError(`${name} is required`);
+  }
+
+  function rows(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  function positiveSafeInteger(value, max = Number.MAX_SAFE_INTEGER) {
+    const number = typeof value === 'number'
+      ? value
+      : typeof value === 'string' && /^\d+$/.test(value.trim())
+        ? Number(value.trim())
+        : NaN;
+    return Number.isSafeInteger(number) && number > 0 && number <= max ? number : null;
+  }
+
+  function nonNegativeSafeInteger(value, max = Number.MAX_SAFE_INTEGER) {
+    const number = typeof value === 'number'
+      ? value
+      : typeof value === 'string' && /^\d+$/.test(value.trim())
+        ? Number(value.trim())
+        : NaN;
+    return Number.isSafeInteger(number) && number >= 0 && number <= max ? number : null;
+  }
+
+  function safeSeason(value) {
+    const number=positiveSafeInteger(value,2100);
+    return number && number>=1900 ? number : null;
+  }
+
+  function safeText(value, max = 240) {
+    if (!['string','number','bigint'].includes(typeof value)) return '';
+    return String(value).trim().slice(0,max);
+  }
+
+  function objectValue(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  }
+
+  function quotaHealthy(reserve, cost) {
+    try { return freeQuotaHealthy(reserve,cost) === true; }
+    catch { return false; }
+  }
+
+  function capabilities() {
+    try { return objectValue(publicDataCapabilities()) || {}; }
+    catch { return {}; }
+  }
+
+  function compactError(error) {
+    try {
+      const compact=compactProviderError(error);
+      if (objectValue(compact)) {
+        return {
+          code:safeText(compact.code,120) || safeText(error?.code,120) || 'provider_error',
+          status:positiveSafeInteger(compact.status,599),
+        };
+      }
+    } catch {}
+    return {
+      code:safeText(error?.code,120) || 'provider_error',
+      status:positiveSafeInteger(error?.status,599),
+    };
+  }
+
+  function emptyPlayerStats(reason = 'quota_guard', sourceLabel = 'Не запрашивалось') {
+    return {
+      available:false,
+      complete:false,
+      partial:false,
+      players:[],
+      summary:{count:0,complete:false,pagesLoaded:0,pagesTotal:0,sourceScope:'team-season'},
+      reason:safeText(reason,160) || 'unavailable',
+      sourceMeta:sourceMeta({
+        provider:'none',
+        label:safeText(sourceLabel,120) || 'Недоступно',
+        freshness:'unavailable',
+      }),
+    };
+  }
 
   async function apiTeamIntelligence(request, cfg) {
     const url = new URL(request.url);
