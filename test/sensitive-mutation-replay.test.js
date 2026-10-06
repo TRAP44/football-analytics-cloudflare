@@ -33,7 +33,7 @@ function coordinator(store=new Map()) {
     async claim(identity) {
       const existing=store.get(identity.operationKey);
       if (!existing) {
-        const leaseToken='lease-'+(++sequence);
+        const leaseToken='lease-token-'+String(++sequence).padStart(8,'0');
         store.set(identity.operationKey,{...identity,state:'inflight',retryable:false,leaseToken});
         return {claimed:true,state:'inflight',reason:'claimed',leaseToken};
       }
@@ -49,7 +49,7 @@ function coordinator(store=new Map()) {
       if (existing.state==='failed' && !existing.retryable) {
         return {claimed:false,state:'failed',reason:'duplicate_failed'};
       }
-      const leaseToken='lease-'+(++sequence);
+      const leaseToken='lease-token-'+String(++sequence).padStart(8,'0');
       store.set(identity.operationKey,{...identity,state:'inflight',retryable:false,leaseToken});
       return {claimed:true,state:'inflight',reason:'retry_failed',leaseToken};
     },
@@ -67,6 +67,27 @@ function coordinator(store=new Map()) {
     },
   };
 }
+
+test('sensitive mutation classification rejects method and path coercion',()=>{
+  assert.equal(isReplaySensitiveMutation(
+    {method:{toString:()=> 'POST'},url:'https://example.com/api/runtime-controls'},
+    new URL('https://example.com/api/runtime-controls'),
+  ),false);
+  assert.equal(isReplaySensitiveMutation(
+    {method:'POST',url:'https://example.com/api/runtime-controls'},
+    {pathname:{toString:()=> '/api/runtime-controls'}},
+  ),false);
+  assert.equal(isReplaySensitiveMutation(
+    request('/api/runtime-controls',{method:'POST'}),
+    {pathname:' /api/runtime-controls'},
+  ),false);
+});
+
+test('sensitive mutation inventory snapshot is immutable',()=>{
+  const paths=sensitiveMutationReplayPaths();
+  assert.equal(Object.isFrozen(paths),true);
+  assert.throws(()=>paths.push('/api/evil'),TypeError);
+});
 
 test('sensitive mutation inventory excludes reads and includes every guarded high-risk route', () => {
   assert.equal(isReplaySensitiveMutation(request('/api/runtime-controls'),new URL('https://example.com/api/runtime-controls')),true);
@@ -178,6 +199,34 @@ test('external side-effect endpoint does not automatically retry a failed operat
   assert.equal(calls,1);
 });
 
+test('replay identity rejects coercible actors, malformed bodies and oversized idempotency keys',async()=>{
+  const req=request('/api/runtime-controls');
+  assert.equal(
+    await sensitiveMutationReplayIdentity(req,new URL(req.url),{id:true}),
+    null,
+  );
+  assert.equal(
+    await sensitiveMutationReplayIdentity(req,new URL(req.url),{id:[7]}),
+    null,
+  );
+
+  const malformed={
+    method:'POST',
+    url:'https://example.com/api/runtime-controls',
+    headers:{get:()=>({toString:()=> 'key'})},
+    clone:()=>({text:async()=>({toString:()=> '{}'})}),
+  };
+  assert.equal(
+    await sensitiveMutationReplayIdentity(malformed,{pathname:'/api/runtime-controls'},{id:7}),
+    null,
+  );
+
+  const longKey='x'.repeat(129);
+  const withLongKey=request('/api/runtime-controls',{idempotencyKey:longKey});
+  const identity=await sensitiveMutationReplayIdentity(withLongKey,new URL(withLongKey.url),{id:7});
+  assert.equal(identity.idempotencyKeyHash,'');
+});
+
 test('different actors, bodies and explicit keys receive independent distributed identities', async () => {
   const a=await sensitiveMutationReplayIdentity(
     request('/api/runtime-controls',{body:'{"enabled":false}'}),
@@ -237,6 +286,115 @@ test('reusing one explicit idempotency key with a different body is rejected as 
   assert.ok(!persisted.includes('charge-2'));
 });
 
+test('persistent claim requires strict boolean, state, reason and lease token',async()=>{
+  const req=request('/api/runtime-controls');
+  const url=new URL(req.url);
+  for(const claim of [
+    {claimed:'true',state:'inflight',reason:'claimed',leaseToken:'lease-token-00000001'},
+    {claimed:true,state:'completed',reason:'claimed',leaseToken:'lease-token-00000001'},
+    {claimed:true,state:'inflight',reason:'claimed',leaseToken:'short'},
+    {claimed:false,state:'failed',reason:'unknown'},
+  ]){
+    let calls=0;
+    const result=await runSensitiveMutationWithReplay({
+      request:req,url,user:{id:7},memory:{},
+      coordinator:{
+        claim:async()=>claim,
+        complete:async()=>({ok:true,updated:true,state:'completed'}),
+        fail:async()=>({ok:true,updated:true,state:'failed',retryable:false}),
+      },
+      handler:async()=>{calls+=1;return {status:200};},
+    });
+    assert.equal(result.blocked,true);
+    assert.equal(result.reason,'guard_unavailable');
+    assert.equal(calls,0);
+  }
+});
+
+test('retryable failure is released locally only after strict persistent fail confirmation',async()=>{
+  const req=request('/api/runtime-controls/rollback');
+  const url=new URL(req.url);
+  const memory={};
+  let claims=0;
+  const coordinator={
+    claim:async()=>({
+      claimed:true,
+      state:'inflight',
+      reason:'claimed',
+      leaseToken:'lease-token-00000001',
+    }),
+    complete:async()=>({ok:true,updated:true,state:'completed'}),
+    fail:async()=>{
+      claims+=1;
+      return {ok:'true',updated:'true',state:'failed',retryable:true};
+    },
+  };
+  const first=await runSensitiveMutationWithReplay({
+    request:req,url,user:{id:7},memory,coordinator,
+    handler:async()=>({status:503}),
+  });
+  assert.equal(first.replayPersistenceConfirmed,false);
+  assert.equal(claims,1);
+
+  const second=await runSensitiveMutationWithReplay({
+    request:req,url,user:{id:7},memory,coordinator,
+    handler:async()=>({status:200}),
+  });
+  assert.equal(second.blocked,true);
+  assert.equal(second.reason,'duplicate_failed');
+});
+
+test('successful handler falls back to non-retryable fail when completion is unconfirmed',async()=>{
+  const req=request('/api/admin/channel-publisher/test');
+  const url=new URL(req.url);
+  const settlements=[];
+  const result=await runSensitiveMutationWithReplay({
+    request:req,url,user:{id:7},memory:{},
+    coordinator:{
+      claim:async()=>({
+        claimed:true,
+        state:'inflight',
+        reason:'claimed',
+        leaseToken:'lease-token-00000001',
+      }),
+      complete:async()=>{
+        settlements.push('complete');
+        return {ok:'true',updated:'true',state:'completed'};
+      },
+      fail:async(_identity,_claim,retryable)=>{
+        settlements.push(`fail:${retryable}`);
+        return {ok:true,updated:true,state:'failed',retryable};
+      },
+    },
+    handler:async()=>({status:200}),
+  });
+  assert.deepEqual(settlements,['complete','fail:false']);
+  assert.equal(result.replayPersistenceConfirmed,true);
+  assert.equal(result.replayPersistenceDegraded,undefined);
+});
+
+test('successful handler reports degraded replay persistence when both terminal settlements fail',async()=>{
+  const req=request('/api/admin/channel-publisher/test');
+  const url=new URL(req.url);
+  const result=await runSensitiveMutationWithReplay({
+    request:req,url,user:{id:7},memory:{},
+    coordinator:{
+      claim:async()=>({
+        claimed:true,
+        state:'inflight',
+        reason:'claimed',
+        leaseToken:'lease-token-00000001',
+      }),
+      complete:async()=>{throw new Error('complete unavailable');},
+      fail:async()=>({ok:false,updated:false,state:'failed',retryable:false}),
+    },
+    handler:async()=>({status:200}),
+  });
+  assert.equal(result.blocked,false);
+  assert.equal(result.replayPersistenceConfirmed,false);
+  assert.equal(result.replayPersistenceDegraded,true);
+});
+
 test('persistent ledger outage fails closed before a sensitive handler runs', async () => {
   let calls=0;
   const req=request('/api/admin/billing/refund',{body:'{"chargeId":"charge-outage"}'});
@@ -255,6 +413,45 @@ test('persistent ledger outage fails closed before a sensitive handler runs', as
   assert.equal(result.blocked,true);
   assert.equal(result.reason,'guard_unavailable');
   assert.equal(result.retryAfter,3);
+  assert.equal(calls,0);
+});
+
+test('malformed clock or local ledger entry cannot bypass distributed replay ownership',async()=>{
+  const req=request('/api/runtime-controls');
+  const url=new URL(req.url);
+  const identity=await sensitiveMutationReplayIdentity(req,url,{id:7});
+  const memory={sensitiveMutationReplay:new Map([[
+    identity.operationKey,
+    {state:'completed',createdAt:true,expiresAt:'999999999999'},
+  ]])};
+  let claimCalls=0;
+  const result=await runSensitiveMutationWithReplay({
+    request:req,url,user:{id:7},memory,now:()=>true,
+    coordinator:{
+      claim:async()=>{
+        claimCalls+=1;
+        return {claimed:false,state:'completed',reason:'duplicate_completed'};
+      },
+      complete:async()=>({ok:true,updated:true,state:'completed'}),
+      fail:async()=>({ok:true,updated:true,state:'failed',retryable:false}),
+    },
+    handler:async()=>({status:200}),
+  });
+  assert.equal(claimCalls,1);
+  assert.equal(result.blocked,true);
+  assert.equal(result.reason,'duplicate_completed');
+});
+
+test('malformed memory object fails closed before sensitive execution',async()=>{
+  const req=request('/api/runtime-controls');
+  let calls=0;
+  const result=await runSensitiveMutationWithReplay({
+    request:req,url:new URL(req.url),user:{id:7},memory:[],
+    coordinator:coordinator(),
+    handler:async()=>{calls+=1;return {status:200};},
+  });
+  assert.equal(result.blocked,true);
+  assert.equal(result.reason,'guard_unavailable');
   assert.equal(calls,0);
 });
 
