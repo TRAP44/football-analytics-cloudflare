@@ -35,10 +35,25 @@ function createInstructorRuntime({
 
 function createBotUi({
   apiAnalyze = async () => new Response('{}', { status: 200 }),
-  telegramFullAnalysisUrl = (_request, fixtureId, tab) =>
-    `https://app.test/?fixtureId=${fixtureId}&action=analysis&tab=${tab}&handoff=1`,
-  telegramWebAppUrl = (_request, params = {}) =>
-    `https://app.test/?${new URLSearchParams(params)}`,
+  telegramFullAnalysisUrl = (request, fixtureId, tab) => {
+    const url=new URL(request.url);
+    url.pathname='/';
+    url.search='';
+    url.searchParams.set('fixtureId',String(fixtureId));
+    url.searchParams.set('action','analysis');
+    url.searchParams.set('tab',String(tab));
+    url.searchParams.set('handoff','1');
+    return url.toString();
+  },
+  telegramWebAppUrl = (request, params = {}) => {
+    const url=new URL(request.url);
+    url.pathname='/';
+    url.search='';
+    for (const [key,value] of Object.entries(params)) {
+      url.searchParams.set(key,String(value));
+    }
+    return url.toString();
+  },
   telegramApi = async () => ({}),
 } = {}) {
   return createTelegramBotUiRuntime({
