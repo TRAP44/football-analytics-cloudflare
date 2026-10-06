@@ -696,6 +696,12 @@ export function createSettlementRuntime(deps) {
     const confirmed = settlementFinalityVerdict({ ...row, settlement_verification_state: 'verified', settlement_verified_status: 'FT' }, fixture('FT', 2, 1));
     const lateScoreDrift = settlementFinalityVerdict({ ...row, settlement_verification_state: 'verified', settlement_verified_status: 'FT' }, fixture('FT', 1, 1));
     const lateStatusDrift = settlementFinalityVerdict({ ...row, settlement_verification_state: 'verified', settlement_verified_status: 'FT' }, fixture('AET', 2, 1));
+    const missingStoredScoreDrift = settlementFinalityVerdict({
+      ...row,
+      actual_home_goals: null,
+      actual_away_goals: null,
+      actual_outcome: 'draw',
+    }, fixture('FT', 0, 0));
     const statusDrift = settlementFinalityVerdict(row, fixture('AWD', 2, 1));
     const wait = settlementFinalityVerdict(row, fixture('2H', 2, 1));
     return {
@@ -703,12 +709,14 @@ export function createSettlementRuntime(deps) {
         confirmed.state === 'confirmed' &&
         lateScoreDrift.state === 'drift' &&
         lateStatusDrift.state === 'drift' &&
+        missingStoredScoreDrift.state === 'drift' &&
         statusDrift.state === 'drift' &&
         wait.state === 'wait',
       verified: verified.state,
       confirmed: confirmed.state,
       lateScoreDrift: lateScoreDrift.state,
       lateStatusDrift: lateStatusDrift.state,
+      missingStoredScoreDrift: missingStoredScoreDrift.state,
       wait: wait.state,
     };
   }
@@ -819,17 +827,25 @@ export function createSettlementRuntime(deps) {
     const accept = buildSettlementDriftResolution(row, event, 'accept_provider', '2026-01-01T00:00:00.000Z');
     const voided = buildSettlementDriftResolution(row, event, 'void_prediction', '2026-01-01T00:00:00.000Z');
     const unsafe = buildSettlementDriftResolution(row, { ...event, provider_status: 'CANC' }, 'accept_provider', '2026-01-01T00:00:00.000Z');
+    const missingScoreUnsafe = buildSettlementDriftResolution(row, {
+      ...event,
+      provider_home_goals: null,
+      provider_away_goals: null,
+      provider_outcome: '',
+    }, 'accept_provider', '2026-01-01T00:00:00.000Z');
     return {
       pass: keep.valid && keep.patch.settlement_verification_state === 'adjudicated' &&
         keep.patch.actual_home_goals === undefined &&
         accept.valid && accept.patch.actual_home_goals === 1 && accept.patch.actual_away_goals === 1 &&
         accept.patch.actual_outcome === 'draw' && accept.patch.correct === false &&
         voided.valid && voided.patch.status === 'void' &&
-        !unsafe.valid,
+        !unsafe.valid &&
+        !missingScoreUnsafe.valid,
       keep: keep.valid,
       accept: accept.valid ? accept.patch.actual_outcome : accept.error,
       void: voided.valid ? voided.patch.status : voided.error,
       unsafeAcceptBlocked: !unsafe.valid,
+      missingScoreAcceptBlocked: !missingScoreUnsafe.valid,
     };
   }
 
