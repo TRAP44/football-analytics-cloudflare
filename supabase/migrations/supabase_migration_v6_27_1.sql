@@ -1,5 +1,14 @@
 -- MatchRadar v6.27.1 / Renewable scheduled execution lease heartbeat
 -- Additive patch for Issue #436. Safe to apply before the Worker rollout.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. renew_scheduled_job() plus the
+-- active-lease guards on complete/release remain current ownership semantics.
+-- This historical heartbeat extended locked_until without extending expires_at;
+-- combined with direct retention cleanup, a long-running active lease could be
+-- deleted if retention ended first. v6.29.5 hardens claim/renew retention and
+-- maintenance cleanup so active ownership always outlives cleanup eligibility.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 create or replace function public.renew_scheduled_job(
   p_job_key text,
