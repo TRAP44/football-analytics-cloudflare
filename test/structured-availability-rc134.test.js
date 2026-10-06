@@ -86,6 +86,8 @@ const worker = fs.readFileSync('src/worker.js', 'utf8')
   + '\n' + fs.readFileSync('src/match-center-runtime.js', 'utf8')
   + '\n' + fs.readFileSync('src/analysis-runtime.js', 'utf8')
   + '\n' + fs.readFileSync('src/analysis-quality-runtime.js', 'utf8')
+  + '\n' + fs.readFileSync('src/model-intelligence-runtime.js', 'utf8')
+  + '\n' + fs.readFileSync('src/match-formatting-runtime.js', 'utf8')
   + '\n' + fs.readFileSync('src/availability.js', 'utf8');
 
 test('RC134 both Match Center and AI analysis reconcile absences against lineups', () => {
@@ -103,7 +105,7 @@ test('RC134 doubtful players have reduced model adjustment instead of full confi
 });
 
 test('RC134 lineup impact exposes injuries, suspensions, doubts and reconciled rows separately', () => {
-  assert.match(worker, /categories:\{home:\{injuryOrIllness:hi,suspension:hs,doubtful:hd\}/);
+  assert.match(worker, /categories:\s*\{[\s\S]{0,80}?home:\{injuryOrIllness:hi,suspension:hs,doubtful:hd\}/);
   assert.match(worker, /resolvedByLineup:reconciled/);
   assert.match(worker, /дисквалификации \$\{hs\}:\$\{as\}/);
   assert.doesNotMatch(worker, /Баланс подтверждённых потерь близкий/);
