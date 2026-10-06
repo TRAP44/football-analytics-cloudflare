@@ -98,20 +98,7 @@ test('Supabase restore drill is isolated, measurable and preserves least privile
   assert.match(restoreSql, /public-schema sequence privileges/);
   assert.match(restoreSql, /backend_security_contract/);
   assert.match(restoreSql, /backend_default_acl_contract/);
-  assert.ok(restoreSql.includes("!~ '^[0-9a-f]{32}  assert.match(restoreSql, /end\s+\$\$;/);
-
-  assert.match(restoreHardeningSql, /revoke create on schema public from public, anon, authenticated/i);
-  assert.match(restoreHardeningSql, /revoke all privileges on all tables in schema public from public, anon, authenticated/i);
-  assert.match(restoreHardeningSql, /alter default privileges in schema public/i);
-  assert.match(restoreHardeningSql, /grant select, insert, update, delete on all tables in schema public to service_role/i);
-
-  assert.match(runbook, /Изолированный restore drill/i);
-  assert.match(runbook, /Observed backup freshness/i);
-  assert.match(runbook, /Measured restore time/i);
-  assert.match(runbook, /ACL hardening/i);
-  assert.match(runbook, /production backup не восстанавливается автоматически/i);
-});
-"));
+  assert.ok(restoreSql.includes("!~ '^[0-9a-f]{32}$'"));
   assert.ok(restoreSql.includes("or coalesce((v_contract->>'parts')::integer, 0) <= 0 then"));
   assert.ok(restoreSql.includes("restore acceptance: backend_schema_contract_v2() returned an invalid contract"));
   assert.equal((restoreSql.match(/\ndo \$\$/g) || []).length, 1);
