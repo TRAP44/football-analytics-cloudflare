@@ -13,7 +13,7 @@ const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 test('Worker composition root stays below the post-audit architecture budget',()=>{
   const bytes=Buffer.byteLength(worker,'utf8');
   assert.ok(
-    bytes<=1_080_000,
+    bytes<=970_000,
     `src/worker.js grew to ${bytes} bytes; extract another cohesive runtime instead of growing the composition root`,
   );
 });
@@ -125,6 +125,8 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/import \{ createDiagnosticsRuntime \} from '\.\/diagnostics-runtime\.js'/);
   assert.match(worker,/import \{ createAppCapabilitiesRuntime \} from '\.\/app-capabilities\.js'/);
   assert.match(worker,/import \{ createSettlementRuntime \} from '\.\/settlement-runtime\.js'/);
+  assert.match(worker,/import \{ createMatchCenterRuntime \} from '\.\/match-center-runtime\.js'/);
+  assert.match(worker,/import \{ createAnalysisRuntime \} from '\.\/analysis-runtime\.js'/);
   assert.match(worker,/createDiagnosticsRuntime\(\{/);
   assert.match(worker,/createPublicHealthRuntime\(\{/);
   assert.match(worker,/createPublicStatusRuntime\(\{/);
@@ -132,6 +134,8 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/createReleaseFieldEvidenceRuntime\(\{/);
   assert.match(worker,/createAppCapabilitiesRuntime\(\{/);
   assert.match(worker,/createSettlementRuntime\(\{/);
+  assert.match(worker,/createMatchCenterRuntime\(\{/);
+  assert.match(worker,/createAnalysisRuntime\(\{/);
   assert.doesNotMatch(worker,/async function collectDiagnostics\(/);
   assert.doesNotMatch(worker,/async function readRecentOpsEvents\(/);
   assert.doesNotMatch(worker,/async function publicServiceStatus\(/);
@@ -143,4 +147,6 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.doesNotMatch(worker,/async function runSettlementWatchdog\(/);
   assert.doesNotMatch(worker,/async function runSettlementFinalityVerification\(/);
   assert.doesNotMatch(worker,/function buildPredictionIntegrity\(/);
+  assert.doesNotMatch(worker,/async function apiMatchCenter\(/);
+  assert.doesNotMatch(worker,/async function apiAnalyze\(/);
 });
