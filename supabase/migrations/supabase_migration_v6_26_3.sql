@@ -1,6 +1,17 @@
 -- Football Analytics v6.26.3 / security incident occurrence accuracy
 -- Additive migration: retain true occurrence volume for transition-key-deduplicated
 -- operational events while keeping legacy ops_events readers compatible.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. occurrence_count, last_occurred_at
+-- and record_ops_event_occurrence() remain active in the current telemetry path.
+-- The v6.21.1 transition_key unique constraint is the conflict target that makes
+-- the insert/increment atomic across isolates. security-incidents consumes both
+-- the stored count and latest occurrence timestamp instead of counting one
+-- deduplicated row as one event forever.
+-- Later migrations preserve this RPC unchanged; CI exercises its service-role
+-- privilege and the concurrency gate verifies the atomic increment behavior.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 alter table public.ops_events
   add column if not exists occurrence_count integer not null default 1,
