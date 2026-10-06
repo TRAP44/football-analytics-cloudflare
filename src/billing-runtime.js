@@ -299,10 +299,7 @@ export function createBillingRuntime(deps = {}) {
       return { ready: false, reason: 'webhook_check_failed', expectedUrl, error: String(e?.message || e) };
     }
   }
-  
-  const STAR_SYNC_PAGE_SIZE = 100;
-  const STAR_SYNC_MAX_PAGES = 5;
-  
+
   async function loadStarTransactionsForSync(cfg) {
     const transactions=[];
     let pagesScanned=0;
