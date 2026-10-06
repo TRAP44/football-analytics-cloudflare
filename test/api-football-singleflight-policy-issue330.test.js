@@ -185,10 +185,16 @@ test('concurrent calls with different timeout policy never inherit each other',a
 
 test('concurrent calls with different retry policy never inherit each other',async()=>{
   let networkCalls=0;
+  const firstEntered=deferred();
+  const releaseFirst=deferred();
   const {gateway,counters}=createGateway({
     fetchWithTimeout:async()=>{
       networkCalls+=1;
-      if (networkCalls===1) throw Object.assign(new Error('network'),{code:'NETWORK'});
+      if (networkCalls===1) {
+        firstEntered.resolve();
+        await releaseFirst.promise;
+        throw new Error('network');
+      }
       return {
         ok:true,
         status:200,
@@ -198,24 +204,30 @@ test('concurrent calls with different retry policy never inherit each other',asy
     },
   });
 
-  const results=await Promise.allSettled([
-    gateway.apiFootball(
-      '/status',
-      {},
-      {apiFootballKey:'secret'},
-      {responseType:'any',transportRetries:0,timeoutMs:8000},
-    ),
-    gateway.apiFootball(
-      '/status',
-      {},
-      {apiFootballKey:'secret'},
-      {responseType:'any',transportRetries:1,timeoutMs:8000},
-    ),
-  ]);
+  const noRetry=gateway.apiFootball(
+    '/status',
+    {},
+    {apiFootballKey:'secret'},
+    {responseType:'any',transportRetries:0,timeoutMs:8000},
+  );
 
-  assert.equal(results.length,2);
-  assert.equal(results.some(result=>result.status==='rejected'),true);
-  assert.equal(results.some(result=>result.status==='fulfilled'),true);
+  await firstEntered.promise;
+
+  const withRetry=gateway.apiFootball(
+    '/status',
+    {},
+    {apiFootballKey:'secret'},
+    {responseType:'any',transportRetries:1,timeoutMs:8000},
+  );
+
+  releaseFirst.resolve();
+
+  const [left,right]=await Promise.allSettled([noRetry,withRetry]);
+
+  assert.equal(left.status,'rejected');
+  assert.equal(left.reason?.code,'FOOTBALL_NETWORK');
+  assert.equal(right.status,'fulfilled');
+  assert.equal(networkCalls,2);
   assert.equal(counters.singleflightJoins,undefined);
 });
 
