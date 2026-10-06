@@ -1,5 +1,16 @@
 -- MatchRadar v6.26 / Scheduled job isolation and distributed cron leases
 -- Additive, backward-compatible coordination for Cloudflare scheduled handlers.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. scheduled_job_leases and
+-- claim_scheduled_job() remain active parts of the current scheduled runtime;
+-- the Worker also schema-probes the complete lease row shape.
+-- v6.26.1 later removes service_role table privileges not needed by the Worker.
+-- v6.27.1 adds renew_scheduled_job() heartbeat support and replaces
+-- complete/release so an expired lease owner can no longer settle a job.
+-- The group advisory lock + running-row index remain the distributed overlap
+-- barrier for jobs that share one execution group.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 create table if not exists public.scheduled_job_leases (
   job_key text primary key,
