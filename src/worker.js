@@ -2431,10 +2431,18 @@ const apiMatches = (...args) => getProviderFixtureRuntime().apiMatches(...args);
 let teamTournamentRuntime = null;
 function getTeamTournamentRuntime() {
   if (!teamTournamentRuntime) {
+    const searchRuntime = getSearchDiscoveryRuntime();
+    const { providerRequestJson: secondaryProviderJson } = createProviderRequestBoundary({
+      fetchWithTimeout,
+      withSingleFlight,
+      sleepMs,
+      recordOpsEvent,
+      bumpTelemetry,
+      observeProviderRequest,
+    });
     teamTournamentRuntime = createTeamTournamentRuntime({
       apiFootball,
       compactProviderError,
-      createProviderRequestBoundary,
       footballDataScorersUrl,
       footballDataStandingsUrl,
       freeQuotaHealthy,
@@ -2459,7 +2467,9 @@ function getTeamTournamentRuntime() {
       openLigaCompetition,
       openLigaMatchDataUrls,
       openLigaTableUrls,
+      providerDataState,
       providerFeaturePolicy,
+      providerMinuteRemaining: () => memory.provider?.minuteRemaining,
       publicDataCapabilities,
       recordOpsEvent,
       resolveProviderChain,
@@ -2471,6 +2481,8 @@ function getTeamTournamentRuntime() {
       statusLabel,
       summarizeFormRows,
       supaRpc,
+      teamDiscoveryFutureDays: searchRuntime.TEAM_DISCOVERY_FUTURE_DAYS,
+      teamDiscoveryPastDays: searchRuntime.TEAM_DISCOVERY_PAST_DAYS,
       teamDiscoveryWindow,
       teamResult,
       theOddsApiUrl,
