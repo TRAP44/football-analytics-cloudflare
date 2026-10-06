@@ -15,7 +15,7 @@ import {
   normalizeFootballDataStandings,
 } from '../src/providers/football-data.js';
 
-const worker=fs.readFileSync('src/worker.js','utf8');
+const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/team-tournament-runtime.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const envExample=fs.readFileSync('.env.example','utf8');
 
