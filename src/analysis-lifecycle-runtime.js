@@ -567,36 +567,107 @@ export function createAnalysisLifecycleRuntime(deps) {
     };
   }
 
-  function newsImpactDeltaStatus(previous = {}, next = {}, delta = null, { requested=false, eligible=false, performed=false, publishedAt='' } = {}) {
-    if (!requested) return null;
-    if (!previous?.match?.fixtureId) {
-      return {requested:true,eligible:false,performed:false,compared:false,material:false,stable:false,publishedAt,reasonCode:'baseline_missing',summary:'До новости не было сохранённого AI-снимка: текущий анализ станет базовой точкой для следующего сравнения.',items:[]};
+  function newsImpactDeltaStatus(
+    previous = {},
+    next = {},
+    delta = null,
+    {
+      requested=false,
+      eligible=false,
+      performed=false,
+      publishedAt='',
+    } = {},
+  ) {
+    if (requested !== true) return null;
+
+    const published=safeText(publishedAt,80);
+    const previousFixtureId=positiveSafeInteger(objectValue(previous)?.match?.fixtureId);
+    const nextFixtureId=positiveSafeInteger(objectValue(next)?.match?.fixtureId);
+
+    if (!previousFixtureId) {
+      return {
+        requested:true,
+        eligible:false,
+        performed:false,
+        compared:false,
+        material:false,
+        stable:false,
+        publishedAt:published,
+        reasonCode:'baseline_missing',
+        summary:'До новости не было сохранённого AI-снимка: текущий анализ станет базовой точкой для следующего сравнения.',
+        items:[],
+        codes:[],
+      };
     }
-    if (!eligible) {
-      return {requested:true,eligible:false,performed:false,compared:false,material:false,stable:true,publishedAt,reasonCode:'snapshot_not_before_news',summary:'Сохранённый AI-снимок не старше новости, поэтому приписывать ей изменение прогноза нельзя.',items:[]};
+    if (!nextFixtureId || nextFixtureId!==previousFixtureId) {
+      return {
+        requested:true,
+        eligible:Boolean(eligible),
+        performed:false,
+        compared:false,
+        material:false,
+        stable:false,
+        publishedAt:published,
+        reasonCode:'fixture_mismatch',
+        summary:'Свежий снимок не относится к тому же матчу, поэтому изменение нельзя связывать с новостью.',
+        items:[],
+        codes:[],
+      };
     }
-    if (!performed || !delta?.available) {
-      return {requested:true,eligible:true,performed:false,compared:false,material:false,stable:false,publishedAt,reasonCode:'recheck_unavailable',summary:'Новость привязана к матчу, но свежую перепроверку сейчас выполнить не удалось.',items:[]};
+    if (eligible !== true) {
+      return {
+        requested:true,
+        eligible:false,
+        performed:false,
+        compared:false,
+        material:false,
+        stable:true,
+        publishedAt:published,
+        reasonCode:'snapshot_not_before_news',
+        summary:'Сохранённый AI-снимок не старше новости, поэтому приписывать ей изменение прогноза нельзя.',
+        items:[],
+        codes:[],
+      };
     }
+
+    const deltaValue=objectValue(delta);
+    if (performed !== true || deltaValue?.available !== true) {
+      return {
+        requested:true,
+        eligible:true,
+        performed:false,
+        compared:false,
+        material:false,
+        stable:false,
+        publishedAt:published,
+        reasonCode:'recheck_unavailable',
+        summary:'Новость привязана к матчу, но свежую перепроверку сейчас выполнить не удалось.',
+        items:[],
+        codes:[],
+      };
+    }
+
+    const material=deltaValue.material === true;
+    const stable=deltaValue.stable === true;
     return {
       requested:true,
       eligible:true,
       performed:true,
       compared:true,
-      material:Boolean(delta.material),
-      stable:Boolean(delta.stable),
-      publishedAt,
-      reasonCode:delta.material?'material_change':delta.stable?'stable':'detail_change',
-      summary:delta.material
+      material,
+      stable,
+      publishedAt:published,
+      reasonCode:material ? 'material_change' : stable ? 'stable' : 'detail_change',
+      summary:material
         ? 'После новости и свежей перепроверки обнаружены существенные изменения во входных данных AI.'
-        : delta.stable
+        : stable
           ? 'После новости свежая перепроверка не обнаружила значимых изменений в AI-входах.'
-          : 'После новости изменились отдельные детали, но существенного сдвига AI-сценария не обнаружено.',
-      items:(delta.items || []).slice(0,6),
-      codes:(delta.codes || []).slice(0,6),
+          : 'После новости изменились отдельные детали или часть сравнения неполна; существенного сдвига AI-сценария не подтверждено.',
+      items:rows(deltaValue.items,6),
+      codes:rows(deltaValue.codes,6).map(code=>safeText(code,40)).filter(Boolean),
     };
   }
-  
+
   function newsImpactDeltaDrill() {
     const previous={match:{fixtureId:71},probabilities:{home:45,draw:30,away:25},market:{probabilities:{home:44,draw:31,away:25}},lineupImpact:{homeConfirmed:false,awayConfirmed:false},absences:{home:[],away:[]},aiInstructor:{betSignal:{code:'skip',label:'Пропустить ставку'},confidenceScore:54}};
     const next={match:{fixtureId:71},probabilities:{home:53,draw:27,away:20},market:{probabilities:{home:50,draw:29,away:21}},lineupImpact:{homeConfirmed:true,awayConfirmed:true},absences:{home:[{name:'X'}],away:[]},aiInstructor:{betSignal:{code:'home',label:'П1'},confidenceScore:68}};
