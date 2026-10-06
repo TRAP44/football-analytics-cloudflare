@@ -1,4 +1,9 @@
 export function createAiTimelineRuntime(deps = {}) {
+  function positiveFixtureId(value) {
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number > 0 ? number : 0;
+  }
+
   const {
     analysisTimelineSnapshotRow,
     buildAiTimeline,
@@ -33,7 +38,7 @@ export function createAiTimelineRuntime(deps = {}) {
   }
   
   async function getAnalysisTimelineSnapshots(fixtureId, cfg, limit = 80) {
-    const id = Number(fixtureId || 0);
+    const id = positiveFixtureId(fixtureId);
     if (!id) return [];
     if (hasSupabase(cfg)) {
       try {
@@ -51,7 +56,7 @@ export function createAiTimelineRuntime(deps = {}) {
   }
   
   async function loadFixtureAiTimeline({ fixtureId, match = {}, events = [], cfg } = {}) {
-    const id = Number(fixtureId || 0);
+    const id = positiveFixtureId(fixtureId);
     if (!id) return buildAiTimeline({ match, events });
     const [snapshotRows, modelPrediction, oddsSnapshots] = await Promise.all([
       getAnalysisTimelineSnapshots(id, cfg, 80),
