@@ -303,10 +303,12 @@ async function testSensitiveMutationIdempotency() {
   const requestDigest='435'.padEnd(64,'b');
   const retryKey='436'.padEnd(64,'c');
   const retryDigest='436'.padEnd(64,'d');
+  const retentionKey='437'.padEnd(64,'e');
+  const retentionDigest='438'.padEnd(64,'f');
 
   await psql(
     "delete from public.sensitive_mutation_idempotency where operation_key in ('"
-      + operationKey + "','" + retryKey + "');",
+      + operationKey + "','" + retryKey + "','" + retentionKey + "');",
   );
 
   const results=await Promise.all(
@@ -361,6 +363,44 @@ async function testSensitiveMutationIdempotency() {
   ),'claim_sensitive_mutation retry owner');
   assert.equal(retryOwner.claimed,true,'retryable failed mutation must be reclaimable');
   assert.equal(retryOwner.reason,'retry_failed');
+
+  const retentionClaim=parseJson(await serviceRoleQuery(
+    "select public.claim_sensitive_mutation('"
+      + retentionKey + "',900000000435,'POST','/api/runtime-controls','"
+      + retentionDigest + "',null,600,60)::text;",
+  ),'claim_sensitive_mutation retention boundary');
+  assert.equal(retentionClaim.claimed,true,'retention-boundary claim must be acquired');
+  assert.ok(
+    Date.parse(retentionClaim.expiresAt)>=Date.parse(retentionClaim.lockedUntil),
+    'sensitive mutation retention must never expire before the active lease',
+  );
+
+  await psql(
+    "update public.sensitive_mutation_idempotency"
+      + " set expires_at=clock_timestamp()-interval '1 second'"
+      + " where operation_key='" + retentionKey + "';",
+  );
+
+  const deletedWhileActive=Number(await serviceRoleQuery(
+    'select public.cleanup_sensitive_mutation_idempotency(5000);',
+  ));
+  assert.equal(
+    deletedWhileActive,
+    0,
+    'cleanup must preserve an inflight row while its ownership lease is active',
+  );
+
+  const duplicateWhileActive=parseJson(await serviceRoleQuery(
+    "select public.claim_sensitive_mutation('"
+      + retentionKey + "',900000000435,'POST','/api/runtime-controls','"
+      + retentionDigest + "',null,600,60)::text;",
+  ),'claim_sensitive_mutation legacy short retention');
+  assert.equal(
+    duplicateWhileActive.claimed,
+    false,
+    'active ownership must block reclaim even when a legacy row retention timestamp expired',
+  );
+  assert.equal(duplicateWhileActive.reason,'duplicate_inflight');
 }
 
 async function cleanup() {
