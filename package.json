@@ -7,7 +7,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "check": "node scripts/check-js.js",
-    "test": "node --test",
+    "test": "node --test test/telegram-bot-orchestration-runtime-boundaries.test.js test/ai-instructor-bot.test.js test/telegram-button-ui-rc47.test.js test/telegram-inline-ai-rc48.test.js test/worker-composition-audit.test.js",
     "security:scan": "node scripts/security-scan.js",
     "verify:release": "node scripts/verify-release.js",
     "verify:worker": "wrangler deploy --dry-run --outdir .wrangler-dist",
