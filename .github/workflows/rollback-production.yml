@@ -57,6 +57,7 @@ jobs:
         with:
           ref: ${{ env.ROLLBACK_WORKFLOW_SHA }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: RC113 verify rollback workflow provenance
         shell: bash
@@ -96,6 +97,7 @@ jobs:
       - name: Rollback preflight
         shell: bash
         run: |
+          set -euo pipefail
           if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
             echo "Cloudflare credentials are required for rollback." >&2
             exit 1
@@ -138,6 +140,7 @@ jobs:
       - name: Roll back Worker
         shell: bash
         run: |
+          set -euo pipefail
           npx wrangler rollback "$VERSION_ID" --yes --message "Manual rollback to $EXPECTED_VERSION from GitHub Actions"
 
       - name: RC119 verify exact rollback deployment target / RC122 verify rollback release identity
@@ -169,6 +172,7 @@ jobs:
       - name: Verify restored production
         shell: bash
         run: |
+          set -euo pipefail
           node scripts/rollback-smoke.js "$ROLLBACK_URL" "$EXPECTED_VERSION"
           echo "### Cloudflare rollback verified" >> "$GITHUB_STEP_SUMMARY"
           echo "Restored and verified: $EXPECTED_VERSION" >> "$GITHUB_STEP_SUMMARY"
