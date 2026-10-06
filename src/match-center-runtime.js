@@ -371,10 +371,59 @@ export function createMatchCenterRuntime(deps) {
           events:rowsOrEmpty(cached.events,500),
           cfg,
         }));
+      const refreshedFreshness=safeFeatureFreshnessMap(
+        cachedMeta,
+        {mode:cachedMode},
+      );
+      const cachedAvailability=objectValue(cached.availability) || {};
+      const liveCache=cachedMode==='live';
+      const eventsTrusted=trustedFeature(refreshedFreshness.events);
+      const statisticsTrusted=trustedFeature(refreshedFreshness.statistics);
+      const playersTrusted=trustedFeature(refreshedFreshness.players);
+      const injuriesTrusted=trustedFeature(refreshedFreshness.injuries);
+      const lineupsTrusted=trustedFeature(refreshedFreshness.lineups);
+      const oddsTrusted=trustedFeature(refreshedFreshness.liveOdds);
+      const liveCoreTrusted=eventsTrusted && statisticsTrusted;
+
       return json({
         ...cached,
+        ...(liveCache && !statisticsTrusted
+          ? {livePressure:null}
+          : {}),
+        ...(liveCache && !liveCoreTrusted
+          ? {smartInsights:null,liveAiCoach:null}
+          : {}),
+        ...(liveCache && !oddsTrusted
+          ? {liveOdds:null,oddsMovement:null}
+          : {}),
         aiTimeline:cachedAiTimeline,
-        dataFreshness:safeFeatureFreshnessMap(cachedMeta,{mode:cachedMode}),
+        dataFreshness:refreshedFreshness,
+        availability:{
+          ...cachedAvailability,
+          ...(liveCache ? {
+            events:eventsTrusted && rowsOrEmpty(cached.events,1000).length>0,
+            statistics:statisticsTrusted,
+            xg:statisticsTrusted
+              && objectValue(cached.xgQuality)?.confidenceBearing===true,
+            players:playersTrusted
+              && (
+                rowsOrEmpty(cached?.playerLeaders?.home,100).length>0
+                || rowsOrEmpty(cached?.playerLeaders?.away,100).length>0
+              ),
+            injuries:injuriesTrusted
+              && objectValue(cached.availabilityQuality)?.confidenceBearing===true
+              && (
+                rowsOrEmpty(cached?.absences?.home,200).length>0
+                || rowsOrEmpty(cached?.absences?.away,200).length>0
+              ),
+            liveOdds:oddsTrusted
+              && objectValue(cached.liveOddsQuality)?.confidenceBearing===true
+              && Boolean(cached.liveOdds),
+            lineupsTrusted,
+            lineupsConfirmed:lineupsTrusted
+              && objectValue(cached.lineupQuality)?.bothConfirmed===true,
+          } : {}),
+        },
         cached:true,
       });
     }
