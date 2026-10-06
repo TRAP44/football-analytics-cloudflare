@@ -22,13 +22,14 @@ import { createAnalysisLifecycleRuntime } from '../src/analysis-lifecycle-runtim
 import { createAnalysisContextRuntime } from '../src/analysis-context-runtime.js';
 import { createFootballNewsRuntime } from '../src/football-news-runtime.js';
 import { createSupabaseSchemaRuntime } from '../src/supabase-schema-runtime.js';
+import { createProductionMonitorRuntime } from '../src/production-monitor-runtime.js';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 
 test('Worker composition root stays below the post-audit architecture budget',()=>{
   const bytes=Buffer.byteLength(worker,'utf8');
   assert.ok(
-    bytes<=720_000,
+    bytes<=690_000,
     `src/worker.js grew to ${bytes} bytes; extract another cohesive runtime instead of growing the composition root`,
   );
 });
@@ -144,6 +145,7 @@ test('extracted runtime factories are executable contracts, not source-only plac
   const analysisContext=createAnalysisContextRuntime({analysisQualityGate:()=>({allowSignal:true,reasons:[]}),freeQuotaHealthy:()=>true,getCache:async()=>null,getStaleCache:async()=>null,marketMovementNote:()=>'',refereeProfile:()=>({}),resolveTeamSeasonPlayers:async()=>({available:false}),setCache:async()=>true});
   const footballNews=createFootballNewsRuntime({NEWS_BLOCKED_HOST_RE:/^$/,NEWS_MAJOR_SOURCE_RE:/^$/,NEWS_OFFICIAL_SOURCE_RE:/^$/,TOP_TEAM_SEARCH_CATALOG:[],botTeamIdMatches:async()=>[],fetchWithTimeout:async()=>({ok:false}),getCache:async()=>null,getFavorites:async()=>[],normalizeBotFixtureCard:value=>value || {},recordGrowthEvent:async()=>{},searchText:value=>String(value||'').toLowerCase(),setCache:async()=>true,telegramApi:async()=>{},telegramHtmlEscape:value=>String(value||''),todayUtc:()=> '2026-10-06'});
   const supabaseSchema=createSupabaseSchemaRuntime({EXPECTED_SCHEMA_FINGERPRINT:'test',PERSONAL_WRITE_LIMITS:{favorites:1,favoritePlayers:1,reminders:1},bumpTelemetry:()=>{},fetchWithTimeout:async()=>({ok:true,status:200}),hasSupabase:()=>false,readProviderIncidentAlertDeliveryContract:async()=>({ok:true,status:'ok'}),redactOpsString:value=>String(value||''),sleepMs:async()=>{},supaHeaders:()=>({}),supaRpc:async()=>({})});
+  const productionMonitor=createProductionMonitorRuntime(new Proxy({}, {get:()=>()=>null}));
   assert.equal(typeof settlement.runSettlementWatchdog,'function');
   assert.equal(typeof settlement.runSettlementFinalityVerification,'function');
   assert.equal(typeof providerData.providerDataState,'function');
@@ -182,6 +184,9 @@ test('extracted runtime factories are executable contracts, not source-only plac
   assert.equal(typeof supabaseSchema.probeSupabaseSchemaDrift,'function');
   assert.equal(typeof supabaseSchema.probeSupabaseSchemaDriftConfirmed,'function');
   assert.equal(typeof supabaseSchema.readSupabaseSchemaFingerprint,'function');
+  assert.equal(typeof productionMonitor.summarizeReleaseWindow,'function');
+  assert.equal(typeof productionMonitor.productionMonitorState,'function');
+  assert.equal(typeof productionMonitor.runProductionMonitor,'function');
 });
 
 test('Worker composes extracted runtimes through explicit imports',()=>{
@@ -208,6 +213,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/import \{ createAnalysisContextRuntime \} from '\.\/analysis-context-runtime\.js'/);
   assert.match(worker,/import \{ createFootballNewsRuntime \} from '\.\/football-news-runtime\.js'/);
   assert.match(worker,/import \{ createSupabaseSchemaRuntime \} from '\.\/supabase-schema-runtime\.js'/);
+  assert.match(worker,/import \{ createProductionMonitorRuntime \} from '\.\/production-monitor-runtime\.js'/);
   assert.match(worker,/createDiagnosticsRuntime\(\{/);
   assert.match(worker,/createPublicHealthRuntime\(\{/);
   assert.match(worker,/createPublicStatusRuntime\(\{/);
@@ -232,6 +238,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/createAnalysisContextRuntime\(\{/);
   assert.match(worker,/createFootballNewsRuntime\(\{/);
   assert.match(worker,/createSupabaseSchemaRuntime\(\{/);
+  assert.match(worker,/createProductionMonitorRuntime\(\{/);
   assert.doesNotMatch(worker,/async function collectDiagnostics\(/);
   assert.doesNotMatch(worker,/async function readRecentOpsEvents\(/);
   assert.doesNotMatch(worker,/async function publicServiceStatus\(/);
@@ -300,4 +307,8 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.doesNotMatch(worker,/async function probeSupabaseSchemaDrift\(/);
   assert.doesNotMatch(worker,/async function probeSupabaseSchemaDriftConfirmed\(/);
   assert.doesNotMatch(worker,/function summarizeSupabaseSchemaChecks\(/);
+  assert.doesNotMatch(worker,/function releaseTopGroups\(/);
+  assert.doesNotMatch(worker,/function summarizeReleaseWindow\(/);
+  assert.doesNotMatch(worker,/function productionMonitorState\(/);
+  assert.doesNotMatch(worker,/async function runProductionMonitor\(/);
 });
