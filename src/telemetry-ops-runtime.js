@@ -25,9 +25,26 @@ export function createTelemetryOpsRuntime(deps = {}) {
       .slice(0, max);
   }
 
+  function safeHasSupabase(cfg) {
+    try {
+      return hasSupabase(cfg) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  function safeReleaseIdentity(cfg) {
+    try {
+      const value=currentReleaseIdentity(cfg);
+      return value && typeof value==='object' && !Array.isArray(value) ? value : {};
+    } catch {
+      return {};
+    }
+  }
+
   async function observeProviderRequest(event = {}, cfg = {}) {
     observeProviderRequestLocal(event);
-    if (!hasSupabase(cfg)) return { ok:true, persistent:false, reason:'supabase_not_configured' };
+    if (!safeHasSupabase(cfg)) return { ok:true, persistent:false, reason:'supabase_not_configured' };
     try {
       const result=await supaRpc(cfg,'record_provider_slo_observation',{
         p_provider:String(event?.provider || 'provider'),
@@ -102,7 +119,7 @@ export function createTelemetryOpsRuntime(deps = {}) {
       occurrence_count: 1,
       last_occurred_at: createdAt,
       metadata: {
-        ...safeOpsMetadata({ ...currentReleaseIdentity(cfg), ...(event.meta || {}), ...currentReleaseIdentity(cfg) }),
+        ...safeOpsMetadata({ ...safeReleaseIdentity(cfg), ...(event.meta || {}), ...safeReleaseIdentity(cfg) }),
         occurrenceCount:1,
         lastOccurredAt:createdAt,
       },
@@ -134,7 +151,7 @@ export function createTelemetryOpsRuntime(deps = {}) {
         configurable: true,
       });
     };
-    if (!hasSupabase(cfg)) {
+    if (!safeHasSupabase(cfg)) {
       setPersistenceStatus('memory_only');
       return row;
     }
