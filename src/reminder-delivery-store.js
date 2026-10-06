@@ -1,6 +1,8 @@
 const REMINDER_CLAIM_STATE = 'delivery_claimed';
 const REMINDER_SENDING_STATE = 'telegram_delivery_sending';
 const REMINDER_UNKNOWN_STATE = 'telegram_delivery_unknown';
+const MAX_TELEGRAM_RETRY_AFTER_SECONDS = 604800;
+const MAX_TIMESTAMP_MS = 8.64e15;
 
 export const REMINDER_DELIVERY_KINDS = Object.freeze({
   prematch: Object.freeze({
@@ -25,9 +27,104 @@ export const REMINDER_DELIVERY_KINDS = Object.freeze({
   }),
 });
 
+function required(name,value) {
+  if (typeof value !== 'function') throw new TypeError(`${name} is required`);
+  return value;
+}
+
+function integerCandidate(value) {
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const raw=value.trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const number=Number(raw);
+  return Number.isSafeInteger(number) ? number : null;
+}
+
+function positiveSafeInteger(value) {
+  const number=integerCandidate(value);
+  return number !== null && number > 0 ? number : 0;
+}
+
+function nonNegativeInteger(value) {
+  const number=integerCandidate(value);
+  return number !== null && number >= 0 ? number : null;
+}
+
+function strictSupabaseAvailable(hasSupabase,cfg) {
+  try {
+    return hasSupabase(cfg) === true;
+  } catch {
+    return false;
+  }
+}
+
+function supabaseOrigin(cfg) {
+  if (typeof cfg?.supabaseUrl !== 'string' || !cfg.supabaseUrl.trim()) return '';
+  try {
+    const url=new URL(cfg.supabaseUrl.trim());
+    return ['http:','https:'].includes(url.protocol) ? url.origin : '';
+  } catch {
+    return '';
+  }
+}
+
+function clockValue(now) {
+  try {
+    const value=now();
+    return typeof value === 'number'
+      && Number.isFinite(value)
+      && value >= 0
+      && value <= MAX_TIMESTAMP_MS
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function isoNow(now) {
+  const timestamp=clockValue(now);
+  if (timestamp === null) throw new Error('Reminder delivery clock is invalid.');
+  return new Date(timestamp).toISOString();
+}
+
+function parseTimestamp(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const timestamp=Date.parse(value.trim());
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function validReminderIdentity(row) {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return null;
+  const telegramId=positiveSafeInteger(row.telegram_id);
+  const fixtureId=positiveSafeInteger(row.fixture_id);
+  return telegramId && fixtureId ? {telegramId,fixtureId} : null;
+}
+
+function validClaimAt(value) {
+  return parseTimestamp(value) !== null ? value.trim() : '';
+}
+
+function responseStatus(response) {
+  const status=integerCandidate(response?.status);
+  return status !== null && status >= 100 && status <= 599 ? status : 0;
+}
+
+function requireConfirmedResponse(response,label) {
+  if (response?.ok === true) return;
+  throw new Error(`${label}: HTTP ${responseStatus(response) || 'unknown'}`);
+}
+
 export function reminderDeliveryKindConfig(kind) {
-  const config = REMINDER_DELIVERY_KINDS[String(kind || '')];
-  if (!config) throw new Error(`Unsupported reminder delivery kind: ${String(kind || 'unknown')}`);
+  if (typeof kind !== 'string') {
+    throw new Error('Unsupported reminder delivery kind: unknown');
+  }
+  const normalized=kind.trim();
+  const config = REMINDER_DELIVERY_KINDS[normalized];
+  if (!config || normalized !== kind) {
+    throw new Error(`Unsupported reminder delivery kind: ${normalized || 'unknown'}`);
+  }
   return config;
 }
 
@@ -37,30 +134,97 @@ export function createReminderDeliveryStore({
   supaHeaders,
   recordOpsEvent,
   redactOpsString,
+  now = Date.now,
 }) {
-  function requireOwnedClaimMutation(rows, action) {
-    if (Array.isArray(rows) && rows.length === 1) return rows[0];
-    const error = new Error(`Reminder delivery claim was lost during ${action}.`);
-    error.code = 'REMINDER_DELIVERY_CLAIM_LOST';
-    error.claimLost = true;
-    throw error;
+  required('hasSupabase',hasSupabase);
+  required('fetchWithTimeout',fetchWithTimeout);
+  required('supaHeaders',supaHeaders);
+  required('recordOpsEvent',recordOpsEvent);
+  required('redactOpsString',redactOpsString);
+  required('now',now);
+
+  function requireIdentity(row) {
+    const identity=validReminderIdentity(row);
+    if (!identity) {
+      const error=new Error('Reminder delivery identity is invalid.');
+      error.code='REMINDER_DELIVERY_IDENTITY_INVALID';
+      throw error;
+    }
+    return identity;
   }
+
+  function requireOwnedClaimMutation(rows, action, {
+    identity,
+    claimColumn='',
+    claimAt='',
+    doneColumn='',
+    requireDone=false,
+  } = {}) {
+    if (!Array.isArray(rows) || rows.length !== 1) {
+      const error = new Error(`Reminder delivery claim was lost during ${action}.`);
+      error.code = 'REMINDER_DELIVERY_CLAIM_LOST';
+      error.claimLost = true;
+      throw error;
+    }
+
+    const row=rows[0];
+    if (!row || typeof row !== 'object' || Array.isArray(row)) {
+      const error = new Error(`Reminder delivery persistence response was malformed during ${action}.`);
+      error.code='REMINDER_DELIVERY_PERSISTENCE_INVALID';
+      throw error;
+    }
+
+    if (
+      identity
+      && (
+        positiveSafeInteger(row.telegram_id) !== identity.telegramId
+        || positiveSafeInteger(row.fixture_id) !== identity.fixtureId
+      )
+    ) {
+      const error=new Error(`Reminder delivery identity mismatch during ${action}.`);
+      error.code='REMINDER_DELIVERY_IDENTITY_MISMATCH';
+      throw error;
+    }
+
+    if (claimColumn && claimAt && row[claimColumn] !== undefined && row[claimColumn] !== claimAt) {
+      const error=new Error(`Reminder delivery claim ownership mismatch during ${action}.`);
+      error.code='REMINDER_DELIVERY_CLAIM_MISMATCH';
+      error.claimLost=true;
+      throw error;
+    }
+
+    if (requireDone && (!doneColumn || parseTimestamp(row[doneColumn]) === null)) {
+      const error=new Error(`Reminder delivery sent state was not confirmed during ${action}.`);
+      error.code='REMINDER_DELIVERY_FINISH_UNCONFIRMED';
+      throw error;
+    }
+
+    return row;
+  }
+
   function reminderDeliveryStatus(row) {
-    if (row?.kickoff_notified_at) return 'kickoff_sent';
-    if (row?.notified_at) return 'prematch_sent';
-    if (row?.important_change_notified_at) return 'important_change_sent';
-    if (row?.lineup_notified_at) return 'lineup_sent';
-    if (row?.delivery_last_error === REMINDER_UNKNOWN_STATE || row?.delivery_last_error === REMINDER_SENDING_STATE) return 'delivery_unknown';
-    if (row?.delivery_last_error) return 'retry_pending';
+    const source=row&&typeof row === 'object'&&!Array.isArray(row) ? row : {};
+    if (parseTimestamp(source.kickoff_notified_at) !== null) return 'kickoff_sent';
+    if (parseTimestamp(source.notified_at) !== null) return 'prematch_sent';
+    if (parseTimestamp(source.important_change_notified_at) !== null) return 'important_change_sent';
+    if (parseTimestamp(source.lineup_notified_at) !== null) return 'lineup_sent';
+    if (source.delivery_last_error === REMINDER_UNKNOWN_STATE || source.delivery_last_error === REMINDER_SENDING_STATE) return 'delivery_unknown';
+    if (typeof source.delivery_last_error === 'string' && source.delivery_last_error.trim()) return 'retry_pending';
     return 'scheduled';
   }
 
   async function clearStaleReminderClaims(cfg) {
-    if (!hasSupabase(cfg)) return { prematch: 0, kickoff: 0, lineup: 0, important_change: 0, failed: 0 };
-    const cutoff = new Date(Date.now() - 20 * 60_000).toISOString();
+    if (!strictSupabaseAvailable(hasSupabase,cfg)) {
+      return { prematch:0, kickoff:0, lineup:0, important_change:0, failed:0 };
+    }
+    const origin=supabaseOrigin(cfg);
+    if (!origin) throw new Error('Supabase reminder store URL is invalid.');
+    const current=clockValue(now);
+    if (current === null || current < 20*60_000) throw new Error('Reminder delivery clock is invalid.');
+    const cutoff = new Date(current - 20 * 60_000).toISOString();
 
     const clearColumn = async column => {
-      const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
+      const url = new URL(`${origin}/rest/v1/match_reminders`);
       url.searchParams.set('enabled', 'eq.true');
       url.searchParams.set(column, `lt.${cutoff}`);
       url.searchParams.set('or', `(delivery_last_error.is.null,delivery_last_error.eq.${REMINDER_CLAIM_STATE})`);
@@ -69,13 +233,14 @@ export function createReminderDeliveryStore({
         headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
         body: JSON.stringify({ [column]: null }),
       }, 7000, 'Supabase reminder stale claim');
-      if (!r.ok) throw new Error(`Supabase reminder claims: HTTP ${r.status}`);
-      const rows = await r.json().catch(() => []);
-      return Array.isArray(rows) ? rows.length : 0;
+      requireConfirmedResponse(r,'Supabase reminder claims');
+      const rows = await r.json().catch(() => null);
+      if (!Array.isArray(rows)) throw new Error('Supabase reminder stale claim response is malformed.');
+      return rows.length;
     };
 
     const reconcileSendingColumn = async ({ claimColumn, doneColumn }) => {
-      const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
+      const url = new URL(`${origin}/rest/v1/match_reminders`);
       url.searchParams.set('enabled', 'eq.true');
       url.searchParams.set(claimColumn, `lt.${cutoff}`);
       url.searchParams.set(doneColumn, 'is.null');
@@ -85,13 +250,14 @@ export function createReminderDeliveryStore({
         headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
         body: JSON.stringify({
           delivery_last_error: REMINDER_UNKNOWN_STATE,
-          delivery_last_attempt_at: new Date().toISOString(),
+          delivery_last_attempt_at: isoNow(now),
           delivery_retry_after: null,
         }),
       }, 7000, 'Supabase reminder sending reconciliation');
-      if (!r.ok) throw new Error(`Supabase reminder sending reconciliation: HTTP ${r.status}`);
-      const rows = await r.json().catch(() => []);
-      return Array.isArray(rows) ? rows.length : 0;
+      requireConfirmedResponse(r,'Supabase reminder sending reconciliation');
+      const rows = await r.json().catch(() => null);
+      if (!Array.isArray(rows)) throw new Error('Supabase reminder sending reconciliation response is malformed.');
+      return rows.length;
     };
 
     const cleared = Object.fromEntries(Object.keys(REMINDER_DELIVERY_KINDS).map(kind => [kind, 0]));
@@ -111,51 +277,51 @@ export function createReminderDeliveryStore({
       }
     }
 
-    const prematch = Number(cleared.prematch || 0);
-    const kickoff = Number(cleared.kickoff || 0);
-    const lineup = Number(cleared.lineup || 0);
-    const important_change = Number(cleared.important_change || 0);
-    const total = Object.values(cleared).reduce((sum, value) => sum + Number(value || 0), 0);
-    const reconciledTotal = Object.values(reconciled).reduce((sum, value) => sum + Number(value || 0), 0);
+    const prematch = nonNegativeInteger(cleared.prematch) ?? 0;
+    const kickoff = nonNegativeInteger(cleared.kickoff) ?? 0;
+    const lineup = nonNegativeInteger(cleared.lineup) ?? 0;
+    const important_change = nonNegativeInteger(cleared.important_change) ?? 0;
+    const total = prematch + kickoff + lineup + important_change;
+    const reconciledCounts={
+      prematch:nonNegativeInteger(reconciled.prematch) ?? 0,
+      kickoff:nonNegativeInteger(reconciled.kickoff) ?? 0,
+      lineup:nonNegativeInteger(reconciled.lineup) ?? 0,
+      important_change:nonNegativeInteger(reconciled.important_change) ?? 0,
+    };
+    const reconciledTotal = Object.values(reconciledCounts).reduce((sum,value)=>sum+value,0);
 
     if (total > 0) {
       await recordOpsEvent(cfg, {
-        severity: 'warning',
-        source: 'reminders',
-        eventType: 'reminder_delivery',
-        code: 'REMINDER_STALE_CLAIMS',
-        message: `Восстановлено зависших заявок на доставку уведомлений: ${total}.`,
-        meta: { prematch, kickoff, lineup, important_change },
+        severity:'warning',
+        source:'reminders',
+        eventType:'reminder_delivery',
+        code:'REMINDER_STALE_CLAIMS',
+        message:`Восстановлено зависших заявок на доставку уведомлений: ${total}.`,
+        meta:{ prematch, kickoff, lineup, important_change },
       }).catch(() => {});
     }
 
     if (reconciledTotal > 0) {
       await recordOpsEvent(cfg, {
-        severity: 'warning',
-        source: 'reminders',
-        eventType: 'reminder_delivery',
-        code: 'REMINDER_STALE_SENDING_RECONCILED',
-        message: `Неопределённые отправки переведены из sending в fail-closed unknown: ${reconciledTotal}.`,
-        endpoint: 'cron:reminders',
-        meta: {
-          total: reconciledTotal,
-          prematch: Number(reconciled.prematch || 0),
-          kickoff: Number(reconciled.kickoff || 0),
-          lineup: Number(reconciled.lineup || 0),
-          important_change: Number(reconciled.important_change || 0),
-        },
+        severity:'warning',
+        source:'reminders',
+        eventType:'reminder_delivery',
+        code:'REMINDER_STALE_SENDING_RECONCILED',
+        message:`Неопределённые отправки переведены из sending в fail-closed unknown: ${reconciledTotal}.`,
+        endpoint:'cron:reminders',
+        meta:{total:reconciledTotal,...reconciledCounts},
       }).catch(() => {});
     }
 
     if (failures.length > 0) {
       await recordOpsEvent(cfg, {
-        severity: 'error',
-        source: 'reminders',
-        eventType: 'reminder_delivery',
-        code: 'REMINDER_STALE_CLAIM_CLEANUP_FAILED',
-        message: `Не удалось очистить ${failures.length} типов зависших claim.`,
-        endpoint: 'cron:reminders',
-        meta: {
+        severity:'error',
+        source:'reminders',
+        eventType:'reminder_delivery',
+        code:'REMINDER_STALE_CLAIM_CLEANUP_FAILED',
+        message:`Не удалось очистить ${failures.length} типов зависших claim.`,
+        endpoint:'cron:reminders',
+        meta:{
           failed: failures.length,
           kinds: failures.map(item => item.kind),
         },
@@ -166,111 +332,165 @@ export function createReminderDeliveryStore({
   }
 
   async function claimReminderDelivery(row, kind, cfg) {
-    if (!hasSupabase(cfg)) return { claimed: true, claimAt: new Date().toISOString() };
-
     const { claimColumn, doneColumn, attemptsColumn } = reminderDeliveryKindConfig(kind);
-    const claimAt = new Date().toISOString();
+    const identity=requireIdentity(row);
+    const claimAt=isoNow(now);
+    if (!strictSupabaseAvailable(hasSupabase,cfg)) return { claimed:true, claimAt };
 
-    const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
-    url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
-    url.searchParams.set('fixture_id', `eq.${Number(row.fixture_id)}`);
+    const origin=supabaseOrigin(cfg);
+    if (!origin) throw new Error('Supabase reminder store URL is invalid.');
+    const attemptsRaw=row?.[attemptsColumn];
+    const attempts=attemptsRaw === undefined || attemptsRaw === null || attemptsRaw === ''
+      ? 0
+      : nonNegativeInteger(attemptsRaw);
+    if (attempts === null || attempts >= Number.MAX_SAFE_INTEGER) {
+      const error=new Error('Reminder delivery attempt counter is invalid.');
+      error.code='REMINDER_DELIVERY_ATTEMPTS_INVALID';
+      throw error;
+    }
+
+    const url = new URL(`${origin}/rest/v1/match_reminders`);
+    url.searchParams.set('telegram_id', `eq.${identity.telegramId}`);
+    url.searchParams.set('fixture_id', `eq.${identity.fixtureId}`);
     url.searchParams.set('enabled', 'eq.true');
     url.searchParams.set(doneColumn, 'is.null');
     url.searchParams.set(claimColumn, 'is.null');
 
     const r = await fetchWithTimeout(url, {
-      method: 'PATCH',
-      headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
-      body: JSON.stringify({
-        [claimColumn]: claimAt,
-        [attemptsColumn]: Math.max(0, Number(row?.[attemptsColumn] || 0)) + 1,
-        delivery_last_attempt_at: claimAt,
-        delivery_last_error: REMINDER_CLAIM_STATE,
+      method:'PATCH',
+      headers:supaHeaders(cfg, { Prefer:'return=representation' }),
+      body:JSON.stringify({
+        [claimColumn]:claimAt,
+        [attemptsColumn]:attempts+1,
+        delivery_last_attempt_at:claimAt,
+        delivery_last_error:REMINDER_CLAIM_STATE,
       }),
-    }, 7000, 'Supabase reminder claim');
+    },7000,'Supabase reminder claim');
 
-    if (!r.ok) throw new Error(`Supabase reminder claim: HTTP ${r.status}`);
-    const rows = await r.json().catch(() => []);
-    return { claimed: Array.isArray(rows) && rows.length === 1, claimAt };
+    requireConfirmedResponse(r,'Supabase reminder claim');
+    const rows=await r.json().catch(()=>null);
+    if (!Array.isArray(rows)) throw new Error('Supabase reminder claim response is malformed.');
+    if (rows.length === 0) return {claimed:false,claimAt};
+    requireOwnedClaimMutation(rows,'claim',{
+      identity,
+      claimColumn,
+      claimAt,
+    });
+    return {claimed:true,claimAt};
   }
 
   async function markReminderDeliverySending(row, kind, claimAt, cfg) {
-    if (!hasSupabase(cfg)) return;
     const { claimColumn } = reminderDeliveryKindConfig(kind);
+    const identity=requireIdentity(row);
+    const ownedClaimAt=validClaimAt(claimAt);
+    if (!ownedClaimAt) throw new Error('Reminder delivery claim timestamp is invalid.');
+    if (!strictSupabaseAvailable(hasSupabase,cfg)) return;
 
-    const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
-    url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
-    url.searchParams.set('fixture_id', `eq.${Number(row.fixture_id)}`);
-    url.searchParams.set(claimColumn, `eq.${claimAt}`);
+    const origin=supabaseOrigin(cfg);
+    if (!origin) throw new Error('Supabase reminder store URL is invalid.');
+    const url = new URL(`${origin}/rest/v1/match_reminders`);
+    url.searchParams.set('telegram_id', `eq.${identity.telegramId}`);
+    url.searchParams.set('fixture_id', `eq.${identity.fixtureId}`);
+    url.searchParams.set(claimColumn, `eq.${ownedClaimAt}`);
 
     const r = await fetchWithTimeout(url, {
-      method: 'PATCH',
-      headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
-      body: JSON.stringify({
-        delivery_last_error: REMINDER_SENDING_STATE,
-        delivery_last_attempt_at: new Date().toISOString(),
-        delivery_retry_after: null,
+      method:'PATCH',
+      headers:supaHeaders(cfg, { Prefer:'return=representation' }),
+      body:JSON.stringify({
+        delivery_last_error:REMINDER_SENDING_STATE,
+        delivery_last_attempt_at:isoNow(now),
+        delivery_retry_after:null,
       }),
-    }, 7000, 'Supabase reminder sending state');
+    },7000,'Supabase reminder sending state');
 
-    if (!r.ok) throw new Error(`Supabase reminder sending state: HTTP ${r.status}`);
-    const rows = await r.json().catch(() => []);
-    if (!Array.isArray(rows) || rows.length !== 1) {
-      throw new Error('Reminder delivery claim was lost before Telegram send.');
-    }
+    requireConfirmedResponse(r,'Supabase reminder sending state');
+    const rows=await r.json().catch(()=>null);
+    requireOwnedClaimMutation(rows,'sending state',{
+      identity,
+      claimColumn,
+      claimAt:ownedClaimAt,
+    });
   }
 
   async function holdReminderDeliveryUnknown(row, kind, claimAt, cfg) {
-    if (!hasSupabase(cfg)) return;
     const { claimColumn } = reminderDeliveryKindConfig(kind);
+    const identity=requireIdentity(row);
+    const ownedClaimAt=validClaimAt(claimAt);
+    if (!ownedClaimAt) throw new Error('Reminder delivery claim timestamp is invalid.');
+    if (!strictSupabaseAvailable(hasSupabase,cfg)) return;
 
-    const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
-    url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
-    url.searchParams.set('fixture_id', `eq.${Number(row.fixture_id)}`);
-    url.searchParams.set(claimColumn, `eq.${claimAt}`);
+    const origin=supabaseOrigin(cfg);
+    if (!origin) throw new Error('Supabase reminder store URL is invalid.');
+    const url = new URL(`${origin}/rest/v1/match_reminders`);
+    url.searchParams.set('telegram_id', `eq.${identity.telegramId}`);
+    url.searchParams.set('fixture_id', `eq.${identity.fixtureId}`);
+    url.searchParams.set(claimColumn, `eq.${ownedClaimAt}`);
 
     const r = await fetchWithTimeout(url, {
-      method: 'PATCH',
-      headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
-      body: JSON.stringify({
-        delivery_last_error: REMINDER_UNKNOWN_STATE,
-        delivery_last_attempt_at: new Date().toISOString(),
-        delivery_retry_after: null,
+      method:'PATCH',
+      headers:supaHeaders(cfg, { Prefer:'return=representation' }),
+      body:JSON.stringify({
+        delivery_last_error:REMINDER_UNKNOWN_STATE,
+        delivery_last_attempt_at:isoNow(now),
+        delivery_retry_after:null,
       }),
-    }, 7000, 'Supabase reminder unknown hold');
+    },7000,'Supabase reminder unknown hold');
 
-    if (!r.ok) throw new Error(`Supabase reminder unknown hold: HTTP ${r.status}`);
-    const rows = await r.json().catch(() => []);
-    requireOwnedClaimMutation(rows, 'unknown hold');
+    requireConfirmedResponse(r,'Supabase reminder unknown hold');
+    const rows=await r.json().catch(()=>null);
+    requireOwnedClaimMutation(rows,'unknown hold',{
+      identity,
+      claimColumn,
+      claimAt:ownedClaimAt,
+    });
   }
 
   async function readReminderDeliveryState(row, kind, cfg) {
-    if (!hasSupabase(cfg)) return null;
     const { claimColumn, doneColumn } = reminderDeliveryKindConfig(kind);
-    const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
-    url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
-    url.searchParams.set('fixture_id', `eq.${Number(row.fixture_id)}`);
+    const identity=requireIdentity(row);
+    if (!strictSupabaseAvailable(hasSupabase,cfg)) return null;
+
+    const origin=supabaseOrigin(cfg);
+    if (!origin) throw new Error('Supabase reminder store URL is invalid.');
+    const url = new URL(`${origin}/rest/v1/match_reminders`);
+    url.searchParams.set('telegram_id', `eq.${identity.telegramId}`);
+    url.searchParams.set('fixture_id', `eq.${identity.fixtureId}`);
     url.searchParams.set('select', `telegram_id,fixture_id,${claimColumn},${doneColumn},delivery_last_error,delivery_last_attempt_at,delivery_last_success_at`);
     url.searchParams.set('limit', '2');
 
     const r = await fetchWithTimeout(url, {
-      method: 'GET',
-      headers: supaHeaders(cfg),
-    }, 7000, 'Supabase reminder delivery reconciliation read');
-    if (!r.ok) throw new Error(`Supabase reminder delivery reconciliation read: HTTP ${r.status}`);
-    const rows = await r.json().catch(() => []);
-    return Array.isArray(rows) && rows.length === 1 ? rows[0] : null;
+      method:'GET',
+      headers:supaHeaders(cfg),
+    },7000,'Supabase reminder delivery reconciliation read');
+    requireConfirmedResponse(r,'Supabase reminder delivery reconciliation read');
+    const rows=await r.json().catch(()=>null);
+    if (!Array.isArray(rows) || rows.length !== 1) return null;
+    const current=rows[0];
+    if (
+      !current
+      || typeof current !== 'object'
+      || Array.isArray(current)
+      || positiveSafeInteger(current.telegram_id) !== identity.telegramId
+      || positiveSafeInteger(current.fixture_id) !== identity.fixtureId
+    ) return null;
+    return current;
   }
 
   async function finishReminderDelivery(row, kind, claimAt, cfg) {
-    if (!hasSupabase(cfg)) return { finalized:true, reconciled:false };
     const { claimColumn, doneColumn } = reminderDeliveryKindConfig(kind);
+    const identity=requireIdentity(row);
+    const ownedClaimAt=validClaimAt(claimAt);
+    if (!ownedClaimAt) throw new Error('Reminder delivery claim timestamp is invalid.');
+    const doneAt=isoNow(now);
+    if (!strictSupabaseAvailable(hasSupabase,cfg)) return { finalized:true, reconciled:false, doneAt };
+
+    const origin=supabaseOrigin(cfg);
+    if (!origin) throw new Error('Supabase reminder store URL is invalid.');
     const kickoff = kind === 'kickoff';
-    const doneAt = new Date().toISOString();
 
     const confirmCommittedFinish = async () => {
       const current = await readReminderDeliveryState(row, kind, cfg);
-      if (current?.[doneColumn]) {
+      if (current && parseTimestamp(current[doneColumn]) !== null) {
         return {
           finalized:true,
           reconciled:true,
@@ -280,84 +500,118 @@ export function createReminderDeliveryStore({
       return null;
     };
 
-    const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
-    url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
-    url.searchParams.set('fixture_id', `eq.${Number(row.fixture_id)}`);
-    url.searchParams.set(claimColumn, `eq.${claimAt}`);
+    const url = new URL(`${origin}/rest/v1/match_reminders`);
+    url.searchParams.set('telegram_id', `eq.${identity.telegramId}`);
+    url.searchParams.set('fixture_id', `eq.${identity.fixtureId}`);
+    url.searchParams.set(claimColumn, `eq.${ownedClaimAt}`);
 
     const patch = {
-      [doneColumn]: doneAt,
-      [claimColumn]: null,
-      delivery_last_success_at: doneAt,
-      delivery_last_error: null,
-      delivery_retry_after: null,
+      [doneColumn]:doneAt,
+      [claimColumn]:null,
+      delivery_last_success_at:doneAt,
+      delivery_last_error:null,
+      delivery_retry_after:null,
     };
 
-    if (kickoff && !row.notified_at) patch.notified_at = doneAt;
+    if (kickoff && parseTimestamp(row?.notified_at) === null) patch.notified_at=doneAt;
 
     let r;
     try {
       r = await fetchWithTimeout(url, {
-        method: 'PATCH',
-        headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
-        body: JSON.stringify(patch),
-      }, 7000, 'Supabase reminder finish');
+        method:'PATCH',
+        headers:supaHeaders(cfg, { Prefer:'return=representation' }),
+        body:JSON.stringify(patch),
+      },7000,'Supabase reminder finish');
     } catch (error) {
       const reconciled = await confirmCommittedFinish().catch(() => null);
       if (reconciled) return reconciled;
       throw error;
     }
 
-    if (!r.ok) {
+    if (r?.ok !== true) {
       const reconciled = await confirmCommittedFinish().catch(() => null);
       if (reconciled) return reconciled;
-      throw new Error(`Supabase reminder finish: HTTP ${r.status}`);
+      throw new Error(`Supabase reminder finish: HTTP ${responseStatus(r) || 'unknown'}`);
     }
 
-    const rows = await r.json().catch(() => []);
+    const rows = await r.json().catch(() => null);
     if (Array.isArray(rows) && rows.length === 1) {
-      return { finalized:true, reconciled:false, doneAt:rows[0]?.[doneColumn] || doneAt };
+      const confirmed=requireOwnedClaimMutation(rows,'finish',{
+        identity,
+        doneColumn,
+        requireDone:true,
+      });
+      return {
+        finalized:true,
+        reconciled:false,
+        doneAt:confirmed[doneColumn],
+      };
     }
 
     const reconciled = await confirmCommittedFinish().catch(() => null);
     if (reconciled) return reconciled;
-    requireOwnedClaimMutation(rows, 'finish');
+    requireOwnedClaimMutation(rows,'finish',{identity,doneColumn,requireDone:true});
   }
 
   async function releaseReminderClaim(row, kind, claimAt, errorMessage, cfg, options = {}) {
-    if (!hasSupabase(cfg)) return;
     const { claimColumn } = reminderDeliveryKindConfig(kind);
+    const identity=requireIdentity(row);
+    const ownedClaimAt=validClaimAt(claimAt);
+    if (!ownedClaimAt) throw new Error('Reminder delivery claim timestamp is invalid.');
+    if (!strictSupabaseAvailable(hasSupabase,cfg)) return;
 
-    const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
-    url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
-    url.searchParams.set('fixture_id', `eq.${Number(row.fixture_id)}`);
-    url.searchParams.set(claimColumn, `eq.${claimAt}`);
+    const origin=supabaseOrigin(cfg);
+    if (!origin) throw new Error('Supabase reminder store URL is invalid.');
+    const optionSource=options&&typeof options === 'object'&&!Array.isArray(options) ? options : {};
+    const retrySeconds=Math.min(
+      MAX_TELEGRAM_RETRY_AFTER_SECONDS,
+      positiveSafeInteger(optionSource.retryAfter),
+    );
+    const current=clockValue(now);
+    if (current === null || current > MAX_TIMESTAMP_MS-retrySeconds*1000) {
+      throw new Error('Reminder delivery retry clock is invalid.');
+    }
+
+    const url = new URL(`${origin}/rest/v1/match_reminders`);
+    url.searchParams.set('telegram_id', `eq.${identity.telegramId}`);
+    url.searchParams.set('fixture_id', `eq.${identity.fixtureId}`);
+    url.searchParams.set(claimColumn, `eq.${ownedClaimAt}`);
 
     const patch = {
-      [claimColumn]: null,
-      delivery_last_error: redactOpsString(errorMessage || 'Telegram delivery failed.', 240),
-      delivery_last_attempt_at: new Date().toISOString(),
-      delivery_retry_after: Number(options.retryAfter || 0) > 0
-        ? new Date(Date.now() + Number(options.retryAfter) * 1000).toISOString()
+      [claimColumn]:null,
+      delivery_last_error:redactOpsString(
+        typeof errorMessage === 'string' && errorMessage.trim()
+          ? errorMessage
+          : 'Telegram delivery failed.',
+        240,
+      ),
+      delivery_last_attempt_at:new Date(current).toISOString(),
+      delivery_retry_after:retrySeconds > 0
+        ? new Date(current + retrySeconds*1000).toISOString()
         : null,
     };
 
-    if (options.disable) {
-      patch.enabled = false;
-      patch.delivery_disabled_reason = redactOpsString(options.disableReason || 'telegram_forbidden', 80);
+    if (optionSource.disable === true) {
+      patch.enabled=false;
+      patch.delivery_disabled_reason=redactOpsString(
+        typeof optionSource.disableReason === 'string' && optionSource.disableReason.trim()
+          ? optionSource.disableReason
+          : 'telegram_forbidden',
+        80,
+      );
     }
 
     const r = await fetchWithTimeout(url, {
-      method: 'PATCH',
-      headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
-      body: JSON.stringify(patch),
-    }, 7000, 'Supabase reminder release');
-    if (!r.ok) throw new Error(`Supabase reminder release: HTTP ${r.status}`);
-    const rows = await r.json().catch(() => []);
-    requireOwnedClaimMutation(rows, 'release');
+      method:'PATCH',
+      headers:supaHeaders(cfg, { Prefer:'return=representation' }),
+      body:JSON.stringify(patch),
+    },7000,'Supabase reminder release');
+    requireConfirmedResponse(r,'Supabase reminder release');
+    const rows=await r.json().catch(()=>null);
+    requireOwnedClaimMutation(rows,'release',{identity});
   }
 
-  return {
+  return Object.freeze({
     reminderDeliveryStatus,
     clearStaleReminderClaims,
     claimReminderDelivery,
@@ -366,5 +620,5 @@ export function createReminderDeliveryStore({
     readReminderDeliveryState,
     finishReminderDelivery,
     releaseReminderClaim,
-  };
+  });
 }
