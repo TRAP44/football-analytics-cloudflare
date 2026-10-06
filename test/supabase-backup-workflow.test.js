@@ -58,8 +58,16 @@ test('Supabase restore drill is isolated, measurable and preserves least privile
   assert.match(workflow, /actions\/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0/);
   assert.doesNotMatch(workflow, /gh run download/);
   assert.match(workflow, /supabase@\$SUPABASE_CLI_VERSION" start/);
-  assert.ok(workflow.includes('grep -qi microsoft /proc/sys/kernel/osrelease'));
-  assert.ok(workflow.includes('/mnt/c/Users/Public/matchradar-supabase-restore-${GITHUB_RUN_ID}'));
+  assert.equal(
+    (workflow.match(/actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/g) || []).length,
+    2,
+  );
+  assert.ok(workflow.includes('Use Node.js 22 for restore drill'));
+  assert.ok(workflow.includes('NODE_BIN="$(command -v node)"'));
+  assert.ok(workflow.includes('NPX_BIN="$(command -v npx)"'));
+  assert.ok(workflow.includes('Restore drill requires native Linux Node/npm tooling inside WSL.'));
+  assert.ok(workflow.includes('docker info >/dev/null'));
+  assert.ok(workflow.includes('LOCAL_PROJECT="$RUNNER_TEMP/supabase-restore-project"'));
   assert.ok(workflow.includes('echo "LOCAL_PROJECT=$LOCAL_PROJECT" >> "$GITHUB_ENV"'));
   assert.ok(workflow.includes('tail -n 80 "$RUNNER_TEMP/supabase-restore-start.log"'));
   assert.ok(workflow.includes('DB_CONTAINER="supabase_db_${PROJECT_ID}"'));

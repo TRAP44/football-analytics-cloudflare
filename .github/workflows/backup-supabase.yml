@@ -252,6 +252,31 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Use Node.js 22 for restore drill
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Validate restore runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          NODE_BIN="$(command -v node)"
+          NPX_BIN="$(command -v npx)"
+          [[ -n "$NODE_BIN" && -n "$NPX_BIN" ]]
+
+          case "$NODE_BIN:$NPX_BIN" in
+            *"/mnt/c/"*|*".exe"*|*".cmd"*)
+              echo "Restore drill requires native Linux Node/npm tooling inside WSL." >&2
+              echo "node=$NODE_BIN npx=$NPX_BIN" >&2
+              exit 1
+              ;;
+          esac
+
+          node --version
+          npx --version
+          docker info >/dev/null
+
       - name: Validate restore secret
         shell: bash
         run: |
@@ -337,17 +362,7 @@ jobs:
           RESTORE_STARTED_EPOCH="$(date -u +%s)"
           RESTORE_STARTED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
-          # Docker Desktop can invoke Windows-side helpers from WSL. A Linux-only
-          # working directory is then exposed to CMD.EXE as a UNC path, which
-          # makes Supabase fall back to C:\\Windows. Use a Windows-backed
-          # throwaway directory on WSL so both Linux tools and Docker Desktop
-          # resolve the same working directory without weakening isolation.
-          if grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null \
-            && [[ -d /mnt/c/Users/Public && -w /mnt/c/Users/Public ]]; then
-            LOCAL_PROJECT="/mnt/c/Users/Public/matchradar-supabase-restore-${GITHUB_RUN_ID}"
-          else
-            LOCAL_PROJECT="$RUNNER_TEMP/supabase-restore-project"
-          fi
+          LOCAL_PROJECT="$RUNNER_TEMP/supabase-restore-project"
 
           rm -rf "$LOCAL_PROJECT"
           mkdir -p "$LOCAL_PROJECT"
