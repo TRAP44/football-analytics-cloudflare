@@ -16,8 +16,16 @@ export function createProviderBudgetRuntime(deps) {
     setCache,
   } = deps;
 
+  function finiteQuotaNumber(value) {
+    if (value === null || value === undefined || typeof value === 'boolean') return null;
+    if (typeof value === 'string' && !value.trim()) return null;
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : null;
+  }
+
   function inferFootballPlan(dailyLimit) {
-    const n = Number(dailyLimit || 0);
+    const n = finiteQuotaNumber(dailyLimit);
+    if (n === null) return 'UNKNOWN';
     if (n >= 150000) return 'MEGA';
     if (n >= 75000) return 'ULTRA';
     if (n >= 7500) return 'PRO';
@@ -27,14 +35,22 @@ export function createProviderBudgetRuntime(deps) {
   
   function updateProviderFromHeaders(response) {
     const readNum = name => {
-      const v = response.headers.get(name);
-      const n = Number(v);
-      return Number.isFinite(n) ? n : null;
+      let raw = null;
+      try { raw = response?.headers?.get?.(name); } catch { raw = null; }
+      return finiteQuotaNumber(raw);
     };
     const dailyLimit = readNum('x-ratelimit-requests-limit');
     const dailyRemaining = readNum('x-ratelimit-requests-remaining');
     const minuteLimit = readNum('x-ratelimit-limit');
     const minuteRemaining = readNum('x-ratelimit-remaining');
+    const completeHeaderSet = dailyLimit !== null
+      && dailyLimit > 0
+      && dailyRemaining !== null
+      && dailyRemaining <= dailyLimit
+      && minuteLimit !== null
+      && minuteLimit > 0
+      && minuteRemaining !== null
+      && minuteRemaining <= minuteLimit;
     memory.provider = {
       ...memory.provider,
       name: 'API-Football',
@@ -43,7 +59,7 @@ export function createProviderBudgetRuntime(deps) {
       dailyRemaining: dailyRemaining ?? memory.provider?.dailyRemaining ?? null,
       minuteLimit: minuteLimit ?? memory.provider?.minuteLimit ?? null,
       minuteRemaining: minuteRemaining ?? memory.provider?.minuteRemaining ?? null,
-      updatedAt: new Date().toISOString(),
+      updatedAt: completeHeaderSet ? new Date().toISOString() : (memory.provider?.updatedAt || null),
     };
   }
   
@@ -51,9 +67,20 @@ export function createProviderBudgetRuntime(deps) {
   const PROVIDER_COOLDOWN_SHARED_CACHE_KEY = 'provider-state:api-football:cooldown:v1';
   
   function completeProviderQuotaSnapshot(value = {}) {
-    return String(value?.plan || 'UNKNOWN') !== 'UNKNOWN'
-      && [value?.dailyLimit, value?.dailyRemaining, value?.minuteLimit, value?.minuteRemaining]
-        .every(item => Number.isFinite(Number(item)));
+    const plan = String(value?.plan || 'UNKNOWN').toUpperCase();
+    const dailyLimit = finiteQuotaNumber(value?.dailyLimit);
+    const dailyRemaining = finiteQuotaNumber(value?.dailyRemaining);
+    const minuteLimit = finiteQuotaNumber(value?.minuteLimit);
+    const minuteRemaining = finiteQuotaNumber(value?.minuteRemaining);
+    return ['FREE','PRO','ULTRA','MEGA'].includes(plan)
+      && dailyLimit !== null
+      && dailyLimit > 0
+      && dailyRemaining !== null
+      && dailyRemaining <= dailyLimit
+      && minuteLimit !== null
+      && minuteLimit > 0
+      && minuteRemaining !== null
+      && minuteRemaining <= minuteLimit;
   }
   
   async function loadSharedProviderState(cfg) {
@@ -118,11 +145,10 @@ export function createProviderBudgetRuntime(deps) {
   
   function providerQuotaEvidence(cfg) {
     const p=memory.provider || {};
-    const raw=[p.dailyLimit,p.dailyRemaining,p.minuteLimit,p.minuteRemaining];
-    if (raw.some(value=>value===null || value===undefined || value==='')) return;
-    const values=raw.map(Number);
-    if (String(p.plan || 'UNKNOWN')==='UNKNOWN' || !values.every(Number.isFinite)) return;
+    if (!completeProviderQuotaSnapshot(p)) return;
+    const updatedAt=Date.parse(String(p.updatedAt || ''));
     const now=Date.now();
+    if (!Number.isFinite(updatedAt) || updatedAt > now + 60_000 || now - updatedAt > 10 * 60_000) return;
     if (now-Number(memory.providerQuotaEvidenceAt || 0)<10*60_000) return;
     memory.providerQuotaEvidenceAt=now;
     void recordOpsEvent(cfg,{
@@ -194,9 +220,9 @@ export function createProviderBudgetRuntime(deps) {
   
   function paidQuotaHealthy() {
     const p = memory.provider || {};
-    if (!['PRO','ULTRA','MEGA'].includes(p.plan)) return false;
-    if (Number.isFinite(Number(p.dailyRemaining)) && Number(p.dailyRemaining) < 50) return false;
-    if (Number.isFinite(Number(p.minuteRemaining)) && Number(p.minuteRemaining) < 5) return false;
+    if (!['PRO','ULTRA','MEGA'].includes(p.plan) || !completeProviderQuotaSnapshot(p)) return false;
+    if (Number(p.dailyRemaining) < 50) return false;
+    if (Number(p.minuteRemaining) < 5) return false;
     return true;
   }
   
