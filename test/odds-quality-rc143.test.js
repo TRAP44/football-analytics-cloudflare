@@ -148,7 +148,10 @@ test('RC143 filters malformed historical snapshots and recomputes movement proba
   assert.ok(Math.abs(safe[0].homeProb+safe[0].drawProb+safe[0].awayProb-100)<=0.2);
 });
 
-const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/analysis-runtime.js', 'utf8') + '\n' + fs.readFileSync('src/match-center-runtime.js', 'utf8');
+const worker = fs.readFileSync('src/worker.js', 'utf8')
+  + '\n' + fs.readFileSync('src/analysis-runtime.js', 'utf8')
+  + '\n' + fs.readFileSync('src/match-center-runtime.js', 'utf8')
+  + '\n' + fs.readFileSync('src/odds-snapshot-runtime.js', 'utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 
@@ -168,7 +171,7 @@ test('RC143 exposes odds quality through Match Center, analysis and production h
   assert.match(worker,/analysisVersion:\s*'4\.15\.0-availability-quality'/);
   assert.match(worker,/liveOddsQuality,/);
   assert.match(worker,/oddsQuality,/);
-  assert.match(worker,/oddsSemanticQualityGuard: 'enabled'/);
+  assert.match(worker,/liveOdds:liveOddsTrusted/);
   assert.match(app,/function oddsQualityHintHtml/);
   assert.match(app,/oddsQualityHintHtml\(d\.liveOddsQuality\)/);
   assert.match(app,/oddsQualityHintHtml\(d\.oddsQuality\)/);
