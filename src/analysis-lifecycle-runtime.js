@@ -439,7 +439,7 @@ export function createAnalysisLifecycleRuntime(deps) {
     const newSignalLabel=safeText(after?.aiInstructor?.betSignal?.label || newSignal || '—',120);
     if (oldSignal && newSignal && oldSignal!==newSignal) {
       add('signal','AI-сигнал изменился',oldSignalLabel,newSignalLabel,'high');
-    } else if (Boolean(oldSignal)!==Boolean(newSignal)) {
+    } else if (!oldSignal || !newSignal) {
       incomplete=true;
     }
 
@@ -468,12 +468,9 @@ export function createAnalysisLifecycleRuntime(deps) {
 
     const oldConf=finiteNumber(before?.aiInstructor?.confidenceScore ?? before?.confidence?.score);
     const newConf=finiteNumber(after?.aiInstructor?.confidenceScore ?? after?.confidence?.score);
-    if (
-      oldConf !== null && newConf !== null
-      && oldConf>=0 && oldConf<=100
-      && newConf>=0 && newConf<=100
-      && Math.abs(newConf-oldConf)>=8
-    ) {
+    const oldConfValid=oldConf !== null && oldConf>=0 && oldConf<=100;
+    const newConfValid=newConf !== null && newConf>=0 && newConf<=100;
+    if (oldConfValid && newConfValid && Math.abs(newConf-oldConf)>=8) {
       add(
         'confidence',
         'Уверенность модели изменилась',
@@ -481,6 +478,8 @@ export function createAnalysisLifecycleRuntime(deps) {
         `${Math.round(newConf)}/100`,
         Math.abs(newConf-oldConf)>=15 ? 'high' : 'medium',
       );
+    } else if (!oldConfValid || !newConfValid) {
+      incomplete=true;
     }
 
     const oldLineups=confirmedLineupSides(before);
@@ -521,8 +520,10 @@ export function createAnalysisLifecycleRuntime(deps) {
       incomplete=true;
     }
 
-    const oldMarket=probabilityVector(before?.market?.probabilities);
-    const newMarket=probabilityVector(after?.market?.probabilities);
+    const oldMarketSource=objectValue(before?.market);
+    const newMarketSource=objectValue(after?.market);
+    const oldMarket=probabilityVector(oldMarketSource?.probabilities);
+    const newMarket=probabilityVector(newMarketSource?.probabilities);
     if (oldMarket && newMarket) {
       const marketRows=['home','draw','away']
         .map(key=>({
@@ -540,14 +541,24 @@ export function createAnalysisLifecycleRuntime(deps) {
           Math.abs(maxMarket.delta)>=5 ? 'high' : 'medium',
         );
       }
-    } else if (Boolean(oldMarket)!==Boolean(newMarket)) {
+    } else if (oldMarket && !newMarketSource) {
       add(
         'market',
-        newMarket ? 'Рыночный сигнал появился' : 'Рыночный сигнал стал недоступен',
-        oldMarket ? 'Доступен' : 'Недоступен',
-        newMarket ? 'Доступен' : 'Недоступен',
+        'Рыночный сигнал стал недоступен',
+        'Доступен',
+        'Недоступен',
         'high',
       );
+    } else if (newMarket && !oldMarketSource) {
+      add(
+        'market',
+        'Рыночный сигнал появился',
+        'Недоступен',
+        'Доступен',
+        'high',
+      );
+    } else if (oldMarketSource || newMarketSource) {
+      incomplete=true;
     }
 
     const oldRef=safeText(before?.match?.referee,180);
