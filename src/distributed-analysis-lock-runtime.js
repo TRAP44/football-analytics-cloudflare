@@ -14,6 +14,7 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
     getCacheEntry,
     hasSupabase,
     memory,
+    randomUUID,
     recordOpsEvent,
     sleepMs,
     supaDelete,
@@ -27,6 +28,7 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
     getCache,
     getCacheEntry,
     hasSupabase,
+    randomUUID,
     recordOpsEvent,
     sleepMs,
     supaDelete,
@@ -91,6 +93,12 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id)
       ? id
       : '';
+  }
+
+  function createClaimId() {
+    const id=normalizeUuid(randomUUID());
+    if (!id) throw new Error('analysis lock claim id invalid');
+    return id;
   }
 
   function safeTelemetry(key,amount=1) {
@@ -266,7 +274,7 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
         await clearExpiredLock(key,existing,cfg);
       }
 
-      const claimId=crypto.randomUUID();
+      const claimId=createClaimId();
       const now=Date.now();
       const expiresAt=new Date(now+policy.ttlSeconds*1000).toISOString();
       const payload={
