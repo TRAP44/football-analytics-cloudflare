@@ -24,6 +24,42 @@ test('router resolves normal-user API route without changing handler arguments',
   assert.deepEqual(calls[0], [req, cfg, user]);
 });
 
+test('admin authorization requires strict true instead of generic truthiness',async()=>{
+  let handlerCalled=false;
+  const deps={
+    ...baseDeps(),
+    isAdminUser:()=> 'true',
+    apiDiagnostics:async()=>{handlerCalled=true;return {ok:true};},
+  };
+  const result=await dispatchApiRoute(request('GET'),url('/api/diagnostics'),{}, {id:7},deps);
+  assert.equal(result.status,403);
+  assert.equal(handlerCalled,false);
+});
+
+test('known sensitive admin routes reject unsupported methods before handler execution',async()=>{
+  let calls=0;
+  const deps={
+    ...baseDeps(),
+    isAdminUser:()=>true,
+    apiRuntimeControls:async()=>{calls+=1;return {status:200};},
+    apiRuntimeRollback:async()=>{calls+=1;return {status:200};},
+    apiCalibrationControl:async()=>{calls+=1;return {status:200};},
+    apiModelRemediation:async()=>{calls+=1;return {status:200};},
+  };
+
+  for(const [method,path] of [
+    ['HEAD','/api/runtime-controls'],
+    ['GET','/api/runtime-controls/rollback'],
+    ['OPTIONS','/api/calibration-control'],
+    ['HEAD','/api/model-remediation'],
+  ]){
+    const result=await dispatchApiRoute(request(method),url(path),{}, {id:1},deps);
+    assert.equal(result.status,405,`${method} ${path}`);
+    assert.equal(result.body.code,'METHOD_NOT_ALLOWED');
+  }
+  assert.equal(calls,0);
+});
+
 test('admin routes remain isolated inside router boundary', async () => {
   let handlerCalled = false;
   const deps = { ...baseDeps(), apiDiagnostics: async () => { handlerCalled = true; } };
@@ -38,12 +74,60 @@ test('unknown API route keeps response compatibility', async () => {
   assert.equal(result.body.error, 'Маршрут не найден.');
 });
 
+test('billing remains disabled for truthy non-boolean monetization configuration',async()=>{
+  let calls=0;
+  const deps={
+    ...baseDeps(),
+    apiBillingPlans:async()=>{calls+=1;return {ok:true};},
+  };
+  const result=await dispatchApiRoute(
+    request('GET'),
+    url('/api/billing/plans'),
+    {monetizationEnabled:'true'},
+    {id:7},
+    deps,
+  );
+  assert.equal(result.status,404);
+  assert.equal(calls,0);
+});
+
+test('router tolerates malformed request path input without throwing',async()=>{
+  const result=await dispatchApiRoute(
+    {method:true},
+    {pathname:{toString:()=>'/api/me'}},
+    {},
+    {id:7},
+    baseDeps(),
+  );
+  assert.equal(result.status,404);
+});
+
 test('billing stays unavailable while monetization is disabled', async () => {
   const result = await dispatchApiRoute(request('GET'), url('/api/billing/plans'), { monetizationEnabled: false }, { id: 7 }, baseDeps());
   assert.equal(result.status, 404);
   assert.equal(result.body.error, 'Монетизация отложена до финального этапа проекта.');
 });
 
+
+test('sensitive guard retry-after is bounded and cannot be object-coerced',async()=>{
+  const deps={
+    ...baseDeps(),
+    isAdminUser:()=>true,
+    memory:{providerAudit:{last:null}},
+    sensitiveMutationCoordinator:{
+      claim:async()=>{throw new Error('coordinator unavailable');},
+    },
+    apiRuntimeControls:async()=>({status:200}),
+  };
+  const req=new Request('https://example.com/api/runtime-controls',{
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body:'{}',
+  });
+  const result=await dispatchApiRoute(req,new URL(req.url),{}, {id:42},deps);
+  assert.equal(result.status,503);
+  assert.equal(result.body.retryAfter,3);
+});
 
 test('router blocks exact replay of a successful sensitive admin mutation', async () => {
   let calls=0;
