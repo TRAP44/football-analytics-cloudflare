@@ -28,16 +28,36 @@ export function createUserAuthRuntime({
   recordOpsEvent,
 }) {
   async function getRequestUser(request, cfg) {
-    const initData = request.headers.get('x-telegram-init-data') || '';
-    const requestUrl = new URL(request.url);
+    let initData='';
+    try {
+      initData=request?.headers?.get?.('x-telegram-init-data') || '';
+    } catch {
+      return null;
+    }
     if (initData.length > MAX_TELEGRAM_INIT_DATA_LENGTH) return null;
+
+    let requestUrl;
+    try {
+      requestUrl=new URL(String(request?.url || ''));
+    } catch {
+      return null;
+    }
+
     const adminSensitive = usesStrictTelegramFreshness(requestUrl.pathname);
-    const mutation = !['GET','HEAD','OPTIONS'].includes(String(request.method || 'GET').toUpperCase());
+    const mutation = !['GET','HEAD','OPTIONS'].includes(String(request?.method || 'GET').toUpperCase());
     const initDataMaxAgeSeconds = adminSensitive ? 15 * 60 : mutation ? 2 * 60 * 60 : 24 * 60 * 60;
-    let user = await validateTelegramInitData(initData, cfg?.botToken, initDataMaxAgeSeconds);
-    const validatedTelegramId = positiveTelegramId(user?.id);
-    const telegramValidated = Boolean(user && validatedTelegramId);
-    if (user && !validatedTelegramId) user = null;
+
+    let validatedUser=null;
+    try {
+      validatedUser=await validateTelegramInitData(initData, cfg?.botToken, initDataMaxAgeSeconds);
+    } catch {
+      validatedUser=null;
+    }
+    const validatedTelegramId = positiveTelegramId(validatedUser?.id);
+    const telegramValidated = Boolean(validatedUser && validatedTelegramId);
+    let user = validatedTelegramId && validatedUser && typeof validatedUser === 'object'
+      ? { ...validatedUser, id:validatedTelegramId }
+      : null;
 
     const localDevelopmentId = positiveTelegramId(developmentTelegramId);
     if (
