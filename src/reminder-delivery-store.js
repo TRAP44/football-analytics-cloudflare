@@ -103,7 +103,15 @@ function validReminderIdentity(row) {
 }
 
 function validClaimAt(value) {
-  return parseTimestamp(value) !== null ? value.trim() : '';
+  if (typeof value !== 'string' || !value.trim()) return '';
+  const raw=value.trim();
+  const timestamp=Date.parse(raw);
+  if (!Number.isFinite(timestamp)) return '';
+  try {
+    return new Date(timestamp).toISOString() === raw ? raw : '';
+  } catch {
+    return '';
+  }
 }
 
 function responseStatus(response) {
@@ -186,7 +194,7 @@ export function createReminderDeliveryStore({
       throw error;
     }
 
-    if (claimColumn && claimAt && row[claimColumn] !== undefined && row[claimColumn] !== claimAt) {
+    if (claimColumn && claimAt && row[claimColumn] !== claimAt) {
       const error=new Error(`Reminder delivery claim ownership mismatch during ${action}.`);
       error.code='REMINDER_DELIVERY_CLAIM_MISMATCH';
       error.claimLost=true;
@@ -333,9 +341,9 @@ export function createReminderDeliveryStore({
 
   async function claimReminderDelivery(row, kind, cfg) {
     const { claimColumn, doneColumn, attemptsColumn } = reminderDeliveryKindConfig(kind);
-    const identity=requireIdentity(row);
     const claimAt=isoNow(now);
     if (!strictSupabaseAvailable(hasSupabase,cfg)) return { claimed:true, claimAt };
+    const identity=requireIdentity(row);
 
     const origin=supabaseOrigin(cfg);
     if (!origin) throw new Error('Supabase reminder store URL is invalid.');
@@ -381,10 +389,10 @@ export function createReminderDeliveryStore({
 
   async function markReminderDeliverySending(row, kind, claimAt, cfg) {
     const { claimColumn } = reminderDeliveryKindConfig(kind);
+    if (!strictSupabaseAvailable(hasSupabase,cfg)) return;
     const identity=requireIdentity(row);
     const ownedClaimAt=validClaimAt(claimAt);
     if (!ownedClaimAt) throw new Error('Reminder delivery claim timestamp is invalid.');
-    if (!strictSupabaseAvailable(hasSupabase,cfg)) return;
 
     const origin=supabaseOrigin(cfg);
     if (!origin) throw new Error('Supabase reminder store URL is invalid.');
@@ -414,10 +422,10 @@ export function createReminderDeliveryStore({
 
   async function holdReminderDeliveryUnknown(row, kind, claimAt, cfg) {
     const { claimColumn } = reminderDeliveryKindConfig(kind);
+    if (!strictSupabaseAvailable(hasSupabase,cfg)) return;
     const identity=requireIdentity(row);
     const ownedClaimAt=validClaimAt(claimAt);
     if (!ownedClaimAt) throw new Error('Reminder delivery claim timestamp is invalid.');
-    if (!strictSupabaseAvailable(hasSupabase,cfg)) return;
 
     const origin=supabaseOrigin(cfg);
     if (!origin) throw new Error('Supabase reminder store URL is invalid.');
@@ -447,8 +455,8 @@ export function createReminderDeliveryStore({
 
   async function readReminderDeliveryState(row, kind, cfg) {
     const { claimColumn, doneColumn } = reminderDeliveryKindConfig(kind);
-    const identity=requireIdentity(row);
     if (!strictSupabaseAvailable(hasSupabase,cfg)) return null;
+    const identity=requireIdentity(row);
 
     const origin=supabaseOrigin(cfg);
     if (!origin) throw new Error('Supabase reminder store URL is invalid.');
@@ -478,11 +486,11 @@ export function createReminderDeliveryStore({
 
   async function finishReminderDelivery(row, kind, claimAt, cfg) {
     const { claimColumn, doneColumn } = reminderDeliveryKindConfig(kind);
+    const doneAt=isoNow(now);
+    if (!strictSupabaseAvailable(hasSupabase,cfg)) return { finalized:true, reconciled:false, doneAt };
     const identity=requireIdentity(row);
     const ownedClaimAt=validClaimAt(claimAt);
     if (!ownedClaimAt) throw new Error('Reminder delivery claim timestamp is invalid.');
-    const doneAt=isoNow(now);
-    if (!strictSupabaseAvailable(hasSupabase,cfg)) return { finalized:true, reconciled:false, doneAt };
 
     const origin=supabaseOrigin(cfg);
     if (!origin) throw new Error('Supabase reminder store URL is invalid.');
@@ -555,10 +563,10 @@ export function createReminderDeliveryStore({
 
   async function releaseReminderClaim(row, kind, claimAt, errorMessage, cfg, options = {}) {
     const { claimColumn } = reminderDeliveryKindConfig(kind);
+    if (!strictSupabaseAvailable(hasSupabase,cfg)) return;
     const identity=requireIdentity(row);
     const ownedClaimAt=validClaimAt(claimAt);
     if (!ownedClaimAt) throw new Error('Reminder delivery claim timestamp is invalid.');
-    if (!strictSupabaseAvailable(hasSupabase,cfg)) return;
 
     const origin=supabaseOrigin(cfg);
     if (!origin) throw new Error('Supabase reminder store URL is invalid.');
