@@ -211,8 +211,8 @@ export function runtimeLockdownDecision(request, { runtime = {}, isAdmin = false
   }
 
   const providerFanout=Boolean(path && isProviderFanoutPath(path));
-  const safeRead=Boolean(path && (method === 'GET' || method === 'HEAD'));
-  if (safeRead && !providerFanout) {
+  const readOnlyRequest=Boolean(path && (method === 'GET' || method === 'HEAD'));
+  if (readOnlyRequest && !providerFanout) {
     return {
       blocked:false,
       active:true,
