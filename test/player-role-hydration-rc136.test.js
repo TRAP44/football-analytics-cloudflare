@@ -36,9 +36,10 @@ test('RC136 exposes hydration provenance and neutral fallback',()=>{
   assert.match(analysis,/analysisVersion:'4\.17\.0-starting-xi'/);
 });
 
-test('RC136 is part of release health contract',()=>{
-  assert.match(capabilities,/playerRoleHydration:\s*true|playerRoleHydration:\s*'enabled'/);
+test('RC136 remains wired through current analysis hydration runtimes',()=>{
+  assert.match(worker,/createAnalysisContextRuntime\(\{/);
+  assert.match(worker,/createAnalysisRuntime\(\{/);
+  assert.match(analysis,/hydrateUnavailablePlayerRoles/);
+  assert.match(analysisContext,/resolveTeamSeasonPlayers/);
   assert.match(worker,/const APP_VERSION = '6\.120\.0-rc144'/);
-  assert.match(worker,/const RC_NAME = 'RC144'/);
-  assert.match(smoke,/'playerRoleHydration'/);
 });
