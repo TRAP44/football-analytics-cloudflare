@@ -378,6 +378,37 @@ async function testOpsEventOccurrence() {
     true,
     'deduplicated ops row must retain the latest represented occurrence timestamp',
   );
+
+  const rolloverKey='ci-ops-release-identity-rollover';
+  const oldSha='a'.repeat(40);
+  const newSha='b'.repeat(40);
+  await psql(
+    "delete from public.ops_events where transition_key='" + rolloverKey + "';",
+  );
+  await serviceRoleQuery(
+    "select public.record_ops_event_occurrence("
+      + "timestamptz '2099-04-03T12:00:00.000Z',"
+      + "'warning','release','ci_release_identity','" + rolloverKey + "',"
+      + "'CI_RELEASE_OLD','old release','ci',null,null,"
+      + "'{\"deploySha\":\"" + oldSha + "\",\"phase\":\"old\"}'::jsonb)::text;",
+  );
+  await serviceRoleQuery(
+    "select public.record_ops_event_occurrence("
+      + "timestamptz '2099-04-03T12:01:00.000Z',"
+      + "'warning','release','ci_release_identity','" + rolloverKey + "',"
+      + "'CI_RELEASE_NEW','new release','ci',null,null,"
+      + "'{\"deploySha\":\"" + newSha + "\",\"phase\":\"new\"}'::jsonb)::text;",
+  );
+
+  const rollover=await psql(
+    "select metadata->>'deploySha' || '|' || metadata->>'phase' || '|' || occurrence_count::text "
+      + "from public.ops_events where transition_key='" + rolloverKey + "';",
+  );
+  assert.equal(
+    rollover,
+    newSha + '|new|2',
+    'repeated transition must retain the newest deployment metadata and atomic count',
+  );
 }
 
 async function testSensitiveMutationIdempotency() {
