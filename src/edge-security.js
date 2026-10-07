@@ -71,25 +71,33 @@ async function requestFingerprint(request, secret='') {
 
 function normalizedScannerPath(pathname = '') {
   let path=String(pathname || '').replace(/\\/g,'/');
-  // Decode repeatedly, but keep a hard ceiling so nested scanner probes cannot
-  // bypass the early filter or turn normalization into unbounded work.
+  let decodeLimitReached=false;
+  // Decode repeatedly with a hard work ceiling. If the value is still changing
+  // after the ceiling, treat that excessive nesting as suspicious instead of
+  // letting one more encoding layer bypass the scanner boundary.
   for (let pass=0; pass<6; pass+=1) {
     let decoded;
     try {
       decoded=decodeURIComponent(path);
     } catch {
-      break;
+      return {path,decodeLimitReached:false};
     }
     decoded=decoded.replace(/\\/g,'/');
-    if (decoded===path) break;
+    if (decoded===path) return {path,decodeLimitReached:false};
     path=decoded;
   }
-  return path;
+  try {
+    decodeLimitReached=decodeURIComponent(path).replace(/\\/g,'/')!==path;
+  } catch {
+    decodeLimitReached=false;
+  }
+  return {path,decodeLimitReached};
 }
 
 export function obviousScannerPath(pathname = '') {
-  const path = normalizedScannerPath(pathname);
-  return SCANNER_PATH_PATTERNS.some(pattern => pattern.test(path));
+  const normalized = normalizedScannerPath(pathname);
+  return normalized.decodeLimitReached
+    || SCANNER_PATH_PATTERNS.some(pattern => pattern.test(normalized.path));
 }
 
 export function edgePolicyForRequest(request) {
