@@ -149,6 +149,7 @@ export async function resolvePrimaryTelegramBotUsername(options = {}) {
   const username=normalizeUsername(me?.username);
   const resolvedBotId=positiveInteger(me?.id);
   if (!username) throw new Error('Telegram bot username is unavailable.');
+  if (me?.is_bot === false) throw new Error('Telegram getMe identity is not a bot.');
   if (expectedBotId !== null && resolvedBotId !== expectedBotId) {
     throw new Error('Telegram bot identity does not match TELEGRAM_BOT_TOKEN.');
   }
