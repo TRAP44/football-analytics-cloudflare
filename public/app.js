@@ -3923,7 +3923,7 @@ function minuteLabel(event) {
 }
 
 function liveEventsHtml(events = []) {
-  if (!events.length) return '<div class="empty compact-empty">События пока не доступны для этого матча.</div>';
+  if (!Array.isArray(events) || !events.length) return '<div class="empty compact-empty">События пока не доступны для этого матча.</div>';
   return `<div class="live-events">${events.map(e => `
     <div class="live-event ${escapeHtml(e.side || '')}">
       <span class="event-minute">${minuteLabel(e)}</span>
@@ -4201,7 +4201,7 @@ function centerAllStatsHtml(stats) {
 }
 
 function timelineEventsHtml(events = [], match = {}) {
-  if (!events.length) return '<div class="empty compact-empty">События матча пока не доступны.</div>';
+  if (!Array.isArray(events) || !events.length) return '<div class="empty compact-empty">События матча пока не доступны.</div>';
   let hs = 0, as = 0;
   const enriched = events.map(e => {
     const isGoal = String(e.type || '').toLowerCase() === 'goal' && !String(e.detail || '').toLowerCase().includes('missed');
@@ -4995,6 +4995,17 @@ function postMatchReviewHtml(review = {}, match = {}) {
   </section>`;
 }
 
+function matchCenterExtraHtml(name,...args) {
+  const renderer=matchCenterExtras?.[name];
+  if (typeof renderer!=='function') return '';
+  try {
+    const html=renderer(...args);
+    return typeof html==='string' ? html : '';
+  } catch {
+    return '';
+  }
+}
+
 function renderMatchCenter(d) {
   $('analysis')?.setAttribute('aria-busy', 'false');
   const previousFixture = Number(state.currentCenter?.match?.fixtureId || 0);
@@ -5012,7 +5023,22 @@ function renderMatchCenter(d) {
     ? timeOf(m.date)
     : homeMatchScoreLabel({...m,live,finished});
   const statusText = live ? '● ИДЁТ' : finished ? '✓ ЗАВЕРШЁН' : 'ПРЕДСТОИТ';
-  const latestEvents = (d.events || []).slice(-3).reverse();
+  const eventRows=Array.isArray(d.events) ? d.events : [];
+  const latestEvents=upcoming ? [] : eventRows.slice(-3).reverse();
+  const matchPulseHtml=matchCenterExtraHtml('renderMatchPulse',{
+    ...d,
+    events:eventRows,
+  });
+  const aiTimelineCompactHtml=matchCenterExtraHtml(
+    'renderAiTimelineCompact',
+    d.aiTimeline || {},
+    m,
+  );
+  const aiTimelineDetailsHtml=matchCenterExtraHtml(
+    'renderAiTimelineDetails',
+    d.aiTimeline || {},
+    m,
+  );
 
   $('analysis').innerHTML = `
     <section class="panel center-hero ${live ? 'is-live' : ''}">
@@ -5053,15 +5079,15 @@ function renderMatchCenter(d) {
       </div>
     </section>
 
-    ${matchCenterExtras?.renderMatchPulse?.(d) || ''}
+    ${matchPulseHtml}
 
-    ${matchCenterExtras?.renderAiTimelineCompact?.(d.aiTimeline || {}, m) || ''}
+    ${aiTimelineCompactHtml}
 
     ${d.note ? `<section class="panel center-note"><p class="tiny warning">${escapeHtml(publicText(d.note))}</p></section>` : ''}
 
     <div class="match-center-primary" aria-label="Главное о матче">
       ${matchChangeNarrativeHtml(d, m)}
-      ${matchCenterExtras?.renderAiTimelineDetails?.(d.aiTimeline || {}, m) || ''}
+      ${aiTimelineDetailsHtml}
       ${live ? liveAiCoachHtml(d.liveAiCoach, m) : ''}
       ${smartInsightsHeroHtml(d.smartInsights, m)}
       ${finished ? postMatchReviewHtml(d.postMatchReview || {}, m) : ''}
@@ -5113,7 +5139,7 @@ function renderMatchCenter(d) {
       <section class="panel">
         <div class="center-section-title"><div><h2>⚡ Хронология матча</h2><p>Голы, карточки, замены и видеопросмотры</p></div></div>
         ${eventQualityHintHtml(d.eventQuality)}
-        ${timelineEventsHtml(d.events, m)}
+        ${timelineEventsHtml(eventRows, m)}
       </section>
     </div>
 
