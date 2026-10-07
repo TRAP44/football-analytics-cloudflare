@@ -678,12 +678,16 @@ export function createCompetitionIntegrityRuntime(deps) {
     try { persistent=hasSupabase(cfg) === true; } catch {}
     if (!persistent) return {...fallback(),migrationReady:true};
     try {
-      const runRows=rows(await supaSelectMany(cfg,'match_integrity_runs',{}, {limit:1,order:'observed_at.desc'}));
-      const eventRows=rows(await supaSelectMany(cfg,'match_integrity_events',{}, {limit:safeLimit,order:'observed_at.desc'}));
-      const row=runRows[0] || null;
+      const runResult=await supaSelectMany(cfg,'match_integrity_runs',{}, {limit:1,order:'observed_at.desc'});
+      const eventResult=await supaSelectMany(cfg,'match_integrity_events',{}, {limit:safeLimit,order:'observed_at.desc'});
+      if (!Array.isArray(runResult) || !Array.isArray(eventResult)) {
+        throw new TypeError('Integrity diagnostics returned a malformed database collection.');
+      }
+      const row=runResult[0] || null;
+      const observedAt=row && strictTimestampMs(row.observed_at) !== null ? safeText(row.observed_at,80) : '';
       const lastRun=row ? {
         runId:safeText(row.run_id,100),
-        observedAt:safeText(row.observed_at,80),
+        observedAt,
         requestedDate:strictUtcDate(row.fixture_date),
         inspected:boundedCount(row.inspected),
         accepted:boundedCount(row.accepted),
@@ -698,7 +702,20 @@ export function createCompetitionIntegrityRuntime(deps) {
         qualityScore:boundedQuality(row.quality_score,0),
         health:['ok','warning','critical'].includes(row.health) ? row.health : 'warning',
       } : null;
-      return {persistent:true,migrationReady:true,lastRun,recentIssues:eventRows};
+      const recentIssues=eventResult.slice(0,safeLimit).map(issue=>({
+        run_id:safeText(issue?.run_id,100),
+        observed_at:strictTimestampMs(issue?.observed_at) !== null ? safeText(issue.observed_at,80) : '',
+        fixture_date:strictUtcDate(issue?.fixture_date) || null,
+        fixture_id:positiveSafeInteger(issue?.fixture_id),
+        severity:['info','warning','error'].includes(issue?.severity) ? issue.severity : 'warning',
+        issue_code:safeText(issue?.issue_code,80) || 'DATA_QUALITY',
+        message:safeText(issue?.message,400),
+        home_name:safeText(issue?.home_name,120),
+        away_name:safeText(issue?.away_name,120),
+        league_name:safeText(issue?.league_name,160),
+        metadata:safeMetadata(issue?.metadata),
+      }));
+      return {persistent:true,migrationReady:true,lastRun,recentIssues};
     } catch {
       return fallback();
     }
