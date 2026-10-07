@@ -628,16 +628,16 @@ export function createAnalysisLifecycleRuntime(deps) {
     previous = {},
     next = {},
     delta = null,
-    {
-      requested=false,
-      eligible=false,
-      performed=false,
-      publishedAt='',
-    } = {},
+    options = {},
   ) {
-    if (requested !== true) return null;
+    const source=objectValue(options) || {};
+    const requested=source.requested === true;
+    const eligible=source.eligible === true;
+    const performed=source.performed === true;
+    const publishedAt=safeText(source.publishedAt,80);
+    if (!requested) return null;
 
-    const published=safeText(publishedAt,80);
+    const published=publishedAt;
     const previousFixtureId=positiveSafeInteger(objectValue(previous)?.match?.fixtureId);
     const nextFixtureId=positiveSafeInteger(objectValue(next)?.match?.fixtureId);
 
@@ -659,7 +659,7 @@ export function createAnalysisLifecycleRuntime(deps) {
     if (!nextFixtureId || nextFixtureId!==previousFixtureId) {
       return {
         requested:true,
-        eligible:Boolean(eligible),
+        eligible,
         performed:false,
         compared:false,
         material:false,
@@ -678,7 +678,7 @@ export function createAnalysisLifecycleRuntime(deps) {
         performed:false,
         compared:false,
         material:false,
-        stable:true,
+        stable:false,
         publishedAt:published,
         reasonCode:'snapshot_not_before_news',
         summary:'Сохранённый AI-снимок не старше новости, поэтому приписывать ей изменение прогноза нельзя.',
@@ -731,13 +731,18 @@ export function createAnalysisLifecycleRuntime(deps) {
     const delta=analysisRecheckDelta(previous,next);
     const impact=newsImpactDeltaStatus(previous,next,delta,{requested:true,eligible:true,performed:true,publishedAt:'2026-09-23T12:00:00Z'});
     const guarded=newsImpactDeltaStatus(previous,next,null,{requested:true,eligible:false,performed:false,publishedAt:'2026-09-23T12:00:00Z'});
+    const malformedOptions=newsImpactDeltaStatus(previous,next,delta,null);
+    const coerciveEligible=newsImpactDeltaStatus(previous,{match:{fixtureId:72}},delta,{requested:true,eligible:'false',performed:true,publishedAt:'2026-09-23T12:00:00Z'});
     return {
       pass:impact?.compared===true
         && impact?.material===true
         && impact?.codes?.includes('signal')
         && guarded?.reasonCode==='snapshot_not_before_news'
-        && guarded?.compared===false,
-      cases:5,
+        && guarded?.compared===false
+        && guarded?.stable===false
+        && malformedOptions===null
+        && coerciveEligible?.eligible===false,
+      cases:8,
     };
   }
   
