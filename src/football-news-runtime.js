@@ -22,39 +22,166 @@ export function createFootballNewsRuntime(deps) {
     todayUtc,
   } = deps;
 
-  function externalNewsUrl(value = '') {
+  for (const [name,value] of Object.entries({
+    NEWS_BLOCKED_HOST_RE,
+    NEWS_MAJOR_SOURCE_RE,
+    NEWS_OFFICIAL_SOURCE_RE,
+  })) {
+    if (!(value instanceof RegExp)) throw new TypeError(`${name} is required`);
+  }
+  if (!TOP_TEAM_SEARCH_CATALOG || typeof TOP_TEAM_SEARCH_CATALOG[Symbol.iterator]!=='function') {
+    throw new TypeError('TOP_TEAM_SEARCH_CATALOG is required');
+  }
+  for (const [name,fn] of Object.entries({
+    botTeamIdMatches,
+    fetchWithTimeout,
+    getCache,
+    getFavorites,
+    normalizeBotFixtureCard,
+    recordGrowthEvent,
+    searchText,
+    setCache,
+    telegramApi,
+    telegramHtmlEscape,
+    todayUtc,
+  })) {
+    if (typeof fn!=='function') throw new TypeError(`${name} is required`);
+  }
+
+  function plainObject(value) {
     try {
-      const u=new URL(String(value || ''));
-      return /^https?:$/.test(u.protocol) ? u.toString() : '';
-    } catch { return ''; }
+      return value && typeof value==='object' && !Array.isArray(value)
+        ? value
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function safeRead(value,key) {
+    try {
+      return value?.[key];
+    } catch {
+      return undefined;
+    }
+  }
+
+  function safeText(value,max=500,fallback='') {
+    if (typeof value!=='string') return fallback;
+    const text=value
+      .replace(/[\u0000-\u001f\u007f]+/g,' ')
+      .replace(/\s+/g,' ')
+      .trim()
+      .slice(0,max);
+    return text || fallback;
+  }
+
+  function positiveInteger(value) {
+    if (typeof value==='number') {
+      return Number.isSafeInteger(value) && value>0 ? value : 0;
+    }
+    if (typeof value!=='string') return 0;
+    const raw=value.trim();
+    if (!/^\d+$/.test(raw)) return 0;
+    const parsed=Number(raw);
+    return Number.isSafeInteger(parsed) && parsed>0 ? parsed : 0;
+  }
+
+  function boundedInteger(value,fallback,min,max) {
+    if (typeof value!=='number' || !Number.isFinite(value)) return fallback;
+    return Math.max(min,Math.min(max,Math.trunc(value)));
+  }
+
+  function testRegex(regex,value) {
+    try {
+      regex.lastIndex=0;
+      return regex.test(value);
+    } catch {
+      return false;
+    }
+  }
+
+  function safeArray(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  function strictPublishedMs(value) {
+    if (typeof value!=='string' || !value.trim()) return null;
+    const raw=value.trim();
+    const dateOnly=/^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+    if (dateOnly) {
+      const year=Number(dateOnly[1]);
+      const month=Number(dateOnly[2]);
+      const day=Number(dateOnly[3]);
+      if (month<1 || month>12 || day<1) return null;
+      const maxDay=new Date(Date.UTC(year,month,0)).getUTCDate();
+      if (day>maxDay) return null;
+      return Date.UTC(year,month-1,day,12,0,0);
+    }
+    const timestamp=/^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/i.exec(raw);
+    if (!timestamp) return null;
+    const year=Number(timestamp[1]);
+    const month=Number(timestamp[2]);
+    const day=Number(timestamp[3]);
+    if (month<1 || month>12 || day<1) return null;
+    const maxDay=new Date(Date.UTC(year,month,0)).getUTCDate();
+    if (day>maxDay) return null;
+    const parsed=Date.parse(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function externalNewsUrl(value = '') {
+    if (typeof value!=='string' || !value.trim()) return '';
+    try {
+      const u=new URL(value.trim());
+      if (!/^https?:$/.test(u.protocol) || u.username || u.password) return '';
+      return u.toString();
+    } catch {
+      return '';
+    }
   }
   
   function newsSourceDomain(value = '') {
-    try { return new URL(String(value || '')).hostname.replace(/^www\./,''); }
-    catch { return ''; }
+    const url=externalNewsUrl(value);
+    if (!url) return '';
+    try {
+      return new URL(url).hostname.toLowerCase().replace(/^www\./,'');
+    } catch {
+      return '';
+    }
   }
   
   function newsSourceTrust(url = '') {
-    const value=String(url || '');
-    if (NEWS_OFFICIAL_SOURCE_RE.test(value)) return {tier:'official',score:95,label:'Официальный источник'};
-    if (NEWS_MAJOR_SOURCE_RE.test(value)) return {tier:'major',score:88,label:'Крупный источник'};
+    const host=newsSourceDomain(url);
+    if (!host) return {tier:'web',score:0,label:'Источник не подтверждён'};
+    if (testRegex(NEWS_OFFICIAL_SOURCE_RE,host)) return {tier:'official',score:95,label:'Официальный источник'};
+    if (testRegex(NEWS_MAJOR_SOURCE_RE,host)) return {tier:'major',score:88,label:'Крупный источник'};
     return {tier:'web',score:58,label:'Веб-источник'};
   }
   
   function applyNewsTrustGate(item = {}) {
-    const trust=newsSourceTrust(item.url);
-    const originalImpact=String(item?.category?.impact || 'low');
+    const value=plainObject(item) || {};
+    const trust=newsSourceTrust(safeRead(value,'url'));
+    const category=plainObject(safeRead(value,'category')) || {};
+    const originalImpact=safeText(safeRead(category,'impact'),20,'low');
     const needsConfirmation=originalImpact==='high' && !['official','major'].includes(trust.tier);
     return {
-      ...item,
+      ...value,
       trust,
       verification:needsConfirmation ? 'needs_confirmation' : 'source_backed',
-      category:needsConfirmation ? {...item.category,impact:'medium'} : item.category,
+      category:needsConfirmation ? {...category,impact:'medium'} : category,
     };
   }
   
   function footballNewsCategory(article = {}) {
-    const hay=searchText(`${article.title || ''} ${article.content || ''}`);
+    const value=plainObject(article) || {};
+    const title=safeText(safeRead(value,'title'),220);
+    const content=safeText(safeRead(value,'content'),700);
+    let hay='';
+    try {
+      const normalized=searchText(`${title} ${content}`);
+      hay=typeof normalized==='string' ? normalized : '';
+    } catch {}
     const groups=[
       {code:'injury',icon:'🚑',label:'Травмы',impact:'high',re:/injur|injured|fitness|ruled out|doubt|surgery|hamstring|ankle|knee|травм|поврежден|повреждён|пропустит|под вопросом/},
       {code:'suspension',icon:'🟥',label:'Дисквалификации',impact:'high',re:/suspend|suspension|ban\b|red card|дисквалиф|отстранен|отстранён/},
@@ -124,8 +251,13 @@ export function createFootballNewsRuntime(deps) {
   }
   
   function newsPublishedMs(item = {}) {
-    const value=Date.parse(String(item?.publishedAt || item?.published_date || ''));
-    return Number.isFinite(value) ? value : null;
+    const value=plainObject(item) || {};
+    return strictPublishedMs(
+      safeText(
+        safeRead(value,'publishedAt') || safeRead(value,'published_date'),
+        80,
+      ),
+    );
   }
   
   function newsFixtureRelevance(item = {}, fixture = {}) {
@@ -273,55 +405,105 @@ export function createFootballNewsRuntime(deps) {
   }
   
   function normalizeFootballNewsResult(row = {}) {
-    const url=externalNewsUrl(row.url);
-    const title=String(row.title || '').trim().slice(0,220);
-    const content=String(row.content || '').replace(/\s+/g,' ').trim().slice(0,700);
-    if (!url || !title || NEWS_BLOCKED_HOST_RE.test(url)) return null;
+    const value=plainObject(row);
+    if (!value) return null;
+    const url=externalNewsUrl(safeRead(value,'url'));
+    const title=safeText(safeRead(value,'title'),220);
+    const content=safeText(safeRead(value,'content'),700);
+    const host=newsSourceDomain(url);
+    if (!url || !host || !title || testRegex(NEWS_BLOCKED_HOST_RE,host)) return null;
     const category=footballNewsCategory({title,content});
+    const publishedRaw=safeText(
+      safeRead(value,'published_date') || safeRead(value,'publishedAt'),
+      80,
+    );
+    const publishedMs=strictPublishedMs(publishedRaw);
     return {
-      title,url,content,
-      source:newsSourceDomain(url),
-      publishedAt:String(row.published_date || row.publishedAt || ''),
+      title,
+      url,
+      content,
+      source:host,
+      publishedAt:publishedMs===null ? '' : new Date(publishedMs).toISOString(),
       category,
       sourceTier:newsSourceTrust(url).tier,
     };
   }
   
   function dedupeFootballNews(rows = [], limit = 6) {
-    const seenUrl=new Set(), seenTitle=new Set();
+    const seenUrl=new Set();
+    const seenTitle=new Set();
     const out=[];
-    for (const row of rows || []) {
+    const safeLimit=boundedInteger(limit,6,1,10);
+    for (const row of safeArray(rows).slice(0,50)) {
       const item=normalizeFootballNewsResult(row);
       if (!item) continue;
-      const tk=searchText(item.title).replace(/[^a-zа-я0-9 ]/gi,'').slice(0,90);
+      let tk='';
+      try {
+        const normalized=searchText(item.title);
+        tk=(typeof normalized==='string' ? normalized : '')
+          .replace(/[^a-zа-я0-9 ]/gi,'')
+          .slice(0,90);
+      } catch {}
       if (seenUrl.has(item.url) || (tk && seenTitle.has(tk))) continue;
-      seenUrl.add(item.url); if (tk) seenTitle.add(tk);
+      seenUrl.add(item.url);
+      if (tk) seenTitle.add(tk);
       out.push(applyNewsTrustGate(item));
     }
-    const tierScore=x=>x.sourceTier==='official'?3:x.sourceTier==='major'?2:1;
-    const impactScore=x=>x.category?.impact==='high'?3:x.category?.impact==='medium'?2:1;
-    return out.sort((a,b)=>tierScore(b)-tierScore(a) || impactScore(b)-impactScore(a)).slice(0,limit);
+    const tierScore=x=>safeRead(x,'sourceTier')==='official'?3:safeRead(x,'sourceTier')==='major'?2:1;
+    const impactScore=x=>{
+      const category=plainObject(safeRead(x,'category')) || {};
+      const impact=safeRead(category,'impact');
+      return impact==='high'?3:impact==='medium'?2:1;
+    };
+    return out
+      .sort((a,b)=>tierScore(b)-tierScore(a) || impactScore(b)-impactScore(a))
+      .slice(0,safeLimit);
   }
   
-  async function tavilyNewsSearch(query, cfg, { days = 3, maxResults = 7 } = {}) {
-    if (!cfg.tavilyKey) return { results:[], available:false, reason:'tavily_missing' };
+  async function tavilyNewsSearch(query, cfg, options = {}) {
+    const config=plainObject(cfg) || {};
+    const tavilyKey=safeText(safeRead(config,'tavilyKey'),500);
+    if (!tavilyKey) return {results:[],available:false,reason:'tavily_missing'};
+    const queryText=safeText(query,500);
+    if (!queryText) return {results:[],available:false,reason:'query_invalid'};
+    const days=boundedInteger(safeRead(options,'days'),3,1,14);
+    const maxResults=boundedInteger(safeRead(options,'maxResults'),7,1,10);
     try {
       const r=await fetchWithTimeout('https://api.tavily.com/search',{
         method:'POST',
-        headers:{Authorization:`Bearer ${cfg.tavilyKey}`,'Content-Type':'application/json'},
+        headers:{Authorization:`Bearer ${tavilyKey}`,'Content-Type':'application/json'},
         body:JSON.stringify({
-          query:String(query || '').slice(0,500),
+          query:queryText,
           topic:'news',
           search_depth:'basic',
-          max_results:Math.max(1,Math.min(10,Number(maxResults || 7))),
-          days:Math.max(1,Math.min(14,Number(days || 3))),
+          max_results:maxResults,
+          days,
           include_answer:false,
         }),
-      }, 8000, 'Tavily news');
-      if (!r.ok) return {results:[],available:false,reason:`http_${r.status}`};
-      const body=await r.json();
-      return {results:dedupeFootballNews(body.results || [],maxResults),available:true,reason:''};
-    } catch (error) {
+      },8000,'Tavily news');
+      if (safeRead(r,'ok')!==true) {
+        const status=positiveInteger(safeRead(r,'status'));
+        return {
+          results:[],
+          available:false,
+          reason:status ? `http_${status}` : 'http_error',
+        };
+      }
+      const json=safeRead(r,'json');
+      if (typeof json!=='function') {
+        return {results:[],available:false,reason:'invalid_payload'};
+      }
+      const body=plainObject(await json.call(r));
+      const rows=safeRead(body,'results');
+      if (!Array.isArray(rows)) {
+        return {results:[],available:false,reason:'invalid_payload'};
+      }
+      return {
+        results:dedupeFootballNews(rows,maxResults),
+        available:true,
+        reason:'',
+      };
+    } catch {
       return {results:[],available:false,reason:'network'};
     }
   }
