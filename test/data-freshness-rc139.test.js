@@ -8,6 +8,8 @@ import {
   featureFreshnessLimitSeconds,
 } from '../src/data-freshness.js';
 import { annotateLineupReliability } from '../src/lineup-quality.js';
+import { createAppCapabilitiesRuntime } from '../src/app-capabilities.js';
+import { createPublicHealthRuntime } from '../src/public-health.js';
 
 const NOW=Date.parse('2026-10-03T12:00:00.000Z');
 
@@ -152,6 +154,65 @@ test('evaluation clock, mode and fallback age reject ambiguous coercion',()=>{
     assert.equal(meta.ageSeconds,null,String(ageSeconds));
     assert.equal(meta.confidenceBearing,false,String(ageSeconds));
     assert.equal(meta.freshnessReason,'freshness_missing',String(ageSeconds));
+  }
+});
+
+test('fresh/cached hints cannot replace measurable timestamp or age evidence',()=>{
+  for(const source of ['network','cache']) {
+    const meta=assessFeatureFreshness(availableMeta({
+      source,
+      fetchedAt:null,
+      ageSeconds:null,
+      freshnessState:source==='cache' ? 'cached' : 'fresh',
+      freshness:source==='cache' ? 'cached' : 'fresh',
+    }),{mode:'live',now:NOW});
+
+    assert.equal(meta.ageSeconds,null,source);
+    assert.equal(meta.freshnessState,'unknown',source);
+    assert.equal(meta.state,'unverified_freshness',source);
+    assert.equal(meta.freshnessReason,'freshness_missing',source);
+    assert.equal(meta.confidenceBearing,false,source);
+    assert.equal(meta.available,false,source);
+  }
+
+  const boundedAge=assessFeatureFreshness(availableMeta({
+    source:'cache',
+    fetchedAt:null,
+    ageSeconds:30,
+    freshnessState:'cached',
+  }),{mode:'live',now:NOW});
+  assert.equal(boundedAge.ageSeconds,30);
+  assert.equal(boundedAge.freshnessState,'cached');
+  assert.equal(boundedAge.confidenceBearing,true);
+});
+
+test('time-bearing freshness timestamps require an explicit timezone',()=>{
+  for(const fetchedAt of [
+    '2026-10-03T11:59:30',
+    '2026-10-03T11:59',
+    '2026-10-03 11:59:30',
+  ]) {
+    const meta=assessFeatureFreshness(availableMeta({fetchedAt}),{
+      mode:'live',
+      now:NOW,
+    });
+    assert.equal(meta.fetchTimestampInvalid,true,fetchedAt);
+    assert.equal(meta.timestampInvalid,true,fetchedAt);
+    assert.equal(meta.state,'invalid_freshness',fetchedAt);
+    assert.equal(meta.confidenceBearing,false,fetchedAt);
+  }
+
+  for(const fetchedAt of [
+    '2026-10-03T11:59:30Z',
+    '2026-10-03T13:59:30+02:00',
+  ]) {
+    const meta=assessFeatureFreshness(availableMeta({fetchedAt}),{
+      mode:'live',
+      now:NOW,
+    });
+    assert.equal(meta.timestampInvalid,false,fetchedAt);
+    assert.equal(meta.ageSeconds,30,fetchedAt);
+    assert.equal(meta.confidenceBearing,true,fetchedAt);
   }
 });
 
@@ -338,15 +399,62 @@ test('prematch analysis gates odds and lineups through refreshed feature trust b
   assert.match(source,/confidenceBearing:meta\.confidenceBearing === true/);
 });
 
-test('RC139 release contract uses the current AI freshness capability instead of legacy /health feature flags',()=>{
-  const capabilities=fs.readFileSync('src/app-capabilities.js','utf8');
-  const health=fs.readFileSync('src/public-health.js','utf8');
+test('RC139 release contract exposes freshness capability while public health stays minimal',async()=>{
+  const capabilities=createAppCapabilitiesRuntime({
+    memory:{provider:{plan:'FREE'}},
+    appVersion:'6.120.0',
+    minClientVersion:'6.0.0',
+    apiContractVersion:1,
+    releaseChannel:'production',
+    releaseCandidate:'RC139',
+    paidQuotaHealthy:()=>true,
+    providerPublicBudgetMode:()=>({mode:'normal',label:'Обычный режим',liveRefreshSeconds:30}),
+    runtimeControlsSnapshot:()=>({
+      maintenanceMode:false,
+      liveEnabled:true,
+      expandedDataEnabled:true,
+    }),
+    isSecurityLockdownControls:()=>false,
+    publicRuntimeControls:()=>({liveEnabled:true}),
+    currentReleaseIdentity:()=>({sha:'a'.repeat(40)}),
+    now:()=>new Date('2026-10-03T12:00:00.000Z'),
+  });
 
-  assert.match(capabilities,/aiFreshnessGuard:true/);
-  assert.match(capabilities,/preKickoffRecheck:true/);
-  assert.match(capabilities,/preKickoffChangeDetection:true/);
-  assert.match(capabilities,/analysisDeltaSummary:true/);
+  const manifest=capabilities.appManifest({});
+  assert.equal(manifest.features.aiFreshnessGuard,true);
+  assert.equal(manifest.features.preKickoffRecheck,true);
+  assert.equal(manifest.features.preKickoffChangeDetection,true);
+  assert.equal(manifest.features.analysisDeltaSummary,true);
 
-  assert.match(health,/readiness:Object\.freeze\(\{[\s\S]*?ok:readiness\.ok === true/);
-  assert.doesNotMatch(health,/freshnessAwareDataTrust/);
+  const health=createPublicHealthRuntime({
+    computeReadiness:async()=>({
+      ok:true,
+      status:'ready',
+      version:'6.120.0',
+      releaseCandidate:'RC139',
+      checks:{
+        supabase:{ok:true,status:'ok'},
+        schema:{ok:true,status:'ok'},
+        backendSecurity:{ok:true,status:'ok'},
+        telegramConfigured:true,
+      },
+      aiFreshnessGuard:true,
+      freshnessAwareDataTrust:true,
+    }),
+    version:'6.120.0',
+    releaseCandidate:'RC139',
+    now:()=>NOW,
+  });
+
+  const publicSnapshot=await health.healthSnapshot({devMode:false});
+  assert.deepEqual(publicSnapshot,{
+    ok:true,
+    status:'ready',
+    version:'6.120.0',
+    releaseCandidate:'RC139',
+    devMode:false,
+    readiness:{ok:true,status:'ready'},
+  });
+  assert.equal('freshnessAwareDataTrust' in publicSnapshot,false);
+  assert.equal('aiFreshnessGuard' in publicSnapshot,false);
 });
