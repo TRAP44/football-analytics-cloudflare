@@ -64,13 +64,13 @@ test('RC74 funnel rejects malformed containers, coercive ids and invalid bottlen
   );
 
   const rows=runtime.buildNewsImpactActionFunnel([
-    {telegram_id:true,created_at:'2026-09-23T10:00:00Z',metadata:{decision:'material'}},
-    {telegram_id:'7',created_at:'2026-09-23T10:00:00Z',metadata:{decision:'material'}},
-    {telegram_id:'8',created_at:{toString(){throw new Error('must not coerce');}},metadata:{decision:'material'}},
-    {telegram_id:'9',created_at:'2026-09-23T10:00:00Z',metadata:{decision:{toString(){throw new Error('must not coerce');}}}},
+    {telegram_id:true,fixture_id:100,created_at:'2026-09-23T10:00:00Z',metadata:{decision:'material'}},
+    {telegram_id:'7',fixture_id:'100',created_at:'2026-09-23T10:00:00Z',metadata:{decision:'material'}},
+    {telegram_id:'8',fixture_id:'100',created_at:{toString(){throw new Error('must not coerce');}},metadata:{decision:'material'}},
+    {telegram_id:'9',fixture_id:'100',created_at:'2026-09-23T10:00:00Z',metadata:{decision:{toString(){throw new Error('must not coerce');}}}},
   ],[
-    {telegram_id:true,created_at:'2026-09-23T10:10:00Z',metadata:{decision:'material',action:'market'}},
-    {telegram_id:'7',created_at:'2026-09-23T10:10:00Z',metadata:{decision:'material',action:'market'}},
+    {telegram_id:true,fixture_id:100,created_at:'2026-09-23T10:10:00Z',metadata:{decision:'material',action:'market'}},
+    {telegram_id:'7',fixture_id:'100',created_at:'2026-09-23T10:10:00Z',metadata:{decision:'material',action:'market'}},
   ],{asOfMs,actionWindowMinutes:true});
 
   const material=rows.find(x=>x.code==='material');
