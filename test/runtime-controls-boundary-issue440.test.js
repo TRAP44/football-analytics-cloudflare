@@ -328,7 +328,7 @@ test('rollback rejects inconsistent or malformed history snapshots',async()=>{
       return null;
     },
   });
-  const result=await api.rollbackRuntimeControls({}, {id:1}, {
+  const result=await api.rollbackRuntimeControls({supabaseUrl:'https://db.test'}, {id:1}, {
     expectedRevision:9,
     historyId:5,
   });
