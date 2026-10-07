@@ -1442,6 +1442,122 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   }
   
   
+  function newsImpactRecoveryStrategyDrill() {
+    const fixedRetry={reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',recovery:'retry',recoveryLabel:'повторить',observed:30,attempts:30,pending:0,recovered:6,failed:24,successPct:20,confidence:newsImpactConversionConfidence(6,30)};
+    const better={reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',recovery:'open_full_ai',recoveryLabel:'открыть полный AI',observed:30,attempts:30,pending:0,recovered:25,failed:5,successPct:83.3,confidence:newsImpactConversionConfidence(25,30)};
+    const adaptive=newsImpactRecoveryStrategyDecision('server_error','full_ai',[fixedRetry,better]);
+    const lowBase={...fixedRetry,attempts:9,recovered:2,failed:7,successPct:22.2,confidence:newsImpactConversionConfidence(2,9)};
+    const guarded=newsImpactRecoveryStrategyDecision('server_error','full_ai',[lowBase,better]);
+    const overlapA={...fixedRetry,recovered:15,failed:15,successPct:50,confidence:newsImpactConversionConfidence(15,30)};
+    const overlapB={...better,recovered:18,failed:12,successPct:60,confidence:newsImpactConversionConfidence(18,30)};
+    const overlap=newsImpactRecoveryStrategyDecision('server_error','full_ai',[overlapA,overlapB]);
+    const malformed=newsImpactRecoveryStrategyDecision(
+      {toString(){throw new Error('must not coerce');}},
+      'full_ai',
+      {broken:true},
+    );
+    return {
+      pass:adaptive.strategy==='adaptive'
+        && adaptive.selectedRecovery==='open_full_ai'
+        && adaptive.liftPctPoints>NEWS_IMPACT_RECOVERY_STRATEGY_MIN_LIFT_PCT_POINTS
+        && guarded.strategy==='fixed'
+        && guarded.guardReason==='baseline_sample'
+        && overlap.strategy==='fixed'
+        && overlap.guardReason==='no_significant_better'
+        && malformed.strategy==='fixed'
+        && malformed.reason==='server_error',
+      cases:8,
+    };
+  }
+
+  function newsImpactRecoveryStabilityDrill() {
+    const fixedLong={reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',recovery:'retry',recoveryLabel:'повторить',observed:40,attempts:40,pending:0,recovered:8,failed:32,successPct:20,confidence:newsImpactConversionConfidence(8,40)};
+    const candidateLong={reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',recovery:'open_full_ai',recoveryLabel:'открыть полный AI',observed:40,attempts:40,pending:0,recovered:34,failed:6,successPct:85,confidence:newsImpactConversionConfidence(34,40)};
+    const fixedRecent={...fixedLong,observed:10,attempts:10,recovered:3,failed:7,successPct:30,confidence:newsImpactConversionConfidence(3,10)};
+    const candidateRecent={...candidateLong,observed:10,attempts:10,recovered:8,failed:2,successPct:80,confidence:newsImpactConversionConfidence(8,10)};
+    const stable=newsImpactRecoveryStrategyDecision('server_error','full_ai',[fixedLong,candidateLong],[fixedRecent,candidateRecent]);
+    const lowRecent={...candidateRecent,observed:5,attempts:5,recovered:4,failed:1,successPct:80,confidence:newsImpactConversionConfidence(4,5)};
+    const sampleGuard=newsImpactRecoveryStrategyDecision('server_error','full_ai',[fixedLong,candidateLong],[fixedRecent,lowRecent]);
+    const regressedRecent={...candidateRecent,recovered:2,failed:8,successPct:20,confidence:newsImpactConversionConfidence(2,10)};
+    const regressionGuard=newsImpactRecoveryStrategyDecision('server_error','full_ai',[fixedLong,candidateLong],[fixedRecent,regressedRecent]);
+    const coerciveRecent={...candidateRecent,attempts:true,successPct:'80'};
+    const coerciveGuard=newsImpactRecoveryStrategyDecision('server_error','full_ai',[fixedLong,candidateLong],[fixedRecent,coerciveRecent]);
+    return {
+      pass:stable.strategy==='adaptive'
+        && stable.guardReason==='stable_significant_better'
+        && stable.selectedRecovery==='open_full_ai'
+        && sampleGuard.strategy==='fixed'
+        && sampleGuard.guardReason==='stability_sample'
+        && sampleGuard.proposedRecovery==='open_full_ai'
+        && regressionGuard.strategy==='fixed'
+        && regressionGuard.guardReason==='recent_regression'
+        && coerciveGuard.strategy==='fixed'
+        && coerciveGuard.guardReason==='stability_sample',
+      cases:9,
+    };
+  }
+
+  function newsImpactRecoveryDriftDrill() {
+    const adaptive={
+      reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',
+      fixedRecovery:'retry',fixedRecoveryLabel:'повторить',selectedRecovery:'open_full_ai',selectedRecoveryLabel:'открыть полный AI',
+      proposedRecovery:'open_full_ai',proposedRecoveryLabel:'открыть полный AI',strategy:'adaptive',
+      guardReason:'stable_significant_better',stability:'confirmed',
+      fixedAttempts:50,fixedSuccessPct:35,fixedConfidence:newsImpactConversionConfidence(18,50),
+      selectedAttempts:60,selectedSuccessPct:88.3,selectedConfidence:newsImpactConversionConfidence(53,60),liftPctPoints:53.3,
+    };
+    const prior=[{reason:'server_error',action:'full_ai',recovery:'open_full_ai',attempts:50,recovered:45,failed:5,successPct:90,confidence:newsImpactConversionConfidence(45,50)}];
+    const driftRecent=[{reason:'server_error',action:'full_ai',recovery:'open_full_ai',attempts:10,recovered:4,failed:6,successPct:40,confidence:newsImpactConversionConfidence(4,10)}];
+    const stableRecent=[{reason:'server_error',action:'full_ai',recovery:'open_full_ai',attempts:10,recovered:8,failed:2,successPct:80,confidence:newsImpactConversionConfidence(8,10)}];
+    const shortRecent=[{reason:'server_error',action:'full_ai',recovery:'open_full_ai',attempts:5,recovered:2,failed:3,successPct:40,confidence:newsImpactConversionConfidence(2,5)}];
+    const blocked=newsImpactRecoveryDriftDecision(adaptive,prior,driftRecent);
+    const stable=newsImpactRecoveryDriftDecision(adaptive,prior,stableRecent);
+    const insufficient=newsImpactRecoveryDriftDecision(adaptive,prior,shortRecent);
+    const coercive=newsImpactRecoveryDriftDecision(adaptive,prior,[{...driftRecent[0],attempts:true,successPct:'40'}]);
+    return {
+      pass:blocked.strategy==='fixed'
+        && blocked.guardReason==='performance_drift'
+        && blocked.driftDetected===true
+        && blocked.selectedRecovery==='retry'
+        && stable.strategy==='adaptive'
+        && stable.driftStatus==='stable'
+        && insufficient.strategy==='adaptive'
+        && insufficient.driftStatus==='insufficient'
+        && coercive.driftStatus==='insufficient',
+      cases:9,
+    };
+  }
+
+  function newsImpactRecoveryTransitionDrill() {
+    const rows=[
+      {telegram_id:1,created_at:'2026-09-01T10:00:00Z',metadata:{reason:'server_error',action:'full_ai',recovery:'retry',strategy:'fixed',strategy_guard:'baseline_sample'}},
+      {telegram_id:2,created_at:'2026-09-05T10:00:00Z',metadata:{reason:'server_error',action:'full_ai',recovery:'open_full_ai',strategy:'adaptive',strategy_guard:'stable_significant_better'}},
+      {telegram_id:3,created_at:'2026-09-10T10:00:00Z',metadata:{reason:'server_error',action:'full_ai',recovery:'open_full_ai',strategy:'adaptive',strategy_guard:'stable_significant_better'}},
+      {telegram_id:4,created_at:'2026-09-15T10:00:00Z',metadata:{reason:'server_error',action:'full_ai',recovery:'retry',strategy:'fixed',strategy_guard:'performance_drift'}},
+      {telegram_id:5,created_at:'2026-09-16T10:00:00Z',metadata:{reason:'timeout',action:'share',recovery:'retry_soon',strategy:'fixed',strategy_guard:'fixed_default'}},
+    ];
+    const history=buildNewsImpactRecoveryTransitionHistory(rows);
+    const summary=summarizeNewsImpactRecoveryTransitions(history);
+    const alerts=buildNewsImpactRecoveryAdminAlerts([
+      {reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',guardReason:'performance_drift',driftDropPctPoints:22.5},
+      {reason:'timeout',reasonLabel:'Тайм-аут',action:'share',actionLabel:'Поделиться',guardReason:'stability_sample',proposedRecovery:'retry_soon'},
+    ],'ok');
+    const malformed=buildNewsImpactRecoveryTransitionHistory({broken:true},{limit:true});
+    return {
+      pass:history.length===2
+        && summary.fixedToAdaptive===1
+        && summary.adaptiveToFixed===1
+        && history[0]?.guardReason==='performance_drift'
+        && !Object.prototype.hasOwnProperty.call(history[0] || {},'telegram_id')
+        && alerts.filter(x=>x.severity==='warning').length===1
+        && alerts.filter(x=>x.severity==='info').length===1
+        && summarizeNewsImpactRecoveryAlerts(alerts).total===2
+        && malformed.length===0,
+      cases:9,
+    };
+  }
+
+
   function buildNewsImpactRecoveryIncidentEvents(failureRows = [], options = {}) {
     const safeRows=Array.isArray(failureRows) ? failureRows : [];
     const safeOptions=options && typeof options==='object' && !Array.isArray(options) ? options : {};
