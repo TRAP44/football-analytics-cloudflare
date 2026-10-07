@@ -96,6 +96,20 @@ export function createWorkerBootstrapRuntime(deps = {}) {
     try { return value[key]; } catch { return undefined; }
   }
 
+  function runtimeControlStateValid(value) {
+    const source=plainObject(value);
+    if (!source) return false;
+    return [
+      'maintenanceMode',
+      'analysisEnabled',
+      'searchEnabled',
+      'liveEnabled',
+      'remindersEnabled',
+      'expandedDataEnabled',
+      'autoSettlementRecoveryEnabled',
+    ].every(key=>typeof safeRead(source,key)==='boolean');
+  }
+
   function safeText(value,max=120,fallback='') {
     let text='';
     if (typeof value === 'string') text=value;
@@ -743,9 +757,22 @@ export function createWorkerBootstrapRuntime(deps = {}) {
         return undefined;
       }
 
+      const scheduledRuntimeValue=safeRead(runtimeState,'value');
+      if (!runtimeControlStateValid(scheduledRuntimeValue)) {
+        await safeRecord(cfg,{
+          severity:'error',
+          source:'release',
+          eventType:'scheduled_control_plane',
+          code:'SCHEDULED_CONTROL_PLANE_INVALID',
+          message:'Scheduled execution skipped because runtime controls failed structural validation.',
+          status:503,
+        });
+        return undefined;
+      }
+
       let lockdown=true;
       try {
-        lockdown=isSecurityLockdownControls(safeRead(runtimeState,'value')) === true;
+        lockdown=isSecurityLockdownControls(scheduledRuntimeValue) === true;
       } catch {
         lockdown=true;
       }
