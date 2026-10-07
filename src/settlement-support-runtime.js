@@ -1,4 +1,7 @@
 export function createSettlementSupportRuntime(deps = {}) {
+  if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
+    throw new TypeError('Settlement support dependencies are required.');
+  }
   const {
     actualOutcomeFromGoals,
     isFinishedStatus,
@@ -7,16 +10,42 @@ export function createSettlementSupportRuntime(deps = {}) {
     settlementDriftProviderSnapshot
   } = deps;
 
+  for (const [name,fn] of Object.entries({
+    actualOutcomeFromGoals,
+    isFinishedStatus,
+    scoreBrier,
+    settlementDriftBeforeSnapshot,
+    settlementDriftProviderSnapshot,
+  })) {
+    if (typeof fn !== 'function') throw new TypeError(`Settlement support requires ${name}.`);
+  }
+
+  function integerCandidate(value) {
+    if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+    if (typeof value !== 'string' || value.length > 24) return null;
+    const raw=value.trim();
+    if (!/^\d+$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isSafeInteger(number) ? number : null;
+  }
+
   function positiveSafeInteger(value) {
-    if (value === null || value === undefined || value === '') return null;
-    const number = Number(value);
-    return Number.isSafeInteger(number) && number > 0 ? number : null;
+    const number=integerCandidate(value);
+    return number !== null && number > 0 ? number : null;
   }
 
   function nonNegativeSafeInteger(value) {
-    if (value === null || value === undefined || value === '') return null;
-    const number = Number(value);
-    return Number.isSafeInteger(number) && number >= 0 ? number : null;
+    const number=integerCandidate(value);
+    return number !== null && number >= 0 ? number : null;
+  }
+
+  function probabilityValue(value) {
+    if (typeof value === 'number') return Number.isFinite(value) && value >= 0 && value <= 100 ? value : null;
+    if (typeof value !== 'string' || value.length > 48) return null;
+    const raw=value.trim();
+    if (!/^(?:\d+|\d+\.\d+|\.\d+)$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isFinite(number) && number >= 0 && number <= 100 ? number : null;
   }
 
   const SETTLEMENT_FINALITY_DELAY_HOURS = 6;
@@ -39,7 +68,7 @@ export function createSettlementSupportRuntime(deps = {}) {
     const provider = settlementDriftProviderSnapshot(event);
     const common = {
       settlement_verification_state: 'adjudicated',
-      settlement_verification_count: Math.max(1, Number(row?.settlement_verification_count || 0)),
+      settlement_verification_count:Math.max(1,nonNegativeSafeInteger(row?.settlement_verification_count) ?? 0),
       settlement_resolved_at: resolvedAt,
       settlement_resolution_action: normalizedAction,
       settlement_resolution_event_id: positiveSafeInteger(event?.id),
@@ -85,10 +114,16 @@ export function createSettlementSupportRuntime(deps = {}) {
       actual_outcome: outcome,
       correct: String(row?.predicted_outcome || '') === outcome,
       brier_score: scoreBrier(row, outcome),
-      over25_actual: over25Actual,
-      over25_correct: row?.over25_prob === null || row?.over25_prob === undefined ? null : (Number(row.over25_prob) >= 50) === over25Actual,
-      btts_actual: bttsActual,
-      btts_correct: row?.btts_prob === null || row?.btts_prob === undefined ? null : (Number(row.btts_prob) >= 50) === bttsActual,
+      over25_actual:over25Actual,
+      over25_correct:(()=>{
+        const probability=probabilityValue(row?.over25_prob);
+        return probability===null ? null : (probability>=50)===over25Actual;
+      })(),
+      btts_actual:bttsActual,
+      btts_correct:(()=>{
+        const probability=probabilityValue(row?.btts_prob);
+        return probability===null ? null : (probability>=50)===bttsActual;
+      })(),
       settlement_verified_at: resolvedAt,
       settlement_verified_status: providerStatus,
     };
@@ -134,7 +169,7 @@ export function createSettlementSupportRuntime(deps = {}) {
   const SETTLEMENT_CIRCUIT_FAILURE_THRESHOLD = 2;
   const SETTLEMENT_CIRCUIT_OPEN_HOURS = 72;
 
-  return {
+  return Object.freeze({
     SETTLEMENT_FINALITY_DELAY_HOURS,
     SETTLEMENT_FINALITY_CONFIRM_DELAY_HOURS,
     SETTLEMENT_FINALITY_LOOKBACK_DAYS,
@@ -148,5 +183,5 @@ export function createSettlementSupportRuntime(deps = {}) {
     SETTLEMENT_CIRCUIT_OPEN_HOURS,
     buildSettlementDriftResolution,
     stalePredictionCandidates
-  };
+  });
 }
