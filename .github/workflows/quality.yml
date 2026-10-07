@@ -43,7 +43,11 @@ jobs:
       - run: npm run security:privileged
       - run: npm run lint
       - run: npm run check
-      - run: npm test
+      - name: Run npm test
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | grep -E '^(not ok|# (tests|suites|pass|fail|cancelled|skipped|todo|duration_ms))|AssertionError|ERR_ASSERTION|actual:|expected:|operator:|error:'
       - run: node scripts/bottom-nav-render-smoke.js
       - run: npm run verify:release
       - run: npm run verify:worker
