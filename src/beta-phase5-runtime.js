@@ -31,6 +31,10 @@ export function createBetaPhase5Runtime(deps) {
     return Number.isFinite(number) ? number : null;
   }
 
+  function evidenceCount(value) {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+  }
+
   function normalizedProviderQuota(value = {}) {
     const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
     const plan = String(source.plan || 'UNKNOWN').trim().toUpperCase();
@@ -257,11 +261,6 @@ export function createBetaPhase5Runtime(deps) {
     const rawProviderEvidence=source.providerEvidence===undefined ? 'insufficient_evidence' : String(source.providerEvidence);
     const providerEvidenceValid=['insufficient_evidence','review_provider_options'].includes(rawProviderEvidence);
     const providerEvidence=providerEvidenceValid ? rawProviderEvidence : 'insufficient_evidence';
-    const evidenceCount=value=>{
-      const count=Number(value);
-      return Number.isSafeInteger(count) && count>=0 ? count : 0;
-    };
-
     const betaUsers=evidenceCount(journey.betaUsers);
     const sessionStarts=evidenceCount(metrics.miniAppLaunch?.events);
     const fullJourneys=evidenceCount(journey.fullCompleted);
@@ -767,12 +766,16 @@ export function createBetaPhase5Runtime(deps) {
   }
   
   function phase5ProviderSummary(rows = [], {sessions=0,users=0,fullJourneys=0} = {}) {
-    const usageRows=(rows || []).filter(row=>
+    const allowedKinds=new Set(['search','matches_feed','match_center','ai','live_refresh']);
+    const usageRows=(Array.isArray(rows) ? rows : []).filter(row=>
       row?.source==='phase5'
       && row?.event_type==='provider_usage'
       && row?.code==='PHASE5_PROVIDER_USAGE'
       && row?.metadata?.validationCohort===PHASE5_VALIDATION_COHORT
       && row?.metadata?.validationVerified===true
+      && /^[0-9a-f]{32}$/.test(String(row?.metadata?.validationSubject || ''))
+      && /^[0-9a-f]{32}$/.test(String(row?.metadata?.validationSession || ''))
+      && allowedKinds.has(String(row?.metadata?.requestKind || ''))
     );
     const totals={networkRequests:0,cacheHits:0,staleCacheHits:0,quotaBlocks:0,sharedCooldowns:0};
     const byFeature={};
@@ -780,25 +783,28 @@ export function createBetaPhase5Runtime(deps) {
     const liveUsers=new Set();
     for (const row of usageRows) {
       const m=row.metadata || {};
-      const kind=String(m.requestKind || 'other');
+      const kind=String(m.requestKind || '');
       const bucket=byFeature[kind] ||= {requests:0,networkRequests:0,cacheHits:0,staleCacheHits:0,quotaBlocks:0,sharedCooldowns:0};
       bucket.requests+=1;
       for (const key of Object.keys(totals)) {
-        const value=Math.max(0,Number(m[key] || 0));
+        const value=evidenceCount(m[key]);
         totals[key]+=value;
         bucket[key]+=value;
       }
-      if (Number(m.quotaBlocks || 0)>0 || Number(m.sharedCooldowns || 0)>0) blockedSessions.add(String(m.validationSession || ''));
+      if (evidenceCount(m.quotaBlocks)>0 || evidenceCount(m.sharedCooldowns)>0) blockedSessions.add(String(m.validationSession || ''));
       if (kind==='live_refresh') liveUsers.add(String(m.validationSubject || ''));
     }
+    const safeSessions=evidenceCount(sessions);
+    const safeUsers=evidenceCount(users);
+    const safeFullJourneys=evidenceCount(fullJourneys);
     const round=value=>Number.isFinite(value) ? Math.round(value*100)/100 : null;
-    const requestsPerSession=sessions ? round(totals.networkRequests/sessions) : null;
-    const requestsPerCompletedJourney=fullJourneys ? round(totals.networkRequests/fullJourneys) : null;
+    const requestsPerSession=safeSessions ? round(totals.networkRequests/safeSessions) : null;
+    const requestsPerCompletedJourney=safeFullJourneys ? round(totals.networkRequests/safeFullJourneys) : null;
     const cacheDenominator=totals.cacheHits+totals.networkRequests;
     const cacheHitRatePct=cacheDenominator ? Math.round((totals.cacheHits/cacheDenominator)*1000)/10 : null;
-    const aiRequestsPerUser=users ? round(Number(byFeature.ai?.networkRequests || 0)/users) : null;
+    const aiRequestsPerUser=safeUsers ? round(Number(byFeature.ai?.networkRequests || 0)/safeUsers) : null;
     const liveRequestsPerActiveUser=liveUsers.size ? round(Number(byFeature.live_refresh?.networkRequests || 0)/liveUsers.size) : null;
-    const sessionsPerUser=users ? sessions/users : null;
+    const sessionsPerUser=safeUsers ? safeSessions/safeUsers : null;
     return {
       ...totals,
       requestsPerSession,
@@ -810,7 +816,7 @@ export function createBetaPhase5Runtime(deps) {
       blockedSessions:[...blockedSessions].filter(value=>/^[0-9a-f]{32}$/.test(value)).length,
       byFeature,
       capacity:{
-        evidenceSufficient:sessions>=10 && requestsPerSession!==null,
+        evidenceSufficient:safeSessions>=10 && requestsPerSession!==null,
         concurrent10:requestsPerCompletedJourney===null ? null : round(requestsPerCompletedJourney*10),
         concurrent25:requestsPerCompletedJourney===null ? null : round(requestsPerCompletedJourney*25),
         concurrent50:requestsPerCompletedJourney===null ? null : round(requestsPerCompletedJourney*50),
@@ -823,23 +829,24 @@ export function createBetaPhase5Runtime(deps) {
   
   function phase5EvidenceGate({journey={},timings={},coverage={},opsSampleLimited=false}={}) {
     const requirements={
-      verifiedNormalUsers:{required:5,actual:Number(journey.verifiedNormalUsers || 0)},
-      sessions:{required:10,actual:Number(journey.sessions || 0)},
-      fullJourneys:{required:5,actual:Number(journey.fullCompleted || 0)},
-      searchSamples:{required:10,actual:Number(timings?.search?.samples || 0)},
-      matchCenterSamples:{required:10,actual:Number(timings?.match?.samples || 0)},
-      aiSamples:{required:10,actual:Number(timings?.ai?.samples || 0)},
-      coverageObservations:{required:20,actual:Number(coverage?.samples || 0)},
+      verifiedNormalUsers:{required:5,actual:evidenceCount(journey?.verifiedNormalUsers)},
+      sessions:{required:10,actual:evidenceCount(journey?.sessions)},
+      fullJourneys:{required:5,actual:evidenceCount(journey?.fullCompleted)},
+      searchSamples:{required:10,actual:evidenceCount(timings?.search?.samples)},
+      matchCenterSamples:{required:10,actual:evidenceCount(timings?.match?.samples)},
+      aiSamples:{required:10,actual:evidenceCount(timings?.ai?.samples)},
+      coverageObservations:{required:20,actual:evidenceCount(coverage?.samples)},
     };
     for (const value of Object.values(requirements)) value.pass=value.actual>=value.required;
-    const thresholdsMet=Object.values(requirements).every(value=>value.pass) && !opsSampleLimited;
-    const liveSamples=Math.max(Number(timings?.live?.samples || 0),Number(coverage?.live?.samples || 0));
+    const sampleLimited=opsSampleLimited === true;
+    const thresholdsMet=Object.values(requirements).every(value=>value.pass) && !sampleLimited;
+    const liveSamples=Math.max(evidenceCount(timings?.live?.samples),evidenceCount(coverage?.live?.samples));
     return {
       status:thresholdsMet ? 'EVIDENCE THRESHOLDS MET' : 'COLLECT MORE EVIDENCE',
       thresholdsMet,
       requirements,
       liveStatus:liveSamples>0 ? 'OBSERVED' : 'INSUFFICIENT_LIVE_SAMPLE',
-      opsSampleLimited:Boolean(opsSampleLimited),
+      opsSampleLimited:sampleLimited,
     };
   }
   
