@@ -18,10 +18,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: quality-${{ github.event.pull_request.number || github.ref }}
-  # PRs may supersede older commits. Main is a production gate: never cancel it
-  # just because another push arrives; serialize and let every trusted main run
-  # reach a real success/failure conclusion for deploy/monitor workflows.
+  # PRs share one key and may supersede older commits. Every main SHA gets its
+  # own key so GitHub cannot replace a pending production gate with a newer push.
+  group: quality-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
