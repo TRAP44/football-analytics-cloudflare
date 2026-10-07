@@ -10,6 +10,14 @@ export function createMarketParsingRuntime() {
     if (!sum) return null;
     return { home: round1(a / sum * 100), draw: round1(b / sum * 100), away: round1(c / sum * 100) };
   }
+
+  function decimalOdd(value) {
+    if (typeof value !== 'number' && typeof value !== 'string') return null;
+    const raw=typeof value === 'number' ? String(value) : value.trim();
+    if (!/^\d+(?:\.\d+)?$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isFinite(number) && number>1 && number<=1000 ? number : null;
+  }
   function extractMarket(oddsRows) {
     const samples = [];
     for (const row of oddsRows || []) {
@@ -17,10 +25,10 @@ export function createMarketParsingRuntime() {
         const bet = (bookmaker.bets || []).find(b => String(b.name || '').toLowerCase().includes('match winner'));
         if (!bet) continue;
         const vals = bet.values || [];
-        const home = Number(vals.find(v => String(v.value).toLowerCase() === 'home')?.odd);
-        const draw = Number(vals.find(v => String(v.value).toLowerCase() === 'draw')?.odd);
-        const away = Number(vals.find(v => String(v.value).toLowerCase() === 'away')?.odd);
-        if (home > 1 && draw > 1 && away > 1) samples.push({ home, draw, away });
+        const home = decimalOdd(vals.find(v => String(v.value).toLowerCase() === 'home')?.odd);
+        const draw = decimalOdd(vals.find(v => String(v.value).toLowerCase() === 'draw')?.odd);
+        const away = decimalOdd(vals.find(v => String(v.value).toLowerCase() === 'away')?.odd);
+        if (home !== null && draw !== null && away !== null) samples.push({ home, draw, away });
       }
     }
     if (!samples.length) return null;
@@ -36,8 +44,8 @@ export function createMarketParsingRuntime() {
       let home = null, draw = null, away = null;
       for (const v of values || []) {
         const label = String(v.value ?? v.name ?? v.label ?? '').trim().toLowerCase();
-        const odd = Number(v.odd ?? v.odds ?? v.price);
-        if (!(odd > 1)) continue;
+        const odd = decimalOdd(v.odd ?? v.odds ?? v.price);
+        if (odd === null) continue;
         if (['home','1'].includes(label) || label.includes('home')) home = odd;
         else if (['draw','x'].includes(label) || label.includes('draw')) draw = odd;
         else if (['away','2'].includes(label) || label.includes('away')) away = odd;
