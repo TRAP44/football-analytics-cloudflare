@@ -17,7 +17,7 @@ const analysisController = fs.readFileSync('public/modules/analysis-controller.j
 const html = fs.readFileSync('public/index.html', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8');
 const env = fs.readFileSync('.env.example', 'utf8');
-const wrangler = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
+const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
 
 test('Weekend Pass stays fail-closed without a usage limit and becomes sale-ready at the configured cap', () => {
   const missing = passProductConfig('WEEKEND_PASS', { passUsageLimits:{ WEEKEND_PASS:null } });
@@ -29,9 +29,9 @@ test('Weekend Pass stays fail-closed without a usage limit and becomes sale-read
   assert.equal(configured.durationHours, 168);
   assert.match(env, /WEEKEND_PASS_DURATION_HOURS=168/);
   assert.match(env, /WEEKEND_PASS_USAGE_LIMIT=6/);
-  assert.equal(wrangler.vars.WEEKEND_PASS_DURATION_HOURS, '168');
-  assert.equal(wrangler.vars.WEEKEND_PASS_USAGE_LIMIT, '6');
-  assert.equal(wrangler.vars.MONETIZATION_ENABLED, 'false');
+  assert.match(wrangler, /"WEEKEND_PASS_DURATION_HOURS":\s*"168"/);
+  assert.match(wrangler, /"WEEKEND_PASS_USAGE_LIMIT":\s*"6"/);
+  assert.match(wrangler, /"MONETIZATION_ENABLED":\s*"false"/);
   assert.match(env, /MONETIZATION_ENABLED=false/);
 });
 
