@@ -157,8 +157,8 @@ export function createHistoryRenderer(options={}) {
     return safeCall(elementById,id) || null;
   }
 
-  function html(value) {
-    const result=safeCall(escapeHtml,safeText(value,500));
+  function html(value,max=500) {
+    const result=safeCall(escapeHtml,safeText(value,max));
     return typeof result==='string' ? result : '';
   }
 
@@ -172,7 +172,7 @@ export function createHistoryRenderer(options={}) {
         || url.username
         || url.password
       ) return '';
-      return html(url.toString());
+      return html(url.toString(),2048);
     } catch {
       return '';
     }
