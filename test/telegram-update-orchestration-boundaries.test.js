@@ -266,3 +266,81 @@ test('runtime-control failures are normalized into retryable upstream errors', a
       && error?.message==='controls offline',
   );
 });
+
+
+test('Telegram callback fixture and team identifiers fail closed before handlers', async () => {
+  let fixtureCalls=0;
+  let teamCalls=0;
+  const processor=createTelegramUpdateProcessor(deps({
+    sendBotFixtureMenu:async()=>{ fixtureCalls+=1; },
+    sendFavoriteTeamNews:async()=>{ teamCalls+=1; },
+  }));
+
+  const invalidFixture=await processor(request,{},{
+    callback_query:{
+      id:'cb-fixture',
+      data:'match:menu:0',
+      from:{id:7},
+      message:{chat:{id:8}},
+    },
+  });
+  assert.equal(invalidFixture.status,400);
+  assert.equal(invalidFixture.body.error,'fixture_id_invalid');
+
+  const invalidTeam=await processor(request,{},{
+    callback_query:{
+      id:'cb-team',
+      data:'news:team:0',
+      from:{id:7},
+      message:{chat:{id:8}},
+    },
+  });
+  assert.equal(invalidTeam.status,400);
+  assert.equal(invalidTeam.body.error,'team_id_invalid');
+  assert.equal(fixtureCalls,0);
+  assert.equal(teamCalls,0);
+});
+
+test('subscription identity mismatch never mutates subscription state', async () => {
+  let mutations=0;
+  const processor=createTelegramUpdateProcessor(deps({
+    parseInvoicePayload:async()=>({userId:99}),
+    updateUserSubscription:async()=>{ mutations+=1; },
+  }));
+
+  const result=await processor(request,{},{
+    subscription:{
+      invoice_payload:'payload',
+      state:'active',
+      user:{id:7},
+    },
+  });
+
+  assert.equal(result.status,400);
+  assert.equal(result.body.error,'telegram_subscription_identity_mismatch');
+  assert.equal(mutations,0);
+});
+
+test('nonessential news outcome tracking cannot turn a delivered action into recovery', async () => {
+  let recoveries=0;
+  let deliveries=0;
+  const processor=createTelegramUpdateProcessor(deps({
+    sendGeneralFootballNews:async()=>{ deliveries+=1; },
+    recordNewsImpactOutcome:async()=>{ throw new Error('analytics offline'); },
+    sendNewsImpactRecoveryMessage:async()=>{ recoveries+=1; },
+  }));
+
+  const result=await processor(request,{},{
+    callback_query:{
+      id:'cb-news',
+      data:'news:impact:material:news:77',
+      from:{id:7},
+      message:{chat:{id:8}},
+    },
+  });
+
+  assert.equal(result.status,200);
+  assert.deepEqual(result.body,{ok:true});
+  assert.equal(deliveries,1);
+  assert.equal(recoveries,0);
+});
