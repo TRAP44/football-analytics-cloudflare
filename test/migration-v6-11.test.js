@@ -59,6 +59,7 @@ test('RC19 security contract is invoker-only and service-role-only', () => {
   assert.match(defaultsSql, /create or replace function public\.backend_default_acl_contract\(\)/);
   assert.match(defaultsSql, /security invoker/);
   assert.doesNotMatch(defaultsSql, /security definer/);
+  assert.match(defaultsSql, /revoke all on function public\.backend_default_acl_contract\(\) from public, anon, authenticated/);
   assert.match(defaultsSql, /grant execute on function public\.backend_default_acl_contract\(\) to service_role/);
 });
 
