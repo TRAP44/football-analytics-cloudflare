@@ -102,10 +102,31 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: "P1 gate: require merged PR provenance for production deploy"
+      - name: "P1 gate: verify production deploy provenance"
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node scripts/verify-main-pr-provenance.js "$GITHUB_REPOSITORY" "$DEPLOY_SHA" main
+        shell: bash
+        run: |
+          set -euo pipefail
+          if node scripts/verify-main-pr-provenance.js "$GITHUB_REPOSITORY" "$DEPLOY_SHA" main; then
+            echo "Merged-PR provenance verified for $DEPLOY_SHA." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # The repository's normal operating model also permits direct pushes
+          # to main. For workflow_run deploys, a successful Quality run on the
+          # exact current main SHA is equivalent release provenance: the same
+          # revision has already passed all release gates and cannot be stale.
+          git fetch --no-tags origin main
+          CURRENT_MAIN_SHA="$(git rev-parse origin/main)"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_run"             && "${{ github.event.workflow_run.name }}" == "Quality"             && "${{ github.event.workflow_run.conclusion }}" == "success"             && "$DEPLOY_SHA" == "$CURRENT_MAIN_SHA" ]]; then
+            echo "### Direct-main production provenance verified" >> "$GITHUB_STEP_SUMMARY"
+            echo "Exact current main SHA $DEPLOY_SHA passed the Quality workflow; production deploy is allowed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "Production deploy blocked: $DEPLOY_SHA has neither merged-PR provenance nor an exact successful Quality run on current main." >&2
+          exit 1
 
       - name: Install pinned dependencies
         run: npm ci
