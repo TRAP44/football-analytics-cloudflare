@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 
 const worker = fs.readFileSync('src/worker.js','utf8');
 const providerSlo = fs.readFileSync('src/provider-slo-runtime.js','utf8');
+const providerWiring = fs.readFileSync('src/provider-readiness-wiring-runtime.js','utf8');
 const productionMonitor = fs.readFileSync('src/production-monitor-runtime.js','utf8');
 const router = fs.readFileSync('src/router.js','utf8');
 const gateway = fs.readFileSync('src/api-football-gateway.js','utf8');
@@ -18,7 +19,7 @@ const stableReadiness = fs.readFileSync('supabase/migrations/supabase_migration_
 
 test('provider observability is wired to both primary and secondary football transports', () => {
   assert.match(worker, /createProviderObservabilityRuntime/);
-  assert.match(worker, /createApiFootballGateway\(\{[\s\S]*?observeProviderRequest/);
+  assert.match(providerWiring, /createApiFootballGateway\(\{[\s\S]*?observeProviderRequest/);
   assert.match(worker, /createProviderRequestBoundary\(\{[\s\S]*?observeProviderRequest/);
   assert.match(gateway, /await observe\(cfg,\{/);
   assert.match(secondary, /await observe\(cfg,\{/);
@@ -33,7 +34,8 @@ test('provider SLO persists distributed 15-minute aggregate windows through prod
   assert.match(migration, /attempts=public\.provider_slo_buckets\.attempts\+excluded\.attempts/);
   assert.match(migration, /floor\(extract\(minute from v_now\) \/ 15\)/);
   assert.match(providerSlo, /providerSloWindowsFromBuckets/);
-  assert.match(providerSlo, /includeCurrent:!providerSloSource\.distributed/);
+  assert.match(productionMonitor, /includeCurrent:!providerSloSource\.distributed/);
+  assert.match(providerSlo, /includeCurrent:!source\.distributed/);
   assert.match(providerSlo, /code: 'PROVIDER_SLO_WINDOW'/);
   assert.match(providerSlo, /event_type: 'slo_window'/);
   assert.match(productionMonitor, /const providerSloFlush = options\.record !== false/);
