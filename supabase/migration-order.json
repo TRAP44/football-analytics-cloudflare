@@ -1,5 +1,5 @@
 {
-  "formatVersion": 1,
+  "formatVersion": 2,
   "generatedAt": "2026-10-07",
   "sourceOfTruth": "../release-contract.json",
   "baseline": "baseline/supabase_baseline_v6_19.sql",
@@ -200,6 +200,8 @@
   "notes": [
     "release-contract.json remains authoritative for the active schema contract and latest migration.",
     "Production remote migration names are rollout history and are not expected to match these repository filenames 1:1.",
-    "Applied migrations are immutable; fixes must be new forward migrations."
-  ]
+    "Applied migrations are immutable; fixes must be new forward migrations.",
+    "CI verifies every listed SQL file by Git blob SHA and rejects untracked migration files."
+  ],
+  "baselineGitBlobSha": "c0b25f3cf7619fff6f01db16f81ff775f3d387ce"
 }
