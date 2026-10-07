@@ -91,7 +91,7 @@ test('RC55 search normalization handles punctuation, composed/decomposed Unicode
 
   assert.equal(runtime.searchText('Sa\u0303o Paulo'),'sao paulo');
   assert.equal(runtime.searchText('Ｒｅａｌ　Ｍａｄｒｉｄ'),'real madrid');
-  assert.equal(runtime.searchText('Интер\u200BМайами'),'интер маиами');
+  assert.equal(runtime.searchText('Интер\u200BМайами'),'интер майами');
   assert.equal(runtime.searchQualityDrill().pass,true);
   assert.equal(runtime.searchQualityDrill().total,21);
 });
