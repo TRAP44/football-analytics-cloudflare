@@ -396,8 +396,8 @@ async function primaryMode() {
 }
 
 async function diagnosticsMode() {
-  const runId = Number(process.env.PRIMARY_RUN_ID || 0);
-  if (!Number.isInteger(runId) || runId <= 0) {
+  const runId=parseTrackingIssueNumber(process.env.PRIMARY_RUN_ID);
+  if (!runId) {
     throw new Error('PRIMARY_RUN_ID is required');
   }
   const runUrl = String(process.env.PRIMARY_RUN_URL || '').trim();
