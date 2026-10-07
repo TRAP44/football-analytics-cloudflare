@@ -17,7 +17,7 @@ export function createMatchCenterRuntime(deps) {
     assessMatchEventQuality,
     assessMatchLineups,
     assessMatchStatisticsQuality,
-    synchronizeLineupQuality,
+    synchronizeLineupQuality: synchronizeLineupQualityInput,
     assessOddsMarketQuality,
     buildAiTimeline,
     buildLiveAiCoach,
@@ -72,6 +72,10 @@ export function createMatchCenterRuntime(deps) {
     validateFixtureIntegrity,
   } = deps;
 
+  const synchronizeLineupQuality=typeof synchronizeLineupQualityInput==='function'
+    ? synchronizeLineupQualityInput
+    : (lineups)=>lineups;
+
   const requiredFunctions={
     annotateAvailabilityReliability,
     annotateEventReliability,
@@ -85,7 +89,6 @@ export function createMatchCenterRuntime(deps) {
     assessMatchEventQuality,
     assessMatchLineups,
     assessMatchStatisticsQuality,
-    synchronizeLineupQuality,
     assessOddsMarketQuality,
     buildAiTimeline,
     buildLiveAiCoach,
