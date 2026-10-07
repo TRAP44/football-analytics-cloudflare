@@ -410,6 +410,225 @@ export function createModelIntelligenceRuntime(deps) {
     ));
   }
   
+  function playerNameKey(value) {
+    const raw=typeof value==='string' ? value : '';
+    if (!raw) return '';
+    return raw
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g,'')
+      .toLowerCase()
+      .replace(/[^a-z0-9а-яё]+/giu,' ')
+      .replace(/\s+/g,' ')
+      .trim()
+      .slice(0,160);
+  }
+
+  function playerSeasonStrength(player = {}) {
+    const appearances=finiteRange(player?.games?.appearances,0,100) ?? 0;
+    const starts=finiteRange(player?.games?.lineups,0,100) ?? 0;
+    const minutes=finiteRange(player?.games?.minutes,0,10000) ?? 0;
+    const rating=finiteRange(player?.games?.rating,0,10);
+    const goals=finiteRange(player?.goals?.total,0,100) ?? 0;
+    const assists=finiteRange(player?.goals?.assists,0,100) ?? 0;
+    if (!(appearances>0 || starts>0 || minutes>0 || rating !== null || goals>0 || assists>0)) {
+      return null;
+    }
+
+    const starterRate=appearances>0 ? clamp(starts/appearances,0,1) : 0;
+    const minutesPerAppearance=appearances>0 ? clamp(minutes/appearances,0,90) : 0;
+    const minutesRate=minutesPerAppearance/90;
+    const sampleStrength=clamp(appearances/12,0,1);
+    const ratingImpact=rating === null
+      ? 0
+      : clamp((rating-6.5)*0.16,-0.16,0.24);
+
+    const position=String(player?.games?.position || '').trim().toLowerCase();
+    const attackMultiplier=/goalkeeper|keeper|\bgk\b/.test(position)
+      ? 0.10
+      : /defender|\bdef\b/.test(position)
+        ? 0.35
+        : /midfielder|\bmid\b/.test(position)
+          ? 0.72
+          : 1;
+    const contributionRate=appearances>0
+      ? clamp((goals+assists*0.7)/appearances,0,0.9)
+      : 0;
+
+    const defensiveActions=(
+      (finiteRange(player?.tackles?.total,0,2000) ?? 0)
+      +(finiteRange(player?.tackles?.blocks,0,1000) ?? 0)
+      +(finiteRange(player?.tackles?.interceptions,0,1000) ?? 0)
+    );
+    const defensiveRate=appearances>0
+      ? clamp(defensiveActions/appearances,0,8)/8
+      : 0;
+    const saves=finiteRange(player?.goals?.saves,0,2000) ?? 0;
+    const saveRate=appearances>0 ? clamp(saves/appearances,0,6)/6 : 0;
+
+    const raw=
+      0.84
+      +starterRate*0.18
+      +minutesRate*0.16
+      +ratingImpact
+      +contributionRate*attackMultiplier*0.22
+      +(/defender|midfielder|\bdef\b|\bmid\b/.test(position) ? defensiveRate*0.06 : 0)
+      +(/goalkeeper|keeper|\bgk\b/.test(position) ? saveRate*0.08 : 0);
+    return round1(clamp(
+      1+(raw-1)*(0.45+sampleStrength*0.55),
+      0.78,
+      1.48,
+    ));
+  }
+
+  function lineupPlayerStatsIndex(playerStats = null) {
+    const stats=playerStats && typeof playerStats==='object' && !Array.isArray(playerStats)
+      ? playerStats
+      : null;
+    const players=Array.isArray(stats?.players) ? stats.players : [];
+    if (stats?.available !== true || stats?.scope !== 'team-season' || players.length<11) {
+      return null;
+    }
+
+    const ids=new Map();
+    const names=new Map();
+    const nameCounts=new Map();
+    for (const player of players) {
+      const id=positiveSafeInteger(player?.providerId) || positiveSafeInteger(player?.id);
+      if (id) ids.set(id,player);
+      const name=playerNameKey(player?.name);
+      if (!name) continue;
+      nameCounts.set(name,(nameCounts.get(name) || 0)+1);
+      if (!names.has(name)) names.set(name,player);
+    }
+    for (const [name,count] of nameCounts) {
+      if (count>1) names.delete(name);
+    }
+    return {stats,players,ids,names};
+  }
+
+  function expectedLineupPoolScore(players = []) {
+    const ranked=(Array.isArray(players) ? players : [])
+      .map(player=>{
+        const strength=playerSeasonStrength(player);
+        const appearances=finiteRange(player?.games?.appearances,0,100) ?? 0;
+        const starts=finiteRange(player?.games?.lineups,0,100) ?? 0;
+        const minutes=finiteRange(player?.games?.minutes,0,10000) ?? 0;
+        if (strength === null) return null;
+        const starterRate=appearances>0 ? clamp(starts/appearances,0,1) : 0;
+        const minutesRate=appearances>0 ? clamp(minutes/appearances,0,90)/90 : 0;
+        const rolePriority=starterRate*0.52+minutesRate*0.33+strength*0.15;
+        return {strength,rolePriority};
+      })
+      .filter(Boolean)
+      .sort((a,b)=>b.rolePriority-a.rolePriority)
+      .slice(0,11);
+    if (ranked.length<11) return null;
+    return ranked.reduce((sum,row)=>sum+row.strength,0)/ranked.length;
+  }
+
+  function lineupSideStrength(lineup = null, playerStats = null) {
+    const starters=Array.isArray(lineup?.startXI) ? lineup.startXI.slice(0,11) : [];
+    if (lineup?.quality?.confirmed !== true || starters.length!==11) return null;
+    const index=lineupPlayerStatsIndex(playerStats);
+    if (!index) return null;
+    const expected=expectedLineupPoolScore(index.players);
+    if (!Number.isFinite(expected) || expected<=0) return null;
+
+    const matched=[];
+    for (const starter of starters) {
+      const id=positiveSafeInteger(starter?.id);
+      const name=playerNameKey(starter?.name);
+      const player=(id && index.ids.get(id)) || (name && index.names.get(name)) || null;
+      const strength=player ? playerSeasonStrength(player) : null;
+      if (strength !== null) matched.push({strength,player});
+    }
+    const coverage=matched.length/11;
+    if (matched.length<9) return {
+      available:false,
+      matched:matched.length,
+      total:11,
+      coverage:round1(coverage*100),
+      reason:'starter_stats_coverage',
+    };
+
+    const actual=matched.reduce((sum,row)=>sum+row.strength,0)/matched.length;
+    const rotationPenaltyPct=clamp((1-actual/expected)*100,0,18);
+    const poolSize=index.players.length;
+    const sourceConfidence=playerStats?.complete === true
+      ? 1
+      : poolSize>=20
+        ? 0.78
+        : poolSize>=16
+          ? 0.62
+          : 0.5;
+    const confidence=clamp(coverage*sourceConfidence,0,1);
+    return {
+      available:true,
+      matched:matched.length,
+      total:11,
+      coverage:round1(coverage*100),
+      actualScore:round1(actual*100),
+      expectedScore:round1(expected*100),
+      rotationPenaltyPct:round1(rotationPenaltyPct),
+      poolSize,
+      complete:playerStats?.complete === true,
+      confidence:round1(confidence*100),
+      source:String(playerStats?.sourceMeta?.provider || 'unknown').slice(0,80),
+    };
+  }
+
+  function buildStartingXiStrength({lineups,homePlayerStats,awayPlayerStats}={}) {
+    const home=lineupSideStrength(lineups?.home,homePlayerStats);
+    const away=lineupSideStrength(lineups?.away,awayPlayerStats);
+    if (!home?.available || !away?.available) {
+      return {
+        available:false,
+        trusted:false,
+        home:home || null,
+        away:away || null,
+        probabilityShift:0,
+        reason:'lineup_or_player_stats_incomplete',
+      };
+    }
+    const confidence=Math.min(
+      finiteRange(home.confidence,0,100) ?? 0,
+      finiteRange(away.confidence,0,100) ?? 0,
+    );
+    const trusted=confidence>=68;
+    const penaltyEdge=clamp(
+      Number(away.rotationPenaltyPct || 0)-Number(home.rotationPenaltyPct || 0),
+      -18,
+      18,
+    );
+    const shift=trusted
+      ? clamp(penaltyEdge*0.18*(confidence/100),-2.8,2.8)
+      : 0;
+    return {
+      available:true,
+      trusted,
+      home,
+      away,
+      confidence:round1(confidence),
+      penaltyEdge:round1(penaltyEdge),
+      probabilityShift:round1(shift),
+      reason:trusted ? '' : 'player_stats_confidence',
+    };
+  }
+
+  function applyLineupStrengthAdjustment(probabilities, lineupStrength = null) {
+    const input=probabilityObject(probabilities);
+    if (!input) return null;
+    const shift=lineupStrength?.trusted === true
+      ? finiteRange(lineupStrength?.probabilityShift,-2.8,2.8)
+      : 0;
+    if (shift === null || Math.abs(shift)<0.05) return input;
+    return probabilityObject(normalizeThree(
+      Math.max(0,input.home+shift),
+      input.draw,
+      Math.max(0,input.away-shift),
+    ));
+  }
+
   function poissonGoalModel(homeForm, awayForm) {
     const h=formSample(homeForm?.overall);
     const a=formSample(awayForm?.overall);
@@ -499,7 +718,7 @@ export function createModelIntelligenceRuntime(deps) {
     return round1(Math.max(0, Number(rows[0].value || 0) - Number(rows[1].value || 0)));
   }
   
-  function confidenceModel(signals, finalP, homeForm, awayForm) {
+  function confidenceModel(signals, finalP, homeForm, awayForm, lineupStrength = null) {
     const validSignals=(Array.isArray(signals) ? signals : []).filter(signal=>probabilityObject(signal?.probabilities));
     const coverage=signalCanonicalCoverage(validSignals);
     const signalCount=validSignals.length;
@@ -516,8 +735,11 @@ export function createModelIntelligenceRuntime(deps) {
         + formSample * 10
         + (agreement / 100) * 10
         + marginFactor * 10
+        + (lineupStrength?.trusted === true
+          ? 2 + Math.min(3,(finiteRange(lineupStrength?.confidence,0,100) ?? 0)/100*3)
+          : 0)
         - disagreement * 0.75,
-      25, 90,
+      25, 92,
     ));
     return {
       score,
@@ -532,11 +754,13 @@ export function createModelIntelligenceRuntime(deps) {
         formSamplePct: round1(formSample * 100),
         leaderAgreementPct: agreement,
         leaderMarginPctPoints: margin,
+        startingXiConfirmed: lineupStrength?.trusted === true,
+        startingXiConfidencePct: finiteRange(lineupStrength?.confidence,0,100) ?? 0,
       },
     };
   }
   
-  function buildAnalysisNotes({ probabilities, market, model, homeForm, awayForm, h2h, absences, lineups, news, homeName, awayName, minutesToKickoff, confidence }) {
+  function buildAnalysisNotes({ probabilities, market, model, homeForm, awayForm, h2h, absences, lineups, lineupStrength, news, homeName, awayName, minutesToKickoff, confidence }) {
     const factors=[];
     const risks=[];
     const finalProbabilities=probabilityObject(probabilities);
@@ -558,6 +782,19 @@ export function createModelIntelligenceRuntime(deps) {
     if (homeSuspensions || awaySuspensions) factors.push(`Дисквалификации по данным источника: ${homeName} — ${homeSuspensions}, ${awayName} — ${awaySuspensions}.`);
     if (counts?.total >= 3 && Math.abs(counts.homeWins-counts.awayWins) >= 2) {
       factors.push(`В последних очных матчах преимущество по победам у ${counts.homeWins > counts.awayWins ? homeName : awayName}.`);
+    }
+    if (lineupStrength?.trusted === true) {
+      const edge=Number(lineupStrength?.penaltyEdge || 0);
+      const shift=Number(lineupStrength?.probabilityShift || 0);
+      if (Math.abs(edge)>=1.2 && Math.abs(shift)>=0.2) {
+        factors.push(
+          edge>0
+            ? `Подтверждённый стартовый состав ${awayName} выглядит более ротированным относительно сезонного ядра; поправка к П1 около +${Math.abs(shift).toFixed(1)} п.п.`
+            : `Подтверждённый стартовый состав ${homeName} выглядит более ротированным относительно сезонного ядра; поправка к П2 около +${Math.abs(shift).toFixed(1)} п.п.`,
+        );
+      } else {
+        factors.push('Оба подтверждённых стартовых состава близки к сезонному ядру команд; сильной поправки по XI не требуется.');
+      }
     }
     if (!marketProbabilities) risks.push('Нет доступной линии 1X2 — итог сильнее зависит от статистических источников.');
     if (!model?.probabilities) risks.push('API-Football не вернул процентный прогноз для этого матча.');
@@ -608,7 +845,7 @@ export function createModelIntelligenceRuntime(deps) {
   
   function buildPreMatchIntelligence({
     probabilities, rawProbabilities, market, apiPrediction, homeForm, awayForm,
-    h2h, absences, lineups, goalModel, comparison, confidence, modelBreakdown,
+    h2h, absences, lineups, lineupStrength, goalModel, comparison, confidence, modelBreakdown,
     homeName, awayName, minutesToKickoff, news, completeness,
   }) {
     probabilities=probabilityObject(probabilities);
@@ -719,6 +956,28 @@ export function createModelIntelligenceRuntime(deps) {
       }));
     }
   
+    if (lineupStrength?.trusted === true) {
+      const shift=Number(lineupStrength?.probabilityShift || 0);
+      const edge=Number(lineupStrength?.penaltyEdge || 0);
+      const side=shift>0.15 ? 'home' : shift<-0.15 ? 'away' : 'neutral';
+      drivers.unshift(preMatchDriver({
+        type:'starting_xi_strength',
+        icon:'👥',
+        side,
+        title:'Сила стартовых составов',
+        text:Math.abs(shift)>=0.2
+          ? `Подтверждённые XI дают ограниченную поправку ${shift>0?homeName:awayName}: ${Math.abs(shift).toFixed(1)} п.п. Разница ротационной нагрузки — ${Math.abs(edge).toFixed(1)}%.`
+          : 'Оба подтверждённых XI близки к основному сезонному ядру; составы повышают уверенность, но почти не меняют проценты.',
+        strength:Math.abs(shift)>=1.4 ? 'high' : Math.abs(shift)>=0.5 ? 'medium' : 'low',
+        source:'lineups',
+        values:{
+          homeRotationPenalty:Number(lineupStrength?.home?.rotationPenaltyPct || 0),
+          awayRotationPenalty:Number(lineupStrength?.away?.rotationPenaltyPct || 0),
+          probabilityShift:shift,
+        },
+      }));
+    }
+
     if (marketProbabilities && probabilities) {
       const marketRanking=probabilityRanking(marketProbabilities,homeName,awayName);
       const marketTop = marketRanking[0];
@@ -905,7 +1164,7 @@ export function createModelIntelligenceRuntime(deps) {
         awayState: String(lineups?.away?.quality?.state || 'unavailable'),
       },
       absences: { home: homeAbs, away: awayAbs },
-      methodology: 'Бриф объясняет уже рассчитанные вероятности через веса источников, недавнюю форму, силу сезона, очные встречи, потери и голевую эвристику. Он не добавляет новый прогноз и не является рекомендацией для ставок.',
+      methodology: 'Бриф объясняет уже рассчитанные вероятности через веса источников, недавнюю форму, силу сезона, очные встречи, потери и голевую эвристику. Подтверждённый Starting XI применяется отдельной ограниченной поправкой после базового объединения и повышает уверенность только при достаточном покрытии сезонной статистикой игроков. Он не является рекомендацией для ставок.',
     };
   }
   
@@ -922,6 +1181,10 @@ export function createModelIntelligenceRuntime(deps) {
     blendProbabilitySignals,
     absenceAdjustmentUnits,
     applyAbsenceAdjustment,
+    playerSeasonStrength,
+    lineupSideStrength,
+    buildStartingXiStrength,
+    applyLineupStrengthAdjustment,
     poissonGoalModel,
     outcomeName,
     signalDisagreement,

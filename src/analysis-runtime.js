@@ -16,6 +16,7 @@ export function createAnalysisRuntime(deps) {
     annotateLineupReliability,
     annotateOddsReliability,
     applyAbsenceAdjustment,
+    applyLineupStrengthAdjustment,
     applyFeatureFreshnessMap,
     assessFixtureAvailabilityQuality,
     assessMatchLineups,
@@ -26,6 +27,7 @@ export function createAnalysisRuntime(deps) {
     buildAiInstructor,
     buildAnalysisNotes,
     buildLineupImpact,
+    buildStartingXiStrength,
     buildMatchComparison,
     buildOddsMovement,
     buildPreMatchIntelligence,
@@ -663,7 +665,7 @@ export function createAnalysisRuntime(deps) {
     };
 
     try {
-    const cacheKey=`fixture:${fixtureId}:v16-season-strength-rc145`;
+    const cacheKey=`fixture:${fixtureId}:v17-starting-xi-rc146`;
     const cachedCandidate=await optionalAsync(getCache,cacheKey,cfg);
     const cached=analysisCachePayload(cachedCandidate,fixtureId);
     const staleCandidate=cached || await optionalAsync(getStaleCache,cacheKey,cfg);
@@ -1431,6 +1433,11 @@ export function createAnalysisRuntime(deps) {
         };
 
     const roleHydrationMaxPages=paid ? 2 : 1;
+    const startingXiStatsNeeded=Boolean(
+      paid
+      && lineupQuality.bothConfirmed === true
+      && featureTrusted('lineups'),
+    );
     const [homeRoleRaw,awayRoleRaw]=await Promise.all([
       optionalAsync(hydratePlayerRolesForAnalysis,{
         teamId:homeId,
@@ -1439,7 +1446,7 @@ export function createAnalysisRuntime(deps) {
         leagueName,
         season,
         cachedPlayerStats:cachedHomePlayerStats,
-        needed:baseAbsences.home.length>0,
+        needed:baseAbsences.home.length>0 || startingXiStatsNeeded,
         cfg,
         maxPages:roleHydrationMaxPages,
       }),
@@ -1450,7 +1457,7 @@ export function createAnalysisRuntime(deps) {
         leagueName,
         season,
         cachedPlayerStats:cachedAwayPlayerStats,
-        needed:baseAbsences.away.length>0,
+        needed:baseAbsences.away.length>0 || startingXiStatsNeeded,
         cfg,
         maxPages:roleHydrationMaxPages,
       }),
@@ -1477,6 +1484,12 @@ export function createAnalysisRuntime(deps) {
     if (baseAbsences.away.length && awayPlayerStats?.available !== true) {
       skipped.push('Роль отсутствующих игроков гостей не уточнена: сезонная статистика недоступна или сохранена квота.');
     }
+    if (
+      startingXiStatsNeeded
+      && (homePlayerStats?.available !== true || awayPlayerStats?.available !== true)
+    ) {
+      skipped.push('Сила стартовых XI рассчитана частично: сезонная статистика игроков одной из команд недоступна.');
+    }
 
     let absences=baseAbsences;
     try {
@@ -1502,6 +1515,20 @@ export function createAnalysisRuntime(deps) {
         awayName,
         reliability:providerReliability,
       })) || lineupImpact;
+    } catch {}
+
+    let lineupStrength={
+      available:false,
+      trusted:false,
+      probabilityShift:0,
+      reason:'lineups_unavailable',
+    };
+    try {
+      lineupStrength=objectValue(buildStartingXiStrength({
+        lineups:trustedLineups,
+        homePlayerStats,
+        awayPlayerStats,
+      })) || lineupStrength;
     } catch {}
 
     let recentFormProb=null;
@@ -1569,8 +1596,12 @@ export function createAnalysisRuntime(deps) {
 
     let rawProbabilities;
     try {
+      const absenceAdjusted=applyAbsenceAdjustment(
+        baselineBlend.probabilities,
+        absences,
+      );
       rawProbabilities=probabilityVector(
-        applyAbsenceAdjustment(baselineBlend.probabilities,absences),
+        applyLineupStrengthAdjustment(absenceAdjusted,lineupStrength),
       );
     } catch {}
     if (!rawProbabilities) {
@@ -1583,8 +1614,12 @@ export function createAnalysisRuntime(deps) {
 
     let weightedProbabilities;
     try {
+      const absenceAdjusted=applyAbsenceAdjustment(
+        blended.probabilities,
+        absences,
+      );
       weightedProbabilities=probabilityVector(
-        applyAbsenceAdjustment(blended.probabilities,absences),
+        applyLineupStrengthAdjustment(absenceAdjusted,lineupStrength),
       );
     } catch {}
     if (!weightedProbabilities) weightedProbabilities=rawProbabilities;
@@ -1650,6 +1685,7 @@ export function createAnalysisRuntime(deps) {
         probabilities,
         homeForm,
         awayForm,
+        lineupStrength,
       )) || confidence;
     } catch {}
 
@@ -1664,6 +1700,7 @@ export function createAnalysisRuntime(deps) {
         h2h:trustedH2h,
         absences,
         lineups,
+        lineupStrength,
         news:web,
         homeName,
         awayName,
@@ -1700,6 +1737,7 @@ export function createAnalysisRuntime(deps) {
       trustedH2h && 'h2h',
       trustedInjuries.length && featureTrusted('injuries') && 'injuries',
       lineupQuality.bothConfirmed === true && featureTrusted('lineups') && 'lineups',
+      lineupStrength.trusted === true && 'playerStrength',
       safeText(web.answer,1) && 'web',
     ].filter(Boolean);
 
@@ -1737,6 +1775,7 @@ export function createAnalysisRuntime(deps) {
         h2h:trustedH2h,
         absences,
         lineups,
+        lineupStrength,
         goalModel,
         comparison,
         confidence,
@@ -1848,7 +1887,7 @@ export function createAnalysisRuntime(deps) {
     const generatedAt=new Date().toISOString();
     const payload={
       generatedAt,
-      analysisVersion:'4.16.0-season-strength',
+      analysisVersion:'4.17.0-starting-xi',
       match:{
         fixtureId,
         date:kickoffRaw,
@@ -1910,7 +1949,7 @@ export function createAnalysisRuntime(deps) {
       modelBreakdown:{
         weights:objectValue(blended.weights) || {},
         signals:rowsOrEmpty(blended.signals,20),
-        method:'Рынок, прогноз источника данных, недавняя форма, сила сезона и очные встречи объединяются динамически. Сила сезона использует атаку, оборону, сухие матчи и, когда доступно, положение в таблице. Активный профиль применяется только после двух окон отложенной выборки и атомарного сравнения кандидата с активной моделью. Потери состава корректируют итог ограниченно: роль игрока сначала берётся из Team Intelligence cache, а при реальной потере может точечно гидратироваться из сезонной статистики с отдельным кешем и quota guard; сомнительный статус даёт половинный вклад.',
+        method:'Рынок, прогноз источника данных, недавняя форма, сила сезона и очные встречи объединяются динамически. Сила сезона использует атаку, оборону, сухие матчи и, когда доступно, положение в таблице. После базового объединения потери состава и подтверждённый Starting XI применяют только ограниченные поправки: XI оценивается по сезонной роли, минутам, стартам, рейтингу и результативным действиям игроков и не может сдвинуть 1X2 более чем на 2.8 п.п. Активный профиль применяется только после двух окон отложенной выборки и атомарного сравнения кандидата с активной моделью.',
       },
       dataPolicy:{
         dataMode:paid ? 'expanded' : 'standard',
@@ -1938,6 +1977,16 @@ export function createAnalysisRuntime(deps) {
             stale:awayRoleHydration.stale === true,
             reason:safeText(awayRoleHydration.reason,160),
           },
+        },
+        startingXiStrength:{
+          available:lineupStrength.available === true,
+          trusted:lineupStrength.trusted === true,
+          confidence:finiteNumber(lineupStrength.confidence),
+          probabilityShift:finiteNumber(lineupStrength.probabilityShift),
+          homeCoverage:finiteNumber(lineupStrength?.home?.coverage),
+          awayCoverage:finiteNumber(lineupStrength?.away?.coverage),
+          homeRotationPenaltyPct:finiteNumber(lineupStrength?.home?.rotationPenaltyPct),
+          awayRotationPenaltyPct:finiteNumber(lineupStrength?.away?.rotationPenaltyPct),
         },
         news:{
           provider:'tavily',
@@ -1967,6 +2016,7 @@ export function createAnalysisRuntime(deps) {
       lineups,
       lineupQuality,
       lineupImpact,
+      lineupStrength,
       h2h:trustedH2h,
       preMatchIntelligence,
       aiInstructor,
