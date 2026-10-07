@@ -420,28 +420,35 @@ test('recipient authorization is per user and is expanded back to all of that us
   assert.equal(result.blockedByPreference,1);
 });
 
-test('recipient filter cannot inject a user that was absent from the source reminder page',async()=>{
-  const rows=[reminder(10,100)];
-  const {service,reads,deliveries}=runtime({
-    rows,
-    byFixture:{
-      100:snapshots(),
-      999:snapshots(),
-    },
-    filterNotificationRecipients:async()=>({
-      rows:[reminder(999,999)],
-      blockedByPreference:0,
-      blockedByEntitlement:0,
-    }),
-  });
+test('recipient filter cannot inject identities outside the source reminder page',async()=>{
+  for (const injected of [
+    reminder(999,999),
+    reminder(10,999),
+  ]) {
+    const rows=[reminder(10,100)];
+    const {service,reads,deliveries}=runtime({
+      rows,
+      byFixture:{
+        100:snapshots(),
+        999:snapshots(),
+      },
+      filterNotificationRecipients:async()=>({
+        rows:[injected],
+        blockedByPreference:0,
+        blockedByEntitlement:0,
+      }),
+    });
 
-  const result=await service
-    .processImportantChangeNotifications({botToken:'token'});
+    const result=await service
+      .processImportantChangeNotifications({
+        botToken:'token',
+      });
 
-  assert.deepEqual(reads,[]);
-  assert.deepEqual(deliveries,[]);
-  assert.equal(result.eligible,0);
-  assert.equal(result.sent,0);
+    assert.deepEqual(reads,[]);
+    assert.deepEqual(deliveries,[]);
+    assert.equal(result.eligible,0);
+    assert.equal(result.sent,0);
+  }
 });
 
 test('scheduler locally validates enabled, notification and kickoff evidence returned by storage',async()=>{
