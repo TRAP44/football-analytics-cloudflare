@@ -284,10 +284,10 @@ test('Telegram share composer preserves URL and truncates oversized text', () =>
   assert.equal(share.searchParams.get('text').length,700);
 });
 
-test('worker composes Telegram links boundary instead of owning link helper implementations', () => {
+test('worker composes Telegram links boundary through lazy delegation wrappers', () => {
   const worker=fs.readFileSync('src/worker.js','utf8');
   assert.match(worker,/import \{ createTelegramLinksRuntime \} from '\.\/telegram-links\.js';/);
-  assert.match(worker,/const \{[\s\S]{0,500}telegramWebAppUrl[\s\S]{0,500}fixtureTelegramDeepLink[\s\S]{0,500}\} = createTelegramLinksRuntime\(/);
+  assert.match(worker,/telegramLinksRuntime = createTelegramLinksRuntime\(\{/);
   for (const name of [
     'telegramWebAppUrl',
     'telegramAnalysisHandoffParams',
@@ -298,6 +298,8 @@ test('worker composes Telegram links boundary instead of owning link helper impl
     'fixtureTelegramDeepLink',
     'telegramShareComposerUrl',
   ]) {
-    assert.doesNotMatch(worker,new RegExp(`(?:async\\s+)?function\\s+${name}\\(`));
+    assert.match(worker,new RegExp(
+      'function\\s+'+name+'\\(\\.\\.\\.args\\) \\{ return getTelegramLinksRuntime\\(\\)\\.'+name+'\\(\\.\\.\\.args\\); \\}'
+    ));
   }
 });
