@@ -198,26 +198,63 @@ export function createSharedCacheRuntime({
   }
 
   function cacheSourceProvenance(payload = {}) {
-    const meta = payload?.sourceMeta || {};
-    const provider = String(
-      meta?.provider
-      || payload?.provider
-      || payload?.dataProvenance?.primaryProvider
-      || ''
-    ).slice(0, 80);
-    const timestampCandidates = [
-      meta?.fetchedAt,
-      payload?.refreshedAt,
-      payload?.generatedAt,
-      payload?.fetchedAt,
+    const source=payload && typeof payload==='object' && !Array.isArray(payload)
+      ? payload
+      : {};
+    const meta=source?.sourceMeta && typeof source.sourceMeta==='object'
+      && !Array.isArray(source.sourceMeta)
+      ? source.sourceMeta
+      : {};
+
+    const text=(value,max)=>{
+      if (typeof value!=='string') return '';
+      return value.trim().slice(0,max);
+    };
+    const timestamp=value=>{
+      if (value instanceof Date) {
+        const ms=value.getTime();
+        return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+      }
+      if (typeof value!=='string' || !value.trim()) return null;
+      const raw=value.trim();
+      const calendar=/^(\d{4})-(\d{2})-(\d{2})(?:$|T|\s)/.exec(raw);
+      if (!calendar) return null;
+      const year=Number(calendar[1]);
+      const month=Number(calendar[2]);
+      const day=Number(calendar[3]);
+      if (!Number.isSafeInteger(year) || month<1 || month>12 || day<1) return null;
+      const maxDay=new Date(Date.UTC(year,month,0)).getUTCDate();
+      if (day>maxDay) return null;
+      const parsed=Date.parse(raw);
+      return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+    };
+
+    const provider=text(meta.provider,80)
+      || text(source.provider,80)
+      || text(source?.dataProvenance?.primaryProvider,80);
+    const timestampCandidates=[
+      meta.fetchedAt,
+      source.refreshedAt,
+      source.generatedAt,
+      source.fetchedAt,
     ];
-    const sourceUpdatedAt = timestampCandidates.find(value => Number.isFinite(Date.parse(String(value || '')))) || null;
-    const freshness = String(
-      payload?.stale ? 'stale'
-        : meta?.freshness
-          || (provider ? 'fresh' : 'unknown')
-    ).slice(0, 40);
-    return { provider, sourceUpdatedAt, freshness };
+    const sourceUpdatedAt=timestampCandidates
+      .map(timestamp)
+      .find(Boolean) || null;
+
+    const freshnessCandidate=(
+      text(meta.freshness,40)
+      || text(meta.freshnessState,40)
+    ).toLowerCase().replace(/\s+/g,'_');
+    const freshness=source.stale===true
+      ? 'stale'
+      : ['fresh','cached','stale','unknown'].includes(freshnessCandidate)
+        ? freshnessCandidate
+        : provider
+          ? 'fresh'
+          : 'unknown';
+
+    return {provider,sourceUpdatedAt,freshness};
   }
 
   async function setCache(cacheKey, fixtureId, payload, cfg = {}, minutes = cfg?.cacheMinutes) {
