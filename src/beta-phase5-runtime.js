@@ -58,6 +58,14 @@ export function createBetaPhase5Runtime(deps) {
     const parsed = Date.parse(value.trim());
     return Number.isFinite(parsed) ? parsed : null;
   }
+
+  function observationRowsInRange(rows = [], fromMs, toMs) {
+    if (!Array.isArray(rows) || !Number.isFinite(fromMs) || !Number.isFinite(toMs) || fromMs > toMs) return [];
+    return rows.filter(row=>{
+      const at=trustedEventTime(row?.created_at);
+      return at !== null && at >= fromMs && at <= toMs;
+    });
+  }
   
   function betaPercentileMs(values = [], percentile = 0.5) {
     const sorted = (Array.isArray(values) ? values : [])
@@ -692,9 +700,10 @@ export function createBetaPhase5Runtime(deps) {
   }
   
   function phase5JourneySummary(rows = []) {
-    const valid=(rows || []).filter(row=>
+    const valid=(Array.isArray(rows) ? rows : []).filter(row=>
       row?.source==='client'
       && row?.event_type==='client_telemetry'
+      && trustedEventTime(row?.created_at) !== null
       && /^[0-9a-f]{32}$/.test(String(row?.metadata?.validationSubject || ''))
       && /^[0-9a-f]{32}$/.test(String(row?.metadata?.validationSession || ''))
     );
@@ -846,7 +855,11 @@ export function createBetaPhase5Runtime(deps) {
       readOpsEventsRange(cfg,since,end,1000),
       collectDiagnostics(cfg).catch(()=>({})),
     ]);
-    const allOpsRows=Array.isArray(opsResult?.items) ? opsResult.items : [];
+    const allOpsRows=observationRowsInRange(
+      opsResult?.items,
+      Date.parse(since),
+      Date.parse(end),
+    );
     const phase5Rows=allOpsRows.filter(row=>
       row?.metadata?.validationCohort===PHASE5_VALIDATION_COHORT
       && row?.metadata?.validationVerified===true
@@ -1006,7 +1019,11 @@ export function createBetaPhase5Runtime(deps) {
       collectDiagnostics(cfg).catch(()=>({})),
       billingWebhookStatus(request,cfg).catch(()=>({ready:false,reason:'webhook_check_failed'})),
     ]);
-    const allOpsRows=Array.isArray(opsResult?.items) ? opsResult.items : [];
+    const allOpsRows=observationRowsInRange(
+      opsResult?.items,
+      Date.parse(since),
+      Date.parse(end),
+    );
     const opsRows=allOpsRows.filter(row=>String(row?.metadata?.betaCohort || '')===CLOSED_BETA_COHORT && row?.metadata?.betaMembershipVerified===true);
     const betaClientRows=opsRows.filter(row=>row?.source==='client' && row?.event_type==='client_telemetry'
       && /^[0-9a-f]{32}$/.test(String(row?.metadata?.betaSubject || '')));
