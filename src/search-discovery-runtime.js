@@ -730,7 +730,11 @@ export function createSearchDiscoveryRuntime(deps) {
   }
   
   function teamSearchFixturePayload(team, fixtures = [], secondQuery = '', meta = {}) {
-    const split=splitTeamDiscoveryMatches(fixtures,secondQuery,{upcomingLimit:8,recentLimit:4});
+    const split=splitTeamDiscoveryMatches(fixtures,secondQuery,{
+      upcomingLimit:8,
+      recentLimit:4,
+      now:meta?.now,
+    });
     const teamId=positiveSafeInteger(team?.id);
     const primaryFixtureId=positiveSafeInteger(split.primary?.fixtureId);
     const refreshedAt=Number.isFinite(Date.parse(safeText(meta?.refreshedAt,80)))
