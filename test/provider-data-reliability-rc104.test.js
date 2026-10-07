@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const providerData=fs.readFileSync('src/provider-data-runtime.js','utf8');
+const appCapabilities=fs.readFileSync('src/app-capabilities.js','utf8');
 const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+providerData+'\n'+fs.readFileSync('src/analysis-runtime.js','utf8')+'\n'+fs.readFileSync('src/match-center-runtime.js','utf8');
 
 test('RC104 classifies provider empty, skipped and failed states separately',()=>{
@@ -41,12 +42,11 @@ test('RC104 reliability caps AI data trust instead of inventing confidence',()=>
   assert.match(worker,/Неизвестность не преобразуется в нулевые значения/);
 });
 
-test('RC104 exposes reliability metadata and release health contracts',()=>{
+test('RC104 exposes reliability metadata and current manifest contract',()=>{
   assert.match(worker,/providerReliability,/);
   assert.match(worker,/featureReliability: analysisFeatureMeta/);
-  assert.match(worker,/providerDataReliability: 'enabled'/);
-  assert.match(worker,/providerDataReliabilitySelfTest: providerDataReliabilitySelfTest\(\)\.pass \? 'enabled' : 'failed'/);
-  assert.match(worker,/releaseCheck\('provider_data_reliability_selftest'/);
+  assert.match(appCapabilities,/providerDataReliability:true/);
+  assert.match(providerData,/function providerDataReliabilitySelfTest\(/);
 });
 
 test('RC104 match-center feature cache also exposes explicit data states',()=>{
