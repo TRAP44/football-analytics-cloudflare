@@ -9,6 +9,7 @@ import {
   probabilitiesFromDecimalOdds,
   sanitizeOddsSnapshotsForMovement,
 } from '../src/odds-quality.js';
+import { createMarketParsingRuntime } from '../src/market-parsing-runtime.js';
 
 const trustedMeta = {
   provider:'api-football', source:'network', state:'available', available:true, usable:true,
@@ -53,6 +54,51 @@ test('RC143 exported probability derivation rejects coercible or impossible odds
   const probabilities=probabilitiesFromDecimalOdds({home:'2.0',draw:'3.5',away:'4'});
   assert.ok(probabilities);
   assert.ok(Math.abs(probabilities.home+probabilities.draw+probabilities.away-100)<=0.2);
+});
+
+test('RC143 market parser preserves type safety before the semantic guard', () => {
+  const parser=createMarketParsingRuntime();
+
+  const prematch=parser.extractMarket([{
+    bookmakers:[{
+      bets:[{
+        name:'Match Winner',
+        values:[
+          {value:'Home',odd:[2]},
+          {value:'Draw',odd:'3.5'},
+          {value:'Away',odd:'4'},
+        ],
+      }],
+    }],
+  }]);
+  assert.equal(prematch,null);
+
+  const live=parser.extractLiveMarket([{
+    odds:[{
+      name:'1x2',
+      values:[
+        {value:'1',odd:[2]},
+        {value:'x',odd:'3.5'},
+        {value:'2',odd:'4'},
+      ],
+    }],
+  }]);
+  assert.equal(live,null);
+
+  const valid=parser.extractMarket([{
+    bookmakers:[{
+      bets:[{
+        name:'Match Winner',
+        values:[
+          {value:'Home',odd:'2.0'},
+          {value:'Draw',odd:'3.5'},
+          {value:'Away',odd:'4'},
+        ],
+      }],
+    }],
+  }]);
+  assert.ok(valid);
+  assert.equal(valid.odds.home,2);
 });
 
 test('RC143 recomputes inconsistent reported probabilities from trusted decimal odds', () => {
