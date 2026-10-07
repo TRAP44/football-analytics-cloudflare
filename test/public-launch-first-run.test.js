@@ -43,9 +43,9 @@ test('first run guide is one-time local UI state with privacy-safe product actio
 test('direct launch intent bypasses the guide and is not overwritten by the default Home route',()=>{
   assert.match(firstRun,/function hasDirectLaunchIntent\(\)/);
   assert.match(firstRun,/const hidden=dismissed \|\| hasDirectLaunchIntent\(\)/);
-  assert.match(firstRun,/view === 'search'/);
-  assert.match(firstRun,/view === 'history'/);
-  assert.match(firstRun,/\['analysis', 'center'\]\.includes\(action\)/);
+  assert.match(firstRun,/view==='search'/);
+  assert.match(firstRun,/view==='history'/);
+  assert.match(firstRun,/\['analysis','center'\]\.includes\(action\)/);
   assert.match(firstRun,/startParam[\s\S]*view==='search'[\s\S]*view==='history'[\s\S]*\['analysis','center'\]\.includes\(action\)/);
 });
 
