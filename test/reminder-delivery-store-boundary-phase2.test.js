@@ -33,15 +33,17 @@ test('reminder delivery status rejects coercion and malformed timestamps',()=>{
   assert.equal(store.reminderDeliveryStatus({delivery_last_error:true}),'scheduled');
 });
 
-test('reminder delivery status preserves public state mapping', () => {
+test('reminder delivery status preserves public state mapping with deterministic timestamps', () => {
   const {store}=runtime();
   assert.equal(store.reminderDeliveryStatus({}),'scheduled');
   assert.equal(store.reminderDeliveryStatus({delivery_last_error:'x'}),'retry_pending');
   assert.equal(store.reminderDeliveryStatus({delivery_last_error:'telegram_delivery_sending'}),'delivery_unknown');
   assert.equal(store.reminderDeliveryStatus({delivery_last_error:'telegram_delivery_unknown'}),'delivery_unknown');
-  assert.equal(store.reminderDeliveryStatus({notified_at:'2026-01-01'}),'prematch_sent');
-  assert.equal(store.reminderDeliveryStatus({kickoff_notified_at:'2026-01-01'}),'kickoff_sent');
-  assert.equal(store.reminderDeliveryStatus({lineup_notified_at:'2026-01-01'}),'lineup_sent');
+  assert.equal(store.reminderDeliveryStatus({notified_at:'2026-01-01'}),'scheduled');
+  assert.equal(store.reminderDeliveryStatus({notified_at:'2026-01-01T00:00:00'}),'scheduled');
+  assert.equal(store.reminderDeliveryStatus({notified_at:'2026-01-01T00:00:00Z'}),'prematch_sent');
+  assert.equal(store.reminderDeliveryStatus({kickoff_notified_at:'2026-01-01T00:00:00+03:00'}),'kickoff_sent');
+  assert.equal(store.reminderDeliveryStatus({lineup_notified_at:'2026-01-01T00:00:00Z'}),'lineup_sent');
 });
 
 test('store rejects coercible reminder identity and attempt counters before network mutation',async()=>{
