@@ -1566,28 +1566,55 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     return Math.round((safeMet/safeEligible)*1000)/10;
   }
 
-  function buildNewsImpactRecoveryIncidentSloDashboard(episodeRows = [], {asOfMs = Date.now(), weeks = 4} = {}) {
-    const safeWeeks=Math.max(2,Math.min(4,Number(weeks || 4)));
+  function buildNewsImpactRecoveryIncidentSloDashboard(episodeRows = [], options = {}) {
+    const safeOptions=options && typeof options==='object' && !Array.isArray(options) ? options : {};
+    const configuredWeeks=newsImpactFiniteNumber(safeOptions.weeks);
+    const safeWeeks=configuredWeeks!==null && Number.isSafeInteger(configuredWeeks)
+      ? Math.max(2,Math.min(4,configuredWeeks))
+      : 4;
+    const configuredAsOf=newsImpactFiniteNumber(safeOptions.asOfMs);
+    const asOfMs=configuredAsOf ?? Date.now();
     const weekMs=7*86400_000;
     const earliestMs=asOfMs-safeWeeks*weekMs;
-    const episodes=(episodeRows || []).map(episode=>({
-      ...episode,
+    const safeEpisodes=Array.isArray(episodeRows)
+      ? episodeRows.filter(episode=>episode && typeof episode==='object' && !Array.isArray(episode))
+      : [];
+    const episodes=safeEpisodes.map(episode=>({
+      reason:newsImpactText(episode.reason),
+      reasonLabel:newsImpactText(episode.reasonLabel,newsImpactText(episode.reason)),
+      action:newsImpactText(episode.action),
+      actionLabel:newsImpactText(episode.actionLabel,newsImpactText(episode.action)),
+      startedAt:newsImpactText(episode.startedAt),
+      lastSeenAt:newsImpactText(episode.lastSeenAt) || null,
+      recoveredAt:newsImpactText(episode.recoveredAt) || null,
+      firstAcknowledgedAt:newsImpactText(episode.firstAcknowledgedAt) || null,
+      active:episode.active===true,
+      guardCodes:Array.isArray(episode.guardCodes)
+        ? episode.guardCodes.filter(code=>typeof code==='string')
+        : [],
       slo:newsImpactRecoveryEpisodeSloState(episode,asOfMs),
-    })).filter(x=>x.slo && Date.parse(x.startedAt)>=earliestMs && Date.parse(x.startedAt)<=asOfMs);
-  
+    })).filter(x=>
+      x.slo
+      && x.startedAt
+      && Number.isFinite(Date.parse(x.startedAt))
+      && Date.parse(x.startedAt)>=earliestMs
+      && Date.parse(x.startedAt)<=asOfMs
+    );
+
     const summarize=(rows=[])=>{
-      const ackEligible=rows.filter(x=>x.slo.ackEligible).length;
-      const ackMet=rows.filter(x=>x.slo.ackMet).length;
-      const ackBreached=rows.filter(x=>x.slo.ackBreached).length;
-      const recoveryEligible=rows.filter(x=>x.slo.recoveryEligible).length;
-      const recoveryMet=rows.filter(x=>x.slo.recoveryMet).length;
-      const recoveryBreached=rows.filter(x=>x.slo.recoveryBreached).length;
-      const ackLatencies=rows.map(x=>x.slo.ackLatencyMinutes).filter(Number.isFinite);
-      const recoveryLatencies=rows.map(x=>x.slo.recoveryLatencyMinutes).filter(Number.isFinite);
+      const safeRows=Array.isArray(rows) ? rows : [];
+      const ackEligible=safeRows.filter(x=>x.slo.ackEligible===true).length;
+      const ackMet=safeRows.filter(x=>x.slo.ackMet===true).length;
+      const ackBreached=safeRows.filter(x=>x.slo.ackBreached===true).length;
+      const recoveryEligible=safeRows.filter(x=>x.slo.recoveryEligible===true).length;
+      const recoveryMet=safeRows.filter(x=>x.slo.recoveryMet===true).length;
+      const recoveryBreached=safeRows.filter(x=>x.slo.recoveryBreached===true).length;
+      const ackLatencies=safeRows.map(x=>newsImpactNonNegativeNumber(x.slo.ackLatencyMinutes,NaN)).filter(Number.isFinite);
+      const recoveryLatencies=safeRows.map(x=>newsImpactNonNegativeNumber(x.slo.recoveryLatencyMinutes,NaN)).filter(Number.isFinite);
       return {
-        episodes:rows.length,
-        active:rows.filter(x=>x.active).length,
-        recovered:rows.filter(x=>!x.active).length,
+        episodes:safeRows.length,
+        active:safeRows.filter(x=>x.active===true).length,
+        recovered:safeRows.filter(x=>x.active!==true).length,
         ackEligible,
         ackMet,
         ackBreached,
@@ -1600,7 +1627,7 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
         avgRecoveryMinutes:recoveryLatencies.length ? Math.round((recoveryLatencies.reduce((a,b)=>a+b,0)/recoveryLatencies.length)*10)/10 : null,
       };
     };
-  
+
     const weekly=[];
     for (let offset=safeWeeks-1; offset>=0; offset-=1) {
       const startMs=asOfMs-(offset+1)*weekMs;
@@ -1616,10 +1643,11 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
         ...summarize(rows),
       });
     }
-  
+
     const recurrence=new Map();
     for (const episode of episodes) {
-      const key=`${episode.reason}|${episode.action}`;
+      if (!episode.reason || !episode.action) continue;
+      const key=episode.reason+'|'+episode.action;
       const bucket=recurrence.get(key) || {
         reason:episode.reason,
         reasonLabel:episode.reasonLabel || episode.reason,
@@ -1633,11 +1661,11 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
         guards:new Set(),
       };
       bucket.episodes+=1;
-      if (episode.active) bucket.active+=1;
-      if (episode.slo.ackBreached) bucket.ackBreaches+=1;
-      if (episode.slo.recoveryBreached) bucket.recoveryBreaches+=1;
+      if (episode.active===true) bucket.active+=1;
+      if (episode.slo.ackBreached===true) bucket.ackBreaches+=1;
+      if (episode.slo.recoveryBreached===true) bucket.recoveryBreaches+=1;
       if (Date.parse(episode.startedAt)>Date.parse(bucket.lastStartedAt)) bucket.lastStartedAt=episode.startedAt;
-      for (const code of episode.guardCodes || []) bucket.guards.add(code);
+      for (const code of episode.guardCodes) bucket.guards.add(code);
       recurrence.set(key,bucket);
     }
     const repeatedAll=[...recurrence.values()].map(x=>({
@@ -1654,13 +1682,15 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     })).filter(x=>x.episodes>=2)
       .sort((a,b)=>b.episodes-a.episodes || b.recoveryBreaches-a.recoveryBreaches || b.ackBreaches-a.ackBreaches || Date.parse(b.lastStartedAt)-Date.parse(a.lastStartedAt));
     const repeated=repeatedAll.slice(0,10);
-  
+
     const summary=summarize(episodes);
     const current=weekly[weekly.length-1] || null;
     const previous=weekly[weekly.length-2] || null;
-    const delta=(a,b)=>Number.isFinite(Number(a)) && Number.isFinite(Number(b))
-      ? Math.round((Number(a)-Number(b))*10)/10
-      : null;
+    const delta=(a,b)=>{
+      const left=newsImpactFiniteNumber(a);
+      const right=newsImpactFiniteNumber(b);
+      return left!==null && right!==null ? Math.round((left-right)*10)/10 : null;
+    };
     return {
       available:true,
       windowDays:safeWeeks*7,
@@ -1677,33 +1707,48 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       privacy:{telegramIdsExposed:false,rawErrorsExposed:false},
     };
   }
-  
-  
-  function buildNewsImpactRecoveryIncidentSloBreachFeed(episodeRows = [], {asOfMs = Date.now(), limit = 20} = {}) {
+
+
+  function buildNewsImpactRecoveryIncidentSloBreachFeed(episodeRows = [], options = {}) {
     const priorityRank={critical:0,high:1,medium:2};
-    const safeLimit=Math.max(1,Math.min(50,Number(limit || 20)));
-    const items=(episodeRows || []).map(episode=>{
+    const safeOptions=options && typeof options==='object' && !Array.isArray(options) ? options : {};
+    const configuredLimit=newsImpactFiniteNumber(safeOptions.limit);
+    const safeLimit=configuredLimit!==null && Number.isSafeInteger(configuredLimit)
+      ? Math.max(1,Math.min(50,configuredLimit))
+      : 20;
+    const configuredAsOf=newsImpactFiniteNumber(safeOptions.asOfMs);
+    const asOfMs=configuredAsOf ?? Date.now();
+    const safeEpisodes=Array.isArray(episodeRows)
+      ? episodeRows.filter(episode=>episode && typeof episode==='object' && !Array.isArray(episode))
+      : [];
+    const items=safeEpisodes.map(episode=>{
       const slo=newsImpactRecoveryEpisodeSloState(episode,asOfMs);
-      if (!slo || (!slo.ackBreached && !slo.recoveryBreached)) return null;
+      if (!slo || (slo.ackBreached!==true && slo.recoveryBreached!==true)) return null;
+      const reason=newsImpactText(episode.reason);
+      const action=newsImpactText(episode.action);
+      if (!reason || !action) return null;
       const breachTypes=[];
-      if (slo.ackBreached) breachTypes.push('ack');
-      if (slo.recoveryBreached) breachTypes.push('recovery');
+      if (slo.ackBreached===true) breachTypes.push('ack');
+      if (slo.recoveryBreached===true) breachTypes.push('recovery');
+      const active=episode.active===true;
       let severity='medium';
-      if (episode.active && slo.recoveryBreached) severity='critical';
-      else if (episode.active && slo.ackBreached && Number(slo.elapsedMinutes || 0)>=NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES) severity='critical';
-      else if (episode.active && slo.ackBreached) severity='high';
-      else if (slo.recoveryBreached) severity='high';
+      if (active && slo.recoveryBreached===true) severity='critical';
+      else if (active && slo.ackBreached===true && newsImpactNonNegativeNumber(slo.elapsedMinutes)>=NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES) severity='critical';
+      else if (active && slo.ackBreached===true) severity='high';
+      else if (slo.recoveryBreached===true) severity='high';
       return {
-        reason:String(episode.reason || ''),
-        reasonLabel:String(episode.reasonLabel || episode.reason || ''),
-        action:String(episode.action || ''),
-        actionLabel:String(episode.actionLabel || episode.action || ''),
-        startedAt:episode.startedAt || null,
-        lastSeenAt:episode.lastSeenAt || null,
-        recoveredAt:episode.recoveredAt || null,
-        active:Boolean(episode.active),
-        occurrences:Number(episode.occurrences || 0),
-        guards:Array.isArray(episode.guardCodes) ? [...episode.guardCodes].sort() : [],
+        reason,
+        reasonLabel:newsImpactText(episode.reasonLabel,reason),
+        action,
+        actionLabel:newsImpactText(episode.actionLabel,action),
+        startedAt:newsImpactText(episode.startedAt) || null,
+        lastSeenAt:newsImpactText(episode.lastSeenAt) || null,
+        recoveredAt:newsImpactText(episode.recoveredAt) || null,
+        active,
+        occurrences:newsImpactCount(episode.occurrences),
+        guards:Array.isArray(episode.guardCodes)
+          ? episode.guardCodes.filter(code=>typeof code==='string').sort()
+          : [],
         breachTypes,
         severity,
         ackStatus:slo.ackStatus,
@@ -1715,12 +1760,12 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     }).filter(Boolean).sort((a,b)=>
       (priorityRank[a.severity] ?? 9)-(priorityRank[b.severity] ?? 9)
       || Number(b.active)-Number(a.active)
-      || Date.parse(String(b.startedAt || 0))-Date.parse(String(a.startedAt || 0))
+      || (Date.parse(b.startedAt || '')-Date.parse(a.startedAt || ''))
     );
-  
+
     const pairs=new Map();
     for (const item of items) {
-      const key=String(item.reason || '')+'|'+String(item.action || '');
+      const key=item.reason+'|'+item.action;
       const bucket=pairs.get(key) || {
         reason:item.reason,
         reasonLabel:item.reasonLabel,
@@ -1733,23 +1778,23 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
         lastStartedAt:item.startedAt,
       };
       bucket.breachEpisodes+=1;
-      if (item.active) bucket.activeBreaches+=1;
+      if (item.active===true) bucket.activeBreaches+=1;
       if (item.breachTypes.includes('ack')) bucket.ackBreaches+=1;
       if (item.breachTypes.includes('recovery')) bucket.recoveryBreaches+=1;
-      if (Date.parse(String(item.startedAt || 0))>Date.parse(String(bucket.lastStartedAt || 0))) bucket.lastStartedAt=item.startedAt;
+      if (Date.parse(item.startedAt || '')>Date.parse(bucket.lastStartedAt || '')) bucket.lastStartedAt=item.startedAt;
       pairs.set(key,bucket);
     }
     const repeated=[...pairs.values()]
       .filter(x=>x.breachEpisodes>=2)
       .sort((a,b)=>b.activeBreaches-a.activeBreaches || b.recoveryBreaches-a.recoveryBreaches || b.ackBreaches-a.ackBreaches || b.breachEpisodes-a.breachEpisodes)
       .slice(0,10);
-  
+
     return {
       available:true,
       generatedAt:new Date(asOfMs).toISOString(),
       summary:{
         breachEpisodes:items.length,
-        activeBreaches:items.filter(x=>x.active).length,
+        activeBreaches:items.filter(x=>x.active===true).length,
         critical:items.filter(x=>x.severity==='critical').length,
         ackBreaches:items.filter(x=>x.breachTypes.includes('ack')).length,
         recoveryBreaches:items.filter(x=>x.breachTypes.includes('recovery')).length,
@@ -1761,8 +1806,8 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       routingChanged:false,
     };
   }
-  
-  
+
+
   function buildNewsImpactRecoveryIncidentSloBreachWatchlist(feed = {}, {limit = 10} = {}) {
     const safeLimit=Math.max(1,Math.min(25,Number(limit || 10)));
     const items=Array.isArray(feed?.items) ? feed.items : [];
