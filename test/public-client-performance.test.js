@@ -7,6 +7,7 @@ const app=fs.readFileSync('public/app.js','utf8');
 const runtime=fs.readFileSync('public/modules/app-runtime.js','utf8');
 const html=fs.readFileSync('public/index.html','utf8');
 const worker=fs.readFileSync('src/worker.js','utf8');
+const clientTelemetryRuntime=fs.readFileSync('src/client-telemetry-runtime.js','utf8');
 const matchCenterController=fs.readFileSync('public/modules/match-center-controller.js','utf8');
 const analysisController=fs.readFileSync('public/modules/analysis-controller.js','utf8');
 
@@ -44,9 +45,9 @@ test('startup profiling separates browser/navigation and server-backed boot phas
   assert.match(boot,/navigationReadyMs/);
   assert.match(boot,/viewportWidth/);
 
-  const telemetryStart=worker.indexOf('function clientTelemetryMetadata');
-  const telemetryEnd=worker.indexOf('async function apiClientTelemetry',telemetryStart);
-  const telemetry=worker.slice(telemetryStart,telemetryEnd);
+  const telemetryStart=clientTelemetryRuntime.indexOf('function clientTelemetryMetadata');
+  const telemetryEnd=clientTelemetryRuntime.indexOf('async function apiClientTelemetry',telemetryStart);
+  const telemetry=clientTelemetryRuntime.slice(telemetryStart,telemetryEnd);
   for (const field of ['moduleReadyMs','navigationReadyMs','responseEndMs','domContentLoadedMs','firstContentfulPaintMs','manifestMs','identityMs','feedMs','revealDelayMs','viewportWidth']) {
     assert.match(telemetry,new RegExp(field));
   }
@@ -87,7 +88,7 @@ test('startup graph defers profile-only and Match Center-only modules until thei
   ];
   for (const moduleName of deferred) {
     assert.equal(app.includes(`from './modules/${moduleName}'`), false);
-    assert.equal(app.includes(`import('./modules/${moduleName}')`), true);
+    assert.match(app,new RegExp(`import\\('\\./modules/${moduleName.replace('.', '\\.')}(?:\\?[^']*)?'\\)`));
   }
   assert.match(app,/async function ensureBillingModule\(/);
   assert.match(app,/async function ensureDigestSettingsModule\(/);
@@ -106,9 +107,9 @@ test('full AI avoids reloading already-known favorites and reminders',()=>{
   const end=analysisController.indexOf('return Object.freeze',start);
   assert.ok(start>=0 && end>start);
   const analyze=analysisController.slice(start,end);
-  assert.match(analyze,/const secondaryTasks = \[refreshHistory\(false\)\]/);
-  assert.match(analyze,/if \(!state\.remindersLoaded\) secondaryTasks\.push\(refreshReminders\(\)\)/);
-  assert.match(analyze,/if \(!state\.favoritesLoaded\) secondaryTasks\.push\(refreshFavorites\(\)\)/);
+  assert.match(analyze,/const secondaryTasks=\[[\s\S]*refreshHistory\(false\)/);
+  assert.match(analyze,/safeRead\(state,'remindersLoaded'\)!==true[\s\S]*refreshReminders\(\)/);
+  assert.match(analyze,/safeRead\(state,'favoritesLoaded'\)!==true[\s\S]*refreshFavorites\(\)/);
   assert.doesNotMatch(analyze,/Promise\.allSettled\(\[refreshHistory\(false\), refreshReminders\(\), refreshFavorites\(\)\]\)/);
 });
 
@@ -119,12 +120,12 @@ test('reopening the same Match Center renders warm data while the refresh and de
   const center=matchCenterController.slice(start,end);
   const warm=center.indexOf('const reusableCenter =');
   const extras=center.indexOf('const extrasPromise = ensureExtras()');
-  const request=center.indexOf('requestMatchCenter(fixtureId)');
-  const render=center.indexOf('renderCenter(reusableCenter)');
+  const request=center.indexOf('requestMatchCenter(id)');
+  const render=center.indexOf('safeCall(renderCenter,reusableCenter)');
   const refreshed=center.indexOf('const data = await centerLoad');
   assert.ok(warm>=0 && extras>warm && request>extras && render>request && refreshed>render);
-  assert.match(center,/Promise\.all\(\[\s*requestMatchCenter\(fixtureId\),\s*extrasPromise,/);
-  assert.match(center,/Number\(state\.currentCenter\?\.match\?\.fixtureId \|\| 0\) === Number\(fixtureId\)/);
+  assert.match(center,/Promise\.all\(\[\s*requestMatchCenter\(id\),\s*extrasPromise,/);
+  assert.match(center,/const reusableCenter=previousFixtureId===id/);
   assert.match(app,/async function openMatchCenter\(fixtureId, btn\)[\s\S]*?ensureMatchCenterController\(\)/);
 });
 
