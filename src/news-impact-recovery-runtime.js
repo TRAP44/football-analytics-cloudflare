@@ -730,16 +730,19 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     sourceAction='',
     channel='telegram',
   }={}) {
+    const safeUserId=newsImpactPositiveId(userId);
+    const safeFixtureId=newsImpactPositiveId(fixtureId);
     const safeDecision=cleanNewsImpactDecisionCode(decision);
     const safeAction=cleanNewsImpactActionCode(action);
     const safeRecovery=cleanNewsImpactRecoveryCode(recovery);
     const safeSource=cleanNewsImpactActionCode(sourceAction);
-    if (!safeDecision || !safeAction || !safeRecovery) return false;
+    const safeChannel=typeof channel==='string' ? channel.trim().slice(0,24) : '';
+    if (!safeUserId || !safeFixtureId || !safeDecision || !safeAction || !safeRecovery) return false;
     return await recordGrowthEvent(cfg,{
-      userId,
+      userId:safeUserId,
       eventName:'news_impact_recovery_attempt',
-      channel,
-      fixtureId,
+      channel:safeChannel || 'telegram',
+      fixtureId:safeFixtureId,
       metadata:{
         decision:safeDecision,
         action:safeAction,
@@ -751,56 +754,91 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   
   function newsImpactRecoveryJourneyKey(row = {}) {
     const base=newsImpactJourneyKey(row);
-    const recovery=cleanNewsImpactRecoveryCode(row?.metadata && typeof row.metadata==='object' ? row.metadata.recovery : '');
+    const metadata=row?.metadata && typeof row.metadata==='object' && !Array.isArray(row.metadata)
+      ? row.metadata
+      : null;
+    const recovery=cleanNewsImpactRecoveryCode(metadata?.recovery);
     return base && recovery ? `${base}|${recovery}` : '';
   }
   
   function buildNewsImpactRecoveryEffectiveness(attemptRows = [], outcomeRows = [], failureRows = [], options = {}) {
-    const asOfMs=Number.isFinite(Number(options?.asOfMs)) ? Number(options.asOfMs) : Date.now();
-    const windowMinutes=Math.max(1,Math.min(30,Number(options?.windowMinutes || NEWS_IMPACT_RECOVERY_WINDOW_MINUTES)));
+    const safeOptions=options && typeof options==='object' && !Array.isArray(options) ? options : {};
+    const configuredAsOf=newsImpactFiniteNumber(safeOptions.asOfMs);
+    const asOfMs=configuredAsOf ?? Date.now();
+    const configuredWindow=newsImpactFiniteNumber(safeOptions.windowMinutes);
+    const defaultWindow=newsImpactFiniteNumber(NEWS_IMPACT_RECOVERY_WINDOW_MINUTES) ?? 5;
+    const windowMinutes=Math.max(1,Math.min(30,configuredWindow ?? defaultWindow));
     const windowMs=windowMinutes*60_000;
+    const safeAttempts=Array.isArray(attemptRows) ? attemptRows : [];
+    const safeOutcomes=Array.isArray(outcomeRows) ? outcomeRows : [];
+    const safeFailures=Array.isArray(failureRows) ? failureRows : [];
     const latestAttempts=new Map();
-    for (const row of attemptRows || []) {
+
+    for (const row of safeAttempts) {
       const key=newsImpactRecoveryJourneyKey(row);
       const attemptAt=newsImpactEventTime(row);
-      if (!key || !Number.isFinite(attemptAt)) continue;
+      if (!key || !Number.isFinite(attemptAt) || attemptAt>asOfMs) continue;
       const previous=latestAttempts.get(key);
       if (!previous || attemptAt>previous.attemptAt) latestAttempts.set(key,{row,attemptAt});
     }
+
     const outcomesByJourney=new Map();
-    for (const row of outcomeRows || []) {
+    for (const row of safeOutcomes) {
       const key=newsImpactJourneyKey(row);
       const at=newsImpactEventTime(row);
-      if (!key || !Number.isFinite(at)) continue;
+      const action=newsImpactRowAction(row);
+      const metadata=row?.metadata && typeof row.metadata==='object' && !Array.isArray(row.metadata)
+        ? row.metadata
+        : null;
+      const outcome=typeof metadata?.outcome==='string' ? metadata.outcome : '';
+      const expected=newsImpactOutcomeCode(action);
+      if (!key || !Number.isFinite(at) || at>asOfMs || !expected || outcome!==expected) continue;
       const list=outcomesByJourney.get(key) || [];
       list.push({row,at});
       outcomesByJourney.set(key,list);
     }
+
     const failuresByJourney=new Map();
-    for (const row of failureRows || []) {
+    for (const row of safeFailures) {
       const key=newsImpactJourneyKey(row);
       const at=newsImpactEventTime(row);
-      if (!key || !Number.isFinite(at)) continue;
+      if (!key || !Number.isFinite(at) || at>asOfMs) continue;
       const list=failuresByJourney.get(key) || [];
       list.push({row,at});
       failuresByJourney.set(key,list);
     }
+
     const states=[...latestAttempts.values()].map(item=>{
       const journey=newsImpactJourneyKey(item.row);
-      const recovery=cleanNewsImpactRecoveryCode(item.row?.metadata?.recovery);
-      const after=(list)=>[...(list || [])]
+      const metadata=item.row?.metadata && typeof item.row.metadata==='object' && !Array.isArray(item.row.metadata)
+        ? item.row.metadata
+        : null;
+      const recovery=cleanNewsImpactRecoveryCode(metadata?.recovery);
+      const after=(list)=>[...(Array.isArray(list) ? list : [])]
         .filter(event=>event.at>=item.attemptAt && event.at<=item.attemptAt+windowMs)
-        .sort((a,b)=>a.at-b.at)[0] || null;
+        .sort((left,right)=>left.at-right.at)[0] || null;
       const outcome=after(outcomesByJourney.get(journey));
       const failure=after(failuresByJourney.get(journey));
       let state='pending';
       let terminalAt=null;
-      if (outcome && (!failure || outcome.at<=failure.at)) { state='recovered'; terminalAt=outcome.at; }
-      else if (failure) { state='failed'; terminalAt=failure.at; }
-      else if (item.attemptAt<=asOfMs-windowMs) state='failed';
+      if (outcome && (!failure || outcome.at<=failure.at)) {
+        state='recovered';
+        terminalAt=outcome.at;
+      } else if (failure) {
+        state='failed';
+        terminalAt=failure.at;
+      } else if (item.attemptAt<=asOfMs-windowMs) {
+        state='failed';
+      }
       return {row:item.row,recovery,state,attemptAt:item.attemptAt,terminalAt};
     });
-    return [...NEWS_IMPACT_RECOVERY_CODES].map(recovery=>{
+
+    const recoveryCodes=NEWS_IMPACT_RECOVERY_CODES instanceof Set
+      ? [...NEWS_IMPACT_RECOVERY_CODES]
+      : Array.isArray(NEWS_IMPACT_RECOVERY_CODES)
+        ? NEWS_IMPACT_RECOVERY_CODES.filter(code=>typeof code==='string')
+        : [];
+    return recoveryCodes.map(recovery=>{
       const observed=states.filter(x=>x.recovery===recovery);
       const matured=observed.filter(x=>x.state!=='pending');
       const recovered=matured.filter(x=>x.state==='recovered').length;
@@ -816,7 +854,7 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       }
       return {
         recovery,
-        label:NEWS_IMPACT_RECOVERY_LABELS[recovery] || recovery,
+        label:NEWS_IMPACT_RECOVERY_LABELS?.[recovery] || recovery,
         observed:observed.length,
         attempts,
         pending,
@@ -824,15 +862,28 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
         failed,
         successPct,
         confidence,
-        actions:Object.entries(actionCounts).map(([action,count])=>({action,label:NEWS_IMPACT_ACTION_LABELS[action] || action,count})).sort((a,b)=>b.count-a.count || a.action.localeCompare(b.action)),
+        actions:Object.entries(actionCounts)
+          .map(([action,count])=>({action,label:NEWS_IMPACT_ACTION_LABELS?.[action] || action,count}))
+          .sort((left,right)=>right.count-left.count || left.action.localeCompare(right.action)),
       };
     });
   }
   
+
   function newsImpactRecoveryBest(rows = []) {
-    const eligible=(rows || []).filter(x=>Boolean(x?.confidence?.eligibleForBottleneck));
+    const minUsers=newsImpactSampleThreshold(NEWS_IMPACT_FUNNEL_MIN_USERS,10);
+    const eligible=(Array.isArray(rows) ? rows : []).filter(row=>{
+      if (!row || typeof row!=='object' || Array.isArray(row) || row?.confidence?.eligibleForBottleneck!==true) return false;
+      const attempts=newsImpactCount(row.attempts);
+      const successPct=newsImpactFiniteNumber(row.successPct);
+      return attempts>=minUsers && successPct!==null && successPct>=0 && successPct<=100;
+    });
     if (!eligible.length) return null;
-    return [...eligible].sort((a,b)=>Number(b.successPct || 0)-Number(a.successPct || 0) || Number(b.attempts || 0)-Number(a.attempts || 0))[0] || null;
+    return [...eligible].sort((left,right)=>{
+      const leftPct=newsImpactPercentage(left.successPct);
+      const rightPct=newsImpactPercentage(right.successPct);
+      return rightPct-leftPct || newsImpactCount(right.attempts)-newsImpactCount(left.attempts);
+    })[0] || null;
   }
   
   function newsImpactRecoveryEffectivenessDrill() {
@@ -881,11 +932,20 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   }
   
   function buildNewsImpactRecoveryStrategyEvidence(attemptRows = [], outcomeRows = [], failureRows = [], options = {}) {
-    const asOfMs=Number.isFinite(Number(options?.asOfMs)) ? Number(options.asOfMs) : Date.now();
-    const recoveryWindowMs=Math.max(1,Math.min(30,Number(options?.recoveryWindowMinutes || NEWS_IMPACT_RECOVERY_WINDOW_MINUTES)))*60_000;
-    const sourceWindowMs=Math.max(5,Math.min(180,Number(options?.sourceWindowMinutes || NEWS_IMPACT_RECOVERY_SOURCE_WINDOW_MINUTES)))*60_000;
+    const safeOptions=options && typeof options==='object' && !Array.isArray(options) ? options : {};
+    const configuredAsOf=newsImpactFiniteNumber(safeOptions.asOfMs);
+    const asOfMs=configuredAsOf ?? Date.now();
+    const configuredRecoveryWindow=newsImpactFiniteNumber(safeOptions.recoveryWindowMinutes);
+    const configuredSourceWindow=newsImpactFiniteNumber(safeOptions.sourceWindowMinutes);
+    const defaultRecoveryWindow=newsImpactFiniteNumber(NEWS_IMPACT_RECOVERY_WINDOW_MINUTES) ?? 5;
+    const defaultSourceWindow=newsImpactFiniteNumber(NEWS_IMPACT_RECOVERY_SOURCE_WINDOW_MINUTES) ?? 30;
+    const recoveryWindowMs=Math.max(1,Math.min(30,configuredRecoveryWindow ?? defaultRecoveryWindow))*60_000;
+    const sourceWindowMs=Math.max(5,Math.min(180,configuredSourceWindow ?? defaultSourceWindow))*60_000;
+    const safeAttempts=Array.isArray(attemptRows) ? attemptRows : [];
+    const safeOutcomes=Array.isArray(outcomeRows) ? outcomeRows : [];
+    const safeFailures=Array.isArray(failureRows) ? failureRows : [];
     const latestAttempts=new Map();
-    for (const row of attemptRows || []) {
+    for (const row of safeAttempts) {
       const key=newsImpactRecoveryJourneyKey(row);
       const at=newsImpactEventTime(row);
       if (!key || !Number.isFinite(at)) continue;
@@ -893,7 +953,7 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       if (!previous || at>previous.at) latestAttempts.set(key,{row,at});
     }
     const failuresByJourney=new Map();
-    for (const row of failureRows || []) {
+    for (const row of safeFailures) {
       const key=newsImpactJourneyKey(row);
       const at=newsImpactEventTime(row);
       if (!key || !Number.isFinite(at)) continue;
@@ -903,7 +963,7 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     }
     for (const list of failuresByJourney.values()) list.sort((a,b)=>a.at-b.at);
     const outcomesByJourney=new Map();
-    for (const row of outcomeRows || []) {
+    for (const row of safeOutcomes) {
       const key=newsImpactJourneyKey(row);
       const at=newsImpactEventTime(row);
       if (!key || !Number.isFinite(at)) continue;
@@ -921,9 +981,17 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       if (!journey || !recovery || !action) continue;
       const priorFailures=(failuresByJourney.get(journey) || []).filter(x=>x.at<=attemptAt && x.at>=attemptAt-sourceWindowMs);
       const sourceFailure=priorFailures[priorFailures.length-1] || null;
-      const reason=String(sourceFailure?.row?.metadata?.reason || '');
-      if (!NEWS_IMPACT_FAILURE_CODES.has(reason)) continue;
-      const nextOutcome=(outcomesByJourney.get(journey) || []).find(x=>x.at>=attemptAt && x.at<=attemptAt+recoveryWindowMs) || null;
+      const sourceMetadata=sourceFailure?.row?.metadata && typeof sourceFailure.row.metadata==='object' && !Array.isArray(sourceFailure.row.metadata)
+        ? sourceFailure.row.metadata
+        : null;
+      const reason=newsImpactKnownCode(sourceMetadata?.reason,NEWS_IMPACT_FAILURE_CODES,'');
+      if (!reason) continue;
+      const expectedOutcome=newsImpactOutcomeCode(action);
+      const nextOutcome=(outcomesByJourney.get(journey) || []).find(x=>{
+        if (x.at<attemptAt || x.at>attemptAt+recoveryWindowMs) return false;
+        const meta=x.row?.metadata && typeof x.row.metadata==='object' && !Array.isArray(x.row.metadata) ? x.row.metadata : null;
+        return expectedOutcome && meta?.outcome===expectedOutcome;
+      }) || null;
       const nextFailure=(failuresByJourney.get(journey) || []).find(x=>x.at>=attemptAt && x.at<=attemptAt+recoveryWindowMs) || null;
       let state='pending';
       if (nextOutcome && (!nextFailure || nextOutcome.at<=nextFailure.at)) state='recovered';
@@ -937,11 +1005,11 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       const key=`${sample.reason}|${sample.action}|${sample.recovery}`;
       const bucket=groups.get(key) || {
         reason:sample.reason,
-        reasonLabel:NEWS_IMPACT_FAILURE_LABELS[sample.reason] || sample.reason,
+        reasonLabel:NEWS_IMPACT_FAILURE_LABELS?.[sample.reason] || sample.reason,
         action:sample.action,
-        actionLabel:NEWS_IMPACT_ACTION_LABELS[sample.action] || sample.action,
+        actionLabel:NEWS_IMPACT_ACTION_LABELS?.[sample.action] || sample.action,
         recovery:sample.recovery,
-        recoveryLabel:NEWS_IMPACT_RECOVERY_LABELS[sample.recovery] || sample.recovery,
+        recoveryLabel:NEWS_IMPACT_RECOVERY_LABELS?.[sample.recovery] || sample.recovery,
         observed:0,attempts:0,pending:0,recovered:0,failed:0,
       };
       bucket.observed+=1;
