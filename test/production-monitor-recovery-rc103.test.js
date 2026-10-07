@@ -86,9 +86,9 @@ test('RC103 schedules a read-only production monitor every 15 minutes', () => {
 });
 
 test('RC103 production readiness declares checks before any push', () => {
-  const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/router.js','utf8');
+  const worker=fs.readFileSync('src/release-readiness-runtime.js','utf8');
   const start=worker.indexOf('async function apiProductionReadiness');
-  const end=worker.indexOf('\nfunction rcCheck',start);
+  const end=worker.indexOf('\n  function rcCheck',start);
   assert.ok(start>=0 && end>start);
   const block=worker.slice(start,end);
   const declaration=block.indexOf('const checks = [');
