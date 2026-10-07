@@ -376,8 +376,8 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
         }]),
       },7000,'Supabase analysis compute lock');
 
-      if (!response?.ok) {
-        const status=positiveSafeInteger(response?.status) || 0;
+      if (safeRead(response,'ok')!==true) {
+        const status=positiveSafeInteger(safeRead(response,'status')) || 0;
         throw new Error(`analysis lock HTTP ${status}`);
       }
 
@@ -390,6 +390,10 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
       }
 
       if (responseRows.length===0) {
+        const conflicting=await getCacheEntry(key,cfg,true);
+        if (!validLockEntry(conflicting,id)) {
+          throw new Error('analysis lock conflict confirmation invalid');
+        }
         safeTelemetry('analysisLockJoins');
         return {
           claimed:false,
@@ -485,7 +489,8 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
       ));
       if (!row) {
         const local=objectValue(memory.cache.get(key));
-        if (normalizeUuid(local?.payload?.claimId)===claimId) {
+        const localPayload=objectValue(safeRead(local,'payload'));
+        if (normalizeUuid(safeRead(localPayload,'claimId'))===claimId) {
           memory.cache.delete(key);
         }
         return {released:false,skipped:true,reason:'not_found'};
