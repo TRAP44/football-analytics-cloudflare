@@ -48,8 +48,7 @@ jobs:
       - run: npm run verify:supabase
       - name: Run release-critical tests
         run: npm run test:release
-      - name: Audit full historical regression suite
-        continue-on-error: true
+      - name: Run full regression suite
         run: npm test
       - run: node scripts/bottom-nav-render-smoke.js
       - run: npm run verify:release
