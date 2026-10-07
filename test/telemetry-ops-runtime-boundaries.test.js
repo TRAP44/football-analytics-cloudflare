@@ -129,8 +129,8 @@ test('ops metadata sanitizer fails closed on sensitive prototype and hostile val
   assert.equal('inf' in meta.nested,false);
   assert.deepEqual(meta.list.slice(0,3),[1,true,'safe']);
   assert.deepEqual(meta.list[3],{keep:'nested'});
-  assert.equal('constructor' in meta,false);
-  assert.equal('prototype' in meta,false);
+  assert.equal(Object.prototype.hasOwnProperty.call(meta,'constructor'),false);
+  assert.equal(Object.prototype.hasOwnProperty.call(meta,'prototype'),false);
 
   const proxy=new Proxy({},{
     ownKeys(){throw new Error('proxy trap');},
