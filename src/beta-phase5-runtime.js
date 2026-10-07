@@ -60,9 +60,14 @@ export function createBetaPhase5Runtime(deps) {
   }
   
   function betaPercentileMs(values = [], percentile = 0.5) {
-    const sorted = values.map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
+    const sorted = (Array.isArray(values) ? values : [])
+      .map(finiteEvidenceNumber)
+      .filter(value=>value !== null)
+      .sort((a,b)=>a-b);
     if (!sorted.length) return null;
-    const pos = (sorted.length - 1) * Math.max(0, Math.min(1, Number(percentile || 0)));
+    const percentileNumber=finiteEvidenceNumber(percentile);
+    const boundedPercentile=percentileNumber === null ? 0.5 : Math.max(0, Math.min(1, percentileNumber));
+    const pos = (sorted.length - 1) * boundedPercentile;
     const lower = Math.floor(pos);
     const upper = Math.ceil(pos);
     if (lower === upper) return Math.round(sorted[lower]);
@@ -158,11 +163,11 @@ export function createBetaPhase5Runtime(deps) {
   }
   
   function betaTimingSummary(opsRows = [], operation = '') {
-    const values=(opsRows || [])
+    const values=(Array.isArray(opsRows) ? opsRows : [])
       .filter(row=>row?.source==='client' && row?.event_type==='client_telemetry' && row?.code==='OPERATION_TIMING'
         && String(row?.metadata?.reason || '')===operation)
-      .map(row=>Number(row?.duration_ms))
-      .filter(value=>Number.isFinite(value) && value>=0 && value<=120000);
+      .map(row=>finiteEvidenceNumber(row?.duration_ms))
+      .filter(value=>value !== null && value>=0 && value<=120000);
     return {
       samples:values.length,
       medianMs:values.length>=3 ? betaPercentileMs(values,0.5) : null,
@@ -172,7 +177,8 @@ export function createBetaPhase5Runtime(deps) {
   }
   
   function betaFeedbackCounts(feedbackRows = [], category = '') {
-    const rows=feedbackRows.filter(row=>String(row?.metadata?.category || '')===category);
+    const rows=(Array.isArray(feedbackRows) ? feedbackRows : [])
+      .filter(row=>String(row?.metadata?.category || '')===category);
     const severity={BLOCKER:0,MAJOR:0,MINOR:0};
     for (const row of rows) {
       const key=String(row?.metadata?.betaSeverity || '').toUpperCase();
@@ -191,7 +197,8 @@ export function createBetaPhase5Runtime(deps) {
   }
   
   function betaCoverageSummary(rows = []) {
-    const coverageRows=(rows || []).filter(row=>row?.source==='client' && row?.event_type==='client_telemetry' && row?.code==='DATA_COVERAGE');
+    const coverageRows=(Array.isArray(rows) ? rows : [])
+      .filter(row=>row?.source==='client' && row?.event_type==='client_telemetry' && row?.code==='DATA_COVERAGE');
     const keys=['lineups','injuries','statistics','xg','odds'];
     const summarizeMissing=(sampleRows=[])=>{
       const missing={};
@@ -839,7 +846,7 @@ export function createBetaPhase5Runtime(deps) {
       readOpsEventsRange(cfg,since,end,1000),
       collectDiagnostics(cfg).catch(()=>({})),
     ]);
-    const allOpsRows=opsResult.items || [];
+    const allOpsRows=Array.isArray(opsResult?.items) ? opsResult.items : [];
     const phase5Rows=allOpsRows.filter(row=>
       row?.metadata?.validationCohort===PHASE5_VALIDATION_COHORT
       && row?.metadata?.validationVerified===true
@@ -862,7 +869,12 @@ export function createBetaPhase5Runtime(deps) {
       live:betaTimingSummary(clientRows,'live'),
     };
     const coverage=betaCoverageSummary(clientRows);
-    const evidenceGate=phase5EvidenceGate({journey,timings,coverage,opsSampleLimited:allOpsRows.length>=1000});
+    const evidenceGate=phase5EvidenceGate({
+      journey,
+      timings,
+      coverage,
+      opsSampleLimited:Boolean(opsResult?.truncated) || allOpsRows.length>=1000,
+    });
     const provider=phase5ProviderSummary(phase5Rows,{sessions:journey.sessions,users:journey.verifiedNormalUsers,fullJourneys:journey.fullCompleted});
     const persistedQuota=latestConfirmedProviderQuota(allOpsRows,now);
     let providerNow={};
@@ -975,7 +987,7 @@ export function createBetaPhase5Runtime(deps) {
       sample:{
         clientEvents:clientRows.length,
         providerUsageRows:phase5Rows.filter(row=>row?.source==='phase5' && row?.event_type==='provider_usage').length,
-        opsPersistent:Boolean(opsResult.persistent),opsSampleLimited:allOpsRows.length>=1000,
+        opsPersistent:Boolean(opsResult?.persistent),opsSampleLimited:Boolean(opsResult?.truncated) || allOpsRows.length>=1000,
         evidenceStartsWithTaggedPhase5ProductionEvents:true,legacyClosedBetaRowsExcluded:true,
       },
     });
@@ -983,7 +995,8 @@ export function createBetaPhase5Runtime(deps) {
   
   async function apiBetaDashboard(request,cfg) {
     const url=new URL(request.url);
-    const days=Math.max(1,Math.min(30,Number(url.searchParams.get('days') || 7)));
+    const requestedDays=finiteEvidenceNumber(url.searchParams.get('days'));
+    const days=requestedDays === null ? 7 : Math.max(1,Math.min(30,Math.floor(requestedDays)));
     if (!hasSupabase(cfg)) return json({available:false,reason:'Для наблюдения closed beta нужен Supabase.',days});
     const now=Date.now();
     const since=new Date(now-days*86400_000).toISOString();
@@ -993,7 +1006,7 @@ export function createBetaPhase5Runtime(deps) {
       collectDiagnostics(cfg).catch(()=>({})),
       billingWebhookStatus(request,cfg).catch(()=>({ready:false,reason:'webhook_check_failed'})),
     ]);
-    const allOpsRows=opsResult.items || [];
+    const allOpsRows=Array.isArray(opsResult?.items) ? opsResult.items : [];
     const opsRows=allOpsRows.filter(row=>String(row?.metadata?.betaCohort || '')===CLOSED_BETA_COHORT && row?.metadata?.betaMembershipVerified===true);
     const betaClientRows=opsRows.filter(row=>row?.source==='client' && row?.event_type==='client_telemetry'
       && /^[0-9a-f]{32}$/.test(String(row?.metadata?.betaSubject || '')));
@@ -1103,7 +1116,7 @@ export function createBetaPhase5Runtime(deps) {
       timings,
       coverage,
       issues,
-      opsSampleLimited:opsRows.length>=1000,
+      opsSampleLimited:Boolean(opsResult?.truncated) || opsRows.length>=1000,
       providerEvidence,
     });
     const controlledExpansion=controlledBetaExpansionDecision({
@@ -1216,8 +1229,8 @@ export function createBetaPhase5Runtime(deps) {
         clientEvents:betaClientRows.length,
         opsEvents:opsRows.length,
         identityMode:'hmac_pseudonym',
-        opsPersistent:Boolean(opsResult.persistent),
-        opsSampleLimited:opsRows.length>=1000,
+        opsPersistent:Boolean(opsResult?.persistent),
+        opsSampleLimited:Boolean(opsResult?.truncated) || opsRows.length>=1000,
       },
     });
   }
