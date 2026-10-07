@@ -89,6 +89,11 @@ function normalizeBaseUrl(value) {
   if (!['http:','https:'].includes(url.protocol)) {
     throw new Error('Production URL protocol must be HTTP or HTTPS.');
   }
+  const host=String(url.hostname || '').toLowerCase();
+  const loopback=['127.0.0.1','localhost','::1','[::1]'].includes(host);
+  if (url.protocol!=='https:' && !loopback) {
+    throw new Error('Production URL must use HTTPS except for loopback development targets.');
+  }
   if (url.username || url.password || url.search || url.hash) {
     throw new Error(
       'Production URL must not contain credentials, query or hash.',
@@ -224,6 +229,7 @@ async function fetchJson(url, { timeoutMs = 10000, fetchImpl = fetch } = {}) {
     if (typeof fetchImpl!=='function') throw new TypeError('fetch implementation is required');
     const response=await fetchImpl(url,{
       method:'GET',
+      redirect:'manual',
       headers:{
         accept:'application/json',
         'cache-control':'no-cache',
