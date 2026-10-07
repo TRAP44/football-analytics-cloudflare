@@ -67,19 +67,19 @@ export function createReleaseMonitorApiRuntime(deps) {
     const startMs=Date.parse(startIso || '');
     const endMs=Date.parse(endIso || '');
     const cap=boundedPositiveInteger(limit,1000,1000);
-    const fallbackItems=memory.opsEvents.filter(item => {
+    const fallbackMatches=memory.opsEvents.filter(item => {
       const t=Date.parse(item?.created_at || '');
       return Number.isFinite(t)
         && t>=startMs
         && t<endMs
         && item?.source==='telegram'
         && item?.event_type==='daily_digest';
-    }).sort((a,b)=>Date.parse(b?.created_at || '')-Date.parse(a?.created_at || '')).slice(0,cap);
+    }).sort((a,b)=>Date.parse(b?.created_at || '')-Date.parse(a?.created_at || ''));
     const fallback=()=>({
       persistent:false,
       migrationReady:false,
-      items:fallbackItems,
-      truncated:fallbackItems.length>=cap,
+      items:fallbackMatches.slice(0,cap),
+      truncated:fallbackMatches.length>cap,
     });
     if (!hasSupabase(cfg)) return fallback();
     try {
@@ -95,11 +95,22 @@ export function createReleaseMonitorApiRuntime(deps) {
       if (!r.ok) return fallback();
       const items=await r.json();
       if (!Array.isArray(items)) return fallback();
+      let truncated=false;
+      if (items.length===cap) {
+        const probeUrl=new URL(url);
+        probeUrl.searchParams.set('offset',String(cap));
+        probeUrl.searchParams.set('limit','1');
+        const probe=await fetchWithTimeout(probeUrl,{headers:supaHeaders(cfg)},7000,'Supabase daily digest reliability probe');
+        if (!probe.ok) return fallback();
+        const probeItems=await probe.json();
+        if (!Array.isArray(probeItems)) return fallback();
+        truncated=probeItems.length>0;
+      }
       return {
         persistent:true,
         migrationReady:true,
-        items,
-        truncated:items.length>=cap,
+        items:items.slice(0,cap),
+        truncated,
       };
     } catch {
       return fallback();
@@ -245,7 +256,11 @@ export function createReleaseMonitorApiRuntime(deps) {
       ),
       reliabilitySlo:assessDailyDigestReliabilitySlo(
         digestEvents,
-        {days:7,nowMs:end.getTime()},
+        {
+          days:7,
+          nowMs:end.getTime(),
+          evidenceComplete:Boolean(digestHistory.persistent && !digestHistory.truncated),
+        },
       ),
       historyPersistent:Boolean(digestHistory.persistent),
       historyTruncated:Boolean(digestHistory.truncated),
