@@ -68,6 +68,8 @@ export const REVIEWED_SYNTHETIC_HISTORY_FIXTURES = Object.freeze({
   '775e63fdcc7bf441481ca7ec8c951ddc604ec07e|test/security-scan-rc102.test.js|telegram_bot_token': 1,
   '775e63fdcc7bf441481ca7ec8c951ddc604ec07e|test/security-scan-rc102.test.js|supabase_secret_key': 2,
   '775e63fdcc7bf441481ca7ec8c951ddc604ec07e|test/security-scan-rc102.test.js|private_key': 1,
+  '419da5c450c6298c32bfbf2abd837f1d441f0236|test/telemetry-ops-runtime-boundaries.test.js|telegram_bot_token': 1,
+  '419da5c450c6298c32bfbf2abd837f1d441f0236|test/telemetry-ops-runtime-boundaries.test.js|supabase_secret_key': 1,
 });
 
 function reviewedFixtureKey(item = {}) {
