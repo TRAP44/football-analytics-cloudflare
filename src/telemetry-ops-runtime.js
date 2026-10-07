@@ -157,7 +157,9 @@ export function createTelemetryOpsRuntime(deps = {}) {
       .replace(/bot\d{5,20}:[A-Za-z0-9_-]{10,}/g,'bot[redacted]')
       .replace(/\b\d{5,20}:[A-Za-z0-9_-]{20,}\b/g,'[telegram-token-redacted]')
       .replace(/Bearer\s+[^\s,;]+/gi,'Bearer [redacted]')
+      .replace(/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g,'[jwt-redacted]')
       .replace(/\bsb_secret_[A-Za-z0-9_-]+\b/gi,'sb_secret_[redacted]')
+      .replace(/\b(?:TELEGRAM_BOT_TOKEN|SUPABASE_SERVICE_ROLE_KEY|API_FOOTBALL_KEY)\s*[:=]\s*[^\s,;]+/gi,'credential=[redacted]')
       .replace(/\b(?:x-apisports-key|x-api-key|api-key|apikey)\s*[:=]\s*[^\s,;]+/gi,'api-key=[redacted]')
       .replace(/([?&](?:token|secret|api[_-]?key|apikey)=)[^&#\s]+/gi,'$1[redacted]')
       .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g,' ')
@@ -264,7 +266,7 @@ export function createTelemetryOpsRuntime(deps = {}) {
     const text=boundedText(key,120);
     if (!text) return true;
     if (['__proto__','prototype','constructor'].includes(text.toLowerCase())) return true;
-    return /token|secret|password|authorization|api.?key|init.?data|telegram.?id|user.?id|chat.?id|username|first.?name|last.?name|photo.?url/i.test(text);
+    return /token|secret|password|authorization|api.?key|init.?data|telegram.?id|user.?id|chat.?id|username|first.?name|last.?name|photo.?url|email|phone|ip.?address|device.?id|session.?id/i.test(text);
   }
 
   function metadataKey(key) {
