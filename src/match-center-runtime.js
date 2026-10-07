@@ -429,6 +429,9 @@ export function createMatchCenterRuntime(deps) {
         dataFreshness:refreshedFreshness,
         availability:{
           ...cachedAvailability,
+          lineupsTrusted,
+          lineupsConfirmed:lineupsTrusted
+            && cachedLineupView.quality?.bothConfirmed===true,
           ...(liveCache ? {
             events:eventsTrusted && rowsOrEmpty(cached.events,1000).length>0,
             statistics:statisticsTrusted,
@@ -448,9 +451,6 @@ export function createMatchCenterRuntime(deps) {
             liveOdds:oddsTrusted
               && objectValue(cached.liveOddsQuality)?.confidenceBearing===true
               && Boolean(cached.liveOdds),
-            lineupsTrusted,
-            lineupsConfirmed:lineupsTrusted
-              && cachedLineupView.quality?.bothConfirmed===true,
           } : {}),
         },
         cached:true,
@@ -504,12 +504,27 @@ export function createMatchCenterRuntime(deps) {
           staleFreshness.lineups,
         );
         staleFreshness.lineups=staleLineupView.meta;
+        const staleLineupsTrusted=trustedFeature(staleLineupView.meta);
         const suppressLiveSignals=staleMode==='live';
         return json({
           ...stale,
           lineups:staleLineupView.lineups,
           lineupQuality:staleLineupView.quality,
           dataFreshness:staleFreshness,
+          availability:{
+            ...objectValue(stale.availability),
+            lineupsTrusted:staleLineupsTrusted,
+            lineupsConfirmed:staleLineupsTrusted
+              && staleLineupView.quality?.bothConfirmed===true,
+            ...(suppressLiveSignals ? {
+              events:false,
+              statistics:false,
+              xg:false,
+              players:false,
+              injuries:false,
+              liveOdds:false,
+            } : {}),
+          },
           ...(suppressLiveSignals ? {
             livePressure:null,
             smartInsights:null,
@@ -536,17 +551,6 @@ export function createMatchCenterRuntime(deps) {
                   confidenceBearing:false,
                 }
               : null,
-            availability:{
-              ...objectValue(stale.availability),
-              events:false,
-              statistics:false,
-              xg:false,
-              players:false,
-              injuries:false,
-              liveOdds:false,
-              lineupsConfirmed:false,
-              lineupsTrusted:false,
-            },
           } : {}),
           cached:true,
           stale:true,
