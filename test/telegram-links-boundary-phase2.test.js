@@ -28,6 +28,145 @@ function runtime(overrides = {}) {
   return {api,cache,calls};
 }
 
+
+test('Telegram links boundary rejects malformed dependency bags and missing sanitizer', () => {
+  assert.throws(
+    () => createTelegramLinksRuntime(null),
+    /dependencies are required/,
+  );
+  assert.throws(
+    () => createTelegramLinksRuntime([]),
+    /dependencies are required/,
+  );
+  assert.throws(
+    () => createTelegramLinksRuntime({}),
+    /requires cleanLaunchPart/,
+  );
+});
+
+test('Telegram Mini App links require bounded HTTPS request origins', () => {
+  const {api}=runtime();
+
+  for (const url of [
+    'http://app.example/',
+    'https://user:pass@app.example/',
+    'not-a-url',
+    'https://app.example/' + 'x'.repeat(2050),
+  ]) {
+    assert.throws(
+      () => api.telegramWebAppUrl({url},{view:'search'}),
+      /Некорректный URL Mini App/,
+      url,
+    );
+  }
+
+  const valid=new URL(api.telegramWebAppUrl(
+    new Request('https://app.example/deep/path?old=1#old'),
+    {view:'search'},
+  ));
+  assert.equal(valid.protocol,'https:');
+  assert.equal(valid.origin,'https://app.example');
+  assert.equal(valid.pathname,'/');
+  assert.equal(valid.searchParams.get('view'),'search');
+  assert.equal(valid.hash,'');
+});
+
+test('Telegram Mini App query boundary rejects malformed containers keys and oversized values', () => {
+  const {api}=runtime();
+  const request=new Request('https://app.example/');
+
+  assert.throws(
+    () => api.telegramWebAppUrl(request,null),
+    /Некорректные параметры Telegram-ссылки/,
+  );
+  assert.throws(
+    () => api.telegramWebAppUrl(request,[]),
+    /Некорректные параметры Telegram-ссылки/,
+  );
+  assert.throws(
+    () => api.telegramWebAppUrl(request,{'bad key':'value'}),
+    /Некорректное имя параметра Telegram-ссылки/,
+  );
+  assert.throws(
+    () => api.telegramWebAppUrl(request,{q:'x'.repeat(513)}),
+    /Некорректный параметр Telegram-ссылки/,
+  );
+  assert.throws(
+    () => api.telegramWebAppUrl(request,{q:'safe\u0000unsafe'}),
+    /Некорректный параметр Telegram-ссылки/,
+  );
+
+  const url=new URL(api.telegramWebAppUrl(request,{
+    view:'search',
+    q:'  Интер — Милан  ',
+    page:2,
+    compact:true,
+  }));
+  assert.equal(url.searchParams.get('q'),'Интер — Милан');
+  assert.equal(url.searchParams.get('page'),'2');
+  assert.equal(url.searchParams.get('compact'),'true');
+});
+
+test('Telegram analysis handoff rejects unsafe tab identifiers', () => {
+  const {api}=runtime();
+  for (const tab of ['brief/../../admin','live view','вкладка','x'.repeat(33),'bad\u0000tab']) {
+    assert.throws(
+      () => api.telegramAnalysisHandoffParams(12345,tab),
+      /Некорректная вкладка Telegram Mini App/,
+      tab,
+    );
+  }
+  assert.equal(api.telegramAnalysisHandoffParams(12345,'live_stats').tab,'live_stats');
+});
+
+test('Telegram campaign and fixture share builders tolerate malformed option containers', () => {
+  const {api}=runtime();
+
+  assert.equal(
+    api.fixtureShareStartParam(12345,null),
+    'fx12345__social__match_share__analysis',
+  );
+  assert.equal(
+    api.fixtureShareStartParam(12345,[]),
+    'fx12345__social__match_share__analysis',
+  );
+  assert.equal(
+    api.campaignStartParam(null),
+    'media__social__launch__promo',
+  );
+  assert.equal(
+    api.campaignStartParam([]),
+    'media__social__launch__promo',
+  );
+});
+
+test('Telegram share composer only accepts bounded credential-free HTTPS targets', () => {
+  const {api}=runtime();
+
+  for (const target of [
+    'http://example.test/path',
+    'javascript:alert(1)',
+    'https://user:pass@example.test/path',
+    'not-a-url',
+    'https://example.test/' + 'x'.repeat(2050),
+  ]) {
+    assert.throws(
+      () => api.telegramShareComposerUrl(target,'share'),
+      /Некорректный URL для Telegram Share/,
+      target,
+    );
+  }
+
+  const share=new URL(api.telegramShareComposerUrl(
+    new URL('https://example.test/path?a=1'),
+    '  строка\u0000с управляющим символом  ',
+  ));
+  assert.equal(share.origin,'https://t.me');
+  assert.equal(share.pathname,'/share/url');
+  assert.equal(share.searchParams.get('url'),'https://example.test/path?a=1');
+  assert.equal(share.searchParams.get('text'),'строка с управляющим символом');
+});
+
 test('Telegram links boundary preserves Mini App handoff contract', () => {
   const {api}=runtime();
   const request=new Request('https://app.example/some/path?old=1');
