@@ -406,14 +406,16 @@ test('master notification switch stays visually toggled while save is in flight'
 test('v6.24 migration adds only Smart Notification state and keeps Favorite Players as the existing source', () => {
   const sql = fs.readFileSync('supabase/migrations/supabase_migration_v6_24.sql','utf8');
   const worker = fs.readFileSync('src/worker.js','utf8');
+  const wiring = fs.readFileSync('src/service-wiring-runtime.js','utf8');
   assert.match(sql,/add column if not exists notification_preferences jsonb/i);
   assert.match(sql,/create table if not exists public\.smart_notification_deliveries/i);
   assert.match(sql,/claim_smart_notification_delivery/);
   assert.match(sql,/finalize_smart_notification_delivery/);
   assert.doesNotMatch(sql,/create table if not exists public\.favorite_players/i);
-  assert.match(worker,/createFavoritePlayersService\(\{/);
-  assert.match(worker,/loadFavoritePlayersByUser: loadFavoritePlayersForSmartNotifications/);
-  assert.match(worker,/filterNotificationRecipients: filterSmartNotificationRecipients/);
+  assert.match(worker,/createFavoritePlayersService,/);
+  assert.match(wiring,/createFavoritePlayersService\(\{/);
+  assert.match(wiring,/loadFavoritePlayersByUser: loadFavoritePlayersForSmartNotifications/);
+  assert.match(wiring,/filterRecipients: filterSmartNotificationRecipients/);
   assert.match(worker,/publicSmartNotificationCapabilities\(quota\?\.plan\)/);
   assert.match(worker,/radarStrongSignalState/);
   assert.match(worker,/expandedDailyDigestText/);
