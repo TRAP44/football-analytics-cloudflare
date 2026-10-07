@@ -2102,6 +2102,216 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   }
 
 
+  async function loadNewsImpactRecoveryStrategyEvidence(cfg) {
+    const now=Date.now();
+    const memoryStore=memory && typeof memory==='object' && !Array.isArray(memory) ? memory : null;
+    const cached=memoryStore?.newsImpactRecoveryStrategy;
+    const cacheMs=newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_STRATEGY_CACHE_MS,300000);
+    const cachedLoadedAt=newsImpactFiniteNumber(cached?.loadedAt);
+    if (
+      cached?.value
+      && cachedLoadedAt!==null
+      && cachedLoadedAt>=0
+      && now-cachedLoadedAt<cacheMs
+    ) return cached.value;
+
+    const unavailable=(reason)=>({
+      available:false,
+      truncated:false,
+      reason,
+      evidence:[],
+      recentEvidence:[],
+      priorEvidence:[],
+      transitionHistory:[],
+      incidentEvents:[],
+      incidentAcknowledgements:[],
+      incidentEpisodeHistory:[],
+    });
+    const store=(value)=>{
+      if (memoryStore) memoryStore.newsImpactRecoveryStrategy={value,loadedAt:now};
+      return value;
+    };
+
+    let supabaseAvailable=false;
+    try {
+      supabaseAvailable=typeof hasSupabase==='function' && hasSupabase(cfg)===true;
+    } catch {}
+    if (!supabaseAvailable || typeof supaSelectPaged!=='function') {
+      return store(unavailable('supabase_unavailable'));
+    }
+
+    try {
+      const lookbackDays=newsImpactSampleThreshold(NEWS_IMPACT_RECOVERY_STRATEGY_LOOKBACK_DAYS,30);
+      const stabilityDays=newsImpactSampleThreshold(NEWS_IMPACT_RECOVERY_STABILITY_WINDOW_DAYS,7);
+      const ackEvent=typeof NEWS_IMPACT_RECOVERY_INCIDENT_ACK_EVENT==='string'
+        ? NEWS_IMPACT_RECOVERY_INCIDENT_ACK_EVENT
+        : '';
+      const since=new Date(now-lookbackDays*86400_000).toISOString();
+      const eventNames=[
+        'news_impact_outcome_failure',
+        'news_impact_recovery_attempt',
+        'news_impact_outcome',
+        ...(ackEvent ? [ackEvent] : []),
+      ];
+      const page=await supaSelectPaged(cfg,'growth_events',{
+        created_at:`gte.${since}`,
+        event_name:`in.(${eventNames.join(',')})`,
+      },{pageSize:1000,maxRows:10000,order:'created_at.asc'});
+      const rows=Array.isArray(page?.rows)
+        ? page.rows.filter(row=>row && typeof row==='object' && !Array.isArray(row))
+        : [];
+      const eventName=(row)=>typeof row.event_name==='string' ? row.event_name : '';
+      const attempts=rows.filter(row=>eventName(row)==='news_impact_recovery_attempt');
+      const outcomes=rows.filter(row=>eventName(row)==='news_impact_outcome');
+      const failures=rows.filter(row=>eventName(row)==='news_impact_outcome_failure');
+      const incidentAckRows=ackEvent ? rows.filter(row=>eventName(row)===ackEvent) : [];
+      const recentCutoffMs=now-stabilityDays*86400_000;
+      const recentAttempts=attempts.filter(row=>{
+        const at=newsImpactEventTime(row);
+        return Number.isFinite(at) && at>=recentCutoffMs && at<=now;
+      });
+      const priorAttempts=attempts.filter(row=>{
+        const at=newsImpactEventTime(row);
+        return Number.isFinite(at) && at<recentCutoffMs;
+      });
+      const evidence=buildNewsImpactRecoveryStrategyEvidence(attempts,outcomes,failures,{asOfMs:now});
+      const recentEvidence=buildNewsImpactRecoveryStrategyEvidence(recentAttempts,outcomes,failures,{asOfMs:now});
+      const priorEvidence=buildNewsImpactRecoveryStrategyEvidence(priorAttempts,outcomes,failures,{asOfMs:now});
+      const transitionHistory=buildNewsImpactRecoveryTransitionHistory(failures,{limit:20});
+      const incidentEvents=buildNewsImpactRecoveryIncidentEvents(failures,{limit:100});
+      const incidentAcknowledgements=buildNewsImpactRecoveryIncidentAcknowledgements(incidentAckRows);
+      const incidentEpisodeHistory=buildNewsImpactRecoveryIncidentEpisodeHistory(failures,incidentAckRows);
+      const truncated=page?.truncated===true;
+      return store({
+        available:!truncated,
+        truncated,
+        reason:truncated?'truncated':'ok',
+        evidence,
+        recentEvidence,
+        priorEvidence,
+        transitionHistory,
+        incidentEvents,
+        incidentAcknowledgements,
+        incidentEpisodeHistory,
+      });
+    } catch {
+      return store(unavailable('load_failed'));
+    }
+  }
+
+  async function selectNewsImpactRecoveryStrategy(cfg, reason = 'server_error', action = '') {
+    const safeReason=newsImpactKnownCode(reason,NEWS_IMPACT_FAILURE_CODES,'server_error');
+    const safeAction=cleanNewsImpactActionCode(action);
+    const fixed=newsImpactRecoveryForFailure(safeReason,safeAction);
+    const loaded=await loadNewsImpactRecoveryStrategyEvidence(cfg);
+    if (!loaded || loaded.available!==true) {
+      return {
+        ...fixed,
+        strategy:'fixed',
+        guardReason:newsImpactText(loaded?.reason,'evidence_unavailable'),
+      };
+    }
+    const decision=newsImpactRecoveryStrategyDecision(
+      safeReason,
+      safeAction,
+      Array.isArray(loaded.evidence) ? loaded.evidence : [],
+      Array.isArray(loaded.recentEvidence) ? loaded.recentEvidence : [],
+    );
+    const driftDecision=newsImpactRecoveryDriftDecision(
+      decision,
+      Array.isArray(loaded.priorEvidence) ? loaded.priorEvidence : [],
+      Array.isArray(loaded.recentEvidence) ? loaded.recentEvidence : [],
+    );
+    const recovery=newsImpactRecoveryPresentation(safeReason,safeAction,driftDecision?.selectedRecovery);
+    return {
+      ...recovery,
+      strategy:driftDecision?.strategy==='adaptive' ? 'adaptive' : 'fixed',
+      guardReason:newsImpactText(driftDecision?.guardReason,'fixed_default'),
+      driftStatus:newsImpactText(driftDecision?.driftStatus,'not_applicable'),
+    };
+  }
+
+  function newsImpactRecoveryIncidentDrill() {
+    const events=[
+      {at:'2026-09-10T10:00:00.000Z',reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',strategy:'fixed',recovery:'retry',recoveryLabel:'повторить',guardReason:'performance_drift',priority:'high'},
+      {at:'2026-09-11T10:00:00.000Z',reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',strategy:'fixed',recovery:'retry',recoveryLabel:'повторить',guardReason:'performance_drift',priority:'high'},
+      {at:'2026-09-12T10:00:00.000Z',reason:'timeout',reasonLabel:'Тайм-аут',action:'share',actionLabel:'Поделиться',strategy:'fixed',recovery:'retry_soon',recoveryLabel:'повторить скоро',guardReason:'recent_regression',priority:'medium'},
+    ];
+    const current=[
+      {reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',strategy:'adaptive',selectedRecovery:'open_full_ai',selectedRecoveryLabel:'открыть полный AI',guardReason:'stable_significant_better'},
+      {reason:'timeout',reasonLabel:'Тайм-аут',action:'share',actionLabel:'Поделиться',strategy:'fixed',selectedRecovery:'retry_soon',selectedRecoveryLabel:'повторить скоро',guardReason:'recent_regression'},
+      {reason:'provider_unavailable',reasonLabel:'Провайдер временно недоступен',action:'full_ai',actionLabel:'Полный AI',strategy:'fixed',selectedRecovery:'retry_later',selectedRecoveryLabel:'повторить позже',guardReason:'performance_drift'},
+    ];
+    const incidents=buildNewsImpactRecoveryIncidentCenter(current,events,[],'ok',{asOfMs:Date.parse('2026-09-12T12:00:00Z')});
+    const summary=summarizeNewsImpactRecoveryIncidents(incidents);
+    return {
+      pass:incidents.length===3
+        && summary.active===2
+        && summary.recovered===1
+        && incidents.some(row=>row.reason==='server_error' && row.status==='recovered' && row.occurrences===2)
+        && incidents.some(row=>row.reason==='provider_unavailable' && row.status==='active' && row.currentOnly===true)
+        && !Object.prototype.hasOwnProperty.call(incidents[0] || {},'telegram_id'),
+      cases:6,
+    };
+  }
+
+  function newsImpactRecoveryIncidentSloDashboardDrill() {
+    const asOfMs=Date.parse('2026-09-23T18:00:00.000Z');
+    const failures=[
+      {created_at:'2026-09-02T10:00:00.000Z',metadata:{reason:'server_error',action:'full_ai',strategy_guard:'performance_drift'}},
+      {created_at:'2026-09-02T10:20:00.000Z',metadata:{reason:'server_error',action:'full_ai',strategy_guard:'fixed_default'}},
+      {created_at:'2026-09-10T10:00:00.000Z',metadata:{reason:'timeout',action:'share',strategy_guard:'recent_regression'}},
+      {created_at:'2026-09-10T17:00:00.000Z',metadata:{reason:'timeout',action:'share',strategy_guard:'fixed_default'}},
+      {created_at:'2026-09-17T10:00:00.000Z',metadata:{reason:'provider_unavailable',action:'full_ai',strategy_guard:'performance_drift'}},
+      {created_at:'2026-09-22T10:00:00.000Z',metadata:{reason:'server_error',action:'full_ai',strategy_guard:'recent_regression'}},
+      {created_at:'2026-09-22T10:15:00.000Z',metadata:{reason:'server_error',action:'full_ai',strategy_guard:'fixed_default'}},
+    ];
+    const acknowledgements=[
+      {created_at:'2026-09-02T10:10:00.000Z',metadata:{reason:'server_error',action:'full_ai',incident_guard:'performance_drift',incident_seen_at:'2026-09-02T10:00:00.000Z'}},
+      {created_at:'2026-09-10T10:40:00.000Z',metadata:{reason:'timeout',action:'share',incident_guard:'recent_regression',incident_seen_at:'2026-09-10T10:00:00.000Z'}},
+      {created_at:'2026-09-17T10:10:00.000Z',metadata:{reason:'provider_unavailable',action:'full_ai',incident_guard:'performance_drift',incident_seen_at:'2026-09-17T10:00:00.000Z'}},
+      {created_at:'2026-09-22T10:05:00.000Z',metadata:{reason:'server_error',action:'full_ai',incident_guard:'recent_regression',incident_seen_at:'2026-09-22T10:00:00.000Z'}},
+    ];
+    const episodes=buildNewsImpactRecoveryIncidentEpisodeHistory(failures,acknowledgements);
+    const dashboard=buildNewsImpactRecoveryIncidentSloDashboard(episodes,{asOfMs,weeks:4});
+    return {
+      pass:episodes.length===4
+        && dashboard.weekly.length===4
+        && dashboard.summary.episodes===4
+        && dashboard.privacy.telegramIdsExposed===false
+        && dashboard.privacy.rawErrorsExposed===false,
+      cases:5,
+    };
+  }
+
+  function newsImpactRecoveryIncidentSloBreachFeedDrill() {
+    const asOfMs=Date.parse('2026-09-23T18:00:00.000Z');
+    const episodes=[
+      {
+        reason:'server_error',reasonLabel:'Ошибка сервера',action:'full_ai',actionLabel:'Полный AI',
+        startedAt:'2026-09-23T08:00:00.000Z',lastSeenAt:'2026-09-23T12:00:00.000Z',recoveredAt:null,
+        occurrences:3,guardCodes:['performance_drift'],firstAcknowledgedAt:null,active:true,
+      },
+      {
+        reason:'timeout',reasonLabel:'Таймаут',action:'share',actionLabel:'Поделиться',
+        startedAt:'2026-09-20T08:00:00.000Z',lastSeenAt:'2026-09-20T10:00:00.000Z',recoveredAt:'2026-09-20T15:30:00.000Z',
+        occurrences:2,guardCodes:['recent_regression'],firstAcknowledgedAt:'2026-09-20T08:10:00.000Z',active:false,
+      },
+    ];
+    const feed=buildNewsImpactRecoveryIncidentSloBreachFeed(episodes,{asOfMs,limit:20});
+    return {
+      pass:feed.summary.breachEpisodes===2
+        && feed.summary.activeBreaches===1
+        && feed.items[0]?.severity==='critical'
+        && feed.routingChanged===false
+        && feed.privacy.telegramIdsExposed===false
+        && feed.privacy.rawErrorsExposed===false
+        && feed.privacy.freeTextExposed===false,
+      cases:7,
+    };
+  }
+
+
   function buildNewsImpactRecoveryIncidentSloBreachWatchlist(feed = {}, {limit = 10} = {}) {
     const safeLimit=Math.max(1,Math.min(25,Number(limit || 10)));
     const items=Array.isArray(feed?.items) ? feed.items : [];
