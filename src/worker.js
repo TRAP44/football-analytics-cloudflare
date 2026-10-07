@@ -327,10 +327,11 @@ const BILLING_PLANS = Object.freeze({
 });
 
 const MODEL_BASE_WEIGHTS = Object.freeze({
-  market: 0.42,
-  apiPrediction: 0.24,
-  recentForm: 0.26,
-  h2h: 0.08,
+  market: 0.40,
+  apiPrediction: 0.20,
+  recentForm: 0.22,
+  seasonStrength: 0.13,
+  h2h: 0.05,
 });
 
 const CALIBRATION_PROFILE_VERSION = '4.0-atomic1';
