@@ -447,7 +447,7 @@ export function createTeamTournamentRuntime(deps) {
     const baseUrl=theOddsApiUrl(leagueId || 0);
     if (!baseUrl) return { available:false, reason:'competition_not_supported', market:null, meta:null };
 
-    const cacheKey=`secondary-odds:${fixtureId}:the-odds-api:v1`;
+    const cacheKey=`secondary-odds:${fixtureId}:the-odds-api:${feature}:v2`;
     const fresh=await getCacheEntry(cacheKey, cfg, false).catch(() => null);
     if (fresh?.payload?.market) {
       return {
