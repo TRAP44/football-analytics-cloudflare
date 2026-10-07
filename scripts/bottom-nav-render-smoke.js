@@ -730,6 +730,11 @@ function remoteSmokeUrl(value) {
   if (!['http:','https:'].includes(url.protocol)) {
     throw new Error('Rendered smoke URL must use HTTP or HTTPS.');
   }
+  const host=String(url.hostname || '').toLowerCase();
+  const loopback=['127.0.0.1','localhost','::1','[::1]'].includes(host);
+  if (url.protocol!=='https:' && !loopback) {
+    throw new Error('Rendered smoke URL must use HTTPS except for loopback targets.');
+  }
   if (url.username || url.password) {
     throw new Error('Rendered smoke URL must not contain credentials.');
   }
