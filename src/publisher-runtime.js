@@ -1,4 +1,7 @@
 export function createPublisherRuntime(deps = {}) {
+  if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
+    throw new TypeError('Publisher runtime dependencies are required.');
+  }
   const {
     adminForbidden,
     botFixtureDateTime,
@@ -29,10 +32,79 @@ export function createPublisherRuntime(deps = {}) {
     telegramShareComposerUrl
   } = deps;
 
+  for (const [name,fn] of Object.entries({
+    adminForbidden,
+    botFixtureDateTime,
+    campaignStartParam,
+    channelPublisherState,
+    claimChannelPublishIdempotency,
+    cleanLaunchPart,
+    completeChannelPublishIdempotency,
+    ensureReferralCode,
+    fixtureShareStartParam,
+    fixtureTelegramDeepLink,
+    getCache,
+    isAdminUser,
+    json,
+    loadBotFixtureCard,
+    normalizeBotFixtureCard,
+    parseLaunchStartParam,
+    publishChannelMessage,
+    readJson,
+    recordGrowthEvent,
+    recordOpsEvent,
+    redactOpsString,
+    releaseChannelPublishIdempotency,
+    telegramApi,
+    telegramCampaignDeepLink,
+    telegramFullAnalysisUrl,
+    telegramHtmlEscape,
+    telegramShareComposerUrl,
+  })) {
+    if (typeof fn !== 'function') throw new TypeError(`Publisher runtime requires ${name}.`);
+  }
+
+  function integerCandidate(value) {
+    if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+    if (typeof value !== 'string' || value.length > 24) return null;
+    const raw=value.trim();
+    if (!/^\d+$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isSafeInteger(number) ? number : null;
+  }
+
+  function positiveId(value) {
+    const number=integerCandidate(value);
+    return number !== null && number > 0 ? number : null;
+  }
+
+  function optionalFixtureId(value) {
+    if (value === null || value === undefined || value === '') return 0;
+    return positiveId(value);
+  }
+
+  function plainObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  }
+
+  function safeText(value,max=1200) {
+    if (typeof value !== 'string') return '';
+    return value.trim().slice(0,max);
+  }
+
+  function finiteNumber(value,min=-Infinity,max=Infinity) {
+    let number=null;
+    if (typeof value === 'number') number=Number.isFinite(value) ? value : null;
+    else if (typeof value === 'string' && value.length<=48 && /^-?(?:\d+|\d+\.\d+|\.\d+)$/.test(value.trim())) {
+      number=Number(value.trim());
+    }
+    return number!==null && number>=min && number<=max ? number : null;
+  }
+
   async function apiFixtureShareLink(request, cfg, user) {
     const url=new URL(request.url);
-    const fixtureId=Number(url.searchParams.get('fixtureId') || 0);
-    if (!Number.isSafeInteger(fixtureId) || fixtureId<=0) return json({error:'Номер матча обязателен.'},400);
+    const fixtureId=positiveId(url.searchParams.get('fixtureId'));
+    if (fixtureId===null) return json({error:'Номер матча обязателен.'},400);
     const source=cleanLaunchPart(url.searchParams.get('source') || 'social',14) || 'social';
     const campaign=cleanLaunchPart(url.searchParams.get('campaign') || 'match_share',22) || 'match_share';
     const content=cleanLaunchPart(url.searchParams.get('content') || 'miniapp',16) || 'miniapp';
@@ -63,7 +135,8 @@ export function createPublisherRuntime(deps = {}) {
     const card=normalizeBotFixtureCard(match || {});
     const ai=analysis?.aiInstructor || {};
     const signal=ai.betSignal || {};
-    const confidence=Number.isFinite(Number(ai.confidenceScore)) ? `${Math.round(Number(ai.confidenceScore))}/100` : '';
+    const confidenceValue=finiteNumber(ai.confidenceScore,0,100);
+    const confidence=confidenceValue===null ? '' : `${Math.round(confidenceValue)}/100`;
     return [
       '⚽ <b>MatchRadar AI · МАТЧ</b>',
       '',
@@ -77,11 +150,13 @@ export function createPublisherRuntime(deps = {}) {
   }
   
   async function sendBotFixtureShareCard(request,cfg,userId,chatId,fixtureId) {
+    const safeFixtureId=positiveId(fixtureId);
+    if (safeFixtureId===null) throw new TypeError('Invalid fixture ID.');
     const referralCode=await ensureReferralCode(userId,cfg).catch(()=>'');
     const [match,analysis,link]=await Promise.all([
-      loadBotFixtureCard(fixtureId,cfg),
-      getCache(`fixture:${Number(fixtureId)}:v15-availability-quality-rc144`,cfg).catch(()=>null),
-      fixtureTelegramDeepLink(cfg,fixtureId,{source:'social',campaign:'match_share',content:'telegram',referralCode}),
+      loadBotFixtureCard(safeFixtureId,cfg),
+      getCache(`fixture:${safeFixtureId}:v15-availability-quality-rc144`,cfg).catch(()=>null),
+      fixtureTelegramDeepLink(cfg,safeFixtureId,{source:'social',campaign:'match_share',content:'telegram',referralCode}),
     ]);
     if (!match) throw new Error('Матч не найден.');
     const plain=`${match.homeName} — ${match.awayName}\nMatchRadar: открыть матч и доступный AI-разбор`;
@@ -89,7 +164,7 @@ export function createPublisherRuntime(deps = {}) {
       userId,
       eventName:'share_created',
       channel:'telegram',
-      fixtureId,
+      fixtureId:safeFixtureId,
       metadata:{surface:'match_card',referral:Boolean(referralCode)},
     });
     await telegramApi('sendMessage',cfg,{
@@ -98,7 +173,7 @@ export function createPublisherRuntime(deps = {}) {
       text:fixtureShareCardText(match,analysis),
       reply_markup:{inline_keyboard:[
         [{text:'↗ Отправить другу / в канал',url:telegramShareComposerUrl(link.url,plain)}],
-        [{text:'🧠 Открыть самому',web_app:{url:telegramFullAnalysisUrl(request,fixtureId,'brief')}}],
+        [{text:'🧠 Открыть самому',web_app:{url:telegramFullAnalysisUrl(request,safeFixtureId,'brief')}}],
       ]},
     });
   }
@@ -106,10 +181,11 @@ export function createPublisherRuntime(deps = {}) {
   
   async function apiChannelPublisherTest(request,cfg,user) {
     if (!isAdminUser(user,cfg)) return adminForbidden();
-    const body=await readJson(request);
-    const fixtureId=Number(body?.fixtureId || 0);
-    if (!Number.isSafeInteger(fixtureId) || fixtureId<=0) return json({error:'Укажите корректный fixture ID.'},400);
-    const text=String(body?.text || '').trim();
+    const body=plainObject(await readJson(request));
+    if (!body) return json({error:'Некорректное тело запроса.'},400);
+    const fixtureId=positiveId(body.fixtureId);
+    if (fixtureId===null) return json({error:'Укажите корректный fixture ID.'},400);
+    const text=safeText(body.text,3900);
     if (!text) return json({error:'Текст тестового поста обязателен.'},400);
   
     const publisher=channelPublisherState(cfg);
@@ -141,7 +217,7 @@ export function createPublisherRuntime(deps = {}) {
         fixtureId,
         text,
         ctaUrl:link.url,
-        idempotencyKey:String(body?.idempotencyKey || '').trim(),
+        idempotencyKey:safeText(body.idempotencyKey,160),
       },{
         claimIdempotency:(key,meta)=>claimChannelPublishIdempotency(key,meta,cfg),
         completeIdempotency:(key,meta)=>completeChannelPublishIdempotency(key,meta,cfg),
@@ -180,7 +256,7 @@ export function createPublisherRuntime(deps = {}) {
     const card=normalizeBotFixtureCard(match || {});
     const title=card.fixtureId && card.homeName && card.awayName
       ? `${card.homeName} — ${card.awayName}`
-      : `Матч #${Number(card.fixtureId || 0) || '—'}`;
+      : `Матч #${positiveId(card.fixtureId) || '—'}`;
     const meta=[card.league,card.date ? botFixtureDateTime(card.date) : ''].filter(Boolean).join(' · ');
     const body=[
       `⚽ ${title}`,
@@ -221,9 +297,10 @@ export function createPublisherRuntime(deps = {}) {
   
   async function apiMediaPublisherLink(request,cfg,user) {
     if (!isAdminUser(user,cfg)) return adminForbidden();
-    const body=await readJson(request);
-    const fixtureId=Number(body?.fixtureId || 0);
-    if (fixtureId && (!Number.isSafeInteger(fixtureId) || fixtureId<=0)) return json({error:'Укажите корректный fixture ID или оставьте поле пустым.'},400);
+    const body=plainObject(await readJson(request));
+    if (!body) return json({error:'Некорректное тело запроса.'},400);
+    const fixtureId=optionalFixtureId(body.fixtureId);
+    if (fixtureId===null) return json({error:'Укажите корректный fixture ID или оставьте поле пустым.'},400);
     const source=cleanLaunchPart(body?.source || 'social',fixtureId>0?14:24) || 'social';
     const campaign=cleanLaunchPart(body?.campaign || 'soft_launch',fixtureId>0?22:28) || 'soft_launch';
     const content=cleanLaunchPart(body?.content || 'promo1',fixtureId>0?16:20) || 'promo1';
@@ -279,7 +356,7 @@ export function createPublisherRuntime(deps = {}) {
       && campaignCopy.body.includes('MatchRadar'),cases:8};
   }
 
-  return {
+  return Object.freeze({
     apiFixtureShareLink,
     fixtureShareCardText,
     sendBotFixtureShareCard,
@@ -289,5 +366,5 @@ export function createPublisherRuntime(deps = {}) {
     campaignPublisherCopy,
     apiMediaPublisherLink,
     mediaPublisherDrill
-  };
+  });
 }
