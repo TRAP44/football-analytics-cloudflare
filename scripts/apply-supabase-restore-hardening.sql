@@ -2,6 +2,8 @@
 -- Run only against the disposable/new restore target after schema/data restore.
 -- Production is never targeted by the restore drill.
 
+begin;
+
 revoke create on schema public from public, anon, authenticated;
 grant usage on schema public to anon, authenticated, service_role;
 
@@ -42,3 +44,5 @@ alter default privileges in schema public
   grant usage, select on sequences to service_role;
 alter default privileges in schema public
   grant execute on functions to service_role;
+
+commit;
