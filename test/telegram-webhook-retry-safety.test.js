@@ -250,7 +250,7 @@ test('labels and retry-after values are bounded before observability output', ()
   assert.equal(oversized.retryAfter,0);
 });
 
-test('ending a webhook attempt is idempotent and blocks later markers', () => {
+test('ending a webhook attempt is idempotent and blocks later markers and retries', () => {
   const cfg={};
   beginTelegramWebhookAttempt(cfg);
   const first=endTelegramWebhookAttempt(cfg);
@@ -260,4 +260,30 @@ test('ending a webhook attempt is idempotent and blocks later markers', () => {
   assert.equal(second.active,false);
   assert.equal(markTelegramWebhookEffect(cfg,'sendMessage'),false);
   assert.equal(markTelegramWebhookMutation(cfg,'favorite_toggle'),false);
+
+  const result=classifyTelegramWebhookFailure(
+    Object.assign(new Error('timeout'),{code:'TELEGRAM_TIMEOUT'}),
+    cfg,
+  );
+  assert.equal(result.retry,false);
+});
+
+test('forged public attempt state cannot authorize a webhook retry', () => {
+  const cfg={
+    telegramWebhookAttempt:{
+      active:true,
+      startedAt:Date.now(),
+      successfulEffects:0,
+      unsafeMutations:0,
+      lastEffect:'',
+      lastMutation:'',
+    },
+  };
+
+  const result=classifyTelegramWebhookFailure(
+    Object.assign(new Error('network'),{code:'TELEGRAM_NETWORK'}),
+    cfg,
+  );
+  assert.equal(result.retry,false);
+  assert.equal(result.transient,true);
 });
