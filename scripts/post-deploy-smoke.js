@@ -25,7 +25,8 @@ function delay(ms) {
 }
 
 function deploymentBaseUrl(value) {
-  const url = new URL(String(value || ''));
+  if (typeof value !== 'string' || !value.trim()) throw new Error('Deployment URL is required.');
+  const url=new URL(value.trim());
   if (url.protocol !== 'https:') throw new Error('Deployment URL must use HTTPS.');
   if (url.username || url.password) throw new Error('Deployment URL must not contain credentials.');
   url.pathname = '/';
@@ -35,8 +36,13 @@ function deploymentBaseUrl(value) {
 }
 
 function boundedNumber(value, fallback, min, max) {
-  const parsed=Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
+  let parsed=null;
+  if (typeof value==='number' && Number.isFinite(value)) {
+    parsed=value;
+  } else if (typeof value==='string' && /^\d+(?:\.\d+)?$/.test(value.trim())) {
+    parsed=Number(value.trim());
+  }
+  if (parsed===null || !Number.isFinite(parsed)) return fallback;
   return Math.max(min,Math.min(max,parsed));
 }
 
@@ -46,7 +52,7 @@ async function request(fetchImpl, baseUrl, path, timeoutMs = 8000, init = {}) {
   try {
     return await fetchImpl(new URL(path, baseUrl), {
       method: init.method || 'GET',
-      redirect: 'follow',
+      redirect: 'manual',
       headers: {
         accept: 'application/json, text/html;q=0.9',
         'cache-control': 'no-cache',
