@@ -67,6 +67,7 @@ function baseDeps(overrides={}) {
     assessMatchEventQuality:()=>({state:'unavailable',observed:false,confidenceBearing:false}),
     assessMatchLineups:()=>({home:{confirmed:false},away:{confirmed:false},bothConfirmed:false,bothPublished:false,anyPublished:false,confirmedSides:0,partialSides:0}),
     assessMatchStatisticsQuality:()=>({state:'unavailable',observed:false,confidenceBearing:false}),
+    synchronizeLineupQuality:(lineups)=>lineups,
     assessOddsMarketQuality:()=>({state:'unavailable',marketValid:false,confidenceBearing:false}),
     buildAiTimeline:({match,events})=>({match,events}),
     buildLiveAiCoach:()=>null,
