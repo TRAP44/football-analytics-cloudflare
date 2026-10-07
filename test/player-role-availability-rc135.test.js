@@ -49,8 +49,29 @@ test('RC135 malformed season counters are sanitized before role weighting', () =
   assert.equal(role.appearances,0);
   assert.equal(role.lineups,0);
   assert.equal(role.minutes,0);
-  assert.equal(role.goals,2);
+  assert.equal(role.goals,0);
   assert.equal(role.assists,0);
+  assert.ok(Number.isFinite(role.weight));
+});
+
+test('RC135 season role counters reject arrays booleans and coercible containers', () => {
+  const data=enrichFixtureAbsencesWithSeasonRole(baseAbsence(), {
+    homePlayerStats:{
+      available:true,
+      players:[{
+        id:10,
+        name:'Key Player',
+        games:{appearances:[12],lineups:true,minutes:{valueOf:()=>900}},
+        goals:{total:[4],assists:'3'},
+      }],
+    },
+  });
+  const role=data.home[0].seasonRole;
+  assert.equal(role.appearances,0);
+  assert.equal(role.lineups,0);
+  assert.equal(role.minutes,0);
+  assert.equal(role.goals,0);
+  assert.equal(role.assists,3);
   assert.ok(Number.isFinite(role.weight));
 });
 
