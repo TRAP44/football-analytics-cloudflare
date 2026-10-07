@@ -80,12 +80,11 @@ export function passProductConfig(type, cfg = {}) {
 }
 
 function normalizedFixtureId(type, fixtureId) {
-  const id = Number(fixtureId || 0);
-  if (type === PASS_TYPES.MATCH) {
-    if (!Number.isSafeInteger(id) || id <= 0) return null;
-    return id;
-  }
-  return 0;
+  if (type === PASS_TYPES.MATCH) return positiveInt(fixtureId,null);
+  const id=fixtureId === null || fixtureId === undefined || fixtureId === ''
+    ? 0
+    : nonNegativeInt(fixtureId,Number.NaN);
+  return id === 0 ? 0 : null;
 }
 
 async function passInvoiceSignature(base, botToken) {
@@ -94,10 +93,10 @@ async function passInvoiceSignature(base, botToken) {
 }
 
 export async function createPassInvoicePayload(userId, passType, fixtureId, botToken) {
-  const uid = Number(userId);
+  const uid=positiveInt(userId,null);
   const type = normalizePassType(passType);
   const fid = normalizedFixtureId(type, fixtureId);
-  if (!Number.isSafeInteger(uid) || uid <= 0 || !type || fid === null || !botToken) {
+  if (uid === null || !type || fid === null || typeof botToken !== 'string' || !botToken) {
     throw new Error('Некорректные параметры Pass-счёта.');
   }
   const nonceBytes = crypto.getRandomValues(new Uint8Array(6));
@@ -110,11 +109,11 @@ export async function parsePassInvoicePayload(payload, botToken) {
   const parts = String(payload || '').split('|');
   if (parts.length !== 6 || parts[0] !== 'fa2' || !botToken) return null;
   const [, uidRaw, typeRaw, fixtureRaw, nonce, sig] = parts;
-  const userId = Number(uidRaw);
-  const passType = normalizePassType(typeRaw);
-  const fixtureId = Number(fixtureRaw);
+  const userId=positiveInt(uidRaw,null);
+  const passType=normalizePassType(typeRaw);
+  const fixtureId=nonNegativeInt(fixtureRaw,Number.NaN);
   if (
-    !Number.isSafeInteger(userId) || userId <= 0
+    userId === null
     || !passType
     || !Number.isSafeInteger(fixtureId) || fixtureId < 0
     || normalizedFixtureId(passType, fixtureId) === null
@@ -194,11 +193,11 @@ export function entitlementDecision(row, { fixtureId = 0, now = Date.now() } = {
   }
 
   if (item.type === PASS_TYPES.MATCH) {
-    const requestedFixtureId = Number(fixtureId);
+    const requestedFixtureId=positiveInt(fixtureId,null);
     if (!Number.isSafeInteger(item.fixtureId) || item.fixtureId <= 0) {
       return { active: false, reason: 'invalid_fixture', item };
     }
-    if (!Number.isSafeInteger(requestedFixtureId) || requestedFixtureId <= 0 || requestedFixtureId !== item.fixtureId) {
+    if (requestedFixtureId === null || requestedFixtureId !== item.fixtureId) {
       return { active: false, reason: 'fixture_mismatch', item };
     }
   } else if (item.fixtureId !== 0) {
@@ -236,7 +235,7 @@ export function resolveEntitlementAccess({
     plan: subscriptionActive ? normalizedPlan : 'FREE',
     effectiveTier: subscriptionActive ? normalizedPlan : passActive ? 'PASS' : 'FREE',
     source: effectiveSource,
-    fixtureId: Number(fixtureId || 0) || null,
+    fixtureId:positiveInt(fixtureId,null),
     subscriptionActive,
     access: {
       expandedAi: subscriptionActive || passActive,
@@ -265,9 +264,11 @@ export function resolveEntitlementAccess({
 }
 
 function passMemoryRows(memory, userId) {
+  const uid=positiveInt(userId,null);
+  if (uid === null) return [];
   const rows = [];
   for (const row of memory.userEntitlements?.values?.() || []) {
-    if (Number(row.telegram_id) === Number(userId)) rows.push(row);
+    if (positiveInt(row?.telegram_id,null) === uid) rows.push(row);
   }
   return rows.sort((a, b) => String(b.expires_at || '').localeCompare(String(a.expires_at || '')));
 }
@@ -279,12 +280,21 @@ export function createEntitlementService({
   supaRpc,
   getUserRecord,
   markWebhookMutation = () => {},
-}) {
+} = {}) {
+  if (!memory || typeof memory !== 'object' || Array.isArray(memory)) {
+    throw new TypeError('Entitlement service memory is required.');
+  }
+  for (const [name,fn] of Object.entries({hasSupabase,supaSelectMany,supaRpc,getUserRecord,markWebhookMutation})) {
+    if (typeof fn !== 'function') throw new TypeError(`Entitlement service requires ${name}.`);
+  }
   if (!memory.userEntitlements) memory.userEntitlements = new Map();
+  if (!(memory.userEntitlements instanceof Map)) {
+    throw new TypeError('Entitlement service requires userEntitlements memory map.');
+  }
 
   async function listUserEntitlements(userId, cfg) {
-    const uid = Number(userId);
-    if (!Number.isSafeInteger(uid) || uid <= 0) return [];
+    const uid=positiveInt(userId,null);
+    if (uid === null) return [];
     if (!hasSupabase(cfg)) return passMemoryRows(memory, uid);
     return await supaSelectMany(cfg, 'user_entitlements', { telegram_id: `eq.${uid}` }, {
       limit: 100,
@@ -301,17 +311,17 @@ export function createEntitlementService({
     invoicePayload,
     paidAt,
   }, cfg) {
-    const uid = Number(telegramId);
-    const product = passProductConfig(passType, cfg);
-    const fid = normalizedFixtureId(product?.key, fixtureId);
-    const chargeId = String(paymentChargeId || '').trim();
-    const payload = String(invoicePayload || '');
-    const window = passEntitlementWindow(product?.key, paidAt, cfg);
-    const paidStars = Number(starsAmount);
+    const uid=positiveInt(telegramId,null);
+    const product=passProductConfig(passType,cfg);
+    const fid=normalizedFixtureId(product?.key,fixtureId);
+    const chargeId=typeof paymentChargeId === 'string' ? paymentChargeId.trim() : '';
+    const payload=typeof invoicePayload === 'string' ? invoicePayload : '';
+    const window=passEntitlementWindow(product?.key,paidAt,cfg);
+    const paidStars=positiveInt(starsAmount,null);
     if (
-      !Number.isSafeInteger(uid) || uid <= 0
+      uid === null
       || !product || !product.saleReady || fid === null
-      || !Number.isSafeInteger(paidStars) || paidStars !== product.stars
+      || paidStars === null || paidStars !== product.stars
       || !chargeId || chargeId.length > 240
       || !payload || payload.length > 512
       || !window
@@ -335,7 +345,7 @@ export function createEntitlementService({
         activated: Boolean(result?.activated),
         duplicate: Boolean(result?.duplicate),
         reason: String(result?.reason || ''),
-        entitlementId: Number(result?.entitlementId || 0) || null,
+        entitlementId:positiveInt(result?.entitlementId,null),
         startsAt: result?.startsAt || window.startsAt,
         expiresAt: result?.expiresAt || window.expiresAt,
       };
@@ -343,12 +353,12 @@ export function createEntitlementService({
 
     const existing = memory.userEntitlements.get(chargeId);
     if (existing) {
-      const existingUsageLimit = existing.usage_limit == null ? null : Number(existing.usage_limit);
-      const same = Number(existing.telegram_id) === uid
+      const existingUsageLimit=existing.usage_limit == null ? null : positiveInt(existing.usage_limit,null);
+      const same=positiveInt(existing.telegram_id,null) === uid
         && existing.entitlement_type === product.key
-        && Number(existing.fixture_id || 0) === Number(fid || 0)
+        && nonNegativeInt(existing.fixture_id ?? 0,Number.NaN) === fid
         && existingUsageLimit === product.usageLimit
-        && Number(existing.stars_amount) === product.stars
+        && positiveInt(existing.stars_amount,null) === product.stars
         && String(existing.invoice_payload || '') === payload;
       return { activated: false, duplicate: same, reason: same ? 'duplicate' : 'payment_charge_conflict', entitlementId: existing.id };
     }
@@ -362,7 +372,7 @@ export function createEntitlementService({
       expires_at: window.expiresAt,
       usage_limit: product.usageLimit,
       usage_count: 0,
-      stars_amount: Number(product.stars),
+      stars_amount:product.stars,
       payment_charge_id: chargeId,
       invoice_payload: payload,
       status: 'active',
@@ -400,10 +410,12 @@ export function createEntitlementService({
   }
 
   async function consumeEntitlement(userId, entitlementId, fixtureId, cfg, usageOptions = {}) {
-    const uid = Number(userId);
-    const eid = Number(entitlementId);
-    const fid = Number(fixtureId || 0);
-    if (!Number.isSafeInteger(uid) || uid <= 0 || !Number.isSafeInteger(eid) || eid <= 0 || !Number.isSafeInteger(fid) || fid < 0) {
+    const uid=positiveInt(userId,null);
+    const eid=positiveInt(entitlementId,null);
+    const fid=fixtureId === null || fixtureId === undefined || fixtureId === ''
+      ? 0
+      : nonNegativeInt(fixtureId,Number.NaN);
+    if (uid === null || eid === null || !Number.isSafeInteger(fid) || fid < 0) {
       return { allowed: false, reason: 'invalid_input' };
     }
     if (hasSupabase(cfg)) {
@@ -417,18 +429,28 @@ export function createEntitlementService({
         p_fixture_id: fid || null,
       }, 4000, extraHeaders);
     }
-    const row = [...memory.userEntitlements.values()].find(item => Number(item.id) === eid && Number(item.telegram_id) === uid);
+    const row=[...memory.userEntitlements.values()]
+      .find(item=>positiveInt(item?.id,null)===eid && positiveInt(item?.telegram_id,null)===uid);
     const decision = entitlementDecision(row || {}, { fixtureId: fid, now: Date.now() });
     if (!decision.active) return { allowed: false, reason: decision.reason };
-    if (row.usage_limit != null) row.usage_count = Number(row.usage_count || 0) + 1;
-    row.updated_at = new Date().toISOString();
-    return { allowed: true, reason: 'consumed', usageCount: Number(row.usage_count || 0), usageLimit: row.usage_limit };
+    if (row.usage_limit != null) {
+      const usageCount=nonNegativeInt(row.usage_count ?? 0,Number.NaN);
+      if (!Number.isSafeInteger(usageCount)) return {allowed:false,reason:'invalid_usage'};
+      row.usage_count=usageCount+1;
+    }
+    row.updated_at=new Date().toISOString();
+    return {
+      allowed:true,
+      reason:'consumed',
+      usageCount:nonNegativeInt(row.usage_count ?? 0,0),
+      usageLimit:row.usage_limit,
+    };
   }
 
   async function refundEntitlementUsage(userId, entitlementId, cfg) {
-    const uid = Number(userId);
-    const eid = Number(entitlementId);
-    if (!Number.isSafeInteger(uid) || uid <= 0 || !Number.isSafeInteger(eid) || eid <= 0) {
+    const uid=positiveInt(userId,null);
+    const eid=positiveInt(entitlementId,null);
+    if (uid === null || eid === null) {
       return { updated: false, reason: 'invalid_input' };
     }
     if (hasSupabase(cfg)) {
@@ -437,16 +459,18 @@ export function createEntitlementService({
         p_entitlement_id: eid,
       }, 4000);
     }
-    const row = [...memory.userEntitlements.values()].find(item => Number(item.id) === eid && Number(item.telegram_id) === uid);
+    const row=[...memory.userEntitlements.values()]
+      .find(item=>positiveInt(item?.id,null)===eid && positiveInt(item?.telegram_id,null)===uid);
     if (!row) return { updated: false, reason: 'not_found' };
     if (row.usage_limit == null) return { updated: false, reason: 'not_limited' };
-    row.usage_count = Math.max(0, Number(row.usage_count || 0) - 1);
+    row.usage_count=Math.max(0,nonNegativeInt(row.usage_count ?? 0,0)-1);
     row.updated_at = new Date().toISOString();
     return { updated: true, reason: 'refunded', entitlementId: row.id, usageCount: row.usage_count };
   }
 
   async function reserveEntitlementUsage(userId, activeEntitlements, fixtureId, cfg, usageOptions = {}) {
-    const uid = Number(userId);
+    const uid=positiveInt(userId,null);
+    if (uid === null) return {allowed:false,reserved:false,reason:'invalid_input'};
     const candidates = (activeEntitlements || []).map(normalizeEntitlementRow);
     const unlimited = candidates.find(item => item.usageLimit == null);
     if (unlimited) {
@@ -480,9 +504,9 @@ export function createEntitlementService({
   }
 
   async function refundPassByCharge(userId, paymentChargeId, cfg) {
-    const uid = Number(userId);
-    const chargeId = String(paymentChargeId || '').trim();
-    if (!Number.isSafeInteger(uid) || uid <= 0 || !chargeId) return { updated: false, reason: 'invalid_input' };
+    const uid=positiveInt(userId,null);
+    const chargeId=typeof paymentChargeId === 'string' ? paymentChargeId.trim() : '';
+    if (uid === null || !chargeId) return { updated: false, reason: 'invalid_input' };
     markWebhookMutation(cfg, 'pass_refund');
     if (hasSupabase(cfg)) {
       return await supaRpc(cfg, 'refund_pass_entitlement', {
@@ -491,7 +515,7 @@ export function createEntitlementService({
       }, 4000);
     }
     const row = memory.userEntitlements.get(chargeId);
-    if (!row || Number(row.telegram_id) !== uid) return { updated: false, reason: 'not_found' };
+    if (!row || positiveInt(row.telegram_id,null) !== uid) return { updated: false, reason: 'not_found' };
     row.status = 'refunded';
     row.updated_at = new Date().toISOString();
     return { updated: true, reason: 'refunded', entitlementId: row.id };
