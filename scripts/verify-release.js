@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { auditFrontendAssetContract } from './frontend-asset-audit.js';
-import { FRONTEND_ASSET_REVISION } from '../public/modules/app-runtime.js';
+import { CLIENT_API_CONTRACT, CLIENT_RELEASE_CHANNEL, CLIENT_VERSION, FRONTEND_ASSET_REVISION, SUPABASE_SCHEMA_HINT } from '../public/modules/app-runtime.js';
 
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
