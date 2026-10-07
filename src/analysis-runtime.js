@@ -728,10 +728,12 @@ export function createAnalysisRuntime(deps) {
     const entitlementBefore=objectValue(
       await optionalAsync(resolveUserEntitlements,userId,fixtureId,cfg),
     ) || {source:'free',access:{},passes:{}};
-    const activePass=objectValue(objectValue(entitlementBefore.passes)?.active);
+    const activePasses=Array.isArray(objectValue(entitlementBefore.passes)?.active)
+      ? entitlementBefore.passes.active
+      : [];
     const passCandidate=entitlementBefore.source==='pass'
       && objectValue(entitlementBefore.access)?.expandedAi === true
-      && Boolean(activePass);
+      && activePasses.length>0;
     let quotaBefore;
     try {
       quotaBefore=quotaSnapshot(await getQuota(userId,cfg),null);
@@ -807,7 +809,7 @@ export function createAnalysisRuntime(deps) {
       try {
         passUsageReservation=objectValue(await reserveEntitlementUsage(
           userId,
-          activePass,
+          activePasses,
           fixtureId,
           cfg,
           {
