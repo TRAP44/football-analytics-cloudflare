@@ -102,6 +102,14 @@ test('invalid or duplicate fixture team context does not assign lineups to a sid
     live.formatLineups([{team:{id:10},startXI:[]}],1.5,20),
     {home:null,away:null},
   );
+  assert.deepEqual(
+    live.formatLineups([{team:{id:1},startXI:[]}],true,20),
+    {home:null,away:null},
+  );
+  assert.deepEqual(
+    live.formatLineups([{team:{id:10},startXI:[]}],[10],20),
+    {home:null,away:null},
+  );
 });
 
 test('H2H counts only finished matches for the requested pair with a real score', () => {
@@ -145,10 +153,10 @@ test('H2H counts only finished matches for the requested pair with a real score'
   );
 });
 
-test('H2H honors provider winner flags for knockout results', () => {
+test('H2H honors provider winner flags for penalty shootout results', () => {
   const result=runtime().formatH2H([
     {
-      fixture:{date:'2026-10-01T10:00:00Z',status:{short:'PEN'}},
+      fixture:{id:101,date:'2026-10-01T10:00:00Z',status:{short:'PEN'}},
       teams:{
         home:{id:10,name:'A',winner:false},
         away:{id:20,name:'B',winner:true},
@@ -162,12 +170,52 @@ test('H2H honors provider winner flags for knockout results', () => {
   assert.equal(result.awayWins,1);
 });
 
-test('status label never converts missing or invalid elapsed time to zero', () => {
+test('H2H ignores contradictory winner flags outside penalty shootouts and deduplicates fixture ids', () => {
+  const duplicate={
+    fixture:{
+      id:202,
+      date:'2026-09-01T10:00:00Z',
+      status:{short:'FT'},
+    },
+    teams:{
+      home:{id:10,name:'A',winner:true},
+      away:{id:20,name:'B',winner:false},
+    },
+    goals:{home:1,away:1},
+  };
+
+  const result=runtime().formatH2H([
+    duplicate,
+    duplicate,
+    {
+      fixture:{
+        id:203,
+        date:'2026-08-01T10:00:00Z',
+        status:{short:'FT'},
+      },
+      teams:{
+        home:{id:10,name:'A',winner:false},
+        away:{id:20,name:'B',winner:true},
+      },
+      goals:{home:2,away:0},
+    },
+  ],10,20);
+
+  assert.equal(result.homeWins,1);
+  assert.equal(result.draws,1);
+  assert.equal(result.awayWins,0);
+  assert.equal(result.matches.length,2);
+});
+
+test('status label never converts missing invalid or coercive elapsed time to zero', () => {
   const live=runtime();
 
   assert.equal(live.statusLabel('1H',null),'1-й тайм');
   assert.equal(live.statusLabel('2H',999),'2-й тайм');
   assert.equal(live.statusLabel('1H',0),'1-й тайм · 0′');
+  assert.equal(live.statusLabel('1H','45'),'1-й тайм · 45′');
+  assert.equal(live.statusLabel('1H',[45]),'1-й тайм');
+  assert.equal(live.statusLabel('1H',true),'1-й тайм');
   assert.equal(live.statusLabel('FT',90),'Завершён');
 });
 
@@ -282,6 +330,23 @@ test('score snapshot preserves missing and partial score information without syn
       away:1,
       halftime:{home:1,away:0},
       fulltime:{home:2,away:1},
+      extratime:null,
+      penalty:null,
+    },
+  );
+
+  assert.deepEqual(
+    live.scoreSnapshot({
+      goals:{home:true,away:[1]},
+      score:{
+        halftime:{home:{valueOf(){return 1;}},away:false},
+      },
+    }),
+    {
+      home:null,
+      away:null,
+      halftime:null,
+      fulltime:null,
       extratime:null,
       penalty:null,
     },
