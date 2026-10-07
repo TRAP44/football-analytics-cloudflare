@@ -88,10 +88,32 @@ function safeIncrement(value) {
   return Math.min(MAX_ATTEMPT_COUNTER,snapshot.value+1);
 }
 
-function stateFor(cfg) {
+function attemptStateSnapshot(cfg) {
   const source=plainObject(cfg);
-  if (!source) return null;
-  return plainObject(safeRead(source,'telegramWebhookAttempt'));
+  if (!source) return {present:false,state:null,valid:true};
+
+  let present=false;
+  try {
+    present=Object.prototype.hasOwnProperty.call(source,'telegramWebhookAttempt');
+  } catch {
+    return {present:true,state:null,valid:false};
+  }
+  if (!present) return {present:false,state:null,valid:true};
+
+  let raw;
+  try { raw=source.telegramWebhookAttempt; }
+  catch { return {present:true,state:null,valid:false}; }
+
+  const state=plainObject(raw);
+  return {
+    present:true,
+    state,
+    valid:Boolean(state),
+  };
+}
+
+function stateFor(cfg) {
+  return attemptStateSnapshot(cfg).state;
 }
 
 function ledgerFor(cfg) {
@@ -162,20 +184,26 @@ export function markTelegramWebhookMutation(cfg, label = '') {
 
 export function classifyTelegramWebhookFailure(error, cfg) {
   const ledger=ledgerFor(cfg);
-  const state=ledger || stateFor(cfg);
-  const statePresent=Boolean(state);
+  const fallbackAttempt=ledger ? null : attemptStateSnapshot(cfg);
+  const state=ledger || fallbackAttempt?.state || null;
+  const statePresent=Boolean(ledger || fallbackAttempt?.present);
 
-  const effectSnapshot=statePresent
+  const effectSnapshot=state
     ? counterSnapshot(safeRead(state,'successfulEffects'),{missing:MAX_ATTEMPT_COUNTER})
-    : {value:0,valid:true};
-  const mutationSnapshot=statePresent
+    : statePresent
+      ? {value:MAX_ATTEMPT_COUNTER,valid:false}
+      : {value:0,valid:true};
+  const mutationSnapshot=state
     ? counterSnapshot(safeRead(state,'unsafeMutations'),{missing:MAX_ATTEMPT_COUNTER})
-    : {value:0,valid:true};
+    : statePresent
+      ? {value:MAX_ATTEMPT_COUNTER,valid:false}
+      : {value:0,valid:true};
 
-  const activeValue=statePresent ? safeRead(state,'active') : false;
+  const activeValue=state ? safeRead(state,'active') : false;
   const stateValid=!statePresent
     || (
-      typeof activeValue === 'boolean'
+      Boolean(ledger || fallbackAttempt?.valid)
+      && typeof activeValue === 'boolean'
       && effectSnapshot.valid
       && mutationSnapshot.valid
     );
