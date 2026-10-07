@@ -105,6 +105,23 @@ export function createFootballNewsRuntime(deps) {
     return Array.isArray(value) ? value : [];
   }
 
+  function safeShallowCopy(value) {
+    const source=plainObject(value);
+    if (!source) return {};
+    const out={};
+    let keys=[];
+    try {
+      keys=Object.keys(source).slice(0,80);
+    } catch {
+      return out;
+    }
+    for (const key of keys) {
+      const item=safeRead(source,key);
+      if (item!==undefined) out[key]=item;
+    }
+    return out;
+  }
+
   function safeCall(fn,...args) {
     try {
       return fn(...args);
@@ -180,7 +197,7 @@ export function createFootballNewsRuntime(deps) {
     const originalImpact=safeText(safeRead(category,'impact'),20,'low');
     const needsConfirmation=originalImpact==='high' && !['official','major'].includes(trust.tier);
     return {
-      ...value,
+      ...safeShallowCopy(value),
       trust,
       verification:needsConfirmation ? 'needs_confirmation' : 'source_backed',
       category:needsConfirmation ? {...category,impact:'medium'} : category,
@@ -210,16 +227,19 @@ export function createFootballNewsRuntime(deps) {
   }
   
   function footballNewsImpactText(category = {}, hasUpcomingMatch = false) {
-    if (!hasUpcomingMatch) {
-      if (category.impact === 'high') return 'Событие может заметно изменить спортивный контекст команды.';
-      if (category.impact === 'medium') return 'Событие стоит учитывать в следующем матче команды.';
+    const value=plainObject(category) || {};
+    const impact=safeText(safeRead(value,'impact'),20,'low');
+    const code=safeText(safeRead(value,'code'),30);
+    if (hasUpcomingMatch!==true) {
+      if (impact==='high') return 'Событие может заметно изменить спортивный контекст команды.';
+      if (impact==='medium') return 'Событие стоит учитывать в следующем матче команды.';
       return 'Контекстная новость: следим, но не меняем AI-сценарий автоматически.';
     }
-    if (category.code === 'injury' || category.code === 'suspension') return 'Может изменить состав и баланс сил. Перед матчем стоит обновить AI-разбор.';
-    if (category.code === 'coach') return 'Смена тренерского контекста может менять стиль и неопределённость. AI-разбор стоит перепроверить.';
-    if (category.code === 'lineup') return 'Может уточнить стартовый состав. Это один из ключевых сигналов перед матчем.';
-    if (category.code === 'referee') return 'Назначение судьи может влиять на карточки, фолы и темп — проверяем в контексте матча.';
-    if (category.code === 'weather') return 'Условия могут влиять на темп и качество игры. Это вспомогательный фактор, не самостоятельный прогноз.';
+    if (code==='injury' || code==='suspension') return 'Может изменить состав и баланс сил. Перед матчем стоит обновить AI-разбор.';
+    if (code==='coach') return 'Смена тренерского контекста может менять стиль и неопределённость. AI-разбор стоит перепроверить.';
+    if (code==='lineup') return 'Может уточнить стартовый состав. Это один из ключевых сигналов перед матчем.';
+    if (code==='referee') return 'Назначение судьи может влиять на карточки, фолы и темп — проверяем в контексте матча.';
+    if (code==='weather') return 'Условия могут влиять на темп и качество игры. Это вспомогательный фактор, не самостоятельный прогноз.';
     return 'Проверяем, меняет ли новость входные данные AI-разбора ближайшего матча.';
   }
   
@@ -401,14 +421,18 @@ export function createFootballNewsRuntime(deps) {
   }
   
   function newsFixtureChangeGuide(item = {}, link = null) {
-    const category=String(item?.category?.code || '');
-    if (!link?.fixture?.fixtureId) return '';
-    if (category==='injury' || category==='suspension') return 'состав · глубина скамейки · баланс сил · рынок';
-    if (category==='lineup') return 'стартовый состав · роли игроков · вероятности · рынок';
-    if (category==='referee') return 'карточки · фолы · пенальти · темп';
-    if (category==='weather') return 'темп · качество поля · интенсивность · тоталы';
-    if (category==='coach') return 'схема · стиль · неопределённость · форма';
-    if (category==='transfer') return 'доступность игрока · ротация · глубина состава';
+    const itemValue=plainObject(item) || {};
+    const category=plainObject(safeRead(itemValue,'category')) || {};
+    const code=safeText(safeRead(category,'code'),30);
+    const linkValue=plainObject(link) || {};
+    const fixture=plainObject(safeRead(linkValue,'fixture')) || {};
+    if (!positiveInteger(safeRead(fixture,'fixtureId'))) return '';
+    if (code==='injury' || code==='suspension') return 'состав · глубина скамейки · баланс сил · рынок';
+    if (code==='lineup') return 'стартовый состав · роли игроков · вероятности · рынок';
+    if (code==='referee') return 'карточки · фолы · пенальти · темп';
+    if (code==='weather') return 'темп · качество поля · интенсивность · тоталы';
+    if (code==='coach') return 'схема · стиль · неопределённость · форма';
+    if (code==='transfer') return 'доступность игрока · ротация · глубина состава';
     return 'состав · форма · рынок · AI-оценка';
   }
   
@@ -435,15 +459,26 @@ export function createFootballNewsRuntime(deps) {
     };
   }
   
-  function newsConversionHook(item = {}, { fixtureId=0, teamName='', fixtureLink=null } = {}) {
-    const category=item?.category || {};
-    const team=String(teamName || newsTeamHint(item)?.canonical || '').trim();
-    if (fixtureId || fixtureLink?.fixture?.fixtureId) {
-      const guide=newsFixtureChangeGuide(item,fixtureLink);
+  function newsConversionHook(item = {}, options = {}) {
+    const itemValue=plainObject(item) || {};
+    const category=plainObject(safeRead(itemValue,'category')) || {};
+    const hint=newsTeamHint(itemValue);
+    const team=safeText(
+      safeRead(options,'teamName') || safeRead(hint,'canonical'),
+      80,
+    );
+    const fixtureLink=plainObject(safeRead(options,'fixtureLink'));
+    const linkedFixture=plainObject(safeRead(fixtureLink,'fixture')) || {};
+    const fixtureId=
+      positiveInteger(safeRead(options,'fixtureId'))
+      || positiveInteger(safeRead(linkedFixture,'fixtureId'));
+    const code=safeText(safeRead(category,'code'),30);
+    if (fixtureId) {
+      const guide=newsFixtureChangeGuide(itemValue,fixtureLink);
       if (guide) return `Перепроверить: ${guide}.`;
-      if (category.code==='injury' || category.code==='suspension' || category.code==='lineup') return 'Проверить, меняет ли это состав, рынок и AI-оценку ближайшего матча.';
-      if (category.code==='referee') return 'Проверить судью, карточки и темп в AI-контексте ближайшего матча.';
-      if (category.code==='coach') return 'Проверить, изменился ли игровой контекст и уровень неопределённости перед матчем.';
+      if (code==='injury' || code==='suspension' || code==='lineup') return 'Проверить, меняет ли это состав, рынок и AI-оценку ближайшего матча.';
+      if (code==='referee') return 'Проверить судью, карточки и темп в AI-контексте ближайшего матча.';
+      if (code==='coach') return 'Проверить, изменился ли игровой контекст и уровень неопределённости перед матчем.';
       return 'Сверить новость с данными ближайшего матча и получить короткую AI-оценку.';
     }
     if (team) return `Найти ближайший матч ${team} и проверить, влияет ли новость на AI-разбор.`;
@@ -692,8 +727,9 @@ export function createFootballNewsRuntime(deps) {
   }
   
   function newsImpactBadge(impact = 'low') {
-    if (impact === 'high') return '🔴 возможное сильное влияние';
-    if (impact === 'medium') return '🟡 возможное влияние';
+    const value=safeText(impact,20,'low');
+    if (value==='high') return '🔴 возможное сильное влияние';
+    if (value==='medium') return '🟡 возможное влияние';
     return '⚪ контекст';
   }
   
