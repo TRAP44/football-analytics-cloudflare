@@ -82,6 +82,8 @@ test('ops redaction removes Telegram bearer Supabase and API credentials', () =>
     'bot111111111:abcdefghijklmnopqrstuvwxyz_secret',
     '111111111:abcdefghijklmnopqrstuvwxyz_secret',
     'Bearer eyJhbGciOiJIUzI1NiJ9.secret',
+    'eyJabcdefghijk.abcdefghijklmnop.abcdefghijklmnop',
+    'SUPABASE_SERVICE_ROLE_KEY=service-role-secret',
     'sb_secret_super_private_key',
     'x-apisports-key=football-secret',
     'apikey: another-secret',
@@ -91,7 +93,8 @@ test('ops redaction removes Telegram bearer Supabase and API credentials', () =>
   const redacted=api.redactOpsString(text,1000);
   assert.doesNotMatch(redacted,/abcdefghijklmnopqrstuvwxyz_secret/);
   assert.doesNotMatch(redacted,/eyJhbGciOiJIUzI1NiJ9\.secret/);
-  assert.doesNotMatch(redacted,/super_private_key/);
+  assert.doesNotMatch(redacted,/eyJabcdefghijk\.abcdefghijklmnop\.abcdefghijklmnop/);
+  assert.doesNotMatch(redacted,/service-role-secret|super_private_key/);
   assert.doesNotMatch(redacted,/football-secret|another-secret|url-secret/);
   assert.match(redacted,/\[redacted\]/);
 
@@ -108,6 +111,9 @@ test('ops metadata sanitizer fails closed on sensitive prototype and hostile val
     safe:'value',
     userId:7,
     apiKey:'secret',
+    email:'private@example.test',
+    phone:'+37100000000',
+    sessionId:'private-session',
     nested:{
       password:'secret',
       keep:'yes',
@@ -123,6 +129,9 @@ test('ops metadata sanitizer fails closed on sensitive prototype and hostile val
   assert.equal(meta.safe,'value');
   assert.equal('userId' in meta,false);
   assert.equal('apiKey' in meta,false);
+  assert.equal('email' in meta,false);
+  assert.equal('phone' in meta,false);
+  assert.equal('sessionId' in meta,false);
   assert.equal(meta.nested.keep,'yes');
   assert.equal('password' in meta.nested,false);
   assert.equal('nan' in meta.nested,false);
