@@ -13,176 +13,265 @@ const DEFAULT_FRESHNESS_LIMITS = Object.freeze({
 
 const FUTURE_TIMESTAMP_TOLERANCE_SECONDS = 30;
 const MAX_POLICY_TTL_MULTIPLIER = 2;
+const FRESHNESS_MODES = new Set(['live','finished','upcoming']);
+
+function objectRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
 
 function compactState(value = '') {
-  return String(value || '').trim().toLowerCase().replace(/\s+/g, '_');
+  if (typeof value !== 'string') return '';
+  return value.trim().toLowerCase().replace(/s+/g, '_');
+}
+
+function finiteNumber(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  return value;
 }
 
 function timestampMs(value) {
-  const parsed = Date.parse(String(value || ''));
+  if (value instanceof Date) {
+    const ms=value.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const raw=value.trim();
+  const calendar=/^(d{4})-(d{2})-(d{2})(?:$|T|s)/.exec(raw);
+  if (!calendar) return null;
+  const year=Number(calendar[1]);
+  const month=Number(calendar[2]);
+  const day=Number(calendar[3]);
+  if (!Number.isSafeInteger(year) || month<1 || month>12 || day<1) return null;
+  const maxDay=new Date(Date.UTC(year,month,0)).getUTCDate();
+  if (day>maxDay) return null;
+  const parsed=Date.parse(raw);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
 function boundedAgeSeconds(value) {
-  const age = Number(value);
-  return Number.isFinite(age) && age >= 0 ? Math.floor(age) : null;
+  const age=finiteNumber(value);
+  return age !== null && age>=0 ? Math.floor(age) : null;
+}
+
+function normalizedFeature(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : 'data';
+}
+
+function normalizedMode(value) {
+  if (typeof value !== 'string') return null;
+  const mode=value.trim().toLowerCase();
+  return FRESHNESS_MODES.has(mode) ? mode : null;
 }
 
 function defaultFreshnessLimit(feature, mode) {
-  const config = DEFAULT_FRESHNESS_LIMITS[String(feature || '')] || {};
-  return Number(config[String(mode || '')] || config.upcoming || 3600);
+  const config=DEFAULT_FRESHNESS_LIMITS[normalizedFeature(feature)] || {};
+  const normalized=normalizedMode(mode);
+  return Number(config[normalized || ''] || config.upcoming || 3600);
 }
 
 function policyTtlState(meta = {}, { feature = meta?.feature || 'data', mode = 'upcoming' } = {}) {
-  const fallback = defaultFreshnessLimit(feature, mode);
-  const raw = Number(meta?.policy?.ttlSeconds);
-  if (!Number.isFinite(raw) || raw <= 0) {
-    return { configured:false, excessive:false, ttlSeconds:null, fallback, limit:fallback };
+  const source=objectRecord(meta);
+  const fallback=defaultFreshnessLimit(feature,mode);
+  const policy=objectRecord(source.policy);
+  const raw=finiteNumber(policy.ttlSeconds);
+  if (raw === null || raw<=0) {
+    return {configured:false,excessive:false,ttlSeconds:null,fallback,limit:fallback};
   }
-  const ttlSeconds = Math.ceil(raw);
-  const ceiling = Math.max(fallback, fallback * MAX_POLICY_TTL_MULTIPLIER);
-  const excessive = ttlSeconds > ceiling;
+  const ttlSeconds=Math.ceil(raw);
+  const ceiling=Math.max(fallback,fallback*MAX_POLICY_TTL_MULTIPLIER);
+  const excessive=ttlSeconds>ceiling;
   return {
     configured:true,
     excessive,
     ttlSeconds,
     fallback,
-    limit: excessive
+    limit:excessive
       ? fallback
-      : Math.min(ceiling, Math.max(fallback, ttlSeconds * 2)),
+      : Math.min(ceiling,Math.max(fallback,ttlSeconds*2)),
   };
 }
 
 export function featureFreshnessLimitSeconds(meta = {}, { feature = meta?.feature || 'data', mode = 'upcoming' } = {}) {
-  return policyTtlState(meta, { feature, mode }).limit;
+  return policyTtlState(meta,{feature,mode}).limit;
 }
 
 export function assessFeatureFreshness(meta = {}, {
-  feature = meta?.feature || 'data',
+  feature = objectRecord(meta).feature || 'data',
   mode = 'upcoming',
   now = Date.now(),
   forceStale = false,
 } = {}) {
-  const provider = compactState(meta?.provider);
-  const source = compactState(meta?.source);
-  const transportState = compactState(meta?.transportState || meta?.state);
-  const freshnessHint = compactState(meta?.freshness || meta?.freshnessState);
-  const providerKnown = Boolean(provider && provider !== 'unknown' && provider !== 'none');
-  const sourceKnown = Boolean(source && source !== 'unknown' && source !== 'none');
-  const provenanceKnown = providerKnown && sourceKnown;
+  const sourceMeta=objectRecord(meta);
+  const normalizedFeatureName=normalizedFeature(feature || sourceMeta.feature);
+  const normalizedModeName=normalizedMode(mode);
+  const modeValid=normalizedModeName!==null;
 
-  const sourceUpdatedAtMs = timestampMs(meta?.sourceUpdatedAt);
-  const fetchedAtMs = timestampMs(meta?.fetchedAt);
-  const sourceUpdatedAt = sourceUpdatedAtMs !== null ? String(meta.sourceUpdatedAt) : null;
-  const fetchedAt = fetchedAtMs !== null ? String(meta.fetchedAt) : null;
-  const anchorMs = sourceUpdatedAtMs ?? fetchedAtMs;
-  const nowMs = Number(now);
-  const clockValid = Number.isFinite(nowMs);
-  const futureSkewSeconds = anchorMs !== null && clockValid && anchorMs > nowMs
-    ? Math.ceil((anchorMs - nowMs) / 1000)
-    : 0;
-  const futureTimestamp = clockValid && futureSkewSeconds > FUTURE_TIMESTAMP_TOLERANCE_SECONDS;
-  const timestampRequired = source === 'embedded';
-  const timestampMissing = timestampRequired && anchorMs === null;
+  const provider=compactState(sourceMeta.provider);
+  const source=compactState(sourceMeta.source);
+  const transportState=compactState(sourceMeta.transportState || sourceMeta.state);
+  const freshnessHint=compactState(sourceMeta.freshness || sourceMeta.freshnessState);
+  const providerKnown=Boolean(provider && provider!=='unknown' && provider!=='none');
+  const sourceKnown=Boolean(source && source!=='unknown' && source!=='none');
+  const provenanceKnown=providerKnown && sourceKnown;
 
-  const computedAge = !clockValid
+  const sourceUpdatedSupplied=sourceMeta.sourceUpdatedAt !== undefined
+    && sourceMeta.sourceUpdatedAt !== null
+    && String(sourceMeta.sourceUpdatedAt).trim()!=='';
+  const fetchedAtSupplied=sourceMeta.fetchedAt !== undefined
+    && sourceMeta.fetchedAt !== null
+    && String(sourceMeta.fetchedAt).trim()!=='';
+  const sourceUpdatedAtMs=timestampMs(sourceMeta.sourceUpdatedAt);
+  const fetchedAtMs=timestampMs(sourceMeta.fetchedAt);
+  const sourceUpdatedAt=sourceUpdatedAtMs!==null
+    ? new Date(sourceUpdatedAtMs).toISOString()
+    : null;
+  const fetchedAt=fetchedAtMs!==null
+    ? new Date(fetchedAtMs).toISOString()
+    : null;
+  const sourceTimestampInvalid=sourceUpdatedSupplied && sourceUpdatedAtMs===null;
+  const fetchTimestampInvalid=!sourceUpdatedSupplied && fetchedAtSupplied && fetchedAtMs===null;
+  const timestampInvalid=sourceTimestampInvalid || fetchTimestampInvalid;
+  const anchorMs=timestampInvalid
     ? null
-    : anchorMs === null
-      ? boundedAgeSeconds(meta?.ageSeconds)
+    : sourceUpdatedSupplied
+      ? sourceUpdatedAtMs
+      : fetchedAtMs;
+
+  const nowMs=now instanceof Date ? finiteNumber(now.getTime()) : finiteNumber(now);
+  const clockValid=nowMs!==null && nowMs>=0;
+  const futureSkewSeconds=anchorMs!==null && clockValid && anchorMs>nowMs
+    ? Math.ceil((anchorMs-nowMs)/1000)
+    : 0;
+  const futureTimestamp=clockValid && futureSkewSeconds>FUTURE_TIMESTAMP_TOLERANCE_SECONDS;
+  const timestampRequired=source==='embedded';
+  const timestampMissing=timestampRequired && anchorMs===null && !timestampInvalid;
+
+  const computedAge=!clockValid || timestampInvalid
+    ? null
+    : anchorMs===null
+      ? boundedAgeSeconds(sourceMeta.ageSeconds)
       : futureTimestamp
         ? null
-        : Math.max(0, Math.floor((nowMs - anchorMs) / 1000));
+        : Math.max(0,Math.floor((nowMs-anchorMs)/1000));
 
-  const ttlPolicy = policyTtlState(meta, { feature, mode });
-  const limit = ttlPolicy.limit;
-  const ageExpired = computedAge !== null && computedAge > limit;
-  const explicitStale = forceStale === true
+  const ttlPolicy=policyTtlState(sourceMeta,{
+    feature:normalizedFeatureName,
+    mode:normalizedModeName || 'upcoming',
+  });
+  const limit=ttlPolicy.limit;
+  const ageExpired=computedAge!==null && computedAge>limit;
+  const explicitStale=forceStale===true
     || ['stale','stale_data'].includes(transportState)
-    || freshnessHint === 'stale'
+    || freshnessHint==='stale'
     || ['stale','stale-cache'].includes(source);
-  const stale = explicitStale || ageExpired;
-  const freshnessKnown = clockValid && (
+  const stale=explicitStale || ageExpired;
+  const freshnessKnown=clockValid && modeValid && !timestampInvalid && (
     stale
-    || (!timestampMissing && !futureTimestamp && computedAge !== null)
+    || (!timestampMissing && !futureTimestamp && computedAge!==null)
     || (!timestampRequired && ['fresh','cached'].includes(freshnessHint))
   );
 
-  const originalAvailable = meta?.available === true;
-  const originalUsable = meta?.usable === undefined ? originalAvailable : meta.usable === true;
-  const freshnessPolicyValid = clockValid && !futureTimestamp && !timestampMissing && !ttlPolicy.excessive;
-  const confidenceBearing = originalAvailable
+  const originalAvailable=sourceMeta.available===true;
+  const originalUsable=sourceMeta.usable===undefined ? originalAvailable : sourceMeta.usable===true;
+  const freshnessPolicyValid=clockValid
+    && modeValid
+    && !timestampInvalid
+    && !futureTimestamp
+    && !timestampMissing
+    && !ttlPolicy.excessive;
+  const confidenceBearing=originalAvailable
     && originalUsable
     && provenanceKnown
     && freshnessKnown
     && freshnessPolicyValid
     && !stale;
 
-  let state = String(meta?.state || 'unknown');
-  let freshnessReason = '';
+  let state=typeof sourceMeta.state==='string' && sourceMeta.state.trim()
+    ? sourceMeta.state
+    : 'unknown';
+  let freshnessReason='';
   if (originalAvailable && !clockValid) {
-    state = 'invalid_freshness';
-    freshnessReason = 'invalid_clock';
+    state='invalid_freshness';
+    freshnessReason='invalid_clock';
+  } else if (originalAvailable && !modeValid) {
+    state='invalid_freshness';
+    freshnessReason='invalid_mode';
+  } else if (originalAvailable && timestampInvalid) {
+    state='invalid_freshness';
+    freshnessReason=sourceTimestampInvalid
+      ? 'source_timestamp_invalid'
+      : 'fetch_timestamp_invalid';
   } else if (originalAvailable && futureTimestamp) {
-    state = 'invalid_freshness';
-    freshnessReason = 'future_timestamp';
+    state='invalid_freshness';
+    freshnessReason='future_timestamp';
   } else if (originalAvailable && !provenanceKnown) {
-    state = 'unverified_source';
-    freshnessReason = 'provenance_missing';
+    state='unverified_source';
+    freshnessReason='provenance_missing';
   } else if (originalAvailable && timestampMissing) {
-    state = 'unverified_freshness';
-    freshnessReason = 'embedded_timestamp_missing';
+    state='unverified_freshness';
+    freshnessReason='embedded_timestamp_missing';
   } else if (originalAvailable && ttlPolicy.excessive) {
-    state = 'unverified_freshness';
-    freshnessReason = 'ttl_policy_excessive';
+    state='unverified_freshness';
+    freshnessReason='ttl_policy_excessive';
   } else if (originalAvailable && stale) {
-    state = 'stale_data';
-    freshnessReason = forceStale || explicitStale ? 'explicit_stale_source' : 'freshness_expired';
+    state='stale_data';
+    freshnessReason=forceStale===true || explicitStale
+      ? 'explicit_stale_source'
+      : 'freshness_expired';
   } else if (originalAvailable && !freshnessKnown) {
-    state = 'unverified_freshness';
-    freshnessReason = 'freshness_missing';
+    state='unverified_freshness';
+    freshnessReason='freshness_missing';
   }
 
   return {
-    ...meta,
-    feature: String(feature || meta?.feature || 'data'),
-    ...(state !== String(meta?.state || 'unknown') ? { transportState: String(meta?.state || 'unknown') } : {}),
+    ...sourceMeta,
+    feature:normalizedFeatureName,
+    ...(state !== (typeof sourceMeta.state==='string' ? sourceMeta.state : 'unknown')
+      ? {transportState:typeof sourceMeta.state==='string' ? sourceMeta.state : 'unknown'}
+      : {}),
     state,
-    available: confidenceBearing ? originalAvailable : false,
-    usable: confidenceBearing ? originalUsable : false,
-    observed: meta?.observed === undefined ? originalAvailable : meta.observed === true,
-    degraded: meta?.degraded === true || (originalAvailable && !confidenceBearing),
+    available:confidenceBearing ? originalAvailable : false,
+    usable:confidenceBearing ? originalUsable : false,
+    observed:sourceMeta.observed===undefined ? originalAvailable : sourceMeta.observed===true,
+    degraded:sourceMeta.degraded===true || (originalAvailable && !confidenceBearing),
     sourceUpdatedAt,
     fetchedAt,
-    ageSeconds: computedAge,
-    freshnessLimitSeconds: limit,
-    freshnessState: stale ? 'stale' : freshnessKnown && freshnessPolicyValid ? (source === 'cache' ? 'cached' : 'fresh') : 'unknown',
-    provenanceState: provenanceKnown ? 'verified' : 'unknown',
+    ageSeconds:computedAge,
+    freshnessLimitSeconds:limit,
+    freshnessState:stale
+      ? 'stale'
+      : freshnessKnown && freshnessPolicyValid
+        ? (source==='cache' ? 'cached' : 'fresh')
+        : 'unknown',
+    provenanceState:provenanceKnown ? 'verified' : 'unknown',
     stale,
     confidenceBearing,
     freshnessReason,
-    reason: freshnessReason || String(meta?.reason || ''),
+    reason:freshnessReason || (typeof sourceMeta.reason==='string' ? sourceMeta.reason : ''),
     clockValid,
+    modeValid,
     futureTimestamp,
     futureSkewSeconds,
     timestampRequired,
     timestampMissing,
-    ttlPolicySeconds: ttlPolicy.ttlSeconds,
-    ttlPolicyExcessive: ttlPolicy.excessive,
+    timestampInvalid,
+    sourceTimestampInvalid,
+    fetchTimestampInvalid,
+    ttlPolicySeconds:ttlPolicy.ttlSeconds,
+    ttlPolicyExcessive:ttlPolicy.excessive,
   };
 }
 
 export function applyFeatureFreshness(meta = {}, options = {}) {
-  return assessFeatureFreshness(meta, options);
+  return assessFeatureFreshness(meta,options);
 }
 
 export function applyFeatureFreshnessMap(featureMeta = {}, options = {}) {
-  const source = featureMeta && typeof featureMeta === 'object' && !Array.isArray(featureMeta)
-    ? featureMeta
-    : {};
+  const source=objectRecord(featureMeta);
   return Object.fromEntries(
-    Object.entries(source).map(([feature, meta]) => [
+    Object.entries(source).map(([feature,meta])=>[
       feature,
-      assessFeatureFreshness(meta || {}, { ...options, feature }),
+      assessFeatureFreshness(objectRecord(meta),{...objectRecord(options),feature}),
     ]),
   );
 }
