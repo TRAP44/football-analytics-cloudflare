@@ -168,11 +168,11 @@ test('pre-auth threshold blocks before Telegram validation or downstream provide
   assert.equal(blocked.status,429);
   assert.equal(blocked.body.code,'PREAUTH_RATE_LIMIT');
 
-  const worker=fs.readFileSync('src/worker.js','utf8');
-  const fetchAt=worker.indexOf('async fetch(request, env, ctx)');
-  const preAuthAt=worker.indexOf('const distributedPreAuthResponse=await enforceDistributedPreAuthRateLimit',fetchAt);
-  const authAt=worker.indexOf('const user = await getRequestUser(request, cfg)',fetchAt);
-  const routeAt=worker.indexOf('return await dispatchApiRoute(request, url, cfg, user, API_ROUTE_DEPS)',fetchAt);
+  const bootstrap=fs.readFileSync('src/worker-bootstrap-runtime.js','utf8');
+  const fetchAt=bootstrap.indexOf('async fetch(request, env, ctx)');
+  const preAuthAt=bootstrap.indexOf('distributedPreAuthResponse=await enforceDistributedPreAuthRateLimit',fetchAt);
+  const authAt=bootstrap.indexOf('const user = await getRequestUser(request, cfg)',fetchAt);
+  const routeAt=bootstrap.indexOf('return await dispatchApiRoute(request,url,cfg,user,API_ROUTE_DEPS)',fetchAt);
   assert.ok(fetchAt>=0 && preAuthAt>fetchAt && authAt>preAuthAt && routeAt>authAt);
 });
 
