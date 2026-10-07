@@ -235,7 +235,18 @@ export async function resolveProviderChain({
         fallback:index > 0,
         attempts:[...attempts,{provider:id,state:'available',reason:''}],
       });
-      return { ...result, available: true, sourceMeta: meta };
+      try {
+        return { ...result, available:true, sourceMeta:meta };
+      } catch (error) {
+        const compact=compactProviderError(error);
+        attempts.push({
+          provider:id,
+          state:'unavailable',
+          reason:`result_${compact.code}`.slice(0,120),
+          ...(compact.status!==null ? {status:compact.status} : {}),
+        });
+        continue;
+      }
     }
 
     attempts.push({
