@@ -139,6 +139,7 @@ export function auditDeploymentWorkflowSources({
     '- name: Detect pending production artifact changes',
     '- name: Preflight previous-known-good rollback target',
     '- name: Deploy Worker',
+    '- name: Promote schema-drift recovery candidate',
     '- name: RC120 verify active production release identity',
     '- name: Verify production deployment',
     '- name: Automatic rollback after failed production verification',
@@ -154,6 +155,27 @@ export function auditDeploymentWorkflowSources({
     'git diff --quiet "$ACTIVE_SHA" "$DEPLOY_SHA" -- src public wrangler.jsonc package.json package-lock.json',
     'exit 1',
   ]) requireContains(findings,'production change detection',detection,marker);
+
+  const rollbackPreflight=stepBlock(deployText,'Preflight previous-known-good rollback target');
+  for (const marker of [
+    'id: rollback_preflight',
+    'scripts/rollback-smoke.js "$SMOKE_URL" "$PREVIOUS_RELEASE"',
+    'scripts/verify-schema-drift-recovery.js "$SMOKE_URL"',
+    'wrangler versions upload --keep-vars --preview-alias "$RECOVERY_ALIAS"',
+    'scripts/resolve-uploaded-worker-version.js',
+    'scripts/post-deploy-smoke.js "$RECOVERY_URL" "$RELEASE_VERSION" "$DEPLOY_SHA"',
+    'scripts/bottom-nav-render-smoke.js "$RECOVERY_URL"',
+    'recovery_mode=true',
+    'recovery_version_id=$RECOVERY_VERSION_ID',
+  ]) requireContains(findings,'rollback preflight recovery',rollbackPreflight,marker);
+
+  const recoveryPromotion=stepBlock(deployText,'Promote schema-drift recovery candidate');
+  for (const marker of [
+    "steps.production_changes.outputs.changed == 'true'",
+    "steps.rollback_preflight.outputs.recovery_mode == 'true'",
+    'RECOVERY_VERSION_ID: ${{ steps.rollback_preflight.outputs.recovery_version_id }}',
+    'npx wrangler versions deploy "$RECOVERY_VERSION_ID@100%" -y',
+  ]) requireContains(findings,'schema-drift recovery promotion',recoveryPromotion,marker);
 
   const deployStep=stepBlock(deployText,'Deploy Worker');
   for (const marker of [
