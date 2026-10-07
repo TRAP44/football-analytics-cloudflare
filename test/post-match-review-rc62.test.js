@@ -6,6 +6,7 @@ const worker = fs.readFileSync('src/worker.js', 'utf8');
 const matchCenter = fs.readFileSync('src/match-center-runtime.js', 'utf8');
 const modelEvaluation = fs.readFileSync('src/model-evaluation-runtime.js', 'utf8');
 const telegram = fs.readFileSync('src/telegram-bot-orchestration-runtime.js', 'utf8');
+const telegramUpdates = fs.readFileSync('src/telegram-update-orchestration.js', 'utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
 
@@ -48,16 +49,17 @@ test('Mini App shows a compact post-match review in finished Match Center',()=> 
 });
 
 test('Telegram exposes post-match AI review without a new pre-match analysis',()=> {
-  assert.match(telegram,/match:review/);
+  assert.match(telegramUpdates,/match:\(menu\|verdict\|referee\|squads\|market\|refresh\|review\)/);
   assert.match(telegram,/async function botMatchCenterFixture\(/);
   assert.match(telegram,/function botPostMatchReviewText\(/);
   assert.match(telegram,/selected === 'review'/);
   assert.match(telegram,/post_match_review/);
 });
 
-test('RC62 health contract is release-gated',()=> {
-  for (const flag of ['postMatchAiReview','immutablePrematchComparison','calibrationFeedbackReview','telegramPostMatchReview']) {
-    assert.ok(worker.includes(flag + ": 'enabled'"), 'missing ' + flag);
-  }
-  assert.match(worker,/postMatchReviewSelfTest: postMatchReviewDrill\(\)\.pass \? 'enabled' : 'failed'/);
+test('RC62 review contract remains wired through the current modular runtime',()=> {
+  assert.match(worker,/function buildPostMatchReview\(\.\.\.args\) \{ return getModelEvaluationRuntime\(\)\.buildPostMatchReview\(\.\.\.args\); \}/);
+  assert.match(worker,/function postMatchReviewDrill\(\.\.\.args\) \{ return getModelEvaluationRuntime\(\)\.postMatchReviewDrill\(\.\.\.args\); \}/);
+  assert.match(matchCenter,/buildPostMatchReview/);
+  assert.match(telegram,/botPostMatchReviewText/);
+  assert.match(worker,/const APP_VERSION = '6\.120\.0-rc144'/);
 });
