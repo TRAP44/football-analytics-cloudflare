@@ -54,10 +54,11 @@ jobs:
 
 
   database-integration:
-    # Fork PR code and synthetic close/cancellation runs must never execute on the persistent WSL runner.
-    # The full database gate still runs after merge on trusted main before production deploy.
+    # Local Supabase integration runs on an ephemeral hosted runner so release
+    # readiness is not coupled to the persistent WSL runner. Fork PRs remain
+    # excluded to keep the heavier database gate scoped to trusted code.
     if: ${{ github.event_name != 'pull_request' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository) }}
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       SUPABASE_CLI_VERSION: "2.119.0"
