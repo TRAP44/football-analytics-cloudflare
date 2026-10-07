@@ -17,9 +17,13 @@ export function createProviderBudgetRuntime(deps) {
   } = deps;
 
   function finiteQuotaNumber(value) {
-    if (value === null || value === undefined || typeof value === 'boolean') return null;
-    if (typeof value === 'string' && !value.trim()) return null;
-    const number = Number(value);
+    if (typeof value === 'number') {
+      return Number.isFinite(value) && value >= 0 ? value : null;
+    }
+    if (typeof value !== 'string' || value.length > 48) return null;
+    const raw=value.trim();
+    if (!raw || !/^(?:\\d+|\\d+\\.\\d+|\\.\\d+)$/.test(raw)) return null;
+    const number=Number(raw);
     return Number.isFinite(number) && number >= 0 ? number : null;
   }
 
