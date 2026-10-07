@@ -46,7 +46,7 @@ test('RC107 persistent dedupe keeps bounded Supabase latency and safe degraded r
   const end=worker.indexOf('function telegramBurstKind',start);
   assert.ok(start>=0 && end>start);
   const block=worker.slice(start,end);
-  assert.match(block,/!key \|\| !hasSupabase\(cfg\)/);
+  assert.match(block,/!key \|\| !canUseSupabase\(cfg\)/);
   assert.match(block,/claim_telegram_update/);
   assert.match(block,/,1800\)/);
   assert.match(block,/,1200\)/);
