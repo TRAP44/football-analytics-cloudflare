@@ -744,20 +744,43 @@ export function createFootballNewsRuntime(deps) {
     ].join('\n');
   }
   
-  async function sendGeneralFootballNews(request,cfg,userId,chatId,{force=false}={}) {
-    void recordGrowthEvent(cfg,{userId,eventName:'news_open',channel:'telegram',metadata:{refresh:Boolean(force)}});
+  async function sendGeneralFootballNews(request,cfg,userId,chatId,options={}) {
+    const force=safeRead(options,'force')===true;
+    try {
+      Promise.resolve(recordGrowthEvent(cfg,{
+        userId,
+        eventName:'news_open',
+        channel:'telegram',
+        metadata:{refresh:force},
+      })).catch(()=>{});
+    } catch {}
     const news=await currentGeneralFootballNews(cfg,force);
-    const favorites=await getFavorites(userId,cfg).catch(()=>[]);
+    const favorites=safeArray(
+      await Promise.resolve(getFavorites(userId,cfg)).catch(()=>[]),
+    );
+    const teamButtons=[];
+    for (const raw of favorites.slice(0,12)) {
+      const favorite=plainObject(raw);
+      if (!favorite) continue;
+      const teamId=positiveInteger(safeRead(favorite,'team_id'));
+      if (!teamId) continue;
+      teamButtons.push({
+        text:`⭐ ${safeText(safeRead(favorite,'team_name'),18,'Команда')}`,
+        callback_data:`news:team:${teamId}`,
+      });
+      if (teamButtons.length>=4) break;
+    }
     const extra=[];
-    if (favorites.length) {
-      const teamButtons=favorites.slice(0,4).map(x=>({text:`⭐ ${String(x.team_name || 'Команда').slice(0,18)}`,callback_data:`news:team:${Number(x.team_id)}`}));
-      for (let i=0;i<teamButtons.length;i+=2) extra.push(teamButtons.slice(i,i+2));
+    for (let i=0;i<teamButtons.length;i+=2) {
+      extra.push(teamButtons.slice(i,i+2));
     }
     extra.push([{text:'🔄 Обновить новости',callback_data:'news:refresh'}]);
+    const items=safeArray(safeRead(news,'items'));
     await telegramApi('sendMessage',cfg,{
-      chat_id:chatId,parse_mode:'HTML',
-      text:newsFeedText(news.items,{title:'MatchRadar AI · Новости'}),
-      reply_markup:newsConversionKeyboard(news.items,extra),
+      chat_id:chatId,
+      parse_mode:'HTML',
+      text:newsFeedText(items,{title:'MatchRadar AI · Новости'}),
+      reply_markup:newsConversionKeyboard(items,extra),
       disable_web_page_preview:true,
     });
   }
