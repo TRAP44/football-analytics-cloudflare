@@ -325,26 +325,32 @@ test('Supabase limited Pass reservation propagates the durable operation contrac
   assert.equal(calls[0][4]['x-analysis-operation-id'], operationId);
 });
 
-test('usage consumption is atomic in service semantics and refund revokes Pass access', async () => {
+test('usage consumption is atomic for a capped Weekend Pass and refund revokes access', async () => {
   const { service, memory, mutations } = memoryRuntime();
+  const cfg={passUsageLimits:{WEEKEND_PASS:1}};
   const activation = await service.activatePassPurchase({
     telegramId: 42,
-    passType: PASS_TYPES.DAY,
+    passType: PASS_TYPES.WEEKEND,
     fixtureId: 0,
-    starsAmount: 89,
+    starsAmount: 149,
     paymentChargeId: 'charge-limited',
-    invoicePayload: 'signed-day',
+    invoicePayload: 'signed-weekend',
     paidAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-  }, {});
+  }, cfg);
   assert.equal(activation.activated, true);
   const stored = memory.userEntitlements.get('charge-limited');
-  stored.usage_limit = 1;
+  assert.equal(stored.usage_limit,1);
 
-  assert.equal((await service.consumeEntitlement(42, stored.id, 123, {})).allowed, true);
-  assert.equal((await service.consumeEntitlement(42, stored.id, 123, {})).reason, 'usage_exhausted');
+  assert.equal((await service.consumeEntitlement(42, stored.id, 123, cfg)).allowed, true);
+  assert.equal((await service.consumeEntitlement(42, stored.id, 123, cfg)).reason, 'usage_exhausted');
 
-  assert.equal((await service.refundPassByCharge(42, 'charge-limited', {})).updated, true);
-  const resolved = await service.resolveUserEntitlements(42, 123, {}, Date.parse('2026-10-01T13:00:00.000Z'));
+  assert.equal((await service.refundPassByCharge(42, 'charge-limited', cfg)).updated, true);
+  const resolved = await service.resolveUserEntitlements(
+    42,
+    123,
+    cfg,
+    Date.parse('2026-10-01T13:00:00.000Z'),
+  );
   assert.equal(resolved.source, 'free');
   assert.equal(resolved.decisions[0].reason, 'refunded');
   assert.deepEqual(mutations, ['pass_entitlement', 'pass_refund']);
