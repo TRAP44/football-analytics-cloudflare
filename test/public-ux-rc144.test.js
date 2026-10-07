@@ -64,13 +64,14 @@ test('profile keeps common appearance choices visible and moves rare styling beh
   assert.match(uiPreferences, /advancedAppearanceLabel/);
   assert.match(uiPreferences, /advancedAppearanceSummary/);
   assert.match(app, /saveInterfacePreference\('theme'/);
-  assert.match(uiPreferences, /applyInterfacePreferences\(\{ announce: true \}\)/);
+  assert.match(uiPreferences, /applyInterfacePreferences\(\{ announce: true, persisted \}\)/);
 });
 
 test('global search shows local results first and bounds the remote wait', () => {
   const body = functionBodyFrom(globalSearchRenderer, 'renderGlobalSearch');
   const run = functionBodyFrom(globalSearchController, 'runGlobalSearch', 'handleSearchInput');
-  assert.match(body, /localDiscoveryResults\(query\)/);
+  assert.match(globalSearchController, /function localDiscoveryResults\(query\)/);
+  assert.match(run, /const local=localDiscoveryResults\(query\)/);
   assert.match(body, /Ищем/);
   assert.match(body, /Матч найден/);
   assert.match(body, /Матчей сейчас нет/);
