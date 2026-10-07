@@ -1,3 +1,81 @@
+import {
+  positiveEntityId,
+  uiErrorMessage,
+} from './entity-state-safety.js';
+
+function plainObject(value) {
+  try {
+    return value && typeof value==='object' && !Array.isArray(value)
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeRead(value,key) {
+  try {
+    return value?.[key];
+  } catch {
+    return undefined;
+  }
+}
+
+function safeText(value,max=120,fallback='') {
+  if (typeof value!=='string') return fallback;
+  const text=value
+    .replace(/[\u0000-\u001f\u007f]+/g,' ')
+    .replace(/\s+/g,' ')
+    .trim()
+    .slice(0,max);
+  return text || fallback;
+}
+
+function favoriteRows(state) {
+  const raw=safeRead(state,'favorites');
+  if (!Array.isArray(raw)) return [];
+
+  const rows=[];
+  const seen=new Set();
+  for (const value of raw.slice(0,100)) {
+    const item=plainObject(value);
+    if (!item) continue;
+    const teamId=positiveEntityId(safeRead(item,'teamId'));
+    if (!teamId || seen.has(teamId)) continue;
+    seen.add(teamId);
+    rows.push({
+      teamId,
+      teamName:safeText(safeRead(item,'teamName'),120,'Команда'),
+      teamLogo:typeof safeRead(item,'teamLogo')==='string'
+        ? safeRead(item,'teamLogo')
+        : '',
+    });
+  }
+  return rows;
+}
+
+function mutationSet(state) {
+  const value=safeRead(state,'favoriteMutations');
+  return value instanceof Set ? value : new Set();
+}
+
+function safeUrlValue(safeUrl,value) {
+  try {
+    const result=safeUrl(value);
+    return typeof result==='string' ? result : '';
+  } catch {
+    return '';
+  }
+}
+
+function safeEscape(escapeHtml,value) {
+  try {
+    return escapeHtml(value);
+  } catch {
+    return '';
+  }
+}
+
 export function createFavoriteTeamsRenderer({
   state,
   elementById,
@@ -9,78 +87,130 @@ export function createFavoriteTeamsRenderer({
   onRemoveFavorite,
   onOpenTeam,
 }) {
-  if (!state || typeof elementById !== 'function' || typeof escapeHtml !== 'function' || typeof safeUrl !== 'function') {
-    throw new TypeError('Favorite Teams renderer requires state, elementById, escapeHtml and safeUrl.');
+  if (
+    !plainObject(state)
+    || typeof elementById!=='function'
+    || typeof escapeHtml!=='function'
+    || typeof safeUrl!=='function'
+    || typeof recoveryCardHtml!=='function'
+    || typeof onRetryLoad!=='function'
+    || typeof onShowMatches!=='function'
+    || typeof onRemoveFavorite!=='function'
+    || typeof onOpenTeam!=='function'
+  ) {
+    throw new TypeError(
+      'Favorite Teams renderer requires state, DOM helpers, formatters and explicit callbacks.',
+    );
   }
 
-  const $ = elementById;
+  const $=elementById;
+
+  function bindClick(id,handler) {
+    const element=$(id);
+    if (!element || typeof element.addEventListener!=='function') return;
+    element.addEventListener('click',handler);
+  }
 
   function renderFavoriteTeams() {
-    const el = $('favoriteTeams');
+    const el=$('favoriteTeams');
     if (!el) return;
 
-    if (state.favoritesLoading && !state.favoritesLoaded) {
-      el.innerHTML = '<div class="loader compact-loader">Загружаю избранное…</div>';
+    const loaded=safeRead(state,'favoritesLoaded')===true;
+    const loading=safeRead(state,'favoritesLoading')===true;
+    const loadError=uiErrorMessage(
+      {message:safeRead(state,'favoritesLoadError')},
+      '',
+    );
+    const rows=favoriteRows(state);
+    const pending=mutationSet(state);
+
+    if (loading && !loaded) {
+      el.innerHTML='<div class="loader compact-loader">Загружаю избранное…</div>';
       return;
     }
 
-    if (state.favoritesLoadError && !state.favoritesLoaded) {
-      el.innerHTML = recoveryCardHtml({
-        title: 'Избранное временно недоступно',
-        message: state.favoritesLoadError,
-        retryId: 'favoritesRetry',
-        compact: true,
+    if (loadError && !loaded) {
+      el.innerHTML=recoveryCardHtml({
+        title:'Избранное временно недоступно',
+        message:loadError,
+        retryId:'favoritesRetry',
+        compact:true,
       });
-      $('favoritesRetry')?.addEventListener('click', onRetryLoad);
+      bindClick('favoritesRetry',onRetryLoad);
       return;
     }
 
-    if (!state.favorites.length) {
-      const warning = state.favoritesLoadError
-        ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.favoritesLoadError)} Последний загруженный список избранного был пуст.</div>`
+    if (!rows.length) {
+      const warning=loadError
+        ? `<div class="data-notice stale">⚠️ ${safeEscape(escapeHtml,loadError)} Последний загруженный список избранного был пуст.</div>`
         : '';
-      const retry = state.favoritesLoadError
+      const retry=loadError
         ? '<button id="favoritesEmptyRetry" class="secondary-btn" type="button">Обновить</button>'
         : '';
-      el.innerHTML = `${warning}<div class="empty compact-empty profile-empty-state">
+      el.innerHTML=`${warning}<div class="empty compact-empty profile-empty-state">
         <strong>Избранных команд пока нет</strong>
         <p>Добавьте команду звёздочкой в списке матчей.</p>
         <div class="empty-actions">${retry}<button id="favoritesEmptyMatches" class="secondary-btn" type="button">Перейти к матчам</button></div>
       </div>`;
-      $('favoritesEmptyRetry')?.addEventListener('click', onRetryLoad);
-      $('favoritesEmptyMatches')?.addEventListener('click', onShowMatches);
+      bindClick('favoritesEmptyRetry',onRetryLoad);
+      bindClick('favoritesEmptyMatches',onShowMatches);
       return;
     }
 
-    const staleNotice = state.favoritesLoadError
-      ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.favoritesLoadError)} Показано последнее загруженное избранное.</div>`
+    const staleNotice=loadError
+      ? `<div class="data-notice stale">⚠️ ${safeEscape(escapeHtml,loadError)} Показано последнее загруженное избранное.</div>`
       : '';
-    el.innerHTML = staleNotice + state.favorites.map(item => {
-      const logo = safeUrl(item.teamLogo);
+
+    const teamById=new Map();
+    el.innerHTML=staleNotice+rows.map(item=>{
+      const logo=safeUrlValue(safeUrl,item.teamLogo);
+      const escapedLogo=safeEscape(escapeHtml,logo);
+      const escapedName=safeEscape(escapeHtml,item.teamName);
+      const isPending=pending.has(item.teamId);
+      teamById.set(item.teamId,{
+        id:item.teamId,
+        name:item.teamName,
+        logo,
+      });
       return `
       <div class="favorite-team-row">
-        <button class="favorite-team-main team-open-link" type="button" data-open-team="${Number(item.teamId)}" data-team-name="${escapeHtml(item.teamName)}" data-team-logo="${escapeHtml(logo)}">
-          ${logo ? `<img src="${logo}" alt="">` : '<span class="team-placeholder">⚽</span>'}
-          <strong>${escapeHtml(item.teamName)}</strong>
+        <button class="favorite-team-main team-open-link" type="button" data-open-team="${item.teamId}" data-team-name="${escapedName}" data-team-logo="${escapedLogo}">
+          ${logo ? `<img src="${escapedLogo}" alt="">` : '<span class="team-placeholder">⚽</span>'}
+          <strong>${escapedName}</strong>
         </button>
-        <button class="favorite-remove" type="button" data-team-id="${Number(item.teamId)}" data-team-name="${escapeHtml(item.teamName)}" ${state.favoriteMutations.has(Number(item.teamId)) ? 'disabled' : ''}>Удалить</button>
+        <button class="favorite-remove" type="button" data-team-id="${item.teamId}" data-team-name="${escapedName}" ${isPending ? 'disabled' : ''}>Удалить</button>
       </div>
     `;
     }).join('');
 
-    el.querySelectorAll('.favorite-remove').forEach(button => button.addEventListener('click', () => {
-      const item = state.favorites.find(entry => Number(entry.teamId) === Number(button.dataset.teamId));
-      if (item) onRemoveFavorite?.({ id: item.teamId, name: item.teamName, logo: item.teamLogo });
-    }));
-
-    el.querySelectorAll('[data-open-team]').forEach(button => button.addEventListener('click', () => {
-      onOpenTeam?.({
-        id: Number(button.dataset.openTeam),
-        name: button.dataset.teamName || '',
-        logo: button.dataset.teamLogo || '',
+    const removeButtons=typeof el.querySelectorAll==='function'
+      ? el.querySelectorAll('.favorite-remove')
+      : [];
+    for (const button of removeButtons) {
+      if (!button || typeof button.addEventListener!=='function') continue;
+      button.addEventListener('click',()=>{
+        const dataset=plainObject(safeRead(button,'dataset')) || {};
+        const teamId=positiveEntityId(safeRead(dataset,'teamId'));
+        if (!teamId || mutationSet(state).has(teamId)) return;
+        const item=teamById.get(teamId);
+        if (item) onRemoveFavorite(item);
       });
-    }));
+    }
+
+    const openButtons=typeof el.querySelectorAll==='function'
+      ? el.querySelectorAll('[data-open-team]')
+      : [];
+    for (const button of openButtons) {
+      if (!button || typeof button.addEventListener!=='function') continue;
+      button.addEventListener('click',()=>{
+        const dataset=plainObject(safeRead(button,'dataset')) || {};
+        const teamId=positiveEntityId(safeRead(dataset,'openTeam'));
+        if (!teamId) return;
+        const item=teamById.get(teamId);
+        if (item) onOpenTeam(item);
+      });
+    }
   }
 
-  return Object.freeze({ renderFavoriteTeams });
+  return Object.freeze({renderFavoriteTeams});
 }
