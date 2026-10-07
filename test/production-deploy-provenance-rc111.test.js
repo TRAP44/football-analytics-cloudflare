@@ -20,13 +20,19 @@ test('RC111 retains the current-main race guard before deploy',()=>{
 });
 
 
-test('RC111 allows a verified merged-PR revision to survive test-only main drift',()=>{
+test('RC111 deploys a verified merged-PR snapshot even when newer runtime main changes are pending',()=>{
   assert.match(workflow,/git merge-base --is-ancestor "\$DEPLOY_SHA" "\$CURRENT_MAIN_SHA"/);
   assert.match(workflow,/git diff --name-only "\$DEPLOY_SHA" "\$CURRENT_MAIN_SHA"/);
   assert.match(workflow,/test\/\*\|docs\/\*\|\*\.md/);
-  assert.match(workflow,/Test-only main drift accepted/);
-  assert.match(workflow,/production-relevant changes/);
+  assert.match(workflow,/Verified release snapshot accepted/);
+  assert.match(workflow,/newer unverified production-relevant main changes remain pending/);
   assert.match(workflow,/UNSAFE_MAIN_DRIFT/);
+});
+
+test('RC111 keeps manual production deploy pinned to current main when runtime drift exists',()=>{
+  assert.match(workflow,/GITHUB_EVENT_NAME.*workflow_dispatch/);
+  assert.match(workflow,/Manual deploy requires current main when production-relevant drift exists/);
+  assert.match(workflow,/Stale production deploy blocked/);
 });
 
 
