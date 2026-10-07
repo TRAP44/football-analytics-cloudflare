@@ -149,7 +149,7 @@ if (!deployWorkflow.includes('verify-production-release-postcondition.js')) {
   failures.push('Production deploy must verify the Cloudflare release postcondition');
 }
 if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "$RELEASE_VERSION" "$EXPECTED_RUNTIME_SHA"')) {
-  failures.push('Production smoke must verify release version and exact runtime SHA');
+  failures.push('Production smoke must verify the same release identity used for deployment');
 }
 if (!deployWorkflow.includes('Automatic rollback after failed production verification')) {
   failures.push('Production deploy must keep automatic rollback after failed verification');
