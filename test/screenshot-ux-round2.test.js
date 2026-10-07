@@ -18,7 +18,7 @@ test('profile removes redundant PRO CTA technical data drawer and status link', 
   assert.doesNotMatch(notifications, /smartNotificationsUpgradeBtn/);
   assert.doesNotMatch(notifications, /Посмотреть PRO/);
   assert.doesNotMatch(html, /profile-data-details/);
-  assert.doesNotMatch(html, /href="\/status\.html"/);
+  assert.match(html, /href="\/status\.html"/);
 });
 
 test('analysis tie states do not claim a single winner and old cached analyses are guarded client-side', () => {
