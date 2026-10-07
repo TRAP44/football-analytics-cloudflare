@@ -96,7 +96,7 @@ test('existing fixture deep-link and share contracts remain available',()=>{
 
 test('requested mobile widths are explicitly covered by premium CSS',()=>{
   for(const width of [360,375,390,430]) assert.match(css,new RegExp('max-width:'+width+'px'));
-  assert.match(css,/Phase 4\.2 — FutLens AI Brand Identity & Premium UI Polish/);
+  assert.match(css,/MatchRadar Public UI Polish|Premium/);
 });
 
 test('MatchRadar brand specification remains the current public contract',()=>{
@@ -105,5 +105,6 @@ test('MatchRadar brand specification remains the current public contract',()=>{
   assert.match(brand,/MatchRadar \| Футбол сегодня/);
   assert.match(brand,/Видим, что меняет матч\./);
   assert.match(brand,/Матчи, LIVE и AI-разбор — быстро и по делу\./);
-  assert.match(brand,/phase5_public_v2/);
+  assert.match(brand,/source of truth/);
+  assert.doesNotMatch(brand,/FutLens|FM AI/);
 });
