@@ -23,7 +23,7 @@
 1. **Production availability failure** — внешний probe реально выполнился и health endpoints не прошли; diagnostic fallback также не подтверждает здоровье production.
 2. **Monitor infrastructure failure** — workflow не дошёл до probe, завершился без шагов, либо production probe был успешным, а workflow упал позже на своей служебной логике.
 
-После failure основного External Production Monitor автоматически запускается `.github/workflows/external-production-monitor-diagnostics.yml` на self-hosted runner. Он читает job/step metadata исходного run через GitHub API и, когда это нужно, повторяет только публичный health probe. Это позволяет отделить сбой приложения от сбоя GitHub-hosted execution/network/control-plane настолько, насколько это возможно без отдельного внешнего uptime-провайдера.
+После failure основного job `monitor` в том же workflow автоматически запускается job `diagnose` на self-hosted runner. Он читает job/step metadata этого run через GitHub API и, когда это нужно, повторяет только публичный health probe. Это позволяет отделить сбой приложения от сбоя GitHub-hosted execution/network/control-plane настолько, насколько это возможно без отдельного внешнего uptime-провайдера.
 
 Incident lifecycle реализован через GitHub REST API из Node.js и **не зависит от установленного `gh` CLI**.
 
