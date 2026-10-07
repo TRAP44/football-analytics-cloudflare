@@ -332,6 +332,21 @@ test('observability failures cannot turn an authenticated distributed block into
   assert.equal(response.headers['retry-after'],'10');
 });
 
+test('response construction failure is not misclassified as a backend fallback',async()=>{
+  await assert.rejects(
+    ()=>enforceDistributedAccountRateLimit({
+      request:request('/api/analyze',{method:'POST'}),
+      user:{id:77},
+      cfg:{supabaseUrl:'https://db.example',supabaseKey:'server-key'},
+      hasSupabase:()=>true,
+      supaRpc:async()=>({allowed:false,retryAfter:10}),
+      json:()=>{throw new Error('response encoder unavailable');},
+      memory:{},
+    }),
+    /response encoder unavailable/,
+  );
+});
+
 test('backend, availability and request-shape failures stay local-fallback safe',async()=>{
   const req=request('/api/analyze',{method:'POST'});
   const events=[];
@@ -366,6 +381,18 @@ test('backend, availability and request-shape failures stay local-fallback safe'
     memory:{},
   });
   assert.equal(unavailable,null);
+  assert.equal(rpcCalls,0);
+
+  const truthyAvailability=await enforceDistributedAccountRateLimit({
+    request:req,
+    user:{id:77},
+    cfg:{},
+    hasSupabase:()=> 'true',
+    supaRpc:async()=>{rpcCalls+=1; return {allowed:true};},
+    json,
+    memory:{},
+  });
+  assert.equal(truthyAvailability,null);
   assert.equal(rpcCalls,0);
 
   assert.equal(
@@ -509,4 +536,5 @@ test('03:00 UTC scheduled plan invokes rate-window cleanup exactly once',async()
     outsideWindow.some(([name])=>name==='rate_window_cleanup'),
     false,
   );
+  await Promise.all(outsideWindow.map(([,promise])=>promise));
 });
