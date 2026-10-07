@@ -61,9 +61,10 @@ permissions: write-all
 
 test('workflow discovery audits every current YAML workflow, including zero-secret maintenance jobs', () => {
   const paths=workflowPaths();
-  assert.ok(paths.includes('.github/workflows/audit-git-history-size.yml'));
+  assert.ok(paths.includes('.github/workflows/privileged-access-audit.yml'));
   assert.ok(paths.includes('.github/workflows/cleanup-merged-branches.yml'));
   assert.ok(paths.includes('.github/workflows/repository-maintenance.yml'));
+  assert.ok(paths.includes('.github/workflows/backup-supabase.yml'));
   assert.ok(paths.every(path=>/\.ya?ml$/i.test(path)));
 });
 
