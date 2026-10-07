@@ -36,7 +36,7 @@ function timestampMs(value) {
   }
   if (typeof value !== 'string' || !value.trim()) return null;
   const raw=value.trim();
-  const calendar=/^(\d{4})-(\d{2})-(\d{2})(?:$|T|\s)/.exec(raw);
+  const calendar=/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(raw);
   if (!calendar) return null;
   const year=Number(calendar[1]);
   const month=Number(calendar[2]);
@@ -44,6 +44,14 @@ function timestampMs(value) {
   if (!Number.isSafeInteger(year) || month<1 || month>12 || day<1) return null;
   const maxDay=new Date(Date.UTC(year,month,0)).getUTCDate();
   if (day>maxDay) return null;
+
+  // Freshness must be deterministic across runtimes. Date-only values are UTC
+  // calendar anchors; time-bearing values require an explicit timezone.
+  if (
+    raw.length>10
+    && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/i.test(raw)
+  ) return null;
+
   const parsed=Date.parse(raw);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -150,13 +158,15 @@ export function assessFeatureFreshness(meta = {}, {
   const timestampRequired=source==='embedded';
   const timestampMissing=timestampRequired && anchorMs===null && !timestampInvalid;
 
+  const fallbackAge=boundedAgeSeconds(sourceMeta.ageSeconds);
   const computedAge=!clockValid || timestampInvalid
     ? null
     : anchorMs===null
-      ? boundedAgeSeconds(sourceMeta.ageSeconds)
+      ? fallbackAge
       : futureTimestamp
         ? null
         : Math.max(0,Math.floor((nowMs-anchorMs)/1000));
+  const measurableFreshness=anchorMs!==null || fallbackAge!==null;
 
   const ttlPolicy=policyTtlState(sourceMeta,{
     feature:normalizedFeatureName,
@@ -169,11 +179,12 @@ export function assessFeatureFreshness(meta = {}, {
     || freshnessHint==='stale'
     || ['stale','stale-cache'].includes(source);
   const stale=explicitStale || ageExpired;
-  const freshnessKnown=clockValid && modeValid && !timestampInvalid && (
-    stale
-    || (!timestampMissing && !futureTimestamp && computedAge!==null)
-    || (!timestampRequired && ['fresh','cached'].includes(freshnessHint))
-  );
+  const freshnessKnown=clockValid
+    && modeValid
+    && !timestampInvalid
+    && !futureTimestamp
+    && measurableFreshness
+    && (stale || (!timestampMissing && computedAge!==null));
 
   const originalAvailable=sourceMeta.available===true;
   const originalUsable=sourceMeta.usable===undefined ? originalAvailable : sourceMeta.usable===true;
