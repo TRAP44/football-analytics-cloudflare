@@ -86,7 +86,7 @@ test('search alias and match-selection drills remain green', () => {
 
   assert.deepEqual(runtime.searchQualityDrill(),{
     pass:true,
-    total:18,
+    total:21,
     failed:0,
   });
   assert.equal(runtime.matchSelectionDrill().pass,true);
