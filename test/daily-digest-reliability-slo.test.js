@@ -254,7 +254,7 @@ test('transition metadata sanitizes malformed counters and only trusted SLO hist
   assert.equal(plan.meta.completionRate,null);
   assert.equal(plan.meta.backlogDays,0);
   assert.equal(plan.meta.rateLimitDays,0);
-  assert.deepEqual(plan.meta.reasons,['completion_rate','[object Object]','rate_limit_days']);
+  assert.deepEqual(plan.meta.reasons,['completion_rate','rate_limit_days']);
 
   const trusted=sloRow(plan,'2026-09-29T08:15:00Z');
   const duplicate=planDailyDigestReliabilitySloEvent(assessment,[trusted]);
