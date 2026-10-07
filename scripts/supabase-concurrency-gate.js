@@ -401,7 +401,7 @@ async function testOpsEventOccurrence() {
   );
 
   const rollover=await psql(
-    "select metadata->>'deploySha' || '|' || metadata->>'phase' || '|' || occurrence_count::text "
+    "select (metadata->>'deploySha') || '|' || (metadata->>'phase') || '|' || occurrence_count::text "
       + "from public.ops_events where transition_key='" + rolloverKey + "';",
   );
   assert.equal(
