@@ -6,9 +6,11 @@ export function createMyTeamsRenderer({
   timeOf,
   onOpenTeam,
   onOpenMatch,
+  now = () => Date.now(),
 }) {
   if (!state || typeof elementById !== 'function' || typeof escapeHtml !== 'function' || typeof safeUrl !== 'function' ||
-      typeof timeOf !== 'function' || typeof onOpenTeam !== 'function' || typeof onOpenMatch !== 'function') {
+      typeof timeOf !== 'function' || typeof onOpenTeam !== 'function' || typeof onOpenMatch !== 'function' ||
+      typeof now !== 'function') {
     throw new TypeError('My Teams renderer requires state, formatters and explicit callbacks.');
   }
 
@@ -29,8 +31,43 @@ export function createMyTeamsRenderer({
 
   function validDateMs(value) {
     if (typeof value !== 'string' || !value.trim()) return null;
-    const parsed=Date.parse(value);
+    const raw=value.trim();
+    const parts=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})$/i.exec(raw);
+    if (!parts) return null;
+
+    const year=Number(parts[1]);
+    const month=Number(parts[2]);
+    const day=Number(parts[3]);
+    const hour=Number(parts[4]);
+    const minute=Number(parts[5]);
+    const second=Number(parts[6] || 0);
+    if (
+      month < 1 || month > 12
+      || day < 1 || day > new Date(Date.UTC(year,month,0)).getUTCDate()
+      || hour > 23
+      || minute > 59
+      || second > 59
+    ) return null;
+
+    const zone=parts[7].toUpperCase();
+    if (zone !== 'Z') {
+      const offset=/^[+-](\d{2}):(\d{2})$/.exec(zone);
+      if (!offset || Number(offset[1]) > 23 || Number(offset[2]) > 59) return null;
+    }
+
+    const parsed=Date.parse(raw);
     return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function currentTimeMs() {
+    try {
+      const value=now();
+      return typeof value==='number' && Number.isFinite(value)
+        ? value
+        : null;
+    } catch {
+      return null;
+    }
   }
 
   function renderMyTeams() {
@@ -40,6 +77,7 @@ export function createMyTeamsRenderer({
 
     const favorites=Array.isArray(state.favorites) ? state.favorites : [];
     const matches=Array.isArray(state.matches) ? state.matches : [];
+    const nowMs=currentTimeMs();
 
     if (state.favoritesLoading === true && state.favoritesLoaded !== true) {
       root.innerHTML = '<div class="loader compact-loader">Загружаю ваши команды…</div>';
@@ -66,8 +104,15 @@ export function createMyTeamsRenderer({
       });
       const live = related.find(match => match.live === true);
       const upcoming = related
-        .filter(match => match.finished !== true && match.live !== true && validDateMs(match.date) !== null)
-        .sort((a, b) => validDateMs(a.date) - validDateMs(b.date))[0];
+        .map(match => ({match,kickoffMs:validDateMs(match.date)}))
+        .filter(item => (
+          item.match.finished !== true
+          && item.match.live !== true
+          && item.kickoffMs !== null
+          && nowMs !== null
+          && item.kickoffMs >= nowMs
+        ))
+        .sort((a, b) => a.kickoffMs - b.kickoffMs)[0]?.match;
       const recent = related
         .filter(match => match.finished === true && validDateMs(match.date) !== null)
         .sort((a, b) => validDateMs(b.date) - validDateMs(a.date))[0];
