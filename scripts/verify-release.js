@@ -5,9 +5,22 @@ import { CLIENT_API_CONTRACT, CLIENT_RELEASE_CHANNEL, CLIENT_VERSION, FRONTEND_A
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
 const releaseContract = JSON.parse(fs.readFileSync('release-contract.json', 'utf8'));
-const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/router.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-transport.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-update-orchestration.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-dedupe.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-links.js', 'utf8') + '\n' + fs.readFileSync('src/auth-user.js', 'utf8') + '\n' + fs.readFileSync('src/cache-runtime.js', 'utf8') + '\n' + fs.readFileSync('src/api-football-gateway.js', 'utf8') + '\n' + fs.readFileSync('src/scheduled-jobs.js', 'utf8');
+function readSourceTree(root, extension='.js') {
+  if (!fs.existsSync(root)) return '';
+  const out=[];
+  const visit=dir => {
+    for (const entry of fs.readdirSync(dir,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name))) {
+      const path=dir+'/'+entry.name;
+      if (entry.isDirectory()) visit(path);
+      else if (entry.isFile() && entry.name.endsWith(extension)) out.push(fs.readFileSync(path,'utf8'));
+    }
+  };
+  visit(root);
+  return out.join('\n');
+}
+const worker = readSourceTree('src');
 const providerSloIncidents = fs.readFileSync('src/provider-slo-incidents.js','utf8');
-const app = fs.readFileSync('public/app.js', 'utf8');
+const app = readSourceTree('public');
 const viewChrome = fs.readFileSync('public/modules/view-chrome.js', 'utf8');
 const navigationShell = fs.readFileSync('public/modules/navigation-shell.js', 'utf8');
 const adminDiagnostics = fs.readFileSync('public/modules/admin-diagnostics.js', 'utf8');
