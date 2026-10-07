@@ -1,4 +1,4 @@
-import { createApiClient, initTelegramWebApp, localDate, timeOf, dateTime, dateOnly, relativeAge, phase5SessionToken } from './modules/client-core.js';
+import { createApiClient, initTelegramWebApp, localDate, timeOf, dateTime, dateOnly, relativeAge, phase5SessionToken, favoriteStarSvg } from './modules/client-core.js';
 import { CANONICAL_HOME_VIEW, PUBLIC_VIEW_IDS, backTargetForView, telegramBackButtonVisible } from './modules/navigation.js';
 import { createNavigationShell } from './modules/navigation-shell.js';
 import { createViewChromeController } from './modules/view-chrome.js';
@@ -3110,13 +3110,6 @@ function renderPopularCompetitions() {
       ${m.live ? '<b>ИДЁТ</b>' : ''}
     </button>`).join('');
   el.querySelectorAll('[data-open-tournament]').forEach(btn => btn.addEventListener('click', () => openTournament(Number(btn.dataset.openTournament))));
-}
-
-function favoriteStarSvg(active = false) {
-  return `<svg class="fav-star-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-    <path d="M12 3.7l2.55 5.17 5.71.83-4.13 4.03.98 5.69L12 16.73l-5.11 2.69.98-5.69-4.13-4.03 5.71-.83L12 3.7z"
-      ${active ? 'fill="currentColor"' : 'fill="none"'} stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-  </svg>`;
 }
 
 function matchCardHtml(m, { grouped = false } = {}) {
