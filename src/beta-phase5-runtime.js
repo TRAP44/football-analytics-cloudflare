@@ -59,7 +59,16 @@ export function createBetaPhase5Runtime(deps) {
 
   function trustedEventTime(value) {
     if (typeof value !== 'string' || !value.trim()) return null;
-    const parsed = Date.parse(value.trim());
+    const raw=value.trim();
+    const calendar=/^(\d{4})-(\d{2})-(\d{2})(?:$|T|\s)/.exec(raw);
+    if (!calendar) return null;
+    const year=Number(calendar[1]);
+    const month=Number(calendar[2]);
+    const day=Number(calendar[3]);
+    if (!Number.isSafeInteger(year) || month<1 || month>12 || day<1) return null;
+    const maxDay=new Date(Date.UTC(year,month,0)).getUTCDate();
+    if (day>maxDay) return null;
+    const parsed=Date.parse(raw);
     return Number.isFinite(parsed) ? parsed : null;
   }
 
