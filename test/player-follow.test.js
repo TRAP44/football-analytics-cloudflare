@@ -15,6 +15,9 @@ import {
 import { createPlayerFollowModule } from '../public/modules/player-follow.js';
 
 const worker = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
+const bootstrap = readFileSync(new URL('../src/worker-bootstrap-runtime.js', import.meta.url), 'utf8');
+const userDataApi = readFileSync(new URL('../src/user-data-api-runtime.js', import.meta.url), 'utf8');
+const schemaRuntime = readFileSync(new URL('../src/supabase-schema-runtime.js', import.meta.url), 'utf8');
 const router = readFileSync(new URL('../src/router.js', import.meta.url), 'utf8');
 const accountRate = readFileSync(new URL('../src/account-rate-limit.js', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -225,24 +228,24 @@ test('Player Follow frontend restores server state after restart and replaces op
 });
 
 test('Favorite Players API is authenticated before routing and canonicalizes metadata from Match Center cache', () => {
-  const authIndex = worker.indexOf('const user = await getRequestUser(request, cfg);');
-  const dispatchIndex = worker.indexOf('dispatchApiRoute(request, url, cfg, user, API_ROUTE_DEPS)');
+  const authIndex = bootstrap.indexOf('const user = await getRequestUser(request, cfg);');
+  const dispatchIndex = bootstrap.indexOf('dispatchApiRoute(request,url,cfg,user,API_ROUTE_DEPS)');
   assert.ok(authIndex >= 0 && dispatchIndex > authIndex);
-  assert.match(worker.slice(authIndex, dispatchIndex), /if \(!user\) return json\([^\n]+401\)/);
+  assert.match(bootstrap.slice(authIndex, dispatchIndex), /if \(!user\) return json\([^\n]+401\)/);
 
-  assert.match(router, /url\.pathname === '\/api\/favorite-players'/);
-  assert.match(worker, /resolveFavoritePlayerIdentity/);
-  const resolveStart = worker.indexOf('async function resolveFavoritePlayerIdentity');
-  const resolveEnd = worker.indexOf('async function apiFavoritePlayers', resolveStart);
-  const resolveSource = worker.slice(resolveStart, resolveEnd);
-  assert.match(resolveSource, /getCache\(cacheKey, cfg\).*getStaleCache/s);
+  assert.match(router, /pathname === '\/api\/favorite-players'/);
+  assert.match(userDataApi, /resolveFavoritePlayerIdentity/);
+  const resolveStart = userDataApi.indexOf('async function resolveFavoritePlayerIdentity');
+  const resolveEnd = userDataApi.indexOf('async function apiFavoritePlayers', resolveStart);
+  const resolveSource = userDataApi.slice(resolveStart, resolveEnd);
+  assert.match(resolveSource, /getCache\(cacheKey, cfg\) \|\| await getStaleCache/);
   assert.match(resolveSource, /center\?\.playerLeaders\?\.\[side\]/);
-  assert.match(resolveSource, /playerName = String\(player\?\.name/);
+  assert.match(resolveSource, /const playerName=safeText\(player\?\.name,180\)\.trim\(\)/);
   assert.doesNotMatch(resolveSource, /apiFootball\(|body\.playerName/);
 
-  const apiStart = worker.indexOf('async function apiFavoritePlayers');
-  const apiEnd = worker.indexOf('async function apiFavorites', apiStart);
-  const apiSource = worker.slice(apiStart, apiEnd);
+  const apiStart = userDataApi.indexOf('async function apiFavoritePlayers');
+  const apiEnd = userDataApi.indexOf('async function apiDigestSettings', apiStart);
+  const apiSource = userDataApi.slice(apiStart, apiEnd);
   assert.match(apiSource, /resolveFavoritePlayerIdentity\(body, cfg\)/);
   assert.doesNotMatch(apiSource, /body\.playerName/);
   assert.match(accountRate, /favorite-players-write/);
@@ -259,10 +262,10 @@ test('v6.23 migration enforces RLS, service-role access, atomic cap and schema v
   assert.match(migration, /limit_reached/);
   assert.match(migration, /favoriteplayerslimit', 50/);
   assert.match(migration, /analysis_timeline_snapshots/);
-  assert.match(worker, /id: 'favorite_players', table: 'favorite_players'/);
-  assert.match(worker, /favoritePlayersLimit/);
+  assert.match(schemaRuntime, /id: 'favorite_players', table: 'favorite_players'/);
+  assert.match(schemaRuntime, /favoritePlayersLimit/);
   assert.equal(releaseContract.productionSchema, '6.29');
-  assert.equal(releaseContract.latestMigration, 'supabase/migrations/supabase_migration_v6_29_1.sql');
+  assert.equal(releaseContract.latestMigration, 'supabase/migrations/supabase_migration_v6_29_13.sql');
 });
 
 test('Player Hub and Profile integrate follow state without adding a bottom-navigation destination', () => {
