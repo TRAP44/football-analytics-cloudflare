@@ -201,7 +201,10 @@ export function createTelegramDigestRuntime(deps = {}) {
         const competition=normalizeCompetition(leagueId,leagueName,country,homeName,awayName) || {};
         const status=plainText(f.fixture?.status?.short,16);
         const date=plainText(f.fixture?.date,64);
-        const score=Number(matchInterestScore({competition,leagueId,leagueName,country,homeName,awayName,status,date}));
+        const score=finiteMetric(
+          matchInterestScore({competition,leagueId,leagueName,country,homeName,awayName,status,date}),
+        );
+        const priority=finiteMetric(competition.priority);
         return {
           fixtureId:positiveSafeInteger(f.fixture?.id),
           date,
@@ -212,8 +215,8 @@ export function createTelegramDigestRuntime(deps = {}) {
           homeName,
           awayName,
           league:plainText(competition.shortName || competition.name || leagueName,120) || 'Турнир',
-          score:Number.isFinite(score) ? score : 0,
-          priority:Number.isFinite(Number(competition.priority)) ? Number(competition.priority) : 0,
+          score:score ?? 0,
+          priority:priority ?? 0,
           featured:competition.featured===true,
         };
       } catch {
@@ -486,27 +489,46 @@ export function createTelegramDigestRuntime(deps = {}) {
   }
   
   function digestRowsFromMatchCache(matches = [], limit = 3) {
-    return rowsOf(matches).map(match=>{
-      try { return normalizeBotFixtureCard(match); } catch { return null; }
-    }).filter(match=>positiveSafeInteger(match?.fixtureId)).map(match => ({
-      fixtureId:Number(match.fixtureId || 0),
-      date:String(match.date || ''),
-      status:String(match.status || ''),
-      live:Boolean(match.live),
-      home:{id:Number(match.home?.id || 0),name:String(match.home?.name || match.homeName || ''),logo:String(match.home?.logo || '')},
-      away:{id:Number(match.away?.id || 0),name:String(match.away?.name || match.awayName || ''),logo:String(match.away?.logo || '')},
-      homeName:String(match.home?.name || match.homeName || ''),
-      awayName:String(match.away?.name || match.awayName || ''),
-      league:String(match.league || 'Турнир'),
-      score:Number(match.interestScore || 0),
-      priority:Number(match.competition?.priority || 0),
-      featured:Boolean(match.featured),
-    })).sort((a,b) =>
+    return rowsOf(matches).map(raw=>{
+      try {
+        const match=plainObject(normalizeBotFixtureCard(raw));
+        if (!match) return null;
+        const fixtureId=positiveSafeInteger(match.fixtureId);
+        if (!fixtureId) return null;
+        const home=plainObject(match.home) || {};
+        const away=plainObject(match.away) || {};
+        const competition=plainObject(match.competition) || {};
+        return {
+          fixtureId,
+          date:plainText(match.date,64),
+          status:plainText(match.status,16),
+          live:match.live===true,
+          home:{
+            id:positiveSafeInteger(home.id),
+            name:plainText(home.name ?? match.homeName,120),
+            logo:plainText(home.logo,500),
+          },
+          away:{
+            id:positiveSafeInteger(away.id),
+            name:plainText(away.name ?? match.awayName,120),
+            logo:plainText(away.logo,500),
+          },
+          homeName:plainText(home.name ?? match.homeName,120),
+          awayName:plainText(away.name ?? match.awayName,120),
+          league:plainText(match.league,120) || 'Турнир',
+          score:finiteMetric(match.interestScore) ?? 0,
+          priority:finiteMetric(competition.priority) ?? 0,
+          featured:match.featured===true,
+        };
+      } catch {
+        return null;
+      }
+    }).filter(Boolean).sort((a,b) =>
       Number(b.live)-Number(a.live)
       || Number(b.featured)-Number(a.featured)
       || b.score-a.score
       || b.priority-a.priority
-      || String(a.date).localeCompare(String(b.date))
+      || a.date.localeCompare(b.date)
     ).slice(0,boundedLimit(limit,3,20));
   }
   
@@ -553,7 +575,7 @@ export function createTelegramDigestRuntime(deps = {}) {
     }
     if (liveOnly) matches=matches.filter(x=>x.live);
     matches.sort((a,b)=>Number(b.live)-Number(a.live) || Date.parse(a.date || 0)-Date.parse(b.date || 0));
-    return matches.slice(0,Math.max(1,Math.min(12,Number(limit || 8))));
+    return matches.slice(0,boundedLimit(limit,8,12));
   }
   
   function botDayMatchesText(matches = [], { liveOnly = false } = {}) {
