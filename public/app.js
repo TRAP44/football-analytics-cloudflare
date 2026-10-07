@@ -4222,14 +4222,19 @@ function timelineEventsHtml(events = [], match = {}) {
 }
 
 function centerPlayersHtml(leaders, match) {
-  const side = (title, teamSide, list = []) => `<div class="center-player-team"><h3>${escapeHtml(title)}</h3>${list.length ? list.map((p,i)=>`
-    <button class="center-player-row center-player-open" type="button" data-center-player="${Number(p.id || 0)}" data-center-player-side="${escapeHtml(teamSide)}" aria-label="Открыть профиль игрока ${escapeHtml(p.name || 'Игрок')}">
+  const side = (title, teamSide, list = []) => `<div class="center-player-team"><h3>${escapeHtml(title)}</h3>${list.length ? list.map((p,i)=>{
+    const rating=typeof p?.rating==='number' && Number.isFinite(p.rating) && p.rating>=0 && p.rating<=10
+      ? p.rating.toFixed(1)
+      : '—';
+    return `
+    <button class="center-player-row center-player-open" type="button" data-center-player="${Number(p?.id || 0)}" data-center-player-side="${escapeHtml(teamSide)}" aria-label="Открыть профиль игрока ${escapeHtml(p?.name || 'Игрок')}">
       <div class="center-player-rank">${i+1}</div>
-      ${p.photo ? `<img src="${safeUrl(p.photo)}" alt="">` : '<span class="center-player-avatar">👤</span>'}
-      <div class="center-player-info"><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(playerMetricText(p))}</small></div>
-      <div class="center-player-rating">${p.rating ? p.rating.toFixed(1) : '—'}</div>
+      ${p?.photo ? `<img src="${safeUrl(p.photo)}" alt="">` : '<span class="center-player-avatar">👤</span>'}
+      <div class="center-player-info"><strong>${escapeHtml(p?.name || 'Игрок')}</strong><small>${escapeHtml(playerMetricText(p || {}))}</small></div>
+      <div class="center-player-rating">${rating}</div>
       <span class="center-player-chevron" aria-hidden="true">›</span>
-    </button>`).join('') : '<div class="empty compact-empty">Статистика игроков недоступна.</div>'}</div>`;
+    </button>`;
+  }).join('') : '<div class="empty compact-empty">Статистика игроков недоступна.</div>'}</div>`;
   return `<div class="center-players-grid">${side(match.home?.name || 'Хозяева', 'home', leaders?.home || [])}${side(match.away?.name || 'Гости', 'away', leaders?.away || [])}</div>`;
 }
 
@@ -4680,11 +4685,21 @@ function centerCoverageHtml(d) {
 function centerMarketHtml(d) {
   const quality = oddsQualityHintHtml(d.liveOddsQuality);
   if (!d.liveOdds) return `${quality}<div class="empty compact-empty">Коэффициенты П1 / Н / П2 в реальном времени сейчас недоступны. Покрытие зависит от турнира и режима данных.</div>`;
+  const odd=value=>{
+    const numeric=typeof value==='number'
+      ? value
+      : typeof value==='string' && /^\d+(?:[.,]\d+)?$/.test(value.trim())
+        ? Number(value.trim().replace(',','.'))
+        : NaN;
+    return Number.isFinite(numeric) && numeric>1 && numeric<1000
+      ? escapeHtml(String(Math.round(numeric*100)/100))
+      : '—';
+  };
   return `${quality}<div class="center-market">
     <div class="odds-grid">
-      <div><span>П1</span><strong>${d.liveOdds.odds?.home ?? '—'}</strong></div>
-      <div><span>Н</span><strong>${d.liveOdds.odds?.draw ?? '—'}</strong></div>
-      <div><span>П2</span><strong>${d.liveOdds.odds?.away ?? '—'}</strong></div>
+      <div><span>П1</span><strong>${odd(d.liveOdds.odds?.home)}</strong></div>
+      <div><span>Н</span><strong>${odd(d.liveOdds.odds?.draw)}</strong></div>
+      <div><span>П2</span><strong>${odd(d.liveOdds.odds?.away)}</strong></div>
     </div>
     <p class="tiny">Источников: ${Number(d.liveOdds.sources || 0)}${d.liveOdds.updatedAt ? ` · ${escapeHtml(String(d.liveOdds.updatedAt))}` : ''}</p>
     <div class="odds-movement-wrap"><h3>Движение рынка</h3>${oddsMovementHtml(d.oddsMovement)}</div>
@@ -4755,8 +4770,9 @@ function insightSideLabel(side, match) {
 
 function smartInsightCardHtml(insight, match) {
   const sideClass = insight.side === 'home' ? 'home' : insight.side === 'away' ? 'away' : 'neutral';
+  const metricValue=value=>value===null || value===undefined || value==='' ? '—' : escapeHtml(publicText(value));
   const metrics = Array.isArray(insight.metrics) && insight.metrics.length
-    ? `<div class="insight-metrics">${insight.metrics.map(m => `<span>${escapeHtml(m.label || '')}: <b>${m.home ?? '—'} — ${m.away ?? '—'}</b></span>`).join('')}</div>`
+    ? `<div class="insight-metrics">${insight.metrics.map(m => `<span>${escapeHtml(publicText(m?.label || ''))}: <b>${metricValue(m?.home)} — ${metricValue(m?.away)}</b></span>`).join('')}</div>`
     : '';
   return `<article class="smart-insight-card ${sideClass} ${escapeHtml(insight.importance || 'medium')}">
     <div class="smart-insight-icon">${escapeHtml(insight.icon || '💡')}</div>
