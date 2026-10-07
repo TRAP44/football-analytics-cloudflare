@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/provider-data-runtime.js','utf8')+'\n'+fs.readFileSync('src/analysis-runtime.js','utf8')+'\n'+fs.readFileSync('src/match-center-runtime.js','utf8');
+const providerData=fs.readFileSync('src/provider-data-runtime.js','utf8');
+const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+providerData+'\n'+fs.readFileSync('src/analysis-runtime.js','utf8')+'\n'+fs.readFileSync('src/match-center-runtime.js','utf8');
 
 test('RC104 classifies provider empty, skipped and failed states separately',()=>{
   assert.match(worker,/function providerFailureState\(/);
@@ -49,11 +50,11 @@ test('RC104 exposes reliability metadata and release health contracts',()=>{
 });
 
 test('RC104 match-center feature cache also exposes explicit data states',()=>{
-  const start=worker.indexOf('async function providerFeatureFetch');
-  const end=worker.indexOf('\nfunction providerValidationStep',start);
+  const start=providerData.indexOf('async function providerFeatureFetch');
+  const end=providerData.indexOf('\n  function providerValidationStep',start);
   assert.ok(start>=0 && end>start);
-  const block=worker.slice(start,end);
+  const block=providerData.slice(start,end);
   assert.match(block,/providerDataState\(/);
-  assert.match(block,/state: 'stale'/);
-  assert.match(block,/source: 'error'/);
+  assert.match(block,/state:'stale'/);
+  assert.match(block,/source:'error'/);
 });
