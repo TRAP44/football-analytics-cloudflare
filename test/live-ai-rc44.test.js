@@ -95,6 +95,21 @@ test('RC44 ignores provider events that are timestamped after the current live m
     result.watchNext.some(item=>/красн|удален/i.test(item)),
     false,
   );
+
+  const futureOnly=live.buildLiveAiCoach({
+    statistics:{items:[]},
+    events:[
+      {minute:70,side:'home',type:'goal',detail:'Normal Goal'},
+    ],
+    pressure:null,
+    score:{home:null,away:null},
+    elapsed:60,
+    homeName:'Home',
+    awayName:'Away',
+    smartInsights:{available:false,dataScore:0},
+    prematch:null,
+  });
+  assert.equal(futureOnly.available,false);
 });
 
 test('RC44 numeric boundaries do not coerce arrays or booleans into live metrics',()=>{
