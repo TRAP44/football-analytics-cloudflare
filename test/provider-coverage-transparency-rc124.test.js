@@ -21,6 +21,6 @@ test('RC124 distinguishes plan limits from empty and delayed provider data',()=>
 test('RC124 exposes reliability trust cap without inventing missing data',()=>{
   assert.match(app,/доверие ≤/);
   assert.match(app,/AI использует только подтверждённые сигналы/);
-  assert.match(css,/RC124 — provider coverage transparency/);
+  assert.match(css,/\/\* provider coverage transparency \*\//);
   assert.match(css,/provider-coverage-row\.degraded/);
 });
