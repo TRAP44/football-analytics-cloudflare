@@ -14,7 +14,7 @@ test('RC80 records only real recovery attempts',()=>{
   assert.match(worker,/eventName:'news_impact_recovery_attempt'/);
   assert.match(worker,/function newsImpactRecoveryCallback\(/);
   assert.match(worker,/\^ni:r:/);
-  assert.match(worker,/if \(recoveryCode\) await recordNewsImpactRecoveryAttempt/);
+  assert.match(worker,/if \(recoveryCode\) \{[\s\S]{0,260}swallowAsync\(recordNewsImpactRecoveryAttempt/);
   assert.match(worker,/if \(newsImpactRecoveryCode\) \{[\s\S]{0,260}recordNewsImpactRecoveryAttempt/);
 });
 
