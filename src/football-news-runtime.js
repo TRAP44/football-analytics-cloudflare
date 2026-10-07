@@ -697,27 +697,51 @@ export function createFootballNewsRuntime(deps) {
     return '⚪ контекст';
   }
   
-  function newsFeedText(items = [], { title='MatchRadar AI · Новости', teamName='', fixture=null, fixtures=[] } = {}) {
-    if (!items.length) return `📰 <b>${telegramHtmlEscape(title)}</b>\n\nСвежих новостей по этому запросу сейчас не найдено или источник новостей временно недоступен.`;
-    const rows=items.slice(0,4).map((item,index)=>{
-      const smartLink=(fixtures || []).length ? newsRelevantFixture(item,fixtures) : null;
-      const linkedFixture=smartLink?.fixture || fixture || null;
-      const why=footballNewsImpactText(item.category,Boolean(linkedFixture?.fixtureId));
+  function newsFeedText(items = [], options = {}) {
+    const title=safeText(safeRead(options,'title'),120,'MatchRadar AI · Новости');
+    const teamName=safeText(safeRead(options,'teamName'),120);
+    const fixture=plainObject(safeRead(options,'fixture'));
+    const fixtures=safeArray(safeRead(options,'fixtures'));
+    const validItems=safeArray(items)
+      .map(normalizeFootballNewsResult)
+      .filter(Boolean)
+      .map(applyNewsTrustGate)
+      .slice(0,4);
+    if (!validItems.length) {
+      return `📰 <b>${html(title)}</b>\n\nСвежих новостей по этому запросу сейчас не найдено или источник новостей временно недоступен.`;
+    }
+    const rows=validItems.map((item,index)=>{
+      const smartLink=fixtures.length ? newsRelevantFixture(item,fixtures) : null;
+      const linkedFixture=plainObject(safeRead(smartLink,'fixture')) || fixture || null;
+      const linkedFixtureId=positiveInteger(safeRead(linkedFixture,'fixtureId'));
+      const category=plainObject(safeRead(item,'category')) || {};
+      const why=footballNewsImpactText(category,linkedFixtureId>0);
       const hint=newsTeamHint(item);
-      const hook=newsConversionHook(item,{fixtureId:Number(linkedFixture?.fixtureId || 0),teamName:teamName || hint?.canonical || '',fixtureLink:smartLink});
+      const hook=newsConversionHook(item,{
+        fixtureId:linkedFixtureId,
+        teamName:teamName || safeText(safeRead(hint,'canonical'),80),
+        fixtureLink:smartLink,
+      });
       const timing=smartLink ? newsFixtureTimingLabel(smartLink) : '';
+      const trust=plainObject(safeRead(item,'trust')) || {};
       return [
-        `${index+1}. ${item.category.icon} <b>${telegramHtmlEscape(item.title)}</b>`,
-        `${telegramHtmlEscape(item.category.label)} · ${newsImpactBadge(item.category.impact)}`,
-        `Почему важно: ${telegramHtmlEscape(why)}`,
-        ...(linkedFixture?.fixtureId ? [`🎯 Матч: ${telegramHtmlEscape(linkedFixture.homeName || '')} — ${telegramHtmlEscape(linkedFixture.awayName || '')}${timing ? ` · ${telegramHtmlEscape(timing)}` : ''}`] : []),
-        `🧠 Что проверить: ${telegramHtmlEscape(hook)}`,
-        `Источник: ${telegramHtmlEscape(item.source || 'веб-источник')} · ${telegramHtmlEscape(item.trust?.label || 'Веб-источник')}`,
-        ...(item.verification==='needs_confirmation' ? ['Проверка: требуется подтверждение ещё одним надёжным источником.'] : []),
+        `${index+1}. ${safeText(safeRead(category,'icon'),8,'📰')} <b>${html(safeRead(item,'title'))}</b>`,
+        `${html(safeRead(category,'label') || 'Футбол')} · ${newsImpactBadge(safeRead(category,'impact'))}`,
+        `Почему важно: ${html(why)}`,
+        ...(linkedFixtureId ? [`🎯 Матч: ${html(safeRead(linkedFixture,'homeName'))} — ${html(safeRead(linkedFixture,'awayName'))}${timing ? ` · ${html(timing)}` : ''}`] : []),
+        `🧠 Что проверить: ${html(hook)}`,
+        `Источник: ${html(safeRead(item,'source') || 'веб-источник')} · ${html(safeRead(trust,'label') || 'Веб-источник')}`,
+        ...(safeRead(item,'verification')==='needs_confirmation' ? ['Проверка: требуется подтверждение ещё одним надёжным источником.'] : []),
       ].join('\n');
     });
-    const intro=teamName ? `Новости по <b>${telegramHtmlEscape(teamName)}</b>` : '<b>Главное в футболе</b>';
-    return [`📰 <b>${telegramHtmlEscape(title)}</b>`,intro,'',...rows.map(x=>x+'\n'),'MatchRadar AI не меняет прогноз только из-за заголовка: новость учитывается в анализе лишь вместе с подтверждёнными футбольными данными.'].join('\n');
+    const intro=teamName ? `Новости по <b>${html(teamName)}</b>` : '<b>Главное в футболе</b>';
+    return [
+      `📰 <b>${html(title)}</b>`,
+      intro,
+      '',
+      ...rows.map(row=>row+'\n'),
+      'MatchRadar AI не меняет прогноз только из-за заголовка: новость учитывается в анализе лишь вместе с подтверждёнными футбольными данными.',
+    ].join('\n');
   }
   
   async function sendGeneralFootballNews(request,cfg,userId,chatId,{force=false}={}) {
