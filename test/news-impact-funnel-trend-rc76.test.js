@@ -24,6 +24,7 @@ test('RC76 only confirms direction when both Wilson intervals separate',()=>{
   assert.match(recovery,/function newsImpactTrendSignal\(/);
   assert.match(recovery,/function newsImpactTrendConfidence\(/);
   assert.match(recovery,/eligibleForBottleneck!==true/);
+  assert.match(recovery,/newsImpactCount\(currentRow\.users\)<minUsers/);
   assert.match(recovery,/currentConfidence\.lowerPct>previousConfidence\.upperPct/);
   assert.match(recovery,/currentConfidence\.upperPct<previousConfidence\.lowerPct/);
   for (const signal of ["'improved'","'weakened'","'uncertain'","'insufficient'"]) assert.ok(recovery.includes(signal));
@@ -97,11 +98,11 @@ test('RC76 trend runtime rejects malformed rows, coercive flags and invalid inte
 
   assert.equal(rows.length,1);
   assert.equal(rows[0].code,'material');
-  assert.equal(rows[0].signal,'improved');
+  assert.equal(rows[0].signal,'insufficient');
   assert.equal(rows[0].currentUsers,0);
   assert.equal(rows[0].currentPct,0);
   assert.equal(rows[0].previousPct,50);
-  assert.equal(rows[0].deltaPctPoints,-50);
+  assert.equal(rows[0].deltaPctPoints,0);
 });
 
 test('RC76 needs no new Supabase migration',()=>{
