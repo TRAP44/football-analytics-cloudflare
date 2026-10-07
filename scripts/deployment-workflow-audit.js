@@ -19,6 +19,39 @@ function source(value) {
   return typeof value==='string' ? value : '';
 }
 
+function stripYamlComment(line) {
+  let quote='';
+  let escaped=false;
+  for (let index=0; index<line.length; index+=1) {
+    const char=line[index];
+    if (quote) {
+      if (escaped) {
+        escaped=false;
+        continue;
+      }
+      if (char==='\\' && quote==='"') {
+        escaped=true;
+        continue;
+      }
+      if (char===quote) quote='';
+      continue;
+    }
+    if (char==='"' || char==="'") {
+      quote=char;
+      continue;
+    }
+    if (char==='#') return line.slice(0,index);
+  }
+  return line;
+}
+
+function workflowSource(value) {
+  return source(value)
+    .split(/\r?\n/)
+    .map(stripYamlComment)
+    .join('\n');
+}
+
 function stepBlock(workflow,name) {
   const text=source(workflow);
   const marker='- name: '+name;
@@ -66,9 +99,9 @@ export function auditDeploymentWorkflowSources({
   wrangler,
 }={}) {
   const findings=[];
-  const deployText=source(deploy);
-  const rollbackText=source(rollback);
-  const qualityText=source(quality);
+  const deployText=workflowSource(deploy);
+  const rollbackText=workflowSource(rollback);
+  const qualityText=workflowSource(quality);
   const wranglerText=source(wrangler);
 
   for (const marker of [
