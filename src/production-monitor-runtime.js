@@ -204,6 +204,8 @@ export function createProductionMonitorRuntime(deps) {
     const firstWatchRow={
       created_at:'2026-09-29T08:15:00Z',
       severity:firstWatch.severity,
+      source:firstWatch.source,
+      event_type:firstWatch.eventType,
       code:firstWatch.code,
       metadata:firstWatch.meta,
     };
@@ -218,6 +220,8 @@ export function createProductionMonitorRuntime(deps) {
     const recoveryRow={
       created_at:'2026-09-29T08:30:00Z',
       severity:recovery.severity,
+      source:recovery.source,
+      event_type:recovery.eventType,
       code:recovery.code,
       metadata:recovery.meta,
     };
