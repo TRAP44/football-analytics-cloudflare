@@ -72,6 +72,24 @@ test('favorites service surfaces Supabase read failures instead of false empty s
   );
 });
 
+test('favorites service rejects malformed stored rows instead of hiding them as an empty list', async () => {
+  const supabase=runtime({
+    hasSupabase:()=>true,
+    supaSelectMany:async()=>[null],
+  });
+  await assert.rejects(
+    ()=>supabase.service.getFavorites(15,{supabaseUrl:'https://db.test'}),
+    /Favorites: invalid row state/,
+  );
+
+  const memory=runtime();
+  memory.memory.favorites.set(15,{unexpected:true});
+  await assert.rejects(
+    ()=>memory.service.getFavorites(15,{}),
+    /Favorites: invalid collection state/,
+  );
+});
+
 test('favorites service preserves Supabase delete request shape', async () => {
   const {fetchCalls,service}=runtime({hasSupabase:()=>true});
   await service.removeFavorite(15,77,{supabaseUrl:'https://db.test'});
