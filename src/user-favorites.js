@@ -47,7 +47,15 @@ export function createUserFavoritesService({
   }
 
   function favoriteList(value) {
-    return Array.isArray(value) ? value.filter(item=>plainObject(item)) : [];
+    if (value === null || value === undefined) return [];
+    if (!Array.isArray(value)) throw new Error('Favorites: invalid collection state.');
+    const rows=[];
+    for (const item of value) {
+      const row=plainObject(item);
+      if (!row) throw new Error('Favorites: invalid row state.');
+      rows.push(row);
+    }
+    return rows;
   }
 
   function supabaseEnabled(cfg) {
@@ -81,7 +89,7 @@ export function createUserFavoritesService({
         {limit:PERSONAL_WRITE_LIMITS.favorites,order:'created_at.desc'},
       );
       if (!Array.isArray(rows)) throw new Error('Supabase favorites: invalid response payload.');
-      return rows;
+      return favoriteList(rows);
     }
     return favoriteList(runtimeMemory.favorites.get(key));
   }
