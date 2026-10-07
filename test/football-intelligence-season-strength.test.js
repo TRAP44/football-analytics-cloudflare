@@ -46,11 +46,13 @@ test('season strength turns strong season fundamentals into a home edge',()=>{
     {rank:2},
     {rank:14},
     {derived:{
+      homePpg:2.55,
       goalsForPerMatch:2.15,
       goalsAgainstPerMatch:0.78,
       cleanSheetRate:48,
     }},
     {derived:{
+      awayPpg:0.85,
       goalsForPerMatch:1.08,
       goalsAgainstPerMatch:1.62,
       cleanSheetRate:21,
