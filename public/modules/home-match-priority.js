@@ -106,7 +106,7 @@ export function homeMatchScoreLabel(value) {
   if ((live || finished) && home!==null && away!==null) {
     return `${home} : ${away}`;
   }
-  return live ? '— : —' : 'VS';
+  return live || finished ? '— : —' : 'VS';
 }
 
 function sectionDefinitions() {
