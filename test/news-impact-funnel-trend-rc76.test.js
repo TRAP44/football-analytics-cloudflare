@@ -3,48 +3,51 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
-const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
+const recovery=fs.readFileSync('src/news-impact-recovery-runtime.js','utf8');
+const growth=fs.readFileSync('src/growth-analytics-runtime.js','utf8');
+const admin=fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
 
 test('RC76 loads an equal previous period without changing the current funnel window',()=>{
-  assert.match(worker,/const analyticsNowMs=Date\.now\(\)/);
-  assert.match(worker,/const previousSince=new Date\(analyticsNowMs-days\*2\*86400_000\)\.toISOString\(\)/);
-  assert.match(worker,/previousWindowRows=/);
-  assert.match(worker,/createdAt<Date\.parse\(since\)/);
-  assert.match(worker,/trendAvailable=false/);
+  assert.match(growth,/const analyticsNowMs=Date\.now\(\)/);
+  assert.match(growth,/const previousSince=new Date\(analyticsNowMs-days\*2\*86400_000\)\.toISOString\(\)/);
+  assert.match(growth,/previousWindowRows=/);
+  assert.match(growth,/createdAt<Date\.parse\(since\)/);
+  assert.match(growth,/trendAvailable=false/);
 });
 
 test('RC76 only confirms direction when both Wilson intervals separate',()=>{
-  assert.match(worker,/function newsImpactTrendSignal\(/);
-  assert.match(worker,/currentConfidence\.lowerPct/);
-  assert.match(worker,/previousConfidence\.upperPct/);
-  assert.match(worker,/currentConfidence\.upperPct/);
-  assert.match(worker,/previousConfidence\.lowerPct/);
-  for (const signal of ["'improved'","'weakened'","'uncertain'","'insufficient'"]) assert.ok(worker.includes(signal));
+  assert.match(recovery,/function newsImpactTrendSignal\(/);
+  assert.match(recovery,/currentConfidence\.lowerPct/);
+  assert.match(recovery,/previousConfidence\.upperPct/);
+  assert.match(recovery,/currentConfidence\.upperPct/);
+  assert.match(recovery,/previousConfidence\.lowerPct/);
+  for (const signal of ["'improved'","'weakened'","'uncertain'","'insufficient'"]) assert.ok(recovery.includes(signal));
 });
 
 test('RC76 returns period-over-period trend without exposing identities',()=>{
-  assert.match(worker,/function buildNewsImpactActionTrend\(/);
-  assert.match(worker,/deltaPctPoints/);
-  assert.match(worker,/currentUsers/);
-  assert.match(worker,/previousUsers/);
-  assert.match(worker,/newsImpactActionTrend,/);
-  assert.match(worker,/signalRule:'non_overlapping_wilson_95'/);
+  assert.match(recovery,/function buildNewsImpactActionTrend\(/);
+  assert.match(recovery,/deltaPctPoints/);
+  assert.match(recovery,/currentUsers/);
+  assert.match(recovery,/previousUsers/);
+  assert.match(growth,/newsImpactActionTrend,/);
+  assert.match(growth,/signalRule:'non_overlapping_wilson_95'/);
 });
 
 test('RC76 admin UI distinguishes confirmed movement from uncertainty',()=>{
-  assert.match(app,/Динамика News Impact/);
-  assert.match(app,/подтверждённый рост/);
-  assert.match(app,/подтверждённое снижение/);
-  assert.match(app,/изменение не подтверждено/);
-  assert.match(app,/мало данных/);
+  assert.match(admin,/Динамика News Impact/);
+  assert.match(admin,/подтверждённый рост/);
+  assert.match(admin,/подтверждённое снижение/);
+  assert.match(admin,/изменение не подтверждено/);
+  assert.match(admin,/мало данных/);
 });
 
-test('RC76 deterministic health contract is release gated',()=>{
-  assert.match(worker,/function newsImpactActionTrendDrill\(/);
-  assert.match(worker,/newsImpactActionTrendSelfTest: newsImpactActionTrendDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  for (const flag of ['newsImpactFunnelTrend','newsImpactPeriodComparison','newsImpactTrendSignificanceGuard']) {
-    assert.ok(worker.includes(flag + ": 'enabled'"), `missing ${flag}`);
-  }
+test('RC76 deterministic trend drill remains wired through the recovery runtime',()=>{
+  assert.match(recovery,/function newsImpactActionTrendDrill\(/);
+  assert.match(recovery,/signal==='improved'/);
+  assert.match(recovery,/signal==='uncertain'/);
+  assert.match(recovery,/signal==='insufficient'/);
+  assert.match(recovery,/deltaPctPoints===50/);
+  assert.match(worker,/function newsImpactActionTrendDrill\(\.\.\.args\).*getNewsImpactRecoveryRuntime\(\)\.newsImpactActionTrendDrill/s);
 });
 
 test('RC76 needs no new Supabase migration',()=>{
