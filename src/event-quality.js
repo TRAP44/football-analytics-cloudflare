@@ -97,7 +97,7 @@ function sourceIsTrusted(meta = {}) {
     safeRead(value,'confidenceBearing') !== true
     || safeRead(value,'available') !== true
     || safeRead(value,'usable') !== true
-    || safeRead(value,'stale') === true
+    || safeRead(value,'stale') !== false
   ) return false;
   const freshnessState = compactState(safeRead(value,'freshnessState'));
   const provenanceState = compactState(safeRead(value,'provenanceState'));
