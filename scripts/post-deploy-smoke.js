@@ -194,7 +194,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
   if (!readiness) throw new Error(`Deployment did not become ready: ${lastHealthError}`);
   if (readiness.releaseCandidate !== expectedReleaseCandidate) throw new Error(`Expected ${expectedReleaseCandidate}, received ${readiness.releaseCandidate || 'unknown'}.`);
 
-  const healthResult=await requestJsonForDeployment(fetchImpl,baseUrl,'/health','Health endpoint','',{retries,retryDelayMs});
+  const healthResult=await requestJsonForDeployment(fetchImpl,baseUrl,'/health','Health endpoint','','',{retries,retryDelayMs});
   const healthResponse=healthResult.response;
   health=healthResult.body;
   if (health?.ok !== true || health?.status !== 'ready') throw new Error('Health endpoint is not healthy.');
@@ -244,7 +244,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
   const hiddenProbe = await request(fetchImpl, baseUrl, '/health/supabase');
   if (hiddenProbe.status !== 404) throw new Error('/health/supabase must remain unavailable publicly.');
 
-  const publicStatusResult=await requestJsonForDeployment(fetchImpl,baseUrl,'/api/public-status','Public status endpoint','',{retries,retryDelayMs});
+  const publicStatusResult=await requestJsonForDeployment(fetchImpl,baseUrl,'/api/public-status','Public status endpoint','','',{retries,retryDelayMs});
   const publicStatusResponse=publicStatusResult.response;
   const publicStatus=publicStatusResult.body;
   if (publicStatus?.version !== expectedVersion || publicStatus?.releaseCandidate !== expectedReleaseCandidate) {
