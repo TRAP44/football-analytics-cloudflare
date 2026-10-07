@@ -2807,7 +2807,7 @@ html {
 }
 .miniapp-public-shell .history-open{
   min-width:72px;
-  min-height:40px;
+  min-height:44px;
   padding:0 11px;
   border:0;
   border-radius:12px;
@@ -2926,7 +2926,7 @@ html {
 }
 .miniapp-public-shell .favorite-team-main{
   min-width:0;
-  min-height:42px;
+  min-height:44px;
   display:grid;
   grid-template-columns:36px minmax(0,1fr);
   gap:9px;
@@ -2954,7 +2954,7 @@ html {
 }
 .miniapp-public-shell .favorite-remove,
 .miniapp-public-shell .reminder-remove{
-  min-height:36px;
+  min-height:44px;
   padding:0 10px;
   border-radius:11px;
   font-size:9px;
@@ -3105,11 +3105,11 @@ html {
 }
 @media(max-width:390px){
   .miniapp-public-shell .history-item{grid-template-columns:auto minmax(0,1fr);gap:9px}
-  .miniapp-public-shell .history-open{grid-column:2;width:100%;min-height:42px}
+  .miniapp-public-shell .history-open{grid-column:2;width:100%;min-height:44px}
   .miniapp-public-shell .favorite-team-row,
   .miniapp-public-shell .reminder-row{grid-template-columns:1fr}
   .miniapp-public-shell .favorite-remove,
-  .miniapp-public-shell .reminder-remove{width:100%;min-height:40px}
+  .miniapp-public-shell .reminder-remove{width:100%;min-height:44px}
   .miniapp-public-shell .my-team-match{grid-template-columns:1fr}
   .miniapp-public-shell .my-team-match strong{white-space:normal}
 }
