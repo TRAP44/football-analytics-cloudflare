@@ -174,8 +174,9 @@ export async function enforceDistributedAccountRateLimit({
     throw new TypeError('distributed account limiter dependencies are required');
   }
 
+  let result;
   try {
-    const result=plainObject(await supaRpc(cfg,'claim_provider_request',{
+    result=plainObject(await supaRpc(cfg,'claim_provider_request',{
       p_bucket_key:bucketKey,
       p_limit:policy.limit,
       p_window_seconds:policy.windowSeconds,
@@ -185,17 +186,6 @@ export async function enforceDistributedAccountRateLimit({
     if (allowed!==false) {
       throw new Error('Distributed account limiter returned an invalid allowed flag.');
     }
-
-    const retryAfter=boundedRetryAfter(
-      safeRead(result,'retryAfter'),
-      policy.windowSeconds,
-    );
-    safeTelemetry(bumpTelemetry,'distributedBurstBlocks');
-    return json({
-      error:'Слишком много запросов за короткое время. Повторите немного позже.',
-      code:'DISTRIBUTED_BURST_GUARD',
-      retryAfter,
-    },429,{'retry-after':String(retryAfter)});
   } catch (error) {
     safeTelemetry(bumpTelemetry,'distributedBurstFallbacks');
     const now=Date.now();
@@ -218,4 +208,15 @@ export async function enforceDistributedAccountRateLimit({
     }
     return null;
   }
+
+  const retryAfter=boundedRetryAfter(
+    safeRead(result,'retryAfter'),
+    policy.windowSeconds,
+  );
+  safeTelemetry(bumpTelemetry,'distributedBurstBlocks');
+  return json({
+    error:'Слишком много запросов за короткое время. Повторите немного позже.',
+    code:'DISTRIBUTED_BURST_GUARD',
+    retryAfter,
+  },429,{'retry-after':String(retryAfter)});
 }
