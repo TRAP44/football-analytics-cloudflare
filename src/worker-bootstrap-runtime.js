@@ -430,7 +430,7 @@ export function createWorkerBootstrapRuntime(deps = {}) {
           source:'api',
           eventType:'public_status_error',
           code:'PUBLIC_STATUS_UNAVAILABLE',
-          message:safeRedact(error?.message || error,200),
+          message:safeRedact(safeRead(error,'message') || error,200),
           endpoint:url.pathname,
           status:503,
         });
@@ -499,7 +499,7 @@ export function createWorkerBootstrapRuntime(deps = {}) {
           source:'security',
           eventType:'preauth_rate_limit',
           code:'PREAUTH_RATE_GUARD_UNAVAILABLE',
-          message:safeRedact(error?.message || error,200),
+          message:safeRedact(safeRead(error,'message') || error,200),
           endpoint:url.pathname,
           status:503,
         });
@@ -751,7 +751,7 @@ export function createWorkerBootstrapRuntime(deps = {}) {
           source:'release',
           eventType:'scheduled_control_plane',
           code:'SCHEDULED_CONTROL_PLANE_UNAVAILABLE',
-          message:safeRedact(error?.message || error,200),
+          message:safeRedact(safeRead(error,'message') || error,200),
           status:503,
         });
         return undefined;
@@ -816,7 +816,7 @@ export function createWorkerBootstrapRuntime(deps = {}) {
                 source:'quota',
                 eventType:'analysis_usage_reconciliation',
                 code:'ANALYSIS_USAGE_RECONCILIATION_FAILED',
-                message:safeRedact(error?.message || error,200),
+                message:safeRedact(safeRead(error,'message') || error,200),
               });
               return false;
             });
