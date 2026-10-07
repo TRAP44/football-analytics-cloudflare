@@ -54,18 +54,29 @@ function booleanFieldIsValid(value) {
     || typeof value==='boolean';
 }
 
-function safeMatch(value) {
+function matchEvidence(value) {
   const match=plainObject(value);
   if (!match) return null;
-  if (!positiveFixtureId(safeRead(match,'fixtureId'))) return null;
-  for (const key of ['live','finished','youthReserve']) {
-    if (!booleanFieldIsValid(safeRead(match,key))) return null;
-  }
+  const fixtureId=positiveFixtureId(safeRead(match,'fixtureId'));
+  const live=safeRead(match,'live');
+  const finished=safeRead(match,'finished');
+  const youthReserve=safeRead(match,'youthReserve');
+  const date=safeRead(match,'date');
+  if (!fixtureId) return null;
   if (
-    safeRead(match,'live')===true
-    && safeRead(match,'finished')===true
+    !booleanFieldIsValid(live)
+    || !booleanFieldIsValid(finished)
+    || !booleanFieldIsValid(youthReserve)
   ) return null;
-  return match;
+  if (live===true && finished===true) return null;
+  return {
+    match,
+    fixtureId,
+    live:live===true,
+    finished:finished===true,
+    youthReserve:youthReserve===true,
+    date,
+  };
 }
 
 function sectionDefinitions() {
@@ -85,19 +96,19 @@ export function homeMatchSections(list,nowMs=Date.now()) {
       : null;
 
   for (const raw of safeArray(list).slice(0,1000)) {
-    const match=safeMatch(raw);
-    if (!match) continue;
+    const evidence=matchEvidence(raw);
+    if (!evidence) continue;
 
-    if (safeRead(match,'live')===true) {
-      sections[0].matches.push(match);
+    if (evidence.live) {
+      sections[0].matches.push(evidence.match);
       continue;
     }
-    if (safeRead(match,'finished')===true) {
-      sections[3].matches.push(match);
+    if (evidence.finished) {
+      sections[3].matches.push(evidence.match);
       continue;
     }
 
-    const kickoffMs=strictKickoffMs(safeRead(match,'date'));
+    const kickoffMs=strictKickoffMs(evidence.date);
     if (kickoffMs===null || now===null || kickoffMs<now) continue;
     const startsInMs=kickoffMs-now;
 
@@ -115,14 +126,29 @@ function normalizedInsight(value) {
   const insight=plainObject(value);
   if (!insight) return null;
   const score=safeRead(insight,'score');
+  const favorite=safeRead(insight,'favorite')===true;
+  const viewedTeam=safeRead(insight,'viewedTeam')===true;
+  const reason=safeRead(insight,'reason');
+  const viewedLeague=safeRead(insight,'viewedLeague')===true;
+  const recommended=safeRead(insight,'recommended')===true;
   return {
-    insight,
+    insight:{
+      score:
+        typeof score==='number' && Number.isFinite(score)
+          ? score
+          : 0,
+      favorite,
+      viewedTeam,
+      viewedLeague,
+      recommended,
+      reason:typeof reason==='string' ? reason.slice(0,160) : '',
+    },
     score:
       typeof score==='number' && Number.isFinite(score)
         ? score
         : 0,
-    favorite:safeRead(insight,'favorite')===true,
-    viewedTeam:safeRead(insight,'viewedTeam')===true,
+    favorite,
+    viewedTeam,
   };
 }
 
@@ -146,16 +172,13 @@ export function selectHomePersonalMatch({
   const rows=[];
 
   for (const raw of safeArray(matches).slice(0,1000)) {
-    const match=safeMatch(raw);
-    if (!match) continue;
-    if (
-      safeRead(match,'finished')===true
-      || safeRead(match,'youthReserve')===true
-    ) continue;
+    const evidence=matchEvidence(raw);
+    if (!evidence) continue;
+    if (evidence.finished || evidence.youthReserve) continue;
 
     let insightValue;
     try {
-      insightValue=insightForMatch(match);
+      insightValue=insightForMatch(evidence.match);
     } catch {
       continue;
     }
@@ -165,8 +188,8 @@ export function selectHomePersonalMatch({
       || (!normalized.favorite && !normalized.viewedTeam)
     ) continue;
 
-    const live=safeRead(match,'live')===true;
-    const kickoffMs=strictKickoffMs(safeRead(match,'date'));
+    const live=evidence.live;
+    const kickoffMs=strictKickoffMs(evidence.date);
     if (
       !live
       && (
@@ -177,7 +200,7 @@ export function selectHomePersonalMatch({
     ) continue;
 
     rows.push({
-      match,
+      match:evidence.match,
       insight:normalized.insight,
       score:normalized.score,
       live,
