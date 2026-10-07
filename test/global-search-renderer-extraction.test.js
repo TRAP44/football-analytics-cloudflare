@@ -402,14 +402,14 @@ test('error and resolved-query copy are escaped before entering status HTML',()=
   h.renderer.renderGlobalSearch();
 
   const status=h.els.map.get('searchStatus').innerHTML;
-  assert.doesNotMatch(status,/<img|<script/);
+  assert.doesNotMatch(status,/<img|<script/i);
   assert.match(status,/&lt;img/);
 
   h.state.globalSearch.status='done';
   h.renderer.renderGlobalSearch();
   const resolved=h.els.map.get('searchStatus').innerHTML;
   assert.match(resolved,/&lt;script&gt;/);
-  assert.doesNotMatch(resolved,/<script>/);
+  assert.doesNotMatch(resolved,/<script>/i);
 });
 
 test('malformed state and hostile getters fail soft instead of crashing renderer',()=>{
