@@ -1,3 +1,95 @@
+function plainObject(value) {
+  try {
+    return value && typeof value==='object' && !Array.isArray(value)
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeRead(value,key) {
+  try {
+    return value?.[key];
+  } catch {
+    return undefined;
+  }
+}
+
+function safeCall(fn,...args) {
+  try {
+    return fn(...args);
+  } catch {
+    return undefined;
+  }
+}
+
+function safeText(value,max=280) {
+  if (typeof value!=='string') return '';
+  return value
+    .replace(/[\u0000-\u001f\u007f]+/g,' ')
+    .replace(/\s+/g,' ')
+    .trim()
+    .slice(0,max);
+}
+
+function positiveId(value) {
+  if (typeof value==='number') {
+    return Number.isSafeInteger(value) && value>0 ? value : 0;
+  }
+  if (typeof value!=='string') return 0;
+  const raw=value.trim();
+  if (!/^\d+$/.test(raw)) return 0;
+  const parsed=Number(raw);
+  return Number.isSafeInteger(parsed) && parsed>0 ? parsed : 0;
+}
+
+function safeParamEntries(value) {
+  const source=plainObject(value);
+  if (!source) return [];
+  let keys=[];
+  try {
+    keys=Object.keys(source).slice(0,24);
+  } catch {
+    return [];
+  }
+  const rows=[];
+  for (const key of keys) {
+    if (
+      typeof key!=='string'
+      || !/^[A-Za-z0-9_-]{1,40}$/.test(key)
+      || key==='fixtureId'
+    ) continue;
+    const item=safeRead(source,key);
+    if (typeof item==='string') {
+      const text=safeText(item,160);
+      if (text) rows.push([key,text]);
+    } else if (
+      typeof item==='number'
+      && Number.isFinite(item)
+    ) {
+      rows.push([key,String(item)]);
+    } else if (typeof item==='boolean') {
+      rows.push([key,item ? 'true' : 'false']);
+    }
+  }
+  return rows;
+}
+
+function responseFixtureId(value) {
+  const data=plainObject(value);
+  const match=plainObject(safeRead(data,'match'));
+  return positiveId(safeRead(match,'fixtureId'));
+}
+
+function matchCenterResponseError() {
+  const error=new Error(
+    'Ответ центра матча не прошёл проверку выбранного матча.',
+  );
+  error.code='MATCH_CENTER_RESPONSE_IDENTITY_MISMATCH';
+  return error;
+}
+
 export function createMatchCenterController({
   state,
   documentRef,
@@ -20,196 +112,397 @@ export function createMatchCenterController({
   setTimer = (fn, ms) => setTimeout(fn, ms),
   clearTimer = handle => clearTimeout(handle),
 }) {
-  if (!state || typeof api !== 'function') throw new TypeError('Match Center controller requires state and api.');
-  if (!documentRef || typeof activeViewId !== 'function' || typeof showView !== 'function') {
-    throw new TypeError('Match Center controller requires documentRef, activeViewId and showView.');
+  if (!state || typeof api!=='function') {
+    throw new TypeError(
+      'Match Center controller requires state and api.',
+    );
+  }
+  if (
+    !documentRef
+    || typeof activeViewId!=='function'
+    || typeof showView!=='function'
+  ) {
+    throw new TypeError(
+      'Match Center controller requires documentRef, activeViewId and showView.',
+    );
   }
 
-  const $ = typeof elementById === 'function' ? elementById : () => null;
-  const canRun = typeof runtimeAllows === 'function' ? runtimeAllows : () => true;
-  const ensureExtras = typeof ensureMatchCenterExtras === 'function' ? ensureMatchCenterExtras : async () => null;
-  const renderCenter = typeof renderMatchCenter === 'function' ? renderMatchCenter : () => {};
-  const renderJourney = typeof renderJourneyState === 'function' ? renderJourneyState : () => {};
-  const productAction = typeof sendProductAction === 'function' ? sendProductAction : () => {};
-  const coverage = typeof sendMatchDataCoverage === 'function' ? sendMatchDataCoverage : () => {};
-  const timing = typeof sendOperationTiming === 'function' ? sendOperationTiming : () => {};
-  const actionError = typeof sendActionError === 'function' ? sendActionError : () => {};
-  const errorCategory = typeof apiErrorCategory === 'function' ? apiErrorCategory : () => 'error';
-  const friendlyError = typeof friendlyErrorMessage === 'function' ? friendlyErrorMessage : error => String(error?.message || 'Не удалось открыть матч.');
-  const showToast = typeof toast === 'function' ? toast : () => {};
+  const $=typeof elementById==='function'
+    ? elementById
+    : ()=>null;
+  const canRun=typeof runtimeAllows==='function'
+    ? runtimeAllows
+    : ()=>false;
+  const ensureExtras=typeof ensureMatchCenterExtras==='function'
+    ? ensureMatchCenterExtras
+    : async()=>null;
+  const renderCenter=typeof renderMatchCenter==='function'
+    ? renderMatchCenter
+    : ()=>{};
+  const renderJourney=typeof renderJourneyState==='function'
+    ? renderJourneyState
+    : ()=>{};
+  const productAction=typeof sendProductAction==='function'
+    ? sendProductAction
+    : ()=>{};
+  const coverage=typeof sendMatchDataCoverage==='function'
+    ? sendMatchDataCoverage
+    : ()=>{};
+  const timing=typeof sendOperationTiming==='function'
+    ? sendOperationTiming
+    : ()=>{};
+  const actionError=typeof sendActionError==='function'
+    ? sendActionError
+    : ()=>{};
+  const errorCategory=typeof apiErrorCategory==='function'
+    ? apiErrorCategory
+    : ()=>'error';
+  const friendlyError=typeof friendlyErrorMessage==='function'
+    ? friendlyErrorMessage
+    : ()=>'Не удалось открыть матч.';
+  const showToast=typeof toast==='function'
+    ? toast
+    : ()=>{};
 
-  const inFlight = new Map();
-  let requestSeq = 0;
-  let liveRefreshTimer = null;
-  let liveRefreshWasActive = false;
+  const inFlight=new Map();
+  let requestSeq=0;
+  let liveRefreshTimer=null;
+  let liveRefreshWasActive=false;
 
-  async function requestMatchCenter(fixtureId, extraParams = {}, options = {}) {
-    const id = Number(fixtureId);
-    const key = String(id);
-    const existing = inFlight.get(key);
+  function currentView() {
+    const value=safeCall(activeViewId);
+    return typeof value==='string' && value
+      ? value
+      : 'matchesView';
+  }
+
+  function currentCenterFixtureId() {
+    const center=plainObject(safeRead(state,'currentCenter'));
+    const match=plainObject(safeRead(center,'match'));
+    return positiveId(safeRead(match,'fixtureId'));
+  }
+
+  function element(id) {
+    return safeCall($,id) || null;
+  }
+
+  function buttonText(button) {
+    return safeText(safeRead(button,'textContent'),160);
+  }
+
+  function setButton(button,{disabled,text}={}) {
+    if (!button || typeof button!=='object') return;
+    try {
+      if (typeof disabled==='boolean') button.disabled=disabled;
+      if (typeof text==='string') button.textContent=text;
+    } catch {}
+  }
+
+  function incrementDeduped() {
+    const perf=plainObject(safeRead(state,'clientPerf'));
+    if (!perf) return;
+    const current=safeRead(perf,'deduped');
+    perf.deduped=
+      typeof current==='number'
+      && Number.isSafeInteger(current)
+      && current>=0
+        ? current+1
+        : 1;
+  }
+
+  async function requestMatchCenter(
+    fixtureId,
+    extraParams={},
+    options={},
+  ) {
+    const id=positiveId(fixtureId);
+    if (!id) return null;
+    const key=String(id);
+    const existing=inFlight.get(key);
     if (existing) {
-      if (state.clientPerf) state.clientPerf.deduped = Number(state.clientPerf.deduped || 0) + 1;
+      incrementDeduped();
       return await existing;
     }
 
-    const seq = ++requestSeq;
-    const params = new URLSearchParams({ fixtureId: key });
-    Object.entries(extraParams || {}).forEach(([paramKey, value]) => {
-      if (value !== undefined && value !== null && value !== '') params.set(paramKey, String(value));
-    });
+    const seq=++requestSeq;
+    const params=new URLSearchParams({fixtureId:key});
+    for (const [paramKey,value] of safeParamEntries(extraParams)) {
+      params.set(paramKey,value);
+    }
 
-    const task = (async () => {
-      const data = await api(`/api/match-center?${params.toString()}`, options);
-      return seq === requestSeq ? data : null;
+    const task=(async()=>{
+      try {
+        const data=await api(
+          `/api/match-center?${params.toString()}`,
+          plainObject(options) || {},
+        );
+        if (seq!==requestSeq) return null;
+        if (responseFixtureId(data)!==id) {
+          throw matchCenterResponseError();
+        }
+        return data;
+      } catch (error) {
+        if (seq!==requestSeq) return null;
+        throw error;
+      }
     })();
-    inFlight.set(key, task);
+
+    inFlight.set(key,task);
     try {
       return await task;
     } finally {
-      if (inFlight.get(key) === task) inFlight.delete(key);
+      if (inFlight.get(key)===task) {
+        inFlight.delete(key);
+      }
     }
   }
 
   function isActiveLiveFixture(fixtureId) {
+    const id=positiveId(fixtureId);
+    if (!id) return false;
     return liveRefreshWasActive
-      && !documentRef.hidden
-      && activeViewId() === 'analysisView'
-      && state.currentCenter?.mode === 'live'
-      && Number(state.currentCenter?.match?.fixtureId || 0) === Number(fixtureId);
+      && safeRead(documentRef,'hidden')!==true
+      && currentView()==='analysisView'
+      && safeRead(
+        plainObject(safeRead(state,'currentCenter')),
+        'mode',
+      )==='live'
+      && currentCenterFixtureId()===id;
   }
 
   function stopLiveRefresh() {
-    if (liveRefreshTimer) clearTimer(liveRefreshTimer);
-    liveRefreshTimer = null;
+    if (liveRefreshTimer!==null) {
+      safeCall(clearTimer,liveRefreshTimer);
+    }
+    liveRefreshTimer=null;
   }
 
   function deactivateLiveRefresh() {
     stopLiveRefresh();
-    liveRefreshWasActive = false;
+    liveRefreshWasActive=false;
+  }
+
+  function refreshDelayMs() {
+    const center=plainObject(safeRead(state,'currentCenter'));
+    const value=safeRead(center,'refreshSeconds');
+    const seconds=
+      typeof value==='number'
+      && Number.isFinite(value)
+      && value>=15
+      && value<=300
+        ? value
+        : 60;
+    return Math.round(seconds*1000);
   }
 
   function scheduleLiveRefresh(fixtureId) {
-    const delayMs = Math.max(15, Number(state.currentCenter?.refreshSeconds || 60)) * 1000;
-    liveRefreshTimer = setTimer(async () => {
-      liveRefreshTimer = null;
-      if (!isActiveLiveFixture(fixtureId)) return;
+    const id=positiveId(fixtureId);
+    if (!id || !isActiveLiveFixture(id)) return false;
+
+    const handle=safeCall(setTimer,async()=>{
+      liveRefreshTimer=null;
+      if (!isActiveLiveFixture(id)) return;
       try {
-        const timingStartedAt = performanceNow();
-        const data = await requestMatchCenter(fixtureId, { t: Date.now() });
-        if (!data || !isActiveLiveFixture(fixtureId)) return;
-        timing('live', timingStartedAt, 'analysisView');
-        state.currentCenter = data;
-        renderCenter(data);
-        if (data.mode !== 'live') liveRefreshWasActive = false;
+        const timingValue=safeCall(performanceNow);
+        const timingStartedAt=
+          typeof timingValue==='number'
+          && Number.isFinite(timingValue)
+            ? timingValue
+            : Date.now();
+        const data=await requestMatchCenter(
+          id,
+          {t:Date.now()},
+        );
+        if (!data || !isActiveLiveFixture(id)) return;
+        safeCall(timing,'live',timingStartedAt,'analysisView');
+        state.currentCenter=data;
+        safeCall(renderCenter,data);
+        if (safeRead(data,'mode')!=='live') {
+          liveRefreshWasActive=false;
+        }
       } catch (error) {
-        if (!isActiveLiveFixture(fixtureId)) return;
-        const el = $('liveRefreshText');
-        if (el) el.textContent = 'Не удалось обновить. Повторим автоматически.';
-        actionError('live_refresh', error, 'analysisView');
+        if (!isActiveLiveFixture(id)) return;
+        const el=element('liveRefreshText');
+        try {
+          if (el) {
+            el.textContent=
+              'Не удалось обновить. Повторим автоматически.';
+          }
+        } catch {}
+        safeCall(actionError,'live_refresh',error,'analysisView');
       } finally {
-        if (isActiveLiveFixture(fixtureId) && !liveRefreshTimer) scheduleLiveRefresh(fixtureId);
+        if (
+          isActiveLiveFixture(id)
+          && liveRefreshTimer===null
+        ) {
+          scheduleLiveRefresh(id);
+        }
       }
-    }, delayMs);
+    },refreshDelayMs());
+
+    if (handle===undefined || handle===null) return false;
+    liveRefreshTimer=handle;
+    return true;
   }
 
   function startLiveRefresh(fixtureId) {
+    const id=positiveId(fixtureId);
     stopLiveRefresh();
-    const el = $('liveRefreshText');
-    if (!canRun('liveEnabled')) {
-      liveRefreshWasActive = false;
-      if (el) el.textContent = 'Автообновление матча временно приостановлено.';
+
+    let enabled=false;
+    try {
+      enabled=canRun('liveEnabled')===true;
+    } catch {
+      enabled=false;
+    }
+
+    const el=element('liveRefreshText');
+    if (!id || !enabled) {
+      liveRefreshWasActive=false;
+      try {
+        if (el) {
+          el.textContent=
+            'Автообновление матча временно приостановлено.';
+        }
+      } catch {}
       return;
     }
-    liveRefreshWasActive = true;
-    if (el) el.textContent = 'Обновляется автоматически';
-    if (!documentRef.hidden) scheduleLiveRefresh(fixtureId);
+
+    liveRefreshWasActive=true;
+    try {
+      if (el) el.textContent='Обновляется автоматически';
+    } catch {}
+    if (safeRead(documentRef,'hidden')!==true) {
+      scheduleLiveRefresh(id);
+    }
   }
 
   function suspendLiveRefresh() {
-    if (!liveRefreshTimer) return false;
+    if (liveRefreshTimer===null) return false;
     stopLiveRefresh();
-    liveRefreshWasActive = true;
+    liveRefreshWasActive=true;
     return true;
   }
 
   function resumeLiveRefresh() {
-    const fixtureId = Number(state.currentCenter?.match?.fixtureId || 0);
-    if (!fixtureId || state.currentCenter?.mode !== 'live' || activeViewId() !== 'analysisView' || !liveRefreshWasActive) return false;
+    const fixtureId=currentCenterFixtureId();
+    const center=plainObject(safeRead(state,'currentCenter'));
+    if (
+      !fixtureId
+      || safeRead(center,'mode')!=='live'
+      || currentView()!=='analysisView'
+      || !liveRefreshWasActive
+    ) return false;
     startLiveRefresh(fixtureId);
-    return true;
+    return liveRefreshWasActive;
   }
 
-  async function openMatchCenter(fixtureId, button) {
-    if (state.analysisActionPending) state.analysisRequestSeq += 1;
-    const sourceView = activeViewId();
-    if (sourceView !== 'analysisView') state.analysisBackView = sourceView;
-    if (Number(state.currentCenter?.match?.fixtureId || 0) !== Number(fixtureId)) state.currentCenterTab = 'summary';
+  async function openMatchCenter(fixtureId,button) {
+    const id=positiveId(fixtureId);
+    if (!id) {
+      safeCall(showToast,'Не удалось определить выбранный матч.');
+      return;
+    }
 
-    const original = button?.textContent || '';
-    const timingStartedAt = performanceNow();
-    const reusableCenter = Number(state.currentCenter?.match?.fixtureId || 0) === Number(fixtureId)
-      ? state.currentCenter
+    if (safeRead(state,'analysisActionPending')===true) {
+      const seq=safeRead(state,'analysisRequestSeq');
+      state.analysisRequestSeq=
+        Number.isSafeInteger(seq) && seq>=0 ? seq+1 : 1;
+    }
+
+    const sourceView=currentView();
+    if (sourceView!=='analysisView') {
+      state.analysisBackView=sourceView;
+    }
+    if (currentCenterFixtureId()!==id) {
+      state.currentCenterTab='summary';
+    }
+
+    const original=buttonText(button);
+    const timingValue=safeCall(performanceNow);
+    const timingStartedAt=
+      typeof timingValue==='number' && Number.isFinite(timingValue)
+        ? timingValue
+        : Date.now();
+    const reusableCenter=currentCenterFixtureId()===id
+      ? safeRead(state,'currentCenter')
       : null;
 
-    if (button) {
-      button.disabled = true;
-      button.textContent = '⏳ Загружаю матч…';
-    }
-    showView('analysisView');
+    setButton(button,{
+      disabled:true,
+      text:'⏳ Загружаю матч…',
+    });
+    safeCall(showView,'analysisView');
 
     if (!reusableCenter) {
-      renderJourney('loading', {
-        title: 'Открываем матч',
-        message: 'Загружаем счёт, события и доступную статистику.',
+      safeCall(renderJourney,'loading',{
+        title:'Открываем матч',
+        message:
+          'Загружаем счёт, события и доступную статистику.',
       });
     }
 
     try {
-      const extrasPromise = ensureExtras();
-      const centerLoad = Promise.all([
-        requestMatchCenter(fixtureId),
+      const extrasPromise=Promise.resolve()
+        .then(()=>ensureExtras())
+        .catch(()=>null);
+      const centerLoad=Promise.all([
+        requestMatchCenter(id),
         extrasPromise,
-      ]).then(([data]) => data);
+      ]).then(([data])=>data);
 
       await extrasPromise;
-      if (reusableCenter) renderCenter(reusableCenter);
+      if (reusableCenter) {
+        safeCall(renderCenter,reusableCenter);
+      }
 
-      const data = await centerLoad;
+      const data=await centerLoad;
       if (!data) return;
-      renderCenter(data);
-      productAction('match_open', sourceView);
-      coverage(data, sourceView);
-      timing('match', timingStartedAt, sourceView);
-      if (data.mode === 'live') {
-        productAction('live_open', sourceView);
-        timing('live', timingStartedAt, sourceView);
+      state.currentCenter=data;
+      safeCall(renderCenter,data);
+      safeCall(productAction,'match_open',sourceView);
+      safeCall(coverage,data,sourceView);
+      safeCall(timing,'match',timingStartedAt,sourceView);
+      if (safeRead(data,'mode')==='live') {
+        safeCall(productAction,'live_open',sourceView);
+        safeCall(timing,'live',timingStartedAt,sourceView);
       }
     } catch (error) {
-      actionError('match', error, sourceView);
-      const category = errorCategory(error);
-      const previous = Number(state.currentCenter?.match?.fixtureId || 0) === Number(fixtureId)
-        ? state.currentCenter
+      safeCall(actionError,'match',error,sourceView);
+      const category=safeCall(errorCategory,error);
+      const previous=currentCenterFixtureId()===id
+        ? safeRead(state,'currentCenter')
         : null;
 
-      if (['rate_limit', 'provider'].includes(category)) {
+      if (category==='rate_limit' || category==='provider') {
         if (previous) {
-          renderCenter(previous);
-        } else if (sourceView && sourceView !== 'analysisView') {
-          showView(sourceView, { restore: true });
+          safeCall(renderCenter,previous);
+        } else if (
+          sourceView
+          && sourceView!=='analysisView'
+        ) {
+          safeCall(showView,sourceView,{restore:true});
         }
-        showToast(friendlyError(error));
+        const friendly=safeCall(friendlyError,error);
+        safeCall(
+          showToast,
+          safeText(friendly,320)
+            || 'Матч временно недоступен.',
+        );
       } else {
-        renderJourney('error', {
-          title: 'Матч временно не открылся',
-          message: error?.message || 'Не удалось получить данные матча.',
-          retry: () => openMatchCenter(fixtureId, null),
+        safeCall(renderJourney,'error',{
+          title:'Матч временно не открылся',
+          message:
+            safeText(safeRead(error,'message'),320)
+            || 'Не удалось получить данные матча.',
+          retry:()=>openMatchCenter(id,null),
         });
       }
     } finally {
-      if (button) {
-        button.disabled = false;
-        button.textContent = original;
-      }
+      setButton(button,{
+        disabled:false,
+        text:original,
+      });
     }
   }
 
@@ -222,6 +515,6 @@ export function createMatchCenterController({
     suspendLiveRefresh,
     resumeLiveRefresh,
     isActiveLiveFixture,
-    isLiveRefreshActive: () => liveRefreshWasActive,
+    isLiveRefreshActive:()=>liveRefreshWasActive,
   });
 }
