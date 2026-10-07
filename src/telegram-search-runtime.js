@@ -144,6 +144,16 @@ export function createTelegramSearchRuntime(deps = {}) {
     } catch {}
   }
 
+  async function asyncSucceeded(fn, ...args) {
+    if (typeof fn !== 'function') return false;
+    try {
+      await fn(...args);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function normalizedSearch(value, max = 120) {
     const input=safeText(value,max);
     if (!input) return '';
@@ -513,11 +523,15 @@ export function createTelegramSearchRuntime(deps = {}) {
       },
     });
 
-    await rememberBotFixtureCards(matches,cfg);
+    const cardsReady=await asyncSucceeded(rememberBotFixtureCards,matches,cfg);
     const lines=matches.map((match,index)=>botMatchLine(match,index)).filter(Boolean);
 
     let replyMarkup;
-    if (matches.length === 1) {
+    if (!cardsReady) {
+      replyMarkup=searchUrl
+        ? {inline_keyboard:[[{text:'🔎 Все результаты поиска',web_app:{url:searchUrl}}]]}
+        : undefined;
+    } else if (matches.length === 1) {
       replyMarkup=safeInlineKeyboard(
         optionalCall(footballSearchHandoffKeyboard,null,request,matches[0],searchUrl),
       ) || fallbackSearchKeyboard(matches[0],searchUrl);
@@ -545,7 +559,7 @@ export function createTelegramSearchRuntime(deps = {}) {
           ? 'Матч найден. Нажмите один раз — сразу покажу короткую AI-оценку.'
           : '⭐ Первый матч — основной выбор MatchRadar AI. Нажмите на любой матч — сразу получите короткую AI-оценку.',
       ].join('\n')),
-      reply_markup:replyMarkup,
+      ...(replyMarkup ? {reply_markup:replyMarkup} : {}),
     });
   }
 
@@ -565,7 +579,7 @@ export function createTelegramSearchRuntime(deps = {}) {
     }
 
     const confidenceNumber=finiteNumber(source.ai_confidence);
-    const confidence=confidenceNumber !== null
+    const confidence=confidenceNumber !== null && confidenceNumber >= 0 && confidenceNumber <= 100
       ? ` · уверенность ${Math.round(confidenceNumber)}/100`
       : '';
     const risk=safeText(source.ai_risk,80);
@@ -608,15 +622,15 @@ export function createTelegramSearchRuntime(deps = {}) {
       '',
       `Проверенных матчей: <b>${verified}</b>`,
       `Совпало / не совпало: <b>${matched} / ${missed}</b>`,
-      `Статус выборки: <b>${telegramHtmlEscape(sample.label || '—')}</b>`,
-      telegramHtmlEscape(sample.message || ''),
+      `Статус выборки: <b>${telegramHtmlEscape(safeText(sample.label,120,'—'))}</b>`,
+      telegramHtmlEscape(safeText(sample.message,500)),
       brier !== null && brier >= 0
         ? `Ошибка Брайера: <b>${brier.toFixed(3)}</b> · ниже лучше`
         : 'Ошибка Брайера: пока недостаточно данных',
       ...(recentLines.length ? ['', '<b>Последние подтверждённые:</b>', ...recentLines] : []),
       '',
       '<i>Это история вероятностей модели, а не «винрейт» и не показатель доходности ставок. Прошлые результаты не гарантируют будущие.</i>',
-    ].filter(Boolean).join('\n'),'3900');
+    ].filter(Boolean).join('\n'),3900);
   }
 
   async function sendBotAiTrackRecord(request, cfg, chatId) {
