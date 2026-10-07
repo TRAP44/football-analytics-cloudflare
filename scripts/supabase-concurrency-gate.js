@@ -24,8 +24,13 @@ export function requireDbUrl(value = process.env.DB_URL) {
 }
 
 function psqlTimeoutMs() {
-  const parsed=Number(process.env.PSQL_TIMEOUT_MS || 30000);
-  return Number.isFinite(parsed) ? Math.max(1000,Math.min(60000,parsed)) : 30000;
+  const value=process.env.PSQL_TIMEOUT_MS;
+  if (value===undefined || value===null || value==='') return 30000;
+  if (typeof value!=='string' || !/^\d+$/.test(value.trim())) return 30000;
+  const parsed=Number(value.trim());
+  return Number.isSafeInteger(parsed)
+    ? Math.max(1000,Math.min(60000,parsed))
+    : 30000;
 }
 
 async function psql(sql) {
