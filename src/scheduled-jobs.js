@@ -124,9 +124,16 @@ export function normalizeScheduledTaskResult(task, value) {
 
   let status='ok';
   if (
-    raw.ok === false
-    || raw.failed === true
+    raw.failed === true
     || ['failed','failure','error'].includes(state)
+    || (
+      raw.ok === false
+      && state !== 'degraded'
+      && state !== 'skipped'
+      && raw.degraded !== true
+      && raw.skipped !== true
+      && !(typeof raw.skipped === 'string' && raw.skipped.trim())
+    )
   ) status='failed';
   else if (
     raw.degraded === true
