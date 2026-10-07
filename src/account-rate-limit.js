@@ -123,9 +123,8 @@ export function accountRatePolicyForRequest(request) {
 
 export function accountRateLimitBucketKey(user, policy) {
   const userId=positiveUserId(user);
-  const label=typeof safeRead(policy,'label')==='string'
-    ? safeRead(policy,'label').trim()
-    : '';
+  const rawLabel=safeRead(policy,'label');
+  const label=typeof rawLabel==='string' ? rawLabel.trim() : '';
   if (!userId || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(label)) return '';
   return `route:${userId}:${label}`;
 }
