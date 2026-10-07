@@ -16,10 +16,10 @@ test('RC135 exact id adds bounded season-role weight', () => {
   assert.equal(data.summary.seasonRole.home.matched,1);
 });
 
-test('RC135 unique normalized name fallback works across providers', () => {
+test('RC135 does not name-fallback across providers when the absence has an authoritative id', () => {
   const data=enrichFixtureAbsencesWithSeasonRole(baseAbsence(30,'José Álvarez'), {homePlayerStats:{available:true,partial:true,scope:'competition-scorers',sourceMeta:{provider:'football-data'},players:[{id:0,providerId:999,name:'Jose Alvarez',source:'football-data',games:{appearances:9,lineups:null,minutes:null,position:'Forward'},goals:{total:7,assists:2}}]}});
-  assert.equal(data.home[0].seasonRole?.matched,true);
-  assert.ok(data.home[0].seasonRole.weight>=1 && data.home[0].seasonRole.weight<=1.20);
+  assert.equal(data.home[0].seasonRole,undefined);
+  assert.equal(data.summary.seasonRole.home.matched,0);
 });
 
 test('RC135 foreign provider ids cannot collide with API-Football absence ids', () => {
@@ -33,7 +33,7 @@ test('RC135 ambiguous names are not force-matched', () => {
   assert.equal(data.summary.seasonRole.home.matched,0);
 });
 
-test('RC135 malformed season counters are sanitized before role weighting', () => {
+test('RC135 malformed season counters fail closed instead of fabricating a neutral role', () => {
   const data=enrichFixtureAbsencesWithSeasonRole(baseAbsence(), {
     homePlayerStats:{
       available:true,
@@ -45,13 +45,8 @@ test('RC135 malformed season counters are sanitized before role weighting', () =
       }],
     },
   });
-  const role=data.home[0].seasonRole;
-  assert.equal(role.appearances,0);
-  assert.equal(role.lineups,0);
-  assert.equal(role.minutes,0);
-  assert.equal(role.goals,0);
-  assert.equal(role.assists,0);
-  assert.ok(Number.isFinite(role.weight));
+  assert.equal(data.home[0].seasonRole,undefined);
+  assert.equal(data.summary.seasonRole.home.matched,0);
 });
 
 test('RC135 season role counters reject arrays booleans and coercible containers', () => {
@@ -82,35 +77,38 @@ test('RC135 small samples shrink toward neutral', () => {
   assert.ok(Math.abs(weight-1)<0.10);
 });
 
-const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/analysis-runtime.js','utf8');
+const worker=fs.readFileSync('src/worker.js','utf8');
+const analysis=fs.readFileSync('src/analysis-runtime.js','utf8');
+const analysisContext=fs.readFileSync('src/analysis-context-runtime.js','utf8');
+const analysisQuality=fs.readFileSync('src/analysis-quality-runtime.js','utf8');
+const modelIntelligence=fs.readFileSync('src/model-intelligence-runtime.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const runtime=fs.readFileSync('public/modules/app-runtime.js','utf8');
 
 test('RC135 weighting remains cache-first while RC136 hydrates only missing roles', () => {
-  assert.match(worker,/async function cachedTeamIntelligenceForAnalysis/);
-  assert.match(worker,/formatAbsences\(trustedInjuries,homeId,awayId,trustedLineups\)/);
-  assert.match(worker,/cachedPlayerStats:cachedHomePlayerStats,[\s\S]{0,160}?needed:baseAbsences\.home\.length>0/);
-  assert.match(worker,/cachedPlayerStats:cachedAwayPlayerStats,[\s\S]{0,160}?needed:baseAbsences\.away\.length>0/);
-  assert.match(worker,/enrichFixtureAbsencesWithSeasonRole\([\s\S]{0,160}?baseAbsences,[\s\S]{0,160}?\{homePlayerStats,awayPlayerStats\}/);
+  assert.match(analysisContext,/async function cachedTeamIntelligenceForAnalysis/);
+  assert.match(analysis,/formatAbsences\(trustedInjuries,homeId,awayId,trustedLineups\)/);
+  assert.match(analysis,/cachedPlayerStats:cachedHomePlayerStats,[\s\S]{0,220}?needed:baseAbsences\.home\.length>0/);
+  assert.match(analysis,/cachedPlayerStats:cachedAwayPlayerStats,[\s\S]{0,220}?needed:baseAbsences\.away\.length>0/);
+  assert.match(analysis,/enrichFixtureAbsencesWithSeasonRole\([\s\S]{0,220}?baseAbsences,[\s\S]{0,220}?\{homePlayerStats,awayPlayerStats\}/);
 });
 
 test('RC135 keeps weighted availability bounded and doubtful at half weight', () => {
-  assert.match(worker,/clamp\(roleWeightRaw, 0\.85, 1\.60\)/);
-  assert.match(worker,/row\?\.status === 'doubtful' \? 0\.5 : 1/);
-  assert.match(worker,/clamp\(\(awayCount - homeCount\) \* 0\.55, -3\.3, 3\.3\)/);
+  assert.match(modelIntelligence,/clamp\(roleWeightRaw, 0\.85, 1\.60\)/);
+  assert.match(modelIntelligence,/row\?\.status === 'doubtful' \? 0\.5 : 1/);
+  assert.match(modelIntelligence,/clamp\(\(awayCount-homeCount\)\*0\.55,-3\.3,3\.3\)/);
 });
 
 test('RC135 exposes methodology without a player quality score', () => {
-  assert.match(worker,/availabilityUnits:\{home:homeUnits,away:awayUnits\}/);
-  assert.match(worker,/seasonRoleCoverage:/);
-  assert.match(worker,/Это не рейтинг качества игрока/);
-  assert.doesNotMatch(worker,/playerImpactScore|playerQualityScore/);
+  assert.match(analysisQuality,/availabilityUnits:\{home:homeUnits,away:awayUnits\}/);
+  assert.match(analysisQuality,/seasonRoleCoverage:/);
+  assert.match(analysisQuality,/Это не рейтинг качества игрока/);
+  assert.doesNotMatch(analysisQuality,/playerImpactScore|playerQualityScore/);
   assert.match(app,/x\.seasonRole\?\.matched \? x\.seasonRole\.label : ''/);
 });
 
 test('RC135 updates model-input and health identity', () => {
-  assert.match(worker,/analysisVersion:\s*'4\.15\.0-availability-quality'/);
-  assert.match(worker,/playerRoleAvailability: 'enabled'/);
+  assert.match(analysis,/analysisVersion:'4\.17\.0-starting-xi'/);
   assert.match(worker,/const APP_VERSION = '6\.120\.0-rc144'/);
   assert.match(worker,/const RC_NAME = 'RC144'/);
   assert.match(runtime,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
