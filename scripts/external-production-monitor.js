@@ -73,22 +73,29 @@ function nonNegativeMetric(value) {
 }
 
 function normalizeBaseUrl(value) {
-  const raw=typeof value==='string' && value.trim()
-    ? value.trim()
-    : DEFAULT_PRODUCTION_URL;
-  try {
-    const url=new URL(raw);
-    if (!['http:','https:'].includes(url.protocol)) {
-      throw new Error('unsupported protocol');
-    }
-    if (url.username || url.password || url.search || url.hash) {
-      throw new Error('base URL must not contain credentials, query or hash');
-    }
-    url.pathname=url.pathname.replace(/\/+$/,'');
-    return url.toString().replace(/\/+$/,'');
-  } catch {
-    return DEFAULT_PRODUCTION_URL;
+  const absent=value===undefined
+    || value===null
+    || (typeof value==='string' && !value.trim());
+  const raw=absent ? DEFAULT_PRODUCTION_URL : value;
+  if (typeof raw!=='string') {
+    throw new TypeError('Production URL must be a string.');
   }
+  let url;
+  try {
+    url=new URL(raw.trim());
+  } catch {
+    throw new Error('Production URL is invalid.');
+  }
+  if (!['http:','https:'].includes(url.protocol)) {
+    throw new Error('Production URL protocol must be HTTP or HTTPS.');
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error(
+      'Production URL must not contain credentials, query or hash.',
+    );
+  }
+  url.pathname=url.pathname.replace(/\/+$/,'');
+  return url.toString().replace(/\/+$/,'');
 }
 
 function escapeMarkdownCell(value) {
