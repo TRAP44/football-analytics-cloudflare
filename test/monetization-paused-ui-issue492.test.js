@@ -76,6 +76,22 @@ test('purchase visibility is fail-closed when monetization is paused',()=>{
     paymentActions:false,
     quotaUpgrade:false,
   });
+
+  const stale=billingUiSnapshot({
+    quota:{plan:'FREE',used:1,limit:3,left:2},
+    billing:{plan:'FREE'},
+    features:{monetizationEnabled:false},
+  },{enabled:true,ready:true,current:{plan:'FREE'}});
+  assert.equal(stale.monetizationEnabled,false);
+  assert.equal(stale.ready,false);
+
+  assert.deepEqual(billingPurchaseVisibility({monetizationEnabled:'false'}),{
+    enabled:false,
+    pricing:false,
+    passes:false,
+    paymentActions:false,
+    quotaUpgrade:false,
+  });
 });
 
 test('paused monetization renders free quota but performs zero billing/product requests',async()=>{
@@ -98,6 +114,11 @@ test('paused monetization renders free quota but performs zero billing/product r
 
     const result=await module.openPassStoreForFixture(777);
     assert.deepEqual(result,{opened:false,reason:'monetization_paused'});
+    assert.equal(getApiCalls(),0);
+
+    const passData=await module.loadPassAccess({fixtureId:777,force:true});
+    assert.equal(passData.paymentsEnabled,false);
+    assert.deepEqual(passData.products,{});
     assert.equal(getApiCalls(),0);
 
     module.showQuotaPaywall(777);

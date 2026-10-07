@@ -71,7 +71,12 @@ export function billingUiSnapshot(profile = {}, billing = {}, now = Date.now()) 
   const used = Math.max(0, Number(quota.used || 0));
   const limit = Math.max(0, Number(quota.limit || billing?.plans?.[plan]?.dailyLimit || 0));
   const left = Math.max(0, Number.isFinite(Number(quota.left)) ? Number(quota.left) : limit - used);
-  const monetizationEnabled = Boolean(billing?.enabled ?? profile?.features?.monetizationEnabled);
+  const profileMonetization=profile?.features?.monetizationEnabled;
+  const billingMonetization=billing?.enabled;
+  const monetizationEnabled=profileMonetization === false
+    ? false
+    : billingMonetization === true
+      || (billingMonetization == null && profileMonetization === true);
   return {
     plan: expired && plan !== 'FREE' ? 'FREE' : plan,
     subscriptionUntil,
@@ -81,12 +86,12 @@ export function billingUiSnapshot(profile = {}, billing = {}, now = Date.now()) 
     limit,
     left,
     monetizationEnabled,
-    ready: Boolean(monetizationEnabled && billing?.ready),
+    ready: Boolean(monetizationEnabled && billing?.ready === true),
   };
 }
 
 export function billingPurchaseVisibility(snapshot = {}) {
-  const enabled=Boolean(snapshot?.monetizationEnabled);
+  const enabled=snapshot?.monetizationEnabled === true;
   return Object.freeze({
     enabled,
     pricing:enabled,
@@ -431,6 +436,19 @@ export function createBillingModule({
   async function loadPassAccess({ fixtureId = contextFixtureId(), force = false } = {}) {
     const fid = safeFixtureId(fixtureId);
     if (fid) passFixtureId = fid;
+    const snapshot=billingUiSnapshot(state.profile || {}, state.billing || {});
+    if (!snapshot.monetizationEnabled) {
+      passLoaded = true;
+      passLoading = false;
+      passError = '';
+      passData = {
+        paymentsEnabled:false,
+        products:{},
+        entitlement:{ decisions:[], passes:{ active:[] }, subscriptionActive:false },
+      };
+      render();
+      return passData;
+    }
     if (passLoading || (passLoaded && !force && fid === contextFixtureId())) {
       render();
       return passData;
