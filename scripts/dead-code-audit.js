@@ -48,7 +48,7 @@ export const RETIRED_CSS_FRAGMENTS=Object.freeze([
 const JS_EXTENSIONS=new Set(['.js','.mjs','.cjs']);
 
 function escapeRegex(value) {
-  return String(value).replace(/[.*+?^\${}()|[\]\\]/g,'\\$&');
+  return String(value).replace(/[|\\{}()[\]^$+*?.-]/g,'\\$&');
 }
 
 function walkFiles(root,extensions) {
@@ -66,12 +66,101 @@ function lineNumber(source,index) {
   return source.slice(0,index).split('\n').length;
 }
 
+function maskJsNonCode(source) {
+  let out='';
+  let state='code';
+  let escaped=false;
+
+  for (let index=0; index<source.length; index+=1) {
+    const char=source[index];
+    const next=source[index+1] || '';
+
+    if (state==='line') {
+      if (char==='\n') {
+        state='code';
+        out+='\n';
+      } else {
+        out+=' ';
+      }
+      continue;
+    }
+
+    if (state==='block') {
+      if (char==='*' && next==='/') {
+        out+='  ';
+        index+=1;
+        state='code';
+      } else {
+        out+=char==='\n' ? '\n' : ' ';
+      }
+      continue;
+    }
+
+    if (state==='single' || state==='double' || state==='template') {
+      if (escaped) {
+        escaped=false;
+        out+=char==='\n' ? '\n' : ' ';
+        continue;
+      }
+      if (char==='\\') {
+        escaped=true;
+        out+=' ';
+        continue;
+      }
+      const closes=(
+        (state==='single' && char==="'")
+        || (state==='double' && char==='"')
+        || (state==='template' && char===String.fromCharCode(96))
+      );
+      out+=char==='\n' ? '\n' : ' ';
+      if (closes) state='code';
+      continue;
+    }
+
+    if (char==='/' && next==='/') {
+      out+='  ';
+      index+=1;
+      state='line';
+      continue;
+    }
+    if (char==='/' && next==='*') {
+      out+='  ';
+      index+=1;
+      state='block';
+      continue;
+    }
+    if (char==="'") {
+      out+=' ';
+      state='single';
+      continue;
+    }
+    if (char==='"') {
+      out+=' ';
+      state='double';
+      continue;
+    }
+    if (char===String.fromCharCode(96)) {
+      out+=' ';
+      state='template';
+      continue;
+    }
+
+    out+=char;
+  }
+
+  return out;
+}
+
+function maskCssComments(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g,match=>match.replace(/[^\n]/g,' '));
+}
+
 function declarationMatches(source,name) {
   const escaped=escapeRegex(name);
   const patterns=[
-    new RegExp(\`\\b(?:async\\s+)?function\\s+\${escaped}\\b\`,'g'),
-    new RegExp(\`\\b(?:const|let|var|class)\\s+\${escaped}\\b\`,'g'),
-    new RegExp(\`\\b(?:get|set)\\s+\${escaped}\\s*\\(\`,'g'),
+    new RegExp('\\b(?:async\\s+)?function\\s+'+escaped+'\\b','g'),
+    new RegExp('\\b(?:const|let|var|class)\\s+'+escaped+'\\b','g'),
+    new RegExp('\\b(?:get|set)\\s+'+escaped+'\\s*\\(','g'),
   ];
   const matches=[];
   for (const pattern of patterns) {
@@ -83,7 +172,7 @@ function declarationMatches(source,name) {
 }
 
 function identifierMatches(source,name) {
-  const pattern=new RegExp(\`\\b\${escapeRegex(name)}\\b\`,'g');
+  const pattern=new RegExp('\\b'+escapeRegex(name)+'\\b','g');
   return [...source.matchAll(pattern)].map(match=>match.index ?? 0);
 }
 
@@ -102,13 +191,14 @@ export function auditDeadCode({
 
   for (const file of sourceFiles) {
     const source=fs.readFileSync(file,'utf8');
+    const code=maskJsNonCode(source);
     for (const name of RETIRED_WORKER_HELPERS) {
-      for (const index of declarationMatches(source,name)) {
+      for (const index of declarationMatches(code,name)) {
         findings.push(finding(file,lineNumber(source,index),'retired_worker_helper',name));
       }
     }
     for (const name of RETIRED_WORKER_CONSTANTS) {
-      for (const index of identifierMatches(source,name)) {
+      for (const index of identifierMatches(code,name)) {
         findings.push(finding(file,lineNumber(source,index),'retired_worker_constant',name));
       }
     }
@@ -116,13 +206,14 @@ export function auditDeadCode({
 
   for (const file of publicJsFiles) {
     const source=fs.readFileSync(file,'utf8');
+    const code=maskJsNonCode(source);
     for (const name of RETIRED_MINIAPP_HELPERS) {
-      for (const index of declarationMatches(source,name)) {
+      for (const index of declarationMatches(code,name)) {
         findings.push(finding(file,lineNumber(source,index),'retired_miniapp_helper',name));
       }
     }
     for (const name of RETIRED_MINIAPP_CONSTANTS) {
-      for (const index of identifierMatches(source,name)) {
+      for (const index of identifierMatches(code,name)) {
         findings.push(finding(file,lineNumber(source,index),'retired_miniapp_constant',name));
       }
     }
@@ -130,10 +221,11 @@ export function auditDeadCode({
 
   for (const file of cssFiles) {
     const source=fs.readFileSync(file,'utf8');
+    const code=maskCssComments(source);
     for (const fragment of RETIRED_CSS_FRAGMENTS) {
       let cursor=0;
-      while (cursor<source.length) {
-        const index=source.indexOf(fragment,cursor);
+      while (cursor<code.length) {
+        const index=code.indexOf(fragment,cursor);
         if (index<0) break;
         findings.push(finding(file,lineNumber(source,index),'retired_css_fragment',fragment));
         cursor=index+fragment.length;
@@ -157,7 +249,7 @@ function runCli() {
   }
   console.error('Dead-code regression gate failed:');
   for (const item of findings) {
-    console.error(\`- \${item.file}:\${item.line} \${item.type} \${item.name}\`);
+    console.error('- '+item.file+':'+item.line+' '+item.type+' '+item.name);
   }
   process.exitCode=1;
 }
