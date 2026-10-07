@@ -199,6 +199,8 @@ test('provider quota launch evidence rejects future, ambiguous and impossible qu
     validQuotaRow('2026-10-07T12:05:00.000Z'),
     validQuotaRow(validAt,{dailyRemaining:false}),
     validQuotaRow(validAt,{minuteLimit:null}),
+    validQuotaRow(validAt,{dailyLimit:[7500]}),
+    validQuotaRow(validAt,{minuteRemaining:['280']}),
     validQuotaRow(validAt,{dailyRemaining:-1}),
     validQuotaRow(validAt,{dailyRemaining:8000}),
     validQuotaRow(validAt,{plan:'UNKNOWN'}),
@@ -259,6 +261,32 @@ test('provider header parsing cannot fabricate zero quota values from missing he
     evidenceSource:'response_headers',
   });
   assert.doesNotMatch(JSON.stringify(events[0]),/apiFootballKey|x-apisports-key|TELEGRAM_BOT_TOKEN/);
+});
+
+test('provider quota boundary rejects arrays and coercive objects before they become launch evidence', async () => {
+  const {runtime,memory,events}=providerBudgetHarness();
+  const coerciveHeaders=new Map([
+    ['x-ratelimit-requests-limit',['7500']],
+    ['x-ratelimit-requests-remaining',{valueOf:()=>7000}],
+    ['x-ratelimit-limit',['300']],
+    ['x-ratelimit-remaining',{toString:()=> '280'}],
+  ]);
+
+  runtime.updateProviderFromHeaders({
+    headers:{get:name=>coerciveHeaders.get(name) ?? null},
+  });
+
+  assert.equal(memory.provider.plan,'UNKNOWN');
+  assert.equal(memory.provider.dailyLimit,null);
+  assert.equal(memory.provider.dailyRemaining,null);
+  assert.equal(memory.provider.minuteLimit,null);
+  assert.equal(memory.provider.minuteRemaining,null);
+  assert.equal(memory.provider.updatedAt,null);
+  assert.equal(runtime.completeProviderQuotaSnapshot(memory.provider),false);
+
+  runtime.providerQuotaEvidence({});
+  await Promise.resolve();
+  assert.equal(events.length,0);
 });
 
 test('beta launch dashboard uses only fresh complete provider quota evidence and never returns member ids', async () => {
