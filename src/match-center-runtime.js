@@ -17,6 +17,7 @@ export function createMatchCenterRuntime(deps) {
     assessMatchEventQuality,
     assessMatchLineups,
     assessMatchStatisticsQuality,
+    synchronizeLineupQuality,
     assessOddsMarketQuality,
     buildAiTimeline,
     buildLiveAiCoach,
@@ -84,6 +85,7 @@ export function createMatchCenterRuntime(deps) {
     assessMatchEventQuality,
     assessMatchLineups,
     assessMatchStatisticsQuality,
+    synchronizeLineupQuality,
     assessOddsMarketQuality,
     buildAiTimeline,
     buildLiveAiCoach,
@@ -324,6 +326,25 @@ export function createMatchCenterRuntime(deps) {
       && value?.provenanceState==='verified';
   }
 
+  function semanticLineupView(lineupsInput,qualityInput,metaInput) {
+    const sourceQuality=objectValue(qualityInput) || {};
+    const quality={
+      ...sourceQuality,
+      home:{...(objectValue(sourceQuality.home) || {})},
+      away:{...(objectValue(sourceQuality.away) || {})},
+    };
+    let meta=objectValue(metaInput)
+      || unavailableFeatureMeta('lineups','lineup_meta_invalid');
+    try {
+      meta=objectValue(annotateLineupReliability(meta,quality)) || meta;
+    } catch {}
+    let lineups=objectValue(lineupsInput) || {};
+    try {
+      lineups=objectValue(synchronizeLineupQuality(lineups,quality)) || lineups;
+    } catch {}
+    return {lineups,quality,meta};
+  }
+
   async function apiMatchCenter(request,cfg) {
     const fixtureId=requestFixtureId(request);
     if (fixtureId===null) {
@@ -381,12 +402,20 @@ export function createMatchCenterRuntime(deps) {
       const statisticsTrusted=trustedFeature(refreshedFreshness.statistics);
       const playersTrusted=trustedFeature(refreshedFreshness.players);
       const injuriesTrusted=trustedFeature(refreshedFreshness.injuries);
-      const lineupsTrusted=trustedFeature(refreshedFreshness.lineups);
+      const cachedLineupView=semanticLineupView(
+        cached.lineups,
+        cached.lineupQuality,
+        refreshedFreshness.lineups,
+      );
+      refreshedFreshness.lineups=cachedLineupView.meta;
+      const lineupsTrusted=trustedFeature(cachedLineupView.meta);
       const oddsTrusted=trustedFeature(refreshedFreshness.liveOdds);
       const liveCoreTrusted=eventsTrusted && statisticsTrusted;
 
       return json({
         ...cached,
+        lineups:cachedLineupView.lineups,
+        lineupQuality:cachedLineupView.quality,
         ...(liveCache && !statisticsTrusted
           ? {livePressure:null}
           : {}),
@@ -421,7 +450,7 @@ export function createMatchCenterRuntime(deps) {
               && Boolean(cached.liveOdds),
             lineupsTrusted,
             lineupsConfirmed:lineupsTrusted
-              && objectValue(cached.lineupQuality)?.bothConfirmed===true,
+              && cachedLineupView.quality?.bothConfirmed===true,
           } : {}),
         },
         cached:true,
@@ -469,9 +498,17 @@ export function createMatchCenterRuntime(deps) {
           mode:staleMode,
           forceStale:true,
         });
+        const staleLineupView=semanticLineupView(
+          stale.lineups,
+          stale.lineupQuality,
+          staleFreshness.lineups,
+        );
+        staleFreshness.lineups=staleLineupView.meta;
         const suppressLiveSignals=staleMode==='live';
         return json({
           ...stale,
+          lineups:staleLineupView.lineups,
+          lineupQuality:staleLineupView.quality,
           dataFreshness:staleFreshness,
           ...(suppressLiveSignals ? {
             livePressure:null,
@@ -1143,6 +1180,10 @@ export function createMatchCenterRuntime(deps) {
         );
       }
     }
+    try {
+      lineups=objectValue(synchronizeLineupQuality(lineups,lineupQuality))
+        || lineups;
+    } catch {}
 
     const lineupSourceTrusted=trustedFeature(featureMeta.lineups);
     let absences={
