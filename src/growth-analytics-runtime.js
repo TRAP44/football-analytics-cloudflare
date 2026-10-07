@@ -141,10 +141,14 @@ export function createGrowthAnalyticsRuntime(deps = {}) {
     if (!hasSupabase(cfg)) return json({error:'Supabase не настроен.'},503);
     let body={};
     try { body=await request.json(); } catch {}
-    const reason=NEWS_IMPACT_FAILURE_CODES.has(String(body?.reason || '')) ? String(body.reason) : '';
+    const reason=typeof body?.reason==='string' && NEWS_IMPACT_FAILURE_CODES?.has?.(body.reason)
+      ? body.reason
+      : '';
     const action=cleanNewsImpactActionCode(body?.action);
-    const code=NEWS_IMPACT_RECOVERY_INCIDENT_CODES.has(String(body?.code || '')) ? String(body.code) : '';
-    const lastSeenAt=String(body?.lastSeenAt || '');
+    const code=typeof body?.code==='string' && NEWS_IMPACT_RECOVERY_INCIDENT_CODES?.has?.(body.code)
+      ? body.code
+      : '';
+    const lastSeenAt=typeof body?.lastSeenAt==='string' ? body.lastSeenAt : '';
     if (!reason || !action || !code || !Number.isFinite(Date.parse(lastSeenAt))) {
       return json({error:'Некорректный recovery-инцидент.'},400);
     }
@@ -164,7 +168,8 @@ export function createGrowthAnalyticsRuntime(deps = {}) {
       && x.action===action
       && x.code===code
       && x.canAcknowledge
-      && String(x.lastSeenAt || '')===lastSeenAt);
+      && typeof x.lastSeenAt==='string'
+      && x.lastSeenAt===lastSeenAt);
     if (!incident) {
       return json({error:'Инцидент уже изменился или больше не активен. Обновите Incident Center.'},409);
     }
