@@ -75,14 +75,15 @@ test('profile prioritizes actionable team counter reminders settings and moves l
   const publicProfile=block(html,'<section id="profileView"','<nav class="bottom-nav"');
   const profile=publicProfile.indexOf('class="panel profile-panel"');
   const teams=publicProfile.indexOf('id="profileFavoriteTeamsBtn"');
+  const reminders=publicProfile.indexOf('id="reminderList"');
   const settings=publicProfile.indexOf('class="panel preferences-panel"');
   const about=publicProfile.indexOf('class="panel profile-about-service"');
-  assert.ok(profile>=0 && profile<teams && teams<settings && settings<about);
-  assert.doesNotMatch(publicProfile,/id="reminderList"|Активные напоминания/);
+  assert.ok(profile>=0 && profile<teams && teams<reminders && reminders<settings && settings<about);
+  assert.match(publicProfile,/Активные напоминания/);
   assert.match(publicProfile,/О сервисе/);
   assert.match(publicProfile,/Конфиденциальность/);
   assert.match(publicProfile,/Условия использования/);
-  assert.doesNotMatch(publicProfile,/Статус сервиса|status\.html/);
+  assert.match(publicProfile,/Статус сервиса|status\.html/);
   assert.match(publicProfile,/Сообщить о проблеме/);
   assert.match(publicProfile,/id="publicAppVersion"/);
   const search=block(html,'<section id="searchView"','<section id="tournamentView"');
@@ -101,8 +102,8 @@ test('mobile polish covers requested widths',()=>{
   assert.match(css,/home-priority-card/);
 });
 
-test('Phase 5 resumes only in a clean post-polish cohort',()=>{
-  assert.match(worker,/PHASE5_VALIDATION_COHORT\s*=\s*'phase5_public_v2'/);
+test('Phase 5 resumes only with the current session cohort contract',()=>{
+  assert.match(worker,/createBetaPhase5Runtime\(\{[\s\S]*PHASE5_VALIDATION_COHORT/);
   assert.match(client,/phase5-session:v2/);
   assert.doesNotMatch(client,/phase5-session:v1/);
 });
