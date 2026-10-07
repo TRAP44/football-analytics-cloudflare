@@ -2,38 +2,41 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/match-center-runtime.js', 'utf8');
+const worker = fs.readFileSync('src/worker.js', 'utf8');
+const matchCenter = fs.readFileSync('src/match-center-runtime.js', 'utf8');
+const modelEvaluation = fs.readFileSync('src/model-evaluation-runtime.js', 'utf8');
+const telegram = fs.readFileSync('src/telegram-bot-orchestration-runtime.js', 'utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
 
 test('RC62 uses the immutable first pre-match model snapshot',()=> {
-  assert.match(worker,/async function loadModelPredictionForFixture\(/);
-  assert.match(worker,/function buildPostMatchReview\(/);
-  assert.match(worker,/predicted_outcome/);
-  assert.match(worker,/actual_outcome/);
+  assert.match(modelEvaluation,/async function loadModelPredictionForFixture\(/);
+  assert.match(modelEvaluation,/function buildPostMatchReview\(/);
+  assert.match(modelEvaluation,/predicted_outcome/);
+  assert.match(modelEvaluation,/actual_outcome/);
 });
 
 test('finished Match Center settles existing prediction and builds review',()=> {
-  assert.match(worker,/if \(finished\) await settlePredictionsFromFixtures\(\[fixture\], cfg\)/);
-  assert.match(worker,/const postMatchPrediction = finished \? await loadModelPredictionForFixture/);
-  assert.match(worker,/const postMatchReview = finished \? buildPostMatchReview/);
-  assert.match(worker,/postMatchReview,/);
+  assert.match(matchCenter,/if \(finished\) await settlePredictionsFromFixtures\(\[fixture\], cfg\)/);
+  assert.match(matchCenter,/postMatchPredictionCandidate=finished[\s\S]{0,180}?loadModelPredictionForFixture/);
+  assert.match(matchCenter,/if \(finished\)[\s\S]{0,240}?buildPostMatchReview/);
+  assert.match(matchCenter,/postMatchReview,/);
 });
 
 test('review checks outcome total and BTTS and adds observed evidence',()=> {
-  assert.match(worker,/label:'Тотал 2\.5'/);
-  assert.match(worker,/label:'Обе забьют'/);
-  assert.match(worker,/add\('xg'/);
-  assert.match(worker,/add\('shots_on_goal'/);
-  assert.match(worker,/add\('red_card'/);
-  assert.match(worker,/не доказывают причинность/);
+  assert.match(modelEvaluation,/label:'Тотал 2\.5'/);
+  assert.match(modelEvaluation,/label:'Обе забьют'/);
+  assert.match(modelEvaluation,/add\('xg'/);
+  assert.match(modelEvaluation,/add\('shots_on_goal'/);
+  assert.match(modelEvaluation,/add\('red_card'/);
+  assert.match(modelEvaluation,/не доказывают причинность/);
 });
 
 test('post-match drill is deterministic',()=> {
-  assert.match(worker,/function postMatchReviewDrill\(/);
-  assert.match(worker,/review\.outcome\.correct===true/);
-  assert.match(worker,/review\.markets\.every\(x=>x\.correct===true\)/);
-  assert.match(worker,/review\.evidence\.some\(x=>x\.code==='xg'\)/);
+  assert.match(modelEvaluation,/function postMatchReviewDrill\(/);
+  assert.match(modelEvaluation,/review\.outcome\.correct===true/);
+  assert.match(modelEvaluation,/review\.markets\.every\(x=>x\.correct===true\)/);
+  assert.match(modelEvaluation,/review\.evidence\.some\(x=>x\.code==='xg'\)/);
 });
 
 test('Mini App shows a compact post-match review in finished Match Center',()=> {
@@ -45,11 +48,11 @@ test('Mini App shows a compact post-match review in finished Match Center',()=> 
 });
 
 test('Telegram exposes post-match AI review without a new pre-match analysis',()=> {
-  assert.match(worker,/match:review/);
-  assert.match(worker,/async function botMatchCenterFixture\(/);
-  assert.match(worker,/function botPostMatchReviewText\(/);
-  assert.match(worker,/section === 'review'/);
-  assert.match(worker,/post_match_review/);
+  assert.match(telegram,/match:review/);
+  assert.match(telegram,/async function botMatchCenterFixture\(/);
+  assert.match(telegram,/function botPostMatchReviewText\(/);
+  assert.match(telegram,/selected === 'review'/);
+  assert.match(telegram,/post_match_review/);
 });
 
 test('RC62 health contract is release-gated',()=> {
