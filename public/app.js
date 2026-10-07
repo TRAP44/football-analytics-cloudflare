@@ -25,7 +25,7 @@ import { analysisAccessUsageHtml, buildAnalysisAccessUsage } from './modules/ana
 import { createGlobalSearchRenderer } from './modules/global-search-renderer.js';
 import { createGlobalSearchController } from './modules/global-search-controller.js';
 import { buildPlayerComparisonCandidates, playerComparisonHtml, samePlayer } from './modules/player-comparison.js';
-import { homeMatchSections as buildHomeMatchSections, selectHomePersonalMatch } from './modules/home-match-priority.js';
+import { homeMatchScoreLabel, homeMatchSections as buildHomeMatchSections, selectHomePersonalMatch } from './modules/home-match-priority.js';
 import { createPlayerFollowModule } from './modules/player-follow.js';
 import {
   CLIENT_VERSION,
@@ -3157,11 +3157,7 @@ function categoryLabel(category) {
 }
 
 function matchCenter(m) {
-  if ((m.finished || m.live) && m.score?.home !== null && m.score?.home !== undefined && m.score?.away !== null && m.score?.away !== undefined) {
-    return `${m.score.home} : ${m.score.away}`;
-  }
-  if (m.live) return `${m.score?.home ?? 0} : ${m.score?.away ?? 0}`;
-  return 'VS';
+  return homeMatchScoreLabel(m);
 }
 
 function renderPopularCompetitions() {
