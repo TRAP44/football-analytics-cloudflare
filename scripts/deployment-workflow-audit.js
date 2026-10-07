@@ -81,7 +81,7 @@ function requireOrder(findings,label,text,names) {
 
 function actionRefs(workflow) {
   const refs=[];
-  for (const match of source(workflow).matchAll(/\buses:\s*([^\s#]+)(?:\s+#.*)?$/gm)) {
+  for (const match of source(workflow).matchAll(/\buses:\s*([^\s#]+)\s*$/gm)) {
     refs.push(match[1]);
   }
   return refs;
