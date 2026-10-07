@@ -1959,6 +1959,16 @@ export function createAnalysisRuntime(deps) {
             reason:safeText(awayRoleHydration.reason,160),
           },
         },
+        startingXiStrength:{
+          available:lineupStrength.available === true,
+          trusted:lineupStrength.trusted === true,
+          confidence:finiteNumber(lineupStrength.confidence),
+          probabilityShift:finiteNumber(lineupStrength.probabilityShift),
+          homeCoverage:finiteNumber(lineupStrength?.home?.coverage),
+          awayCoverage:finiteNumber(lineupStrength?.away?.coverage),
+          homeRotationPenaltyPct:finiteNumber(lineupStrength?.home?.rotationPenaltyPct),
+          awayRotationPenaltyPct:finiteNumber(lineupStrength?.away?.rotationPenaltyPct),
+        },
         news:{
           provider:'tavily',
           source:safeText(web.answer,1) || rowsOrEmpty(web.results,5).length
