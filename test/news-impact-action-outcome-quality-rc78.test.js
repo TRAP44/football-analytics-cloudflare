@@ -7,10 +7,10 @@ const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/m
 
 test('RC78 records outcomes only after successful delivery paths',()=>{
   assert.match(worker,/eventName:'news_impact_outcome'/);
-  assert.match(worker,/await sendGeneralFootballNews[\s\S]{0,220}await recordNewsImpactOutcome/);
-  assert.match(worker,/await sendBotFixtureShareCard[\s\S]{0,220}await recordNewsImpactOutcome/);
+  assert.match(worker,/await sendGeneralFootballNews[\\s\\S]{0,260}await swallowAsync\\(recordNewsImpactOutcome/);
+  assert.match(worker,/await sendBotFixtureShareCard[\\s\\S]{0,260}await swallowAsync\\(recordNewsImpactOutcome/);
   const deliveryStart=worker.indexOf('const delivery=await sendBotFixtureSection');
-  const deliveryOutcome=worker.indexOf('await recordNewsImpactOutcome',deliveryStart);
+  const deliveryOutcome=worker.indexOf('await swallowAsync(recordNewsImpactOutcome',deliveryStart);
   const deliveryGuard=worker.indexOf('if (!delivery?.ok)',deliveryStart);
   assert.ok(deliveryStart>=0 && deliveryGuard>deliveryStart && deliveryOutcome>deliveryGuard,'section outcome must follow successful-delivery guard');
   assert.match(worker,/await recordTrackedFullAiOutcome\('fresh'\)/);
