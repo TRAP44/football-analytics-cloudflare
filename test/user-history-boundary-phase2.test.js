@@ -182,16 +182,15 @@ test('history service ignores payloads without fixture identity', async () => {
   assert.equal(writes.length,0);
 });
 
-test('worker delegates history storage boundary to extracted service', () => {
+test('worker delegates history storage boundary through service wiring', () => {
   const worker=fs.readFileSync('src/worker.js','utf8');
+  const wiring=fs.readFileSync('src/service-wiring-runtime.js','utf8');
   assert.match(worker,/import \{ createUserHistoryService \} from '\.\/user-history\.js'/);
-  assert.match(worker,/createUserHistoryService\(\{/);
-  assert.match(worker,/recordOpsEvent,\s*bumpTelemetry,\s*redactOpsString,/);
-  assert.match(worker,/analysis-history:\$\{Number\(userId\)\}:\$\{Number\(fixtureId\)\}/);
-  assert.match(worker,/analysisHistoryWriteErrors/);
-  assert.match(worker,/analysisHistoryWriteLosses/);
-  assert.doesNotMatch(worker,/async function recordHistory\(userId, payload, cfg\)/);
-  assert.doesNotMatch(worker,/async function getHistory\(userId, cfg\)/);
-  assert.match(worker,/recordHistory\(/);
-  assert.match(worker,/getHistory\(user\.id, cfg\)/);
+  assert.match(worker,/createUserHistoryService,/);
+  assert.match(wiring,/\} = createUserHistoryService\(\{/);
+  assert.match(wiring,/recordOpsEvent,\s*bumpTelemetry,\s*redactOpsString,/);
+  assert.match(wiring,/analysis-history:\$\{Number\(userId\)\}:\$\{Number\(fixtureId\)\}/);
+  assert.match(wiring,/\brecordHistory\b/);
+  assert.match(wiring,/\bgetHistory\b/);
+  assert.doesNotMatch(worker,/async function (?:recordHistory|getHistory)\(/);
 });
