@@ -19,7 +19,7 @@
     "test:review-tail": "node scripts/run-review-tail-tests.js"
   },
   "devDependencies": {
-    "wrangler": "4.141.0"
+    "wrangler": "4.147.0"
   },
   "overrides": {
     "undici": "7.30.0",
