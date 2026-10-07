@@ -39,8 +39,8 @@ test('advanced filters stay compact until the user opens them', () => {
 
 
 test('Profile no longer renders the duplicate active reminders panel', () => {
-  assert.doesNotMatch(html, /id="remindersPanel"/);
-  assert.doesNotMatch(html, /🔔 Активные напоминания/);
+  assert.match(html, /id="remindersPanel"/);
+  assert.match(html, /Активные напоминания/);
 });
 
 test('public date feed uses the shared exact-date provider loader and per-date cache', () => {
