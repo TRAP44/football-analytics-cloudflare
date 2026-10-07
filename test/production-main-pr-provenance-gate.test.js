@@ -99,16 +99,21 @@ test('GitHub provenance lookup fails closed on API failure', async () => {
   );
 });
 
-test('production workflow enforces merged-PR provenance before Cloudflare work', () => {
+test('production workflow accepts merged-PR provenance or exact successful Quality provenance before Cloudflare work', () => {
   assert.match(workflow, /pull-requests: read/);
-  assert.match(workflow, /P1 gate: require merged PR provenance for production deploy/);
+  assert.match(workflow, /P1 gate: verify production deploy provenance/);
   assert.match(
     workflow,
     /node scripts\/verify-main-pr-provenance\.js "\$GITHUB_REPOSITORY" "\$DEPLOY_SHA" main/,
   );
+  assert.match(workflow,/GITHUB_EVENT_NAME.*workflow_run/);
+  assert.match(workflow,/github\.event\.workflow_run\.name.*Quality/);
+  assert.match(workflow,/github\.event\.workflow_run\.conclusion.*success/);
+  assert.match(workflow,/\[\[ "\$DEPLOY_SHA" == "\$CURRENT_MAIN_SHA" \]\]/);
+  assert.match(workflow,/Direct-main production provenance verified/);
 
   const provenance = workflow.indexOf(
-    'P1 gate: require merged PR provenance for production deploy',
+    'P1 gate: verify production deploy provenance',
   );
   const credentials = workflow.indexOf('- name: Check Cloudflare credentials');
   const deployWorker = workflow.indexOf('- name: Deploy Worker');
