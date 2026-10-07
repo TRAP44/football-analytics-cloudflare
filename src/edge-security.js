@@ -71,9 +71,9 @@ async function requestFingerprint(request, secret='') {
 
 function normalizedScannerPath(pathname = '') {
   let path=String(pathname || '').replace(/\\/g,'/');
-  // Decode a small, bounded number of times so encoded scanner probes such as
-  // %2eenv and double-encoded variants cannot bypass the early edge filter.
-  for (let pass=0; pass<2; pass+=1) {
+  // Decode repeatedly, but keep a hard ceiling so nested scanner probes cannot
+  // bypass the early filter or turn normalization into unbounded work.
+  for (let pass=0; pass<6; pass+=1) {
     let decoded;
     try {
       decoded=decodeURIComponent(path);
