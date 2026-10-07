@@ -83,6 +83,32 @@ test('error journey state escapes copy and binds one-shot injected retry callbac
   assert.equal(retries, 1);
 });
 
+test('error journey state ignores non-function retry values', () => {
+  const { module, elements } = createModule();
+
+  assert.doesNotThrow(() => module.renderJourneyState('error', {
+    title: 'Ошибка',
+    message: 'Повторите позже',
+    retry: 'retry-now',
+  }));
+
+  const root = elements.get('analysis');
+  assert.equal(root.attrs.get('aria-busy'), 'false');
+  assert.doesNotMatch(root.innerHTML, /analysisStateRetry/);
+  assert.equal(elements.get('analysisStateRetry').listeners.length, 0);
+});
+
+test('journey state module rejects missing required dependencies', () => {
+  assert.throws(
+    () => createJourneyStateModule({ elementById: null, escapeHtml: value => String(value ?? '') }),
+    /requires elementById and escapeHtml/,
+  );
+  assert.throws(
+    () => createJourneyStateModule({ elementById: () => null, escapeHtml: null }),
+    /requires elementById and escapeHtml/,
+  );
+});
+
 test('journey state preserves default loading and error copy', () => {
   const { module, elements } = createModule();
 
