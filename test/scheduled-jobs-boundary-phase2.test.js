@@ -411,6 +411,7 @@ test('heartbeat requires strict persistent and renewed flags',async()=>{
     persistent:true,
     jobKey:'cron:x',
     groupKey:'cron-global',
+    leaseToken:'token',
     leaseSeconds:720,
   });
   assert.equal(lost.state.lost,true);
@@ -533,14 +534,17 @@ test('run and daily keys are stable UTC identities', () => {
   assert.equal(dailyScheduledTaskKey('ops_cleanup',when),'daily:ops_cleanup:2026-09-28');
 });
 
-test('worker delegates scheduled orchestration through the distributed lease runtime', () => {
+test('worker delegates scheduled orchestration through operational and service wiring runtimes', () => {
   const worker=fs.readFileSync('src/worker.js','utf8');
-  assert.match(worker,/import \{ createScheduledJobsRuntime \} from '\.\/scheduled-jobs\.js';/);
+  const orchestration=fs.readFileSync('src/operational-orchestration-runtime.js','utf8');
+  const wiring=fs.readFileSync('src/service-wiring-runtime.js','utf8');
+  assert.match(orchestration,/import \{ createScheduledJobsRuntime \} from '\.\/scheduled-jobs\.js';/);
   assert.match(worker,/import \{ createScheduledLeaseRuntime \} from '\.\/scheduled-lease\.js';/);
-  assert.match(worker,/createScheduledLeaseRuntime\(\{/);
-  assert.match(worker,/const \{ handleScheduled \} = createScheduledJobsRuntime\(\{/);
-  assert.match(worker,/claimScheduledJob,/);
-  assert.match(worker,/completeScheduledJob,/);
-  assert.match(worker,/releaseScheduledJob,/);
-  assert.match(worker,/return handleScheduled\(controller, cfg, ctx\);/);
+  assert.match(worker,/createScheduledLeaseRuntime,/);
+  assert.match(wiring,/createScheduledLeaseRuntime\(\{/);
+  assert.match(orchestration,/const \{ handleScheduled \} = createScheduledJobsRuntime\(\{/);
+  for (const name of ['claimScheduledJob','renewScheduledJob','completeScheduledJob','releaseScheduledJob']) {
+    assert.match(orchestration,new RegExp('\\b'+name+'\\b'));
+  }
+  assert.match(worker,/handleScheduled,/);
 });
