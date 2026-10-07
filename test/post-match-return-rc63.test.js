@@ -51,10 +51,10 @@ test('cron chains return loop after settlement task',()=> {
   assert.match(scheduled,/\['post_match_return', postMatchPrerequisite\.then\(\(\) => run\('post_match_return', \(\) => processPostMatchReturns\(cfg\)\)\)\]/);
 });
 
-test('RC63 deterministic drill and health contract are present',()=> {
+test('RC63 deterministic drill remains wired through the current modular runtime',()=> {
   assert.match(returns,/function postMatchReturnDrill\(/);
-  assert.match(worker,/postMatchReturnSelfTest: postMatchReturnDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  for (const flag of ['postMatchReturnLoop','analyzedMatchReturn','postMatchReturnDedupe','postMatchReturnOptOut','postMatchReturnQuotaGuard']) {
-    assert.ok(worker.includes(flag + ": 'enabled'"), 'missing ' + flag);
-  }
+  assert.match(worker,/function postMatchReturnDrill\(\.\.\.args\) \{ return getPostMatchReturnRuntime\(\)\.postMatchReturnDrill\(\.\.\.args\); \}/);
+  assert.match(worker,/function processPostMatchReturns\(\.\.\.args\) \{ return getPostMatchReturnRuntime\(\)\.processPostMatchReturns\(\.\.\.args\); \}/);
+  assert.match(worker,/const APP_VERSION = '6\.120\.0-rc144'/);
+  assert.match(worker,/const RC_NAME = 'RC144'/);
 });
