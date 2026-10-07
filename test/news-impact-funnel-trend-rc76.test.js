@@ -8,15 +8,16 @@ const recovery=fs.readFileSync('src/news-impact-recovery-runtime.js','utf8');
 const growth=fs.readFileSync('src/growth-analytics-runtime.js','utf8');
 const admin=fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
 
-test('RC76 loads an equal previous period without changing the current funnel window',()=>{
+test('RC76 loads the previous decision cohort while preserving its RC77 follow-up window',()=>{
   assert.match(growth,/const analyticsNowMs=Date\.now\(\)/);
   assert.match(growth,/const previousSince=new Date\(analyticsNowMs-days\*2\*86400_000\)\.toISOString\(\)/);
   assert.match(growth,/previousWindowRows=/);
   assert.match(growth,/createdAt<Date\.parse\(since\)/);
-  assert.match(growth,/previousNewsImpactActionRows=previousWindowRows\.filter/);
+  assert.match(growth,/previousNewsImpactRows=previousWindowRows\.filter/);
+  assert.match(growth,/previousNewsImpactActionRows=comparisonRows\.filter/);
   assert.match(growth,/const previousPeriodEndMs=Date\.parse\(since\)/);
-  assert.match(growth,/asOfMs:Number\.isFinite\(previousPeriodEndMs\) \? previousPeriodEndMs : analyticsNowMs/);
-  assert.doesNotMatch(growth,/previousNewsImpactActionRows=comparisonRows\.filter/);
+  assert.match(growth,/previousPeriodEndMs\+NEWS_IMPACT_ACTION_WINDOW_MINUTES\*60_000/);
+  assert.match(growth,/asOfMs:previousAttributionAsOfMs/);
   assert.match(growth,/trendAvailable=false/);
 });
 
