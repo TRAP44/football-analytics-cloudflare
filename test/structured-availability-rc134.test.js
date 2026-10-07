@@ -30,6 +30,19 @@ test('RC134 distinguishes injuries, illness and doubtful wording', () => {
   assert.equal(data.summary.away.doubtful, 1);
 });
 
+test('RC134 rejects coercible team ids and text containers instead of fabricating absences', () => {
+  const data = normalizeFixtureAbsences([
+    { team:{id:[1]}, player:{id:10,name:'Array Team',type:'Injury',reason:'Knee injury'} },
+    { team:{id:true}, player:{id:11,name:'Boolean Team',type:'Injury',reason:'Knee injury'} },
+    { team:{id:1}, player:{id:[12],name:['Forged Name'],type:['Injury'],reason:['Knee injury']} },
+  ], { homeId:1, awayId:2 });
+
+  assert.equal(data.home.length,0);
+  assert.equal(data.away.length,0);
+  assert.equal(data.summary.home.total,0);
+  assert.equal(data.summary.away.total,0);
+});
+
 test('RC134 deduplicates repeated provider rows for one player', () => {
   const data = normalizeFixtureAbsences([
     { team:{id:1}, player:{id:20,name:'Same Player',type:'Injury',reason:'Knee injury'} },
