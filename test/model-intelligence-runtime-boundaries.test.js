@@ -113,6 +113,37 @@ test('recent form rejects unsafe ids, malformed provider rows and missing final 
     null,
   );
 
+  assert.equal(runtime.teamResult(finishedFixture(),true),null);
+
+  let boundaryNetworkCalls=0;
+  const strictBoundaries=createModelIntelligenceRuntime(deps({
+    apiFootball:async()=>{
+      boundaryNetworkCalls+=1;
+      return [];
+    },
+  }));
+  assert.equal(
+    await strictBoundaries.getRecentTeamForm(
+      10,
+      'home',
+      'not-a-date',
+      100,
+      {},
+    ),
+    null,
+  );
+  assert.equal(
+    await strictBoundaries.getRecentTeamForm(
+      10,
+      'home',
+      '2026-10-06T18:00:00.000Z',
+      true,
+      {},
+    ),
+    null,
+  );
+  assert.equal(boundaryNetworkCalls,0);
+
   const malformed=createModelIntelligenceRuntime(deps({
     apiFootball:async()=>({unexpected:true}),
   }));
@@ -204,6 +235,10 @@ test('ranking, H2H and Poisson calculations fail closed on malformed numeric inp
     null,
   );
   assert.equal(
+    runtime.h2hProbabilities({homeWins:true,draws:2,awayWins:1}),
+    null,
+  );
+  assert.equal(
     runtime.poissonGoalModel(
       {overall:{sample:5,ppg:2,gfAvg:'bad',gaAvg:1,gdAvg:1}},
       {overall:{sample:5,ppg:1,gfAvg:1,gaAvg:1,gdAvg:0}},
@@ -227,8 +262,8 @@ test('pre-match intelligence drops malformed market, H2H and signal context', ()
     },
     homeForm:null,
     awayForm:null,
-    absences:null,
-    lineups:null,
+    absences:{home:'corrupt',away:{length:9}},
+    lineups:{home:'corrupt',away:['corrupt']},
     goalModel:null,
     comparison:null,
     confidence:{score:70,disagreement:5},
@@ -250,6 +285,21 @@ test('pre-match intelligence drops malformed market, H2H and signal context', ()
   assert.equal(
     brief.drivers.some(driver=>driver.type==='h2h_context'),
     false,
+  );
+  assert.equal(
+    brief.drivers.some(driver=>driver.type==='absences'),
+    false,
+  );
+  assert.deepEqual(brief.absences,{home:0,away:0});
+  assert.deepEqual(
+    brief.lineupStatus,
+    {
+      home:false,
+      away:false,
+      confirmed:false,
+      homeState:'unavailable',
+      awayState:'unavailable',
+    },
   );
   assert.ok(
     brief.watch.some(item=>item.includes('Линия 1X2 отсутствует')),

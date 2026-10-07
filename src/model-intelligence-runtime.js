@@ -48,22 +48,33 @@ export function createModelIntelligenceRuntime(deps) {
     MODEL_SIGNAL_NAMES.map(name=>[name,baseWeightValues[name]/baseWeightTotal]),
   ));
 
+  function scalarFiniteNumber(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value !== 'string') return null;
+    const raw=value.trim();
+    if (!raw) return null;
+    const number=Number(raw);
+    return Number.isFinite(number) ? number : null;
+  }
+
   function positiveSafeInteger(value) {
-    if (value === null || value === undefined || value === '') return null;
-    const number=Number(value);
-    return Number.isSafeInteger(number) && number > 0 ? number : null;
+    const number=scalarFiniteNumber(value);
+    return number !== null && Number.isSafeInteger(number) && number > 0 ? number : null;
   }
 
   function nonNegativeSafeInteger(value) {
-    if (value === null || value === undefined || value === '') return null;
-    const number=Number(value);
-    return Number.isSafeInteger(number) && number >= 0 ? number : null;
+    const number=scalarFiniteNumber(value);
+    return number !== null && Number.isSafeInteger(number) && number >= 0 ? number : null;
   }
 
   function finiteNumber(value) {
-    if (value === null || value === undefined || value === '') return null;
-    const number=Number(value);
-    return Number.isFinite(number) ? number : null;
+    return scalarFiniteNumber(value);
+  }
+
+  function plainRecord(value) {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? value
+      : null;
   }
 
   function finiteRange(value,min,max) {
@@ -224,10 +235,13 @@ export function createModelIntelligenceRuntime(deps) {
   async function getRecentTeamForm(teamId, preferredVenue, fixtureDate, fixtureId, cfg, { allowNetwork = true } = {}) {
     const id=positiveSafeInteger(teamId);
     if (!id) return null;
+    const hasFixtureIdentity=fixtureId !== null && fixtureId !== undefined && fixtureId !== '';
     const fixtureIdentity=positiveSafeInteger(fixtureId);
+    if (hasFixtureIdentity && !fixtureIdentity) return null;
     const venueKey=['home','away'].includes(preferredVenue) ? preferredVenue : '';
     const parsedTarget=Date.parse(String(fixtureDate || ''));
-    const targetMs=Number.isFinite(parsedTarget) ? parsedTarget : Date.now();
+    if (!Number.isFinite(parsedTarget)) return null;
+    const targetMs=parsedTarget;
     const to=ymd(new Date(targetMs-60_000));
     const cacheKey=`teamform:${id}:${venueKey || 'all'}:${to}:v2`;
     const cached=cachedFormSummary(await getCache(cacheKey,cfg).catch(()=>null));
@@ -924,8 +938,8 @@ export function createModelIntelligenceRuntime(deps) {
       }
     }
   
-    const homeAbs = absences?.home?.length || 0;
-    const awayAbs = absences?.away?.length || 0;
+    const homeAbs = Array.isArray(absences?.home) ? absences.home.length : 0;
+    const awayAbs = Array.isArray(absences?.away) ? absences.away.length : 0;
     if (homeAbs || awayAbs) {
       const diff = homeAbs - awayAbs;
       if (Math.abs(diff) >= 2) {
@@ -1075,8 +1089,11 @@ export function createModelIntelligenceRuntime(deps) {
       });
     }
   
+    const homeLineup=plainRecord(lineups?.home);
+    const awayLineup=plainRecord(lineups?.away);
+    const kickoffMinutes=finiteRange(minutesToKickoff,0,60*24*30);
     const watch = [];
-    if (minutesToKickoff !== null && minutesToKickoff <= 180 && minutesToKickoff >= 0 && !lineups?.home && !lineups?.away) {
+    if (kickoffMinutes !== null && kickoffMinutes <= 180 && !homeLineup && !awayLineup) {
       watch.push('Подтверждённые стартовые составы: они ещё не опубликованы, а перед стартом могут изменить оценку.');
     }
     if (Math.abs(homeAbs - awayAbs) >= 2) {
@@ -1102,7 +1119,7 @@ export function createModelIntelligenceRuntime(deps) {
       Math.min(30, disagreement * 1.2) +
       (closeMatch ? 10 : 0) +
       (!marketProbabilities ? 8 : 0) +
-      ((!lineups?.home && !lineups?.away && minutesToKickoff !== null && minutesToKickoff <= 120) ? 6 : 0),
+      ((!homeLineup && !awayLineup && kickoffMinutes !== null && kickoffMinutes <= 120) ? 6 : 0),
       10, 90
     ));
     const uncertainty = uncertaintyScore >= 62
@@ -1157,11 +1174,11 @@ export function createModelIntelligenceRuntime(deps) {
       sourceRows,
       comparisonSummary: comparison?.balanceLabel || '',
       lineupStatus: {
-        home: Boolean(lineups?.home?.quality?.published),
-        away: Boolean(lineups?.away?.quality?.published),
-        confirmed: Boolean(lineups?.home?.quality?.confirmed && lineups?.away?.quality?.confirmed),
-        homeState: String(lineups?.home?.quality?.state || 'unavailable'),
-        awayState: String(lineups?.away?.quality?.state || 'unavailable'),
+        home: Boolean(homeLineup?.quality?.published),
+        away: Boolean(awayLineup?.quality?.published),
+        confirmed: Boolean(homeLineup?.quality?.confirmed && awayLineup?.quality?.confirmed),
+        homeState: String(homeLineup?.quality?.state || 'unavailable'),
+        awayState: String(awayLineup?.quality?.state || 'unavailable'),
       },
       absences: { home: homeAbs, away: awayAbs },
       methodology: 'Бриф объясняет уже рассчитанные вероятности через веса источников, недавнюю форму, силу сезона, очные встречи, потери и голевую эвристику. Подтверждённый Starting XI применяется отдельной ограниченной поправкой после базового объединения и повышает уверенность только при достаточном покрытии сезонной статистикой игроков. Он не является рекомендацией для ставок.',
