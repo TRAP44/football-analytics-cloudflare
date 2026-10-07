@@ -83,7 +83,9 @@ jobs:
       - name: Re-verify release artifact
         run: |
           npm audit --audit-level=high
+          npm run security:dependencies
           npm run security:scan
+          npm run security:privileged
           npm run lint
           npm run check
           npm test
