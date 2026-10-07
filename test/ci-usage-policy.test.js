@@ -14,9 +14,10 @@ test('CI usage policy keeps external monitoring hourly with immediate post-deplo
   assert.match(monitor,/workflows: \["Deploy Production"\]/);
 });
 
-test('Quality cancels superseded PR runs, skips docs-only changes and protects the persistent runner',()=>{
+test('Quality cancels superseded PR runs without cancelling trusted main gates',()=>{
   assert.match(quality,/group: quality-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/);
-  assert.match(quality,/cancel-in-progress: true/);
+  assert.match(quality,/cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
+  assert.doesNotMatch(quality,/cancel-in-progress: true/);
   assert.match(quality,/paths-ignore:[\s\S]*"docs\/\*\*"[\s\S]*"\*\*\/\*\.md"/);
   assert.match(quality,/database-integration:[\s\S]*runs-on: \[self-hosted, Linux, X64\]/);
   assert.match(quality,/github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
