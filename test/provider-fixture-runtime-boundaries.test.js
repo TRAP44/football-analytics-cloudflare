@@ -189,6 +189,29 @@ test('team discovery keeps usable half of a two-request fanout and short-caches 
   assert.equal(writes[0][2].partial,true);
 });
 
+test('team discovery rejects fixtures outside the requested team scope', async () => {
+  let calls=0;
+  const runtime=createProviderFixtureRuntime(deps({
+    apiFootball:async()=>{
+      calls+=1;
+      return [
+        fixture(31,'FT',null,1,2),
+        fixture(32,'FT',null,77,4),
+        fixture(33,'FT',null,5,77),
+      ];
+    },
+  }));
+
+  const rows=await runtime.loadProviderTeamDiscoveryFixtures(
+    77,
+    {},
+    {forceRefresh:true},
+  );
+
+  assert.equal(calls,2);
+  assert.deepEqual(rows.map(row=>row.fixture.id),[32,33]);
+});
+
 test('direct fixture loader only accepts the requested fixture identity', async () => {
   const writes=[];
   const runtime=createProviderFixtureRuntime(deps({
