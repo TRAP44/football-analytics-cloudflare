@@ -6015,10 +6015,21 @@ function aiInstructorHtml(ai = {}, match = {}, kickoffHandoff = {}) {
     </section>`;
 }
 
+function canonicalLaunchFixtureId(value) {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+  if (typeof value !== 'string' || value.length > 32) return null;
+  const raw = value.trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const id = Number(raw);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
 let launchIntentHandled = false;
 async function openLaunchFixture(fixtureId, action, tab = '', handoff = false, newsImpactDecision = '', newsImpactAction = '', newsImpactRecoveryCode = '', newsImpactRecoveryFrom = '') {
-  const id = Number(fixtureId || 0);
-  if (!id) return;
+  const id = canonicalLaunchFixtureId(fixtureId);
+  if (id === null) return;
   const allowedTabs = new Set(['brief','overview','form','comparison','market','squads','context']);
   const requestedTab = allowedTabs.has(String(tab || '').toLowerCase()) ? String(tab).toLowerCase() : '';
   if (requestedTab) state.currentAnalysisTab = requestedTab;
@@ -6041,7 +6052,7 @@ function applyLaunchIntent() {
   const filter = String(params.get('filter') || '').toLowerCase();
   const view = String(params.get('view') || '').toLowerCase();
   const query = String(params.get('q') || '').trim().slice(0, 60);
-  const fixtureId = Number(params.get('fixtureId') || 0);
+  const fixtureId = canonicalLaunchFixtureId(params.get('fixtureId'));
   const action = String(params.get('action') || '').toLowerCase();
   const tab = String(params.get('tab') || '').toLowerCase();
   const handoff = params.get('handoff') === '1';
@@ -6065,7 +6076,7 @@ function applyLaunchIntent() {
   } else if (view === 'history') {
     showView('historyView');
     void Promise.allSettled([loadHistory(false),loadAiTrackRecord()]);
-  } else if (fixtureId > 0 && ['analysis','center'].includes(action)) {
+  } else if (fixtureId !== null && ['analysis','center'].includes(action)) {
     // A direct fixture link has no in-app parent. Keep Home as the stable
     // BackButton destination instead of manufacturing Search as a parent.
     showView(CANONICAL_HOME_VIEW);
