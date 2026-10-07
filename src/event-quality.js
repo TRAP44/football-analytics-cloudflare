@@ -149,9 +149,10 @@ function safeShallowCopy(value) {
 
 function eventFingerprint(event = {}) {
   const value=plainObject(event) || {};
+  const rawExtra=safeRead(value,'extra');
   return [
     integerInRange(safeRead(value,'minute'), 0, MAX_EVENT_MINUTE) ?? '',
-    integerInRange(safeRead(value,'extra') ?? 0, 0, MAX_EXTRA_MINUTE) ?? '',
+    integerInRange(rawExtra===undefined ? 0 : rawExtra, 0, MAX_EXTRA_MINUTE) ?? '',
     compactState(safeRead(value,'side')),
     positiveIdentifier(safeRead(value,'teamId') ?? safeRead(value,'team_id')),
     normalizedText(safeRead(value,'type')),
@@ -166,14 +167,23 @@ function eventFingerprint(event = {}) {
   ].join('|');
 }
 
-export function inspectMatchEvent(event = {}, { mode = 'live', elapsed = null } = {}) {
+export function inspectMatchEvent(event = {}, options = {}) {
   const value=plainObject(event) || {};
+  const rawExtra=safeRead(value,'extra');
   const minute = integerInRange(safeRead(value,'minute'), 0, MAX_EVENT_MINUTE);
-  const extra = integerInRange(safeRead(value,'extra') ?? 0, 0, MAX_EXTRA_MINUTE);
+  const extra = integerInRange(
+    rawExtra===undefined ? 0 : rawExtra,
+    0,
+    MAX_EXTRA_MINUTE,
+  );
   const side = compactState(safeRead(value,'side'));
   const type = normalizedText(safeRead(value,'type'));
-  const normalizedMode = compactState(mode) || 'live';
-  const liveElapsed = integerInRange(elapsed, 0, MAX_EVENT_MINUTE);
+  const normalizedMode = compactState(safeRead(options,'mode')) || 'live';
+  const liveElapsed = integerInRange(
+    safeRead(options,'elapsed'),
+    0,
+    MAX_EVENT_MINUTE,
+  );
   const effectiveMinute=minute!==null && extra!==null ? minute+extra : null;
   const future = normalizedMode === 'live'
     && liveElapsed !== null
@@ -208,9 +218,11 @@ export function inspectMatchEvent(event = {}, { mode = 'live', elapsed = null } 
   };
 }
 
-export function assessMatchEventQuality(events = [], { eventsMeta = {}, mode = 'live', elapsed = null } = {}) {
+export function assessMatchEventQuality(events = [], options = {}) {
   const rows = Array.isArray(events) ? events : [];
-  const normalizedMode = compactState(mode) || 'live';
+  const eventsMeta=plainObject(safeRead(options,'eventsMeta')) || {};
+  const normalizedMode = compactState(safeRead(options,'mode')) || 'live';
+  const elapsed=safeRead(options,'elapsed');
   const sourceTrusted = sourceIsTrusted(eventsMeta);
   const seen = new Set();
   const displayEventIds = [];
