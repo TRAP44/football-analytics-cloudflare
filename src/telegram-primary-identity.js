@@ -2,6 +2,7 @@ const CACHE_PREFIX = 'telegram:bot-username:v2:';
 const USERNAME_PATTERN = /^[A-Za-z0-9_]{5,32}$/;
 const START_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const BOT_ID_PATTERN = /^[1-9]\d{4,19}$/;
+const BOT_SECRET_PATTERN = /^[A-Za-z0-9_-]{1,256}$/;
 const MAX_TOKEN_LENGTH = 512;
 const MAX_CALLBACK_ID_LENGTH = 120;
 const MAX_USERNAME_INPUT_LENGTH = 64;
@@ -97,8 +98,7 @@ export function primaryTelegramBotStableIdentity(botToken = '') {
   const secretPart=token.slice(separator+1);
   if (
     !BOT_ID_PATTERN.test(botId)
-    || !secretPart
-    || /[\u0000-\u001f\u007f-\u009f]/u.test(secretPart)
+    || !BOT_SECRET_PATTERN.test(secretPart)
   ) return '';
   return `id-${botId}`;
 }
