@@ -78,13 +78,15 @@ test('telemetry counters reject malformed keys and numeric coercion', () => {
 
 test('ops redaction removes Telegram bearer Supabase and API credentials', () => {
   const {api}=buildRuntime();
+  const telegramCredential='111111111:' + 'abcdefghijklmnopqrstuvwxyz_' + 'secret';
+  const supabaseCredential='sb_' + 'secret_' + 'super_private_key';
   const text=[
-    'bot111111111:abcdefghijklmnopqrstuvwxyz_secret',
-    '111111111:abcdefghijklmnopqrstuvwxyz_secret',
+    'bot' + telegramCredential,
+    telegramCredential,
     'Bearer eyJhbGciOiJIUzI1NiJ9.secret',
     'eyJabcdefghijk.abcdefghijklmnop.abcdefghijklmnop',
     'SUPABASE_SERVICE_ROLE_KEY=service-role-secret',
-    'sb_secret_super_private_key',
+    supabaseCredential,
     'x-apisports-key=football-secret',
     'apikey: another-secret',
     'https://example.test/path?token=url-secret&x=1',
