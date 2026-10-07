@@ -5532,8 +5532,9 @@ async function shareAnalysis(d) {
   const text=lines.join('\n');
   const fullText=shareUrl ? `${text}\n\n${shareUrl}` : text;
   try {
-    if (telegramShareUrl && tg?.openTelegramLink) {
-      tg.openTelegramLink(telegramShareUrl);
+    const safeTelegramShareUrl=safeTelegramUrl(telegramShareUrl);
+    if (safeTelegramShareUrl && tg?.openTelegramLink) {
+      tg.openTelegramLink(safeTelegramShareUrl);
       toast('Открыто окно отправки матча');
       return;
     }
@@ -6345,6 +6346,18 @@ function safeUrl(url) {
     const u = new URL(url, location.origin);
     return ['http:', 'https:'].includes(u.protocol) ? u.href : '';
   } catch { return ''; }
+}
+
+function safeTelegramUrl(value) {
+  if (typeof value !== 'string' || value.length > 4096) return '';
+  try {
+    const u=new URL(value);
+    if (u.protocol !== 'https:' || u.username || u.password) return '';
+    const host=u.hostname.toLowerCase();
+    return host === 't.me' || host === 'telegram.me' ? u.toString() : '';
+  } catch {
+    return '';
+  }
 }
 
 function escapeHtml(value) {
