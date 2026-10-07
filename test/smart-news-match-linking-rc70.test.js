@@ -33,7 +33,7 @@ test('dated team intent can resolve a smart fixture and falls back to search',()
   assert.match(worker,/mode:'team_smart_link'/);
   assert.match(worker,/origin:'news_ai_smart_link'/);
   assert.match(worker,/sendBotFixtureMenu\(request,cfg,callbackUserId,callbackChatId,fixtureId\)/);
-  assert.match(worker,//sendBotFootballSearch\\\(request,cfg,callbackUserId,callbackChatId,teamName\\\)//);
+  assert.match(worker,/sendBotFootballSearch\(request,cfg,callbackUserId,callbackChatId,teamName\)/);
 });
 
 test('news text explains the linked match and which AI inputs should be rechecked',()=>{
