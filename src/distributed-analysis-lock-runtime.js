@@ -60,9 +60,21 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
   }
 
   function objectValue(value) {
-    return value && typeof value==='object' && !Array.isArray(value)
-      ? value
-      : null;
+    try {
+      return value && typeof value==='object' && !Array.isArray(value)
+        ? value
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function safeRead(value,key) {
+    try {
+      return value?.[key];
+    } catch {
+      return undefined;
+    }
   }
 
   function integerValue(value) {
@@ -93,6 +105,32 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id)
       ? id
       : '';
+  }
+
+  function strictInstantMs(value) {
+    if (value instanceof Date) {
+      const ms=value.getTime();
+      return Number.isFinite(ms) ? ms : null;
+    }
+    if (typeof value!=='string' || !value.trim()) return null;
+    const raw=value.trim();
+    const match=/^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/i.exec(raw);
+    if (!match) return null;
+    const year=Number(match[1]);
+    const month=Number(match[2]);
+    const day=Number(match[3]);
+    if (!Number.isSafeInteger(year) || month<1 || month>12 || day<1) return null;
+    const maxDay=new Date(Date.UTC(year,month,0)).getUTCDate();
+    if (day>maxDay) return null;
+    const parsed=Date.parse(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function errorText(error,fallback) {
+    return safeText(
+      safeRead(error,'message') ?? safeRead(error,'code') ?? error,
+      240,
+    ) || fallback;
   }
 
   function createClaimId() {
@@ -179,20 +217,21 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
 
   function validLockEntry(entry,fixtureId) {
     const value=objectValue(entry);
-    if (!value || value.expired!==false) return false;
-    const expiresAt=Date.parse(safeText(value.expiresAt,80));
-    if (!Number.isFinite(expiresAt) || expiresAt<=Date.now()) return false;
-    const payload=objectValue(value.payload);
-    if (!payload || payload.state!=='computing') return false;
-    if (positiveSafeInteger(payload.fixtureId)!==fixtureId) return false;
-    return Boolean(normalizeUuid(payload.claimId));
+    if (!value || safeRead(value,'expired')!==false) return false;
+    const expiresAt=strictInstantMs(safeRead(value,'expiresAt'));
+    if (expiresAt===null || expiresAt<=Date.now()) return false;
+    const payload=objectValue(safeRead(value,'payload'));
+    if (!payload || safeRead(payload,'state')!=='computing') return false;
+    if (positiveSafeInteger(safeRead(payload,'fixtureId'))!==fixtureId) return false;
+    return Boolean(normalizeUuid(safeRead(payload,'claimId')));
   }
 
   function sharedAnalysisPayload(value,cacheKey) {
     const payload=objectValue(value);
     const fixtureId=analysisFixtureIdFromCacheKey(cacheKey);
     if (!payload || !fixtureId) return null;
-    return positiveSafeInteger(payload?.match?.fixtureId)===fixtureId
+    const match=objectValue(safeRead(payload,'match'));
+    return positiveSafeInteger(safeRead(match,'fixtureId'))===fixtureId
       ? payload
       : null;
   }
@@ -200,8 +239,9 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
   async function clearExpiredLock(key,existing,cfg) {
     const now=Date.now();
     const local=objectValue(memory.cache.get(key));
-    const localExpiresAt=typeof local?.expiresAt==='number' && Number.isFinite(local.expiresAt)
-      ? local.expiresAt
+    const rawLocalExpiresAt=safeRead(local,'expiresAt');
+    const localExpiresAt=typeof rawLocalExpiresAt==='number' && Number.isFinite(rawLocalExpiresAt)
+      ? rawLocalExpiresAt
       : null;
     if (local && localExpiresAt !== null && localExpiresAt<=now) {
       memory.cache.delete(key);
@@ -213,10 +253,10 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
       expires_at:`lte.${nowIso}`,
     });
 
-    const payload=objectValue(existing?.payload);
+    const payload=objectValue(safeRead(existing,'payload'));
     return {
-      previousClaimId:normalizeUuid(payload?.claimId),
-      expiredAt:safeText(existing?.expiresAt,80) || null,
+      previousClaimId:normalizeUuid(safeRead(payload,'claimId')),
+      expiredAt:safeText(safeRead(existing,'expiresAt'),80) || null,
     };
   }
 
@@ -272,7 +312,7 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
     const policy=lockPolicy();
     try {
       const existing=await getCacheEntry(key,cfg,true);
-      if (existing && existing.expired!==true) {
+      if (existing && safeRead(existing,'expired')!==true) {
         if (!validLockEntry(existing,id)) {
           safeTelemetry('analysisLockInvalidEntries');
           await safeRecord(cfg,{
@@ -306,7 +346,7 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
         };
       }
 
-      if (existing?.expired===true) {
+      if (safeRead(existing,'expired')===true) {
         await clearExpiredLock(key,existing,cfg);
       }
 
@@ -341,7 +381,10 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
         throw new Error(`analysis lock HTTP ${status}`);
       }
 
-      const responseRows=await response.json().catch(()=>null);
+      const responseJson=safeRead(response,'json');
+      const responseRows=typeof responseJson==='function'
+        ? await Promise.resolve(responseJson.call(response)).catch(()=>null)
+        : null;
       if (!Array.isArray(responseRows)) {
         throw new Error('analysis lock response payload invalid');
       }
@@ -363,12 +406,15 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
       }
 
       const row=objectValue(responseRows[0]);
-      const rowPayload=objectValue(row?.payload);
+      const rowPayload=objectValue(safeRead(row,'payload'));
+      const confirmedExpiresAt=strictInstantMs(safeRead(row,'expires_at'));
       if (
-        safeText(row?.cache_key,200)!==key
-        || positiveSafeInteger(row?.fixture_id)!==id
-        || normalizeUuid(rowPayload?.claimId)!==claimId
-        || rowPayload?.state!=='computing'
+        safeText(safeRead(row,'cache_key'),200)!==key
+        || positiveSafeInteger(safeRead(row,'fixture_id'))!==id
+        || normalizeUuid(safeRead(rowPayload,'claimId'))!==claimId
+        || safeRead(rowPayload,'state')!=='computing'
+        || confirmedExpiresAt===null
+        || confirmedExpiresAt<=now
       ) {
         throw new Error('analysis lock claim confirmation invalid');
       }
@@ -393,7 +439,7 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
         source:'analysis_lock',
         eventType:'analysis_lock_degraded',
         code:'ANALYSIS_LOCK_FAIL_CLOSED',
-        message:safeText(error?.message || error,240) || 'analysis lock unavailable',
+        message:errorText(error,'analysis lock unavailable'),
         endpoint:'/api/analyze',
         meta:{fixtureId:id},
       });
@@ -412,13 +458,13 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
 
   async function releaseDistributedAnalysisLock(lock,cfg) {
     const value=objectValue(lock);
-    if (!value?.shared || !value?.claimId) {
+    if (safeRead(value,'shared')!==true || !safeRead(value,'claimId')) {
       return {released:false,skipped:true,reason:'not_shared_owner'};
     }
 
-    const key=safeText(value.key,160);
+    const key=safeText(safeRead(value,'key'),160);
     const fixtureId=lockFixtureIdFromKey(key);
-    const claimId=normalizeUuid(value.claimId);
+    const claimId=normalizeUuid(safeRead(value,'claimId'));
     if (!key || !fixtureId || !claimId) {
       return {released:false,skipped:true,reason:'invalid_lock'};
     }
@@ -445,12 +491,12 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
         return {released:false,skipped:true,reason:'not_found'};
       }
 
-      const payload=objectValue(row.payload);
-      const rowKey=safeText(row.cache_key,160);
-      const rowFixtureId=positiveSafeInteger(row.fixture_id);
+      const payload=objectValue(safeRead(row,'payload'));
+      const rowKey=safeText(safeRead(row,'cache_key'),160);
+      const rowFixtureId=positiveSafeInteger(safeRead(row,'fixture_id'));
       if (
-        normalizeUuid(payload?.claimId)!==claimId
-        || positiveSafeInteger(payload?.fixtureId)!==fixtureId
+        normalizeUuid(safeRead(payload,'claimId'))!==claimId
+        || positiveSafeInteger(safeRead(payload,'fixtureId'))!==fixtureId
         || (rowKey && rowKey!==key)
         || (rowFixtureId && rowFixtureId!==fixtureId)
       ) {
@@ -469,12 +515,14 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
         'analysis_cache',
         {cache_key:`eq.${key}`},
       ));
-      if (normalizeUuid(remaining?.payload?.claimId)===claimId) {
+      const remainingPayload=objectValue(safeRead(remaining,'payload'));
+      if (normalizeUuid(safeRead(remainingPayload,'claimId'))===claimId) {
         throw new Error('analysis lock release not confirmed');
       }
 
       const local=objectValue(memory.cache.get(key));
-      if (normalizeUuid(local?.payload?.claimId)===claimId) {
+      const localPayload=objectValue(safeRead(local,'payload'));
+      if (normalizeUuid(safeRead(localPayload,'claimId'))===claimId) {
         memory.cache.delete(key);
       }
       safeTelemetry('analysisLockReleases');
@@ -486,7 +534,7 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
         source:'analysis_lock',
         eventType:'analysis_lock_release',
         code:'ANALYSIS_LOCK_RELEASE_FAILED',
-        message:safeText(error?.message || error,240) || 'analysis lock release failed',
+        message:errorText(error,'analysis lock release failed'),
         endpoint:'/api/analyze',
         meta:{fixtureId},
       });
@@ -514,7 +562,13 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
 
       let ready=null;
       try { ready=await getCache(key,cfg); } catch {}
-      const payload=sharedAnalysisPayload(ready,key);
+      let payload=null;
+      try {
+        payload=sharedAnalysisPayload(ready,key);
+      } catch {
+        safeTelemetry('analysisLockJoinInvalidPayloads');
+        return null;
+      }
       if (payload) {
         safeTelemetry('analysisLockJoinHits');
         return payload;
