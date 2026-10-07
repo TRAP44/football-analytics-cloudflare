@@ -580,10 +580,11 @@ export function createSearchDiscoveryRuntime(deps) {
     const finished=match?.finished === true;
     const kickoffMs=strictInstantMs(safeText(match?.date,80));
     const nowMs=selectionNowMs(now);
+    const temporalInvalid=!live && kickoffMs===null;
     const staleUnfinished=!live
       && !finished
       && (
-        kickoffMs===null
+        temporalInvalid
         || kickoffMs<nowMs-MATCH_SELECTION_STALE_GRACE_MS
       );
     const distanceMs=kickoffMs!==null
@@ -595,9 +596,9 @@ export function createSearchDiscoveryRuntime(deps) {
         ? 1
         : !finished && !staleUnfinished
           ? 2
-          : finished && official
+          : finished && !temporalInvalid && official
             ? 3
-            : finished
+            : finished && !temporalInvalid
               ? 4
               : 5;
     const priority=Math.max(
@@ -622,6 +623,7 @@ export function createSearchDiscoveryRuntime(deps) {
       priority,
       distanceMs,
       kickoffMs,
+      temporalInvalid,
       staleUnfinished,
       reason,
     };
@@ -652,12 +654,16 @@ export function createSearchDiscoveryRuntime(deps) {
   }
   
   function rankTeamDiscoveryMatches(matches = [], now = Date.now()) {
+    const currentNow=selectionNowMs(now);
     const ranked=rows(matches)
-      .filter(match=>positiveSafeInteger(match?.fixtureId))
+      .filter(match=>
+        positiveSafeInteger(match?.fixtureId)
+        && matchSelectionProfile(match,currentNow).lane<5
+      )
       .slice()
-      .sort((a,b)=>compareMatchSelection(a,b,now));
+      .sort((a,b)=>compareMatchSelection(a,b,currentNow));
     return ranked.map((match,index)=>{
-      const profile=matchSelectionProfile(match,now);
+      const profile=matchSelectionProfile(match,currentNow);
       return {...match,selection:{primary:index===0,rank:index+1,reason:profile.reason,official:profile.official,firstTeam:profile.firstTeam,lane:profile.lane}};
     });
   }
@@ -696,8 +702,11 @@ export function createSearchDiscoveryRuntime(deps) {
       const profile=matchSelectionProfile(match,now);
       return profile.lane<=2;
     }).slice(0,upcomingLimit);
-    let recent=ranked.filter(match=>match?.finished === true)
-      .slice(0,recentLimit);
+    let recent=ranked.filter(match=>{
+      if (match?.finished !== true) return false;
+      const profile=matchSelectionProfile(match,now);
+      return profile.lane>=3 && profile.lane<=4;
+    }).slice(0,recentLimit);
     const primary=upcoming[0] || recent[0] || null;
     const primaryFixtureId=positiveSafeInteger(primary?.fixtureId);
     const markPrimary=list=>list.map(match=>({
