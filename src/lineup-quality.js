@@ -196,6 +196,45 @@ export function assessLineupQuality(lineup = null) {
   };
 }
 
+export function synchronizeLineupQuality(lineups = {}, matchQuality = {}) {
+  const source=lineups && typeof lineups==='object' && !Array.isArray(lineups)
+    ? lineups
+    : {};
+  const quality=matchQuality && typeof matchQuality==='object' && !Array.isArray(matchQuality)
+    ? matchQuality
+    : {};
+  const output={...source};
+
+  for (const sideName of ['home','away']) {
+    const lineup=source?.[sideName];
+    const sideQuality=quality?.[sideName];
+    if (
+      !lineup
+      || typeof lineup!=='object'
+      || Array.isArray(lineup)
+      || !sideQuality
+      || typeof sideQuality!=='object'
+      || Array.isArray(sideQuality)
+    ) continue;
+
+    const embeddedQuality=lineup.quality
+      && typeof lineup.quality==='object'
+      && !Array.isArray(lineup.quality)
+        ? lineup.quality
+        : {};
+
+    output[sideName]={
+      ...lineup,
+      quality:{
+        ...embeddedQuality,
+        ...sideQuality,
+      },
+    };
+  }
+
+  return output;
+}
+
 export function annotateLineupReliability(meta = {}, matchQuality = {}) {
   const quality = matchQuality && typeof matchQuality === 'object' ? matchQuality : {};
   restoreStructuralMatchQuality(quality);
