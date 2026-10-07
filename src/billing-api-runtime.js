@@ -1,6 +1,9 @@
 export function createBillingApiRuntime(deps = {}) {
+  if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
+    throw new TypeError('Billing API runtime dependencies are required.');
+  }
+
   const {
-    CHANNEL_PUBLISH_IDEMPOTENCY_MINUTES,
     PASS_TYPES,
     SUBSCRIPTION_PERIOD_SECONDS,
     adminForbidden,
@@ -8,8 +11,6 @@ export function createBillingApiRuntime(deps = {}) {
     billingPlanConfig,
     billingWebhookStatus,
     createPassInvoicePayload,
-    createSharedCacheRuntime,
-    createTelegramLinksRuntime,
     findRefundableBillingCharge,
     getQuota,
     getUserRecord,
@@ -27,6 +28,66 @@ export function createBillingApiRuntime(deps = {}) {
     telegramApi,
     updateUserSubscription
   } = deps;
+
+  if (!PASS_TYPES || typeof PASS_TYPES !== 'object' || Array.isArray(PASS_TYPES)) {
+    throw new TypeError('Billing API runtime requires PASS_TYPES.');
+  }
+  if (!memory || typeof memory !== 'object' || Array.isArray(memory)) {
+    throw new TypeError('Billing API runtime requires memory.');
+  }
+  const requiredFunctions={
+    adminForbidden,
+    applyRefundedPayment,
+    billingPlanConfig,
+    billingWebhookStatus,
+    createPassInvoicePayload,
+    findRefundableBillingCharge,
+    getQuota,
+    getUserRecord,
+    hasSupabase,
+    isAdminUser,
+    json,
+    listUserEntitlements,
+    makeInvoicePayload,
+    passProductConfig,
+    recordOpsEvent,
+    resolveUserEntitlements,
+    supaSelectMany,
+    syncBillingFromStars,
+    telegramApi,
+    updateUserSubscription,
+  };
+  for (const [name,fn] of Object.entries(requiredFunctions)) {
+    if (typeof fn !== 'function') throw new TypeError(`Billing API runtime requires ${name}.`);
+  }
+
+  function integerCandidate(value) {
+    if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+    if (typeof value !== 'string' || value.length > 24) return null;
+    const raw=value.trim();
+    if (!/^\d+$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isSafeInteger(number) ? number : null;
+  }
+
+  function positiveId(value) {
+    const number=integerCandidate(value);
+    return number !== null && number > 0 ? number : null;
+  }
+
+  function nonNegativeInteger(value) {
+    const number=integerCandidate(value);
+    return number !== null && number >= 0 ? number : null;
+  }
+
+  function plainObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  }
+
+  function safeText(value,max=240) {
+    if (typeof value !== 'string') return '';
+    return value.trim().slice(0,max);
+  }
 
   async function apiBillingPlans(request, cfg, user) {
     const webhook = cfg.monetizationEnabled
@@ -59,9 +120,9 @@ export function createBillingApiRuntime(deps = {}) {
   
   async function apiEntitlements(request, cfg, user) {
     const url = new URL(request.url);
-    const rawFixtureId = url.searchParams.get('fixtureId');
-    const fixtureId = rawFixtureId == null || rawFixtureId === '' ? 0 : Number(rawFixtureId);
-    if (!Number.isSafeInteger(fixtureId) || fixtureId < 0) {
+    const rawFixtureId=url.searchParams.get('fixtureId');
+    const fixtureId=rawFixtureId == null || rawFixtureId === '' ? 0 : nonNegativeInteger(rawFixtureId);
+    if (fixtureId === null) {
       return json({ error: 'Некорректный fixtureId.', code: 'ENTITLEMENT_INVALID_FIXTURE' }, 400);
     }
     return json({
@@ -80,10 +141,11 @@ export function createBillingApiRuntime(deps = {}) {
     if (!webhook.ready) return json({ error: 'Оплата ещё не активирована: Telegram webhook не настроен.', webhook }, 503);
   
     let body;
-    try { body = await request.json(); }
-    catch { return json({ error: 'Некорректное тело запроса.', code: 'BILLING_INVALID_JSON' }, 400); }
+    try { body=plainObject(await request.json()); }
+    catch { body=null; }
+    if (!body) return json({ error: 'Некорректное тело запроса.', code: 'BILLING_INVALID_JSON' }, 400);
   
-    const passType = String(body?.passType || '').trim().toUpperCase();
+    const passType=safeText(body.passType,40).toUpperCase();
     if (passType) {
       const product = passProductConfig(passType, cfg);
       if (!product) return json({ error: 'Неизвестный Pass.', code: 'BILLING_UNKNOWN_PASS' }, 400);
@@ -94,12 +156,16 @@ export function createBillingApiRuntime(deps = {}) {
         }, 503);
       }
   
-      const fixtureId = passType === PASS_TYPES.MATCH ? Number(body?.fixtureId || 0) : 0;
-      if (passType === PASS_TYPES.MATCH && (!Number.isSafeInteger(fixtureId) || fixtureId <= 0)) {
+      const rawFixtureId=body.fixtureId;
+      const fixtureId=passType === PASS_TYPES.MATCH ? positiveId(rawFixtureId) : 0;
+      if (passType === PASS_TYPES.MATCH && fixtureId === null) {
         return json({ error: 'Для Match Pass нужен корректный fixtureId.', code: 'BILLING_FIXTURE_REQUIRED' }, 400);
       }
-      if (passType !== PASS_TYPES.MATCH && body?.fixtureId != null && Number(body.fixtureId || 0) !== 0) {
-        return json({ error: 'Этот Pass не привязывается к матчу.', code: 'BILLING_FIXTURE_NOT_ALLOWED' }, 400);
+      if (passType !== PASS_TYPES.MATCH && rawFixtureId !== null && rawFixtureId !== undefined && rawFixtureId !== '') {
+        const nonMatchFixtureId=nonNegativeInteger(rawFixtureId);
+        if (nonMatchFixtureId === null || nonMatchFixtureId !== 0) {
+          return json({ error: 'Этот Pass не привязывается к матчу.', code: 'BILLING_FIXTURE_NOT_ALLOWED' }, 400);
+        }
       }
   
       const currentAccess = await resolveUserEntitlements(user.id, fixtureId, cfg);
@@ -125,7 +191,7 @@ export function createBillingApiRuntime(deps = {}) {
       return json({ invoiceUrl, passType, fixtureId: fixtureId || null, stars: product.stars });
     }
   
-    const plan = String(body?.plan || '').toUpperCase();
+    const plan=safeText(body.plan,24).toUpperCase();
     const planCfg = billingPlanConfig(plan, cfg);
     if (!planCfg) return json({ error: 'Неизвестный тариф.' }, 400);
   
@@ -154,20 +220,20 @@ export function createBillingApiRuntime(deps = {}) {
   
   async function apiBillingSubscription(request, cfg, user) {
     let body;
-    try {
-      body = await request.json();
-    } catch {
-      return json({ error: 'Некорректное тело запроса.', code: 'BILLING_INVALID_JSON' }, 400);
-    }
-    const action = String(body?.action || '').trim().toLowerCase();
+    try { body=plainObject(await request.json()); }
+    catch { body=null; }
+    if (!body) return json({ error: 'Некорректное тело запроса.', code: 'BILLING_INVALID_JSON' }, 400);
+    const action=safeText(body.action,16).toLowerCase();
     if (!['cancel', 'resume'].includes(action)) {
       return json({ error: 'Укажите действие cancel или resume.', code: 'BILLING_INVALID_ACTION' }, 400);
     }
     const record = await getUserRecord(user.id, cfg);
     const chargeId = String(record?.telegram_payment_charge_id || '');
     if (!chargeId) return json({ error: 'Активная подписка Telegram Stars не найдена.' }, 404);
+    const userId=positiveId(user?.id);
+    if (userId === null) return json({ error:'Некорректный пользователь.', code:'BILLING_INVALID_USER' },400);
     await telegramApi('editUserStarSubscription', cfg, {
-      user_id: Number(user.id),
+      user_id:userId,
       telegram_payment_charge_id: chargeId,
       is_canceled: action === 'cancel',
     });
@@ -176,8 +242,8 @@ export function createBillingApiRuntime(deps = {}) {
   }
   
   async function listRefundableBillingCharges(userId, cfg) {
-    const uid = Number(userId);
-    if (!Number.isSafeInteger(uid) || uid <= 0) return [];
+    const uid=positiveId(userId);
+    if (uid === null) return [];
   
     const items = [];
     let payments = [];
@@ -190,7 +256,7 @@ export function createBillingApiRuntime(deps = {}) {
       }).catch(() => []);
     } else {
       payments = [...memory.billingPayments.values()]
-        .filter(row => Number(row?.telegram_id || 0) === uid)
+        .filter(row => positiveId(row?.telegram_id) === uid)
         .sort((a, b) => Date.parse(b?.created_at || 0) - Date.parse(a?.created_at || 0))
         .slice(0, 20);
     }
@@ -202,7 +268,7 @@ export function createBillingApiRuntime(deps = {}) {
       items.push({
         kind: 'subscription',
         product: String(row?.plan || ''),
-        stars: Math.max(0, Number(row?.stars_amount || 0)),
+        stars:nonNegativeInteger(row?.stars_amount) ?? 0,
         status,
         createdAt: row?.created_at || null,
         expiresAt: row?.subscription_expiration_date || null,
@@ -220,11 +286,11 @@ export function createBillingApiRuntime(deps = {}) {
       items.push({
         kind: 'pass',
         product: String(row?.entitlement_type || row?.type || ''),
-        stars: Math.max(0, Number(row?.stars_amount || row?.starsAmount || 0)),
+        stars:nonNegativeInteger(row?.stars_amount ?? row?.starsAmount) ?? 0,
         status,
         createdAt: row?.created_at || row?.createdAt || null,
         expiresAt: row?.expires_at || row?.expiresAt || null,
-        fixtureId: Number(row?.fixture_id || row?.fixtureId || 0) || null,
+        fixtureId:positiveId(row?.fixture_id ?? row?.fixtureId),
         paymentChargeId: chargeId,
         chargeSuffix: chargeId.slice(-8),
       });
@@ -243,8 +309,9 @@ export function createBillingApiRuntime(deps = {}) {
   
   async function apiBillingRefundLookup(request, cfg, user) {
     const url = new URL(request.url);
-    const targetUserId = Number(url.searchParams.get('telegramId') || user?.id || 0);
-    if (!Number.isSafeInteger(targetUserId) || targetUserId <= 0) {
+    const requestedUserId=url.searchParams.get('telegramId');
+    const targetUserId=positiveId(requestedUserId === null || requestedUserId === '' ? user?.id : requestedUserId);
+    if (targetUserId === null) {
       return json({ error:'Укажите корректный Telegram ID.', code:'BILLING_REFUND_INVALID_TARGET' }, 400);
     }
     const items = await listRefundableBillingCharges(targetUserId, cfg);
@@ -259,13 +326,14 @@ export function createBillingApiRuntime(deps = {}) {
     if (!isAdminUser(user, cfg)) return adminForbidden();
   
     let body;
-    try { body = await request.json(); }
-    catch { return json({ error:'Некорректное тело запроса.', code:'BILLING_INVALID_JSON' }, 400); }
+    try { body=plainObject(await request.json()); }
+    catch { body=null; }
+    if (!body) return json({ error:'Некорректное тело запроса.', code:'BILLING_INVALID_JSON' }, 400);
   
-    const targetUserId = Number(body?.telegramId || 0);
-    const chargeId = String(body?.telegramPaymentChargeId || '').trim();
-    const reason = String(body?.reason || '').trim().slice(0, 240);
-    if (!Number.isSafeInteger(targetUserId) || targetUserId <= 0 || !chargeId || chargeId.length > 240) {
+    const targetUserId=positiveId(body.telegramId);
+    const chargeId=safeText(body.telegramPaymentChargeId,240);
+    const reason=safeText(body.reason,240);
+    if (targetUserId === null || !chargeId) {
       return json({ error:'Нужны корректные telegramId и Telegram payment charge ID.', code:'BILLING_REFUND_INVALID_TARGET' }, 400);
     }
     if (reason.length < 3) {
@@ -320,41 +388,7 @@ export function createBillingApiRuntime(deps = {}) {
     });
   }
   
-  const {
-    getCacheEntry,
-    getCache,
-    getStaleCache,
-    setCache,
-  } = createSharedCacheRuntime({
-    memory,
-    bumpTelemetry,
-    phase5ProviderCacheUsage,
-    hasSupabase,
-    supaSelectOne,
-    supaUpsert,
-    pruneMemoryState,
-    recordOpsEvent,
-  });
-  
-  const {
-    telegramWebAppUrl,
-    telegramAnalysisHandoffParams,
-    telegramFullAnalysisUrl,
-    oneTapHandoffDrill,
-    fixtureShareStartParam,
-    campaignStartParam,
-    telegramBotUsername,
-    fixtureTelegramDeepLink,
-    telegramCampaignDeepLink,
-    telegramShareComposerUrl,
-  } = createTelegramLinksRuntime({
-    cleanLaunchPart,
-    getCache,
-    setCache,
-    telegramApi,
-  });
-
-  return {
+  return Object.freeze({
     apiBillingPlans,
     apiEntitlements,
     apiBillingInvoice,
@@ -363,5 +397,5 @@ export function createBillingApiRuntime(deps = {}) {
     listRefundableBillingCharges,
     apiBillingRefundLookup,
     apiBillingRefund
-  };
+  });
 }
