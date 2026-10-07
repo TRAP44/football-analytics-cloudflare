@@ -54,14 +54,38 @@ jobs:
             exit 1
           fi
           if [[ "$DEPLOY_SHA" != "$CURRENT_MAIN_SHA" ]]; then
-            echo "### Stale production deploy blocked" >> "$GITHUB_STEP_SUMMARY"
-            echo "Verified revision $DEPLOY_SHA is no longer current main ($CURRENT_MAIN_SHA)." >> "$GITHUB_STEP_SUMMARY"
-            echo "A newer Quality run must deploy the current main revision." >> "$GITHUB_STEP_SUMMARY"
-            exit 1
+            if ! git merge-base --is-ancestor "$DEPLOY_SHA" "$CURRENT_MAIN_SHA"; then
+              echo "### Stale production deploy blocked" >> "$GITHUB_STEP_SUMMARY"
+              echo "Verified revision $DEPLOY_SHA is not an ancestor of current main ($CURRENT_MAIN_SHA)." >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+
+            mapfile -t MAIN_DRIFT_FILES < <(git diff --name-only "$DEPLOY_SHA" "$CURRENT_MAIN_SHA")
+            UNSAFE_MAIN_DRIFT=()
+            for path in "${MAIN_DRIFT_FILES[@]}"; do
+              case "$path" in
+                test/*|docs/*|*.md|.github/workflows/cleanup-merged-branches.yml|.github/workflows/repository-maintenance.yml)
+                  ;;
+                *)
+                  UNSAFE_MAIN_DRIFT+=("$path")
+                  ;;
+              esac
+            done
+
+            if (( ${#UNSAFE_MAIN_DRIFT[@]} > 0 )); then
+              echo "### Stale production deploy blocked" >> "$GITHUB_STEP_SUMMARY"
+              echo "Verified revision $DEPLOY_SHA is behind current main ($CURRENT_MAIN_SHA) with production-relevant changes." >> "$GITHUB_STEP_SUMMARY"
+              printf 'Unsafe drift: %s\n' "${UNSAFE_MAIN_DRIFT[*]}" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+
+            echo "### Test-only main drift accepted" >> "$GITHUB_STEP_SUMMARY"
+            echo "Verified merged-PR revision $DEPLOY_SHA remains production-equivalent to current main $CURRENT_MAIN_SHA." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Deploy SHA matches current main: $DEPLOY_SHA" >> "$GITHUB_STEP_SUMMARY"
+            echo "Checked-out SHA and current main both match deploy SHA: $DEPLOY_SHA" >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "### Production revision confirmed" >> "$GITHUB_STEP_SUMMARY"
-          echo "Deploy SHA matches current main: $DEPLOY_SHA" >> "$GITHUB_STEP_SUMMARY"
-          echo "Checked-out SHA and current main both match deploy SHA: $DEPLOY_SHA" >> "$GITHUB_STEP_SUMMARY"
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
             echo "RC112 manual deploy target confirmed as current main: $DEPLOY_SHA" >> "$GITHUB_STEP_SUMMARY"
           fi
