@@ -125,7 +125,9 @@ export function createAnalysisLifecycleRuntime(deps) {
       || objectValue(market?.probabilities),
     );
 
-    if (live || finished || (minutesToKickoff !== null && minutesToKickoff < -5)) {
+    const kickoffPassed=kickoffMs !== null && kickoffMs<=nowMs;
+
+    if (live || finished || kickoffPassed) {
       return {
         state:'started',
         label:finished ? 'Матч завершён' : 'Матч уже начался',
@@ -200,7 +202,7 @@ export function createAnalysisLifecycleRuntime(deps) {
       : null;
     const finished=statusFlag(isFinishedStatus,status);
     const liveByStatus=statusFlag(isLiveStatus,status);
-    const liveByClock=!finished && minutesToKickoff!==null && minutesToKickoff<-5;
+    const liveByClock=!finished && kickoffMs!==null && kickoffMs<=nowMs;
 
     if (finished) {
       return {
