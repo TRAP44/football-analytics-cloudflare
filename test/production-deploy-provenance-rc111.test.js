@@ -28,3 +28,9 @@ test('RC111 allows a verified merged-PR revision to survive test-only main drift
   assert.match(workflow,/production-relevant changes/);
   assert.match(workflow,/UNSAFE_MAIN_DRIFT/);
 });
+
+
+test('production deploy requires merged-PR provenance for the exact deploy SHA',()=>{
+  assert.match(workflow,/verify-main-pr-provenance\.js "\$GITHUB_REPOSITORY" "\$DEPLOY_SHA" main/);
+  assert.match(workflow,/P1 gate: require merged PR provenance for production deploy/);
+});
