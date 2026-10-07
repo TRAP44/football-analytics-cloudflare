@@ -48,6 +48,7 @@ function createHarness(overrides = {}) {
     timeOf: value => 'TIME:' + String(value ?? ''),
     onOpenTeam: team => calls.open.push(team),
     onOpenMatch: (fixtureId, btn) => calls.match.push({ fixtureId, btn }),
+    now: () => Date.parse('2026-09-30T12:00:00.000Z'),
   });
   return { module, state, root, onboarding, calls };
 }
@@ -133,6 +134,54 @@ test('my teams uses earliest upcoming then latest recent when no live match exis
   assert.match(recent.root.innerHTML, /data-team-fixture="7"/);
 });
 
+test('my teams never labels stale or malformed kickoff evidence as the nearest upcoming match', () => {
+  const { module, root } = createHarness({
+    state:{
+      favorites:[{teamId:7,teamName:'Team Seven'}],
+      matches:[
+        {
+          fixtureId:21,
+          date:'2026-09-29T10:00:00Z',
+          finished:false,
+          live:false,
+          home:{id:7,name:'Past stale'},
+          away:{id:8,name:'Away'},
+        },
+        {
+          fixtureId:22,
+          date:'2026-02-31T10:00:00Z',
+          finished:false,
+          live:false,
+          home:{id:7,name:'Impossible date'},
+          away:{id:8,name:'Away'},
+        },
+        {
+          fixtureId:23,
+          date:'2026-10-01T10:00:00',
+          finished:false,
+          live:false,
+          home:{id:7,name:'No timezone'},
+          away:{id:8,name:'Away'},
+        },
+        {
+          fixtureId:24,
+          date:'2026-10-02T10:00:00Z',
+          finished:false,
+          live:false,
+          home:{id:7,name:'Valid future'},
+          away:{id:8,name:'Away'},
+        },
+      ],
+    },
+  });
+
+  module.renderMyTeams();
+
+  assert.match(root.innerHTML,/Ближайший матч/);
+  assert.match(root.innerHTML,/data-team-fixture="24"/);
+  assert.doesNotMatch(root.innerHTML,/data-team-fixture="21"|data-team-fixture="22"|data-team-fixture="23"/);
+});
+
 test('unsafe team logos use placeholder and delegated callbacks preserve sanitized values', () => {
   const { module, root, calls } = createHarness({
     state: {
@@ -166,6 +215,7 @@ test('missing my teams root fails soft without callbacks', () => {
     timeOf: value => String(value ?? ''),
     onOpenTeam: () => { calls += 1; },
     onOpenMatch: () => { calls += 1; },
+    now: () => Date.parse('2026-09-30T12:00:00.000Z'),
   });
   assert.doesNotThrow(() => module.renderMyTeams());
   assert.equal(calls, 0);
