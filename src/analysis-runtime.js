@@ -9,6 +9,7 @@ export function createAnalysisRuntime(deps) {
     MODEL_BASE_WEIGHTS,
     analysisFreshness,
     analysisProviderFetch,
+    apiFootball,
     analysisRecheckDelta,
     analysisResponsePayload,
     annotateAvailabilityReliability,
@@ -56,6 +57,7 @@ export function createAnalysisRuntime(deps) {
     h2hProbabilities,
     hasSupabase,
     hydratePlayerRolesForAnalysis,
+    normalizeTeamSeasonStatistics,
     isFinishedStatus,
     isFootballRateLimitError,
     isRetryableFootballTransportError,
@@ -89,6 +91,7 @@ export function createAnalysisRuntime(deps) {
     sanitizeAvailabilityRows,
     saveOddsSnapshot,
     secondaryOddsMarket,
+    seasonStrengthProbabilities,
     selectNewsImpactRecoveryStrategy,
     setCache,
     settlePredictionsFromFixtures,
@@ -165,6 +168,96 @@ export function createAnalysisRuntime(deps) {
     } catch {
       return null;
     }
+  }
+
+  function seasonStatsCacheValue(value, teamId, leagueId, season) {
+    const source=objectValue(value);
+    const id=positiveSafeInteger(teamId);
+    const competitionId=positiveSafeInteger(leagueId);
+    const year=safeSeason(season);
+    if (!source || source.available !== true || !id || !competitionId || !year) {
+      return null;
+    }
+    if (positiveSafeInteger(source?.team?.id)!==id) return null;
+    if (positiveSafeInteger(source?.league?.id)!==competitionId) return null;
+    if (safeSeason(source?.league?.season)!==year) return null;
+    return objectValue(source.derived) ? source : null;
+  }
+
+  async function loadSeasonStatsForAnalysis({
+    teamId,
+    teamName,
+    teamLogo,
+    leagueId,
+    leagueName,
+    leagueLogo,
+    country,
+    season,
+    cfg,
+    allowNetwork=false,
+  }={}) {
+    const id=positiveSafeInteger(teamId);
+    const competitionId=positiveSafeInteger(leagueId);
+    const year=safeSeason(season);
+    if (!id || !competitionId || !year) return null;
+
+    const cacheKey=`analysis:team-season:${id}:${competitionId}:${year}:v1`;
+    const cached=seasonStatsCacheValue(
+      await optionalAsync(getCache,cacheKey,cfg),
+      id,
+      competitionId,
+      year,
+    );
+    if (cached) return cached;
+
+    const stale=seasonStatsCacheValue(
+      await optionalAsync(getStaleCache,cacheKey,cfg),
+      id,
+      competitionId,
+      year,
+    );
+    if (allowNetwork !== true || typeof apiFootball !== 'function') {
+      return stale;
+    }
+
+    let providerRow=null;
+    try {
+      providerRow=objectValue(await apiFootball(
+        '/teams/statistics',
+        {team:id,league:competitionId,season:year},
+        cfg,
+        {responseType:'any'},
+      ));
+    } catch {
+      return stale;
+    }
+    if (
+      positiveSafeInteger(providerRow?.team?.id)!==id
+      || positiveSafeInteger(providerRow?.league?.id)!==competitionId
+      || safeSeason(providerRow?.league?.season)!==year
+    ) {
+      return stale;
+    }
+
+    let normalized=null;
+    try {
+      normalized=objectValue(normalizeTeamSeasonStatistics(providerRow,{
+        teamId:id,
+        teamName:safeText(teamName,180),
+        teamLogo:safeText(teamLogo,500),
+        leagueId:competitionId,
+        leagueName:safeText(leagueName,180),
+        leagueLogo:safeText(leagueLogo,500),
+        country:safeText(country,120),
+        season:year,
+      }));
+    } catch {
+      normalized=null;
+    }
+    const valid=seasonStatsCacheValue(normalized,id,competitionId,year);
+    if (!valid) return stale;
+    await optionalAsync(setCache,cacheKey,id,valid,cfg,360);
+    return valid;
   }
 
   function safeAnalysisResponsePayload(payload, extra = {}) {
@@ -569,7 +662,7 @@ export function createAnalysisRuntime(deps) {
     };
 
     try {
-    const cacheKey=`fixture:${fixtureId}:v15-availability-quality-rc144`;
+    const cacheKey=`fixture:${fixtureId}:v16-season-strength-rc145`;
     const cachedCandidate=await optionalAsync(getCache,cacheKey,cfg);
     const cached=analysisCachePayload(cachedCandidate,fixtureId);
     const staleCandidate=cached || await optionalAsync(getStaleCache,cacheKey,cfg);
@@ -1220,8 +1313,52 @@ export function createAnalysisRuntime(deps) {
     const awayStanding=objectValue(awayStandingRaw);
     const homeTeamIntelligence=objectValue(homeTeamIntelligenceRaw) || {};
     const awayTeamIntelligence=objectValue(awayTeamIntelligenceRaw) || {};
-    const homeSeasonStats=objectValue(homeTeamIntelligence.stats);
-    const awaySeasonStats=objectValue(awayTeamIntelligence.stats);
+    const cachedHomeSeasonStats=objectValue(homeTeamIntelligence.stats);
+    const cachedAwaySeasonStats=objectValue(awayTeamIntelligence.stats);
+    const canFetchSeasonStrength=Boolean(
+      detailedCoverage
+      && paid
+      && healthyFree
+      && leagueId
+      && season,
+    );
+    const [homeSeasonFreshRaw,awaySeasonFreshRaw]=await Promise.all([
+      cachedHomeSeasonStats
+        ? Promise.resolve(null)
+        : optionalAsync(loadSeasonStatsForAnalysis,{
+            teamId:homeId,
+            teamName:homeName,
+            teamLogo:safeText(fixture?.teams?.home?.logo,500),
+            leagueId,
+            leagueName,
+            leagueLogo:safeText(fixture?.league?.logo,500),
+            country:safeText(fixture?.league?.country,120),
+            season,
+            cfg,
+            allowNetwork:canFetchSeasonStrength,
+          }),
+      cachedAwaySeasonStats
+        ? Promise.resolve(null)
+        : optionalAsync(loadSeasonStatsForAnalysis,{
+            teamId:awayId,
+            teamName:awayName,
+            teamLogo:safeText(fixture?.teams?.away?.logo,500),
+            leagueId,
+            leagueName,
+            leagueLogo:safeText(fixture?.league?.logo,500),
+            country:safeText(fixture?.league?.country,120),
+            season,
+            cfg,
+            allowNetwork:canFetchSeasonStrength,
+          }),
+    ]);
+    const homeSeasonStats=cachedHomeSeasonStats
+      || objectValue(homeSeasonFreshRaw);
+    const awaySeasonStats=cachedAwaySeasonStats
+      || objectValue(awaySeasonFreshRaw);
+    if (paid && detailedCoverage && (!homeSeasonStats || !awaySeasonStats)) {
+      skipped.push('Сезонная сила команд рассчитана частично: статистика сезона одной из команд пока недоступна.');
+    }
     const cachedHomePlayerStats=objectValue(homeTeamIntelligence.playerStats);
     const cachedAwayPlayerStats=objectValue(awayTeamIntelligence.playerStats);
 
@@ -1354,6 +1491,15 @@ export function createAnalysisRuntime(deps) {
     if (trustedH2h) {
       try { h2hProb=objectValue(h2hProbabilities(trustedH2h)); } catch {}
     }
+    let seasonStrengthProb=null;
+    try {
+      seasonStrengthProb=objectValue(seasonStrengthProbabilities(
+        homeStanding,
+        awayStanding,
+        homeSeasonStats,
+        awaySeasonStats,
+      ));
+    } catch {}
 
     const calibrationProfile=calibrationProfileValue(
       await optionalAsync(getCalibrationProfile,cfg),
@@ -1365,6 +1511,7 @@ export function createAnalysisRuntime(deps) {
         market:analysisMarket,
         model:trustedApiPrediction,
         form:recentFormProb,
+        seasonStrength:seasonStrengthProb,
         h2h:h2hProb,
         weightOverrides:normalizedModelBaseWeights(),
       }));
@@ -1386,6 +1533,7 @@ export function createAnalysisRuntime(deps) {
           market:analysisMarket,
           model:trustedApiPrediction,
           form:recentFormProb,
+          seasonStrength:seasonStrengthProb,
           h2h:h2hProb,
           weightOverrides:calibrationProfile.signalWeights,
         }));
@@ -1529,6 +1677,7 @@ export function createAnalysisRuntime(deps) {
       analysisMarket && 'market',
       trustedApiPrediction && 'apiPrediction',
       homeForm?.overall && awayForm?.overall && 'recentForm',
+      seasonStrengthProb && 'seasonStrength',
       trustedH2h && 'h2h',
       trustedInjuries.length && featureTrusted('injuries') && 'injuries',
       lineupQuality.bothConfirmed === true && featureTrusted('lineups') && 'lineups',
@@ -1680,7 +1829,7 @@ export function createAnalysisRuntime(deps) {
     const generatedAt=new Date().toISOString();
     const payload={
       generatedAt,
-      analysisVersion:'4.15.0-availability-quality',
+      analysisVersion:'4.16.0-season-strength',
       match:{
         fixtureId,
         date:kickoffRaw,
@@ -1742,7 +1891,7 @@ export function createAnalysisRuntime(deps) {
       modelBreakdown:{
         weights:objectValue(blended.weights) || {},
         signals:rowsOrEmpty(blended.signals,20),
-        method:'Рынок, прогноз источника данных, форма и очные встречи объединяются динамически. Активный профиль применяется только после двух окон отложенной выборки и атомарного сравнения кандидата с активной моделью. Потери состава корректируют итог ограниченно: роль игрока сначала берётся из Team Intelligence cache, а при реальной потере может точечно гидратироваться из сезонной статистики с отдельным кешем и quota guard; сомнительный статус даёт половинный вклад.',
+        method:'Рынок, прогноз источника данных, недавняя форма, сила сезона и очные встречи объединяются динамически. Сила сезона использует атаку, оборону, сухие матчи и, когда доступно, положение в таблице. Активный профиль применяется только после двух окон отложенной выборки и атомарного сравнения кандидата с активной моделью. Потери состава корректируют итог ограниченно: роль игрока сначала берётся из Team Intelligence cache, а при реальной потере может точечно гидратироваться из сезонной статистики с отдельным кешем и quota guard; сомнительный статус даёт половинный вклад.',
       },
       dataPolicy:{
         dataMode:paid ? 'expanded' : 'standard',
@@ -1787,6 +1936,12 @@ export function createAnalysisRuntime(deps) {
       availabilityQuality,
       apiPrediction:trustedApiPrediction,
       recentForm:{home:homeForm,away:awayForm},
+      seasonStrength:{
+        probabilities:seasonStrengthProb,
+        homeSeasonAvailable:Boolean(homeSeasonStats),
+        awaySeasonAvailable:Boolean(awaySeasonStats),
+        networkFetchEnabled:canFetchSeasonStrength,
+      },
       goalModel,
       comparison,
       absences,
