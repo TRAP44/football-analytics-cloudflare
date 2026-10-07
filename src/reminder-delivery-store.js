@@ -156,7 +156,8 @@ export function reminderDeliveryKindConfig(kind) {
     throw new Error('Unsupported reminder delivery kind: unknown');
   }
   const normalized=kind.trim();
-  const config = REMINDER_DELIVERY_KINDS[normalized];
+  const owned=Object.prototype.hasOwnProperty.call(REMINDER_DELIVERY_KINDS,normalized);
+  const config=owned ? REMINDER_DELIVERY_KINDS[normalized] : null;
   if (!config || normalized !== kind) {
     throw new Error(`Unsupported reminder delivery kind: ${normalized || 'unknown'}`);
   }
