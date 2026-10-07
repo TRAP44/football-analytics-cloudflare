@@ -11,7 +11,7 @@
   "qualityGate": [
     "npm run security:scan",
     "npm run check",
-    "npm test",
+    "npm run test:release",
     "npm run lint",
     "npm run verify:supabase",
     "npm run verify:release",
