@@ -223,6 +223,8 @@ export function createAppCapabilitiesRuntime({
         matchSelectionIntelligence:true,
         primaryMatchRecommendation:true,
         oneTapAiHandoff:true,
+        focusedMatchHome:true,
+        contextualLeagueFilter:true,
         telegramMiniAppE2E:true,
         telegramWebhookPersistentDedupe:true,
         telegramWebhookDedupeObservability:true,
