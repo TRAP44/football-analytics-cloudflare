@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const workerCore=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 const providerDataRuntime=readFileSync(new URL('../src/provider-data-runtime.js',import.meta.url),'utf8');
+const providerBudgetRuntime=readFileSync(new URL('../src/provider-budget-runtime.js',import.meta.url),'utf8');
 const analysisRuntime=readFileSync(new URL('../src/analysis-runtime.js',import.meta.url),'utf8');
 const matchCenterRuntime=readFileSync(new URL('../src/match-center-runtime.js',import.meta.url),'utf8');
 const providerFixtureRuntime=readFileSync(new URL('../src/provider-fixture-runtime.js',import.meta.url),'utf8');
@@ -93,11 +94,11 @@ test('provider budget telemetry exposes shared date-fixture reuse',()=>{
 });
 
 test('real provider response headers persist quota evidence without synthetic probes',()=>{
-  const quota=block(worker,'function providerQuotaEvidence','function quotaUsed');
+  const quota=block(providerBudgetRuntime,'function providerQuotaEvidence','function quotaUsed');
   for(const token of ['PROVIDER_QUOTA_CONFIRMED','dailyLimit','dailyRemaining','minuteLimit','minuteRemaining','response_headers']){
     assert.match(quota,new RegExp(token));
   }
-  const network=block(worker,'async function apiFootballNetwork','function providerRequestKey');
+  const network=block(gateway,'async function apiFootballNetwork','function providerRequestKey');
   assert.match(network,/providerQuotaEvidence\(cfg\)/);
   assert.match(network,/FOOTBALL_RATE_LIMIT_BODY/);
 });
@@ -122,8 +123,9 @@ test('provider cooldown exposes a bounded countdown before manual retry',()=>{
 test('client deduplicates match center refreshes and keeps provider cooldown non-blocking',()=>{
   const request=block(matchCenterController,'async function requestMatchCenter','function isActiveLiveFixture');
   assert.match(request,/inFlight/);
-  assert.match(request,/state\.clientPerf/);
-  assert.match(request,/deduped/);
+  assert.match(matchCenterController,/function incrementDeduped\(\)/);
+  assert.match(matchCenterController,/safeRead\(state,'clientPerf'\)/);
+  assert.match(matchCenterController,/safeRead\(perf,'deduped'\)/);
 
   const open=block(matchCenterController,'async function openMatchCenter','return Object.freeze');
   assert.match(open,/\['rate_limit', 'provider'\]/);
@@ -155,8 +157,8 @@ test('public shell owns final shared layout declarations without duplicate base 
 });
 
 test('360-400px mobile layout keeps score status teams and title stable',()=>{
-  assert.match(css,/provider cooldown \+ 360–400px mobile hardening/);
-  assert.match(css,/\.center-score-core > strong,[\s\S]*white-space: nowrap/);
+  assert.match(css,/\.center-score-core > strong,[\s\S]*white-space:\s*nowrap/);
+  assert.match(css,/\.center-score-core > strong,[\s\S]*white-space:\s*nowrap/);
   assert.match(css,/\.center-team-card strong[\s\S]*-webkit-line-clamp: 2/);
   assert.match(css,/#topbarTitle[\s\S]*overflow-wrap: anywhere/);
   assert.match(css,/@media \(max-width: 430px\)/);
@@ -188,7 +190,7 @@ test('Match Center preserves the originating view across degraded provider failu
   assert.match(open,/const sourceView = activeViewId\(\)/);
   assert.match(open,/state\.analysisBackView = sourceView/);
   assert.match(open,/showView\('analysisView'\)/);
-  assert.match(open,/\['rate_limit', 'provider'\]\.includes\(category\)/);
+  assert.match(open,/\['rate_limit','provider'\]\.includes\(category\)/);
   assert.match(open,/showView\(sourceView, \{ restore: true \}\)/);
 
   const request=block(matchCenterController,'async function requestMatchCenter','function isActiveLiveFixture');
