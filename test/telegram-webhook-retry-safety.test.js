@@ -76,6 +76,38 @@ test('explicit retry-safe reconciliation can retry after idempotent internal mut
   assert.equal(result.lastMutation,'billing_refund');
 });
 
+
+test('arbitrary errors cannot self-authorize retry-safe replay', () => {
+  const cfg={};
+  beginTelegramWebhookAttempt(cfg);
+  markTelegramWebhookMutation(cfg,'favorite_toggle');
+
+  const result=classifyTelegramWebhookFailure(
+    Object.assign(new Error('custom failure'),{
+      code:'CUSTOM_RETRY_ME',
+      telegramWebhookRetrySafe:true,
+    }),
+    cfg,
+  );
+  assert.equal(result.retrySafe,false);
+  assert.equal(result.retry,false);
+  assert.equal(result.unsafeMutations,1);
+});
+
+test('dedupe unavailability remains explicitly retry-safe before processing begins', () => {
+  const result=classifyTelegramWebhookFailure(
+    Object.assign(new Error('dedupe offline'),{
+      code:'TELEGRAM_DEDUPE_UNAVAILABLE',
+      telegramWebhookRetrySafe:true,
+      retryAfter:3,
+    }),
+    {},
+  );
+  assert.equal(result.retrySafe,true);
+  assert.equal(result.retry,true);
+  assert.equal(result.retryAfter,3);
+});
+
 test('retry-safe reconciliation still cannot retry after an external Telegram side effect', () => {
   const cfg={};
   beginTelegramWebhookAttempt(cfg);
