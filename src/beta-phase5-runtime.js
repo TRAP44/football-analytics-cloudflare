@@ -319,20 +319,28 @@ export function createBetaPhase5Runtime(deps) {
   }
   
   function quotaRemainingPct(limit,remaining) {
-    const l=Number(limit);
-    const r=Number(remaining);
-    if (!Number.isFinite(l) || l<=0 || !Number.isFinite(r)) return null;
-    return Math.max(0,Math.min(100,Math.round((r/l)*1000)/10));
+    const l=finiteEvidenceNumber(limit);
+    const r=finiteEvidenceNumber(remaining);
+    if (l === null || l <= 0 || r === null || r < 0 || r > l) return null;
+    return Math.round((r/l)*1000)/10;
   }
   
   function betaProductionMonitorSummary(rows = [], nowMs = Date.now()) {
-    const recent=(rows || [])
-      .filter(row=>row?.source==='monitor' && row?.event_type==='production_monitor')
-      .filter(row=>{
-        const at=Date.parse(row?.created_at || '');
-        return Number.isFinite(at) && nowMs-at<=6*60*60_000;
-      })
-      .sort((a,b)=>Date.parse(b?.created_at || 0)-Date.parse(a?.created_at || 0));
+    const now=finiteEvidenceNumber(nowMs);
+    if (now === null || now < 0) {
+      return {state:'unknown',latestCode:'',lastSeen:null,samples:0,incidentCount:0,watchCount:0};
+    }
+    const recent=(Array.isArray(rows) ? rows : [])
+      .map(row=>({row,at:trustedEventTime(row?.created_at)}))
+      .filter(item=>
+        item.row?.source==='monitor'
+        && item.row?.event_type==='production_monitor'
+        && item.at !== null
+        && item.at <= now + 60_000
+        && now-item.at <= 6*60*60_000
+      )
+      .sort((a,b)=>b.at-a.at)
+      .map(item=>item.row);
     const latest=recent[0] || null;
     const latestCode=String(latest?.code || '');
     const state=!latest ? 'unknown'
@@ -350,112 +358,144 @@ export function createBetaPhase5Runtime(deps) {
     };
   }
   
-  function controlledBetaExpansionDecision({
-    expansionDecision={},
-    assignedBetaUsers=0,
-    journey={},
-    metrics={},
-    timings={},
-    coverage={},
-    issues=[],
-    errorRows=[],
-    clientErrorRows=[],
-    providerQuota={},
-    productionMonitor={},
-    supabaseOk=false,
-    telegramConfirmed=false,
-  } = {}) {
-    const verifiedUsers=Number(journey?.betaUsers || 0);
-    const assignedUsers=Number(assignedBetaUsers || 0);
-    const fullJourneys=Number(journey?.fullCompleted || 0);
-    const blockerCount=(issues || []).filter(issue=>issue?.classification==='BLOCKER').length;
-    const majorCount=(issues || []).filter(issue=>issue?.classification==='MAJOR').length;
-    const searchTimeouts=(errorRows || []).filter(row=>String(row?.metadata?.action || '')==='search' && String(row?.metadata?.errorKind || '')==='timeout').length;
-    const providerRateLimit=(errorRows || []).filter(row=>String(row?.metadata?.errorKind || '')==='rate_limit').length;
-    const providerErrors=(errorRows || []).filter(row=>String(row?.metadata?.errorKind || '')==='provider').length;
-    const actionErrors=Number((errorRows || []).length || 0);
-    const dailyRemainingPct=quotaRemainingPct(providerQuota?.dailyLimit,providerQuota?.dailyRemaining);
-    const minuteRemainingPct=quotaRemainingPct(providerQuota?.minuteLimit,providerQuota?.minuteRemaining);
-    const quotaPressure=Boolean(providerQuota?.confirmed && (
+  function controlledBetaExpansionDecision(input = {}) {
+    const root=input && typeof input==='object' && !Array.isArray(input) ? input : {};
+    const expansionDecision=root.expansionDecision && typeof root.expansionDecision==='object' && !Array.isArray(root.expansionDecision)
+      ? root.expansionDecision
+      : {};
+    const journey=root.journey && typeof root.journey==='object' && !Array.isArray(root.journey) ? root.journey : {};
+    const metrics=root.metrics && typeof root.metrics==='object' && !Array.isArray(root.metrics) ? root.metrics : {};
+    const timings=root.timings && typeof root.timings==='object' && !Array.isArray(root.timings) ? root.timings : {};
+    const coverage=root.coverage && typeof root.coverage==='object' && !Array.isArray(root.coverage) ? root.coverage : {};
+    const issues=Array.isArray(root.issues) ? root.issues : [];
+    const errorRows=Array.isArray(root.errorRows) ? root.errorRows : [];
+    const clientErrorRows=Array.isArray(root.clientErrorRows) ? root.clientErrorRows : [];
+    const productionMonitor=root.productionMonitor && typeof root.productionMonitor==='object' && !Array.isArray(root.productionMonitor)
+      ? root.productionMonitor
+      : {};
+    const providerQuota=root.providerQuota && typeof root.providerQuota==='object' && !Array.isArray(root.providerQuota)
+      ? root.providerQuota
+      : {};
+
+    const verifiedUsers=evidenceCount(journey.betaUsers);
+    const assignedUsers=evidenceCount(root.assignedBetaUsers);
+    const fullJourneys=evidenceCount(journey.fullCompleted);
+    const blockerCount=issues.filter(issue=>issue?.classification==='BLOCKER').length;
+    const majorCount=issues.filter(issue=>issue?.classification==='MAJOR').length;
+    const searchTimeouts=errorRows.filter(row=>String(row?.metadata?.action || '')==='search' && String(row?.metadata?.errorKind || '')==='timeout').length;
+    const providerRateLimit=errorRows.filter(row=>String(row?.metadata?.errorKind || '')==='rate_limit').length;
+    const providerErrors=errorRows.filter(row=>String(row?.metadata?.errorKind || '')==='provider').length;
+    const actionErrors=errorRows.length;
+
+    const normalizedQuota=normalizedProviderQuota(providerQuota);
+    const providerQuotaConfirmed=providerQuota.confirmed===true && normalizedQuota.complete;
+    const dailyRemainingPct=providerQuotaConfirmed
+      ? quotaRemainingPct(normalizedQuota.dailyLimit,normalizedQuota.dailyRemaining)
+      : null;
+    const minuteRemainingPct=providerQuotaConfirmed
+      ? quotaRemainingPct(normalizedQuota.minuteLimit,normalizedQuota.minuteRemaining)
+      : null;
+    const quotaPressure=providerQuotaConfirmed && (
       (dailyRemainingPct!==null && dailyRemainingPct<=10)
       || (minuteRemainingPct!==null && minuteRemainingPct<=10)
-    ));
-    const liveMissingCategories=Object.values(coverage?.live?.missing || {})
-      .filter(item=>Number(item?.samples || 0)>=5 && Number(item?.missingPct || 0)>=70).length;
-    const liveCoverageDeficit=Number(coverage?.live?.samples || 0)>=5 && liveMissingCategories>=2;
-    const providerReviewSignal=expansionDecision?.dataCoverageDecision==='review_new_or_paid_provider'
+    );
+
+    const liveMissing=coverage?.live?.missing && typeof coverage.live.missing==='object' && !Array.isArray(coverage.live.missing)
+      ? coverage.live.missing
+      : {};
+    const liveMissingCategories=Object.values(liveMissing).filter(item=>{
+      const samples=evidenceCount(item?.samples);
+      const missingPct=finiteEvidenceNumber(item?.missingPct);
+      return samples>=5 && missingPct!==null && missingPct>=70 && missingPct<=100;
+    }).length;
+    const liveCoverageSamples=evidenceCount(coverage?.live?.samples);
+    const liveCoverageDeficit=liveCoverageSamples>=5 && liveMissingCategories>=2;
+    const providerReviewSignal=expansionDecision.dataCoverageDecision==='review_new_or_paid_provider'
       || providerRateLimit>=3
       || quotaPressure
       || liveCoverageDeficit;
-  
+
     const wave1Observed=verifiedUsers>=4;
     const wave2Observed=verifiedUsers>=6;
-    const coreLatencyEnough=['search','match','ai'].every(key=>Number(timings?.[key]?.samples || 0)>=5);
-    const liveLatencyEnough=Number(timings?.live?.samples || 0)>=3;
+    const coreLatencyEnough=['search','match','ai'].every(key=>evidenceCount(timings?.[key]?.samples)>=5);
+    const liveLatencyEnough=evidenceCount(timings?.live?.samples)>=3;
+    const coverageSamples=evidenceCount(coverage?.samples);
     const expandedEvidenceEnough=wave2Observed
       && fullJourneys>=4
-      && Number(coverage?.samples || 0)>=20
+      && coverageSamples>=20
       && coreLatencyEnough
       && liveLatencyEnough;
+
+    const supabaseOk=root.supabaseOk===true;
+    const telegramConfirmed=root.telegramConfirmed===true;
+    const productionMonitorHealthy=productionMonitor.state==='healthy';
+    const expansionAllowed=expansionDecision.expansionAllowed===true;
     const runtimeHealthy=Boolean(
       supabaseOk
       && telegramConfirmed
-      && productionMonitor?.state==='healthy'
+      && productionMonitorHealthy
+      && providerQuotaConfirmed
       && blockerCount===0
       && majorCount===0
       && !quotaPressure
     );
-  
+
     const providerValidationDecision=!wave1Observed
       ? 'collecting_expanded_beta'
       : providerReviewSignal
         ? 'review_new_or_paid_provider'
         : 'keep_current_provider';
-  
+
     let finalDecision='BETA HOLD';
-    if (expansionDecision?.expansionAllowed) {
-      if (blockerCount>0 || majorCount>0 || !supabaseOk || !telegramConfirmed || productionMonitor?.state==='incident') {
+    if (expansionAllowed) {
+      if (!runtimeHealthy) {
         finalDecision='BETA HOLD';
       } else if (wave1Observed && providerValidationDecision==='review_new_or_paid_provider') {
         finalDecision='DATA PROVIDER UPGRADE REQUIRED';
-      } else if (expandedEvidenceEnough && runtimeHealthy && providerValidationDecision==='keep_current_provider') {
+      } else if (expandedEvidenceEnough && providerValidationDecision==='keep_current_provider') {
         finalDecision='BETA READY FOR PUBLIC PRE-LAUNCH';
       } else {
         finalDecision='BETA CONTINUE';
       }
     }
-  
-    const nextWaveTarget=!expansionDecision?.expansionAllowed ? null
+
+    const nextWaveTarget=!expansionAllowed ? null
       : verifiedUsers<4 ? 4
         : verifiedUsers<6 ? 6
           : null;
     const currentAssignmentsObserved=assignedUsers>0 && verifiedUsers>=Math.min(assignedUsers,6);
     const canAddNextWave=Boolean(
       finalDecision==='BETA CONTINUE'
+      && runtimeHealthy
       && nextWaveTarget
       && assignedUsers<nextWaveTarget
       && currentAssignmentsObserved
-      && blockerCount===0
-      && majorCount===0
-      && !quotaPressure
       && providerValidationDecision!=='review_new_or_paid_provider'
     );
-  
-    const initialGateGaps=Object.entries(expansionDecision?.requirements || {})
-      .filter(([,value])=>!value?.pass)
+
+    const requirements=expansionDecision.requirements && typeof expansionDecision.requirements==='object' && !Array.isArray(expansionDecision.requirements)
+      ? expansionDecision.requirements
+      : {};
+    const initialGateGaps=Object.entries(requirements)
+      .filter(([,value])=>value?.pass!==true)
       .map(([key])=>key);
-    const launchBlockers=[...new Set((expansionDecision?.hardBlockers || []).map(String).filter(Boolean))];
+    const launchBlockers=Array.isArray(expansionDecision.hardBlockers)
+      ? [...new Set(expansionDecision.hardBlockers.map(String).filter(Boolean))]
+      : expansionDecision.hardBlockers===undefined
+        ? []
+        : ['invalid_expansion_hard_blockers'];
     const launchBlockerSet=new Set(launchBlockers);
     const fieldBlockers=[];
     if (assignedUsers<2) fieldBlockers.push('beta_users_not_assigned');
     if (verifiedUsers===0) fieldBlockers.push('verified_beta_telemetry_missing');
-    if (!expansionDecision?.expansionAllowed) fieldBlockers.push('initial_expansion_gate_closed');
+    if (!expansionAllowed) fieldBlockers.push('initial_expansion_gate_closed');
     for (const code of launchBlockers) if (!fieldBlockers.includes(code)) fieldBlockers.push(code);
     if (blockerCount>0 || majorCount>0) fieldBlockers.push('beta_product_issue');
-    if (!supabaseOk || !telegramConfirmed || productionMonitor?.state==='incident') fieldBlockers.push('runtime_unhealthy');
+    if (!supabaseOk || !telegramConfirmed || !productionMonitorHealthy) fieldBlockers.push('runtime_unhealthy');
+    if (!providerQuotaConfirmed) fieldBlockers.push('provider_quota_unconfirmed');
     if (quotaPressure) fieldBlockers.push('provider_quota_pressure');
     if (wave1Observed && providerValidationDecision==='review_new_or_paid_provider') fieldBlockers.push('provider_review_required');
-  
+
     const nextRequiredAction=assignedUsers<2
       ? 'assign_real_beta_users'
       : launchBlockerSet.has('beta_admin_overlap')
@@ -464,13 +504,13 @@ export function createBetaPhase5Runtime(deps) {
           ? 'enable_strict_beta_access'
           : launchBlockerSet.has('telegram_webhook_unconfirmed')
             ? 'confirm_telegram_webhook'
-            : launchBlockerSet.has('provider_quota_unconfirmed')
+            : launchBlockerSet.has('provider_quota_unconfirmed') || !providerQuotaConfirmed
               ? 'confirm_provider_quota'
               : verifiedUsers<Math.min(assignedUsers,2)
                 ? 'collect_verified_beta_usage'
-                : !expansionDecision?.expansionAllowed
+                : !expansionAllowed
                   ? 'close_initial_expansion_requirements'
-                  : blockerCount>0 || majorCount>0 || !supabaseOk || !telegramConfirmed || productionMonitor?.state==='incident'
+                  : !runtimeHealthy
                     ? 'restore_runtime_health'
                     : wave1Observed && providerValidationDecision==='review_new_or_paid_provider'
                       ? 'run_provider_evaluation'
@@ -481,10 +521,10 @@ export function createBetaPhase5Runtime(deps) {
                           : !expandedEvidenceEnough
                             ? 'collect_expanded_beta_evidence'
                             : 'none';
-  
+
     return {
       finalDecision,
-      expansionAllowed:Boolean(expansionDecision?.expansionAllowed),
+      expansionAllowed,
       automaticExpansion:false,
       waveSize:2,
       assignedUsers,
@@ -499,7 +539,7 @@ export function createBetaPhase5Runtime(deps) {
         add:Math.max(0,Math.min(2,nextWaveTarget-assignedUsers)),
         allowed:canAddNextWave,
       } : null,
-      fieldBlockers,
+      fieldBlockers:[...new Set(fieldBlockers)],
       launchBlockers,
       initialGateGaps,
       nextRequiredAction,
@@ -515,6 +555,7 @@ export function createBetaPhase5Runtime(deps) {
       providerSignals:{
         rateLimit:providerRateLimit,
         providerErrors,
+        quotaConfirmed:providerQuotaConfirmed,
         quotaPressure,
         dailyRemainingPct,
         minuteRemainingPct,
@@ -522,38 +563,38 @@ export function createBetaPhase5Runtime(deps) {
         liveMissingCategories,
       },
       checks:{
-        miniAppLaunch:Number(metrics?.miniAppLaunch?.events || 0),
+        miniAppLaunch:evidenceCount(metrics?.miniAppLaunch?.events),
         search:{
-          used:Number(metrics?.searchUsed?.events || 0),
-          success:Number(metrics?.searchFound?.events || 0),
-          empty:Number(metrics?.searchEmpty?.events || 0),
+          used:evidenceCount(metrics?.searchUsed?.events),
+          success:evidenceCount(metrics?.searchFound?.events),
+          empty:evidenceCount(metrics?.searchEmpty?.events),
           timeout:searchTimeouts,
         },
-        matchOpen:Number(metrics?.matchOpen?.events || 0),
+        matchOpen:evidenceCount(metrics?.matchOpen?.events),
         ai:{
-          start:Number(metrics?.aiStart?.events || 0),
-          complete:Number(metrics?.aiComplete?.events || 0),
+          start:evidenceCount(metrics?.aiStart?.events),
+          complete:evidenceCount(metrics?.aiComplete?.events),
         },
         fullJourneys,
-        reentries:Number(journey?.stages?.reentry || 0),
+        reentries:evidenceCount(journey?.stages?.reentry),
         latency:timings,
         actionErrors,
-        clientErrors:Number((clientErrorRows || []).length || 0),
+        clientErrors:clientErrorRows.length,
         blockerCount,
         majorCount,
-        supabaseOk:Boolean(supabaseOk),
-        telegramConfirmed:Boolean(telegramConfirmed),
+        supabaseOk,
+        telegramConfirmed,
         productionMonitor,
         live:{
-          opens:Number(metrics?.liveOpen?.events || 0),
-          timingSamples:Number(timings?.live?.samples || 0),
-          coverageSamples:Number(coverage?.live?.samples || 0),
+          opens:evidenceCount(metrics?.liveOpen?.events),
+          timingSamples:evidenceCount(timings?.live?.samples),
+          coverageSamples:liveCoverageSamples,
         },
       },
-      readinessRule:'Two manual expansion waves of +2 users are observed before public pre-launch. Every wave remains fail-closed on BLOCKER/MAJOR, runtime health, provider quota pressure and provider-review evidence.',
+      readinessRule:'Two manual expansion waves of +2 users are observed before public pre-launch. Every wave remains fail-closed on BLOCKER/MAJOR, runtime health, confirmed provider quota pressure and provider-review evidence.',
     };
   }
-  
+
   function buildBetaIssueGroups({metrics,errorRows,feedbackRows,timings,clientErrorRows=[]}) {
     const configs=[
       {category:'search',errors:betaErrorCountByAction(errorRows,'search'),attempts:Number(metrics.searchUsed?.events || 0)},
