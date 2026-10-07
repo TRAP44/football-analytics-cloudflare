@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { validateReleaseIdentity } from '../src/release-identity.js';
+import { cloudflareVersionIdValid, validateReleaseIdentity } from '../src/release-identity.js';
 
 const REQUIRED_MANIFEST_FEATURES = Object.freeze([
   'startupSafety',
@@ -75,24 +75,61 @@ async function jsonBody(response, label) {
   }
 }
 
-function verifyRuntimeDeploymentIdentity(body, label, expectedSha) {
+function verifyRuntimeDeploymentIdentity(body, label, expectedSha, expectedVersionId = '') {
   if (!expectedSha) return;
-  if (!/^[0-9a-f]{40}$/i.test(String(expectedSha))) throw new Error('Expected deploy SHA must be a 40-character Git commit SHA.');
+  const normalizedSha=String(expectedSha).trim().toLowerCase();
+  if (!/^[0-9a-f]{40}$/i.test(normalizedSha)) throw new Error('Expected deploy SHA must be a 40-character Git commit SHA.');
   const deployment=body?.deployment || {};
+  const runtimeDeploySha=String(deployment?.deploySha || '').trim();
+  const runtimeVersionTag=String(deployment?.cloudflareVersionTag || '').trim();
+  const runtimeVersionId=String(deployment?.cloudflareVersionId || '').trim();
+
+  // Prefer the strongest runtime identity when Cloudflare exposes its Version tag.
+  // Some Version URL executions expose id/timestamp but omit tag. In that narrow
+  // case the caller must provide the exact immutable Version ID already proven
+  // by the Cloudflare control plane for expectedSha.
+  if (runtimeDeploySha || runtimeVersionTag) {
+    const validation=validateReleaseIdentity({
+      ...deployment,
+      appVersion:body?.version,
+      releaseCandidate:body?.releaseCandidate,
+    });
+    if (!validation.ok) {
+      throw new Error(`${label} release identity validation failed: ${validation.code}.`);
+    }
+    if (runtimeDeploySha.toLowerCase() !== normalizedSha) {
+      throw new Error(`${label} deploy SHA does not match the verified production revision.`);
+    }
+    if (expectedVersionId && runtimeVersionId.toLowerCase() !== String(expectedVersionId).trim().toLowerCase()) {
+      throw new Error(`${label} Cloudflare Version ID does not match the verified version.`);
+    }
+    return;
+  }
+
+  const normalizedVersionId=String(expectedVersionId || '').trim().toLowerCase();
+  if (!cloudflareVersionIdValid(normalizedVersionId)) {
+    throw new Error(`${label} runtime tag is unavailable and no verified Cloudflare Version ID was supplied.`);
+  }
+  if (runtimeVersionId.toLowerCase() !== normalizedVersionId) {
+    throw new Error(`${label} Cloudflare Version ID does not match the verified version.`);
+  }
+
+  // Validate every runtime-owned identity field while substituting only the
+  // SHA/tag that the immediately preceding control-plane check already bound
+  // to this exact immutable Version ID.
   const validation=validateReleaseIdentity({
     ...deployment,
     appVersion:body?.version,
     releaseCandidate:body?.releaseCandidate,
+    deploySha:normalizedSha,
+    cloudflareVersionTag:normalizedSha,
   });
   if (!validation.ok) {
     throw new Error(`${label} release identity validation failed: ${validation.code}.`);
   }
-  if (String(deployment.deploySha || '').toLowerCase() !== String(expectedSha).toLowerCase()) {
-    throw new Error(`${label} deploy SHA does not match the verified production revision.`);
-  }
 }
 
-async function requestJsonForDeployment(fetchImpl, baseUrl, path, label, expectedSha, options = {}) {
+async function requestJsonForDeployment(fetchImpl, baseUrl, path, label, expectedSha, expectedVersionId = '', options = {}) {
   const retries=boundedNumber(options.retries,1,1,20);
   const retryDelayMs=boundedNumber(options.retryDelayMs,0,0,60000);
   let lastError='';
@@ -101,7 +138,7 @@ async function requestJsonForDeployment(fetchImpl, baseUrl, path, label, expecte
       const response=await request(fetchImpl,baseUrl,path);
       const body=await jsonBody(response,label);
       if(!response.ok) throw new Error(`${label} returned HTTP ${response.status}.`);
-      verifyRuntimeDeploymentIdentity(body,label,expectedSha);
+      verifyRuntimeDeploymentIdentity(body,label,expectedSha,expectedVersionId);
       return {response,body};
     }catch(error){
       lastError=error?.message || String(error);
@@ -170,7 +207,8 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
     throw new Error('Health endpoint must embed a passing readiness snapshot.');
   }
 
-  const manifestResult=await requestJsonForDeployment(fetchImpl,baseUrl,'/api/app-manifest','App manifest',expectedSha,{retries,retryDelayMs});
+  const expectedVersionId=typeof options.expectedVersionId === 'string' ? options.expectedVersionId.trim() : '';
+  const manifestResult=await requestJsonForDeployment(fetchImpl,baseUrl,'/api/app-manifest','App manifest',expectedSha,expectedVersionId,{retries,retryDelayMs});
   const manifestResponse=manifestResult.response;
   const manifest=manifestResult.body;
   if (manifest?.version !== expectedVersion || manifest?.releaseCandidate !== expectedReleaseCandidate) {
@@ -246,9 +284,9 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
 }
 
 async function main() {
-  const [, , baseUrl, expectedVersion, expectedSha] = process.argv;
+  const [, , baseUrl, expectedVersion, expectedSha, expectedVersionId=''] = process.argv;
   if (!baseUrl || !expectedVersion || !expectedSha) {
-    throw new Error('Usage: node scripts/post-deploy-smoke.js <deployment-url> <expected-version> <expected-sha>');
+    throw new Error('Usage: node scripts/post-deploy-smoke.js <deployment-url> <expected-version> <expected-sha> [expected-version-id]');
   }
   let configuredMonetization = 'paused';
   try {
@@ -260,7 +298,7 @@ async function main() {
   if (!['enabled','paused'].includes(expectedMonetization)) {
     throw new Error('EXPECTED_MONETIZATION must be enabled or paused.');
   }
-  const result=await runDeploymentSmoke(baseUrl,expectedVersion,expectedSha,{expectedMonetization});
+  const result=await runDeploymentSmoke(baseUrl,expectedVersion,expectedSha,{expectedMonetization,expectedVersionId});
   console.log(`Post-deploy smoke passed: ${result.version} sha=${expectedSha} at ${result.origin} (${result.checks} checks).`);
 }
 
