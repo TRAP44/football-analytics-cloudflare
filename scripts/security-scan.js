@@ -22,7 +22,7 @@ const SECRET_PATTERNS = [
   { id: 'jwt_secret', pattern: /\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b/g },
 ];
 
-const TEXT_FILE = /(?:^|\/)(?:[^/]+\.(?:js|mjs|cjs|json|jsonc|md|html|css|sql|yml|yaml|toml|txt|example|sh|bash|zsh|ps1|ini|cfg|conf|xml)|\.gitignore)$/i;
+const TEXT_FILE = /(?:^|\/)(?:[^/]+\.(?:js|mjs|cjs|json|jsonc|md|html|css|sql|yml|yaml|toml|txt|example|sh|bash|zsh|ps1|ini|cfg|conf|xml)|\.gitignore|\.npmrc|\.yarnrc|\.netrc|\.envrc|\.dockerignore|\.editorconfig|\.npmignore|_headers|_redirects|Dockerfile|Makefile|Procfile)$/i;
 
 export function scanTextForSecrets(text = '') {
   const findings = [];
