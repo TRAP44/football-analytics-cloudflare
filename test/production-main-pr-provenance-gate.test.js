@@ -109,7 +109,7 @@ test('production workflow accepts merged-PR provenance or exact successful Quali
   assert.match(workflow,/GITHUB_EVENT_NAME.*workflow_run/);
   assert.match(workflow,/github\.event\.workflow_run\.name.*Quality/);
   assert.match(workflow,/github\.event\.workflow_run\.conclusion.*success/);
-  assert.match(workflow,/\[\[ "\$DEPLOY_SHA" == "\$CURRENT_MAIN_SHA" \]\]/);
+  assert.match(workflow,/&& "\$DEPLOY_SHA" == "\$CURRENT_MAIN_SHA" \]\]/);
   assert.match(workflow,/Direct-main production provenance verified/);
 
   const provenance = workflow.indexOf(
