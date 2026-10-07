@@ -1028,34 +1028,58 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   }
   
   function newsImpactRecoveryStrategyDecision(reason = 'server_error', action = '', evidenceRows = [], recentEvidenceRows = null) {
-    const safeReason=NEWS_IMPACT_FAILURE_CODES.has(String(reason || '')) ? String(reason) : 'server_error';
+    const safeReason=newsImpactKnownCode(reason,NEWS_IMPACT_FAILURE_CODES,'server_error');
     const safeAction=cleanNewsImpactActionCode(action);
     const fixed=newsImpactRecoveryForFailure(safeReason,safeAction);
-    const relevant=(evidenceRows || []).filter(x=>x.reason===safeReason && x.action===safeAction);
-    const baseline=relevant.find(x=>x.recovery===fixed.code) || null;
-    const stable=(row)=>Boolean(row)
-      && Number(row.attempts || 0)>=NEWS_IMPACT_RECOVERY_STRATEGY_MIN_ATTEMPTS
-      && row?.confidence?.status==='stable';
+    const evidence=Array.isArray(evidenceRows)
+      ? evidenceRows.filter(row=>row && typeof row==='object' && !Array.isArray(row))
+      : [];
+    const relevant=evidence.filter(row=>row.reason===safeReason && row.action===safeAction);
+    const baseline=relevant.find(row=>row.recovery===fixed.code) || null;
+    const minAttempts=newsImpactSampleThreshold(NEWS_IMPACT_RECOVERY_STRATEGY_MIN_ATTEMPTS,30);
+    const minLift=newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_STRATEGY_MIN_LIFT_PCT_POINTS,5);
+    const stabilityMinAttempts=newsImpactSampleThreshold(NEWS_IMPACT_RECOVERY_STABILITY_MIN_ATTEMPTS,10);
+    const stable=(row)=>{
+      if (!row || typeof row!=='object' || Array.isArray(row)) return false;
+      const confidence=row.confidence && typeof row.confidence==='object' && !Array.isArray(row.confidence)
+        ? row.confidence
+        : null;
+      const successPct=newsImpactFiniteNumber(row.successPct);
+      const lowerPct=newsImpactFiniteNumber(confidence?.lowerPct);
+      const upperPct=newsImpactFiniteNumber(confidence?.upperPct);
+      return newsImpactCount(row.attempts)>=minAttempts
+        && successPct!==null && successPct>=0 && successPct<=100
+        && confidence?.status==='stable'
+        && lowerPct!==null && lowerPct>=0
+        && upperPct!==null && upperPct<=100
+        && lowerPct<=upperPct;
+    };
+    const baselineAttempts=newsImpactCount(baseline?.attempts);
+    const baselineSuccess=newsImpactPercentage(baseline?.successPct);
     const baseResult={
       reason:safeReason,
-      reasonLabel:NEWS_IMPACT_FAILURE_LABELS[safeReason] || safeReason,
+      reasonLabel:NEWS_IMPACT_FAILURE_LABELS?.[safeReason] || safeReason,
       action:safeAction,
-      actionLabel:NEWS_IMPACT_ACTION_LABELS[safeAction] || safeAction,
+      actionLabel:NEWS_IMPACT_ACTION_LABELS?.[safeAction] || safeAction,
       fixedRecovery:fixed.code,
-      fixedRecoveryLabel:NEWS_IMPACT_RECOVERY_LABELS[fixed.code] || fixed.code,
+      fixedRecoveryLabel:NEWS_IMPACT_RECOVERY_LABELS?.[fixed.code] || fixed.code,
       selectedRecovery:fixed.code,
-      selectedRecoveryLabel:NEWS_IMPACT_RECOVERY_LABELS[fixed.code] || fixed.code,
+      selectedRecoveryLabel:NEWS_IMPACT_RECOVERY_LABELS?.[fixed.code] || fixed.code,
       proposedRecovery:'',
       proposedRecoveryLabel:'',
       strategy:'fixed',
       guardReason:'fixed_default',
       stability:'fixed',
-      fixedAttempts:Number(baseline?.attempts || 0),
-      fixedSuccessPct:Number(baseline?.successPct || 0),
-      fixedConfidence:baseline?.confidence || newsImpactConversionConfidence(0,0),
-      selectedAttempts:Number(baseline?.attempts || 0),
-      selectedSuccessPct:Number(baseline?.successPct || 0),
-      selectedConfidence:baseline?.confidence || newsImpactConversionConfidence(0,0),
+      fixedAttempts:baselineAttempts,
+      fixedSuccessPct:baselineSuccess,
+      fixedConfidence:baseline?.confidence && typeof baseline.confidence==='object' && !Array.isArray(baseline.confidence)
+        ? baseline.confidence
+        : newsImpactConversionConfidence(0,0),
+      selectedAttempts:baselineAttempts,
+      selectedSuccessPct:baselineSuccess,
+      selectedConfidence:baseline?.confidence && typeof baseline.confidence==='object' && !Array.isArray(baseline.confidence)
+        ? baseline.confidence
+        : newsImpactConversionConfidence(0,0),
       liftPctPoints:0,
       recentFixedAttempts:0,
       recentFixedSuccessPct:0,
@@ -1064,51 +1088,78 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       recentLiftPctPoints:0,
     };
     if (!stable(baseline)) return {...baseResult,guardReason:'baseline_sample'};
+
+    const baselineUpper=newsImpactFiniteNumber(baseline?.confidence?.upperPct);
     const candidates=relevant
-      .filter(x=>x.recovery!==fixed.code && stable(x))
-      .map(x=>({...x,liftPctPoints:Math.round((Number(x.successPct || 0)-Number(baseline.successPct || 0))*10)/10}))
-      .filter(x=>Number(x.liftPctPoints || 0)>=NEWS_IMPACT_RECOVERY_STRATEGY_MIN_LIFT_PCT_POINTS)
-      .filter(x=>Number(x?.confidence?.lowerPct || 0)>Number(baseline?.confidence?.upperPct || 100))
-      .sort((a,b)=>Number(b?.confidence?.lowerPct || 0)-Number(a?.confidence?.lowerPct || 0)
-        || Number(b.successPct || 0)-Number(a.successPct || 0)
-        || Number(b.attempts || 0)-Number(a.attempts || 0));
+      .filter(row=>row.recovery!==fixed.code && cleanNewsImpactRecoveryCode(row.recovery)===row.recovery && stable(row))
+      .map(row=>{
+        const successPct=newsImpactPercentage(row.successPct);
+        return {...row,liftPctPoints:Math.round((successPct-baselineSuccess)*10)/10};
+      })
+      .filter(row=>row.liftPctPoints>=minLift)
+      .filter(row=>{
+        const lowerPct=newsImpactFiniteNumber(row?.confidence?.lowerPct);
+        return lowerPct!==null && baselineUpper!==null && lowerPct>baselineUpper;
+      })
+      .sort((left,right)=>
+        (newsImpactFiniteNumber(right?.confidence?.lowerPct) ?? 0)-(newsImpactFiniteNumber(left?.confidence?.lowerPct) ?? 0)
+        || newsImpactPercentage(right.successPct)-newsImpactPercentage(left.successPct)
+        || newsImpactCount(right.attempts)-newsImpactCount(left.attempts)
+      );
     const candidate=candidates[0] || null;
     if (!candidate) return {...baseResult,guardReason:'no_significant_better'};
+
+    const candidateLabel=newsImpactText(candidate.recoveryLabel,NEWS_IMPACT_RECOVERY_LABELS?.[candidate.recovery] || candidate.recovery);
     const adaptiveResult={
       ...baseResult,
       selectedRecovery:candidate.recovery,
-      selectedRecoveryLabel:candidate.recoveryLabel || NEWS_IMPACT_RECOVERY_LABELS[candidate.recovery] || candidate.recovery,
+      selectedRecoveryLabel:candidateLabel,
       proposedRecovery:candidate.recovery,
-      proposedRecoveryLabel:candidate.recoveryLabel || NEWS_IMPACT_RECOVERY_LABELS[candidate.recovery] || candidate.recovery,
+      proposedRecoveryLabel:candidateLabel,
       strategy:'adaptive',
       guardReason:'significant_better',
       stability:'legacy_confirmed',
-      selectedAttempts:Number(candidate.attempts || 0),
-      selectedSuccessPct:Number(candidate.successPct || 0),
+      selectedAttempts:newsImpactCount(candidate.attempts),
+      selectedSuccessPct:newsImpactPercentage(candidate.successPct),
       selectedConfidence:candidate.confidence,
-      liftPctPoints:Number(candidate.liftPctPoints || 0),
+      liftPctPoints:newsImpactSignedNumber(candidate.liftPctPoints),
     };
     if (!Array.isArray(recentEvidenceRows)) return adaptiveResult;
-  
-    const recentRelevant=recentEvidenceRows.filter(x=>x.reason===safeReason && x.action===safeAction);
-    const recentBaseline=recentRelevant.find(x=>x.recovery===fixed.code) || null;
-    const recentCandidate=recentRelevant.find(x=>x.recovery===candidate.recovery) || null;
-    const recentReady=(row)=>Boolean(row) && Number(row.attempts || 0)>=NEWS_IMPACT_RECOVERY_STABILITY_MIN_ATTEMPTS;
+
+    const recentRelevant=recentEvidenceRows.filter(row=>
+      row && typeof row==='object' && !Array.isArray(row)
+      && row.reason===safeReason && row.action===safeAction
+    );
+    const recentBaseline=recentRelevant.find(row=>row.recovery===fixed.code) || null;
+    const recentCandidate=recentRelevant.find(row=>row.recovery===candidate.recovery) || null;
+    const recentReady=(row)=>{
+      if (!row || typeof row!=='object' || Array.isArray(row)) return false;
+      const successPct=newsImpactFiniteNumber(row.successPct);
+      return newsImpactCount(row.attempts)>=stabilityMinAttempts
+        && successPct!==null && successPct>=0 && successPct<=100;
+    };
     const proposed={
       ...baseResult,
       proposedRecovery:candidate.recovery,
-      proposedRecoveryLabel:candidate.recoveryLabel || NEWS_IMPACT_RECOVERY_LABELS[candidate.recovery] || candidate.recovery,
-      liftPctPoints:Number(candidate.liftPctPoints || 0),
-      recentFixedAttempts:Number(recentBaseline?.attempts || 0),
-      recentFixedSuccessPct:Number(recentBaseline?.successPct || 0),
-      recentSelectedAttempts:Number(recentCandidate?.attempts || 0),
-      recentSelectedSuccessPct:Number(recentCandidate?.successPct || 0),
+      proposedRecoveryLabel:candidateLabel,
+      liftPctPoints:newsImpactSignedNumber(candidate.liftPctPoints),
+      recentFixedAttempts:newsImpactCount(recentBaseline?.attempts),
+      recentFixedSuccessPct:newsImpactPercentage(recentBaseline?.successPct),
+      recentSelectedAttempts:newsImpactCount(recentCandidate?.attempts),
+      recentSelectedSuccessPct:newsImpactPercentage(recentCandidate?.successPct),
     };
     if (!recentReady(recentBaseline) || !recentReady(recentCandidate)) {
       return {...proposed,guardReason:'stability_sample',stability:'insufficient'};
     }
-    const recentLiftPctPoints=Math.round((Number(recentCandidate.successPct || 0)-Number(recentBaseline.successPct || 0))*10)/10;
-    const recentConfidenceOk=Number(recentCandidate?.confidence?.lowerPct || 0)>=Number(recentBaseline?.confidence?.lowerPct || 0);
+
+    const recentBaselineSuccess=newsImpactPercentage(recentBaseline.successPct);
+    const recentCandidateSuccess=newsImpactPercentage(recentCandidate.successPct);
+    const recentLiftPctPoints=Math.round((recentCandidateSuccess-recentBaselineSuccess)*10)/10;
+    const recentCandidateLower=newsImpactFiniteNumber(recentCandidate?.confidence?.lowerPct);
+    const recentBaselineLower=newsImpactFiniteNumber(recentBaseline?.confidence?.lowerPct);
+    const recentConfidenceOk=recentCandidateLower!==null
+      && recentBaselineLower!==null
+      && recentCandidateLower>=recentBaselineLower;
     if (recentLiftPctPoints<0 || !recentConfidenceOk) {
       return {...proposed,guardReason:'recent_regression',stability:'regressed',recentLiftPctPoints};
     }
@@ -1116,26 +1167,32 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       ...adaptiveResult,
       guardReason:'stable_significant_better',
       stability:'confirmed',
-      recentFixedAttempts:Number(recentBaseline.attempts || 0),
-      recentFixedSuccessPct:Number(recentBaseline.successPct || 0),
-      recentSelectedAttempts:Number(recentCandidate.attempts || 0),
-      recentSelectedSuccessPct:Number(recentCandidate.successPct || 0),
+      recentFixedAttempts:newsImpactCount(recentBaseline.attempts),
+      recentFixedSuccessPct:recentBaselineSuccess,
+      recentSelectedAttempts:newsImpactCount(recentCandidate.attempts),
+      recentSelectedSuccessPct:recentCandidateSuccess,
       recentLiftPctPoints,
     };
   }
+
   function buildNewsImpactRecoveryStrategyMatrix(evidenceRows = [], recentEvidenceRows = null) {
-    const keys=new Set((evidenceRows || []).map(x=>`${x.reason}|${x.action}`));
+    const evidence=Array.isArray(evidenceRows)
+      ? evidenceRows.filter(row=>row && typeof row==='object' && !Array.isArray(row) && typeof row.reason==='string' && typeof row.action==='string')
+      : [];
+    const keys=new Set(evidence.map(row=>row.reason+'|'+row.action));
     return [...keys].map(key=>{
-      const [reason,action]=key.split('|');
-      return newsImpactRecoveryStrategyDecision(reason,action,evidenceRows,recentEvidenceRows);
-    }).sort((a,b)=>(a.strategy==='adaptive'?0:1)-(b.strategy==='adaptive'?0:1)
-      || b.liftPctPoints-a.liftPctPoints
-      || a.reason.localeCompare(b.reason)
-      || a.action.localeCompare(b.action));
+      const separator=key.indexOf('|');
+      const reason=separator>=0 ? key.slice(0,separator) : '';
+      const action=separator>=0 ? key.slice(separator+1) : '';
+      return newsImpactRecoveryStrategyDecision(reason,action,evidence,recentEvidenceRows);
+    }).sort((left,right)=>(left.strategy==='adaptive'?0:1)-(right.strategy==='adaptive'?0:1)
+      || newsImpactSignedNumber(right.liftPctPoints)-newsImpactSignedNumber(left.liftPctPoints)
+      || left.reason.localeCompare(right.reason)
+      || left.action.localeCompare(right.action));
   }
-  
+
   function newsImpactRecoveryDriftDecision(decision = null, priorEvidenceRows = [], recentEvidenceRows = []) {
-    if (!decision || typeof decision!=='object') return decision;
+    if (!decision || typeof decision!=='object' || Array.isArray(decision)) return decision;
     const base={
       ...decision,
       driftStatus:'not_applicable',
@@ -1146,109 +1203,149 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       recentDriftAttempts:0,
       recentDriftSuccessPct:0,
     };
-    if (decision.strategy!=='adaptive' || !decision.selectedRecovery) return base;
-    const prior=(priorEvidenceRows || []).find(x=>x.reason===decision.reason && x.action===decision.action && x.recovery===decision.selectedRecovery) || null;
-    const recent=(recentEvidenceRows || []).find(x=>x.reason===decision.reason && x.action===decision.action && x.recovery===decision.selectedRecovery) || null;
-    const priorAttempts=Number(prior?.attempts || 0);
-    const recentAttempts=Number(recent?.attempts || 0);
+    if (decision.strategy!=='adaptive' || typeof decision.selectedRecovery!=='string' || !decision.selectedRecovery) return base;
+    const priorRows=Array.isArray(priorEvidenceRows) ? priorEvidenceRows : [];
+    const recentRows=Array.isArray(recentEvidenceRows) ? recentEvidenceRows : [];
+    const prior=priorRows.find(row=>
+      row && typeof row==='object' && !Array.isArray(row)
+      && row.reason===decision.reason && row.action===decision.action && row.recovery===decision.selectedRecovery
+    ) || null;
+    const recent=recentRows.find(row=>
+      row && typeof row==='object' && !Array.isArray(row)
+      && row.reason===decision.reason && row.action===decision.action && row.recovery===decision.selectedRecovery
+    ) || null;
+    const priorAttempts=newsImpactCount(prior?.attempts);
+    const recentAttempts=newsImpactCount(recent?.attempts);
+    const priorSuccessRaw=newsImpactFiniteNumber(prior?.successPct);
+    const recentSuccessRaw=newsImpactFiniteNumber(recent?.successPct);
+    const priorSuccess=priorSuccessRaw!==null && priorSuccessRaw>=0 && priorSuccessRaw<=100 ? priorSuccessRaw : 0;
+    const recentSuccess=recentSuccessRaw!==null && recentSuccessRaw>=0 && recentSuccessRaw<=100 ? recentSuccessRaw : 0;
     const snapshot={
       ...base,
       driftStatus:'insufficient',
       priorSelectedAttempts:priorAttempts,
-      priorSelectedSuccessPct:Number(prior?.successPct || 0),
+      priorSelectedSuccessPct:priorSuccess,
       recentDriftAttempts:recentAttempts,
-      recentDriftSuccessPct:Number(recent?.successPct || 0),
+      recentDriftSuccessPct:recentSuccess,
     };
-    if (priorAttempts<NEWS_IMPACT_RECOVERY_DRIFT_PRIOR_MIN_ATTEMPTS || recentAttempts<NEWS_IMPACT_RECOVERY_DRIFT_RECENT_MIN_ATTEMPTS) {
-      return snapshot;
-    }
-    const dropPctPoints=Math.round((Number(prior.successPct || 0)-Number(recent.successPct || 0))*10)/10;
-    const confidenceSeparated=Number(recent?.confidence?.upperPct || 100)<Number(prior?.confidence?.lowerPct || 0);
-    if (dropPctPoints>=NEWS_IMPACT_RECOVERY_DRIFT_DROP_PCT_POINTS && confidenceSeparated) {
+    const priorMin=newsImpactSampleThreshold(NEWS_IMPACT_RECOVERY_DRIFT_PRIOR_MIN_ATTEMPTS,20);
+    const recentMin=newsImpactSampleThreshold(NEWS_IMPACT_RECOVERY_DRIFT_RECENT_MIN_ATTEMPTS,10);
+    const dropThreshold=newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_DRIFT_DROP_PCT_POINTS,15);
+    if (
+      priorAttempts<priorMin
+      || recentAttempts<recentMin
+      || priorSuccessRaw===null || priorSuccessRaw<0 || priorSuccessRaw>100
+      || recentSuccessRaw===null || recentSuccessRaw<0 || recentSuccessRaw>100
+    ) return snapshot;
+
+    const priorLower=newsImpactFiniteNumber(prior?.confidence?.lowerPct);
+    const recentUpper=newsImpactFiniteNumber(recent?.confidence?.upperPct);
+    if (
+      priorLower===null || priorLower<0 || priorLower>100
+      || recentUpper===null || recentUpper<0 || recentUpper>100
+    ) return snapshot;
+
+    const dropPctPoints=Math.round((priorSuccess-recentSuccess)*10)/10;
+    const confidenceSeparated=recentUpper<priorLower;
+    if (dropPctPoints>=dropThreshold && confidenceSeparated) {
       return {
         ...snapshot,
-        selectedRecovery:decision.fixedRecovery,
-        selectedRecoveryLabel:decision.fixedRecoveryLabel,
+        selectedRecovery:newsImpactText(decision.fixedRecovery,decision.selectedRecovery),
+        selectedRecoveryLabel:newsImpactText(decision.fixedRecoveryLabel,newsImpactText(decision.fixedRecovery,decision.selectedRecovery)),
         strategy:'fixed',
         guardReason:'performance_drift',
         stability:'drift_blocked',
         driftStatus:'blocked',
         driftDetected:true,
         driftDropPctPoints:dropPctPoints,
-        selectedAttempts:Number(decision.fixedAttempts || 0),
-        selectedSuccessPct:Number(decision.fixedSuccessPct || 0),
-        selectedConfidence:decision.fixedConfidence,
+        selectedAttempts:newsImpactCount(decision.fixedAttempts),
+        selectedSuccessPct:newsImpactPercentage(decision.fixedSuccessPct),
+        selectedConfidence:decision.fixedConfidence && typeof decision.fixedConfidence==='object' && !Array.isArray(decision.fixedConfidence)
+          ? decision.fixedConfidence
+          : newsImpactConversionConfidence(0,0),
       };
     }
     return {...snapshot,driftStatus:'stable',driftDropPctPoints:Math.max(0,dropPctPoints)};
   }
-  
+
   function buildNewsImpactRecoveryDriftMatrix(strategyRows = [], priorEvidenceRows = [], recentEvidenceRows = []) {
-    return (strategyRows || []).map(row=>newsImpactRecoveryDriftDecision(row,priorEvidenceRows,recentEvidenceRows))
-      .sort((a,b)=>(a.strategy==='adaptive'?0:1)-(b.strategy==='adaptive'?0:1)
-        || (a.driftDetected?0:1)-(b.driftDetected?0:1)
-        || Number(b.liftPctPoints || 0)-Number(a.liftPctPoints || 0)
-        || String(a.reason || '').localeCompare(String(b.reason || ''))
-        || String(a.action || '').localeCompare(String(b.action || '')));
+    const strategies=Array.isArray(strategyRows)
+      ? strategyRows.filter(row=>row && typeof row==='object' && !Array.isArray(row))
+      : [];
+    return strategies.map(row=>newsImpactRecoveryDriftDecision(row,priorEvidenceRows,recentEvidenceRows))
+      .filter(Boolean)
+      .sort((left,right)=>(left.strategy==='adaptive'?0:1)-(right.strategy==='adaptive'?0:1)
+        || (left.driftDetected===true?0:1)-(right.driftDetected===true?0:1)
+        || newsImpactSignedNumber(right.liftPctPoints)-newsImpactSignedNumber(left.liftPctPoints)
+        || newsImpactText(left.reason).localeCompare(newsImpactText(right.reason))
+        || newsImpactText(left.action).localeCompare(newsImpactText(right.action)));
   }
-  
-  
-  function buildNewsImpactRecoveryTransitionHistory(failureRows = [], {limit = 20} = {}) {
-    const ordered=[...(failureRows || [])]
+
+
+  function buildNewsImpactRecoveryTransitionHistory(failureRows = [], options = {}) {
+    const safeRows=Array.isArray(failureRows) ? failureRows : [];
+    const safeOptions=options && typeof options==='object' && !Array.isArray(options) ? options : {};
+    const configuredLimit=newsImpactFiniteNumber(safeOptions.limit);
+    const safeLimit=configuredLimit!==null && Number.isSafeInteger(configuredLimit)
+      ? Math.max(1,Math.min(50,configuredLimit))
+      : 20;
+    const ordered=safeRows
+      .filter(row=>row && typeof row==='object' && !Array.isArray(row))
       .map(row=>({row,at:newsImpactEventTime(row)}))
-      .filter(x=>Number.isFinite(x.at))
-      .sort((a,b)=>a.at-b.at);
+      .filter(item=>Number.isFinite(item.at))
+      .sort((left,right)=>left.at-right.at);
     const state=new Map();
     const transitions=[];
     for (const item of ordered) {
       const row=item.row;
-      const meta=row?.metadata && typeof row.metadata==='object' ? row.metadata : {};
-      const reason=NEWS_IMPACT_FAILURE_CODES.has(String(meta.reason || '')) ? String(meta.reason) : 'server_error';
+      const meta=row.metadata && typeof row.metadata==='object' && !Array.isArray(row.metadata) ? row.metadata : {};
+      const reason=newsImpactKnownCode(meta.reason,NEWS_IMPACT_FAILURE_CODES,'server_error');
       const action=cleanNewsImpactActionCode(meta.action);
       if (!action) continue;
       const fixed=newsImpactRecoveryForFailure(reason,action);
-      const recovery=NEWS_IMPACT_RECOVERY_CODES.has(String(meta.recovery || '')) ? String(meta.recovery) : fixed.code;
-      const strategy=String(meta.strategy || '')==='adaptive' ? 'adaptive' : 'fixed';
-      const guardReason=NEWS_IMPACT_RECOVERY_STRATEGY_GUARD_CODES.has(String(meta.strategy_guard || ''))
-        ? String(meta.strategy_guard)
-        : '';
-      const key=`${reason}|${action}`;
+      const recovery=newsImpactKnownCode(meta.recovery,NEWS_IMPACT_RECOVERY_CODES,fixed.code);
+      const strategy=meta.strategy==='adaptive' ? 'adaptive' : 'fixed';
+      const guardReason=newsImpactKnownCode(meta.strategy_guard,NEWS_IMPACT_RECOVERY_STRATEGY_GUARD_CODES,'');
+      const key=reason+'|'+action;
       const current={strategy,recovery,guardReason,at:item.at};
       const previous=state.get(key) || null;
       if (previous && (previous.strategy!==strategy || previous.recovery!==recovery)) {
         transitions.push({
           at:new Date(item.at).toISOString(),
           reason,
-          reasonLabel:NEWS_IMPACT_FAILURE_LABELS[reason] || reason,
+          reasonLabel:NEWS_IMPACT_FAILURE_LABELS?.[reason] || reason,
           action,
-          actionLabel:NEWS_IMPACT_ACTION_LABELS[action] || action,
+          actionLabel:NEWS_IMPACT_ACTION_LABELS?.[action] || action,
           fromStrategy:previous.strategy,
           fromRecovery:previous.recovery,
-          fromRecoveryLabel:NEWS_IMPACT_RECOVERY_LABELS[previous.recovery] || previous.recovery,
+          fromRecoveryLabel:NEWS_IMPACT_RECOVERY_LABELS?.[previous.recovery] || previous.recovery,
           toStrategy:strategy,
           toRecovery:recovery,
-          toRecoveryLabel:NEWS_IMPACT_RECOVERY_LABELS[recovery] || recovery,
+          toRecoveryLabel:NEWS_IMPACT_RECOVERY_LABELS?.[recovery] || recovery,
           guardReason,
         });
       }
       state.set(key,current);
     }
     return transitions
-      .sort((a,b)=>Date.parse(b.at)-Date.parse(a.at))
-      .slice(0,Math.max(1,Math.min(50,Number(limit || 20))));
+      .sort((left,right)=>Date.parse(right.at)-Date.parse(left.at))
+      .slice(0,safeLimit);
   }
-  
+
   function summarizeNewsImpactRecoveryTransitions(rows = []) {
-    const list=Array.isArray(rows) ? rows : [];
+    const list=Array.isArray(rows)
+      ? rows.filter(row=>row && typeof row==='object' && !Array.isArray(row))
+      : [];
     return {
       total:list.length,
-      fixedToAdaptive:list.filter(x=>x.fromStrategy==='fixed' && x.toStrategy==='adaptive').length,
-      adaptiveToFixed:list.filter(x=>x.fromStrategy==='adaptive' && x.toStrategy==='fixed').length,
-      recoveryChanged:list.filter(x=>x.fromRecovery!==x.toRecovery).length,
+      fixedToAdaptive:list.filter(row=>row.fromStrategy==='fixed' && row.toStrategy==='adaptive').length,
+      adaptiveToFixed:list.filter(row=>row.fromStrategy==='adaptive' && row.toStrategy==='fixed').length,
+      recoveryChanged:list.filter(row=>row.fromRecovery!==row.toRecovery).length,
       last:list[0] || null,
     };
   }
-  
+
+
   function buildNewsImpactRecoveryAdminAlerts(strategyRows = [], evidenceReason = 'ok', incidentRows = []) {
     const alerts=[];
     const suppressed=new Set((incidentRows || [])
