@@ -36,13 +36,17 @@ test('RC111 keeps manual production deploy pinned to current main when runtime d
 });
 
 
-test('production deploy requires merged-PR provenance for the exact deploy SHA',()=>{
+test('production deploy accepts merged-PR provenance or an exact successful Quality run on current main',()=>{
   assert.match(workflow,/verify-main-pr-provenance\.js "\$GITHUB_REPOSITORY" "\$DEPLOY_SHA" main/);
-  assert.match(workflow,/P1 gate: require merged PR provenance for production deploy/);
+  assert.match(workflow,/P1 gate: verify production deploy provenance/);
+  assert.match(workflow,/github\.event\.workflow_run\.name/);
+  assert.match(workflow,/github\.event\.workflow_run\.conclusion/);
+  assert.match(workflow,/\$DEPLOY_SHA.*\$CURRENT_MAIN_SHA/);
+  assert.match(workflow,/Direct-main production provenance verified/);
 });
 
 
-test('current release snapshot remains explicitly PR-gated',()=>{
-  assert.match(workflow,/P1 gate: require merged PR provenance for production deploy/);
-  assert.match(workflow,/verify-main-pr-provenance\.js "\$GITHUB_REPOSITORY" "\$DEPLOY_SHA" main/);
+test('production provenance still fails closed for unverified or stale direct-main revisions',()=>{
+  assert.match(workflow,/has neither merged-PR provenance nor an exact successful Quality run on current main/);
+  assert.match(workflow,/exit 1/);
 });
