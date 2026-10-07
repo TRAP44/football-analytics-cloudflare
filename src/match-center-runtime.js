@@ -334,7 +334,7 @@ export function createMatchCenterRuntime(deps) {
 
     // Shared across all users. LIVE cache follows the provider refresh cadence
     // with a hard minimum of 10 seconds.
-    const baseCacheKey=`match-center:${fixtureId}:v16-availability-quality-rc144`;
+    const baseCacheKey=`match-center:${fixtureId}:v17-event-evidence-rc144`;
     const cachedCandidate=await optionalAsync(getCache,baseCacheKey,cfg);
     const cached=matchCenterCachePayload(cachedCandidate,fixtureId);
     if (cachedCandidate && !cached) {
