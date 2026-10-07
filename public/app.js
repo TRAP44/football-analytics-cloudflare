@@ -4829,7 +4829,7 @@ function matchChangeNarrativeHtml(d = {}, match = {}) {
     if (leader && Number.isFinite(home) && Number.isFinite(away) && Math.abs(home - away) >= 12) {
       items.push({
         icon: '⚡',
-        title: `${leader} усилил давление`,
+        title: `Давление сейчас на стороне: ${leader}`,
         text: `Текущий индекс давления: ${Math.round(home)}:${Math.round(away)}.`,
         tone: 'strong',
       });
