@@ -88,6 +88,23 @@ export function createGrowthReferralRuntime(deps = {}) {
     }
   }
 
+  function safeShallowCopy(value) {
+    const source=plainObject(value);
+    if (!source) return {};
+    let keys=[];
+    try {
+      keys=Object.keys(source).slice(0,80);
+    } catch {
+      return {};
+    }
+    const out={};
+    for (const key of keys) {
+      const item=safeRead(source,key);
+      if (item!==undefined) out[key]=item;
+    }
+    return out;
+  }
+
   async function safeAsyncCall(fn,...args) {
     try {
       return await fn(...args);
@@ -370,9 +387,14 @@ export function createGrowthReferralRuntime(deps = {}) {
         : {...incoming,firstTouchAt:null};
     }
 
-    const current=plainObject(memory.users.get(id))
-      || {telegram_id:id,plan:'FREE'};
-    memory.users.set(id,{...current,...patch});
+    const current=plainObject(memory.users.get(id));
+    memory.users.set(id,{
+      ...(current ? safeShallowCopy(current) : {
+        telegram_id:id,
+        plan:'FREE',
+      }),
+      ...patch,
+    });
     return {...incoming,firstTouchAt};
   }
 
