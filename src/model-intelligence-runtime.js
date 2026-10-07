@@ -30,7 +30,7 @@ export function createModelIntelligenceRuntime(deps) {
     if (typeof fn !== 'function') throw new TypeError(`${name} is required`);
   }
 
-  const MODEL_SIGNAL_NAMES=Object.freeze(['market','apiPrediction','recentForm','h2h']);
+  const MODEL_SIGNAL_NAMES=Object.freeze(['market','apiPrediction','recentForm','seasonStrength','h2h']);
   if (!MODEL_BASE_WEIGHTS || typeof MODEL_BASE_WEIGHTS !== 'object' || Array.isArray(MODEL_BASE_WEIGHTS)) {
     throw new TypeError('MODEL_BASE_WEIGHTS is required');
   }
@@ -286,8 +286,64 @@ export function createModelIntelligenceRuntime(deps) {
       counts.awayWins+1,
     ));
   }
+
+  function seasonStrengthProbabilities(
+    homeStanding,
+    awayStanding,
+    homeSeasonStats,
+    awaySeasonStats,
+  ) {
+    const h=homeSeasonStats?.derived;
+    const a=awaySeasonStats?.derived;
+    const components=[];
+    const add=(value,weight)=>{
+      if (!Number.isFinite(value) || !Number.isFinite(weight) || weight<=0) return;
+      components.push({value,weight});
+    };
+
+    const homeAttack=finiteRange(h?.goalsForPerMatch,0,10);
+    const awayAttack=finiteRange(a?.goalsForPerMatch,0,10);
+    if (homeAttack !== null && awayAttack !== null) {
+      add(clamp((homeAttack-awayAttack)*7,-10,10),1);
+    }
+
+    const homeDefense=finiteRange(h?.goalsAgainstPerMatch,0,10);
+    const awayDefense=finiteRange(a?.goalsAgainstPerMatch,0,10);
+    if (homeDefense !== null && awayDefense !== null) {
+      add(clamp((awayDefense-homeDefense)*6.5,-10,10),1);
+    }
+
+    const homeClean=finiteRange(h?.cleanSheetRate,0,100);
+    const awayClean=finiteRange(a?.cleanSheetRate,0,100);
+    if (homeClean !== null && awayClean !== null) {
+      add(clamp((homeClean-awayClean)*0.14,-8,8),0.6);
+    }
+
+    const homeRank=positiveSafeInteger(homeStanding?.rank);
+    const awayRank=positiveSafeInteger(awayStanding?.rank);
+    if (homeRank && awayRank && homeRank<=1000 && awayRank<=1000) {
+      add(clamp((awayRank-homeRank)*0.55,-12,12),0.8);
+    }
+
+    if (components.length<2) return null;
+    const weightSum=components.reduce((sum,row)=>sum+row.weight,0);
+    if (!(weightSum>0)) return null;
+    const structuralEdge=components.reduce(
+      (sum,row)=>sum+row.value*row.weight,
+      0,
+    )/weightSum;
+    const edge=clamp(1.8+structuralEdge*1.15,-18,18);
+    const draw=clamp(28.5-Math.abs(edge)*0.24,21.5,29);
+    const remaining=100-draw;
+    const homeShare=1/(1+Math.exp(-edge/7.8));
+    return probabilityObject(normalizeThree(
+      remaining*homeShare,
+      draw,
+      remaining*(1-homeShare),
+    ));
+  }
   
-  function blendProbabilitySignals({ market, model, form, h2h, weightOverrides = null } = {}) {
+  function blendProbabilitySignals({ market, model, form, seasonStrength, h2h, weightOverrides = null } = {}) {
     const configured=weightOverrides && typeof weightOverrides === 'object' && !Array.isArray(weightOverrides)
       ? weightOverrides
       : {};
@@ -295,6 +351,7 @@ export function createModelIntelligenceRuntime(deps) {
       ['market',market?.probabilities],
       ['apiPrediction',model?.probabilities],
       ['recentForm',form],
+      ['seasonStrength',seasonStrength],
       ['h2h',h2h],
     ];
     const candidates=[];
@@ -528,6 +585,7 @@ export function createModelIntelligenceRuntime(deps) {
       market: 'Коэффициенты П1 / Н / П2',
       apiPrediction: 'API Prediction',
       recentForm: 'Недавняя форма',
+      seasonStrength: 'Сила сезона',
       h2h: 'Очные встречи',
     })[name] || name || 'Источник';
   }
@@ -537,6 +595,7 @@ export function createModelIntelligenceRuntime(deps) {
       market: '💹',
       apiPrediction: '🧠',
       recentForm: '📈',
+      seasonStrength: '📊',
       h2h: '🤝',
     })[name] || '•';
   }
@@ -840,7 +899,7 @@ export function createModelIntelligenceRuntime(deps) {
         awayState: String(lineups?.away?.quality?.state || 'unavailable'),
       },
       absences: { home: homeAbs, away: awayAbs },
-      methodology: 'Бриф объясняет уже рассчитанные вероятности через веса источников, форму, очные встречи, потери и голевую эвристику. Он не добавляет новый прогноз и не является рекомендацией для ставок.',
+      methodology: 'Бриф объясняет уже рассчитанные вероятности через веса источников, недавнюю форму, силу сезона, очные встречи, потери и голевую эвристику. Он не добавляет новый прогноз и не является рекомендацией для ставок.',
     };
   }
   
@@ -853,6 +912,7 @@ export function createModelIntelligenceRuntime(deps) {
     getRecentTeamForm,
     formProbabilities,
     h2hProbabilities,
+    seasonStrengthProbabilities,
     blendProbabilitySignals,
     absenceAdjustmentUnits,
     applyAbsenceAdjustment,
