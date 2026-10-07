@@ -20,7 +20,8 @@ function readSourceTree(root, extension='.js') {
 }
 const worker = readSourceTree('src');
 const providerSloIncidents = fs.readFileSync('src/provider-slo-incidents.js','utf8');
-const app = readSourceTree('public');
+const publicSourceTree = readSourceTree('public');
+const app = fs.readFileSync('public/app.js','utf8');
 const viewChrome = fs.readFileSync('public/modules/view-chrome.js', 'utf8');
 const navigationShell = fs.readFileSync('public/modules/navigation-shell.js', 'utf8');
 const adminDiagnostics = fs.readFileSync('public/modules/admin-diagnostics.js', 'utf8');
@@ -423,7 +424,7 @@ if (!worker.includes('function loadRefereeHistoryProfile')) failures.push('RC44 
 if (!worker.includes('saveRefereeMatchHistory')) failures.push('RC44 referee history collector is missing');
 if (!fs.existsSync('test/phase4-2-brand-premium-ui.test.js')) failures.push('Missing Phase 4.2 brand/UI regression test');
 if (!fs.existsSync('public/assets/brand/matchradar-mark.svg') || !fs.existsSync('public/assets/brand/matchradar-avatar.svg') || !fs.existsSync('public/assets/brand/matchradar-wordmark.svg')) failures.push('MatchRadar brand assets are incomplete');
-if (!html.includes('MatchRadar') || /FutLens|FM AI/.test(html) || /FutLens|FM AI/.test(app)) failures.push('MatchRadar public brand replacement is incomplete');
+if (!html.includes('MatchRadar') || /FutLens|FM AI/.test(html) || /FutLens|FM AI/.test(publicSourceTree)) failures.push('MatchRadar public brand replacement is incomplete');
 if (!app.includes('function renderAiFocus')) failures.push('RC44 AI focus card is missing');
 if (!worker.includes("verifiedRefereeHistory: 'enabled'") || !worker.includes("aiFocusOfDay: 'enabled'")) failures.push('RC44 health contract is missing');
 if (!worker.includes('function buildLineupImpact')) failures.push('RC44 lineup impact engine is missing');
