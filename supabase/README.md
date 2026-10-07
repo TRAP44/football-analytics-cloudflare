@@ -82,3 +82,46 @@ Production fingerprint остаётся primary. Fresh-install fingerprint пр�
 - Executable CI schema checks являются обязательной частью release contract.
 
 Production-секреты в `supabase/` не добавляются.
+
+
+## Проверенный operational workflow
+
+### Детерминированный порядок миграций
+
+Файл `supabase/migration-order.json` фиксирует числовой порядок legacy migrations и разделяет:
+
+- historical migrations, уже поглощённые fresh-install baseline;
+- migrations, которые должны выполняться после baseline на новой БД.
+
+Порядок определяется **числовыми компонентами версии**. Лексикографическая сортировка запрещена: например, `v6_29_10` лексикографически попадает раньше `v6_29_2`.
+
+`/release-contract.json` остаётся единственным источником истины для active schema contract, fingerprint и latest migration. Manifest нужен только для безопасного порядка применения файлов.
+
+### Совместимость с Supabase CLI
+
+Имена существующих migrations — исторический формат проекта (`supabase_migration_v6_...`), а не нативный timestamp-формат Supabase CLI.
+
+Поэтому **не используйте** `supabase db push`, `supabase migration up` или `supabase migration list` против этого каталога как против стандартной CLI migration history. Production rollout history в Supabase также не обязан 1:1 совпадать с именами файлов в Git: correctness определяется release/schema contracts и readiness fingerprint.
+
+Исторические применённые migrations не переименовываются ради перехода на CLI: это сломало бы аудит и upgrade-контракт. Любой будущий переход на стандартный CLI workflow должен выполняться отдельной контролируемой миграцией процесса.
+
+### Read-only doctor
+
+`supabase/doctor.sql` — диагностический скрипт без DDL/DML. Он проверяет:
+
+- schema/security/default-ACL contracts;
+- RLS без policy вместе с фактическими grants для `anon`/`authenticated`;
+- `SECURITY DEFINER` и mutable `search_path` у public functions;
+- public views без `security_invoker=true`;
+- расширенные права `service_role`, выходящие за DML boundary;
+- сводку remote migration history.
+
+### Как трактовать Supabase Advisors
+
+`RLS Enabled No Policy` для backend-only таблицы не требует автоматического добавления policy, если `anon` и `authenticated` не имеют table grants. В этой модели отсутствие policy является deny-by-default, а backend работает через server-side elevated role.
+
+`Unused Index` — информационный сигнал, а не команда на удаление индекса. Индексы удаляются только после репрезентативной нагрузки и проверки реальных query plans.
+
+### Data API exposure
+
+Новые таблицы нельзя считать автоматически доступными через Data API. Для каждой новой public table нужно явно определить intended roles и grants. Если доступ даётся `anon` или `authenticated`, RLS и соответствующие policies обязательны.
