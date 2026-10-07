@@ -2153,6 +2153,8 @@ const seasonStrengthProbabilities = (...args) => getModelIntelligenceRuntime().s
 const blendProbabilitySignals = (...args) => getModelIntelligenceRuntime().blendProbabilitySignals(...args);
 const absenceAdjustmentUnits = (...args) => getModelIntelligenceRuntime().absenceAdjustmentUnits(...args);
 const applyAbsenceAdjustment = (...args) => getModelIntelligenceRuntime().applyAbsenceAdjustment(...args);
+const buildStartingXiStrength = (...args) => getModelIntelligenceRuntime().buildStartingXiStrength(...args);
+const applyLineupStrengthAdjustment = (...args) => getModelIntelligenceRuntime().applyLineupStrengthAdjustment(...args);
 const poissonGoalModel = (...args) => getModelIntelligenceRuntime().poissonGoalModel(...args);
 const outcomeName = (...args) => getModelIntelligenceRuntime().outcomeName(...args);
 const signalDisagreement = (...args) => getModelIntelligenceRuntime().signalDisagreement(...args);
@@ -2691,6 +2693,7 @@ function getAnalysisRuntime() {
       annotateLineupReliability,
       annotateOddsReliability,
       applyAbsenceAdjustment,
+      applyLineupStrengthAdjustment,
       applyFeatureFreshnessMap,
       assessFixtureAvailabilityQuality,
       assessMatchLineups,
@@ -2701,6 +2704,7 @@ function getAnalysisRuntime() {
       buildAiInstructor,
       buildAnalysisNotes,
       buildLineupImpact,
+      buildStartingXiStrength,
       buildMatchComparison,
       buildOddsMovement,
       buildPreMatchIntelligence,
