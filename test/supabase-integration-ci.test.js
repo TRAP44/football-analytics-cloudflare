@@ -74,7 +74,7 @@ test('Supabase migration manifest is the executable source for CI staging', () =
   );
 
   const verified = validateSupabaseMigrationContract(repoRoot);
-  assert.equal(verified.migrationCount, 47);
+  assert.equal(\n    verified.migrationCount,\n    migrationManifest.historicalMigrations.length\n      + migrationManifest.freshInstallAfterBaseline.length,\n  );
   assert.equal(verified.latestMigration, releaseContract.latestMigration);
   assert.equal(verified.doctorReadOnly, true);
 });
