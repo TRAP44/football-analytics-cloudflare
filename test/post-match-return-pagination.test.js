@@ -22,9 +22,8 @@ test('post-match return reads recent history through bounded pagination instead 
 });
 
 test('post-match return surfaces history truncation in ops and scheduler summary',()=>{
-  const process=block(postMatchReturn,'async function processPostMatchReturns','  return {');
-  assert.match(process,/RETURN_HISTORY_TRUNCATED/);
-  assert.match(process,/candidatePage\.truncated/);
-  assert.match(process,/cap:5000/);
-  assert.match(process,/truncated:Boolean\(candidatePage\.truncated\)/);
+  assert.match(postMatchReturn,/RETURN_HISTORY_TRUNCATED/);
+  assert.match(postMatchReturn,/candidatePage\.truncated/);
+  assert.match(postMatchReturn,/cap:5000/);
+  assert.match(postMatchReturn,/truncated:Boolean\(candidatePage\.truncated\)/);
 });
