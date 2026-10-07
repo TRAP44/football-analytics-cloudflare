@@ -1143,8 +1143,14 @@ async function loadProfile() {
     renderProfile();
     renderDiscoveryHome();
   } catch (e) {
-    const status = typeof e?.status === 'number' && Number.isSafeInteger(e.status) ? e.status : 0;
-    const category = typeof e?.category === 'string' ? e.category : '';
+    let status = 0;
+    let category = '';
+    try {
+      status = typeof e?.status === 'number' && Number.isSafeInteger(e.status)
+        ? e.status
+        : 0;
+      category = typeof e?.category === 'string' ? e.category : '';
+    } catch {}
     const authFailure = status === 401 || category === 'auth';
     if (previousProfile && typeof previousProfile === 'object' && !Array.isArray(previousProfile) && !authFailure) {
       state.profile = previousProfile;
@@ -1159,7 +1165,7 @@ async function loadProfile() {
     state.profileStale = false;
     state.profileLoadError = message;
     applyAdminVisibility();
-    sendActionError('profile', e, 'profileView');
+    try { sendActionError('profile', e, 'profileView'); } catch {}
     toast(message);
   }
 }
