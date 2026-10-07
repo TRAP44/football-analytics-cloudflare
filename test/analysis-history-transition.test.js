@@ -54,11 +54,15 @@ test('renderAnalysis owns currentAnalysis assignment so a new fixture resets the
   assert.doesNotMatch(historyOpen[0], /state\.currentAnalysis = data/);
 });
 
-test('local history accepts only positive safe integer fixture identities', () => {
+test('local history accepts only canonical positive fixture identities', () => {
   const block = app.match(/function historyItemFromAnalysis\(data = \{\}\)[\s\S]*?\n}\n\nfunction rememberHistoryAnalysis/);
   assert.ok(block, 'history item builder must exist');
-  assert.match(block[0], /const fixtureId = Number\(match\.fixtureId\)/);
-  assert.match(block[0], /!Number\.isSafeInteger\(fixtureId\) \|\| fixtureId <= 0/);
+  assert.match(
+    block[0],
+    /const fixtureId = positiveEntityId\(match\.fixtureId\)/,
+  );
+  assert.match(block[0], /if \(!fixtureId\) return null/);
+  assert.doesNotMatch(block[0], /Number\(match\.fixtureId\)/);
 });
 
 test('completed analysis is shown before conditional secondary synchronization starts', () => {
@@ -114,13 +118,14 @@ test('history open rejects invalid fixture ids before navigation or request sequ
   const open = app.match(/async function openHistoryAnalysis\(fixtureId, btn\)[\s\S]*?\n}\n\nlet historyRenderer/);
   assert.ok(open, 'openHistoryAnalysis must exist');
 
-  const guardIndex = open[0].indexOf('Number.isSafeInteger(id)');
+  const guardIndex = open[0].indexOf('positiveEntityId(fixtureId)');
   const sourceViewIndex = open[0].indexOf('const sourceView = activeViewId()');
   const sequenceIndex = open[0].indexOf('++state.historyOpenRequestSeq');
 
   assert.ok(guardIndex >= 0);
   assert.ok(sourceViewIndex > guardIndex);
   assert.ok(sequenceIndex > guardIndex);
+  assert.match(open[0], /if \(!id\)/);
   assert.match(open[0], /toast\('Не удалось определить матч из истории\.'\)/);
   assert.match(open[0], /history-analysis\?fixtureId=\$\{id\}/);
 });
