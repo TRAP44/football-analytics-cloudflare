@@ -4,7 +4,7 @@ import fs from 'node:fs';
 
 const workflow=fs.readFileSync('.github/workflows/deploy-production.yml','utf8');
 
-test('RC110 blocks stale runtime drift but permits test-only main drift',()=>{
+test('RC110 accepts verified release snapshots while keeping stale ancestry and manual guards',()=>{
   assert.match(workflow,/fetch-depth: 0/);
   assert.match(workflow,/RC110 guard against stale production deploy/);
   assert.match(workflow,/git fetch --no-tags origin main/);
@@ -13,7 +13,9 @@ test('RC110 blocks stale runtime drift but permits test-only main drift',()=>{
   assert.match(workflow,/git merge-base --is-ancestor "\$DEPLOY_SHA" "\$CURRENT_MAIN_SHA"/);
   assert.match(workflow,/git diff --name-only "\$DEPLOY_SHA" "\$CURRENT_MAIN_SHA"/);
   assert.match(workflow,/Test-only main drift accepted/);
-  assert.match(workflow,/production-relevant changes/);
+  assert.match(workflow,/Verified release snapshot accepted/);
+  assert.match(workflow,/newer unverified production-relevant main changes remain pending/);
+  assert.match(workflow,/Manual deploy requires current main when production-relevant drift exists/);
   assert.match(workflow,/Stale production deploy blocked/);
   assert.match(workflow,/exit 1/);
 });
