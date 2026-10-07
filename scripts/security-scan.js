@@ -6,6 +6,8 @@ const TRACKED_SECRET_FILES = [
   /(?:^|\/)\.env$/i,
   /(?:^|\/)\.env\.(?!example$)[^/]+$/i,
   /(?:^|\/)\.dev\.vars$/i,
+  /(?:^|\/)\.netrc$/i,
+  /(?:^|\/)\.dockerconfigjson$/i,
   /\.pem$/i,
   /\.key$/i,
   /\.p12$/i,
