@@ -38,9 +38,9 @@ test('Phase 5 cohort is verified normal-user based and independent from beta mem
 });
 
 test('Phase 5 dashboard is admin-only and legacy strict-beta dashboard remains available',()=>{
-  assert.match(router,/\/api\/phase5-dashboard/);
+  assert.match(router,/pathname === '\/api\/phase5-dashboard'/);
   assert.match(router,/return await apiPhase5Dashboard/);
-  assert.match(router,/\/api\/beta-dashboard/);
+  assert.match(router,/pathname === '\/api\/beta-dashboard'/);
   assert.match(router,/return await apiBetaDashboard/);
   assert.match(betaDashboard,/\/api\/phase5-dashboard\?days=/);
   assert.match(adminIndex,/Phase 5 Dashboard/);
