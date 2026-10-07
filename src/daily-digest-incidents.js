@@ -89,12 +89,15 @@ function isDailyDigestEvent(event = {}) {
 }
 
 function dateForEvent(event = {}) {
-  const metadataDate = String(event.metadata?.date || '').trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(metadataDate)) {
-    const parsed = Date.parse(`${metadataDate}T00:00:00.000Z`);
-    if (Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0,10) === metadataDate) return metadataDate;
-  }
-  return String(event.at || '').slice(0,10);
+  const atMs=trustedTimestampMs(event?.at);
+  if (atMs === null) return '';
+  const timestampDate=new Date(atMs).toISOString().slice(0,10);
+  const metadataDate=String(event?.metadata?.date || '').trim();
+  if (!metadataDate) return timestampDate;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(metadataDate)) return '';
+  const parsed=Date.parse(`${metadataDate}T00:00:00.000Z`);
+  if (!Number.isFinite(parsed) || new Date(parsed).toISOString().slice(0,10)!==metadataDate) return '';
+  return metadataDate===timestampDate ? timestampDate : '';
 }
 
 function incidentId(date = '') {
@@ -499,7 +502,7 @@ export function summarizeDailyDigestReliability(rows = [], { days = 7, nowMs = D
   const windowDays=normalizedWindowDays(days);
   const endMs=normalizedNowMs(nowMs);
   const startMs=endMs-windowDays*24*3600_000;
-  const events=(rows || [])
+  const events=(Array.isArray(rows) ? rows : [])
     .map(normalizeEvent)
     .filter(event => {
       const atMs=Date.parse(event.at || '');
@@ -670,12 +673,22 @@ export function assessDailyDigestReliabilitySlo(rows = [], {
   nowMs = Date.now(),
   days = 7,
   policy = DAILY_DIGEST_RELIABILITY_SLO,
+  evidenceComplete = true,
 } = {}) {
   const now=normalizedNowMs(nowMs);
   const date=utcDate(now);
+  const windowDays=normalizedWindowDays(days);
+  const startMs=now-windowDays*24*3600_000;
   const normalized=(Array.isArray(rows) ? rows : [])
     .map(normalizeEvent)
-    .filter(event=>event.at && isDailyDigestEvent(event));
+    .filter(event=>{
+      const at=trustedTimestampMs(event?.at);
+      return at !== null
+        && at>=startMs
+        && at<=now+60_000
+        && isDailyDigestEvent(event)
+        && Boolean(dateForEvent(event));
+    });
   const todayEvents=normalized.filter(event=>dateForEvent(event)===date);
   const latestSuccessfulDigestRun=[...normalized]
     .filter(event=>event.code==='DAILY_DIGEST_RUN_OK' || event.code==='DAILY_DIGEST_RUN_EMPTY')
@@ -687,7 +700,22 @@ export function assessDailyDigestReliabilitySlo(rows = [], {
     lastSuccessfulDigestRun:latestSuccessfulDigestRun,
     evaluatedAt:new Date(now).toISOString(),
     todayRunObserved:todayEvents.length>0,
+    evidenceComplete:evidenceComplete === true,
   };
+
+  if (evidenceComplete !== true && afterMissingRunGrace(now,policy)) {
+    return {
+      state:'watch',
+      severity:'warning',
+      code:'DAILY_DIGEST_SLO_EVIDENCE_INCOMPLETE',
+      reason:'evidence_incomplete',
+      date,
+      message:'Daily Digest reliability SLO cannot be confirmed because persistent history is incomplete.',
+      reliability:summarizeDailyDigestReliability(normalized,{days:windowDays,nowMs:now}),
+      policy,
+      diagnostics,
+    };
+  }
 
   if (afterMissingRunGrace(now,policy) && todayEvents.length===0) {
     return {
@@ -697,13 +725,13 @@ export function assessDailyDigestReliabilitySlo(rows = [], {
       reason:'missing_run',
       date,
       message:`Daily Digest has no operational run event for ${date} after the 08:15 UTC grace point.`,
-      reliability:summarizeDailyDigestReliability(rows,{days,nowMs:now}),
+      reliability:summarizeDailyDigestReliability(normalized,{days:windowDays,nowMs:now}),
       policy,
       diagnostics,
     };
   }
 
-  const reliability=summarizeDailyDigestReliability(rows,{days,nowMs:now});
+  const reliability=summarizeDailyDigestReliability(normalized,{days:windowDays,nowMs:now});
   if (!afterMissingRunGrace(now,policy) && todayEvents.length===0) {
     return {
       state:'collecting',
