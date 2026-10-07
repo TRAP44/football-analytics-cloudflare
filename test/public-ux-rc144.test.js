@@ -142,7 +142,7 @@ test('Phase 4 normal user journey uses Home, My Teams, History and Profile', () 
   assert.match(myTeamsRenderer, /function renderMyTeams\(\)/);
   assert.match(app, /\$\('navMyTeams'\)\?\.addEventListener/);
   assert.match(app, /sendProductAction\('matches_open', 'myTeamsView'\)/);
-  assert.match(app, /sendProductAction\('open', 'matchesView'\)/);
+  assert.match(app, /sendProductAction\('matches_open', 'matchesView'\)/);
   assert.match(app, /async function openProfileView\(\)/);
 });
 
