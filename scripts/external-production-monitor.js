@@ -4,142 +4,254 @@ import { pathToFileURL } from 'node:url';
 export const DEFAULT_PRODUCTION_URL = 'https://football-analytics-cloudflare.wok-side.workers.dev';
 
 const ENDPOINTS = Object.freeze([
-  { name: 'live', path: '/health/live' },
-  { name: 'ready', path: '/health/ready' },
-  { name: 'public_status', path: '/api/public-status' },
+  Object.freeze({ name: 'live', path: '/health/live' }),
+  Object.freeze({ name: 'ready', path: '/health/ready' }),
+  Object.freeze({ name: 'public_status', path: '/api/public-status' }),
 ]);
+const ENDPOINT_KINDS = new Set(ENDPOINTS.map(item=>item.name));
+
+function plainObject(value) {
+  try {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeRead(value,key) {
+  try {
+    return value?.[key];
+  } catch {
+    return undefined;
+  }
+}
+
+function safeText(value,max=240) {
+  if (typeof value!=='string') return '';
+  return value
+    .replace(/[\u0000-\u001f\u007f]+/g,' ')
+    .replace(/\s+/g,' ')
+    .trim()
+    .slice(0,max);
+}
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function normalizeBaseUrl(value) {
-  return String(value || DEFAULT_PRODUCTION_URL).replace(/\/+$/, '');
-}
-
-function boundedNumber(value, fallback, min, max) {
-  const parsed=Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
+function numericConfig(value,fallback,min,max) {
+  let parsed=null;
+  if (typeof value==='number' && Number.isFinite(value)) {
+    parsed=value;
+  } else if (
+    typeof value==='string'
+    && /^\d+(?:\.\d+)?$/.test(value.trim())
+  ) {
+    parsed=Number(value.trim());
+  }
+  if (parsed===null || !Number.isFinite(parsed)) return fallback;
   return Math.max(min,Math.min(max,parsed));
 }
 
+function statusCodeValue(value) {
+  return typeof value==='number'
+    && Number.isSafeInteger(value)
+    && value>=0
+    && value<=999
+    ? value
+    : 0;
+}
+
+function nonNegativeMetric(value) {
+  return typeof value==='number'
+    && Number.isFinite(value)
+    && value>=0
+    ? value
+    : null;
+}
+
+function normalizeBaseUrl(value) {
+  const raw=typeof value==='string' && value.trim()
+    ? value.trim()
+    : DEFAULT_PRODUCTION_URL;
+  try {
+    const url=new URL(raw);
+    if (!['http:','https:'].includes(url.protocol)) {
+      throw new Error('unsupported protocol');
+    }
+    if (url.username || url.password || url.search || url.hash) {
+      throw new Error('base URL must not contain credentials, query or hash');
+    }
+    url.pathname=url.pathname.replace(/\/+$/,'');
+    return url.toString().replace(/\/+$/,'');
+  } catch {
+    return DEFAULT_PRODUCTION_URL;
+  }
+}
+
 function escapeMarkdownCell(value) {
-  return String(value ?? '')
+  const text=typeof value==='string'
+    ? value
+    : typeof value==='number' || typeof value==='bigint'
+      ? String(value)
+      : '';
+  return text
     .replace(/\\/g, '\\\\')
     .replace(/\|/g, '\\|')
     .replace(/\r?\n/g, ' ');
 }
 
 function safeObserved(kind, body) {
-  if (!body || typeof body !== 'object') return null;
+  const value=plainObject(body);
+  if (!value || !ENDPOINT_KINDS.has(kind)) return null;
   if (kind === 'live') {
     return {
-      ok: body.ok === true,
-      status: String(body.status || ''),
-      version: String(body.version || ''),
-      releaseCandidate: String(body.releaseCandidate || ''),
+      ok: safeRead(value,'ok') === true,
+      status: safeText(safeRead(value,'status'),80),
+      version: safeText(safeRead(value,'version'),80),
+      releaseCandidate:safeText(safeRead(value,'releaseCandidate'),80),
     };
   }
   if (kind === 'ready') {
     return {
-      ok: body.ok === true,
-      status: String(body.status || ''),
-      version: String(body.version || ''),
-      releaseCandidate: String(body.releaseCandidate || ''),
-      latencyMs: Number.isFinite(Number(body.latencyMs)) ? Number(body.latencyMs) : null,
-      checks: body.checks && typeof body.checks === 'object' ? body.checks : null,
+      ok: safeRead(value,'ok') === true,
+      status: safeText(safeRead(value,'status'),80),
+      version: safeText(safeRead(value,'version'),80),
+      releaseCandidate:safeText(safeRead(value,'releaseCandidate'),80),
+      latencyMs:nonNegativeMetric(safeRead(value,'latencyMs')),
+      checks:plainObject(safeRead(value,'checks')),
     };
   }
   return {
-    ok: body.ok === true,
-    status: String(body.status || ''),
-    label: String(body.label || ''),
-    version: String(body.version || ''),
-    releaseCandidate: String(body.releaseCandidate || ''),
+    ok: safeRead(value,'ok') === true,
+    status:safeText(safeRead(value,'status'),80),
+    label:safeText(safeRead(value,'label'),120),
+    version:safeText(safeRead(value,'version'),80),
+    releaseCandidate:safeText(safeRead(value,'releaseCandidate'),80),
   };
 }
 
 export function evaluateEndpoint(kind, response = {}, options = {}) {
-  const statusCode = Number(response.statusCode || 0);
-  const body = response.body && typeof response.body === 'object' ? response.body : null;
-  const transportOk = statusCode >= 200 && statusCode < 300 && body;
+  if (!ENDPOINT_KINDS.has(kind)) {
+    return {
+      passed:false,
+      warning:false,
+      reason:'Unknown external monitor endpoint kind.',
+      observed:null,
+    };
+  }
+
+  const responseValue=plainObject(response) || {};
+  const body=plainObject(safeRead(responseValue,'body'));
+  const statusCode=statusCodeValue(safeRead(responseValue,'statusCode'));
+  const transportOk=statusCode>=200 && statusCode<300 && body!==null;
 
   if (kind === 'live') {
-    const passed = Boolean(transportOk && body.ok === true && body.status === 'alive');
+    const passed=transportOk
+      && safeRead(body,'ok')===true
+      && safeRead(body,'status')==='alive';
     return {
       passed,
-      warning: false,
-      reason: passed ? 'ok' : `Expected HTTP 2xx with {ok:true,status:"alive"}; got HTTP ${statusCode || 'network_error'}.`,
-      observed: safeObserved(kind, body),
+      warning:false,
+      reason:passed
+        ? 'ok'
+        : `Expected HTTP 2xx with {ok:true,status:"alive"}; got HTTP ${statusCode || 'network_error'}.`,
+      observed:safeObserved(kind,body),
     };
   }
 
   if (kind === 'ready') {
-    const passed = Boolean(transportOk && body.ok === true && body.status === 'ready');
-    const warningBudgetMs = Math.max(500, Math.min(9000, Number(options.readyWarningMs ?? 3000)));
-    const elapsedMs = Math.max(0, Number(response.elapsedMs || 0));
-    const warning = Boolean(passed && elapsedMs >= warningBudgetMs);
+    const passed=transportOk
+      && safeRead(body,'ok')===true
+      && safeRead(body,'status')==='ready';
+    const warningBudgetMs=numericConfig(
+      safeRead(options,'readyWarningMs'),
+      3000,
+      500,
+      9000,
+    );
+    const clientElapsedMs=nonNegativeMetric(
+      safeRead(responseValue,'elapsedMs'),
+    ) ?? 0;
+    const serverLatencyMs=nonNegativeMetric(safeRead(body,'latencyMs'));
+    const observedLatencyMs=serverLatencyMs===null
+      ? clientElapsedMs
+      : Math.max(clientElapsedMs,serverLatencyMs);
+    const warning=passed && observedLatencyMs>=warningBudgetMs;
     return {
       passed,
       warning,
-      reason: !passed
+      reason:!passed
         ? `Expected HTTP 2xx with {ok:true,status:"ready"}; got HTTP ${statusCode || 'network_error'}.`
         : warning
-          ? `Readiness latency ${elapsedMs} ms exceeds warning budget ${warningBudgetMs} ms.`
+          ? `Readiness latency ${observedLatencyMs} ms exceeds warning budget ${warningBudgetMs} ms.`
           : 'ok',
-      observed: safeObserved(kind, body),
+      observed:safeObserved(kind,body),
     };
   }
 
-  const allowed = new Set(['operational', 'degraded', 'maintenance']);
-  const passed = Boolean(transportOk && allowed.has(String(body.status || '')));
-  const warning = Boolean(passed && body.status !== 'operational');
+  const status=safeText(safeRead(body,'status'),80);
+  const allowed=new Set(['operational','degraded','maintenance']);
+  const passed=transportOk && allowed.has(status);
+  const warning=passed && status!=='operational';
   return {
     passed,
     warning,
-    reason: !passed
+    reason:!passed
       ? `Expected HTTP 2xx public status response; got HTTP ${statusCode || 'network_error'}.`
       : warning
-        ? `Public status reports ${body.status}.`
+        ? `Public status reports ${status}.`
         : 'ok',
-    observed: safeObserved(kind, body),
+    observed:safeObserved(kind,body),
   };
 }
 
 async function fetchJson(url, { timeoutMs = 10000, fetchImpl = fetch } = {}) {
-  const startedAt = Date.now();
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const startedAt=Date.now();
+  const controller=new AbortController();
+  const boundedTimeoutMs=numericConfig(timeoutMs,10000,1000,30000);
+  const timeout=setTimeout(()=>controller.abort(),boundedTimeoutMs);
   try {
-    const response = await fetchImpl(url, {
-      method: 'GET',
-      headers: {
-        accept: 'application/json',
-        'cache-control': 'no-cache',
-        'user-agent': 'MatchRadar-External-Monitor/1.0',
+    if (typeof fetchImpl!=='function') throw new TypeError('fetch implementation is required');
+    const response=await fetchImpl(url,{
+      method:'GET',
+      headers:{
+        accept:'application/json',
+        'cache-control':'no-cache',
+        'user-agent':'MatchRadar-External-Monitor/1.0',
       },
-      signal: controller.signal,
+      signal:controller.signal,
     });
-    const text = await response.text();
-    let body = null;
+    const textFn=safeRead(response,'text');
+    if (typeof textFn!=='function') {
+      throw new Error('response text reader unavailable');
+    }
+    const text=await textFn.call(response);
+    const rawText=typeof text==='string' ? text : '';
+    let body=null;
     try {
-      body = text ? JSON.parse(text) : null;
+      body=rawText ? JSON.parse(rawText) : null;
     } catch {
-      body = null;
+      body=null;
     }
     return {
-      statusCode: response.status,
-      elapsedMs: Date.now() - startedAt,
-      body,
-      parseOk: body !== null,
+      statusCode:statusCodeValue(safeRead(response,'status')),
+      elapsedMs:Math.max(0,Date.now()-startedAt),
+      body:plainObject(body),
+      parseOk:plainObject(body)!==null,
     };
   } catch (error) {
     return {
-      statusCode: 0,
-      elapsedMs: Date.now() - startedAt,
-      body: null,
-      parseOk: false,
-      error: String(error?.name || error?.message || error || 'request_failed').slice(0, 160),
+      statusCode:0,
+      elapsedMs:Math.max(0,Date.now()-startedAt),
+      body:null,
+      parseOk:false,
+      error:safeText(
+        safeRead(error,'name') || safeRead(error,'message'),
+        160,
+      ) || 'request_failed',
     };
   } finally {
     clearTimeout(timeout);
@@ -152,34 +264,38 @@ export async function runMonitorAttempt({
   readyWarningMs = 3000,
   fetchImpl = fetch,
 } = {}) {
-  const normalized = normalizeBaseUrl(baseUrl);
+  const normalized=normalizeBaseUrl(baseUrl);
   const checkedAtToken=Date.now();
-  const entries=await Promise.all(ENDPOINTS.map(async endpoint => {
-    const url = `${normalized}${endpoint.path}?external_monitor=${checkedAtToken}`;
-    const response = await fetchJson(url, { timeoutMs, fetchImpl });
-    const evaluation = evaluateEndpoint(endpoint.name, response, { readyWarningMs });
-    return [endpoint.name, {
-      endpoint: endpoint.path,
-      statusCode: response.statusCode,
-      elapsedMs: response.elapsedMs,
-      parseOk: response.parseOk,
-      transportError: response.error || '',
+  const entries=await Promise.all(ENDPOINTS.map(async endpoint=>{
+    const url=`${normalized}${endpoint.path}?external_monitor=${checkedAtToken}`;
+    const response=await fetchJson(url,{timeoutMs,fetchImpl});
+    const evaluation=evaluateEndpoint(
+      endpoint.name,
+      response,
+      {readyWarningMs},
+    );
+    return [endpoint.name,{
+      endpoint:endpoint.path,
+      statusCode:response.statusCode,
+      elapsedMs:response.elapsedMs,
+      parseOk:response.parseOk,
+      transportError:response.error || '',
       ...evaluation,
     }];
   }));
   const checks=Object.fromEntries(entries);
 
   return {
-    ok: Object.values(checks).every(item => item.passed),
-    warning: Object.values(checks).some(item => item.warning),
-    checkedAt: new Date().toISOString(),
-    baseUrl: normalized,
+    ok:Object.values(checks).every(item=>item.passed===true),
+    warning:Object.values(checks).some(item=>item.warning===true),
+    checkedAt:new Date().toISOString(),
+    baseUrl:normalized,
     checks,
   };
 }
 
 function toMarkdown(result, attempts) {
-  const lines = [
+  const lines=[
     '### MatchRadar external production monitor',
     '',
     `- Result: **${result.ok ? (result.warning ? 'WARNING' : 'PASS') : 'FAIL'}**`,
@@ -190,50 +306,79 @@ function toMarkdown(result, attempts) {
     '| Check | HTTP | Latency | Result | Detail |',
     '| --- | ---: | ---: | --- | --- |',
   ];
-  for (const [name, check] of Object.entries(result.checks)) {
+  for (const [name,check] of Object.entries(result.checks)) {
     lines.push(
-      `| ${name} | ${check.statusCode || 'network'} | ${check.elapsedMs} ms | ${check.passed ? (check.warning ? 'WARNING' : 'PASS') : 'FAIL'} | ${escapeMarkdownCell(check.reason)} |`
+      `| ${name} | ${check.statusCode || 'network'} | ${check.elapsedMs} ms | ${check.passed ? (check.warning ? 'WARNING' : 'PASS') : 'FAIL'} | ${escapeMarkdownCell(check.reason)} |`,
     );
   }
   return `${lines.join('\n')}\n`;
 }
 
 export async function main() {
-  const baseUrl = normalizeBaseUrl(process.env.PRODUCTION_URL || DEFAULT_PRODUCTION_URL);
-  const retries = boundedNumber(process.env.EXTERNAL_MONITOR_RETRIES, 3, 1, 5);
-  const retryDelayMs = boundedNumber(process.env.EXTERNAL_MONITOR_RETRY_DELAY_MS, 10000, 0, 60000);
-  const timeoutMs = boundedNumber(process.env.EXTERNAL_MONITOR_TIMEOUT_MS, 10000, 1000, 30000);
-  const readyWarningMs = boundedNumber(process.env.EXTERNAL_MONITOR_READY_WARNING_MS, 3000, 500, 9000);
+  const baseUrl=normalizeBaseUrl(
+    process.env.PRODUCTION_URL || DEFAULT_PRODUCTION_URL,
+  );
+  const retries=numericConfig(
+    process.env.EXTERNAL_MONITOR_RETRIES,
+    3,
+    1,
+    5,
+  );
+  const retryDelayMs=numericConfig(
+    process.env.EXTERNAL_MONITOR_RETRY_DELAY_MS,
+    10000,
+    0,
+    60000,
+  );
+  const timeoutMs=numericConfig(
+    process.env.EXTERNAL_MONITOR_TIMEOUT_MS,
+    10000,
+    1000,
+    30000,
+  );
+  const readyWarningMs=numericConfig(
+    process.env.EXTERNAL_MONITOR_READY_WARNING_MS,
+    3000,
+    500,
+    9000,
+  );
 
-  let finalResult = null;
-  let attemptsUsed = 0;
+  let finalResult=null;
+  let attemptsUsed=0;
 
-  for (let attempt = 1; attempt <= retries; attempt += 1) {
-    attemptsUsed = attempt;
-    finalResult = await runMonitorAttempt({ baseUrl, timeoutMs, readyWarningMs });
+  for (let attempt=1;attempt<=retries;attempt+=1) {
+    attemptsUsed=attempt;
+    finalResult=await runMonitorAttempt({
+      baseUrl,
+      timeoutMs,
+      readyWarningMs,
+    });
     if (finalResult.ok) break;
-    if (attempt < retries) await sleep(retryDelayMs);
+    if (attempt<retries) await sleep(retryDelayMs);
   }
 
-  const result = {
+  const result={
     ...finalResult,
-    attempts: attemptsUsed,
-    retriesConfigured: retries,
+    attempts:attemptsUsed,
+    retriesConfigured:retries,
   };
-  const markdown = toMarkdown(result, attemptsUsed);
+  const markdown=toMarkdown(result,attemptsUsed);
 
-  fs.writeFileSync('monitor-result.json', JSON.stringify(result, null, 2) + '\n');
-  fs.writeFileSync('monitor-result.md', markdown);
+  fs.writeFileSync(
+    'monitor-result.json',
+    JSON.stringify(result,null,2)+'\n',
+  );
+  fs.writeFileSync('monitor-result.md',markdown);
 
   if (process.env.GITHUB_STEP_SUMMARY) {
-    fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, markdown);
+    fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,markdown);
   }
 
   process.stdout.write(markdown);
-  process.exitCode = result.ok ? 0 : 1;
+  process.exitCode=result.ok ? 0 : 1;
 }
 
-const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : '';
-if (import.meta.url === invokedPath) {
+const invokedPath=process.argv[1] ? pathToFileURL(process.argv[1]).href : '';
+if (import.meta.url===invokedPath) {
   await main();
 }
