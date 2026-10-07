@@ -3834,18 +3834,18 @@ function setTeamTab(tab) {
 }
 function openTournamentFromTeam(openTable = false) {
   state.tournamentBackView = 'teamView';
+  const targetTab=tournamentTabForTeamShortcut(openTable);
   const comp=state.currentTeam?.data?.primaryCompetition;
   if(!comp?.leagueId) return toast('Основной турнир команды пока не определён.');
   const existing=state.matches.find(m=>Number(m.leagueId)===Number(comp.leagueId));
   if(existing) {
     openTournament(Number(comp.leagueId));
-    if (openTable) setTournamentTab('table', true);
+    if (targetTab==='table') setTournamentTab('table', true);
     return;
   }
   state.currentTournament={leagueId:Number(comp.leagueId),season:Number(comp.season||new Date().getFullYear()),name:comp.name||'Турнир',shortName:comp.shortName||comp.name||'Турнир',country:comp.country||'',logo:comp.logo||'',category:comp.category||'',tier:comp.tier||'standard'};
   renderTournamentHero();
   renderTournamentMatches();
-  const targetTab=tournamentTabForTeamShortcut(openTable);
   setTournamentTab(targetTab,targetTab==='table');
   showView('tournamentView');
 }
