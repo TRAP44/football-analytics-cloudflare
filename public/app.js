@@ -26,6 +26,11 @@ import { createGlobalSearchRenderer } from './modules/global-search-renderer.js'
 import { createGlobalSearchController } from './modules/global-search-controller.js';
 import { buildPlayerComparisonCandidates, playerComparisonHtml, samePlayer } from './modules/player-comparison.js';
 import { homeMatchScoreLabel, homeMatchSections as buildHomeMatchSections, selectHomePersonalMatch } from './modules/home-match-priority.js';
+import {
+  buildPersonalContextSignals,
+  evaluatePersonalMatchInsight,
+  normalizePersonalSignalText,
+} from './modules/personal-feed.js';
 import { deriveMatchCockpit } from './modules/match-cockpit.js';
 import { createPlayerFollowModule } from './modules/player-follow.js';
 import {
@@ -2718,7 +2723,6 @@ function applyMatchPayload(data, { snapshot = false, refreshing = false } = {}) 
     refreshing: Boolean(refreshing),
   };
   if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
-  if (state.filter === 'top' && !state.matches.some(x => personalMatchInsight(x).recommended)) state.filter = 'all';
   syncFilterButtons();
   renderMatches();
   renderDiscoveryHome();
@@ -2844,59 +2848,18 @@ function syncFilterButtons() {
 }
 
 function normalizedSignalText(value) {
-  return String(value || '').trim().toLocaleLowerCase('ru-RU');
+  return normalizePersonalSignalText(value);
 }
 
 function personalContextSignals() {
-  const viewedTeams = new Set();
-  const viewedLeagues = new Set();
-  for (const item of state.history.slice(0, 20)) {
-    const home = normalizedSignalText(item.homeName);
-    const away = normalizedSignalText(item.awayName);
-    const league = normalizedSignalText(item.leagueName);
-    if (home) viewedTeams.add(home);
-    if (away) viewedTeams.add(away);
-    if (league) viewedLeagues.add(league);
-  }
-  return {
-    favoriteTeams: favoriteSet(),
-    viewedTeams,
-    viewedLeagues,
-    hasPersonalData: state.favorites.length > 0 || viewedTeams.size > 0,
-  };
+  return buildPersonalContextSignals({
+    favorites:state.favorites,
+    history:state.history,
+  });
 }
 
 function personalMatchInsight(match, signals = personalContextSignals()) {
-  const homeId = Number(match.home?.id || 0);
-  const awayId = Number(match.away?.id || 0);
-  const homeName = normalizedSignalText(match.home?.name);
-  const awayName = normalizedSignalText(match.away?.name);
-  const leagueName = normalizedSignalText(match.league || match.leagueOriginal);
-  const favorite = signals.favoriteTeams.has(homeId) || signals.favoriteTeams.has(awayId);
-  const viewedTeam = signals.viewedTeams.has(homeName) || signals.viewedTeams.has(awayName);
-  const viewedLeague = signals.viewedLeagues.has(leagueName);
-  let score = Math.min(34, Number(match.interestScore || 0) * .34) + Math.min(26, Number(match.competition?.priority || 0) * 3);
-  if (favorite) score += 150;
-  if (viewedTeam) score += 72;
-  else if (viewedLeague) score += 18;
-  if (match.live) score += 48;
-  if (match.featured) score += 34;
-  if (match.lowPriority) score -= 55;
-  if (match.youthReserve) score -= 80;
-
-  let reason = '';
-  if (favorite) reason = 'Любимая команда';
-  else if (viewedTeam) reason = 'Вы смотрели эту команду';
-  else if (match.live) reason = 'Сейчас в эфире';
-  else if (match.featured) reason = 'Главный матч';
-  else if (viewedLeague) reason = 'Знакомый турнир';
-  else if (Number(match.interestScore || 0) >= 80) reason = 'Высокий интерес';
-
-  const baseline = Boolean(match.featured) || (Number(match.interestScore || 0) >= 68 && !match.lowPriority);
-  const recommended = signals.hasPersonalData
-    ? Boolean(favorite || viewedTeam || match.live || match.featured || (!match.lowPriority && Number(match.interestScore || 0) >= 74))
-    : baseline;
-  return { score, reason, favorite, viewedTeam, viewedLeague, recommended };
+  return evaluatePersonalMatchInsight(match,signals);
 }
 
 function homePersonalMatch(signals = personalContextSignals(), nowMs = Date.now()) {
@@ -3114,24 +3077,37 @@ function filteredMatches() {
   const prefs = state.preferences || {};
   const signals = personalContextSignals();
   const list = state.matches.filter(m => {
-    const isFavMatch = fav.has(Number(m.home?.id)) || fav.has(Number(m.away?.id));
-    if (prefs.hideYouth !== false && m.youthReserve && state.filter !== 'favorites') return false;
+    const homeId=positiveEntityId(m?.home?.id);
+    const awayId=positiveEntityId(m?.away?.id);
+    const isFavMatch = (homeId>0 && fav.has(homeId)) || (awayId>0 && fav.has(awayId));
+    if (prefs.hideYouth !== false && m?.youthReserve === true && state.filter !== 'favorites') return false;
     let byFilter = state.filter === 'all';
     if (state.filter === 'top') byFilter = personalMatchInsight(m, signals).recommended;
-    if (state.filter === 'live') byFilter = Boolean(m.live);
-    if (state.filter === 'cups') byFilter = ['cup', 'continental', 'national', 'international'].includes(String(m.category || ''));
-    if (state.filter === 'international') byFilter = ['continental', 'national', 'international'].includes(String(m.category || '')) || m.group === 'international';
-    if (['england', 'spain', 'italy', 'germany', 'france'].includes(state.filter)) byFilter = m.group === state.filter;
+    if (state.filter === 'live') byFilter = m?.live === true;
+    if (state.filter === 'cups') byFilter = typeof m?.category === 'string'
+      && ['cup', 'continental', 'national', 'international'].includes(m.category);
+    if (state.filter === 'international') {
+      byFilter = (
+        (typeof m?.category === 'string'
+          && ['continental', 'national', 'international'].includes(m.category))
+        || m?.group === 'international'
+      );
+    }
+    if (['england', 'spain', 'italy', 'germany', 'france'].includes(state.filter)) byFilter = m?.group === state.filter;
     if (state.filter === 'favorites') byFilter = isFavMatch;
     if (!byFilter) return false;
     if (!q) return true;
-    return [m.home?.name, m.away?.name, m.league, m.leagueOriginal, m.leagueShort, m.country, m.countryRaw, m.round, m.roundLabel]
-      .filter(Boolean)
-      .some(v => String(v).toLowerCase().includes(q));
+    return [m?.home?.name, m?.away?.name, m?.league, m?.leagueOriginal, m?.leagueShort, m?.country, m?.countryRaw, m?.round, m?.roundLabel]
+      .filter(v => typeof v === 'string')
+      .some(v => v.toLowerCase().includes(q));
   });
   list.sort((a, b) => {
-    const af = fav.has(Number(a.home?.id)) || fav.has(Number(a.away?.id)) ? 1 : 0;
-    const bf = fav.has(Number(b.home?.id)) || fav.has(Number(b.away?.id)) ? 1 : 0;
+    const aHomeId=positiveEntityId(a?.home?.id);
+    const aAwayId=positiveEntityId(a?.away?.id);
+    const bHomeId=positiveEntityId(b?.home?.id);
+    const bAwayId=positiveEntityId(b?.away?.id);
+    const af = ((aHomeId>0 && fav.has(aHomeId)) || (aAwayId>0 && fav.has(aAwayId))) ? 1 : 0;
+    const bf = ((bHomeId>0 && fav.has(bHomeId)) || (bAwayId>0 && fav.has(bAwayId))) ? 1 : 0;
     if (prefs.favoriteFirst !== false && state.filter !== 'favorites' && af !== bf) return bf - af;
     if (state.filter === 'top') {
       const personalDelta = personalMatchInsight(b, signals).score - personalMatchInsight(a, signals).score;
@@ -3139,13 +3115,29 @@ function filteredMatches() {
     }
     // LIVE is explicit in the LIVE filter; it must not make "Все" and
     // "Для вас" look like the same feed or outrank stronger competitions.
-    if (state.filter === 'live' && Boolean(a.live) !== Boolean(b.live)) return a.live ? -1 : 1;
-    if (Boolean(a.featured) !== Boolean(b.featured)) return a.featured ? -1 : 1;
-    const ap = Number(a.competition?.priority || 0), bp = Number(b.competition?.priority || 0);
+    const aLive=a?.live===true;
+    const bLive=b?.live===true;
+    if (state.filter === 'live' && aLive !== bLive) return aLive ? -1 : 1;
+    const aFeatured=a?.featured===true;
+    const bFeatured=b?.featured===true;
+    if (aFeatured !== bFeatured) return aFeatured ? -1 : 1;
+    const ap = typeof a?.competition?.priority === 'number' && Number.isFinite(a.competition.priority)
+      ? a.competition.priority
+      : 0;
+    const bp = typeof b?.competition?.priority === 'number' && Number.isFinite(b.competition.priority)
+      ? b.competition.priority
+      : 0;
     if (ap !== bp) return bp - ap;
-    const ai = Number(a.interestScore || 0), bi = Number(b.interestScore || 0);
+    const ai = typeof a?.interestScore === 'number' && Number.isFinite(a.interestScore)
+      ? a.interestScore
+      : 0;
+    const bi = typeof b?.interestScore === 'number' && Number.isFinite(b.interestScore)
+      ? b.interestScore
+      : 0;
     if (ai !== bi) return bi - ai;
-    return String(a.date || '').localeCompare(String(b.date || ''));
+    const aDate=typeof a?.date === 'string' ? a.date : '';
+    const bDate=typeof b?.date === 'string' ? b.date : '';
+    return aDate.localeCompare(bDate);
   });
   return list;
 }
