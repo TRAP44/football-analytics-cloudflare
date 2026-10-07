@@ -7,6 +7,7 @@ export const IMMUTABLE_FRONTEND_ASSETS=Object.freeze([
   '/styles.css',
   '/styles/public-shell.css',
   '/styles/premium-ui.css',
+  '/styles/admin.css',
 ]);
 
 const REQUIRED_SURFACE_ASSETS=Object.freeze({
