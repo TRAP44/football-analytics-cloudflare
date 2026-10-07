@@ -1348,10 +1348,17 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
 
   function buildNewsImpactRecoveryAdminAlerts(strategyRows = [], evidenceReason = 'ok', incidentRows = []) {
     const alerts=[];
-    const suppressed=new Set((incidentRows || [])
-      .filter(x=>x.status==='active' && x.acknowledged && x.alertSuppressed)
-      .map(x=>newsImpactRecoveryIncidentKey(x.reason,x.action,x.code)));
-    if (String(evidenceReason || 'ok')!=='ok') {
+    const strategies=Array.isArray(strategyRows)
+      ? strategyRows.filter(row=>row && typeof row==='object' && !Array.isArray(row))
+      : [];
+    const incidents=Array.isArray(incidentRows)
+      ? incidentRows.filter(row=>row && typeof row==='object' && !Array.isArray(row))
+      : [];
+    const suppressed=new Set(incidents
+      .filter(row=>row.status==='active' && row.acknowledged===true && row.alertSuppressed===true)
+      .map(row=>newsImpactRecoveryIncidentKey(row.reason,row.action,row.code)));
+    const safeEvidenceReason=typeof evidenceReason==='string' ? evidenceReason : 'evidence_unavailable';
+    if (safeEvidenceReason!=='ok') {
       alerts.push({
         severity:'warning',
         code:'strategy_evidence_unavailable',
@@ -1363,53 +1370,59 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       });
       return alerts;
     }
-    for (const row of strategyRows || []) {
-      if (NEWS_IMPACT_RECOVERY_INCIDENT_CODES.has(String(row.guardReason || ''))
-        && suppressed.has(newsImpactRecoveryIncidentKey(row.reason,row.action,row.guardReason))) continue;
-      if (row.guardReason==='performance_drift') {
+    for (const row of strategies) {
+      const guardReason=typeof row.guardReason==='string' ? row.guardReason : '';
+      if (NEWS_IMPACT_RECOVERY_INCIDENT_CODES?.has?.(guardReason)
+        && suppressed.has(newsImpactRecoveryIncidentKey(row.reason,row.action,guardReason))) continue;
+      const reason=newsImpactText(row.reason);
+      const action=newsImpactText(row.action);
+      if (guardReason==='performance_drift') {
+        const drop=newsImpactNonNegativeNumber(row.driftDropPctPoints);
         alerts.push({
           severity:'warning',
           code:'performance_drift',
-          reason:row.reason,
-          action:row.action,
-          reasonLabel:row.reasonLabel || row.reason,
-          actionLabel:row.actionLabel || row.action,
-          message:`Adaptive recovery отключён после подтверждённого падения на ${Number(row.driftDropPctPoints || 0).toFixed(1)} п.п.; включён fixed fallback.`,
+          reason,
+          action,
+          reasonLabel:newsImpactText(row.reasonLabel,reason),
+          actionLabel:newsImpactText(row.actionLabel,action),
+          message:`Adaptive recovery отключён после подтверждённого падения на ${drop.toFixed(1)} п.п.; включён fixed fallback.`,
         });
-      } else if (row.guardReason==='recent_regression') {
+      } else if (guardReason==='recent_regression') {
         alerts.push({
           severity:'warning',
           code:'recent_regression',
-          reason:row.reason,
-          action:row.action,
-          reasonLabel:row.reasonLabel || row.reason,
-          actionLabel:row.actionLabel || row.action,
+          reason,
+          action,
+          reasonLabel:newsImpactText(row.reasonLabel,reason),
+          actionLabel:newsImpactText(row.actionLabel,action),
           message:'Свежая выборка не подтверждает adaptive recovery; используется fixed fallback.',
         });
-      } else if (row.guardReason==='stability_sample' && row.proposedRecovery) {
+      } else if (guardReason==='stability_sample' && typeof row.proposedRecovery==='string' && row.proposedRecovery) {
         alerts.push({
           severity:'info',
           code:'stability_sample',
-          reason:row.reason,
-          action:row.action,
-          reasonLabel:row.reasonLabel || row.reason,
-          actionLabel:row.actionLabel || row.action,
+          reason,
+          action,
+          reasonLabel:newsImpactText(row.reasonLabel,reason),
+          actionLabel:newsImpactText(row.actionLabel,action),
           message:'Есть adaptive-кандидат, но свежей выборки пока недостаточно для безопасного переключения.',
         });
       }
     }
-    for (const incident of incidentRows || []) {
-      if (incident.status!=='active' || !incident.escalated) continue;
+    for (const incident of incidents) {
+      if (incident.status!=='active' || incident.escalated!==true) continue;
       const recoveryBreach=incident?.slo?.recoveryStatus==='breached';
-      const ackBreach=incident?.slo?.ackStatus==='breached' && !incident.acknowledged;
+      const ackBreach=incident?.slo?.ackStatus==='breached' && incident.acknowledged!==true;
       if (!recoveryBreach && !ackBreach) continue;
+      const reason=newsImpactText(incident.reason);
+      const action=newsImpactText(incident.action);
       alerts.push({
         severity:incident.effectivePriority==='critical' ? 'critical' : 'warning',
         code:recoveryBreach ? 'incident_recovery_slo_breach' : 'incident_ack_slo_breach',
-        reason:incident.reason,
-        action:incident.action,
-        reasonLabel:incident.reasonLabel || incident.reason,
-        actionLabel:incident.actionLabel || incident.action,
+        reason,
+        action,
+        reasonLabel:newsImpactText(incident.reasonLabel,reason),
+        actionLabel:newsImpactText(incident.actionLabel,action),
         message:recoveryBreach
           ? `Recovery-инцидент не восстановлен в пределах ${NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES} минут; приоритет повышен.`
           : `Recovery-инцидент не просмотрен в пределах ${NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES} минут; приоритет повышен.`,
@@ -1417,7 +1430,7 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     }
     return alerts.slice(0,12);
   }
-  
+
   function summarizeNewsImpactRecoveryAlerts(rows = []) {
     const list=Array.isArray(rows) ? rows : [];
     return {
