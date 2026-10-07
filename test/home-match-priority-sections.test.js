@@ -377,6 +377,37 @@ test('Home personal relevance rejects stale, timezone-less and malformed match s
   );
 });
 
+test('hostile personal insight getters are sanitized before selection output',()=>{
+  const now=Date.UTC(2026,8,29,18,0,0);
+  const hostileInsight={};
+  Object.defineProperty(hostileInsight,'score',{
+    enumerable:true,
+    get(){throw new Error('hostile score getter');},
+  });
+  Object.defineProperty(hostileInsight,'favorite',{
+    enumerable:true,
+    get(){throw new Error('hostile favorite getter');},
+  });
+  Object.defineProperty(hostileInsight,'viewedTeam',{
+    enumerable:true,
+    get(){throw new Error('hostile viewedTeam getter');},
+  });
+
+  const selected=selectHomePersonalMatch({
+    matches:[{
+      fixtureId:1,
+      live:false,
+      finished:false,
+      date:'2026-09-29T19:00:00Z',
+    }],
+    signals:{hasPersonalData:true},
+    insightForMatch:()=>hostileInsight,
+    nowMs:now,
+  });
+
+  assert.equal(selected,null);
+});
+
 test('personal insight failures are isolated and a later valid candidate can win',()=>{
   const now=Date.UTC(2026,8,29,18,0,0);
   const result=selectHomePersonalMatch({
