@@ -6,14 +6,10 @@ const releaseApi=fs.readFileSync('src/release-monitor-api-runtime.js','utf8');
 const releaseMonitor=fs.readFileSync('public/modules/admin-release-monitor.js','utf8');
 
 test('release monitor exposes regression SLO dashboard derived from ops history',()=>{
-  const start=releaseApi.indexOf('async function apiReleaseMonitor');
-  const end=releaseApi.indexOf('  return Object.freeze({',start);
-  assert.ok(start>=0 && end>start);
-  const block=releaseApi.slice(start,end);
-  assert.match(block,/buildPostDeployRegressionSloDashboard/);
-  assert.match(block,/activeDeploySha/);
-  assert.match(block,/postDeployRegressionSlo/);
-  assert.match(block,/slo:postDeployRegressionSlo/);
+  assert.match(releaseApi,/const activeDeploySha=String\(currentReleaseIdentity\(cfg\)\?\.deploySha \|\| ''\)\.toLowerCase\(\)/);
+  assert.match(releaseApi,/const postDeployRegressionSlo=buildPostDeployRegressionSloDashboard\(source\.items,/);
+  assert.match(releaseApi,/postDeployRegression:\{/);
+  assert.match(releaseApi,/slo:postDeployRegressionSlo/);
 });
 
 test('admin regression panel shows existing ACK and recovery SLO thresholds',()=>{
