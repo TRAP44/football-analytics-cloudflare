@@ -2424,26 +2424,14 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     const safeLimit=configuredLimit!==null && Number.isSafeInteger(configuredLimit)
       ? Math.max(1,Math.min(25,configuredLimit))
       : 10;
-    const thresholds=source?.thresholds && typeof source.thresholds==='object' && !Array.isArray(source.thresholds)
-      ? source.thresholds
-      : {};
-    const defaultAckMinutes=newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30);
-    const defaultCriticalAckMinutes=Math.max(
-      defaultAckMinutes,
-      newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,120),
-    );
-    const defaultRecoveryMinutes=Math.max(
-      defaultCriticalAckMinutes,
-      newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360),
-    );
-    const ackMinutes=newsImpactPositiveNumber(thresholds.ackMinutes,defaultAckMinutes);
+    const ackMinutes=newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30);
     const criticalAckMinutes=Math.max(
       ackMinutes,
-      newsImpactPositiveNumber(thresholds.criticalAckMinutes,defaultCriticalAckMinutes),
+      newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,120),
     );
     const recoveryMinutes=Math.max(
       criticalAckMinutes,
-      newsImpactPositiveNumber(thresholds.recoveryMinutes,defaultRecoveryMinutes),
+      newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360),
     );
     const stageRank={recovery_overdue:0,ack_critical:1,ack_overdue:2};
     const triageItems=(Array.isArray(source?.items) ? source.items : [])
