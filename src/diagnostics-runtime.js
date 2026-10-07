@@ -14,7 +14,9 @@ export function createDiagnosticsRuntime({
   telemetrySnapshot,
   now=()=>new Date(),
 } = {}) {
-  if (!memory || typeof memory!=='object') throw new TypeError('memory is required');
+  if (!memory || typeof memory!=='object' || Array.isArray(memory)) {
+    throw new TypeError('memory is required');
+  }
   for (const [name,fn] of Object.entries({
     hasSupabase,
     fetchWithTimeout,
@@ -26,26 +28,136 @@ export function createDiagnosticsRuntime({
     providerSnapshot,
     footballCooldownRemaining,
     telemetrySnapshot,
+    now,
   })) {
     if (typeof fn!=='function') throw new TypeError(`${name} is required`);
   }
 
-  function normalizeOpsLimit(limit = 10) {
-    const parsed=Number(limit);
-    if (!Number.isFinite(parsed)) return 10;
-    return Math.max(1,Math.min(20,Math.trunc(parsed)));
+  function plainObject(value) {
+    return value && typeof value==='object' && !Array.isArray(value) ? value : null;
   }
 
-  async function readRecentOpsEvents(cfg, limit = 10) {
+  function safeRead(value,key) {
+    try {
+      return value?.[key];
+    } catch {
+      return undefined;
+    }
+  }
+
+  function safeText(value,max=240,fallback='') {
+    if (!['string','number','bigint'].includes(typeof value)) return fallback;
+    try {
+      const text=String(value)
+        .replace(/[\u0000-\u001f\u007f]+/g,' ')
+        .trim()
+        .slice(0,max);
+      return text || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  function finiteNumber(value,{min=-Infinity,max=Infinity}={}) {
+    if (typeof value!=='number' || !Number.isFinite(value)) return null;
+    if (value<min || value>max) return null;
+    return value;
+  }
+
+  function telemetryValue(name) {
+    const telemetry=plainObject(safeRead(memory,'telemetry'));
+    return finiteNumber(safeRead(telemetry,name),{min:0}) ?? 0;
+  }
+
+  function strictTimestamp(value) {
+    if (value instanceof Date) {
+      const ms=value.getTime();
+      return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+    }
+    if (typeof value!=='string' || !value.trim()) return null;
+    const raw=value.trim();
+    const calendar=/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(raw);
+    if (!calendar) return null;
+    const year=Number(calendar[1]);
+    const month=Number(calendar[2]);
+    const day=Number(calendar[3]);
+    if (!Number.isSafeInteger(year) || month<1 || month>12 || day<1) return null;
+    const maxDay=new Date(Date.UTC(year,month,0)).getUTCDate();
+    if (day>maxDay) return null;
+    if (
+      raw.length>10
+      && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/i.test(raw)
+    ) return null;
+    const parsed=Date.parse(raw);
+    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+  }
+
+  function normalizeOpsLimit(limit=10) {
+    if (typeof limit!=='number' || !Number.isFinite(limit)) return 10;
+    return Math.max(1,Math.min(20,Math.trunc(limit)));
+  }
+
+  function normalizeRetentionDays(value) {
+    if (typeof value!=='number' || !Number.isFinite(value)) return 14;
+    return Math.max(1,Math.min(365,Math.trunc(value)));
+  }
+
+  function safeHasSupabase(cfg) {
+    try {
+      return hasSupabase(cfg)===true;
+    } catch {
+      return false;
+    }
+  }
+
+  function sanitizeOpsEvent(value) {
+    const row=plainObject(value);
+    if (!row) return null;
+    const out={};
+    const createdAt=strictTimestamp(safeRead(row,'created_at'));
+    if (createdAt) out.created_at=createdAt;
+    for (const [key,max] of [
+      ['severity',24],
+      ['source',40],
+      ['event_type',80],
+      ['code',120],
+      ['message',500],
+      ['endpoint',180],
+    ]) {
+      const text=safeText(safeRead(row,key),max);
+      if (text) out[key]=text;
+    }
+    const status=finiteNumber(safeRead(row,'status'),{min:100,max:599});
+    if (status!==null && Number.isInteger(status)) out.status=status;
+    const durationMs=finiteNumber(safeRead(row,'duration_ms'),{min:0,max:3_600_000});
+    if (durationMs!==null) out.duration_ms=durationMs;
+    const metadata=plainObject(safeRead(row,'metadata'));
+    if (metadata) out.metadata=metadata;
+    return Object.keys(out).length ? out : null;
+  }
+
+  function fallbackOpsItems(limit) {
+    const rows=Array.isArray(safeRead(memory,'opsEvents'))
+      ? safeRead(memory,'opsEvents')
+      : [];
+    return rows
+      .slice(0,limit)
+      .map(sanitizeOpsEvent)
+      .filter(Boolean);
+  }
+
+  async function readRecentOpsEvents(cfg,limit=10) {
     const safeLimit=normalizeOpsLimit(limit);
-    const fallback = () => ({
+    const fallback=()=>({
       persistent:false,
       migrationReady:false,
-      items:Array.isArray(memory.opsEvents) ? memory.opsEvents.slice(0,safeLimit) : [],
+      items:fallbackOpsItems(safeLimit),
     });
-    if (!hasSupabase(cfg)) return fallback();
+    if (!safeHasSupabase(cfg)) return fallback();
     try {
-      const url = new URL(`${cfg.supabaseUrl}/rest/v1/ops_events`);
+      const supabaseUrl=safeText(safeRead(cfg,'supabaseUrl'),2048);
+      if (!supabaseUrl) return fallback();
+      const url=new URL('/rest/v1/ops_events',supabaseUrl.endsWith('/') ? supabaseUrl : supabaseUrl+'/');
       url.searchParams.set('select','created_at,severity,source,event_type,code,message,endpoint,status,duration_ms,metadata');
       url.searchParams.set('order','created_at.desc');
       url.searchParams.set('limit',String(safeLimit));
@@ -55,111 +167,300 @@ export function createDiagnosticsRuntime({
         7000,
         'Supabase ops',
       );
-      if (!response.ok) return fallback();
-      const items=await response.json();
+      if (!response || safeRead(response,'ok')!==true) return fallback();
+      const json=safeRead(response,'json');
+      if (typeof json!=='function') return fallback();
+      const items=await json.call(response);
       if (!Array.isArray(items)) return fallback();
       return {
         persistent:true,
         migrationReady:true,
-        items,
+        items:items
+          .slice(0,safeLimit)
+          .map(sanitizeOpsEvent)
+          .filter(Boolean),
       };
     } catch {
       return fallback();
     }
   }
 
+  async function safeAsyncCall(fn,args,fallback) {
+    try {
+      const value=await fn(...args);
+      return value;
+    } catch {
+      return typeof fallback==='function' ? fallback() : fallback;
+    }
+  }
+
+  function safeSyncCall(fn,args,fallback) {
+    try {
+      return fn(...args);
+    } catch {
+      return typeof fallback==='function' ? fallback() : fallback;
+    }
+  }
+
+  function safeGeneratedAt() {
+    const value=safeSyncCall(now,[],null);
+    return strictTimestamp(value) || new Date().toISOString();
+  }
+
   async function collectDiagnostics(cfg) {
-    const [supabase,ops,integrity,telegramWebhook,providerObservability]=await Promise.all([
-      probeSupabaseConfirmed(cfg),
+    const supabaseConfigured=safeHasSupabase(cfg);
+    const [supabaseRaw,ops,integrityRaw,telegramRaw,providerObservabilityRaw]=await Promise.all([
+      safeAsyncCall(
+        probeSupabaseConfirmed,
+        [cfg],
+        ()=>({
+          configured:supabaseConfigured,
+          ok:false,
+          status:'diagnostics_error',
+          diagnosticsError:true,
+        }),
+      ),
       readRecentOpsEvents(cfg,12),
-      readIntegrityDiagnostics(cfg,12),
-      readTelegramDedupeHealth(cfg,60),
-      providerSloReport(cfg,24),
+      safeAsyncCall(
+        readIntegrityDiagnostics,
+        [cfg,12],
+        ()=>({
+          available:false,
+          migrationReady:false,
+          lastRun:null,
+          recentIssues:[],
+          diagnosticsError:true,
+        }),
+      ),
+      safeAsyncCall(
+        readTelegramDedupeHealth,
+        [cfg,60],
+        ()=>({
+          available:false,
+          state:'unknown',
+          staleProcessing:0,
+          failedCurrent:0,
+          diagnosticsError:true,
+        }),
+      ),
+      safeAsyncCall(
+        providerSloReport,
+        [cfg,24],
+        ()=>({
+          available:false,
+          overall:{state:'unknown'},
+          incident:{activeIncident:null},
+          diagnosticsError:true,
+        }),
+      ),
     ]);
-    const provider=providerSnapshot();
+
+    const supabase=plainObject(supabaseRaw) || {
+      configured:supabaseConfigured,
+      ok:false,
+      status:'invalid_diagnostics',
+      diagnosticsError:true,
+    };
+    const integrity=plainObject(integrityRaw) || {
+      available:false,
+      migrationReady:false,
+      lastRun:null,
+      recentIssues:[],
+      diagnosticsError:true,
+    };
+    const telegramWebhook=plainObject(telegramRaw) || {
+      available:false,
+      state:'unknown',
+      staleProcessing:0,
+      failedCurrent:0,
+      diagnosticsError:true,
+    };
+    const providerObservability=plainObject(providerObservabilityRaw) || {
+      available:false,
+      overall:{state:'unknown'},
+      incident:{activeIncident:null},
+      diagnosticsError:true,
+    };
+
+    const providerRaw=safeSyncCall(
+      providerSnapshot,
+      [],
+      ()=>({
+        health:'warning',
+        cooldownActive:false,
+        dailyUsedPct:null,
+        diagnosticsError:true,
+      }),
+    );
+    const provider=plainObject(providerRaw) || {
+      health:'warning',
+      cooldownActive:false,
+      dailyUsedPct:null,
+      diagnosticsError:true,
+    };
+    const runtimeRaw=safeSyncCall(telemetrySnapshot,[],()=>({diagnosticsError:true}));
+    const runtime=plainObject(runtimeRaw) || {diagnosticsError:true};
+
+    const providerHealth=safeText(safeRead(provider,'health'),32,'warning');
+    const providerOverall=plainObject(safeRead(providerObservability,'overall')) || {};
+    const providerSloState=safeText(safeRead(providerOverall,'state'),32,'unknown');
+    const telegramState=safeText(safeRead(telegramWebhook,'state'),32,'unknown');
+    const integrityLastRun=plainObject(safeRead(integrity,'lastRun')) || {};
+    const integrityHealth=safeText(safeRead(integrityLastRun,'health'),32,'unknown');
+
     let overall;
-    if (supabase.configured && !supabase.ok) overall={state:'critical',label:'Нужна проверка Supabase'};
-    else if (supabase.recovered) overall={state:'warning',label:'Supabase ответил после подтверждающего probe'};
-    else if (provider.health==='critical') overall={state:'critical',label:'API-Football временно ограничен'};
-    else if (providerObservability?.overall?.state==='incident') overall={state:'warning',label:'Provider SLO нарушен'};
-    else if (!ops.migrationReady && hasSupabase(cfg)) overall={state:'warning',label:'Проверьте актуальную схему Supabase'};
-    else if (!integrity.migrationReady && hasSupabase(cfg)) overall={state:'warning',label:'Проверьте актуальную схему Supabase'};
-    else if (!telegramWebhook.available && hasSupabase(cfg)) overall={state:'warning',label:'Нужна миграция наблюдаемости Telegram webhook'};
-    else if (telegramWebhook.state==='incident') overall={state:'warning',label:'Persistent Telegram dedupe требует проверки'};
-    else if (integrity.lastRun?.health==='critical') overall={state:'warning',label:'Есть проблемы качества футбольных данных'};
-    else if (Number(memory.telemetry?.analysisHistoryWriteLosses || 0)>=3) overall={state:'warning',label:'Есть потери истории AI-анализов'};
-    else if (
-      telegramWebhook.state==='watch'
-      || provider.health==='warning'
-      || providerObservability?.overall?.state==='watch'
-      || integrity.lastRun?.health==='warning'
-      || Number(memory.telemetry?.routeErrors || 0)>0
-      || Number(memory.telemetry?.cacheWriteErrors || 0)>0
-    ) overall={state:'warning',label:'Есть предупреждения'};
-    else if (provider.health==='waiting') overall={state:'waiting',label:'Ожидаем первый запрос к источнику данных'};
-    else overall={state:'ok',label:'Системы работают штатно'};
+    if (safeRead(supabase,'configured')===true && safeRead(supabase,'ok')!==true) {
+      overall={state:'critical',label:'Нужна проверка Supabase'};
+    } else if (safeRead(supabase,'recovered')===true) {
+      overall={state:'warning',label:'Supabase ответил после подтверждающего probe'};
+    } else if (providerHealth==='critical') {
+      overall={state:'critical',label:'API-Football временно ограничен'};
+    } else if (safeRead(provider,'diagnosticsError')===true) {
+      overall={state:'warning',label:'Диагностика API-Football недоступна'};
+    } else if (providerSloState==='incident') {
+      overall={state:'warning',label:'Provider SLO нарушен'};
+    } else if (safeRead(providerObservability,'diagnosticsError')===true) {
+      overall={state:'warning',label:'Provider SLO временно недоступен'};
+    } else if (!safeRead(ops,'migrationReady') && supabaseConfigured) {
+      overall={state:'warning',label:'Проверьте актуальную схему Supabase'};
+    } else if (safeRead(integrity,'diagnosticsError')===true) {
+      overall={state:'warning',label:'Диагностика целостности данных недоступна'};
+    } else if (!safeRead(integrity,'migrationReady') && supabaseConfigured) {
+      overall={state:'warning',label:'Проверьте актуальную схему Supabase'};
+    } else if (safeRead(telegramWebhook,'diagnosticsError')===true) {
+      overall={state:'warning',label:'Диагностика Telegram webhook недоступна'};
+    } else if (!safeRead(telegramWebhook,'available') && supabaseConfigured) {
+      overall={state:'warning',label:'Нужна миграция наблюдаемости Telegram webhook'};
+    } else if (telegramState==='incident') {
+      overall={state:'warning',label:'Persistent Telegram dedupe требует проверки'};
+    } else if (integrityHealth==='critical') {
+      overall={state:'warning',label:'Есть проблемы качества футбольных данных'};
+    } else if (telemetryValue('analysisHistoryWriteLosses')>=3) {
+      overall={state:'warning',label:'Есть потери истории AI-анализов'};
+    } else if (
+      telegramState==='watch'
+      || providerHealth==='warning'
+      || providerSloState==='watch'
+      || integrityHealth==='warning'
+      || telemetryValue('routeErrors')>0
+      || telemetryValue('cacheWriteErrors')>0
+    ) {
+      overall={state:'warning',label:'Есть предупреждения'};
+    } else if (providerHealth==='waiting') {
+      overall={state:'waiting',label:'Ожидаем первый запрос к источнику данных'};
+    } else {
+      overall={state:'ok',label:'Системы работают штатно'};
+    }
 
     const recommendations=[];
-    if (supabase.ok && !ops.migrationReady && hasSupabase(cfg)) {
-      recommendations.push(`Схема постоянного журнала событий недоступна. ${supabaseSchemaGuidance}`);
+    const pushRecommendation=value=>{
+      if (recommendations.length>=8) return;
+      const text=safeText(value,500);
+      if (!text || recommendations.includes(text)) return;
+      recommendations.push(text);
+    };
+    const schemaGuidance=safeText(supabaseSchemaGuidance,500);
+
+    if (safeRead(supabase,'ok')===true && !safeRead(ops,'migrationReady') && supabaseConfigured) {
+      pushRecommendation(`Схема постоянного журнала событий недоступна. ${schemaGuidance}`);
     }
-    if (!integrity.migrationReady && hasSupabase(cfg)) {
-      recommendations.push(`Схема постоянного журнала целостности недоступна. ${supabaseSchemaGuidance}`);
+    if (safeRead(integrity,'diagnosticsError')===true) {
+      pushRecommendation('Не удалось прочитать диагностику целостности данных; повторите проверку и проверьте доступность Supabase.');
+    } else if (!safeRead(integrity,'migrationReady') && supabaseConfigured) {
+      pushRecommendation(`Схема постоянного журнала целостности недоступна. ${schemaGuidance}`);
     }
-    if (!telegramWebhook.available && hasSupabase(cfg)) {
-      recommendations.push(`Диагностика persistent Telegram dedupe недоступна. ${supabaseSchemaGuidance}`);
+    if (safeRead(telegramWebhook,'diagnosticsError')===true) {
+      pushRecommendation('Не удалось прочитать состояние persistent Telegram dedupe; повторите проверку и проверьте Supabase.');
+    } else if (!safeRead(telegramWebhook,'available') && supabaseConfigured) {
+      pushRecommendation(`Диагностика persistent Telegram dedupe недоступна. ${schemaGuidance}`);
     }
-    if (Number(telegramWebhook.staleProcessing || 0)>0 || Number(telegramWebhook.failedCurrent || 0)>0) {
-      recommendations.push(`Проверьте Telegram webhook claims: stale=${Number(telegramWebhook.staleProcessing || 0)}, failed=${Number(telegramWebhook.failedCurrent || 0)}.`);
+
+    const staleProcessing=finiteNumber(safeRead(telegramWebhook,'staleProcessing'),{min:0}) ?? 0;
+    const failedCurrent=finiteNumber(safeRead(telegramWebhook,'failedCurrent'),{min:0}) ?? 0;
+    if (staleProcessing>0 || failedCurrent>0) {
+      pushRecommendation(
+        `Проверьте Telegram webhook claims: stale=${staleProcessing}, failed=${failedCurrent}.`,
+      );
     }
-    if (provider.cooldownActive) {
-      recommendations.push(`API-Football находится на паузе ещё примерно ${footballCooldownRemaining()} сек.; приложение должно использовать последние сохранённые данные.`);
+
+    if (safeRead(provider,'cooldownActive')===true) {
+      const cooldown=safeSyncCall(footballCooldownRemaining,[],0);
+      const seconds=finiteNumber(cooldown,{min:0,max:86_400}) ?? 0;
+      pushRecommendation(
+        `API-Football находится на паузе ещё примерно ${Math.round(seconds)} сек.; приложение должно использовать последние сохранённые данные.`,
+      );
     }
-    if (providerObservability?.overall?.state==='incident') {
-      recommendations.push('Provider SLO за 24 часа нарушен: проверьте success rate, timeout/rate-limit долю и задержку по источникам.');
-    } else if (providerObservability?.overall?.state==='watch') {
-      recommendations.push('Provider SLO за 24 часа вышел из целевого диапазона; наблюдайте provider/operation breakdown перед расширением нагрузки.');
+
+    if (providerSloState==='incident') {
+      pushRecommendation('Provider SLO за 24 часа нарушен: проверьте success rate, timeout/rate-limit долю и задержку по источникам.');
+    } else if (providerSloState==='watch') {
+      pushRecommendation('Provider SLO за 24 часа вышел из целевого диапазона; наблюдайте provider/operation breakdown перед расширением нагрузки.');
+    } else if (safeRead(providerObservability,'diagnosticsError')===true) {
+      pushRecommendation('Не удалось прочитать Provider SLO; повторите диагностику перед изменением лимитов или нагрузки.');
     }
-    for (const step of providerObservability?.incident?.activeIncident?.runbook || []) {
-      if (recommendations.length>=8) break;
-      recommendations.push(String(step));
+
+    const incident=plainObject(safeRead(providerObservability,'incident')) || {};
+    const activeIncident=plainObject(safeRead(incident,'activeIncident')) || {};
+    const runbook=Array.isArray(safeRead(activeIncident,'runbook'))
+      ? safeRead(activeIncident,'runbook')
+      : [];
+    for (const step of runbook.slice(0,8)) pushRecommendation(step);
+
+    if (safeRead(supabase,'configured')===true && safeRead(supabase,'ok')!==true) {
+      pushRecommendation('Проверьте адрес Supabase, сервисный ключ и доступность интерфейса базы данных.');
     }
-    if (supabase.configured && !supabase.ok) {
-      recommendations.push('Проверьте адрес Supabase, сервисный ключ и доступность интерфейса базы данных.');
+    if (safeRead(supabase,'recovered')===true) {
+      const initialStatus=safeText(safeRead(supabase,'initialStatus'),80,'unknown');
+      pushRecommendation(
+        `Первый Supabase probe не прошёл (${initialStatus}), подтверждающий запрос успешно восстановился. Наблюдайте частоту transient recoveries.`,
+      );
     }
-    if (supabase.recovered) {
-      recommendations.push(`Первый Supabase probe не прошёл (${supabase.initialStatus || 'unknown'}), подтверждающий запрос успешно восстановился. Наблюдайте частоту transient recoveries.`);
+
+    const dailyUsedPct=finiteNumber(safeRead(provider,'dailyUsedPct'),{min:0,max:100});
+    if (dailyUsedPct!==null && dailyUsedPct>=90) {
+      pushRecommendation('Дневная квота API-Football использована более чем на 90%; до сброса лимита работаем в экономном режиме.');
     }
-    if (Number(provider.dailyUsedPct)>=90) {
-      recommendations.push('Дневная квота API-Football использована более чем на 90%; до сброса лимита работаем в экономном режиме.');
+
+    const quarantined=finiteNumber(safeRead(integrityLastRun,'quarantined'),{min:0}) ?? 0;
+    const warnings=finiteNumber(safeRead(integrityLastRun,'warnings'),{min:0}) ?? 0;
+    if (quarantined>0) {
+      pushRecommendation(
+        `Защита целостности скрыла ${quarantined} подозрительных матч(а/ей) из последней выборки. Проверьте список кодов проблем ниже.`,
+      );
     }
-    if (Number(integrity.lastRun?.quarantined || 0)>0) {
-      recommendations.push(`Защита целостности скрыла ${Number(integrity.lastRun.quarantined)} подозрительных матч(а/ей) из последней выборки. Проверьте список кодов проблем ниже.`);
+    if (warnings>0 && quarantined===0) {
+      pushRecommendation('В последней выборке есть предупреждения целостности данных; приложение оставило матчи доступными, но пометило их для контроля.');
     }
-    if (Number(integrity.lastRun?.warnings || 0)>0 && !Number(integrity.lastRun?.quarantined || 0)) {
-      recommendations.push('В последней выборке есть предупреждения целостности данных; приложение оставило матчи доступными, но пометило их для контроля.');
+
+    const historyLosses=telemetryValue('analysisHistoryWriteLosses');
+    const historyPending=telemetryValue('analysisHistoryRetryPending');
+    if (historyLosses>=3) {
+      pushRecommendation(
+        `История AI-анализов потеряла ${historyLosses} записей после повторной попытки в текущем экземпляре Worker. Проверьте Supabase analysis_history и события ANALYSIS_HISTORY_WRITE_LOST.`,
+      );
+    } else if (historyPending>0) {
+      pushRecommendation('Есть фоновые повторные попытки сохранения истории AI-анализов; проверьте их завершение в ops_events.');
     }
-    if (Number(memory.telemetry?.analysisHistoryWriteLosses || 0)>=3) {
-      recommendations.push(`История AI-анализов потеряла ${Number(memory.telemetry.analysisHistoryWriteLosses)} записей после повторной попытки в текущем экземпляре Worker. Проверьте Supabase analysis_history и события ANALYSIS_HISTORY_WRITE_LOST.`);
-    } else if (Number(memory.telemetry?.analysisHistoryRetryPending || 0)>0) {
-      recommendations.push('Есть фоновые повторные попытки сохранения истории AI-анализов; проверьте их завершение в ops_events.');
+    if (!recommendations.length) {
+      recommendations.push('Критичных действий сейчас не требуется.');
     }
-    if (!recommendations.length) recommendations.push('Критичных действий сейчас не требуется.');
 
     return {
       available:true,
-      version:String(appVersion || ''),
-      generatedAt:now().toISOString(),
+      version:safeText(appVersion,120),
+      generatedAt:safeGeneratedAt(),
       overall,
       provider,
       providerObservability,
       supabase,
-      runtime:telemetrySnapshot(),
+      runtime,
       observability:{
-        persistent:ops.persistent,
-        migrationReady:ops.migrationReady,
-        retentionDays:cfg.opsRetentionDays,
-        recentEvents:ops.items,
+        persistent:safeRead(ops,'persistent')===true,
+        migrationReady:safeRead(ops,'migrationReady')===true,
+        retentionDays:normalizeRetentionDays(safeRead(cfg,'opsRetentionDays')),
+        recentEvents:Array.isArray(safeRead(ops,'items'))
+          ? safeRead(ops,'items').slice(0,12)
+          : [],
       },
       telegramWebhook,
       integrity,
