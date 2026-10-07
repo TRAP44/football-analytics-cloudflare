@@ -908,7 +908,8 @@ export function planDailyDigestReliabilitySloEvent(assessment = {}, priorRows = 
         state:'watch',
         reason:String(assessment.reason || ''),
         reasons:(Array.isArray(assessment.reasons) ? assessment.reasons : [])
-          .map(reason=>String(reason || '').trim().slice(0,80))
+          .filter(reason=>typeof reason==='string')
+          .map(reason=>reason.trim().slice(0,80))
           .filter(Boolean)
           .slice(0,8),
         sampleDays:nonNegativeCount(assessment.reliability?.sampleDays),
