@@ -108,6 +108,10 @@ export function createTelegramDigestRuntime(deps = {}) {
     return Array.isArray(value) ? value : [];
   }
 
+  function plainObject(value) {
+    return value && typeof value==='object' && !Array.isArray(value) ? value : null;
+  }
+
   function positiveSafeInteger(value) {
     if (typeof value==='number') {
       return Number.isSafeInteger(value) && value>0 ? value : 0;
@@ -131,9 +135,17 @@ export function createTelegramDigestRuntime(deps = {}) {
   }
 
   function boundedLimit(value,fallback=3,max=20) {
-    const parsed=Number(value);
-    if (!Number.isFinite(parsed)) return fallback;
-    return Math.max(1,Math.min(max,Math.trunc(parsed)));
+    if (typeof value!=='number' || !Number.isFinite(value)) return fallback;
+    return Math.max(1,Math.min(max,Math.trunc(value)));
+  }
+
+  function finiteMetric(value,min=-Infinity,max=Infinity) {
+    return typeof value==='number'
+      && Number.isFinite(value)
+      && value>=min
+      && value<=max
+      ? value
+      : null;
   }
 
   function plainText(value,max=120) {
@@ -242,12 +254,12 @@ export function createTelegramDigestRuntime(deps = {}) {
         : state.strongest.side==='away'
           ? String(match?.awayName || 'Гости')
           : 'Ничья';
-      const confidence=Number(state.latest.confidence);
-      const probability=Number(state.strongest.probability);
-      const probabilityLabel=Number.isFinite(probability)
-        ? Math.max(0,Math.min(100,probability)).toFixed(1)
+      const confidence=finiteMetric(state.latest.confidence,0,100);
+      const probability=finiteMetric(state.strongest.probability,0,100);
+      const probabilityLabel=probability!==null
+        ? probability.toFixed(1)
         : '—';
-      return `• <b>${htmlText(match?.homeName,120,'Хозяева')} — ${htmlText(match?.awayName,120,'Гости')}</b>: ${htmlText(sideName,120,'Ничья')} ${probabilityLabel}%${Number.isFinite(confidence) ? ` · Radar ${Math.max(0,Math.min(100,Math.round(confidence)))}/100` : ''}`;
+      return `• <b>${htmlText(match?.homeName,120,'Хозяева')} — ${htmlText(match?.awayName,120,'Гости')}</b>: ${htmlText(sideName,120,'Ничья')} ${probabilityLabel}%${confidence!==null ? ` · Radar ${Math.round(confidence)}/100` : ''}`;
     }).filter(Boolean);
     if (!radarLines.length) return base;
     return [
@@ -278,29 +290,51 @@ export function createTelegramDigestRuntime(deps = {}) {
       throw new TypeError('Telegram digest subscription enabled must be boolean.');
     }
     markTelegramWebhookMutation(cfg,'digest_subscription');
-    const previous=await getBotDigestSubscription(telegramId,cfg);
+    const previous=plainObject(await getBotDigestSubscription(telegramId,cfg)) || {};
+    const previousAppUrl=plainText(previous.app_url,500);
+    const requestedAppUrl=plainText(appUrl,500);
     const row = {
       telegram_id:telegramId,
-      chat_id:telegramChatId(previous?.chat_id) || requestedChatId,
+      chat_id:telegramChatId(previous.chat_id) || requestedChatId,
       enabled,
       hour_utc:DAILY_DIGEST_POLICY.deliveryHourUtc,
-      app_url:plainText(appUrl || previous?.app_url,500),
+      app_url:requestedAppUrl || previousAppUrl,
       updated_at:new Date().toISOString(),
     };
-    if (hasSupabase(cfg)) await supaUpsert(cfg,'bot_digest_subscriptions',row,'telegram_id');
-    else memory.botDigestSubscriptions.set(telegramId,{...previous,...row,last_sent_date:previous?.last_sent_date || null});
+    if (hasSupabase(cfg)) {
+      await supaUpsert(cfg,'bot_digest_subscriptions',row,'telegram_id');
+    } else {
+      memory.botDigestSubscriptions.set(telegramId,{
+        ...previous,
+        ...row,
+        last_sent_date:deliveryDate(previous.last_sent_date) || null,
+      });
+    }
     return {...previous,...row};
   }
   
   function publicDigestSettings(row = null, plan = 'FREE', favorites = []) {
+    const source=plainObject(row) || {};
     const hourUtc=DAILY_DIGEST_POLICY.deliveryHourUtc;
     const requestedPlan=plainText(plan,16).toUpperCase();
     const normalizedPlan=['FREE','PRO','PREMIUM'].includes(requestedPlan)
       ? requestedPlan
       : 'FREE';
+    const favoriteTeams=[];
+    const seenTeamIds=new Set();
+    for (const raw of rowsOf(favorites).slice(0,24)) {
+      const item=plainObject(raw);
+      if (!item) continue;
+      const teamId=positiveSafeInteger(item.team_id ?? item.teamId);
+      const teamName=plainText(item.team_name ?? item.teamName,80);
+      if (!teamId || !teamName || seenTeamIds.has(teamId)) continue;
+      seenTeamIds.add(teamId);
+      favoriteTeams.push({teamId,teamName});
+      if (favoriteTeams.length>=6) break;
+    }
     return {
-      enabled:row?.enabled === true,
-      configured:Boolean(row?.telegram_id),
+      enabled:source.enabled === true,
+      configured:positiveSafeInteger(source.telegram_id)>0,
       plan:normalizedPlan,
       delivery:{
         hourUtc,
@@ -309,10 +343,7 @@ export function createTelegramDigestRuntime(deps = {}) {
         editable:false,
         executionWindow:`${String(hourUtc).padStart(2,'0')}:00–${String(hourUtc).padStart(2,'0')}:55 UTC`,
       },
-      favoriteTeams:rowsOf(favorites).map(item=>({
-        teamId:positiveSafeInteger(item?.team_id ?? item?.teamId),
-        teamName:plainText(item?.team_name ?? item?.teamName,80),
-      })).filter(item=>item.teamId && item.teamName).slice(0,6),
+      favoriteTeams,
       capabilities:{
         baseDigest:true,
         morningNews:true,
@@ -321,7 +352,7 @@ export function createTelegramDigestRuntime(deps = {}) {
         planSpecificContent:normalizedPlan!=='FREE',
         smartRadarContext:normalizedPlan!=='FREE',
       },
-      updatedAt:row?.updated_at || null,
+      updatedAt:plainText(source.updated_at,80) || null,
     };
   }
   
@@ -343,7 +374,12 @@ export function createTelegramDigestRuntime(deps = {}) {
         throw new Error('Daily digest subscription pagination returned an invalid result.');
       }
       return {
-        rows:page.rows.filter(row=>positiveSafeInteger(row?.telegram_id) && telegramChatId(row?.chat_id)),
+        rows:page.rows.filter(row=>
+          plainObject(row)
+          && row.enabled===true
+          && positiveSafeInteger(row.telegram_id)
+          && telegramChatId(row.chat_id)
+        ),
         truncated:page.truncated,
       };
     }
