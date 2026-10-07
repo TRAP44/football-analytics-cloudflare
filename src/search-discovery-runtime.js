@@ -79,8 +79,37 @@ export function createSearchDiscoveryRuntime(deps) {
   }
 
   function finiteScore(value, fallback = 0) {
-    const number=Number(value);
+    if (typeof value==='number') {
+      return Number.isFinite(value) ? value : fallback;
+    }
+    if (typeof value!=='string') return fallback;
+    const raw=value.trim();
+    if (!/^[+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)$/.test(raw)) {
+      return fallback;
+    }
+    const number=Number(raw.replace(',','.'));
     return Number.isFinite(number) ? number : fallback;
+  }
+
+  function strictInstantMs(value) {
+    if (typeof value!=='string' || !value.trim()) return null;
+    const raw=value.trim();
+    const match=/^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/i.exec(raw);
+    if (!match) return null;
+    const year=Number(match[1]);
+    const month=Number(match[2]);
+    const day=Number(match[3]);
+    if (month<1 || month>12 || day<1) return null;
+    const maxDay=new Date(Date.UTC(year,month,0)).getUTCDate();
+    if (day>maxDay) return null;
+    const parsed=Date.parse(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function selectionNowMs(value) {
+    return typeof value==='number' && Number.isFinite(value)
+      ? value
+      : Date.now();
   }
 
   function safeLimit(value, fallback, max = 20) {
@@ -523,22 +552,58 @@ export function createSearchDiscoveryRuntime(deps) {
     return {from:fromDate.toISOString().slice(0,10),to:toDate.toISOString().slice(0,10)};
   }
   
+  const MATCH_SELECTION_STALE_GRACE_MS=3*60*60*1000;
+
   function matchSelectionProfile(match = {}, now = Date.now()) {
     const competition=match?.competition && typeof match.competition === 'object' && !Array.isArray(match.competition)
       ? match.competition
       : {};
-    const category=safeText(competition.category || match?.category,40);
+    const category=safeText(
+      competition.category || match?.category,
+      40,
+    ).toLowerCase();
     const homeName=safeText(match?.home?.name || match?.homeName,160);
     const awayName=safeText(match?.away?.name || match?.awayName,160);
-    const firstTeam=!isYouthReserveMatch(safeText(match?.league || competition.name,160),homeName,awayName);
-    const official=Boolean(firstTeam && category!=='friendly');
+    const firstTeam=!isYouthReserveMatch(
+      safeText(match?.league || competition.name,160),
+      homeName,
+      awayName,
+    );
+    const official=Boolean(
+      firstTeam
+      && category
+      && !['friendly','youth'].includes(category)
+      && competition.friendly!==true
+      && competition.youth!==true
+    );
     const live=match?.live === true;
     const finished=match?.finished === true;
-    const kickoff=Date.parse(safeText(match?.date,80));
-    const nowMs=Number.isFinite(Number(now)) ? Number(now) : Date.now();
-    const distanceMs=Number.isFinite(kickoff) ? Math.abs(kickoff-nowMs) : Number.MAX_SAFE_INTEGER;
-    const lane=live ? 0 : !finished && official ? 1 : !finished ? 2 : official ? 3 : 4;
-    const priority=Math.max(0,Math.min(99,finiteScore(competition.priority,0)));
+    const kickoffMs=strictInstantMs(safeText(match?.date,80));
+    const nowMs=selectionNowMs(now);
+    const staleUnfinished=!live
+      && !finished
+      && (
+        kickoffMs===null
+        || kickoffMs<nowMs-MATCH_SELECTION_STALE_GRACE_MS
+      );
+    const distanceMs=kickoffMs!==null
+      ? Math.abs(kickoffMs-nowMs)
+      : Number.MAX_SAFE_INTEGER;
+    const lane=live
+      ? 0
+      : !finished && !staleUnfinished && official
+        ? 1
+        : !finished && !staleUnfinished
+          ? 2
+          : finished && official
+            ? 3
+            : finished
+              ? 4
+              : 5;
+    const priority=Math.max(
+      0,
+      Math.min(99,finiteScore(competition.priority,0)),
+    );
     const reason=live
       ? 'Матч идёт сейчас'
       : lane===1
@@ -547,16 +612,40 @@ export function createSearchDiscoveryRuntime(deps) {
           ? 'Ближайший доступный матч; официальный календарь не найден'
           : lane===3
             ? 'Последний официальный матч; будущих игр пока нет'
-            : 'Последний доступный матч';
-    return {lane,official,firstTeam,priority,distanceMs,reason};
+            : lane===4
+              ? 'Последний доступный матч'
+              : 'Матч с устаревшим или неполным статусом не используется как основной';
+    return {
+      lane,
+      official,
+      firstTeam,
+      priority,
+      distanceMs,
+      kickoffMs,
+      staleUnfinished,
+      reason,
+    };
   }
   
   function compareMatchSelection(a, b, now = Date.now()) {
-    const pa=matchSelectionProfile(a,now), pb=matchSelectionProfile(b,now);
+    const pa=matchSelectionProfile(a,now);
+    const pb=matchSelectionProfile(b,now);
     if (pa.lane!==pb.lane) return pa.lane-pb.lane;
-    const ad=Date.parse(a?.date || 0), bd=Date.parse(b?.date || 0);
-    if (pa.lane<=2 && Number.isFinite(ad) && Number.isFinite(bd) && ad!==bd) return ad-bd;
-    if (pa.lane>=3 && Number.isFinite(ad) && Number.isFinite(bd) && ad!==bd) return bd-ad;
+    const ad=pa.kickoffMs;
+    const bd=pb.kickoffMs;
+    if (
+      pa.lane<=2
+      && ad!==null
+      && bd!==null
+      && ad!==bd
+    ) return ad-bd;
+    if (
+      pa.lane>=3
+      && pa.lane<=4
+      && ad!==null
+      && bd!==null
+      && ad!==bd
+    ) return bd-ad;
     if (pa.priority!==pb.priority) return pb.priority-pa.priority;
     return (positiveSafeInteger(a?.fixtureId) || Number.MAX_SAFE_INTEGER)
       -(positiveSafeInteger(b?.fixtureId) || Number.MAX_SAFE_INTEGER);
@@ -591,24 +680,53 @@ export function createSearchDiscoveryRuntime(deps) {
   }
   function splitTeamDiscoveryMatches(matches = [], secondQuery = '', options = {}) {
     const second=searchText(secondQuery);
-    const now=Date.now();
+    const now=selectionNowMs(options?.now);
     const filtered=rows(matches).filter(match=>{
       if (!positiveSafeInteger(match?.fixtureId)) return false;
       if (!second) return true;
-      return searchText(`${safeText(match?.home?.name,160)} ${safeText(match?.away?.name,160)}`).includes(second);
+      return searchText(
+        `${safeText(match?.home?.name,160)} ${safeText(match?.away?.name,160)}`,
+      ).includes(second);
     });
     const ranked=rankTeamDiscoveryMatches(filtered,now);
     const upcomingLimit=safeLimit(options?.upcomingLimit,8,20);
     const recentLimit=safeLimit(options?.recentLimit,4,20);
-    const upcoming=ranked.filter(match=>{
+    let upcoming=ranked.filter(match=>{
       if (match?.finished === true) return false;
-      const kickoff=Date.parse(safeText(match?.date,80));
-      return match?.live === true || (Number.isFinite(kickoff) && kickoff>=now-3*60*60*1000);
+      const profile=matchSelectionProfile(match,now);
+      return profile.lane<=2;
     }).slice(0,upcomingLimit);
-    const recent=ranked.filter(match=>match?.finished === true)
+    let recent=ranked.filter(match=>match?.finished === true)
       .slice(0,recentLimit);
-    const primary=ranked[0] || null;
-    return {upcoming,recent,primary,mode:upcoming.length ? 'upcoming' : recent.length ? 'recent' : 'empty'};
+    const primary=upcoming[0] || recent[0] || null;
+    const primaryFixtureId=positiveSafeInteger(primary?.fixtureId);
+    const markPrimary=list=>list.map(match=>({
+      ...match,
+      selection:{
+        ...(match?.selection && typeof match.selection==='object'
+          && !Array.isArray(match.selection)
+            ? match.selection
+            : {}),
+        primary:positiveSafeInteger(match?.fixtureId)===primaryFixtureId,
+      },
+    }));
+    upcoming=markPrimary(upcoming);
+    recent=markPrimary(recent);
+    const visiblePrimary=primaryFixtureId
+      ? [...upcoming,...recent].find(
+          match=>positiveSafeInteger(match?.fixtureId)===primaryFixtureId,
+        ) || null
+      : null;
+    return {
+      upcoming,
+      recent,
+      primary:visiblePrimary,
+      mode:upcoming.length
+        ? 'upcoming'
+        : recent.length
+          ? 'recent'
+          : 'empty',
+    };
   }
   
   function teamSearchFixturePayload(team, fixtures = [], secondQuery = '', meta = {}) {
