@@ -1,11 +1,30 @@
 // Public client infrastructure boundary.
 // Transport/bootstrap helpers only; product and authorization semantics remain outside.
-export function initTelegramWebApp(scope = window) {
-  const tg = scope.Telegram?.WebApp;
-  if (tg) {
-    tg.ready();
-    tg.expand();
-    try { tg.setHeaderColor('secondary_bg_color'); } catch {}
+export function initTelegramWebApp(scope = globalThis) {
+  let tg=null;
+  try {
+    const telegram=scope?.Telegram;
+    tg=telegram?.WebApp || null;
+  } catch {
+    return null;
+  }
+  if (!tg) return null;
+
+  for (const [method,args] of [
+    ['ready',[]],
+    ['expand',[]],
+    ['setHeaderColor',['secondary_bg_color']],
+  ]) {
+    let fn;
+    try {
+      fn=tg?.[method];
+    } catch {
+      continue;
+    }
+    if (typeof fn!=='function') continue;
+    try {
+      fn.apply(tg,args);
+    } catch {}
   }
   return tg;
 }
