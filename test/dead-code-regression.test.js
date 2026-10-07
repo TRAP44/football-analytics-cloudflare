@@ -48,16 +48,17 @@ test('dead-code gate detects reintroduced declarations outside the old monolithi
     );
 
     const findings=auditDeadCode({srcRoot,publicRoot});
-    assert.deepEqual(
-      findings.map(item=>({type:item.type,name:item.name})),
-      [
-        {type:'retired_worker_helper',name:'combineProbabilities'},
-        {type:'retired_worker_constant',name:'NEWS_IMPACT_ACTION_WINDOW_MS'},
-        {type:'retired_miniapp_helper',name:'liveStatsHtml'},
-        {type:'retired_miniapp_constant',name:'MINIAPP_PRODUCT_MODE'},
-        {type:'retired_css_fragment',name:'match-ai-snapshot'},
-      ],
-    );
+    const summary=findings
+      .map(item=>({type:item.type,name:item.name}))
+      .sort((a,b)=>(a.type+':'+a.name).localeCompare(b.type+':'+b.name));
+    const expected=[
+      {type:'retired_worker_helper',name:'combineProbabilities'},
+      {type:'retired_worker_constant',name:'NEWS_IMPACT_ACTION_WINDOW_MS'},
+      {type:'retired_miniapp_helper',name:'liveStatsHtml'},
+      {type:'retired_miniapp_constant',name:'MINIAPP_PRODUCT_MODE'},
+      {type:'retired_css_fragment',name:'match-ai-snapshot'},
+    ].sort((a,b)=>(a.type+':'+a.name).localeCompare(b.type+':'+b.name));
+    assert.deepEqual(summary,expected);
     assert.ok(findings.every(item=>Number.isSafeInteger(item.line) && item.line>0));
   } finally {
     fs.rmSync(root,{recursive:true,force:true});
