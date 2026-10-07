@@ -4,6 +4,9 @@ import { readFileSync } from 'node:fs';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 const providerFixtureRuntime=readFileSync(new URL('../src/provider-fixture-runtime.js',import.meta.url),'utf8');
+const providerBudgetRuntime=readFileSync(new URL('../src/provider-budget-runtime.js',import.meta.url),'utf8');
+const apiFootballGateway=readFileSync(new URL('../src/api-football-gateway.js',import.meta.url),'utf8');
+const teamTournamentRuntime=readFileSync(new URL('../src/team-tournament-runtime.js',import.meta.url),'utf8');
 const searchDiscoveryRuntime=readFileSync(new URL('../src/search-discovery-runtime.js',import.meta.url),'utf8');
 
 function block(start,end,source=worker){
@@ -34,21 +37,21 @@ test('Issue #330 shares team discovery fixtures across search and team page flow
   assert.doesNotMatch(search,/apiFootball\('\/fixtures',\{team:teamId,next:12\}/);
   assert.doesNotMatch(search,/apiFootball\('\/fixtures',\{team:teamId,last:8\}/);
 
-  const team=block('async function apiTeam\(','async function apiTeamIntelligence');
+  const team=block('async function apiTeam(request, cfg)','async function apiTeamIntelligence',teamTournamentRuntime);
   assert.match(team,/loadProviderTeamDiscoveryFixtures\(teamId,cfg\)/);
   assert.doesNotMatch(team,/apiFootball\('\/fixtures', \{ team:teamId, next:12 \}/);
   assert.doesNotMatch(team,/apiFootball\('\/fixtures', \{ team:teamId, last:8 \}/);
 });
 
 test('Issue #330 exposes persistent team-fixture reuse in provider budget telemetry',()=>{
-  assert.match(worker,/providerTeamFixtureReuses:\s*0/);
-  const budget=block('function providerBudgetProfile','function providerPublicBudgetMode');
+  assert.match(providerFixtureRuntime,/bumpTelemetry\('providerTeamFixtureReuses'\)/);
+  const budget=block('function providerBudgetProfile','function providerPublicBudgetMode',providerBudgetRuntime);
   assert.match(budget,/teamFixtureReuses:\s*Number\(memory\.telemetry\?\.providerTeamFixtureReuses \|\| 0\)/);
 });
 
 test('Issue #330 leaves distributed guard and LIVE provider feature policy intact',()=>{
-  assert.match(worker,/claimDistributedProviderBudget/);
-  const policy=block('function providerFeaturePolicy','function featureCacheAgeSeconds');
+  assert.match(apiFootballGateway,/async function claimDistributedProviderBudget\(cfg\)/);
+  const policy=block('function providerFeaturePolicy','function featureCacheAgeSeconds',providerBudgetRuntime);
   assert.match(policy,/mode === 'live'/);
   assert.match(policy,/\['events','statistics'\]/);
   assert.match(policy,/ttlSeconds = Math\.max\(ttlSeconds, 180\)/);
