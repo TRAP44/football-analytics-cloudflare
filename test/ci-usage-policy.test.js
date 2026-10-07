@@ -19,7 +19,7 @@ test('Quality cancels superseded PR runs without cancelling trusted main gates',
   assert.match(quality,/cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
   assert.doesNotMatch(quality,/cancel-in-progress: true/);
   assert.match(quality,/paths-ignore:[\s\S]*"docs\/\*\*"[\s\S]*"\*\*\/\*\.md"/);
-  assert.match(quality,/database-integration:[\s\S]*runs-on: \[self-hosted, Linux, X64\]/);
+  assert.match(quality,/database-integration:[\s\S]*runs-on: ubuntu-latest/);
   assert.match(quality,/github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
 });
 
@@ -36,7 +36,7 @@ test('privileged audit keeps weekly coverage while avoiding unrelated PR churn',
 });
 
 
-test('closed pull requests cancel queued self-hosted CI without consuming a runner',()=>{
+test('closed pull requests cancel queued CI and keep trusted database work bounded',()=>{
   for (const [name,workflow] of [
     ['Quality',quality],
     ['CodeQL',codeql],
@@ -62,7 +62,7 @@ test('closed pull requests cancel queued self-hosted CI without consuming a runn
   assert.match(
     quality,
     /database-integration:[\s\S]*if: \$\{\{ github\.event_name != 'pull_request' \|\| \(github\.event\.action != 'closed' && github\.event\.pull_request\.head\.repo\.full_name == github\.repository\) \}\}/,
-    'the self-hosted Quality database job must both skip closed PRs and reject fork PR code',
+    'the Quality database job must both skip closed PRs and reject fork PR code',
   );
 });
 
