@@ -2,9 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
+import { homeMatchScoreLabel } from '../public/modules/home-match-priority.js';
+
 const html=fs.readFileSync('public/index.html','utf8');
 const css=fs.readFileSync('public/styles/public-shell.css','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
+const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));
+
+function sourceSection(source,start,end) {
+  const from=source.indexOf(start);
+  assert.notEqual(from,-1,`missing section start: ${start}`);
+  const to=source.indexOf(end,from+start.length);
+  assert.notEqual(to,-1,`missing section end: ${end}`);
+  assert.ok(to>from,`invalid section order: ${start} -> ${end}`);
+  return source.slice(from,to);
+}
 
 test('MatchRadar home visual polish keeps the existing interaction contract',()=>{
   assert.match(css,/MatchRadar Public UI Polish — Home \+ Match Cards/);
@@ -18,19 +30,23 @@ test('MatchRadar home visual polish keeps the existing interaction contract',()=
     '.quick-reminder-btn.compact',
   ]) assert.ok(css.includes(selector),selector);
 
-  const card=app.slice(app.indexOf('function matchCardHtml'),app.indexOf('function bindMatchActions'));
+  const card=sourceSection(app,'function matchCardHtml','function bindMatchActions');
   for(const token of ['compact-match-card','compact-match-row','compact-score','analyze-btn','match-secondary-actions']){
     assert.ok(card.includes(token),token);
   }
 });
 
 test('home match cards separate status from score and keep one clear primary action',()=>{
-  const center=app.slice(app.indexOf('function matchCenter'),app.indexOf('function renderPopularCompetitions'));
-  const card=app.slice(app.indexOf('function matchCardHtml'),app.indexOf('function bindMatchActions'));
-  assert.match(center,/if \(\(m\.finished \|\| m\.live\)[\s\S]*return `\$\{m\.score\.home\} : \$\{m\.score\.away\}`/);
-  assert.match(center,/if \(m\.live\) return `\$\{m\.score\?\.home \?\? 0\} : \$\{m\.score\?\.away \?\? 0\}`/);
-  assert.match(center,/return 'VS'/);
-  assert.doesNotMatch(center,/идёт матч/);
+  const center=sourceSection(app,'function matchCenter','function renderPopularCompetitions');
+  const card=sourceSection(app,'function matchCardHtml','function bindMatchActions');
+
+  assert.match(center,/return homeMatchScoreLabel\(m\)/);
+  assert.equal(homeMatchScoreLabel({live:true,score:{home:0,away:0}}),'0 : 0');
+  assert.equal(homeMatchScoreLabel({finished:true,score:{home:2,away:1}}),'2 : 1');
+  assert.equal(homeMatchScoreLabel({live:false,finished:false,score:{home:2,away:1}}),'VS');
+  assert.equal(homeMatchScoreLabel({live:true,score:{home:null,away:null}}),'— : —');
+  assert.doesNotMatch(center,/идёт матч/i);
+
   assert.match(card,/LIVE\$\{liveMinute\}/);
   assert.match(card,/Матч-центр/);
   assert.match(card,/score-live/);
@@ -49,9 +65,20 @@ test('visual polish preserves accessible touch targets and mobile widths',()=>{
 });
 
 test('frontend asset revision busts the public shell cache without changing release identity',()=>{
-  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch\d+"/);
-  assert.match(html,/styles\.css\?v=6\.120\.0-launch\d+/);
-  assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-launch\d+/);
-  assert.match(html,/app\.js\?v=6\.120\.0-launch\d+/);
+  const revisionMatch=html.match(/frontend-asset-revision" content="([^"]+)"/);
+  assert.ok(revisionMatch,'frontend asset revision meta is required');
+  const frontendRevision=revisionMatch[1];
+
+  assert.match(frontendRevision,/^\d+\.\d+\.\d+-launch\d+$/);
+  assert.ok(frontendRevision.startsWith(`${pkg.version}-launch`),'asset revision must preserve package release identity');
+
+  for(const asset of [
+    '/styles.css?v=',
+    '/styles/public-shell.css?v=',
+    '/app.js?v=',
+  ]) {
+    assert.ok(html.includes(`${asset}${frontendRevision}`),`${asset} must use ${frontendRevision}`);
+  }
+
   assert.doesNotMatch(html,/6\.120\.0-perf1/);
 });
