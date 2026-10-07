@@ -200,7 +200,9 @@ export function createFootballNewsRuntime(deps) {
       ...safeShallowCopy(value),
       trust,
       verification:needsConfirmation ? 'needs_confirmation' : 'source_backed',
-      category:needsConfirmation ? {...category,impact:'medium'} : category,
+      category:needsConfirmation
+        ? {...safeShallowCopy(category),impact:'medium'}
+        : safeShallowCopy(category),
     };
   }
   
@@ -374,7 +376,7 @@ export function createFootballNewsRuntime(deps) {
     if (categoryCode==='coach' && !finished) score+=20;
     return {
       score,
-      fixture:{...match,fixtureId},
+      fixture:{...safeShallowCopy(match),fixtureId},
       timing,
       hoursFromNews:Number.isFinite(hours) ? hours : null,
     };
