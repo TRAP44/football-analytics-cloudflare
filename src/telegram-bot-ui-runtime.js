@@ -55,6 +55,12 @@ export function createTelegramBotUiRuntime(deps = {}) {
       : null;
   }
 
+  const HANDOFF_SOURCE_CODES=new Set([
+    'match_select',
+    'deep_link',
+    'news_impact',
+  ]);
+
   function safeText(value,max=240,fallback='') {
     if (!['string','number','bigint'].includes(typeof value)) return fallback;
     try {
@@ -68,6 +74,12 @@ export function createTelegramBotUiRuntime(deps = {}) {
     } catch {
       return fallback;
     }
+  }
+
+  function handoffSource(value,attributed=false) {
+    const source=safeText(value,48).toLowerCase();
+    if (HANDOFF_SOURCE_CODES.has(source)) return source;
+    return attributed ? 'deep_link' : 'match_select';
   }
 
   function finiteNumber(value) {
@@ -736,7 +748,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
 
     const opts=objectValue(options) || {};
     const attribution=objectValue(opts.attribution);
-    const source=safeText(opts.source,48,'match_select');
+    const source=handoffSource(opts.source,Boolean(attribution));
 
     backgroundCall(recordGrowthEvent,cfg,{
       userId:user,
