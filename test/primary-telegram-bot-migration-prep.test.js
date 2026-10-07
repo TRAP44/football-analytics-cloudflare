@@ -13,6 +13,7 @@ const worker = fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src
 const telegramLinks = fs.readFileSync('src/telegram-links.js','utf8');
 const identityModule = fs.readFileSync('src/telegram-primary-identity.js','utf8');
 const router = fs.readFileSync('src/router.js','utf8');
+const userDataApi = fs.readFileSync('src/user-data-api-runtime.js','utf8');
 const accessControl = fs.readFileSync('src/access-control.js','utf8');
 const reminderDeliveryService = fs.readFileSync('src/reminder-delivery-service.js','utf8');
 
@@ -157,18 +158,19 @@ test('fixture share and channel publisher CTA use the current primary bot identi
 });
 
 test('/api/me and admin identity remain keyed by Telegram user id after primary bot migration', () => {
-  assert.match(router,/request\.method === 'GET' && url\.pathname === '\/api\/me'/);
-  const apiMeStart=worker.indexOf('async function apiMe');
-  const apiMeEnd=worker.indexOf('\nasync function apiHistory',apiMeStart);
-  const apiMeBlock=worker.slice(apiMeStart,apiMeEnd);
-  assert.match(apiMeBlock,/getFavorites\(user\.id, cfg\)/);
-  assert.match(apiMeBlock,/getReminders\(user\.id, cfg\)/);
-  assert.match(apiMeBlock,/getPreferences\(user\.id, cfg\)/);
-  assert.match(apiMeBlock,/isAdmin:\s*isAdminUser\(user, cfg\)/);
+  assert.match(router,/method === 'GET' && pathname === '\/api\/me'/);
+  const apiMeStart=userDataApi.indexOf('async function apiMe');
+  const apiMeEnd=userDataApi.indexOf('\n  async function apiHistory',apiMeStart);
+  const apiMeBlock=userDataApi.slice(apiMeStart,apiMeEnd);
+  assert.match(apiMeBlock,/const userId=positiveId\(user\?\.id\)/);
+  assert.match(apiMeBlock,/getFavorites\(userId, cfg\)/);
+  assert.match(apiMeBlock,/getReminders\(userId, cfg\)/);
+  assert.match(apiMeBlock,/getPreferences\(userId, cfg\)/);
+  assert.match(apiMeBlock,/const admin=isAdminUser\(user,cfg\) === true/);
   assert.match(accessControl,/cfg\.adminTelegramIds/);
   assert.match(accessControl,/Number\(id\) === userId/);
 });
 
 test('disabled monetization remains fail-closed during primary bot migration', () => {
-  assert.match(router,/if \(!cfg\.monetizationEnabled\) return json\(\{ error: 'Монетизация отложена до финального этапа проекта\.' \}, 404\)/);
+  assert.match(router,/if \(cfg\?\.monetizationEnabled !== true\) return json\(\{ error: 'Монетизация отложена до финального этапа проекта\.' \}, 404\)/);
 });
