@@ -112,7 +112,9 @@ export function auditWranglerVars(text='') {
 export function auditPublicFiles(paths, readFile=file=>fs.readFileSync(file,'utf8')) {
   const findings=[];
   for (const file of paths) {
-    if (!/\.(?:js|html|css|json|txt|md)$/i.test(file)) continue;
+    const textAsset=/\.(?:js|mjs|cjs|html|css|json|txt|md|svg|xml)$/i.test(file)
+      || /(?:^|\/)_(?:headers|redirects)$/i.test(file);
+    if (!textAsset) continue;
     let text='';
     try { text=readFile(file); } catch { continue; }
     for (const name of PUBLIC_SECRET_REFERENCES) {
