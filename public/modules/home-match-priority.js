@@ -61,6 +61,10 @@ function safeMatch(value) {
   for (const key of ['live','finished','youthReserve']) {
     if (!booleanFieldIsValid(safeRead(match,key))) return null;
   }
+  if (
+    safeRead(match,'live')===true
+    && safeRead(match,'finished')===true
+  ) return null;
   return match;
 }
 
@@ -94,16 +98,10 @@ export function homeMatchSections(list,nowMs=Date.now()) {
     }
 
     const kickoffMs=strictKickoffMs(safeRead(match,'date'));
-    const startsInMs=
-      kickoffMs!==null && now!==null
-        ? kickoffMs-now
-        : null;
+    if (kickoffMs===null || now===null || kickoffMs<now) continue;
+    const startsInMs=kickoffMs-now;
 
-    if (
-      startsInMs!==null
-      && startsInMs>=0
-      && startsInMs<=SOON_WINDOW_MS
-    ) {
+    if (startsInMs<=SOON_WINDOW_MS) {
       sections[1].matches.push(match);
     } else {
       sections[2].matches.push(match);
@@ -167,12 +165,23 @@ export function selectHomePersonalMatch({
       || (!normalized.favorite && !normalized.viewedTeam)
     ) continue;
 
+    const live=safeRead(match,'live')===true;
+    const kickoffMs=strictKickoffMs(safeRead(match,'date'));
+    if (
+      !live
+      && (
+        kickoffMs===null
+        || now===null
+        || kickoffMs<now
+      )
+    ) continue;
+
     rows.push({
       match,
       insight:normalized.insight,
       score:normalized.score,
-      live:safeRead(match,'live')===true,
-      kickoffMs:strictKickoffMs(safeRead(match,'date')),
+      live,
+      kickoffMs,
     });
   }
 
@@ -180,16 +189,6 @@ export function selectHomePersonalMatch({
     if (a.live!==b.live) return a.live ? -1 : 1;
     const scoreDelta=b.score-a.score;
     if (scoreDelta) return scoreDelta;
-
-    const aFuture=
-      a.kickoffMs!==null && now!==null && a.kickoffMs>=now
-        ? 0
-        : 1;
-    const bFuture=
-      b.kickoffMs!==null && now!==null && b.kickoffMs>=now
-        ? 0
-        : 1;
-    if (aFuture!==bFuture) return aFuture-bFuture;
 
     return (a.kickoffMs ?? Number.POSITIVE_INFINITY)
       -(b.kickoffMs ?? Number.POSITIVE_INFINITY);
