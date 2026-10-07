@@ -2604,31 +2604,64 @@ function readMatchSnapshot(date) {
     const raw = storageGet(matchSnapshotKey(date));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!parsed?.savedAt || Date.now() - Number(parsed.savedAt) > MATCH_SNAPSHOT_MAX_AGE_MS) {
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       storageRemove(matchSnapshotKey(date));
       return null;
     }
-    return parsed;
+    const savedAt=parsed.savedAt;
+    const age=
+      typeof savedAt==='number' && Number.isFinite(savedAt)
+        ? Date.now()-savedAt
+        : Number.POSITIVE_INFINITY;
+    if (age < 0 || age > MATCH_SNAPSHOT_MAX_AGE_MS) {
+      storageRemove(matchSnapshotKey(date));
+      return null;
+    }
+    return {
+      ...parsed,
+      matches:collectionItems(parsed,'matches'),
+    };
   } catch { return null; }
 }
 
 function writeMatchSnapshot(date, data) {
   try {
+    const source=data && typeof data==='object' && !Array.isArray(data)
+      ? data
+      : {};
+    const retryAfter=
+      typeof source.retryAfter==='number'
+      && Number.isFinite(source.retryAfter)
+      && source.retryAfter>=0
+        ? source.retryAfter
+        : 0;
     storageSet(matchSnapshotKey(date), JSON.stringify({
       savedAt: Date.now(),
-      matches: data.matches || [],
-      refreshedAt: data.refreshedAt || new Date().toISOString(),
-      stale: Boolean(data.stale),
-      warning: data.warning || '',
-      retryAfter: Number(data.retryAfter || 0),
-      catalog: data.catalog || {},
-      integrity: data.integrity || null,
+      matches: collectionItems(source,'matches'),
+      refreshedAt: typeof source.refreshedAt==='string'
+        ? source.refreshedAt
+        : new Date().toISOString(),
+      stale: source.stale===true,
+      warning: typeof source.warning==='string' ? source.warning : '',
+      retryAfter,
+      catalog:
+        source.catalog
+        && typeof source.catalog==='object'
+        && !Array.isArray(source.catalog)
+          ? source.catalog
+          : {},
+      integrity:
+        source.integrity
+        && typeof source.integrity==='object'
+        && !Array.isArray(source.integrity)
+          ? source.integrity
+          : null,
     }));
   } catch {}
 }
 
 function applyMatchPayload(data, { snapshot = false, refreshing = false } = {}) {
-  state.matches = data.matches || [];
+  state.matches = collectionItems(data,'matches');
   state.matchesMeta = {
     refreshedAt: data.refreshedAt || null,
     stale: Boolean(data.stale || snapshot),
