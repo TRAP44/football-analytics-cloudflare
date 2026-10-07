@@ -382,9 +382,9 @@ test('RC144 exposes availability quality through current cache, UI and smoke con
   const center=readRepoFile('src/match-center-runtime.js');
   const app=readRepoFile('public/app.js');
 
-  assert.match(center,/match-center:\$\{fixtureId\}:v16-availability-quality-rc144/);
-  assert.match(analysis,/fixture:\$\{fixtureId\}:v15-availability-quality-rc144/);
-  assert.match(analysis,/analysisVersion:'4\.15\.0-availability-quality'/);
+  assert.match(center,/match-center:\$\{fixtureId\}:v17-event-evidence-rc144/);
+  assert.match(analysis,/fixture:\$\{fixtureId\}:v17-starting-xi-rc146/);
+  assert.match(analysis,/analysisVersion:'4\.17\.0-starting-xi'/);
   assert.match(analysis,/availabilityQuality,/);
   assert.match(
     analysis,
