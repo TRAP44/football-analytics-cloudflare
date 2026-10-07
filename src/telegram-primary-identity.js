@@ -74,11 +74,10 @@ function hex(bytes) {
 async function primaryTokenFingerprint(botToken) {
   const token=tokenValue(botToken);
   if (!token) throw new Error('TELEGRAM_BOT_TOKEN is required for primary bot identity.');
-  const digestFn=globalThis.crypto?.subtle?.digest;
-  if (typeof digestFn !== 'function') {
+  if (typeof globalThis.crypto?.subtle?.digest !== 'function') {
     throw new Error('Secure crypto is required for primary bot identity.');
   }
-  const digest=await digestFn.call(globalThis.crypto.subtle,'SHA-256',encoder.encode(token));
+  const digest=await globalThis.crypto.subtle.digest('SHA-256',encoder.encode(token));
   const fingerprint=hex(digest);
   if (!/^[0-9a-f]{64}$/.test(fingerprint)) {
     throw new Error('Primary Telegram bot identity fingerprint is invalid.');
