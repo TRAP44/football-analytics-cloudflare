@@ -16,9 +16,9 @@ function activeProductionVersion(deployment) {
 
   const versions = deployment.versions.map((entry, index) => {
     const versionId = String(entry?.version_id || '');
-    const percentage = Number(entry?.percentage);
+    const percentage=entry?.percentage;
     if (!versionId) throw new Error(`Deployment traffic entry ${index + 1} is missing version_id.`);
-    if (!Number.isFinite(percentage) || percentage < 0 || percentage > 100) {
+    if (typeof percentage !== 'number' || !Number.isFinite(percentage) || percentage < 0 || percentage > 100) {
       throw new Error(`Deployment traffic entry ${index + 1} has an invalid percentage.`);
     }
     return { versionId, percentage };
