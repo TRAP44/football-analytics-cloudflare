@@ -28,7 +28,7 @@ test('RC116 Cloudflare version metadata is machine-readable and commit-bound', (
 });
 
 test('RC116 release verifier locks the identity contract', () => {
-  assert.match(verifier, /Production deploy must pin the verified release version/);
+  assert.match(verifier, /Production deploy must pin the verified release-contract runtime version/);
   assert.match(verifier, /Production deploy message must bind release version and deploy SHA/);
   assert.match(verifier, /Production smoke must verify the same release identity used for deployment/);
 });
