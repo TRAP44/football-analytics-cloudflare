@@ -28,7 +28,7 @@ export function createBetaPhase5Runtime(deps) {
     if (typeof value === 'number') return Number.isFinite(value) ? value : null;
     if (typeof value !== 'string' || value.length > 48) return null;
     const raw=value.trim();
-    if (!raw || !/^-?(?:\\d+|\\d+\\.\\d+|\\.\\d+)$/.test(raw)) return null;
+    if (!raw || !/^-?(?:\d+|\d+\.\d+|\.\d+)$/.test(raw)) return null;
     const number=Number(raw);
     return Number.isFinite(number) ? number : null;
   }
