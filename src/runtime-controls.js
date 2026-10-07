@@ -175,25 +175,23 @@ function inspectRuntimeControls(row,defaults,{requireComplete=false}={}) {
   const rawMessage=controlInputValue(source,'message','message');
   if (rawMessage !== undefined && rawMessage !== null && typeof rawMessage !== 'string') valid=false;
 
-  return {
-    valid,
-    value:{
-      maintenanceMode:booleanField('maintenance_mode','maintenanceMode',defaults.maintenanceMode),
-      analysisEnabled:booleanField('analysis_enabled','analysisEnabled',defaults.analysisEnabled),
-      searchEnabled:booleanField('search_enabled','searchEnabled',defaults.searchEnabled),
-      liveEnabled:booleanField('live_enabled','liveEnabled',defaults.liveEnabled),
-      remindersEnabled:booleanField('reminders_enabled','remindersEnabled',defaults.remindersEnabled),
-      expandedDataEnabled:booleanField('expanded_data_enabled','expandedDataEnabled',defaults.expandedDataEnabled),
-      autoSettlementRecoveryEnabled:booleanField(
-        'auto_settlement_recovery_enabled',
-        'autoSettlementRecoveryEnabled',
-        defaults.autoSettlementRecoveryEnabled,
-      ),
-      message:cleanText(rawMessage,'',280),
-      revision:revision || defaults.revision,
-      updatedAt,
-    },
+  const value={
+    maintenanceMode:booleanField('maintenance_mode','maintenanceMode',defaults.maintenanceMode),
+    analysisEnabled:booleanField('analysis_enabled','analysisEnabled',defaults.analysisEnabled),
+    searchEnabled:booleanField('search_enabled','searchEnabled',defaults.searchEnabled),
+    liveEnabled:booleanField('live_enabled','liveEnabled',defaults.liveEnabled),
+    remindersEnabled:booleanField('reminders_enabled','remindersEnabled',defaults.remindersEnabled),
+    expandedDataEnabled:booleanField('expanded_data_enabled','expandedDataEnabled',defaults.expandedDataEnabled),
+    autoSettlementRecoveryEnabled:booleanField(
+      'auto_settlement_recovery_enabled',
+      'autoSettlementRecoveryEnabled',
+      defaults.autoSettlementRecoveryEnabled,
+    ),
+    message:cleanText(rawMessage,'',280),
+    revision:revision || defaults.revision,
+    updatedAt,
   };
+  return {valid,value};
 }
 
 function validMutationControls(body) {
