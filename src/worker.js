@@ -98,7 +98,7 @@ import { annotateStatisticsReliability, assessMatchStatisticsQuality, sanitizeSt
 import { annotateEventReliability, assessMatchEventQuality, eventsForTrustedAnalytics, sanitizeEventsForDisplay } from './event-quality.js';
 import { annotateOddsReliability, assessOddsMarketQuality, oddsMarketForTrustedAnalytics, sanitizeOddsSnapshotsForMovement } from './odds-quality.js';
 import { annotateAvailabilityReliability, assessFixtureAvailabilityQuality, enrichFixtureAbsencesWithSeasonRole, normalizeFixtureAbsences, sanitizeAvailabilityRows } from './availability.js';
-import { annotateLineupReliability, assessLineupQuality, assessMatchLineups } from './lineup-quality.js';
+import { annotateLineupReliability, assessLineupQuality, assessMatchLineups, synchronizeLineupQuality } from './lineup-quality.js';
 import { normalizeOpenLigaMatchEvents, normalizeOpenLigaStandings, openLigaCompetition, openLigaMatchDataUrls, openLigaTableUrls } from './providers/openligadb.js';
 import { footballDataScorersUrl, footballDataStandingsUrl, normalizeFootballDataStandings, normalizeFootballDataTeamScorers } from './providers/football-data.js';
 import { normalizeTheOddsApiMarket, theOddsApiUrl } from './providers/the-odds-api.js';
@@ -2590,6 +2590,7 @@ function getMatchCenterRuntime() {
       assessMatchEventQuality,
       assessMatchLineups,
       assessMatchStatisticsQuality,
+      synchronizeLineupQuality,
       assessOddsMarketQuality,
       buildAiTimeline,
       buildLiveAiCoach,
@@ -2694,6 +2695,7 @@ function getAnalysisRuntime() {
       assessFixtureAvailabilityQuality,
       assessMatchLineups,
       assessOddsMarketQuality,
+      synchronizeLineupQuality,
       baselineCalibrationProfile,
       blendProbabilitySignals,
       buildAiInstructor,
