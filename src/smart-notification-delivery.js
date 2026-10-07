@@ -142,9 +142,11 @@ function normalizeTelegramResult(value) {
   const ok=reportedOk && statusCompatible && errorCompatible && outcomeCompatible;
   const outcome=ok
     ? 'sent'
-    : rawOutcome === 'confirmed_failure'
-      ? 'confirmed_failure'
-      : 'unknown';
+    : reportedOk
+      ? 'unknown'
+      : rawOutcome === 'confirmed_failure'
+        ? 'confirmed_failure'
+        : 'unknown';
   const retryAfter=boundedSeconds(source.retryAfter,0,MAX_RETRY_AFTER_SECONDS,{allowZero:true}) ?? 0;
   return {
     ok,
