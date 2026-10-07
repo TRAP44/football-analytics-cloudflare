@@ -3418,6 +3418,8 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   function newsImpactTrendSignal(current = {}, previous = {}) {
     const currentRow=current && typeof current==='object' && !Array.isArray(current) ? current : {};
     const previousRow=previous && typeof previous==='object' && !Array.isArray(previous) ? previous : {};
+    const minUsers=newsImpactSampleThreshold(NEWS_IMPACT_FUNNEL_MIN_USERS,10);
+    if (newsImpactCount(currentRow.users)<minUsers || newsImpactCount(previousRow.users)<minUsers) return 'insufficient';
     const currentConfidence=newsImpactTrendConfidence(currentRow.confidence);
     const previousConfidence=newsImpactTrendConfidence(previousRow.confidence);
     if (!currentConfidence || !previousConfidence) return 'insufficient';
@@ -3444,12 +3446,18 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
         users:0,actedUsers:0,conversionPct:0,
         confidence:newsImpactConversionConfidence(0,0),
       };
-      const signal=newsImpactTrendSignal(current,previous);
       const currentPctRaw=newsImpactFiniteNumber(current.conversionPct);
       const previousPctRaw=newsImpactFiniteNumber(previous.conversionPct);
-      const currentPct=currentPctRaw!==null && currentPctRaw>=0 && currentPctRaw<=100 ? currentPctRaw : 0;
-      const previousPct=previousPctRaw!==null && previousPctRaw>=0 && previousPctRaw<=100 ? previousPctRaw : 0;
-      const deltaPctPoints=Math.round((currentPct-previousPct)*10)/10;
+      const currentPctValid=currentPctRaw!==null && currentPctRaw>=0 && currentPctRaw<=100;
+      const previousPctValid=previousPctRaw!==null && previousPctRaw>=0 && previousPctRaw<=100;
+      const currentPct=currentPctValid ? currentPctRaw : 0;
+      const previousPct=previousPctValid ? previousPctRaw : 0;
+      const signal=currentPctValid && previousPctValid
+        ? newsImpactTrendSignal(current,previous)
+        : 'insufficient';
+      const deltaPctPoints=currentPctValid && previousPctValid
+        ? Math.round((currentPct-previousPct)*10)/10
+        : 0;
       return {
         code,
         label,
