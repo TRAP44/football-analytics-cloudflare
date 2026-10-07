@@ -2149,6 +2149,7 @@ const summarizeFormRows = (...args) => getModelIntelligenceRuntime().summarizeFo
 const getRecentTeamForm = (...args) => getModelIntelligenceRuntime().getRecentTeamForm(...args);
 const formProbabilities = (...args) => getModelIntelligenceRuntime().formProbabilities(...args);
 const h2hProbabilities = (...args) => getModelIntelligenceRuntime().h2hProbabilities(...args);
+const seasonStrengthProbabilities = (...args) => getModelIntelligenceRuntime().seasonStrengthProbabilities(...args);
 const blendProbabilitySignals = (...args) => getModelIntelligenceRuntime().blendProbabilitySignals(...args);
 const absenceAdjustmentUnits = (...args) => getModelIntelligenceRuntime().absenceAdjustmentUnits(...args);
 const applyAbsenceAdjustment = (...args) => getModelIntelligenceRuntime().applyAbsenceAdjustment(...args);
@@ -2682,6 +2683,7 @@ function getAnalysisRuntime() {
       MODEL_BASE_WEIGHTS,
       analysisFreshness,
       analysisProviderFetch,
+      apiFootball,
       analysisRecheckDelta,
       analysisResponsePayload,
       annotateAvailabilityReliability,
@@ -2728,6 +2730,7 @@ function getAnalysisRuntime() {
       getStaleCache,
       h2hProbabilities,
       hasSupabase,
+      normalizeTeamSeasonStatistics,
       hydratePlayerRolesForAnalysis,
       isFinishedStatus,
       isFootballRateLimitError,
@@ -2762,6 +2765,7 @@ function getAnalysisRuntime() {
       sanitizeAvailabilityRows,
       saveOddsSnapshot,
       secondaryOddsMarket,
+      seasonStrengthProbabilities,
       selectNewsImpactRecoveryStrategy,
       setCache,
       settlePredictionsFromFixtures,
