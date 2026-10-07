@@ -43,6 +43,7 @@ jobs:
       - run: npm run security:privileged
       - run: npm run lint
       - run: npm run check
+      - run: npm run verify:supabase
       - name: Run npm test
         shell: bash
         run: |
