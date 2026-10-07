@@ -24,8 +24,15 @@ export function createNavigationShell({
   }
 
   const $ = elementById;
-  const views = Array.isArray(viewIds) ? [...new Set(viewIds.map(value => String(value || '')).filter(Boolean))] : [];
+  const views = Array.isArray(viewIds)
+    ? [...new Set(viewIds.filter(value => typeof value === 'string' && value).map(value => value))]
+    : [];
   const viewSet = new Set(views);
+  const requestedHome=typeof homeView === 'string' ? homeView : '';
+  const safeHome=
+    (viewSet.has(requestedHome) && $(requestedHome) ? requestedHome : '')
+    || views.find(id => $(id))
+    || '';
   const scrollByView = new Map();
   const rawNavBindings = Array.isArray(bottomNav) ? bottomNav : DEFAULT_BOTTOM_NAV;
   const navBindings = rawNavBindings
@@ -59,11 +66,21 @@ export function createNavigationShell({
   }
 
   function normalizeViewId(id) {
-    return viewSet.has(id) && $(id) ? id : homeView;
+    return typeof id === 'string' && viewSet.has(id) && $(id)
+      ? id
+      : safeHome;
   }
 
   function activeViewId() {
-    return document.querySelector('.view.active')?.id || homeView;
+    const activeId=document.querySelector('.view.active')?.id;
+    return typeof activeId === 'string' && viewSet.has(activeId) && $(activeId)
+      ? activeId
+      : safeHome;
+  }
+
+  function safeScrollOffset(value) {
+    const numeric=typeof value === 'number' ? value : Number.NaN;
+    return Number.isFinite(numeric) && numeric >= 0 ? numeric : 0;
   }
 
   function releaseFocusFromHiddenView(current, target) {
@@ -102,12 +119,17 @@ export function createNavigationShell({
   }
 
   function showView(id, options = {}) {
+    const safeOptions=options && typeof options === 'object' && !Array.isArray(options)
+      ? options
+      : {};
     const target = normalizeViewId(id);
     const current = activeViewId();
-    const context = Object.freeze({ from: current, to: target, options });
+    const context = Object.freeze({ from: current, to: target, options: safeOptions });
+
+    if (!target) return '';
 
     if (current && current !== target) {
-      scrollByView.set(current, Number(window.scrollY || 0));
+      scrollByView.set(current, safeScrollOffset(window.scrollY));
     }
 
     releaseFocusFromHiddenView(current, target);
@@ -122,21 +144,44 @@ export function createNavigationShell({
       runEffect(onLeaveView, 'onLeaveView', context);
     }
 
-    const top = options.restore ? Number(scrollByView.get(target) || 0) : 0;
+    const top = safeOptions.restore
+      ? safeScrollOffset(scrollByView.get(target))
+      : 0;
     const applyScrollAndFocus = () => {
-      window.scrollTo({ top, behavior: 'auto' });
-      if (options.focusHeading === true) $('topbarTitle')?.focus?.({ preventScroll: true });
+      try {
+        window.scrollTo({ top, behavior: 'auto' });
+        if (safeOptions.focusHeading === true) $('topbarTitle')?.focus?.({ preventScroll: true });
+      } catch (error) {
+        reportEffectError(error, { ...context, effect: 'scrollAndFocus' });
+      }
     };
-    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(applyScrollAndFocus);
-    else applyScrollAndFocus();
+    try {
+      if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(applyScrollAndFocus);
+      else applyScrollAndFocus();
+    } catch (error) {
+      reportEffectError(error, { ...context, effect: 'requestAnimationFrame' });
+      applyScrollAndFocus();
+    }
 
     return target;
   }
 
   function handleBackNavigation() {
     const current = activeViewId();
-    if (current === homeView) return false;
-    const target = typeof resolveBackTarget === 'function' ? resolveBackTarget(current) : homeView;
+    if (!current || current === safeHome) return false;
+
+    let requestedTarget=safeHome;
+    if (typeof resolveBackTarget === 'function') {
+      try {
+        requestedTarget=resolveBackTarget(current);
+      } catch (error) {
+        reportEffectError(error, { from: current, to: safeHome, options: { restore:true }, effect: 'resolveBackTarget' });
+      }
+    }
+
+    let target=normalizeViewId(requestedTarget);
+    if (!target || target === current) target=safeHome;
+    if (!target || target === current) return false;
     showView(target, { restore: true });
     return true;
   }
