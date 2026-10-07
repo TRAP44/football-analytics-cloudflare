@@ -8,7 +8,7 @@ export function createTelegramUpdateProcessor(deps) {
   const {
     loadRuntimeControls,
     telegramLockdownDecision,
-    telegramApi,
+    telegramApi: telegramApiDependency,
     json,
     parseInvoicePayload,
     billingPlanConfig,
@@ -68,7 +68,7 @@ export function createTelegramUpdateProcessor(deps) {
   const requiredFunctions={
     loadRuntimeControls,
     telegramLockdownDecision,
-    telegramApi,
+    telegramApi:telegramApiDependency,
     json,
     parseInvoicePayload,
     billingPlanConfig,
@@ -125,6 +125,8 @@ export function createTelegramUpdateProcessor(deps) {
   for (const [name,fn] of Object.entries(requiredFunctions)) {
     if (typeof fn !== 'function') throw new TypeError(`${name} is required`);
   }
+
+  const telegramApi=(...args)=>Promise.resolve().then(()=>telegramApiDependency(...args));
 
   function plainObject(value) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
@@ -183,10 +185,19 @@ export function createTelegramUpdateProcessor(deps) {
 
   function safeWebAppUrl(request, params = {}) {
     try {
+      const requestUrl=new URL(textValue(request?.url,2048));
       const raw=textValue(telegramWebAppUrl(request,params),4096);
       if (!raw) return '';
       const url=new URL(raw);
-      if (url.protocol !== 'https:' || url.username || url.password) return '';
+      if (
+        requestUrl.protocol !== 'https:'
+        || requestUrl.username
+        || requestUrl.password
+        || url.protocol !== 'https:'
+        || url.username
+        || url.password
+        || url.origin !== requestUrl.origin
+      ) return '';
       return url.toString();
     } catch {
       return '';
@@ -591,6 +602,7 @@ export function createTelegramUpdateProcessor(deps) {
 
   const text=textValue(msg?.text,4096);
   const chatId=telegramChatId(msg?.chat?.id);
+  const messageUserId=telegramUserId(msg?.from?.id);
   if (chatId && /^\/start(?:@\w+)?(?:\s|$)/i.test(text)) {
     const userId=telegramUserId(msg.from?.id);
     if (!userId) return json({ok:false,error:'telegram_user_invalid'},400);
@@ -666,12 +678,14 @@ export function createTelegramUpdateProcessor(deps) {
   }
 
   if (chatId && (/^\/favorites(?:@\w+)?(?:\s|$)/i.test(text) || text === '⭐ Мои команды')) {
-    await sendBotFavoriteTeams(request,cfg,telegramUserId(msg.from?.id,chatId>0 ? chatId : 0),chatId);
+    if (!messageUserId) return json({ok:false,error:'telegram_user_invalid'},400);
+    await sendBotFavoriteTeams(request,cfg,messageUserId,chatId);
     return json({ ok: true });
   }
 
   if (chatId && text === '📰 Новости') {
-    await sendGeneralFootballNews(request,cfg,telegramUserId(msg.from?.id,chatId>0 ? chatId : 0),chatId,{force:false});
+    if (!messageUserId) return json({ok:false,error:'telegram_user_invalid'},400);
+    await sendGeneralFootballNews(request,cfg,messageUserId,chatId,{force:false});
     return json({ ok: true });
   }
 
@@ -689,12 +703,14 @@ export function createTelegramUpdateProcessor(deps) {
   }
 
   if (chatId && /^\/(?:search|ask)(?:@\w+)?(?:\s|$)/i.test(text)) {
-    await sendBotFootballSearch(request, cfg, telegramUserId(msg.from?.id,chatId>0 ? chatId : 0), chatId, text);
+    if (!messageUserId) return json({ok:false,error:'telegram_user_invalid'},400);
+    await sendBotFootballSearch(request, cfg, messageUserId, chatId, text);
     return json({ ok: true });
   }
 
   if (chatId && (/^\/last(?:@\w+)?(?:\s|$)/i.test(text) || text === '🕘 Последний разбор')) {
-    await sendLastAiVerdict(request, cfg, telegramUserId(msg.from?.id,chatId>0 ? chatId : 0), chatId);
+    if (!messageUserId) return json({ok:false,error:'telegram_user_invalid'},400);
+    await sendLastAiVerdict(request, cfg, messageUserId, chatId);
     return json({ ok: true });
   }
 
@@ -741,7 +757,8 @@ export function createTelegramUpdateProcessor(deps) {
   }
 
   if (chatId && text && !text.startsWith('/')) {
-    await sendBotFootballSearch(request, cfg, telegramUserId(msg.from?.id,chatId>0 ? chatId : 0), chatId, text);
+    if (!messageUserId) return json({ok:false,error:'telegram_user_invalid'},400);
+    await sendBotFootballSearch(request, cfg, messageUserId, chatId, text);
   }
 
   return json({ ok: true });
