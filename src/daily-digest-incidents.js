@@ -531,6 +531,7 @@ export function summarizeDailyDigestReliability(rows = [], { days = 7, nowMs = D
   let degradedDays=0;
   let truncatedDays=0;
   let maxBacklog=0;
+  let invalidEvidenceRuns=0;
   const daily=[];
 
   for (const [date,list] of [...grouped.entries()].sort((a,b)=>a[0].localeCompare(b[0]))) {
@@ -546,11 +547,32 @@ export function summarizeDailyDigestReliability(rows = [], { days = 7, nowMs = D
 
     for (const event of list) {
       const meta=event.metadata || {};
-      sent+=nonNegativeCount(meta.sent);
-      claimed+=nonNegativeCount(meta.claimed);
-      failed+=nonNegativeCount(meta.failed);
-      rateLimited+=nonNegativeCount(meta.rateLimited);
-      const backlog=nonNegativeCount(meta.remaining ?? meta.backlog);
+      const sentValue=nonNegativeCount(meta.sent);
+      const claimedValue=nonNegativeCount(meta.claimed);
+      const failedValue=nonNegativeCount(meta.failed);
+      const rateLimitedValue=nonNegativeCount(meta.rateLimited);
+      const backlogRaw=meta.remaining ?? meta.backlog;
+      const backlog=nonNegativeCount(backlogRaw);
+
+      const suppliedCounts=[
+        ['sent',meta.sent],
+        ['claimed',meta.claimed],
+        ['failed',meta.failed],
+        ['rateLimited',meta.rateLimited],
+        ['backlog',backlogRaw],
+        ['sealedClaims',meta.sealedClaims],
+      ].filter(([,value])=>value !== undefined && value !== null);
+      const malformedCount=suppliedCounts.some(([,value])=>strictNonNegativeInteger(value)===null);
+      const malformedRate=meta.completionRate !== undefined
+        && meta.completionRate !== null
+        && boundedRate(meta.completionRate)===null;
+      const impossibleDelivery=sentValue>claimedValue;
+      if (malformedCount || malformedRate || impossibleDelivery) invalidEvidenceRuns+=1;
+
+      sent+=sentValue;
+      claimed+=claimedValue;
+      failed+=failedValue;
+      rateLimited+=rateLimitedValue;
       if (backlog>0) backlogRuns+=1;
       dayMaxBacklog=Math.max(dayMaxBacklog,backlog);
       sealed ||= event.code==='DAILY_DIGEST_SEALED_CLAIMS' || nonNegativeCount(meta.sealedClaims)>0;
@@ -630,6 +652,8 @@ export function summarizeDailyDigestReliability(rows = [], { days = 7, nowMs = D
     degradedDays,
     truncatedDays,
     rateLimitDays:daily.filter(item=>item.rateLimited>0).length,
+    evidenceValid:invalidEvidenceRuns===0,
+    invalidEvidenceRuns,
     incidents:{
       count:periodIncidentDates.length,
       recovered:recovered.length,
@@ -746,6 +770,20 @@ export function assessDailyDigestReliabilitySlo(rows = [], {
     };
   }
 
+  if (reliability.evidenceValid !== true) {
+    return {
+      state:'watch',
+      severity:'warning',
+      code:'DAILY_DIGEST_SLO_EVIDENCE_INVALID',
+      reason:'invalid_evidence',
+      date,
+      message:'Daily Digest reliability SLO found malformed or internally inconsistent delivery evidence.',
+      reliability,
+      policy,
+      diagnostics,
+    };
+  }
+
   const enoughSample=Number(reliability.sampleDays || 0)>=Number(policy.minSampleDays || 0)
     && Number(reliability.totals?.claimed || 0)>=Number(policy.minClaimedDeliveries || 0);
   if (!enoughSample) {
@@ -825,14 +863,23 @@ export function assessDailyDigestReliabilitySlo(rows = [], {
 
 export function planDailyDigestReliabilitySloEvent(assessment = {}, priorRows = []) {
   const date=String(assessment?.date || '');
+  const evaluatedAt=trustedTimestampMs(assessment?.diagnostics?.evaluatedAt);
   const rows=(Array.isArray(priorRows) ? priorRows : [])
     .map(row=>({
       at:iso(row?.created_at || row?.createdAt || row?.at),
+      source:String(row?.source || ''),
+      eventType:String(row?.event_type || row?.eventType || ''),
       severity:String(row?.severity || ''),
       code:String(row?.code || ''),
       metadata:objectRecord(row?.metadata),
     }))
-    .filter(row=>row.at)
+    .filter(row=>{
+      const at=trustedTimestampMs(row.at);
+      return at !== null
+        && row.source==='digest_slo'
+        && row.eventType==='reliability_slo'
+        && (evaluatedAt === null || at<=evaluatedAt+60_000);
+    })
     .sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
   const latest=rows.at(-1) || null;
   const latestState=String(latest?.metadata?.state || (latest?.severity==='warning' ? 'watch' : ''));
@@ -860,7 +907,10 @@ export function planDailyDigestReliabilitySloEvent(assessment = {}, priorRows = 
         date,
         state:'watch',
         reason:String(assessment.reason || ''),
-        reasons:Array.isArray(assessment.reasons)?assessment.reasons:[],
+        reasons:(Array.isArray(assessment.reasons) ? assessment.reasons : [])
+          .map(reason=>String(reason || '').trim().slice(0,80))
+          .filter(Boolean)
+          .slice(0,8),
         sampleDays:nonNegativeCount(assessment.reliability?.sampleDays),
         claimed:nonNegativeCount(assessment.reliability?.totals?.claimed),
         completionRate:boundedRate(assessment.reliability?.completionRate),
