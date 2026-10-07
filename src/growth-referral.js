@@ -390,10 +390,13 @@ export function createGrowthReferralRuntime(deps = {}) {
   async function recordGrowthEventTask(cfg,eventInput={}) {
     const input=plainObject(eventInput) || {};
     const id=positiveSafeInteger(safeRead(input,'userId'));
-    const event=cleanLaunchPart(
+    const eventCandidate=cleanLaunchPart(
       safeRead(input,'eventName'),
       40,
     );
+    const event=/^[a-z0-9_]{2,40}$/.test(eventCandidate)
+      ? eventCandidate
+      : '';
     const rawDedupeKey=safeText(
       safeRead(input,'eventKey'),
       180,
