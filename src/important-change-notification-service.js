@@ -57,8 +57,11 @@ function positiveSafeInteger(value,fallback=0,max=Number.MAX_SAFE_INTEGER) {
 }
 
 function nonNegativeSafeInteger(value) {
-  const number=numericIdentifier(value);
-  return number!==null && number>=0 ? number : 0;
+  return typeof value==='number'
+    && Number.isSafeInteger(value)
+    && value>=0
+      ? value
+      : 0;
 }
 
 function strictPositiveInteger(value,fallback,max) {
@@ -310,11 +313,12 @@ export function createImportantChangeNotificationService({
       };
     }
 
-    const baseline=valid.find(row=>
+    const recentHistory=valid.filter(row=>
       row.timestampMs<latest.timestampMs
       && latest.timestampMs-row.timestampMs
         <=MAX_SIGNAL_AGE_MINUTES*60_000
     );
+    const baseline=recentHistory.at(-1);
     if (!baseline) {
       return {
         significant:false,
@@ -369,7 +373,13 @@ export function createImportantChangeNotificationService({
         : 0;
     const direction=safeDelta>0 ? 'выросла' : 'снизилась';
     const signed=`${safeDelta>0 ? '+' : ''}${safeDelta.toFixed(1)} п.п.`;
-    const sample=positiveSafeInteger(safeRead(movement,'sample')) || 0;
+    const rawSample=safeRead(movement,'sample');
+    const sample=
+      typeof rawSample==='number'
+      && Number.isSafeInteger(rawSample)
+      && rawSample>=0
+        ? rawSample
+        : 0;
     const home=safeText(safeRead(row,'home_name'),160,'Хозяева');
     const away=safeText(safeRead(row,'away_name'),160,'Гости');
     const league=safeText(safeRead(row,'league_name'),160);
@@ -390,12 +400,25 @@ export function createImportantChangeNotificationService({
     ].filter(Boolean).join('\n');
   }
 
-  function sourceRows(value) {
-    return Array.isArray(value)
-      ? value
-        .slice(0,2000)
-        .filter(row=>Boolean(unnotifiedReminder(row)))
-      : [];
+  function sourceRows(value,window) {
+    if (!Array.isArray(value) || !window) return [];
+    const fromMs=strictTimestampMs(window.from);
+    const toMs=strictTimestampMs(window.to);
+    if (fromMs===null || toMs===null) return [];
+
+    return value
+      .slice(0,2000)
+      .filter(row=>{
+        const candidate=unnotifiedReminder(row);
+        if (!candidate) return false;
+        if (safeRead(row,'enabled')!==true) return false;
+        const fixtureMs=strictTimestampMs(
+          safeRead(row,'fixture_date'),
+        );
+        return fixtureMs!==null
+          && fixtureMs>=fromMs
+          && fixtureMs<=toMs;
+      });
   }
 
   async function eligibleReminderRows(rows,cfg) {
@@ -578,7 +601,28 @@ export function createImportantChangeNotificationService({
       });
     }
 
-    const rows=sourceRows(safeRead(page,'rows'));
+    const rawRows=safeRead(page,'rows');
+    const rawTruncated=safeRead(page,'truncated');
+    if (
+      !Array.isArray(rawRows)
+      || typeof rawTruncated!=='boolean'
+    ) {
+      await emitOpsEvent(cfg,{
+        severity:'error',
+        source:'important_change_notifications',
+        eventType:'important_change_notification_scheduler',
+        code:'IMPORTANT_CHANGE_NOTIFICATION_READ_INVALID',
+        message:'Reminder page returned malformed rows or truncation evidence.',
+        endpoint:'cron:important-change-notifications',
+      });
+      return emptySummary({
+        ok:false,
+        failed:1,
+        reason:'reminder_read_invalid',
+      });
+    }
+
+    const rows=sourceRows(rawRows,window);
     let audience;
     try {
       audience=await eligibleReminderRows(rows,cfg);
@@ -597,9 +641,9 @@ export function createImportantChangeNotificationService({
       });
       return emptySummary({
         ok:false,
-        checked:rows.length,
+        checked:rawRows.length,
         failed:1,
-        truncated:safeRead(page,'truncated')===true,
+        truncated:rawTruncated,
         reason:'audience_unavailable',
       });
     }
@@ -610,7 +654,7 @@ export function createImportantChangeNotificationService({
     const groups=groupByFixture(eligibleRows);
     const fixtures=[...groups.entries()].slice(0,fixtureLimit);
     const truncated=
-      safeRead(page,'truncated')===true
+      rawTruncated
       || groups.size>fixtures.length;
 
     let significant=0;
@@ -674,7 +718,7 @@ export function createImportantChangeNotificationService({
 
     const summary={
       ok:!(failed || unknown || truncated),
-      checked:rows.length,
+      checked:rawRows.length,
       eligible:eligibleRows.length,
       blockedByPreference:audience.blockedByPreference,
       blockedByEntitlement:audience.blockedByEntitlement,
