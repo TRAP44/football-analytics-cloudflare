@@ -19,7 +19,19 @@ const CONTROL_PLANE_FAIL_CLOSED_MESSAGE =
   'Аварийный режим безопасности: состояние панели управления временно недоступно.';
 
 function plainObject(value) {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  try {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeRead(value,key) {
+  try {
+    return value?.[key];
+  } catch {
+    return undefined;
+  }
 }
 
 function integerCandidate(value) {
@@ -45,7 +57,20 @@ function cleanReason(value,fallback='control_plane_unavailable') {
 
 function cleanTimestamp(value) {
   if (typeof value !== 'string' || !value.trim()) return null;
-  const timestamp=Date.parse(value.trim());
+  const raw=value.trim();
+  const calendar=/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(raw);
+  if (!calendar) return null;
+  const year=Number(calendar[1]);
+  const month=Number(calendar[2]);
+  const day=Number(calendar[3]);
+  if (!Number.isSafeInteger(year) || month<1 || month>12 || day<1) return null;
+  const maxDay=new Date(Date.UTC(year,month,0)).getUTCDate();
+  if (day>maxDay) return null;
+  if (
+    raw.length>10
+    && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/i.test(raw)
+  ) return null;
+  const timestamp=Date.parse(raw);
   if (!Number.isFinite(timestamp)) return null;
   try {
     return new Date(timestamp).toISOString();
@@ -58,7 +83,7 @@ function runtimeShapeValid(runtime) {
   const source=plainObject(runtime);
   return Boolean(
     source
-    && CONTROL_BOOLEAN_FIELDS.every(key=>typeof source[key] === 'boolean')
+    && CONTROL_BOOLEAN_FIELDS.every(key=>typeof safeRead(source,key) === 'boolean')
   );
 }
 
@@ -69,15 +94,17 @@ function normalizedLockdownRuntime(runtime) {
 }
 
 function requestMethod(request) {
-  if (typeof request?.method !== 'string') return '';
-  const method=request.method.trim().toUpperCase();
+  const raw=safeRead(request,'method');
+  if (typeof raw !== 'string') return '';
+  const method=raw.trim().toUpperCase();
   return /^[A-Z]+$/.test(method) ? method : '';
 }
 
 function requestPath(request) {
-  if (typeof request?.url !== 'string' || !request.url.trim()) return '';
+  const raw=safeRead(request,'url');
+  if (typeof raw !== 'string' || !raw.trim()) return '';
   try {
-    return new URL(request.url).pathname;
+    return new URL(raw).pathname;
   } catch {
     return '';
   }
@@ -106,20 +133,27 @@ function paymentReconciliationUpdate(update) {
   const source=plainObject(update);
   if (!source) return false;
 
-  const message=plainObject(source.message);
-  const successful=plainObject(message?.successful_payment);
-  if (successful && nonEmptyString(successful.telegram_payment_charge_id,256)) return true;
+  const message=plainObject(safeRead(source,'message'));
+  const successful=plainObject(safeRead(message,'successful_payment'));
+  if (
+    successful
+    && nonEmptyString(safeRead(successful,'telegram_payment_charge_id'),256)
+  ) return true;
 
-  const refunded=plainObject(message?.refunded_payment);
-  if (refunded && nonEmptyString(refunded.telegram_payment_charge_id,256)) return true;
+  const refunded=plainObject(safeRead(message,'refunded_payment'));
+  if (
+    refunded
+    && nonEmptyString(safeRead(refunded,'telegram_payment_charge_id'),256)
+  ) return true;
 
-  const subscription=plainObject(source.subscription);
-  const subscriptionUser=plainObject(subscription?.user);
+  const subscription=plainObject(safeRead(source,'subscription'));
+  const subscriptionUser=plainObject(safeRead(subscription,'user'));
+  const subscriptionState=safeRead(subscription,'state');
   if (
     subscription
-    && nonEmptyString(subscription.invoice_payload,512)
-    && positiveTelegramId(subscriptionUser?.id)
-    && (subscription.state === 'active' || subscription.state === 'canceled')
+    && nonEmptyString(safeRead(subscription,'invoice_payload'),512)
+    && positiveTelegramId(safeRead(subscriptionUser,'id'))
+    && (subscriptionState === 'active' || subscriptionState === 'canceled')
   ) return true;
 
   return false;
@@ -136,8 +170,8 @@ export function failClosedRuntimeControls(previous = {}, reason = 'control_plane
     expandedDataEnabled:false,
     autoSettlementRecoveryEnabled:false,
     message:CONTROL_PLANE_FAIL_CLOSED_MESSAGE,
-    revision:positiveRevision(source.revision),
-    updatedAt:cleanTimestamp(source.updatedAt),
+    revision:positiveRevision(safeRead(source,'revision')),
+    updatedAt:cleanTimestamp(safeRead(source,'updatedAt')),
     controlPlaneFailClosed:true,
     controlPlaneReason:cleanReason(reason),
   };
@@ -147,13 +181,13 @@ export function isSecurityLockdownControls(runtime = {}) {
   const source=plainObject(runtime);
   return Boolean(
     source
-    && source.maintenanceMode === true
-    && source.analysisEnabled === false
-    && source.searchEnabled === false
-    && source.liveEnabled === false
-    && source.remindersEnabled === false
-    && source.expandedDataEnabled === false
-    && source.autoSettlementRecoveryEnabled === false
+    && safeRead(source,'maintenanceMode') === true
+    && safeRead(source,'analysisEnabled') === false
+    && safeRead(source,'searchEnabled') === false
+    && safeRead(source,'liveEnabled') === false
+    && safeRead(source,'remindersEnabled') === false
+    && safeRead(source,'expandedDataEnabled') === false
+    && safeRead(source,'autoSettlementRecoveryEnabled') === false
   );
 }
 
@@ -165,7 +199,7 @@ export function runtimeLockdownDecision(request, { runtime = {}, isAdmin = false
 
   const path=requestPath(request);
   const method=requestMethod(request);
-  const controlPlaneFailClosed=effectiveRuntime.controlPlaneFailClosed === true;
+  const controlPlaneFailClosed=safeRead(effectiveRuntime,'controlPlaneFailClosed') === true;
 
   if (path && method && adminRecoveryAllowed(path,method,isAdmin)) {
     return {
@@ -219,24 +253,24 @@ export function telegramLockdownDecision(update = {}, { runtime = {} } = {}) {
       blocked:false,
       active:true,
       paymentReconciliation:true,
-      controlPlaneFailClosed:effectiveRuntime.controlPlaneFailClosed === true,
+      controlPlaneFailClosed:safeRead(effectiveRuntime,'controlPlaneFailClosed') === true,
     };
   }
 
   const source=plainObject(update);
-  const preCheckout=plainObject(source?.pre_checkout_query);
+  const preCheckout=plainObject(safeRead(source,'pre_checkout_query'));
   if (preCheckout && nonEmptyString(preCheckout.id,256)) {
     return {
       blocked:true,
       active:true,
       rejectCheckout:true,
-      controlPlaneFailClosed:effectiveRuntime.controlPlaneFailClosed === true,
+      controlPlaneFailClosed:safeRead(effectiveRuntime,'controlPlaneFailClosed') === true,
     };
   }
 
   return {
     blocked:true,
     active:true,
-    controlPlaneFailClosed:effectiveRuntime.controlPlaneFailClosed === true,
+    controlPlaneFailClosed:safeRead(effectiveRuntime,'controlPlaneFailClosed') === true,
   };
 }
