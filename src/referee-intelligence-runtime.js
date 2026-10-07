@@ -48,8 +48,8 @@ export function createRefereeIntelligenceRuntime(deps) {
   }
 
   function safeText(value, max = 180) {
-    if (!['string','number','bigint'].includes(typeof value)) return '';
-    return String(value)
+    if (typeof value !== 'string') return '';
+    return value
       .normalize('NFKC')
       .replace(/[\u0000-\u001F\u007F]/g,' ')
       .replace(/\s+/g,' ')
@@ -58,22 +58,50 @@ export function createRefereeIntelligenceRuntime(deps) {
   }
 
   function canonicalDate(value) {
-    const raw=safeText(value,80);
-    if (!raw) return null;
+    if (typeof value !== 'string' || value.length > 80) return null;
+    const raw=value.trim();
+    const match=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?(Z|([+-])(\d{2}):(\d{2}))$/i.exec(raw);
+    if (!match) return null;
+
+    const year=Number(match[1]);
+    const month=Number(match[2]);
+    const day=Number(match[3]);
+    const hour=Number(match[4]);
+    const minute=Number(match[5]);
+    const second=Number(match[6] || 0);
+    const offsetHour=match[8].toUpperCase()==='Z' ? 0 : Number(match[10]);
+    const offsetMinute=match[8].toUpperCase()==='Z' ? 0 : Number(match[11]);
+    if (
+      month < 1 || month > 12
+      || day < 1 || day > new Date(Date.UTC(year,month,0)).getUTCDate()
+      || hour > 23
+      || minute > 59
+      || second > 59
+      || offsetHour > 14
+      || offsetMinute > 59
+      || (offsetHour === 14 && offsetMinute !== 0)
+    ) return null;
+
     const parsed=Date.parse(raw);
     return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
   }
 
+  function numericCandidate(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value !== 'string') return null;
+    const raw=value.trim();
+    if (!/^-?(?:\d+|\d+\.\d+|\.\d+)$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isFinite(number) ? number : null;
+  }
+
   function boundedMetric(value, max) {
-    try {
-      const number=Number(value);
-      return Number.isFinite(number) && number >= 0 && number <= max ? number : null;
-    } catch {
-      return null;
-    }
+    const number=numericCandidate(value);
+    return number !== null && number >= 0 && number <= max ? number : null;
   }
 
   function providerMetric(value, max = 100) {
+    if (typeof value !== 'number' && typeof value !== 'string') return null;
     try {
       return boundedMetric(numericValue(value),max);
     } catch {
