@@ -5,6 +5,8 @@ import { createNewsImpactRecoveryRuntime } from '../src/news-impact-recovery-run
 
 // Consolidated recovery impact summary regression coverage (historical RC95-RC98).
 
+const recovery=fs.readFileSync('src/news-impact-recovery-runtime.js','utf8');
+
 // test/news-impact-recovery-incident-impact-concentration-rc95.test.js
 {
 const worker=fs.readFileSync('src/worker.js','utf8');
