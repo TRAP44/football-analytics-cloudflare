@@ -213,6 +213,7 @@ export function createTelegramWebhookHandler(deps) {
   return async function handleTelegramWebhook(request, cfg) {
     const sourceCfg=plainObject(cfg) || {};
     cfg={...sourceCfg};
+    delete cfg.telegramWebhookAttempt;
 
     const webhookSecret=webhookSecretValue(cfg.webhookSecret);
     if (!webhookSecret) return json({ok:false,error:'webhook_secret_missing'},503);
