@@ -36,8 +36,44 @@ function walk(dir) {
   return out;
 }
 
+function stripYamlComments(text='') {
+  return String(text).split(/\r?\n/).map(line=>{
+    let quote='';
+    let escaped=false;
+    for (let index=0;index<line.length;index+=1) {
+      const char=line[index];
+      if (quote) {
+        if (escaped) {
+          escaped=false;
+          continue;
+        }
+        if (char==='\\' && quote==='"') {
+          escaped=true;
+          continue;
+        }
+        if (char===quote) quote='';
+        continue;
+      }
+      if (char==='"' || char==="'") {
+        quote=char;
+        continue;
+      }
+      if (char==='#') return line.slice(0,index);
+    }
+    return line;
+  }).join('\n');
+}
+
 export function workflowSecretRefs(text='') {
-  return [...String(text).matchAll(/\$\{\{\s*secrets\.([A-Z0-9_]+)\s*\}\}/g)].map(match=>match[1]);
+  const source=stripYamlComments(text);
+  const refs=[];
+  for (const match of source.matchAll(/\$\{\{\s*secrets\.([A-Z0-9_]+)\b[^}]*\}\}/g)) {
+    refs.push(match[1]);
+  }
+  for (const match of source.matchAll(/\$\{\{\s*secrets\[\s*['"]([A-Z0-9_]+)['"]\s*\][^}]*\}\}/g)) {
+    refs.push(match[1]);
+  }
+  return [...new Set(refs)];
 }
 
 export function workflowActionRefs(text='') {
@@ -63,12 +99,21 @@ export function auditWorkflow(pathName, text='') {
     findings.push({path:pathName,type:'write_all_permissions'});
   }
 
+  const cleanSource=stripYamlComments(source);
   const allowed=WORKFLOW_SECRET_ALLOWLIST[pathName] || new Set();
-  for (const secret of workflowSecretRefs(source)) {
+  for (const secret of workflowSecretRefs(cleanSource)) {
     if (!allowed.has(secret)) findings.push({path:pathName,type:'unexpected_secret_reference',name:secret});
   }
+  if (/\bsecrets\s*\[/.test(cleanSource)) {
+    for (const match of cleanSource.matchAll(/\$\{\{[^}]*\bsecrets\s*\[\s*([^\]]+)\s*\][^}]*\}\}/g)) {
+      const key=String(match[1] || '').trim();
+      if (!/^['"][A-Z0-9_]+['"]$/.test(key)) {
+        findings.push({path:pathName,type:'dynamic_secret_reference',name:key.slice(0,80)});
+      }
+    }
+  }
 
-  for (const ref of workflowActionRefs(source)) {
+  for (const ref of workflowActionRefs(cleanSource)) {
     if (ref.startsWith('./')) continue;
     const at=ref.lastIndexOf('@');
     const revision=at>=0 ? ref.slice(at+1) : '';
