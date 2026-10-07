@@ -118,6 +118,23 @@ function entityRows(value,idKey) {
     .filter(Boolean);
 }
 
+function knownTeamRows(value) {
+  return objectRows(value)
+    .map(row=>{
+      const name=safeText(safeRead(row,'name'),160);
+      if (!name) return null;
+      return {
+        ...row,
+        id:0,
+        name,
+        country:safeText(safeRead(row,'country'),100),
+        logo:safeText(safeRead(row,'logo'),2048),
+        catalogOnly:safeRead(row,'catalogOnly')===true,
+      };
+    })
+    .filter(Boolean);
+}
+
 function safeElements(selectAll,selector) {
   const result=safeCall(selectAll,selector);
   if (!result) return [];
@@ -471,7 +488,7 @@ export function createGlobalSearchController(options={}) {
 
       Object.assign(globalSearch,{
         remoteTeams:entityRows(safeRead(data,'teams'),'id'),
-        knownTeams:objectRows(safeRead(data,'knownTeams')),
+        knownTeams:knownTeamRows(safeRead(data,'knownTeams')),
         remoteCompetitions:entityRows(
           safeRead(data,'competitions'),
           'leagueId',
