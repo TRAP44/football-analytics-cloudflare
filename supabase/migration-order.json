@@ -1,0 +1,205 @@
+{
+  "formatVersion": 1,
+  "generatedAt": "2026-10-07",
+  "sourceOfTruth": "../release-contract.json",
+  "baseline": "baseline/supabase_baseline_v6_19.sql",
+  "orderingRule": "Sort by numeric version components. Never sort these legacy filenames lexicographically.",
+  "supabaseCliCompatibility": "Legacy custom filenames are not native Supabase CLI timestamp migrations. Do not use supabase db push/migration up with this directory as a standard CLI migration history.",
+  "historicalMigrations": [
+    {
+      "path": "migrations/supabase_migration_v6_9.sql",
+      "gitBlobSha": "ed5cfa96144e979f6081310e3ed0b071a01642e6"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_10.sql",
+      "gitBlobSha": "c566a839d9c73bd494ac04cbbfe1c0f2dedc9b13"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_11.sql",
+      "gitBlobSha": "d7f838d23858ef368568c6422a73b81ad27b8386"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_11_1.sql",
+      "gitBlobSha": "ef2ebe67b7effafd45745d329d43a11c809d86af"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_12.sql",
+      "gitBlobSha": "9e9e9c623721d8818ae789886d64dcc7c12aca2d"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_13.sql",
+      "gitBlobSha": "9875982d28da9b92fb760af85c8e00b004fc7271"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_14.sql",
+      "gitBlobSha": "8c7d08d318bae0a76c8de4b823648cc7322fa061"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_15.sql",
+      "gitBlobSha": "aa50779ecc2ade5782ea998a9d6e126595952748"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_16.sql",
+      "gitBlobSha": "1f8fd73fe94c2f19460a91fe7568350afc774873"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_17.sql",
+      "gitBlobSha": "0a918ca9ebaca3729271833501814f3a2d27b3e0"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_18.sql",
+      "gitBlobSha": "abb57e5452a8f0b4b511305e0f92d1c2d30d9e44"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_18_1.sql",
+      "gitBlobSha": "e05058c6166f3be9cc14c0ec8fac370d004692eb"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_19.sql",
+      "gitBlobSha": "49f5f55107e661c729f4d371956bd6290d02e8b1"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_19_1.sql",
+      "gitBlobSha": "ec6f065b6399aa09dc5d655743ebc91ad5400683"
+    }
+  ],
+  "freshInstallAfterBaseline": [
+    {
+      "path": "migrations/supabase_migration_v6_20.sql",
+      "gitBlobSha": "4731d9e279ae340b204c6f59095f20ca16370524"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_21.sql",
+      "gitBlobSha": "09ef104903ca7315a47c47300ebc5ed575434d45"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_21_1.sql",
+      "gitBlobSha": "02c68d822c435b3ed45caa9a06c2bbd4c2620b5f"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_21_2.sql",
+      "gitBlobSha": "ff02088d80a5930e252830ba10257eaaafdbdeaa"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_21_3.sql",
+      "gitBlobSha": "d45998550ec8e4b94aeab0c7f2c9d0fdac05296f"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_22.sql",
+      "gitBlobSha": "02332afaee46cd9d30d5854f44466ab474634b30"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_23.sql",
+      "gitBlobSha": "7c3760558d41d00dc37f379c0df06d2c82e761ed"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_24.sql",
+      "gitBlobSha": "5048256eb2686528d9b5046ae15b0250b1da291e"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_25.sql",
+      "gitBlobSha": "d94a273cd9d66018a1c68afaef07f0098bc17e28"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_25_1.sql",
+      "gitBlobSha": "bb74157e4856c8f7f53f45ccd8b5189f6594b30f"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_25_2.sql",
+      "gitBlobSha": "8cc36db3fbd5c3fd904b368006076034f7827af5"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_26.sql",
+      "gitBlobSha": "222703cfa5ab0707bc75732a0d5abfb8fe6b2d72"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_26_1.sql",
+      "gitBlobSha": "2ead5f56bb200d46b0f83e3a432486165c7fcb44"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_26_2.sql",
+      "gitBlobSha": "f735b1beac0a89e2a5ab8d6a7c789b1f1a67fe20"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_26_3.sql",
+      "gitBlobSha": "53241a2cc4fc9051b5501ba80cb83426c428ad8d"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_27.sql",
+      "gitBlobSha": "06bb3458f8929eb089c51fa23c9f7e71025f80d9"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_27_1.sql",
+      "gitBlobSha": "ae39a06e1c607c3459acf99fa2cc93ac94f04897"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_27_2.sql",
+      "gitBlobSha": "95d8a8a630b6df5a695706d47d11c7131a9e25e6"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_27_3.sql",
+      "gitBlobSha": "74c55f392b5c2e95f404de4e822b2a9b9459904d"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_28.sql",
+      "gitBlobSha": "04e1cde8d7a35ebeac98c7f69023a139eba553ce"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_29.sql",
+      "gitBlobSha": "c3b47e9200720f03f3cfeb2768969138ed415953"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_29_1.sql",
+      "gitBlobSha": "04ce390c901c77b0a4bdef325d3f38d9d2302bea"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_29_2.sql",
+      "gitBlobSha": "036881fdb95ce8c53f0f9f13eaaebcfbdcf980bf"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_29_3.sql",
+      "gitBlobSha": "8d5199b63dbe0c259625efdf9a561502659cc15f"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_29_4.sql",
+      "gitBlobSha": "f94701de21e8b57a290c276dfcca98efe083fa85"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_29_5.sql",
+      "gitBlobSha": "4743c2af868ee3762edef0ac58555231d6187a4a"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_29_6.sql",
+      "gitBlobSha": "c830b1b8762ff24818cb59e4883e815658d8d5ab"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_29_7.sql",
+      "gitBlobSha": "780d2be588d986f0c0dc0f64c18dad12a59f7b09"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_29_8.sql",
+      "gitBlobSha": "ff794805e8d8721f8fbcf2dc03bcf015ad2918f7"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_29_9.sql",
+      "gitBlobSha": "bbb0d2e85bfd765e639bd0a7a6d30b9a694d9d3b"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_29_10.sql",
+      "gitBlobSha": "311737a0ff6a35b433fa8539d4e38a9859f069d9"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_29_11.sql",
+      "gitBlobSha": "daac5303e16e9e91182fe3277a6110f64dc16d62"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_29_12.sql",
+      "gitBlobSha": "ae95a8252bd2366540675754f391d450d6c97d9c"
+    }
+  ],
+  "notes": [
+    "release-contract.json remains authoritative for the active schema contract and latest migration.",
+    "Production remote migration names are rollout history and are not expected to match these repository filenames 1:1.",
+    "Applied migrations are immutable; fixes must be new forward migrations."
+  ]
+}
