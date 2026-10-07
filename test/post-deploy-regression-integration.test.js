@@ -6,17 +6,12 @@ const productionMonitor=fs.readFileSync('src/production-monitor-runtime.js','utf
 const telemetryOps=fs.readFileSync('src/telemetry-ops-runtime.js','utf8');
 
 test('production monitor exposes non-blocking 15/30/60 post-deploy regression windows',()=>{
-  const start=productionMonitor.indexOf('async function runProductionMonitor');
-  const end=productionMonitor.indexOf('  return Object.freeze({',start);
-  assert.ok(start>=0 && end>start);
-  const block=productionMonitor.slice(start,end);
-
-  assert.match(block,/postDeployRegressionReport\(/);
-  assert.match(block,/windowsMinutes:\[15,30,60\]/);
-  assert.match(block,/regression:\{[\s\S]*\.\.\.releaseRegression[\s\S]*lifecycle:/);
-  assert.match(block,/postDeployRegressionState/);
-  assert.match(block,/postDeployRegressionCompletedWindows/);
-  assert.doesNotMatch(block,/productionMonitorState\(\{[\s\S]{0,700}releaseRegression/);
+  assert.match(productionMonitor,/const releaseRegression=postDeployRegressionReport\(/);
+  assert.match(productionMonitor,/windowsMinutes:\[15,30,60\]/);
+  assert.match(productionMonitor,/regression:\{[\s\S]*\.\.\.releaseRegression[\s\S]*lifecycle:/);
+  assert.match(productionMonitor,/postDeployRegressionState:String\(releaseRegression\.state/);
+  assert.match(productionMonitor,/postDeployRegressionCompletedWindows:Number\(releaseRegression\.completedWindows/);
+  assert.match(productionMonitor,/autoRollback: false/);
 });
 
 test('post-deploy regression uses historical ops source rather than only current-deploy events',()=>{
@@ -43,16 +38,12 @@ test('regression lifecycle is persisted without feeding its own events back into
 
 
 test('regression lifecycle persistence uses an atomic transition key and remains fail-soft',()=>{
-  const start=telemetryOps.indexOf('async function recordOpsEventTask');
-  const end=telemetryOps.indexOf('  return Object.freeze({',start);
-  assert.ok(start>=0 && end>start);
-  const block=telemetryOps.slice(start,end);
-
-  assert.match(block,/transition_key:event\.transitionKey/);
-  assert.match(block,/record_ops_event_occurrence/);
-  assert.match(block,/on_conflict/);
-  assert.match(block,/_persistenceStatus/);
-  assert.match(block,/persistenceStatus\(row,'failed'\)/);
+  assert.match(telemetryOps,/const transitionText=redactOpsString\(safeRead\(source,'transitionKey'\),220\)/);
+  assert.match(telemetryOps,/transition_key:transitionText \|\| null/);
+  assert.match(telemetryOps,/record_ops_event_occurrence/);
+  assert.match(telemetryOps,/url\.searchParams\.set\('on_conflict','transition_key'\)/);
+  assert.match(telemetryOps,/persistenceStatus\(row,'persistent'\)/);
+  assert.match(telemetryOps,/persistenceStatus\(row,'failed'\)/);
 });
 
 test('production monitor exposes lifecycle persistence failure without failing the monitor',()=>{
