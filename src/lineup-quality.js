@@ -1,7 +1,11 @@
 import { createPlayerIdentityResolver } from './player-identity.js';
 
 function compactText(value = '') {
-  return String(value || '').trim().replace(/\s+/g, ' ');
+  if (typeof value !== 'string') return '';
+  return value
+    .normalize('NFKC')
+    .trim()
+    .replace(/\s+/gu, ' ');
 }
 
 function validGrid(value = '') {
@@ -328,17 +332,20 @@ export function assessMatchLineups(lineups = {}) {
   const homeStarters=Array.isArray(homeLineup?.startXI) ? homeLineup.startXI : [];
   const awayStarters=Array.isArray(awayLineup?.startXI) ? awayLineup.startXI : [];
   const resolver=createPlayerIdentityResolver([...homeStarters,...awayStarters]);
-  const explicitKeys = rows => new Set(
+  const resolvedKeys = rows => new Set(
     rows
       .map(player => resolver.resolve(player))
-      .filter(identity => identity.valid && identity.via === 'id' && identity.key)
+      .filter(identity => identity.valid && identity.key)
       .map(identity => identity.key),
   );
-  const homeIds=explicitKeys(homeStarters);
-  const awayIds=explicitKeys(awayStarters);
-  const crossTeamStarterOverlapCount=[...homeIds].filter(key => awayIds.has(key)).length;
+  const homeKeys=resolvedKeys(homeStarters);
+  const awayKeys=resolvedKeys(awayStarters);
+  const crossTeamStarterOverlapCount=[...homeKeys]
+    .filter(key => awayKeys.has(key))
+    .length;
   const structuralBothConfirmed=home.confirmed && away.confirmed;
-  const integrityConfirmed=structuralBothConfirmed && crossTeamStarterOverlapCount === 0;
+  const integrityConfirmed=structuralBothConfirmed
+    && crossTeamStarterOverlapCount === 0;
 
   return {
     home,
@@ -351,6 +358,6 @@ export function assessMatchLineups(lineups = {}) {
     crossTeamStarterOverlapCount,
     integrityConfirmed,
     reliabilityConfirmed: integrityConfirmed,
-    methodology: 'Состав считается подтверждённым только при 11 уникальных игроках стартового XI, отсутствии одного и того же явного player ID в обеих командах и надёжном свежем источнике. Stale-кэш или неизвестный provenance не повышают статус до подтверждённого.',
+    methodology: 'Состав считается подтверждённым только при 11 уникальных игроках стартового XI, отсутствии пересечения подтверждённых identity между командами и надёжном свежем источнике. Явный ID авторитетнее имени; однозначный name-alias используется только для fail-closed проверки пересечения. Stale-кэш или неизвестный provenance не повышают статус до подтверждённого.',
   };
 }
