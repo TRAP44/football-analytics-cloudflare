@@ -108,13 +108,19 @@ test('delta drill covers signal probability lineups and market',()=>{
 test('recheck response and analytics expose bounded delta metadata',()=>{
   assert.match(
     analysisRuntime,
-    /const recheckDelta=needsFreshnessRecheck \? analysisRecheckDelta\(staleBefore,payload\) : null/,
+    /let recheckDelta=null;[\s\S]{0,220}?if \(needsFreshnessRecheck\)[\s\S]{0,160}?analysisRecheckDelta\(staleBefore,payload\)/,
   );
   assert.match(analysisRuntime,/delta:recheckDelta/);
-
-  const event=/eventName:'analysis_recheck'[\s\S]{0,900}?metadata:\{free:freeRecheck,reason:previousFreshness\?\.reasonCode \|\| 'age_window',material:Boolean\(recheckDelta\?\.material\),stable:Boolean\(recheckDelta\?\.stable\),changeCount:Number\(recheckDelta\?\.items\?\.length \|\| 0\),codes:\(recheckDelta\?\.codes \|\| \[\]\)\.slice\(0,6\)\}/;
-  assert.match(analysisRuntime,event);
-  assert.doesNotMatch(event.source,/query|rawText/);
+  assert.match(
+    analysisRuntime,
+    /const deltaMetadata=delta=>\(\{[\s\S]{0,320}?material:delta\?\.material === true,[\s\S]{0,320}?stable:delta\?\.stable === true,[\s\S]{0,320}?changeCount:Math\.min\(6,[\s\S]{0,320}?codes:rowsOrEmpty\(delta\?\.codes,6\)/,
+  );
+  const event=analysisRuntime.slice(
+    analysisRuntime.indexOf("eventName:'analysis_recheck'"),
+    analysisRuntime.indexOf("if (trackFullAi)",analysisRuntime.indexOf("eventName:'analysis_recheck'")),
+  );
+  assert.match(event,/\.\.\.deltaMetadata\(recheckDelta\)/);
+  assert.doesNotMatch(event,/query|rawText/);
 });
 
 test('Telegram and Mini App explain what changed after recheck',()=>{
