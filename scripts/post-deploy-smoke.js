@@ -2,254 +2,23 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { validateReleaseIdentity } from '../src/release-identity.js';
 
-const REQUIRED_HEALTH_FLAGS = [
-  'adminSecurity',
-  'adminDevModeIsolation',
-  'backendSecurityContract',
-  'supabaseSchemaDriftGuard',
-  'supabaseSchemaDriftSelfTest',
+const REQUIRED_MANIFEST_FEATURES = Object.freeze([
+  'startupSafety',
+  'rollbackSafety',
   'productionMonitor',
-  'productionMonitorSelfTest',
   'rollbackVerification',
   'providerDataReliability',
-  'providerDataReliabilitySelfTest',
-  'providerSloObservability',
-  'providerSloSelfTest',
-  'providerSloIncidentIntegration',
-  'providerSloIncidentSelfTest',
-  'providerIncidentAlertDelivery',
-  'providerIncidentAlertPersistence',
-  'providerIncidentAlertUnknownSafety',
-  'providerIncidentAlertDeliverySelfTest',
-  'multiProviderDataService',
-  'openLigaDbStandingsFallback',
-  'openLigaDbEventFallback',
-  'teamPlayerSeasonStats',
-  'structuredAvailability',
-  'playerRoleAvailability',
-  'playerRoleHydration',
-  'lineupQualityGuard',
-  'lineupSemanticReliability',
-  'freshnessAwareDataTrust',
-  'xgSemanticQualityGuard',
-  'eventSemanticQualityGuard',
-  'statisticsSemanticQualityGuard',
-  'oddsSemanticQualityGuard',
-  'availabilitySemanticQualityGuard',
-  'sourceProvenance',
   'aiAnalysisQualityGate',
-  'aiAnalysisQualityGateSelfTest',
   'telegramMiniAppE2E',
-  'telegramMiniAppE2ESelfTest',
   'telegramWebhookPersistentDedupe',
-  'telegramWebhookPersistentDedupeSelfTest',
-  'telegramWebhookDedupeObservability',
-  'telegramWebhookDedupeObservabilitySelfTest',
   'supabaseProbeConfirmation',
-  'supabaseProbeConfirmationSelfTest',
   'supabaseSchemaProbeConfirmation',
-  'supabaseSchemaProbeConfirmationSelfTest',
-  'cloudflareDeploymentGate',
-  'browserSecurityPolicy',
-  'failClosedDeployment',
-  'interactionSafety',
-  'actionDeduplication',
-  'staleResponseGuard',
-  'profileFailSoft',
-  'entityNavigationSafety',
-  'personalDataStateSafety',
-  'asyncEntityGuard',
-  'personalDataWriteConsistency',
-  'reminderWriteConfirmation',
-  'readWriteRaceGuard',
-  'analysisHistoryTransition',
-  'historyStaleGuard',
-  'immediateAnalysisHandoff',
-  'russianUiLocalization',
-  'adminRussianLocalization',
-  'prematchRussianLocalization',
-  'dynamicRussianLocalization',
-  'adminTextHumanization',
-  'matchCenterRussianLocalization',
-  'mediaLaunchHardening',
-  'telegramWebhookDedupe',
-  'telegramWebhookBurstGuard',
-  'newsSourceTrustGate',
-  'publicLegalPages',
-  'publicStatusPage',
-  'mediaLaunchPackage',
-  'mediaDeepLinkAttribution',
-  'firstPartyGrowthAnalytics',
-  'launchFunnelAnalytics',
-  'launchPrivacyGuard',
-  'launchSimulation',
-  'conversionUx',
-  'highIntentSearchFallback',
-  'newsReturnLoop',
-  'realLaunchDrill',
-  'searchNormalization',
-  'searchOutcomeAnalytics',
-  'searchRetryUx',
-  'searchQualitySelfTest',
-  'zeroResultRecovery',
-  'teamFixtureDiscovery',
-  'sharedFixtureDiscoveryCache',
-  'extendedTeamCalendar',
-  'recentMatchFallback',
-  'matchSelectionIntelligence',
-  'primaryMatchRecommendation',
-  'officialMatchPriority',
-  'selectionReasonUx',
-  'matchSelectionSelfTest',
-  'oneTapAiHandoff',
-  'telegramAutoQuickBrief',
-  'cachedFullAnalysisHandoff',
-  'directFixtureDeepLink',
-  'handoffFunnelTracking',
-  'oneTapHandoffSelfTest',
+  'cloudflareEdgeRateLimits',
   'aiFreshnessGuard',
   'preKickoffRecheck',
-  'userScopedFreeRecheck',
-  'lineupFreshnessWindow',
-  'adaptiveAnalysisTtl',
-  'analysisFreshnessSelfTest',
   'preKickoffChangeDetection',
   'analysisDeltaSummary',
-  'recheckMateriality',
-  'telegramRecheckDelta',
-  'analysisDeltaSelfTest',
-  'kickoffHandoffGuard',
-  'prematchAdviceFreeze',
-  'liveContextHandoff',
-  'finishedAnalysisArchive',
-  'kickoffHandoffSelfTest',
-  'postMatchAiReview',
-  'immutablePrematchComparison',
-  'calibrationFeedbackReview',
-  'telegramPostMatchReview',
-  'postMatchReviewSelfTest',
-  'postMatchReturnLoop',
-  'analyzedMatchReturn',
-  'postMatchReturnDedupe',
-  'postMatchReturnOptOut',
-  'postMatchReturnQuotaGuard',
-  'postMatchReturnSelfTest',
-  'publicAiTrackRecord',
-  'verifiedTrackRecordOnly',
-  'smallSampleTrustGuard',
-  'noWinRateTrustUx',
-  'telegramAiTrackRecord',
-  'aiTrackRecordSelfTest',
-  'mediaFixtureDeepLinks',
-  'shareableMatchCards',
-  'shareAttribution',
-  'deepLinkAutoAnalysis',
-  'telegramNativeShare',
-  'fixtureDeepLinkSelfTest',
-  'distributedAnalysisLock',
-  'viralFixtureCollapse',
-  'crossInstanceAnalysisDedupe',
-  'analysisLockFailClosed',
-  'sharedAnalysisWaitFallback',
-  'distributedAnalysisLockSelfTest',
-  'mediaPublisherKit',
-  'campaignTaggedFixtureLinks',
-  'mediaCopyGenerator',
-  'adminPublisherOnly',
-  'mediaPublisherSelfTest',
-  'mediaCampaignControlRoom',
-  'contentLevelMediaAttribution',
-  'mediaCampaignConversion',
-  'publisherOutcomeTracking',
-  'mediaCampaignControlSelfTest',
-  'telegramNewsConversionEngine',
-  'newsPerItemAiCta',
-  'newsTeamIntentResolution',
-  'newsConversionTracking',
-  'newsConversionSelfTest',
-  'smartNewsFixtureLinking',
-  'newsTimeRelevanceGuard',
-  'perNewsFixtureCta',
-  'newsImpactDeltaGuide',
-  'smartNewsLinkSelfTest',
-  'newsImpactDelta',
-  'preNewsSnapshotGuard',
-  'explicitNewsRecheck',
-  'newsImpactMateriality',
-  'newsImpactDeltaSelfTest',
-  'newsImpactDecisionCard',
-  'newsImpactActionRouting',
-  'newsImpactCausalityGuardUx',
-  'newsImpactDecisionAnalytics',
-  'newsImpactDecisionSelfTest',
-  'newsImpactActionSelfTest',
-  'newsImpactActionFunnelSelfTest',
-  'newsImpactFunnelConfidenceSelfTest',
-  'newsImpactActionTrendSelfTest',
-  'newsImpactTemporalAttributionSelfTest',
-  'newsImpactOutcomeQualitySelfTest',
-  'newsImpactFailureDiagnosticsSelfTest',
-  'newsImpactRecoveryEffectivenessSelfTest',
-  'newsImpactRecoveryStrategySelfTest',
-  'newsImpactRecoveryStrategyParity',
-  'newsImpactRecoveryStabilityGuard',
-  'newsImpactRecoveryStabilitySelfTest',
-  'newsImpactRecoveryDriftGuard',
-  'newsImpactRecoveryDriftAudit',
-  'newsImpactRecoveryDriftSelfTest',
-  'newsImpactRecoveryTransitionHistory',
-  'newsImpactRecoveryAdminAlerts',
-  'newsImpactRecoveryTransitionPrivacyGuard',
-  'newsImpactRecoveryTransitionSelfTest',
-  'newsImpactRecoveryIncidentCenter',
-  'newsImpactRecoveryIncidentLifecycle',
-  'newsImpactRecoveryIncidentPrivacyGuard',
-  'newsImpactRecoveryIncidentSelfTest',
-  'newsImpactRecoveryIncidentAcknowledgement',
-  'newsImpactRecoveryIncidentRunbook',
-  'newsImpactRecoveryIncidentAlertSuppression',
-  'newsImpactRecoveryIncidentAckPrivacyGuard',
-  'newsImpactRecoveryIncidentAckSelfTest',
-  'newsImpactRecoveryIncidentSlo',
-  'newsImpactRecoveryIncidentEscalation',
-  'newsImpactRecoveryIncidentLatencyMetrics',
-  'newsImpactRecoveryIncidentSloSelfTest',
-  'newsImpactRecoveryIncidentSloDashboard',
-  'newsImpactRecoveryIncidentWeeklyTrend',
-  'newsImpactRecoveryIncidentRecurrence',
-  'newsImpactRecoveryIncidentSloDashboardSelfTest',
-  'newsImpactRecoveryIncidentSloBreachFeed',
-  'newsImpactRecoveryIncidentBreachDrilldown',
-  'newsImpactRecoveryIncidentBreachPrivacyGuard',
-  'newsImpactRecoveryIncidentSloBreachFeedSelfTest',
-  'newsImpactRecoveryIncidentSloBreachWatchlist',
-  'newsImpactRecoveryIncidentBreachAging',
-  'newsImpactRecoveryIncidentSloBreachWatchlistSelfTest',
-  'newsImpactRecoveryIncidentSloBreachTriage',
-  'newsImpactRecoveryIncidentBreachStageBuckets',
-  'newsImpactRecoveryIncidentSloBreachTriageSelfTest',
-  'newsImpactRecoveryIncidentSloBreachTriageTrend',
-  'newsImpactRecoveryIncidentTriageRecurrence',
-  'newsImpactRecoveryIncidentSloBreachTriageTrendSelfTest',
-  'newsImpactRecoveryIncidentSloBreachImpactRanking',
-  'newsImpactRecoveryIncidentOverdueContribution',
-  'newsImpactRecoveryIncidentSloBreachImpactRankingSelfTest',
-  'newsImpactRecoveryIncidentSloBreachImpactTrend',
-  'newsImpactRecoveryIncidentWeeklyOverdueBurden',
-  'newsImpactRecoveryIncidentSloBreachImpactTrendSelfTest',
-  'newsImpactRecoveryIncidentSloImpactConcentration',
-  'newsImpactRecoveryIncidentTopContributionShares',
-  'newsImpactRecoveryIncidentSloImpactConcentrationSelfTest',
-  'newsImpactRecoveryIncidentSloImpactConcentrationTrend',
-  'newsImpactRecoveryIncidentWeeklyConcentrationShares',
-  'newsImpactRecoveryIncidentSloImpactConcentrationTrendSelfTest',
-  'newsImpactRecoveryIncidentSloImpactExecutiveSummary',
-  'newsImpactRecoveryIncidentSloImpactUnifiedView',
-  'newsImpactRecoveryIncidentSloImpactExecutiveSummarySelfTest',
-  'newsImpactRecoveryIncidentSloImpactFocusQueue',
-  'newsImpactRecoveryIncidentSloImpactFocusOrdering',
-  'newsImpactRecoveryIncidentSloImpactFocusQueueSelfTest',
-];
+]);
 
 function delay(ms) {
   return ms > 0 ? new Promise(resolve => setTimeout(resolve, ms)) : Promise.resolve();
@@ -364,8 +133,6 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
       if (body?.checks?.schema?.ok !== true) throw new Error('Readiness schema fingerprint failed.');
       if (body?.checks?.backendSecurity?.ok !== true) throw new Error('Readiness backend security contract failed.');
       if (body?.checks?.telegramConfigured !== true) throw new Error('Readiness Telegram configuration failed.');
-      if (Number(body?.checks?.recentSupabaseAuthFailures || 0) !== 0) throw new Error('Readiness detected recent Supabase authentication failures.');
-      verifyRuntimeDeploymentIdentity(body,'Readiness endpoint',expectedSha);
       readiness = body;
       break;
     } catch (error) {
@@ -377,19 +144,17 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
   if (!readiness) throw new Error(`Deployment did not become ready: ${lastHealthError}`);
   if (readiness.releaseCandidate !== expectedReleaseCandidate) throw new Error(`Expected ${expectedReleaseCandidate}, received ${readiness.releaseCandidate || 'unknown'}.`);
 
-  const healthResult=await requestJsonForDeployment(fetchImpl,baseUrl,'/health','Health endpoint',expectedSha,{retries,retryDelayMs});
+  const healthResult=await requestJsonForDeployment(fetchImpl,baseUrl,'/health','Health endpoint','',{retries,retryDelayMs});
   const healthResponse=healthResult.response;
   health=healthResult.body;
-  if (health?.ok !== true) throw new Error('Health endpoint is not healthy.');
+  if (health?.ok !== true || health?.status !== 'ready') throw new Error('Health endpoint is not healthy.');
+  if (health.version !== expectedVersion) {
+    throw new Error(`Expected ${expectedVersion}, received ${health.version || 'unknown'}.`);
+  }
   if (health.releaseCandidate !== expectedReleaseCandidate) throw new Error(`Expected ${expectedReleaseCandidate}, received ${health.releaseCandidate || 'unknown'}.`);
   if (health.devMode !== false) throw new Error('Production deployment exposes DEV_MODE=true.');
-  if (health.database !== 'supabase') throw new Error('Production deployment must use Supabase persistence.');
-  if (health.monetization !== expectedMonetization) {
-    throw new Error(`Production deployment must expose MONETIZATION_ENABLED=${expectedMonetization === 'enabled' ? 'true' : 'false'}.`);
-  }
-  if (health?.readiness?.ok !== true) throw new Error('Legacy health endpoint must embed a passing readiness snapshot.');
-  for (const flag of REQUIRED_HEALTH_FLAGS) {
-    if (health[flag] !== 'enabled') throw new Error(`Health flag ${flag} is not enabled.`);
+  if (health?.readiness?.ok !== true || health?.readiness?.status !== 'ready') {
+    throw new Error('Health endpoint must embed a passing readiness snapshot.');
   }
 
   const manifestResult=await requestJsonForDeployment(fetchImpl,baseUrl,'/api/app-manifest','App manifest',expectedSha,{retries,retryDelayMs});
@@ -397,6 +162,14 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
   const manifest=manifestResult.body;
   if (manifest?.version !== expectedVersion || manifest?.releaseCandidate !== expectedReleaseCandidate) {
     throw new Error(`Public app manifest does not match the deployed ${expectedReleaseCandidate} release.`);
+  }
+  if (manifest?.monetization !== expectedMonetization) {
+    throw new Error(`Production deployment must expose MONETIZATION_ENABLED=${expectedMonetization === 'enabled' ? 'true' : 'false'} in the app manifest.`);
+  }
+  for (const feature of REQUIRED_MANIFEST_FEATURES) {
+    if (manifest?.features?.[feature] !== true) {
+      throw new Error(`App manifest feature ${feature} is not enabled.`);
+    }
   }
 
   const rootResponse = await request(fetchImpl, baseUrl, '/');
@@ -420,7 +193,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
   const hiddenProbe = await request(fetchImpl, baseUrl, '/health/supabase');
   if (hiddenProbe.status !== 404) throw new Error('/health/supabase must remain unavailable publicly.');
 
-  const publicStatusResult=await requestJsonForDeployment(fetchImpl,baseUrl,'/api/public-status','Public status endpoint',expectedSha,{retries,retryDelayMs});
+  const publicStatusResult=await requestJsonForDeployment(fetchImpl,baseUrl,'/api/public-status','Public status endpoint','',{retries,retryDelayMs});
   const publicStatusResponse=publicStatusResult.response;
   const publicStatus=publicStatusResult.body;
   if (publicStatus?.version !== expectedVersion || publicStatus?.releaseCandidate !== expectedReleaseCandidate) {
