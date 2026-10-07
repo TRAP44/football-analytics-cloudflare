@@ -430,15 +430,16 @@ export function createBetaPhase5Runtime(deps) {
     const telegramConfirmed=root.telegramConfirmed===true;
     const productionMonitorHealthy=productionMonitor.state==='healthy';
     const expansionAllowed=expansionDecision.expansionAllowed===true;
-    const runtimeHealthy=Boolean(
+    const assignmentWaveValid=[2,4,6].includes(assignedUsers);
+    const runtimePrerequisitesHealthy=Boolean(
       supabaseOk
       && telegramConfirmed
       && productionMonitorHealthy
       && providerQuotaConfirmed
       && blockerCount===0
       && majorCount===0
-      && !quotaPressure
     );
+    const runtimeHealthy=runtimePrerequisitesHealthy && !quotaPressure;
 
     const providerValidationDecision=!wave1Observed
       ? 'collecting_expanded_beta'
@@ -447,29 +448,30 @@ export function createBetaPhase5Runtime(deps) {
         : 'keep_current_provider';
 
     let finalDecision='BETA HOLD';
-    if (expansionAllowed) {
-      if (!runtimeHealthy) {
+    if (expansionAllowed && assignmentWaveValid) {
+      if (!runtimePrerequisitesHealthy) {
         finalDecision='BETA HOLD';
       } else if (wave1Observed && providerValidationDecision==='review_new_or_paid_provider') {
         finalDecision='DATA PROVIDER UPGRADE REQUIRED';
-      } else if (expandedEvidenceEnough && providerValidationDecision==='keep_current_provider') {
+      } else if (expandedEvidenceEnough && runtimeHealthy && providerValidationDecision==='keep_current_provider') {
         finalDecision='BETA READY FOR PUBLIC PRE-LAUNCH';
       } else {
         finalDecision='BETA CONTINUE';
       }
     }
 
-    const nextWaveTarget=!expansionAllowed ? null
+    const nextWaveTarget=!expansionAllowed || !assignmentWaveValid ? null
       : verifiedUsers<4 ? 4
         : verifiedUsers<6 ? 6
           : null;
-    const currentAssignmentsObserved=assignedUsers>0 && verifiedUsers>=Math.min(assignedUsers,6);
+    const currentAssignmentsObserved=assignmentWaveValid && verifiedUsers>=assignedUsers;
     const canAddNextWave=Boolean(
       finalDecision==='BETA CONTINUE'
       && runtimeHealthy
       && nextWaveTarget
       && assignedUsers<nextWaveTarget
       && currentAssignmentsObserved
+      && nextWaveTarget-assignedUsers===2
       && providerValidationDecision!=='review_new_or_paid_provider'
     );
 
@@ -487,6 +489,7 @@ export function createBetaPhase5Runtime(deps) {
     const launchBlockerSet=new Set(launchBlockers);
     const fieldBlockers=[];
     if (assignedUsers<2) fieldBlockers.push('beta_users_not_assigned');
+    if (assignedUsers>=2 && !assignmentWaveValid) fieldBlockers.push('beta_assignment_wave_mismatch');
     if (verifiedUsers===0) fieldBlockers.push('verified_beta_telemetry_missing');
     if (!expansionAllowed) fieldBlockers.push('initial_expansion_gate_closed');
     for (const code of launchBlockers) if (!fieldBlockers.includes(code)) fieldBlockers.push(code);
@@ -498,7 +501,9 @@ export function createBetaPhase5Runtime(deps) {
 
     const nextRequiredAction=assignedUsers<2
       ? 'assign_real_beta_users'
-      : launchBlockerSet.has('beta_admin_overlap')
+      : !assignmentWaveValid
+        ? 'reconcile_beta_assignments'
+        : launchBlockerSet.has('beta_admin_overlap')
         ? 'remove_beta_admin_overlap'
         : launchBlockerSet.has('strict_beta_access_disabled')
           ? 'enable_strict_beta_access'
