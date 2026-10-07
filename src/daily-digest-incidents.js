@@ -102,9 +102,16 @@ function incidentId(date = '') {
 }
 
 export function buildDailyDigestIncidentReport(rows = [], { nowMs = Date.now() } = {}) {
+  const now=normalizedNowMs(nowMs);
   const events = (Array.isArray(rows) ? rows : [])
     .map(normalizeEvent)
-    .filter(event => event.at && isDailyDigestEvent(event) && (ALERTABLE_CODES.has(event.code) || HEALTHY_CODES.has(event.code)))
+    .filter(event => {
+      const at=trustedTimestampMs(event.at);
+      return at !== null
+        && at <= now + 60_000
+        && isDailyDigestEvent(event)
+        && (ALERTABLE_CODES.has(event.code) || HEALTHY_CODES.has(event.code));
+    })
     .sort((a,b) => Date.parse(a.at) - Date.parse(b.at));
 
   const byDate = new Map();
@@ -312,9 +319,13 @@ function digestLedgerSummary(rows = [], incidentId = '') {
 }
 
 export function summarizeDailyDigestOperationalStatus(rows = [], ledgerRows = [], { nowMs = Date.now() } = {}) {
+  const now=normalizedNowMs(nowMs);
   const events=(Array.isArray(rows) ? rows : [])
     .map(normalizeEvent)
-    .filter(event=>event.at && isDailyDigestEvent(event))
+    .filter(event=>{
+      const at=trustedTimestampMs(event.at);
+      return at !== null && at <= now + 60_000 && isDailyDigestEvent(event);
+    })
     .sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
   const latest=events.at(-1) || null;
   const latestMeta=latest?.metadata || {};
@@ -346,7 +357,7 @@ export function summarizeDailyDigestOperationalStatus(rows = [], ledgerRows = []
         : state==='healthy'
           ? 'Daily Digest работает штатно'
           : 'Нет данных о Daily Digest',
-    generatedAt:new Date(normalizedNowMs(nowMs)).toISOString(),
+    generatedAt:new Date(now).toISOString(),
     latestRun:latest ? {
       at:latest.at,
       code:latest.code,
