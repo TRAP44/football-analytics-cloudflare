@@ -484,6 +484,21 @@ export function createTelemetryOpsRuntime(deps = {}) {
           occurrenceCount:row.occurrence_count,
           lastOccurredAt:row.last_occurred_at,
         };
+
+        // The database is authoritative for deduplicated transition counts.
+        // Keep the in-memory copy aligned after concurrent or restarted writers.
+        if (memoryExisting) {
+          try {
+            memoryExisting.occurrence_count=row.occurrence_count;
+            memoryExisting.last_occurred_at=row.last_occurred_at;
+            memoryExisting.metadata={
+              ...safeOpsMetadata(safeRead(memoryExisting,'metadata')),
+              occurrenceCount:row.occurrence_count,
+              lastOccurredAt:row.last_occurred_at,
+            };
+          } catch {}
+        }
+
         persistenceStatus(row,'persistent');
         return row;
       } catch {
