@@ -18,7 +18,7 @@ test('RC130 maps only explicitly supported competitions to official The Odds API
   assert.equal(theOddsSportKey(39),'soccer_epl');
   assert.equal(theOddsSportKey(2),'soccer_uefa_champs_league');
   assert.equal(theOddsSportKey(999999),'');
-  assert.match(theOddsApiUrl(39),/sports\\/soccer_epl\\/odds/);
+  assert.match(theOddsApiUrl(39),/sports\/soccer_epl\/odds/);
   assert.match(theOddsApiUrl(39),/markets=h2h/);
   assert.doesNotMatch(theOddsApiUrl(39),/apiKey=/);
 });
@@ -113,41 +113,41 @@ test('RC130 rejects a different fixture instead of guessing by kickoff time',()=
 });
 
 test('RC130 configures The Odds API only as an optional server-side fallback',()=>{
-  assert.match(commonInfrastructure,/theOddsApiKey:\\s*env\\.THE_ODDS_API_KEY\\s*\\|\\|\\s*''/);
+  assert.match(commonInfrastructure,/theOddsApiKey:\s*env\.THE_ODDS_API_KEY\s*\|\|\s*''/);
   assert.match(envExample,/^THE_ODDS_API_KEY=$/m);
   assert.match(teamTournamentRuntime,/async function secondaryOddsMarket/);
-  assert.match(teamTournamentRuntime,/const apiKey=safeText\\(cfg\\?\\.theOddsApiKey,\\s*500\\)/);
-  assert.match(teamTournamentRuntime,/if \\(!apiKey\\) return \\{ available:false, reason:'token_not_configured'/);
-  assert.match(teamTournamentRuntime,/claimSecondaryProviderBudget\\(cfg,\\s*'the-odds-api',\\s*8\\)/);
-  assert.match(teamTournamentRuntime,/url\\.searchParams\\.set\\('apiKey',\\s*apiKey\\)/);
+  assert.match(teamTournamentRuntime,/const apiKey=safeText\(cfg\?\.theOddsApiKey,\s*500\)/);
+  assert.match(teamTournamentRuntime,/if \(!apiKey\) return \{ available:false, reason:'token_not_configured'/);
+  assert.match(teamTournamentRuntime,/claimSecondaryProviderBudget\(cfg,\s*'the-odds-api',\s*8\)/);
+  assert.match(teamTournamentRuntime,/url\.searchParams\.set\('apiKey',\s*apiKey\)/);
 });
 
 test('RC130 isolates prematch and live fallback caches so live odds cannot reuse a longer-lived prematch entry',()=>{
   assert.match(
     teamTournamentRuntime,
-    /secondary-odds:\\$\\{fixtureId\\}:the-odds-api:\\$\\{feature\\}:v2/,
+    /secondary-odds:\$\{fixtureId\}:the-odds-api:\$\{feature\}:v2/,
   );
   assert.doesNotMatch(
     teamTournamentRuntime,
-    /secondary-odds:\\$\\{fixtureId\\}:the-odds-api:v1/,
+    /secondary-odds:\$\{fixtureId\}:the-odds-api:v1/,
   );
-  assert.match(teamTournamentRuntime,/const ttlMinutes=mode === 'live' \\? 1 :/);
+  assert.match(teamTournamentRuntime,/const ttlMinutes=mode === 'live' \? 1 :/);
 });
 
 test('RC130 keeps the secondary market as fallback and RC143 also allows it after a structurally invalid primary market',()=>{
-  assert.match(analysisRuntime,/primaryMarket=objectValue\\(extractMarket\\(odds\\)\\)/);
-  assert.match(analysisRuntime,/assessOddsMarketQuality\\(primaryMarket,\\{/);
-  assert.match(analysisRuntime,/if \\(!\\(primaryMarket && primaryMarketShape\\.marketValid === true\\)\\) \\{/);
-  assert.match(analysisRuntime,/secondaryOddsMarket\\(fixture,cfg,\\{mode:'prematch'\\}\\)/);
-  assert.match(analysisRuntime,/const market=secondaryMarket \\|\\| primaryMarket/);
+  assert.match(analysisRuntime,/primaryMarket=objectValue\(extractMarket\(odds\)\)/);
+  assert.match(analysisRuntime,/assessOddsMarketQuality\(primaryMarket,\{/);
+  assert.match(analysisRuntime,/if \(!\(primaryMarket && primaryMarketShape\.marketValid === true\)\) \{/);
+  assert.match(analysisRuntime,/secondaryOddsMarket\(fixture,cfg,\{mode:'prematch'\}\)/);
+  assert.match(analysisRuntime,/const market=secondaryMarket \|\| primaryMarket/);
 
-  assert.match(matchCenterRuntime,/if \\(!primaryLiveOdds \\|\\| primaryLiveShape\\.marketValid!==true\\) \\{/);
-  assert.match(matchCenterRuntime,/optionalAsync\\(secondaryOddsMarket,fixture,cfg,\\{mode:'live'\\}\\)/);
+  assert.match(matchCenterRuntime,/if \(!primaryLiveOdds \|\| primaryLiveShape\.marketValid!==true\) \{/);
+  assert.match(matchCenterRuntime,/optionalAsync\(secondaryOddsMarket,fixture,cfg,\{mode:'live'\}\)/);
 });
 
 test('RC130 marks unusable raw odds as unavailable instead of pretending a market exists',()=>{
   assert.match(teamTournamentRuntime,/function usableOddsFeatureMeta/);
-  assert.match(teamTournamentRuntime,/reason:safeText\\(meta\\?\\.reason,\\s*160\\) \\|\\| '1x2_market_missing'/);
+  assert.match(teamTournamentRuntime,/reason:safeText\(meta\?\.reason,\s*160\) \|\| '1x2_market_missing'/);
   assert.match(analysisRuntime,/odds:resolvedOddsMeta/);
 });
 
@@ -157,8 +157,8 @@ test('RC130 needs no odds-fallback DDL because RC129 snapshots already persist p
   const v620=fs.readFileSync('supabase/migrations/supabase_migration_v6_20.sql','utf8');
   assert.match(
     v619,
-    /alter table public\\.odds_snapshots[\\s\\S]*add column if not exists provider[\\s\\S]*bookmaker_count[\\s\\S]*source_updated_at/,
+    /alter table public\.odds_snapshots[\s\S]*add column if not exists provider[\s\S]*bookmaker_count[\s\S]*source_updated_at/,
   );
   assert.match(v620,/provider_incident_alert_deliveries/);
-  assert.doesNotMatch(v620,/alter\\s+table\\s+public\\.odds_snapshots/i);
+  assert.doesNotMatch(v620,/alter\s+table\s+public\.odds_snapshots/i);
 });
