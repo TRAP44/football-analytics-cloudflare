@@ -2544,6 +2544,264 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   }
   
   
+  function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents = [], acknowledgements = [], evidenceReason = 'ok', options = {}) {
+    const priorityRank={critical:0,high:1,medium:2,low:3};
+    const safeOptions=options && typeof options==='object' && !Array.isArray(options) ? options : {};
+    const optionAsOf=newsImpactFiniteNumber(safeOptions.asOfMs);
+    const asOfMs=optionAsOf ?? Date.now();
+    const safeStrategies=Array.isArray(strategyRows)
+      ? strategyRows.filter(row=>row && typeof row==='object' && !Array.isArray(row) && typeof row.reason==='string' && row.reason && typeof row.action==='string' && row.action)
+      : [];
+    const safeEvents=Array.isArray(incidentEvents)
+      ? incidentEvents.filter(row=>row && typeof row==='object' && !Array.isArray(row))
+      : [];
+    const safeAcknowledgements=Array.isArray(acknowledgements)
+      ? acknowledgements.filter(row=>row && typeof row==='object' && !Array.isArray(row))
+      : [];
+    const current=new Map(safeStrategies.map(row=>[row.reason+'|'+row.action,row]));
+    const ackMap=new Map(
+      safeAcknowledgements
+        .filter(row=>typeof row.reason==='string' && typeof row.action==='string' && typeof row.code==='string')
+        .map(row=>[newsImpactRecoveryIncidentKey(row.reason,row.action,row.code),row]),
+    );
+    const groups=new Map();
+
+    for (const event of safeEvents) {
+      const reason=typeof event.reason==='string' ? event.reason : '';
+      const action=typeof event.action==='string' ? event.action : '';
+      const code=typeof event.guardReason==='string' && NEWS_IMPACT_RECOVERY_INCIDENT_CODES?.has?.(event.guardReason)
+        ? event.guardReason
+        : '';
+      const at=typeof event.at==='string' ? event.at : '';
+      if (!reason || !action || !code || !Number.isFinite(Date.parse(at))) continue;
+      const key=newsImpactRecoveryIncidentKey(reason,action,code);
+      const bucket=groups.get(key) || {
+        code,
+        priority:event.priority==='high' || event.priority==='medium' ? event.priority : (code==='performance_drift' ? 'high' : 'medium'),
+        reason,
+        reasonLabel:newsImpactText(event.reasonLabel,reason),
+        action,
+        actionLabel:newsImpactText(event.actionLabel,action),
+        firstSeenAt:at,
+        lastSeenAt:at,
+        occurrences:0,
+        lastStrategy:event.strategy==='adaptive' ? 'adaptive' : 'fixed',
+        lastRecovery:newsImpactText(event.recovery),
+        lastRecoveryLabel:newsImpactText(event.recoveryLabel,newsImpactText(event.recovery)),
+        episodeStartedAt:newsImpactText(event.episodeStartedAt,at),
+        episodeLastSeenAt:newsImpactText(event.episodeLastSeenAt,at),
+        episodeRecoveredAt:newsImpactText(event.episodeRecoveredAt) || null,
+        episodeOccurrences:Math.max(1,newsImpactCount(event.episodeOccurrences)),
+      };
+      bucket.occurrences+=1;
+      if (Date.parse(at)<Date.parse(bucket.firstSeenAt)) bucket.firstSeenAt=at;
+      if (Date.parse(at)>Date.parse(bucket.lastSeenAt)) {
+        bucket.lastSeenAt=at;
+        bucket.lastStrategy=event.strategy==='adaptive' ? 'adaptive' : bucket.lastStrategy;
+        bucket.lastRecovery=newsImpactText(event.recovery,bucket.lastRecovery);
+        bucket.lastRecoveryLabel=newsImpactText(event.recoveryLabel,bucket.lastRecoveryLabel);
+        bucket.episodeStartedAt=newsImpactText(event.episodeStartedAt,at);
+        bucket.episodeLastSeenAt=newsImpactText(event.episodeLastSeenAt,at);
+        bucket.episodeRecoveredAt=newsImpactText(event.episodeRecoveredAt) || null;
+        bucket.episodeOccurrences=Math.max(1,newsImpactCount(event.episodeOccurrences));
+      }
+      groups.set(key,bucket);
+    }
+
+    const withAcknowledgement=(item,active,currentOnly=false)=>{
+      const ack=ackMap.get(newsImpactRecoveryIncidentKey(item.reason,item.action,item.code)) || null;
+      const ackSeenAt=newsImpactText(ack?.incidentSeenAt);
+      const ackAt=newsImpactText(ack?.acknowledgedAt);
+      const acknowledged=active===true
+        && currentOnly!==true
+        && typeof item.lastSeenAt==='string'
+        && Boolean(ack)
+        && ackSeenAt===item.lastSeenAt
+        && Number.isFinite(Date.parse(ackAt))
+        && Date.parse(ackAt)>=Date.parse(item.lastSeenAt);
+      const status=active===true ? 'active' : 'recovered';
+      const startedAt=newsImpactText(item.episodeStartedAt,newsImpactText(item.firstSeenAt)) || null;
+      const lastEpisodeSeenAt=newsImpactText(item.episodeLastSeenAt,newsImpactText(item.lastSeenAt)) || null;
+      const recoveredAt=active===true ? null : (newsImpactText(item.episodeRecoveredAt) || null);
+      const startedMs=startedAt ? Date.parse(startedAt) : NaN;
+      const recoveredMs=recoveredAt ? Date.parse(recoveredAt) : NaN;
+      const acknowledgedMs=acknowledged ? Date.parse(ackAt) : NaN;
+      const ageMinutes=active===true && Number.isFinite(startedMs)
+        ? Math.max(0,Math.floor((asOfMs-startedMs)/60000))
+        : null;
+      const ackLatencyMinutes=acknowledged && Number.isFinite(startedMs) && Number.isFinite(acknowledgedMs)
+        ? Math.max(0,Math.round((acknowledgedMs-startedMs)/60000))
+        : null;
+      const recoveryLatencyMinutes=active!==true && Number.isFinite(startedMs) && Number.isFinite(recoveredMs)
+        ? Math.max(0,Math.round((recoveredMs-startedMs)/60000))
+        : null;
+      const ackStatus=currentOnly===true || !Number.isFinite(startedMs)
+        ? 'unavailable'
+        : acknowledged
+          ? (Number(ackLatencyMinutes || 0)<=NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES ? 'met' : 'breached')
+          : active===true
+            ? (Number(ageMinutes || 0)>=NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES ? 'breached' : 'pending')
+            : 'unavailable';
+      const recoveryStatus=currentOnly===true || !Number.isFinite(startedMs)
+        ? 'unavailable'
+        : active===true
+          ? (Number(ageMinutes || 0)>=NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES ? 'breached' : 'pending')
+          : Number.isFinite(recoveredMs)
+            ? (Number(recoveryLatencyMinutes || 0)<=NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES ? 'met' : 'breached')
+            : 'unavailable';
+      let effectivePriority=item.priority==='high' || item.priority==='medium' ? item.priority : 'medium';
+      let escalationReason='';
+      if (active===true && recoveryStatus==='breached') {
+        effectivePriority='critical';
+        escalationReason='recovery_slo_breach';
+      } else if (active===true && !acknowledged && Number(ageMinutes || 0)>=NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES) {
+        effectivePriority='critical';
+        escalationReason='ack_critical_overdue';
+      } else if (active===true && !acknowledged && ackStatus==='breached') {
+        effectivePriority=effectivePriority==='medium' ? 'high' : 'critical';
+        escalationReason='ack_slo_breach';
+      }
+      return {
+        ...item,
+        status,
+        acknowledged,
+        acknowledgedAt:acknowledged ? ackAt : null,
+        alertSuppressed:acknowledged,
+        canAcknowledge:Boolean(active===true && currentOnly!==true && item.lastSeenAt && NEWS_IMPACT_RECOVERY_INCIDENT_CODES?.has?.(item.code)),
+        runbook:newsImpactRecoveryIncidentRunbook(item.code),
+        currentOnly:currentOnly===true,
+        effectivePriority,
+        escalated:effectivePriority!==(item.priority || 'medium'),
+        escalationReason,
+        slo:{
+          startedAt,
+          lastSeenAt:lastEpisodeSeenAt,
+          recoveredAt,
+          ageMinutes,
+          ackTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
+          ackCriticalMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
+          recoveryTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,
+          ackLatencyMinutes,
+          recoveryLatencyMinutes,
+          ackStatus,
+          recoveryStatus,
+        },
+      };
+    };
+
+    const rows=[...groups.values()].map(item=>{
+      const now=current.get(item.reason+'|'+item.action) || null;
+      const active=Boolean(now && typeof now.guardReason==='string' && now.guardReason===item.code);
+      return withAcknowledgement({
+        ...item,
+        currentStrategy:now?.strategy==='adaptive' ? 'adaptive' : (now ? 'fixed' : ''),
+        currentRecovery:newsImpactText(now?.selectedRecovery),
+        currentRecoveryLabel:newsImpactText(now?.selectedRecoveryLabel,newsImpactText(now?.selectedRecovery)),
+        currentGuardReason:newsImpactText(now?.guardReason),
+      },active,false);
+    });
+
+    for (const now of safeStrategies) {
+      if (typeof now.guardReason!=='string' || !NEWS_IMPACT_RECOVERY_INCIDENT_CODES?.has?.(now.guardReason)) continue;
+      const exists=rows.some(x=>x.reason===now.reason && x.action===now.action && x.code===now.guardReason && x.status==='active');
+      if (exists) continue;
+      rows.push(withAcknowledgement({
+        code:now.guardReason,
+        priority:now.guardReason==='performance_drift' ? 'high' : 'medium',
+        reason:now.reason,
+        reasonLabel:newsImpactText(now.reasonLabel,now.reason),
+        action:now.action,
+        actionLabel:newsImpactText(now.actionLabel,now.action),
+        firstSeenAt:null,
+        lastSeenAt:null,
+        occurrences:0,
+        lastStrategy:now.strategy==='adaptive' ? 'adaptive' : 'fixed',
+        lastRecovery:newsImpactText(now.selectedRecovery),
+        lastRecoveryLabel:newsImpactText(now.selectedRecoveryLabel,newsImpactText(now.selectedRecovery)),
+        currentStrategy:now.strategy==='adaptive' ? 'adaptive' : 'fixed',
+        currentRecovery:newsImpactText(now.selectedRecovery),
+        currentRecoveryLabel:newsImpactText(now.selectedRecoveryLabel,newsImpactText(now.selectedRecovery)),
+        currentGuardReason:now.guardReason,
+      },true,true));
+    }
+
+    const safeEvidenceReason=typeof evidenceReason==='string' ? evidenceReason : 'evidence_unavailable';
+    if (safeEvidenceReason!=='ok') {
+      rows.unshift({
+        code:'strategy_evidence_unavailable',
+        priority:'medium',
+        reason:'',
+        reasonLabel:'Recovery Strategy',
+        action:'',
+        actionLabel:'',
+        firstSeenAt:null,
+        lastSeenAt:null,
+        occurrences:0,
+        lastStrategy:'fixed',
+        lastRecovery:'',
+        lastRecoveryLabel:'',
+        status:'active',
+        currentStrategy:'fixed',
+        currentRecovery:'',
+        currentRecoveryLabel:'',
+        currentGuardReason:safeEvidenceReason || 'evidence_unavailable',
+        currentOnly:true,
+        acknowledged:false,
+        acknowledgedAt:null,
+        alertSuppressed:false,
+        canAcknowledge:false,
+        runbook:newsImpactRecoveryIncidentRunbook('strategy_evidence_unavailable'),
+        effectivePriority:'medium',
+        escalated:false,
+        escalationReason:'',
+        slo:{
+          startedAt:null,lastSeenAt:null,recoveredAt:null,ageMinutes:null,
+          ackTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
+          ackCriticalMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
+          recoveryTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,
+          ackLatencyMinutes:null,recoveryLatencyMinutes:null,ackStatus:'unavailable',recoveryStatus:'unavailable',
+        },
+      });
+    }
+
+    return rows.sort((a,b)=>(a.status==='active'?0:1)-(b.status==='active'?0:1)
+      || (a.acknowledged?1:0)-(b.acknowledged?1:0)
+      || (priorityRank[a.effectivePriority || a.priority] ?? 9)-(priorityRank[b.effectivePriority || b.priority] ?? 9)
+      || (Date.parse(b.lastSeenAt || 0)-Date.parse(a.lastSeenAt || 0))
+      || a.reason.localeCompare(b.reason)
+      || a.action.localeCompare(b.action))
+      .slice(0,30);
+  }
+
+  function summarizeNewsImpactRecoveryIncidents(rows = []) {
+    const list=Array.isArray(rows)
+      ? rows.filter(row=>row && typeof row==='object' && !Array.isArray(row))
+      : [];
+    const ackLatencies=list.map(x=>newsImpactNonNegativeNumber(x?.slo?.ackLatencyMinutes,NaN)).filter(Number.isFinite);
+    const recoveryLatencies=list.map(x=>newsImpactNonNegativeNumber(x?.slo?.recoveryLatencyMinutes,NaN)).filter(Number.isFinite);
+    return {
+      total:list.length,
+      active:list.filter(x=>x.status==='active').length,
+      recovered:list.filter(x=>x.status==='recovered').length,
+      highActive:list.filter(x=>x.status==='active' && x.priority==='high').length,
+      mediumActive:list.filter(x=>x.status==='active' && x.priority==='medium').length,
+      acknowledgedActive:list.filter(x=>x.status==='active' && x.acknowledged===true).length,
+      unacknowledgedActive:list.filter(x=>x.status==='active' && x.acknowledged!==true).length,
+      suppressedAlerts:list.filter(x=>x.status==='active' && x.alertSuppressed===true).length,
+      escalatedActive:list.filter(x=>x.status==='active' && x.escalated===true).length,
+      criticalActive:list.filter(x=>x.status==='active' && x.effectivePriority==='critical').length,
+      ackSloBreached:list.filter(x=>x.status==='active' && x?.slo?.ackStatus==='breached').length,
+      recoverySloBreached:list.filter(x=>x.status==='active' && x?.slo?.recoveryStatus==='breached').length,
+      ackMeasured:ackLatencies.length,
+      recoveryMeasured:recoveryLatencies.length,
+      avgAckMinutes:ackLatencies.length ? Math.round((ackLatencies.reduce((a,b)=>a+b,0)/ackLatencies.length)*10)/10 : null,
+      avgRecoveryMinutes:recoveryLatencies.length ? Math.round((recoveryLatencies.reduce((a,b)=>a+b,0)/recoveryLatencies.length)*10)/10 : null,
+      latest:list
+        .filter(x=>typeof x.lastSeenAt==='string' && Number.isFinite(Date.parse(x.lastSeenAt)))
+        .sort((a,b)=>Date.parse(b.lastSeenAt)-Date.parse(a.lastSeenAt))[0] || null,
+    };
+  }
+
   function newsImpactRecoveryIncidentSloImpactConcentrationDrill() {
     const ranking={
       available:true,
