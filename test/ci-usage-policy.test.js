@@ -15,7 +15,7 @@ test('CI usage policy keeps external monitoring hourly with immediate post-deplo
 });
 
 test('Quality cancels superseded PR runs without cancelling trusted main gates',()=>{
-  assert.match(quality,/group: quality-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/);
+  assert.match(quality,/group: quality-\$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.number \|\| github\.sha \}\}/);
   assert.match(quality,/cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
   assert.doesNotMatch(quality,/cancel-in-progress: true/);
   assert.match(quality,/paths-ignore:[\s\S]*"docs\/\*\*"[\s\S]*"\*\*\/\*\.md"/);
@@ -67,7 +67,14 @@ test('closed pull requests cancel queued self-hosted CI without consuming a runn
 });
 
 
-test('closed merged PR events cannot cancel current-main security checks',()=>{
+test('main Quality runs use commit-scoped concurrency while security checks keep PR-scoped cancellation',()=>{
+  assert.match(
+    quality,
+    /group: quality-\$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.number \|\| github\.sha \}\}/,
+  );
+  assert.match(quality,/cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
+
+  
   assert.match(
     codeql,
     /group: codeql-\$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/,
