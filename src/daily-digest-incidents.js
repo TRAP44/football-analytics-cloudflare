@@ -9,9 +9,35 @@ const HEALTHY_CODES = new Set([
   'DAILY_DIGEST_CLAIMS_RECOVERED',
 ]);
 
+function finiteNumberCandidate(value) {
+  if (value === null || value === undefined || typeof value === 'boolean') return null;
+  if (typeof value === 'string' && !value.trim()) return null;
+  const number=Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function trustedTimestampMs(value) {
+  if (value instanceof Date) {
+    const ms=value.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const raw=value.trim();
+  const calendar=/^(\d{4})-(\d{2})-(\d{2})(?:$|T|\s)/.exec(raw);
+  if (!calendar) return null;
+  const year=Number(calendar[1]);
+  const month=Number(calendar[2]);
+  const day=Number(calendar[3]);
+  if (!Number.isSafeInteger(year) || month<1 || month>12 || day<1) return null;
+  const maxDay=new Date(Date.UTC(year,month,0)).getUTCDate();
+  if (day>maxDay) return null;
+  const ms=Date.parse(raw);
+  return Number.isFinite(ms) ? ms : null;
+}
+
 function iso(value) {
-  const ms = Date.parse(String(value || ''));
-  return Number.isFinite(ms) ? new Date(ms).toISOString() : '';
+  const ms=trustedTimestampMs(value);
+  return ms === null ? '' : new Date(ms).toISOString();
 }
 
 function objectRecord(value) {
@@ -19,37 +45,47 @@ function objectRecord(value) {
 }
 
 function nonNegativeCount(value) {
-  const number = Number(value);
-  return Number.isFinite(number) && number >= 0 ? Math.floor(number) : 0;
+  const number=finiteNumberCandidate(value);
+  return number !== null && Number.isSafeInteger(number) && number >= 0 ? number : 0;
 }
 
 function nonNegativeNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) && number >= 0 ? number : 0;
+  const number=finiteNumberCandidate(value);
+  return number !== null && number >= 0 ? number : 0;
 }
 
 function boundedRate(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : null;
+  const number=finiteNumberCandidate(value);
+  return number !== null && number >= 0 && number <= 1 ? number : null;
 }
 
 function normalizedNowMs(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : Date.now();
+  const number=finiteNumberCandidate(value);
+  return number !== null && number >= 0 && number <= 8.64e15 ? number : Date.now();
 }
 
 function normalizedWindowDays(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? Math.max(1, Math.min(30, Math.floor(number))) : 7;
+  const number=finiteNumberCandidate(value);
+  return number !== null ? Math.max(1, Math.min(30, Math.floor(number))) : 7;
 }
 
 function normalizeEvent(row = {}) {
+  const source=String(row?.source || '');
+  const eventType=String(row?.event_type || row?.eventType || '');
   return {
-    at: iso(row.created_at || row.createdAt || row.at),
-    code: String(row.code || ''),
-    severity: String(row.severity || ''),
-    metadata: objectRecord(row.metadata),
+    at: iso(row?.created_at || row?.createdAt || row?.at),
+    source,
+    eventType,
+    code: String(row?.code || ''),
+    severity: String(row?.severity || ''),
+    metadata: objectRecord(row?.metadata),
   };
+}
+
+function isDailyDigestEvent(event = {}) {
+  return event.source === 'telegram'
+    && event.eventType === 'daily_digest'
+    && event.code.startsWith('DAILY_DIGEST_');
 }
 
 function dateForEvent(event = {}) {
@@ -68,7 +104,7 @@ function incidentId(date = '') {
 export function buildDailyDigestIncidentReport(rows = [], { nowMs = Date.now() } = {}) {
   const events = (Array.isArray(rows) ? rows : [])
     .map(normalizeEvent)
-    .filter(event => event.at && (ALERTABLE_CODES.has(event.code) || HEALTHY_CODES.has(event.code)))
+    .filter(event => event.at && isDailyDigestEvent(event) && (ALERTABLE_CODES.has(event.code) || HEALTHY_CODES.has(event.code)))
     .sort((a,b) => Date.parse(a.at) - Date.parse(b.at));
 
   const byDate = new Map();
@@ -278,7 +314,7 @@ function digestLedgerSummary(rows = [], incidentId = '') {
 export function summarizeDailyDigestOperationalStatus(rows = [], ledgerRows = [], { nowMs = Date.now() } = {}) {
   const events=(Array.isArray(rows) ? rows : [])
     .map(normalizeEvent)
-    .filter(event=>event.at)
+    .filter(event=>event.at && isDailyDigestEvent(event))
     .sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
   const latest=events.at(-1) || null;
   const latestMeta=latest?.metadata || {};
@@ -365,7 +401,7 @@ export function summarizeDailyDigestReliability(rows = [], { days = 7, nowMs = D
       return Number.isFinite(atMs)
         && atMs>=startMs
         && atMs<=endMs
-        && event.code.startsWith('DAILY_DIGEST_');
+        && isDailyDigestEvent(event);
     })
     .sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
 
@@ -532,8 +568,10 @@ export function assessDailyDigestReliabilitySlo(rows = [], {
 } = {}) {
   const now=normalizedNowMs(nowMs);
   const date=utcDate(now);
-  const normalized=(Array.isArray(rows) ? rows : []).map(normalizeEvent).filter(event=>event.at);
-  const todayEvents=normalized.filter(event=>dateForEvent(event)===date && event.code.startsWith('DAILY_DIGEST_'));
+  const normalized=(Array.isArray(rows) ? rows : [])
+    .map(normalizeEvent)
+    .filter(event=>event.at && isDailyDigestEvent(event));
+  const todayEvents=normalized.filter(event=>dateForEvent(event)===date);
   const latestSuccessfulDigestRun=[...normalized]
     .filter(event=>event.code==='DAILY_DIGEST_RUN_OK' || event.code==='DAILY_DIGEST_RUN_EMPTY')
     .sort((a,b)=>Date.parse(a.at)-Date.parse(b.at))
