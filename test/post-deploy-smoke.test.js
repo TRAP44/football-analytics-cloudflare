@@ -2,424 +2,214 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runDeploymentSmoke } from '../scripts/post-deploy-smoke.js';
 
-const deploySha = '0123456789abcdef0123456789abcdef01234567';
-const deploymentIdentity = {
-  deploySha,
-  cloudflareVersionId: '11111111-2222-3333-4444-555555555555',
-  cloudflareVersionTag: deploySha,
-  cloudflareVersionTimestamp: '2026-09-29T12:36:17.000Z',
+const VERSION='6.27.0-rc35';
+const RC='RC35';
+const DEPLOY_SHA='0123456789abcdef0123456789abcdef01234567';
+const deploymentIdentity={
+  deploySha:DEPLOY_SHA,
+  cloudflareVersionId:'11111111-2222-3333-4444-555555555555',
+  cloudflareVersionTag:DEPLOY_SHA,
+  cloudflareVersionTimestamp:'2026-09-29T12:36:17.000Z',
 };
 
-const json = (body, status = 200) => new Response(JSON.stringify(body), {
+const REQUIRED_FEATURES=[
+  'startupSafety',
+  'rollbackSafety',
+  'productionMonitor',
+  'rollbackVerification',
+  'providerDataReliability',
+  'aiAnalysisQualityGate',
+  'telegramMiniAppE2E',
+  'telegramWebhookPersistentDedupe',
+  'supabaseProbeConfirmation',
+  'supabaseSchemaProbeConfirmation',
+  'cloudflareEdgeRateLimits',
+  'aiFreshnessGuard',
+  'preKickoffRecheck',
+  'preKickoffChangeDetection',
+  'analysisDeltaSummary',
+];
+
+const json=(body,status=200)=>new Response(JSON.stringify(body),{
   status,
-  headers: { 'content-type': 'application/json' },
+  headers:{'content-type':'application/json'},
 });
 
-function healthyFetch({ staleOnce = false, devMode = false, monetization = 'paused', database = 'supabase', serviceOverrides = {} } = {}) {
-  let healthCalls = 0;
-  return async input => {
-    const url = new URL(input);
-    if (url.pathname === '/health/ready') {
-      healthCalls += 1;
-      const version=staleOnce && healthCalls===1 ? '6.12.0-rc20' : '6.27.0-rc35';
+function manifestFeatures(overrides={}) {
+  return Object.fromEntries(REQUIRED_FEATURES.map(name=>[name,true]).concat(Object.entries(overrides)));
+}
+
+function healthyFetch({
+  staleReadyOnce=false,
+  devMode=false,
+  monetization='paused',
+  deployment=deploymentIdentity,
+  featureOverrides={},
+  serviceOverrides={},
+  healthStatus='ready',
+}={}) {
+  let readyCalls=0;
+  return async input=>{
+    const url=new URL(input);
+
+    if(url.pathname==='/health/ready'){
+      readyCalls+=1;
+      const version=staleReadyOnce && readyCalls===1 ? '6.26.0-rc34' : VERSION;
       return json({
-        ok:true,status:'ready',version,releaseCandidate:'RC35',deployment:deploymentIdentity,checks:{
-          supabase:{ok:true,status:'ok',attempts:1},
-          schema:{ok:true,status:'ok',fingerprint:'abc',expectedFingerprint:'abc'},
+        ok:true,
+        status:'ready',
+        version,
+        releaseCandidate:RC,
+        checks:{
+          supabase:{ok:true,status:'ok'},
+          schema:{ok:true,status:'ok'},
           backendSecurity:{ok:true,status:'ok'},
           telegramConfigured:true,
-          recentSupabaseAuthFailures:0,
         },
       });
     }
-    if (url.pathname === '/health') {
-      healthCalls += 1;
+
+    if(url.pathname==='/health'){
       return json({
-        ok: true,
-        readiness:{ok:true,status:'ready'},
-        version: staleOnce && healthCalls === 1 ? '6.12.0-rc20' : '6.27.0-rc35',
-        releaseCandidate: 'RC35',
-        deployment: deploymentIdentity,
+        ok:healthStatus==='ready',
+        status:healthStatus,
+        version:VERSION,
+        releaseCandidate:RC,
         devMode,
-        database,
+        readiness:{ok:healthStatus==='ready',status:healthStatus},
+      },healthStatus==='ready'?200:503);
+    }
+
+    if(url.pathname==='/api/app-manifest'){
+      return json({
+        version:VERSION,
+        releaseCandidate:RC,
+        deployment,
         monetization,
-        adminSecurity: 'enabled',
-        adminDevModeIsolation: 'enabled',
-        backendSecurityContract: 'enabled',
-        supabaseSchemaDriftGuard: 'enabled',
-        supabaseSchemaDriftSelfTest: 'enabled',
-        productionMonitor: 'enabled',
-        productionMonitorSelfTest: 'enabled',
-        rollbackVerification: 'enabled',
-        providerDataReliability: 'enabled',
-        providerDataReliabilitySelfTest: 'enabled',
-        providerSloObservability: 'enabled',
-        providerSloSelfTest: 'enabled',
-        providerSloIncidentIntegration: 'enabled',
-        providerSloIncidentSelfTest: 'enabled',
-        providerIncidentAlertDelivery: 'enabled',
-        providerIncidentAlertPersistence: 'enabled',
-        providerIncidentAlertUnknownSafety: 'enabled',
-        providerIncidentAlertDeliverySelfTest: 'enabled',
-        multiProviderDataService: 'enabled',
-        openLigaDbStandingsFallback: 'enabled',
-        openLigaDbEventFallback: 'enabled',
-        teamPlayerSeasonStats: 'enabled',
-        structuredAvailability: 'enabled',
-        playerRoleAvailability: 'enabled',
-        playerRoleHydration: 'enabled',
-        lineupQualityGuard: 'enabled',
-        lineupSemanticReliability: 'enabled',
-        freshnessAwareDataTrust: 'enabled',
-        xgSemanticQualityGuard: 'enabled',
-        eventSemanticQualityGuard: 'enabled',
-        statisticsSemanticQualityGuard: 'enabled',
-        oddsSemanticQualityGuard: 'enabled',
-        availabilitySemanticQualityGuard: 'enabled',
-        sourceProvenance: 'enabled',
-        aiAnalysisQualityGate: 'enabled',
-        aiAnalysisQualityGateSelfTest: 'enabled',
-        telegramMiniAppE2E: 'enabled',
-        telegramMiniAppE2ESelfTest: 'enabled',
-        telegramWebhookPersistentDedupe: 'enabled',
-        telegramWebhookPersistentDedupeSelfTest: 'enabled',
-        telegramWebhookDedupeObservability: 'enabled',
-        telegramWebhookDedupeObservabilitySelfTest: 'enabled',
-        supabaseProbeConfirmation: 'enabled',
-        supabaseProbeConfirmationSelfTest: 'enabled',
-        supabaseSchemaProbeConfirmation: 'enabled',
-        supabaseSchemaProbeConfirmationSelfTest: 'enabled',
-        cloudflareDeploymentGate: 'enabled',
-        browserSecurityPolicy: 'enabled',
-        failClosedDeployment: 'enabled',
-        interactionSafety: 'enabled',
-        actionDeduplication: 'enabled',
-        staleResponseGuard: 'enabled',
-        profileFailSoft: 'enabled',
-        entityNavigationSafety: 'enabled',
-        personalDataStateSafety: 'enabled',
-        asyncEntityGuard: 'enabled',
-        personalDataWriteConsistency: 'enabled',
-        reminderWriteConfirmation: 'enabled',
-        readWriteRaceGuard: 'enabled',
-        analysisHistoryTransition: 'enabled',
-        historyStaleGuard: 'enabled',
-        immediateAnalysisHandoff: 'enabled',
-        russianUiLocalization: 'enabled',
-        adminRussianLocalization: 'enabled',
-        prematchRussianLocalization: 'enabled',
-        dynamicRussianLocalization: 'enabled',
-        adminTextHumanization: 'enabled',
-        matchCenterRussianLocalization: 'enabled',
-        mediaLaunchHardening: 'enabled',
-        telegramWebhookDedupe: 'enabled',
-        telegramWebhookBurstGuard: 'enabled',
-        newsSourceTrustGate: 'enabled',
-        publicLegalPages: 'enabled',
-        publicStatusPage: 'enabled',
-        mediaLaunchPackage: 'enabled',
-        mediaDeepLinkAttribution: 'enabled',
-        firstPartyGrowthAnalytics: 'enabled',
-        launchFunnelAnalytics: 'enabled',
-        launchPrivacyGuard: 'enabled',
-        launchSimulation: 'enabled',
-        conversionUx: 'enabled',
-        highIntentSearchFallback: 'enabled',
-        newsReturnLoop: 'enabled',
-        realLaunchDrill: 'enabled',
-        searchNormalization: 'enabled',
-        searchOutcomeAnalytics: 'enabled',
-        searchRetryUx: 'enabled',
-        searchQualitySelfTest: 'enabled',
-        zeroResultRecovery: 'enabled',
-        teamFixtureDiscovery: 'enabled',
-        sharedFixtureDiscoveryCache: 'enabled',
-        extendedTeamCalendar: 'enabled',
-        recentMatchFallback: 'enabled',
-        matchSelectionIntelligence: 'enabled',
-        primaryMatchRecommendation: 'enabled',
-        officialMatchPriority: 'enabled',
-        selectionReasonUx: 'enabled',
-        matchSelectionSelfTest: 'enabled',
-        oneTapAiHandoff: 'enabled',
-        telegramAutoQuickBrief: 'enabled',
-        cachedFullAnalysisHandoff: 'enabled',
-        directFixtureDeepLink: 'enabled',
-        handoffFunnelTracking: 'enabled',
-        oneTapHandoffSelfTest: 'enabled',
-        aiFreshnessGuard: 'enabled',
-        preKickoffRecheck: 'enabled',
-        userScopedFreeRecheck: 'enabled',
-        lineupFreshnessWindow: 'enabled',
-        adaptiveAnalysisTtl: 'enabled',
-        analysisFreshnessSelfTest: 'enabled',
-        preKickoffChangeDetection: 'enabled',
-        analysisDeltaSummary: 'enabled',
-        recheckMateriality: 'enabled',
-        telegramRecheckDelta: 'enabled',
-        analysisDeltaSelfTest: 'enabled',
-        kickoffHandoffGuard: 'enabled',
-        prematchAdviceFreeze: 'enabled',
-        liveContextHandoff: 'enabled',
-        finishedAnalysisArchive: 'enabled',
-        kickoffHandoffSelfTest: 'enabled',
-        postMatchAiReview: 'enabled',
-        immutablePrematchComparison: 'enabled',
-        calibrationFeedbackReview: 'enabled',
-        telegramPostMatchReview: 'enabled',
-        postMatchReviewSelfTest: 'enabled',
-        postMatchReturnLoop: 'enabled',
-        analyzedMatchReturn: 'enabled',
-        postMatchReturnDedupe: 'enabled',
-        postMatchReturnOptOut: 'enabled',
-        postMatchReturnQuotaGuard: 'enabled',
-        postMatchReturnSelfTest: 'enabled',
-        publicAiTrackRecord: 'enabled',
-        verifiedTrackRecordOnly: 'enabled',
-        smallSampleTrustGuard: 'enabled',
-        noWinRateTrustUx: 'enabled',
-        telegramAiTrackRecord: 'enabled',
-        aiTrackRecordSelfTest: 'enabled',
-        mediaFixtureDeepLinks: 'enabled',
-        shareableMatchCards: 'enabled',
-        shareAttribution: 'enabled',
-        deepLinkAutoAnalysis: 'enabled',
-        telegramNativeShare: 'enabled',
-        fixtureDeepLinkSelfTest: 'enabled',
-        distributedAnalysisLock: 'enabled',
-        viralFixtureCollapse: 'enabled',
-        crossInstanceAnalysisDedupe: 'enabled',
-        analysisLockFailClosed: 'enabled',
-        sharedAnalysisWaitFallback: 'enabled',
-        distributedAnalysisLockSelfTest: 'enabled',
-        mediaPublisherKit: 'enabled',
-        campaignTaggedFixtureLinks: 'enabled',
-        mediaCopyGenerator: 'enabled',
-        adminPublisherOnly: 'enabled',
-        mediaPublisherSelfTest: 'enabled',
-        mediaCampaignControlRoom: 'enabled',
-        contentLevelMediaAttribution: 'enabled',
-        mediaCampaignConversion: 'enabled',
-        publisherOutcomeTracking: 'enabled',
-        mediaCampaignControlSelfTest: 'enabled',
-        telegramNewsConversionEngine: 'enabled',
-        newsPerItemAiCta: 'enabled',
-        newsTeamIntentResolution: 'enabled',
-        newsConversionTracking: 'enabled',
-        newsConversionSelfTest: 'enabled',
-        smartNewsFixtureLinking: 'enabled',
-        newsTimeRelevanceGuard: 'enabled',
-        perNewsFixtureCta: 'enabled',
-        newsImpactDeltaGuide: 'enabled',
-        smartNewsLinkSelfTest: 'enabled',
-        newsImpactDelta: 'enabled',
-        preNewsSnapshotGuard: 'enabled',
-        explicitNewsRecheck: 'enabled',
-        newsImpactMateriality: 'enabled',
-        newsImpactDeltaSelfTest: 'enabled',
-        newsImpactDecisionCard: 'enabled',
-        newsImpactActionRouting: 'enabled',
-        newsImpactCausalityGuardUx: 'enabled',
-        newsImpactDecisionAnalytics: 'enabled',
-        newsImpactDecisionSelfTest: 'enabled',
-        newsImpactActionTracking: 'enabled',
-        newsImpactActionAttribution: 'enabled',
-        newsImpactActionAnalytics: 'enabled',
-        newsImpactActionSelfTest: 'enabled',
-        newsImpactActionFunnel: 'enabled',
-        newsImpactDecisionConversion: 'enabled',
-        newsImpactActionBottleneck: 'enabled',
-        newsImpactActionFunnelSelfTest: 'enabled',
-        newsImpactFunnelConfidenceGuard: 'enabled',
-        newsImpactWilsonInterval: 'enabled',
-        newsImpactSampleGate: 'enabled',
-        newsImpactFunnelConfidenceSelfTest: 'enabled',
-        newsImpactFunnelTrend: 'enabled',
-        newsImpactPeriodComparison: 'enabled',
-        newsImpactTrendSignificanceGuard: 'enabled',
-        newsImpactActionTrendSelfTest: 'enabled',
-        newsImpactTemporalAttribution: 'enabled',
-        newsImpactActionWindowGuard: 'enabled',
-        newsImpactMaturityGuard: 'enabled',
-        newsImpactBoundaryAttribution: 'enabled',
-        newsImpactTemporalAttributionSelfTest: 'enabled',
-        newsImpactActionOutcomeTracking: 'enabled',
-        newsImpactOutcomeTemporalGuard: 'enabled',
-        newsImpactOutcomeQualityAnalytics: 'enabled',
-        newsImpactOutcomeMeaningGuard: 'enabled',
-        newsImpactOutcomeQualitySelfTest: 'enabled',
-        newsImpactOutcomeFailureTracking: 'enabled',
-        newsImpactFailureTaxonomy: 'enabled',
-        newsImpactRecoveryUx: 'enabled',
-        newsImpactFailurePrivacyGuard: 'enabled',
-        newsImpactFailureDiagnosticsSelfTest: 'enabled',
-        newsImpactRecoveryAttemptTracking: 'enabled',
-        newsImpactRecoveryEffectiveness: 'enabled',
-        newsImpactRecoveryMaturityGuard: 'enabled',
-        newsImpactRecoverySampleGuard: 'enabled',
-        newsImpactRecoveryEffectivenessSelfTest: 'enabled',
-        newsImpactRecoveryStrategyGuard: 'enabled',
-        newsImpactAdaptiveRecovery: 'enabled',
-        newsImpactFixedFallbackGuard: 'enabled',
-        newsImpactRecoveryStrategyCache: 'enabled',
-        newsImpactRecoveryStrategySelfTest: 'enabled',
-        newsImpactRecoveryStrategyParity: 'enabled',
-        newsImpactRecoveryStabilityGuard: 'enabled',
-        newsImpactRecoveryStabilitySelfTest: 'enabled',
-        newsImpactRecoveryDriftGuard: 'enabled',
-        newsImpactRecoveryDriftAudit: 'enabled',
-        newsImpactRecoveryDriftSelfTest: 'enabled',
-        newsImpactRecoveryTransitionHistory: 'enabled',
-        newsImpactRecoveryAdminAlerts: 'enabled',
-        newsImpactRecoveryTransitionPrivacyGuard: 'enabled',
-        newsImpactRecoveryTransitionSelfTest: 'enabled',
-        newsImpactRecoveryIncidentCenter: 'enabled',
-        newsImpactRecoveryIncidentLifecycle: 'enabled',
-        newsImpactRecoveryIncidentPrivacyGuard: 'enabled',
-        newsImpactRecoveryIncidentSelfTest: 'enabled',
-        newsImpactRecoveryIncidentAcknowledgement: 'enabled',
-        newsImpactRecoveryIncidentRunbook: 'enabled',
-        newsImpactRecoveryIncidentAlertSuppression: 'enabled',
-        newsImpactRecoveryIncidentAckPrivacyGuard: 'enabled',
-        newsImpactRecoveryIncidentAckSelfTest: 'enabled',
-        newsImpactRecoveryIncidentSlo: 'enabled',
-        newsImpactRecoveryIncidentEscalation: 'enabled',
-        newsImpactRecoveryIncidentLatencyMetrics: 'enabled',
-        newsImpactRecoveryIncidentSloSelfTest: 'enabled',
-        newsImpactRecoveryIncidentSloDashboard: 'enabled',
-        newsImpactRecoveryIncidentWeeklyTrend: 'enabled',
-        newsImpactRecoveryIncidentRecurrence: 'enabled',
-        newsImpactRecoveryIncidentSloDashboardSelfTest: 'enabled',
-        newsImpactRecoveryIncidentSloBreachFeed: 'enabled',
-        newsImpactRecoveryIncidentBreachDrilldown: 'enabled',
-        newsImpactRecoveryIncidentBreachPrivacyGuard: 'enabled',
-        newsImpactRecoveryIncidentSloBreachFeedSelfTest: 'enabled',
-        newsImpactRecoveryIncidentSloBreachWatchlist: 'enabled',
-        newsImpactRecoveryIncidentBreachAging: 'enabled',
-        newsImpactRecoveryIncidentSloBreachWatchlistSelfTest: 'enabled',
-        newsImpactRecoveryIncidentSloBreachTriage: 'enabled',
-        newsImpactRecoveryIncidentBreachStageBuckets: 'enabled',
-        newsImpactRecoveryIncidentSloBreachTriageSelfTest: 'enabled',
-        newsImpactRecoveryIncidentSloBreachTriageTrend: 'enabled',
-        newsImpactRecoveryIncidentTriageRecurrence: 'enabled',
-        newsImpactRecoveryIncidentSloBreachTriageTrendSelfTest: 'enabled',
-        newsImpactRecoveryIncidentSloBreachImpactRanking: 'enabled',
-        newsImpactRecoveryIncidentOverdueContribution: 'enabled',
-        newsImpactRecoveryIncidentSloBreachImpactRankingSelfTest: 'enabled',
-        newsImpactRecoveryIncidentSloBreachImpactTrend: 'enabled',
-        newsImpactRecoveryIncidentWeeklyOverdueBurden: 'enabled',
-        newsImpactRecoveryIncidentSloBreachImpactTrendSelfTest: 'enabled',
-        newsImpactRecoveryIncidentSloImpactConcentration: 'enabled',
-        newsImpactRecoveryIncidentTopContributionShares: 'enabled',
-        newsImpactRecoveryIncidentSloImpactConcentrationSelfTest: 'enabled',
-        newsImpactRecoveryIncidentSloImpactConcentrationTrend: 'enabled',
-        newsImpactRecoveryIncidentWeeklyConcentrationShares: 'enabled',
-        newsImpactRecoveryIncidentSloImpactConcentrationTrendSelfTest: 'enabled',
-        newsImpactRecoveryIncidentSloImpactExecutiveSummary: 'enabled',
-        newsImpactRecoveryIncidentSloImpactUnifiedView: 'enabled',
-        newsImpactRecoveryIncidentSloImpactExecutiveSummarySelfTest: 'enabled',
-        newsImpactRecoveryIncidentSloImpactFocusQueue: 'enabled',
-        newsImpactRecoveryIncidentSloImpactFocusOrdering: 'enabled',
-        newsImpactRecoveryIncidentSloImpactFocusQueueSelfTest: 'enabled',
+        features:manifestFeatures(featureOverrides),
       });
     }
-    if (url.pathname === '/api/app-manifest') return json({ version: '6.27.0-rc35', releaseCandidate: 'RC35', deployment: deploymentIdentity });
-    if (url.pathname === '/api/public-status') return json({
-      ok:true,
-      status:'operational',
-      version:'6.27.0-rc35',
-      releaseCandidate:'RC35',
-      deployment:deploymentIdentity,
-      services:{
-        telegram:'operational',
-        miniApp:'operational',
-        aiAnalysis:'operational',
-        search:'operational',
-        live:'operational',
-        ...serviceOverrides,
-      },
-    });
-    if (['/privacy.html','/terms.html','/status.html'].includes(url.pathname)) return new Response('<!doctype html>', { status:200, headers:{
-      'content-type':'text/html; charset=UTF-8',
-      'content-security-policy':"default-src 'self'; object-src 'none'",
-    }});
-    if (url.pathname === '/status.js') return new Response('export {};', { status:200, headers:{
-      'content-type':'text/javascript; charset=UTF-8',
-    }});
-    if (url.pathname === '/telegram/webhook') return json({ ok:false },403);
-    if (url.pathname === '/') return new Response('<!doctype html>', { status: 200, headers: {
-      'content-type': 'text/html; charset=UTF-8',
-      'content-security-policy': "default-src 'self'; script-src 'self' https://telegram.org; object-src 'none'",
-      'x-content-type-options': 'nosniff',
-    } });
-    if (url.pathname === '/health/supabase') return json({ error: 'not found' }, 404);
-    if (url.pathname.startsWith('/api/')) return json({ error: 'Telegram auth required' }, 401);
-    return json({ error: 'not found' }, 404);
+
+    if(url.pathname==='/api/public-status'){
+      return json({
+        ok:true,
+        status:'operational',
+        version:VERSION,
+        releaseCandidate:RC,
+        services:{
+          telegram:'operational',
+          miniApp:'operational',
+          aiAnalysis:'operational',
+          search:'operational',
+          live:'operational',
+          ...serviceOverrides,
+        },
+      });
+    }
+
+    if(url.pathname==='/'){
+      return new Response('<!doctype html>',{
+        status:200,
+        headers:{
+          'content-type':'text/html; charset=UTF-8',
+          'content-security-policy':"default-src 'self'; script-src 'self' https://telegram.org; object-src 'none'",
+          'x-content-type-options':'nosniff',
+        },
+      });
+    }
+
+    if(['/privacy.html','/terms.html','/status.html'].includes(url.pathname)){
+      return new Response('<!doctype html>',{
+        status:200,
+        headers:{
+          'content-type':'text/html; charset=UTF-8',
+          'content-security-policy':"default-src 'self'; object-src 'none'",
+        },
+      });
+    }
+
+    if(url.pathname==='/status.js'){
+      return new Response('export {};',{
+        status:200,
+        headers:{'content-type':'text/javascript; charset=UTF-8'},
+      });
+    }
+
+    if(url.pathname==='/telegram/webhook') return json({ok:false},403);
+    if(url.pathname==='/health/supabase') return json({error:'not found'},404);
+    if(url.pathname.startsWith('/api/')) return json({error:'Telegram auth required'},401);
+    return json({error:'not found'},404);
   };
 }
 
-
-function healthyFetchWithDeployment(identity) {
-  const base=healthyFetch();
-  const identityPaths=new Set(['/health/ready','/health','/api/app-manifest','/api/public-status']);
-  return async input=>{
-    const url=new URL(input);
-    const response=await base(input);
-    if(!identityPaths.has(url.pathname)) return response;
-    const body=await response.json();
-    return json({...body,deployment:identity},response.status);
-  };
-}
-
-test('post-deploy smoke validates RC35, security headers and protected routes', async () => {
-  const result = await runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', {
-    fetchImpl: healthyFetch(),
-    retries: 1,
-    retryDelayMs: 0,
+test('post-deploy smoke validates the minimal public health contract and current manifest capabilities',async()=>{
+  const result=await runDeploymentSmoke('https://football.example.test',VERSION,DEPLOY_SHA,{
+    fetchImpl:healthyFetch(),
+    retries:1,
+    retryDelayMs:0,
   });
-  assert.equal(result.ok, true);
-  assert.equal(result.checks, 25);
+
+  assert.equal(result.ok,true);
+  assert.equal(result.version,VERSION);
+  assert.equal(result.releaseCandidate,RC);
+  assert.equal(result.checks,25);
 });
 
-test('post-deploy smoke binds runtime Cloudflare identity to exact deploy SHA', async () => {
-  const result = await runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', deploySha, {
-    fetchImpl: healthyFetch(),
-    retries: 1,
-    retryDelayMs: 0,
-  });
-  assert.equal(result.ok, true);
+test('public health/readiness/status do not need deployment identity when manifest carries the verified revision',async()=>{
+  const fetchImpl=healthyFetch();
+  const seen=[];
+  const wrapped=async input=>{
+    const response=await fetchImpl(input);
+    const path=new URL(input).pathname;
+    if(['/health/ready','/health','/api/public-status'].includes(path)){
+      const body=await response.json();
+      seen.push({path,hasDeployment:Object.hasOwn(body,'deployment')});
+      return json(body,response.status);
+    }
+    return response;
+  };
 
+  const result=await runDeploymentSmoke('https://football.example.test',VERSION,DEPLOY_SHA,{
+    fetchImpl:wrapped,
+    retries:1,
+    retryDelayMs:0,
+  });
+
+  assert.equal(result.ok,true);
+  assert.deepEqual(seen,[
+    {path:'/health/ready',hasDeployment:false},
+    {path:'/health',hasDeployment:false},
+    {path:'/api/public-status',hasDeployment:false},
+  ]);
+});
+
+test('post-deploy smoke binds exact deployment SHA to the app manifest',async()=>{
   await assert.rejects(
-    runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', {
-      fetchImpl: healthyFetch(),
-      retries: 1,
-      retryDelayMs: 0,
+    runDeploymentSmoke('https://football.example.test',VERSION,'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',{
+      fetchImpl:healthyFetch(),
+      retries:1,
+      retryDelayMs:0,
     }),
     /deploy SHA does not match/,
   );
 });
 
-
-test('Issue #409 post-deploy smoke rejects malformed Cloudflare version IDs with the validator code', async () => {
+test('post-deploy smoke rejects malformed release identity from the app manifest',async()=>{
   await assert.rejects(
-    runDeploymentSmoke('https://football.example.test','6.27.0-rc35',deploySha,{
-      fetchImpl:healthyFetchWithDeployment({
-        ...deploymentIdentity,
-        cloudflareVersionId:'version-id',
+    runDeploymentSmoke('https://football.example.test',VERSION,DEPLOY_SHA,{
+      fetchImpl:healthyFetch({
+        deployment:{...deploymentIdentity,cloudflareVersionId:'not-a-version-id'},
       }),
       retries:1,
       retryDelayMs:0,
     }),
     /RELEASE_IDENTITY_CLOUDFLARE_VERSION_ID_INVALID/,
   );
-});
 
-test('Issue #409 post-deploy smoke rejects implausible future Cloudflare timestamps', async () => {
   await assert.rejects(
-    runDeploymentSmoke('https://football.example.test','6.27.0-rc35',deploySha,{
-      fetchImpl:healthyFetchWithDeployment({
-        ...deploymentIdentity,
-        cloudflareVersionTimestamp:'2099-01-01T00:00:00.000Z',
+    runDeploymentSmoke('https://football.example.test',VERSION,DEPLOY_SHA,{
+      fetchImpl:healthyFetch({
+        deployment:{...deploymentIdentity,cloudflareVersionTimestamp:'2099-01-01T00:00:00.000Z'},
       }),
       retries:1,
       retryDelayMs:0,
@@ -428,393 +218,74 @@ test('Issue #409 post-deploy smoke rejects implausible future Cloudflare timesta
   );
 });
 
-test('post-deploy smoke tolerates brief mixed-edge identity propagation across health endpoints', async () => {
-  let healthCalls=0;
-  const fetchImpl=async input=>{
-    const url=new URL(input);
-    if(url.pathname==='/health/ready'){
-      return json({
-        ok:true,status:'ready',version:'6.27.0-rc35',releaseCandidate:'RC35',deployment:deploymentIdentity,checks:{
-          supabase:{ok:true,status:'ok',attempts:1},
-          schema:{ok:true,status:'ok',fingerprint:'abc',expectedFingerprint:'abc'},
-          backendSecurity:{ok:true,status:'ok'},
-          telegramConfigured:true,
-          recentSupabaseAuthFailures:0,
-        },
-      });
-    }
-    if(url.pathname==='/health'){
-      healthCalls+=1;
-      const deployment=healthCalls===1
-        ? {...deploymentIdentity,deploySha:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',cloudflareVersionTag:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
-        : deploymentIdentity;
-      return json({
-        ok:true,
-        readiness:{ok:true,status:'ready'},
-        version:'6.27.0-rc35',
-        releaseCandidate:'RC35',
-        deployment,
-        devMode:false,
-        database:'supabase',
-        monetization:'paused',
-        adminSecurity:'enabled',
-        adminDevModeIsolation:'enabled',
-        backendSecurityContract:'enabled',
-        supabaseSchemaDriftGuard:'enabled',
-        supabaseSchemaDriftSelfTest:'enabled',
-        productionMonitor:'enabled',
-        productionMonitorSelfTest:'enabled',
-        rollbackVerification:'enabled',
-        providerDataReliability:'enabled',
-        providerDataReliabilitySelfTest:'enabled',
-        providerSloObservability:'enabled',
-        providerSloSelfTest:'enabled',
-        providerSloIncidentIntegration:'enabled',
-        providerSloIncidentSelfTest:'enabled',
-        providerIncidentAlertDelivery:'enabled',
-        providerIncidentAlertPersistence:'enabled',
-        providerIncidentAlertUnknownSafety:'enabled',
-        providerIncidentAlertDeliverySelfTest:'enabled',
-        multiProviderDataService:'enabled',
-        openLigaDbStandingsFallback:'enabled',
-        openLigaDbEventFallback:'enabled',
-        teamPlayerSeasonStats:'enabled',
-        structuredAvailability:'enabled',
-        playerRoleAvailability:'enabled',
-        playerRoleHydration:'enabled',
-        lineupQualityGuard:'enabled',
-        lineupSemanticReliability:'enabled',
-        freshnessAwareDataTrust:'enabled',
-        xgSemanticQualityGuard:'enabled',
-        eventSemanticQualityGuard:'enabled',
-        statisticsSemanticQualityGuard:'enabled',
-        oddsSemanticQualityGuard:'enabled',
-        availabilitySemanticQualityGuard:'enabled',
-        sourceProvenance:'enabled',
-        aiAnalysisQualityGate:'enabled',
-        aiAnalysisQualityGateSelfTest:'enabled',
-        telegramMiniAppE2E:'enabled',
-        telegramMiniAppE2ESelfTest:'enabled',
-        telegramWebhookPersistentDedupe:'enabled',
-        telegramWebhookPersistentDedupeSelfTest:'enabled',
-        telegramWebhookDedupeObservability:'enabled',
-        telegramWebhookDedupeObservabilitySelfTest:'enabled',
-        supabaseProbeConfirmation:'enabled',
-        supabaseProbeConfirmationSelfTest:'enabled',
-        supabaseSchemaProbeConfirmation:'enabled',
-        supabaseSchemaProbeConfirmationSelfTest:'enabled',
-        cloudflareDeploymentGate:'enabled',
-        browserSecurityPolicy:'enabled',
-        failClosedDeployment:'enabled',
-        interactionSafety:'enabled',
-        actionDeduplication:'enabled',
-        staleResponseGuard:'enabled',
-        profileFailSoft:'enabled',
-        entityNavigationSafety:'enabled',
-        personalDataStateSafety:'enabled',
-        asyncEntityGuard:'enabled',
-        personalDataWriteConsistency:'enabled',
-        reminderWriteConfirmation:'enabled',
-        readWriteRaceGuard:'enabled',
-        analysisHistoryTransition:'enabled',
-        historyStaleGuard:'enabled',
-        immediateAnalysisHandoff:'enabled',
-        russianUiLocalization:'enabled',
-        adminRussianLocalization:'enabled',
-        prematchRussianLocalization:'enabled',
-        dynamicRussianLocalization:'enabled',
-        adminTextHumanization:'enabled',
-        matchCenterRussianLocalization:'enabled',
-        mediaLaunchHardening:'enabled',
-        telegramWebhookDedupe:'enabled',
-        telegramWebhookBurstGuard:'enabled',
-        newsSourceTrustGate:'enabled',
-        publicLegalPages:'enabled',
-        publicStatusPage:'enabled',
-        mediaLaunchPackage:'enabled',
-        mediaDeepLinkAttribution:'enabled',
-        firstPartyGrowthAnalytics:'enabled',
-        launchFunnelAnalytics:'enabled',
-        launchPrivacyGuard:'enabled',
-        launchSimulation:'enabled',
-        conversionUx:'enabled',
-        highIntentSearchFallback:'enabled',
-        newsReturnLoop:'enabled',
-        realLaunchDrill:'enabled',
-        searchNormalization:'enabled',
-        searchOutcomeAnalytics:'enabled',
-        searchRetryUx:'enabled',
-        searchQualitySelfTest:'enabled',
-        zeroResultRecovery:'enabled',
-        teamFixtureDiscovery:'enabled',
-        sharedFixtureDiscoveryCache:'enabled',
-        extendedTeamCalendar:'enabled',
-        recentMatchFallback:'enabled',
-        matchSelectionIntelligence:'enabled',
-        primaryMatchRecommendation:'enabled',
-        officialMatchPriority:'enabled',
-        selectionReasonUx:'enabled',
-        matchSelectionSelfTest:'enabled',
-        oneTapAiHandoff:'enabled',
-        telegramAutoQuickBrief:'enabled',
-        cachedFullAnalysisHandoff:'enabled',
-        directFixtureDeepLink:'enabled',
-        handoffFunnelTracking:'enabled',
-        oneTapHandoffSelfTest:'enabled',
-        aiFreshnessGuard:'enabled',
-        preKickoffRecheck:'enabled',
-        userScopedFreeRecheck:'enabled',
-        lineupFreshnessWindow:'enabled',
-        adaptiveAnalysisTtl:'enabled',
-        analysisFreshnessSelfTest:'enabled',
-        preKickoffChangeDetection:'enabled',
-        analysisDeltaSummary:'enabled',
-        recheckMateriality:'enabled',
-        telegramRecheckDelta:'enabled',
-        analysisDeltaSelfTest:'enabled',
-        kickoffHandoffGuard:'enabled',
-        prematchAdviceFreeze:'enabled',
-        liveContextHandoff:'enabled',
-        finishedAnalysisArchive:'enabled',
-        kickoffHandoffSelfTest:'enabled',
-        postMatchAiReview:'enabled',
-        immutablePrematchComparison:'enabled',
-        calibrationFeedbackReview:'enabled',
-        telegramPostMatchReview:'enabled',
-        postMatchReviewSelfTest:'enabled',
-        postMatchReturnLoop:'enabled',
-        analyzedMatchReturn:'enabled',
-        postMatchReturnDedupe:'enabled',
-        postMatchReturnOptOut:'enabled',
-        postMatchReturnQuotaGuard:'enabled',
-        postMatchReturnSelfTest:'enabled',
-        publicAiTrackRecord:'enabled',
-        verifiedTrackRecordOnly:'enabled',
-        smallSampleTrustGuard:'enabled',
-        noWinRateTrustUx:'enabled',
-        telegramAiTrackRecord:'enabled',
-        aiTrackRecordSelfTest:'enabled',
-        mediaFixtureDeepLinks:'enabled',
-        shareableMatchCards:'enabled',
-        shareAttribution:'enabled',
-        deepLinkAutoAnalysis:'enabled',
-        telegramNativeShare:'enabled',
-        fixtureDeepLinkSelfTest:'enabled',
-        distributedAnalysisLock:'enabled',
-        viralFixtureCollapse:'enabled',
-        crossInstanceAnalysisDedupe:'enabled',
-        analysisLockFailClosed:'enabled',
-        sharedAnalysisWaitFallback:'enabled',
-        distributedAnalysisLockSelfTest:'enabled',
-        mediaPublisherKit:'enabled',
-        campaignTaggedFixtureLinks:'enabled',
-        mediaCopyGenerator:'enabled',
-        adminPublisherOnly:'enabled',
-        mediaPublisherSelfTest:'enabled',
-        mediaCampaignControlRoom:'enabled',
-        contentLevelMediaAttribution:'enabled',
-        mediaCampaignConversion:'enabled',
-        publisherOutcomeTracking:'enabled',
-        mediaCampaignControlSelfTest:'enabled',
-        telegramNewsConversionEngine:'enabled',
-        newsPerItemAiCta:'enabled',
-        newsTeamIntentResolution:'enabled',
-        newsConversionTracking:'enabled',
-        newsConversionSelfTest:'enabled',
-        smartNewsFixtureLinking:'enabled',
-        newsTimeRelevanceGuard:'enabled',
-        perNewsFixtureCta:'enabled',
-        newsImpactDeltaGuide:'enabled',
-        smartNewsLinkSelfTest:'enabled',
-        newsImpactDelta:'enabled',
-        preNewsSnapshotGuard:'enabled',
-        explicitNewsRecheck:'enabled',
-        newsImpactMateriality:'enabled',
-        newsImpactDeltaSelfTest:'enabled',
-        newsImpactDecisionCard:'enabled',
-        newsImpactActionRouting:'enabled',
-        newsImpactCausalityGuardUx:'enabled',
-        newsImpactDecisionAnalytics:'enabled',
-        newsImpactDecisionSelfTest:'enabled',
-        newsImpactActionTracking:'enabled',
-        newsImpactActionAttribution:'enabled',
-        newsImpactActionAnalytics:'enabled',
-        newsImpactActionSelfTest:'enabled',
-        newsImpactActionFunnel:'enabled',
-        newsImpactDecisionConversion:'enabled',
-        newsImpactActionBottleneck:'enabled',
-        newsImpactActionFunnelSelfTest:'enabled',
-        newsImpactFunnelConfidenceGuard:'enabled',
-        newsImpactWilsonInterval:'enabled',
-        newsImpactSampleGate:'enabled',
-        newsImpactFunnelConfidenceSelfTest:'enabled',
-        newsImpactFunnelTrend:'enabled',
-        newsImpactPeriodComparison:'enabled',
-        newsImpactTrendSignificanceGuard:'enabled',
-        newsImpactActionTrendSelfTest:'enabled',
-        newsImpactTemporalAttribution:'enabled',
-        newsImpactActionWindowGuard:'enabled',
-        newsImpactMaturityGuard:'enabled',
-        newsImpactBoundaryAttribution:'enabled',
-        newsImpactTemporalAttributionSelfTest:'enabled',
-        newsImpactActionOutcomeTracking:'enabled',
-        newsImpactOutcomeTemporalGuard:'enabled',
-        newsImpactOutcomeQualityAnalytics:'enabled',
-        newsImpactOutcomeMeaningGuard:'enabled',
-        newsImpactOutcomeQualitySelfTest:'enabled',
-        newsImpactOutcomeFailureTracking:'enabled',
-        newsImpactFailureTaxonomy:'enabled',
-        newsImpactRecoveryUx:'enabled',
-        newsImpactFailurePrivacyGuard:'enabled',
-        newsImpactFailureDiagnosticsSelfTest:'enabled',
-        newsImpactRecoveryAttemptTracking:'enabled',
-        newsImpactRecoveryEffectiveness:'enabled',
-        newsImpactRecoveryMaturityGuard:'enabled',
-        newsImpactRecoverySampleGuard:'enabled',
-        newsImpactRecoveryEffectivenessSelfTest:'enabled',
-        newsImpactRecoveryStrategyGuard:'enabled',
-        newsImpactAdaptiveRecovery:'enabled',
-        newsImpactFixedFallbackGuard:'enabled',
-        newsImpactRecoveryStrategyCache:'enabled',
-        newsImpactRecoveryStrategySelfTest:'enabled',
-        newsImpactRecoveryStrategyParity:'enabled',
-        newsImpactRecoveryStabilityGuard:'enabled',
-        newsImpactRecoveryStabilitySelfTest:'enabled',
-        newsImpactRecoveryDriftGuard:'enabled',
-        newsImpactRecoveryDriftAudit:'enabled',
-        newsImpactRecoveryDriftSelfTest:'enabled',
-        newsImpactRecoveryTransitionHistory:'enabled',
-        newsImpactRecoveryAdminAlerts:'enabled',
-        newsImpactRecoveryTransitionPrivacyGuard:'enabled',
-        newsImpactRecoveryTransitionSelfTest:'enabled',
-        newsImpactRecoveryIncidentCenter:'enabled',
-        newsImpactRecoveryIncidentLifecycle:'enabled',
-        newsImpactRecoveryIncidentPrivacyGuard:'enabled',
-        newsImpactRecoveryIncidentSelfTest:'enabled',
-        newsImpactRecoveryIncidentAcknowledgement:'enabled',
-        newsImpactRecoveryIncidentRunbook:'enabled',
-        newsImpactRecoveryIncidentAlertSuppression:'enabled',
-        newsImpactRecoveryIncidentAckPrivacyGuard:'enabled',
-        newsImpactRecoveryIncidentAckSelfTest:'enabled',
-        newsImpactRecoveryIncidentSlo:'enabled',
-        newsImpactRecoveryIncidentEscalation:'enabled',
-        newsImpactRecoveryIncidentLatencyMetrics:'enabled',
-        newsImpactRecoveryIncidentSloSelfTest:'enabled',
-        newsImpactRecoveryIncidentSloDashboard:'enabled',
-        newsImpactRecoveryIncidentWeeklyTrend:'enabled',
-        newsImpactRecoveryIncidentRecurrence:'enabled',
-        newsImpactRecoveryIncidentSloDashboardSelfTest:'enabled',
-        newsImpactRecoveryIncidentSloBreachFeed:'enabled',
-        newsImpactRecoveryIncidentBreachDrilldown:'enabled',
-        newsImpactRecoveryIncidentBreachPrivacyGuard:'enabled',
-        newsImpactRecoveryIncidentSloBreachFeedSelfTest:'enabled',
-        newsImpactRecoveryIncidentSloBreachWatchlist:'enabled',
-        newsImpactRecoveryIncidentBreachAging:'enabled',
-        newsImpactRecoveryIncidentSloBreachWatchlistSelfTest:'enabled',
-        newsImpactRecoveryIncidentSloBreachTriage:'enabled',
-        newsImpactRecoveryIncidentBreachStageBuckets:'enabled',
-        newsImpactRecoveryIncidentSloBreachTriageSelfTest:'enabled',
-        newsImpactRecoveryIncidentSloBreachTriageTrend:'enabled',
-        newsImpactRecoveryIncidentTriageRecurrence:'enabled',
-        newsImpactRecoveryIncidentSloBreachTriageTrendSelfTest:'enabled',
-        newsImpactRecoveryIncidentSloBreachImpactRanking:'enabled',
-        newsImpactRecoveryIncidentOverdueContribution:'enabled',
-        newsImpactRecoveryIncidentSloBreachImpactRankingSelfTest:'enabled',
-        newsImpactRecoveryIncidentSloBreachImpactTrend:'enabled',
-        newsImpactRecoveryIncidentWeeklyOverdueBurden:'enabled',
-        newsImpactRecoveryIncidentSloBreachImpactTrendSelfTest:'enabled',
-        newsImpactRecoveryIncidentSloImpactConcentration:'enabled',
-        newsImpactRecoveryIncidentTopContributionShares:'enabled',
-        newsImpactRecoveryIncidentSloImpactConcentrationSelfTest:'enabled',
-        newsImpactRecoveryIncidentSloImpactConcentrationTrend:'enabled',
-        newsImpactRecoveryIncidentWeeklyConcentrationShares:'enabled',
-        newsImpactRecoveryIncidentSloImpactConcentrationTrendSelfTest:'enabled',
-        newsImpactRecoveryIncidentSloImpactExecutiveSummary:'enabled',
-        newsImpactRecoveryIncidentSloImpactUnifiedView:'enabled',
-        newsImpactRecoveryIncidentSloImpactExecutiveSummarySelfTest:'enabled',
-        newsImpactRecoveryIncidentSloImpactFocusQueue:'enabled',
-        newsImpactRecoveryIncidentSloImpactFocusOrdering:'enabled',
-        newsImpactRecoveryIncidentSloImpactFocusQueueSelfTest:'enabled'
-      });
-    }
-    if(url.pathname==='/api/app-manifest') return json({version:'6.27.0-rc35',releaseCandidate:'RC35',deployment:deploymentIdentity});
-    if(url.pathname==='/api/public-status') return json({
-      ok:true,status:'operational',version:'6.27.0-rc35',releaseCandidate:'RC35',deployment:deploymentIdentity,
-      services:{telegram:'operational',miniApp:'operational',aiAnalysis:'operational',search:'operational',live:'operational'},
-    });
-    if(url.pathname==='/') return new Response('<!doctype html>',{status:200,headers:{
-      'content-type':'text/html; charset=UTF-8',
-      'content-security-policy':"default-src 'self'; script-src 'self' https://telegram.org; object-src 'none'",
-      'x-content-type-options':'nosniff',
-    }});
-    if(url.pathname==='/health/supabase') return json({error:'not found'},404);
-    if(['/privacy.html','/terms.html','/status.html'].includes(url.pathname)) return new Response('<!doctype html>',{status:200,headers:{
-      'content-type':'text/html; charset=UTF-8','content-security-policy':"default-src 'self'; object-src 'none'",
-    }});
-    if(url.pathname==='/status.js') return new Response('export {};',{status:200,headers:{
-      'content-type':'text/javascript; charset=UTF-8',
-    }});
-    if(url.pathname==='/telegram/webhook') return json({ok:false},403);
-    if(url.pathname.startsWith('/api/')) return json({error:'Telegram auth required'},401);
-    return json({error:'not found'},404);
-  };
-
-  const result=await runDeploymentSmoke('https://football.example.test','6.27.0-rc35',deploySha,{
-    fetchImpl,retries:2,retryDelayMs:0,
+test('post-deploy smoke retries while an older readiness version is still propagating',async()=>{
+  const result=await runDeploymentSmoke('https://football.example.test/',VERSION,{
+    fetchImpl:healthyFetch({staleReadyOnce:true}),
+    retries:2,
+    retryDelayMs:0,
   });
-  assert.equal(result.ok,true);
-  assert.equal(healthCalls,2);
+  assert.equal(result.version,VERSION);
 });
 
-test('post-deploy smoke retries while the previous Worker version is propagating', async () => {
-  const result = await runDeploymentSmoke('https://football.example.test/', '6.27.0-rc35', {
-    fetchImpl: healthyFetch({ staleOnce: true }),
-    retries: 2,
-    retryDelayMs: 0,
-  });
-  assert.equal(result.version, '6.27.0-rc35');
-});
-
-test('post-deploy smoke rejects DEV_MODE in production', async () => {
+test('post-deploy smoke rejects DEV_MODE from minimal public health',async()=>{
   await assert.rejects(
-    runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', {
-      fetchImpl: healthyFetch({ devMode: true }),
-      retries: 1,
-      retryDelayMs: 0,
+    runDeploymentSmoke('https://football.example.test',VERSION,{
+      fetchImpl:healthyFetch({devMode:true}),
+      retries:1,
+      retryDelayMs:0,
     }),
     /DEV_MODE=true/,
   );
 });
 
-
-test('post-deploy smoke rejects enabled monetization when the release still expects paused', async () => {
+test('post-deploy smoke validates monetization through app manifest instead of public health',async()=>{
   await assert.rejects(
-    runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', {
-      fetchImpl: healthyFetch({ monetization: 'enabled' }),
-      retries: 1,
-      retryDelayMs: 0,
+    runDeploymentSmoke('https://football.example.test',VERSION,{
+      fetchImpl:healthyFetch({monetization:'enabled'}),
+      retries:1,
+      retryDelayMs:0,
     }),
     /MONETIZATION_ENABLED=false/,
   );
-});
 
-test('post-deploy smoke accepts enabled monetization only when the release explicitly expects it', async () => {
-  const result = await runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', {
-    fetchImpl: healthyFetch({ monetization: 'enabled' }),
-    retries: 1,
-    retryDelayMs: 0,
-    expectedMonetization: 'enabled',
+  const enabled=await runDeploymentSmoke('https://football.example.test',VERSION,{
+    fetchImpl:healthyFetch({monetization:'enabled'}),
+    retries:1,
+    retryDelayMs:0,
+    expectedMonetization:'enabled',
   });
-  assert.equal(result.ok, true);
+  assert.equal(enabled.ok,true);
 });
 
-test('post-deploy smoke requires API-Football-backed public services to be operational', async () => {
+test('post-deploy smoke requires the manifest freshness capability used by RC139',async()=>{
   await assert.rejects(
-    runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', {
-      fetchImpl: healthyFetch({ serviceOverrides: { aiAnalysis: 'configuration_required' } }),
-      retries: 1,
-      retryDelayMs: 0,
+    runDeploymentSmoke('https://football.example.test',VERSION,{
+      fetchImpl:healthyFetch({featureOverrides:{aiFreshnessGuard:false}}),
+      retries:1,
+      retryDelayMs:0,
+    }),
+    /App manifest feature aiFreshnessGuard is not enabled/,
+  );
+});
+
+test('post-deploy smoke requires all API-Football-backed public services to be operational',async()=>{
+  await assert.rejects(
+    runDeploymentSmoke('https://football.example.test',VERSION,{
+      fetchImpl:healthyFetch({serviceOverrides:{aiAnalysis:'configuration_required'}}),
+      retries:1,
+      retryDelayMs:0,
     }),
     /aiAnalysis must be operational/,
+  );
+});
+
+test('post-deploy smoke rejects a non-ready health snapshot even when readiness was previously healthy',async()=>{
+  await assert.rejects(
+    runDeploymentSmoke('https://football.example.test',VERSION,{
+      fetchImpl:healthyFetch({healthStatus:'not_ready'}),
+      retries:1,
+      retryDelayMs:0,
+    }),
+    /Health endpoint/,
   );
 });
