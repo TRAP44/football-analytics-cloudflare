@@ -75,8 +75,9 @@ function positiveFinite(value, fallback, max = Number.MAX_SAFE_INTEGER) {
 }
 
 export function isDailyDigestExecutionWindow(scheduledAt) {
-  const date = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt);
-  return Number.isFinite(date.getTime()) && date.getUTCHours() === DAILY_DIGEST_POLICY.deliveryHourUtc;
+  const timestamp=strictTimestampMs(scheduledAt);
+  if (timestamp === null) return false;
+  return new Date(timestamp).getUTCHours()===DAILY_DIGEST_POLICY.deliveryHourUtc;
 }
 
 export function planDailyDigestRecipients(rows = [], {
@@ -220,15 +221,21 @@ export function assessDailyDigestRun(summary = {}, scheduledAt = new Date()) {
 }
 
 export function classifyDigestTransportError(error) {
-  const code = String(error?.code || '');
-  const status = Number(error?.status || 0);
-  const rateLimited = code === 'TELEGRAM_RATE_LIMIT' || status === 429;
-  const retryAfter = rateLimited ? positiveInteger(error?.retryAfter, 1, 3600) : 0;
-  const ambiguous = ['TELEGRAM_TIMEOUT', 'TELEGRAM_NETWORK', 'TELEGRAM_UPSTREAM'].includes(code)
-    || status >= 500
-    || status === 0;
-  const permanent = !rateLimited && !ambiguous;
-  return { rateLimited, retryAfter, ambiguous, permanent };
+  const code=typeof error?.code==='string' ? error.code : '';
+  const statusCandidate=finiteNumberCandidate(error?.status);
+  const status=statusCandidate !== null
+    && Number.isSafeInteger(statusCandidate)
+    && statusCandidate>=0
+    && statusCandidate<=599
+    ? statusCandidate
+    : 0;
+  const rateLimited=code==='TELEGRAM_RATE_LIMIT' || status===429;
+  const retryAfter=rateLimited ? positiveInteger(error?.retryAfter,1,3600) : 0;
+  const ambiguous=['TELEGRAM_TIMEOUT','TELEGRAM_NETWORK','TELEGRAM_UPSTREAM'].includes(code)
+    || status>=500
+    || status===0;
+  const permanent=!rateLimited && !ambiguous;
+  return {rateLimited,retryAfter,ambiguous,permanent};
 }
 
 export function createDigestRateGate({
@@ -523,12 +530,20 @@ export function estimateDigestOrchestration(recipients, {
   minSendIntervalMs = DAILY_DIGEST_POLICY.minSendIntervalMs,
   cronIntervalMs = 300000,
 } = {}) {
-  const count = Math.max(0, Number(recipients || 0));
-  const oldBatches = count ? Math.ceil(count / Math.max(1, Number(oldBatchSize || 20))) : 0;
-  const oldMinimumMs = Math.max(0, oldBatches - 1) * Math.max(0, Number(oldBatchDelayMs || 0));
-  const runs = count ? Math.ceil(count / Math.max(1, Number(maxRecipientsPerRun || 1))) : 0;
-  const busiestRunRecipients = Math.min(count, Math.max(1, Number(maxRecipientsPerRun || 1)));
-  const activeMsPerRun = busiestRunRecipients * Math.max(1, Number(messagesPerRecipient || 1)) * Math.max(1, Number(minSendIntervalMs || 1));
-  const completionWindowMs = runs ? (runs - 1) * Math.max(1, Number(cronIntervalMs || 1)) + activeMsPerRun : 0;
-  return { recipients: count, oldBatches, oldMinimumMs, runs, activeMsPerRun, completionWindowMs };
+  const count=nonNegativeInteger(recipients,0);
+  const legacyBatch=positiveInteger(oldBatchSize,20,DAILY_DIGEST_POLICY.scanCap);
+  const legacyDelay=finiteNumberCandidate(oldBatchDelayMs);
+  const batchDelay=legacyDelay !== null && legacyDelay>=0 ? Math.min(15*60*1000,legacyDelay) : 1000;
+  const messages=positiveInteger(messagesPerRecipient,2,4);
+  const runCap=positiveInteger(maxRecipientsPerRun,DAILY_DIGEST_POLICY.maxRecipientsPerRun,DAILY_DIGEST_POLICY.scanCap);
+  const sendGap=positiveFinite(minSendIntervalMs,DAILY_DIGEST_POLICY.minSendIntervalMs,60_000);
+  const cronGap=positiveFinite(cronIntervalMs,300000,24*3600_000);
+
+  const oldBatches=count ? Math.ceil(count/legacyBatch) : 0;
+  const oldMinimumMs=Math.max(0,oldBatches-1)*batchDelay;
+  const runs=count ? Math.ceil(count/runCap) : 0;
+  const busiestRunRecipients=Math.min(count,runCap);
+  const activeMsPerRun=busiestRunRecipients*messages*sendGap;
+  const completionWindowMs=runs ? (runs-1)*cronGap+activeMsPerRun : 0;
+  return {recipients:count,oldBatches,oldMinimumMs,runs,activeMsPerRun,completionWindowMs};
 }
