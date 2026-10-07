@@ -276,7 +276,7 @@ test('P0 FREE provider policy reserves the Match Center events request for AI an
   const center=sourceBlock(
     matchCenterRuntime,
     'async function apiMatchCenter',
-    '  return { apiMatchCenter };',
+    '  return Object.freeze({apiMatchCenter});',
   );
   assert.match(center,/preserveAiBudget:budgetProfile\.paid!==true/);
   assert.match(center,/secondaryOpenLigaEvents/);
