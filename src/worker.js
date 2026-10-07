@@ -277,10 +277,10 @@ const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
 const RELEASE_CHANNEL = 'rc144';
 const RC_NAME = 'RC144';
-const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19 и примените миграции до v6.29.11; для существующей примените все доступные миграции из supabase/migrations до v6.29.11.';
+const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19 и примените миграции до v6.29.12; для существующей примените все доступные миграции из supabase/migrations до v6.29.12.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_CONTRACT_VERSION = 2;
-const EXPECTED_SCHEMA_FINGERPRINT = '6a7f0fe444f49a2a52c4603e952ee9ea';
+const EXPECTED_SCHEMA_FINGERPRINT = '4e7b6afc69b45ab3e5eecc4685d75c73';
 const FRESH_INSTALL_SCHEMA_FINGERPRINT = '8b3e6ec749079296e6746d3db8ae3d2e';
 const COMPATIBLE_SCHEMA_FINGERPRINTS = Object.freeze([
   EXPECTED_SCHEMA_FINGERPRINT,

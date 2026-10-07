@@ -113,6 +113,7 @@ if (releaseContract.databaseContract?.sensitiveMutationLeaseFinalization?.versio
 if (releaseContract.databaseContract?.sensitiveMutationLeaseFinalization?.activeLeaseRequired !== true) failures.push('release-contract sensitiveMutationLeaseFinalization active lease guard must remain enabled');
 if (releaseContract.databaseContract?.sensitiveMutationLeaseFinalization?.readinessField !== 'backendSecurity.function_violations') failures.push('release-contract sensitiveMutationLeaseFinalization readiness field drifted');
 if (releaseContract.databaseContract?.sensitiveMutationLeaseFinalization?.sourceMigration !== 'supabase/migrations/supabase_migration_v6_29_11.sql') failures.push('release-contract sensitiveMutationLeaseFinalization source migration drifted');
+if (releaseContract.databaseContract?.serviceRolePrivilegeBoundary?.sourceMigration !== 'supabase/migrations/supabase_migration_v6_29_12.sql') failures.push('release-contract serviceRolePrivilegeBoundary source migration drifted');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
 if (!expectedRc || !worker.includes(`const RC_NAME = '${expectedRc}'`)) failures.push(`Worker RC name must be ${expectedRc || 'derived from runtimeVersion'}`);
@@ -844,7 +845,7 @@ for (const marker of [
 }
 if (!baseline.toLowerCase().includes('create table if not exists public.provider_rate_windows')) failures.push('RC127 v6.18 baseline is missing provider rate windows');
 if (!baseline.toLowerCase().includes('create or replace function public.consume_analysis_quota')) failures.push('RC127 v6.18 baseline is missing atomic quota RPC');
-if (!worker.includes("const EXPECTED_SCHEMA_FINGERPRINT = '6a7f0fe444f49a2a52c4603e952ee9ea'")) failures.push('RC127 expected schema fingerprint is missing');
+if (!worker.includes("const EXPECTED_SCHEMA_FINGERPRINT = '4e7b6afc69b45ab3e5eecc4685d75c73'")) failures.push('RC127 expected schema fingerprint is missing');
 if (!worker.includes('const EXPECTED_SCHEMA_CONTRACT_VERSION = 2')) failures.push('Issue #438 expected schema contract version is missing');
 if (!worker.includes("readinessRpc: 'backend_readiness_contract_v2'")) failures.push('Issue #438 Worker does not use versioned readiness RPC');
 if (!worker.includes('async function reserveAnalysisQuota')) failures.push('RC127 atomic analysis quota integration is missing');

@@ -5,7 +5,7 @@ import {
   normalizeCompositeReadinessResponse,
 } from '../src/readiness-contract.js';
 
-const FP = '6a7f0fe444f49a2a52c4603e952ee9ea';
+const FP = '4e7b6afc69b45ab3e5eecc4685d75c73';
 const CONTRACT_VERSION = 2;
 const FRESH_FP = '8b3e6ec749079296e6746d3db8ae3d2e';
 
