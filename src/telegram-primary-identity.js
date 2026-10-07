@@ -4,17 +4,24 @@ const START_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const BOT_ID_PATTERN = /^[1-9]\d{4,19}$/;
 const MAX_TOKEN_LENGTH = 512;
 const MAX_CALLBACK_ID_LENGTH = 120;
+const MAX_USERNAME_INPUT_LENGTH = 64;
+const MAX_INTEGER_TEXT_LENGTH = 24;
+const MAX_START_INPUT_LENGTH = 128;
 const encoder = new TextEncoder();
+
+function plainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+}
 
 function textValue(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
 function tokenValue(value) {
-  const token=textValue(value);
+  if (typeof value !== 'string' || value.length > MAX_TOKEN_LENGTH) return '';
+  const token=value.trim();
   if (
     !token
-    || token.length>MAX_TOKEN_LENGTH
     || /[\u0000-\u001f\u007f-\u009f]/u.test(token)
   ) return '';
   return token;
@@ -22,7 +29,7 @@ function tokenValue(value) {
 
 function integerCandidate(value) {
   if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
-  if (typeof value !== 'string') return null;
+  if (typeof value !== 'string' || value.length > MAX_INTEGER_TEXT_LENGTH) return null;
   const raw=value.trim();
   if (!/^-?\d+$/.test(raw)) return null;
   const number=Number(raw);
@@ -45,15 +52,16 @@ function boundedPositiveInteger(value, fallback, max) {
 }
 
 function normalizeUsername(value = '') {
-  const username = textValue(value).replace(/^@/, '');
+  if (typeof value !== 'string' || value.length > MAX_USERNAME_INPUT_LENGTH) return '';
+  const username=value.trim().replace(/^@/, '');
   return USERNAME_PATTERN.test(username) ? username : '';
 }
 
 function normalizeCallbackId(value) {
-  const id=textValue(value);
+  if (typeof value !== 'string' || value.length > MAX_CALLBACK_ID_LENGTH) return '';
+  const id=value.trim();
   if (
     !id
-    || id.length>MAX_CALLBACK_ID_LENGTH
     || /[\u0000-\u001f\u007f-\u009f]/u.test(id)
   ) return '';
   return id;
@@ -66,11 +74,16 @@ function hex(bytes) {
 async function primaryTokenFingerprint(botToken) {
   const token=tokenValue(botToken);
   if (!token) throw new Error('TELEGRAM_BOT_TOKEN is required for primary bot identity.');
-  if (!globalThis.crypto?.subtle?.digest) {
+  const digestFn=globalThis.crypto?.subtle?.digest;
+  if (typeof digestFn !== 'function') {
     throw new Error('Secure crypto is required for primary bot identity.');
   }
-  const digest=await globalThis.crypto.subtle.digest('SHA-256',encoder.encode(token));
-  return hex(digest).slice(0,32);
+  const digest=await digestFn.call(globalThis.crypto.subtle,'SHA-256',encoder.encode(token));
+  const fingerprint=hex(digest);
+  if (!/^[0-9a-f]{64}$/.test(fingerprint)) {
+    throw new Error('Primary Telegram bot identity fingerprint is invalid.');
+  }
+  return fingerprint.slice(0,32);
 }
 
 export async function primaryTelegramBotIdentityCacheKey(botToken) {
@@ -92,6 +105,7 @@ export function primaryTelegramBotStableIdentity(botToken = '') {
 }
 
 export function primaryTelegramUpdateDedupeKey(botToken, update = {}) {
+  if (!plainObject(update)) return '';
   const identity=primaryTelegramBotStableIdentity(botToken);
   if (!identity) return '';
   const prefix=`b:${identity}`;
@@ -109,32 +123,45 @@ export function primaryTelegramUpdateDedupeKey(botToken, update = {}) {
     : '';
 }
 
-export async function resolvePrimaryTelegramBotUsername({
-  botToken,
-  getCached,
-  setCached,
-  getMe,
-  ttlMinutes = 1440,
-} = {}) {
+export async function resolvePrimaryTelegramBotUsername(options = {}) {
+  const source=plainObject(options);
+  if (!source) throw new TypeError('Primary Telegram bot identity options are required.');
+  const {
+    botToken,
+    getCached,
+    setCached,
+    getMe,
+    ttlMinutes = 1440,
+  } = source;
   if (typeof getMe !== 'function') throw new Error('Primary Telegram getMe resolver is required.');
-  const cacheKey = await primaryTelegramBotIdentityCacheKey(botToken);
+  const token=tokenValue(botToken);
+  if (!token) throw new Error('TELEGRAM_BOT_TOKEN is required for primary bot identity.');
+  const cacheKey = await primaryTelegramBotIdentityCacheKey(token);
+  const stableIdentity=primaryTelegramBotStableIdentity(token);
+  const expectedBotId=stableIdentity ? positiveInteger(stableIdentity.slice(3)) : null;
 
   if (typeof getCached === 'function') {
     try {
-      const cached = await getCached(cacheKey);
-      const cachedUsername = normalizeUsername(cached?.username);
-      if (cachedUsername) return cachedUsername;
+      const cached=plainObject(await getCached(cacheKey));
+      const cachedUsername=normalizeUsername(cached?.username);
+      const cachedBotId=positiveInteger(cached?.botId);
+      const cacheIdentityValid=expectedBotId === null || cachedBotId === expectedBotId;
+      if (cachedUsername && cacheIdentityValid) return cachedUsername;
     } catch {}
   }
 
-  const me=await getMe();
+  const me=plainObject(await getMe());
   const username=normalizeUsername(me?.username);
+  const resolvedBotId=positiveInteger(me?.id);
   if (!username) throw new Error('Telegram bot username is unavailable.');
+  if (expectedBotId !== null && resolvedBotId !== expectedBotId) {
+    throw new Error('Telegram bot identity does not match TELEGRAM_BOT_TOKEN.');
+  }
 
   if (typeof setCached === 'function') {
     const payload={
       username,
-      botId:positiveInteger(me?.id),
+      botId:resolvedBotId,
       refreshedAt:new Date().toISOString(),
     };
     const ttl=boundedPositiveInteger(ttlMinutes,1440,10080);
@@ -148,7 +175,9 @@ export async function resolvePrimaryTelegramBotUsername({
 
 export function telegramBotStartUrl(username, startParam) {
   const safeUsername=normalizeUsername(username);
-  const safeStart=textValue(startParam);
+  const safeStart=typeof startParam === 'string' && startParam.length <= MAX_START_INPUT_LENGTH
+    ? startParam.trim()
+    : '';
   if (!safeUsername) throw new Error('Telegram bot username is invalid.');
   if (!START_PATTERN.test(safeStart)) throw new Error('Telegram start parameter is invalid.');
   return `https://t.me/${safeUsername}?start=${encodeURIComponent(safeStart)}`;
