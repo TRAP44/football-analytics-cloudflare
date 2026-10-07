@@ -716,10 +716,31 @@ async function inspectEdgeCaseFixture(cdp, width, theme) {
   return evaluated?.result?.value || null;
 }
 
+function remoteSmokeUrl(value) {
+  if (value === undefined || value === null || value === '') return '';
+  if (typeof value !== 'string' || value.length > 2048) {
+    throw new TypeError('Rendered smoke URL must be a bounded HTTP(S) URL.');
+  }
+  let url;
+  try {
+    url=new URL(value.trim());
+  } catch {
+    throw new Error('Rendered smoke URL is invalid.');
+  }
+  if (!['http:','https:'].includes(url.protocol)) {
+    throw new Error('Rendered smoke URL must use HTTP or HTTPS.');
+  }
+  if (url.username || url.password) {
+    throw new Error('Rendered smoke URL must not contain credentials.');
+  }
+  url.hash='';
+  return url.toString();
+}
+
 async function main() {
-  const remoteUrl = process.argv[2] ? new URL(process.argv[2]).toString() : '';
-  const local = remoteUrl ? null : await localServer();
-  const targetUrl = remoteUrl || local.url;
+  const remoteUrl=remoteSmokeUrl(process.argv[2]);
+  const local=remoteUrl ? null : await localServer();
+  const targetUrl=remoteUrl || local.url;
   let chrome = null;
   let profileDir = '';
   let cdp;
