@@ -24,11 +24,39 @@ export function buildPassPurchaseBody(passType, fixtureId = 0) {
   return { passType:type };
 }
 
-function latestPassDecision(entitlement = {}, passType = '') {
-  const rows = Array.isArray(entitlement?.decisions) ? entitlement.decisions : [];
-  return rows
-    .filter(row => String(row?.type || '').toUpperCase() === String(passType || '').toUpperCase())
-    .sort((a,b) => String(b?.expiresAt || '').localeCompare(String(a?.expiresAt || '')))[0] || null;
+function latestPassDecision(entitlement = {}, passType = '', fixtureId = 0, now = Date.now()) {
+  const type=String(passType || '').toUpperCase();
+  const rows=(Array.isArray(entitlement?.decisions) ? entitlement.decisions : [])
+    .filter(row => String(row?.type || '').toUpperCase() === type)
+    .sort((a,b) => String(b?.expiresAt || '').localeCompare(String(a?.expiresAt || '')));
+  if (!rows.length) return null;
+
+  if (type === 'MATCH_PASS') {
+    const requestedFixtureId=safeFixtureId(fixtureId);
+    if (requestedFixtureId) {
+      const exactActive=rows.find(row => (
+        row?.active === true
+        && safeFixtureId(row?.fixtureId) === requestedFixtureId
+      ));
+      if (exactActive) return exactActive;
+
+      const nowMs=Number(now);
+      const activeOther=rows.find(row => {
+        const expiry=row?.expiresAt ? new Date(row.expiresAt).getTime() : Number.NaN;
+        return row?.reason === 'fixture_mismatch'
+          && safeFixtureId(row?.fixtureId) > 0
+          && Number.isFinite(nowMs)
+          && Number.isFinite(expiry)
+          && expiry > nowMs;
+      });
+      if (activeOther) return activeOther;
+
+      const exactPrevious=rows.find(row => safeFixtureId(row?.fixtureId) === requestedFixtureId);
+      if (exactPrevious) return exactPrevious;
+    }
+  }
+
+  return rows.find(row => row?.active === true) || rows[0];
 }
 
 export function passUiState({
@@ -41,15 +69,16 @@ export function passUiState({
   now = Date.now(),
 } = {}) {
   const type = String(passType || '').toUpperCase();
-  const decision = latestPassDecision(entitlement, type);
+  const nowMs=Number(now);
+  const decision = latestPassDecision(entitlement, type, fixtureId, nowMs);
   const expiresMs = decision?.expiresAt ? new Date(decision.expiresAt).getTime() : Number.NaN;
-  const future = Number.isFinite(expiresMs) && expiresMs > Number(now);
+  const future = Number.isFinite(expiresMs) && expiresMs > nowMs;
   const exactFixture = type !== 'MATCH_PASS'
     || (safeFixtureId(fixtureId) > 0 && Number(decision?.fixtureId || 0) === safeFixtureId(fixtureId));
 
   let state = 'available';
-  if (!product || product.saleReady === false) state = 'unavailable';
-  else if (subscriptionActive) state = 'included';
+  if (subscriptionActive) state = 'included';
+  else if (!product || product.saleReady === false) state = 'unavailable';
   else if (type === 'MATCH_PASS' && !safeFixtureId(fixtureId)) state = 'needs-fixture';
   else if (decision?.active && exactFixture) state = 'active';
   else if (type === 'MATCH_PASS' && decision?.reason === 'fixture_mismatch' && future) state = 'active-other';
@@ -127,7 +156,10 @@ export function createBillingModule({
   let lastError = '';
   let passFixtureId = 0;
   let passLoading = false;
+  let passLoadingFixtureId = 0;
   let passLoaded = false;
+  let passLoadedFixtureId = 0;
+  let passRequestSequence = 0;
   let passError = '';
   let passData = {
     paymentsEnabled:false,
@@ -149,9 +181,12 @@ export function createBillingModule({
   }
 
   function clearPassContext() {
-    if (!passFixtureId) return;
     passFixtureId = 0;
     passLoaded = false;
+    passLoadedFixtureId = 0;
+    passLoading = false;
+    passLoadingFixtureId = 0;
+    passRequestSequence += 1;
     passError = '';
     render();
   }
@@ -435,11 +470,14 @@ export function createBillingModule({
 
   async function loadPassAccess({ fixtureId = contextFixtureId(), force = false } = {}) {
     const fid = safeFixtureId(fixtureId);
-    if (fid) passFixtureId = fid;
+    passFixtureId = fid;
     const snapshot=billingUiSnapshot(state.profile || {}, state.billing || {});
     if (!snapshot.monetizationEnabled) {
+      passRequestSequence += 1;
       passLoaded = true;
+      passLoadedFixtureId = fid;
       passLoading = false;
+      passLoadingFixtureId = 0;
       passError = '';
       passData = {
         paymentsEnabled:false,
@@ -449,30 +487,43 @@ export function createBillingModule({
       render();
       return passData;
     }
-    if (passLoading || (passLoaded && !force && fid === contextFixtureId())) {
+    if (
+      (passLoading && passLoadingFixtureId === fid)
+      || (passLoaded && !force && passLoadedFixtureId === fid)
+    ) {
       render();
       return passData;
     }
+
+    const requestId=++passRequestSequence;
     passLoading = true;
+    passLoadingFixtureId = fid;
     passError = '';
     render();
     try {
       const suffix = fid ? '?fixtureId=' + encodeURIComponent(String(fid)) : '';
       const data = await api('/api/entitlements' + suffix, { retry:false });
+      if (requestId !== passRequestSequence || contextFixtureId() !== fid) return passData;
       passData = {
         paymentsEnabled:Boolean(data?.paymentsEnabled),
         products:data?.products || {},
         entitlement:data?.entitlement || { decisions:[], passes:{ active:[] }, subscriptionActive:false },
       };
       passLoaded = true;
+      passLoadedFixtureId = fid;
       return passData;
     } catch (error) {
+      if (requestId !== passRequestSequence || contextFixtureId() !== fid) return passData;
       passLoaded = false;
+      passLoadedFixtureId = 0;
       passError = error?.message || 'Не удалось проверить Pass-доступ.';
       return passData;
     } finally {
-      passLoading = false;
-      render();
+      if (requestId === passRequestSequence) {
+        passLoading = false;
+        passLoadingFixtureId = 0;
+        render();
+      }
     }
   }
 
@@ -490,8 +541,11 @@ export function createBillingModule({
       loaded = true;
       loading = false;
       lastError = '';
+      passRequestSequence += 1;
       passLoaded = true;
+      passLoadedFixtureId = contextFixtureId();
       passLoading = false;
+      passLoadingFixtureId = 0;
       passError = '';
       passData = {
         paymentsEnabled:false,
@@ -834,6 +888,7 @@ export function createBillingModule({
     snapshot: () => ({
       loaded, loading, busyAction, syncing, paymentState, lastError,
       passLoaded, passLoading, passError, passFixtureId:contextFixtureId(),
+      passLoadedFixtureId, passLoadingFixtureId,
     }),
     syncBilling,
   });
