@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
+const postMatchReturn=readFileSync(new URL('../src/post-match-return-runtime.js',import.meta.url),'utf8');
 
 function block(source,start,end){
   const a=source.indexOf(start);
@@ -13,7 +13,7 @@ function block(source,start,end){
 }
 
 test('post-match return reads recent history through bounded pagination instead of a 300-row single page',()=>{
-  const load=block(worker,'async function loadPostMatchReturnCandidates','async function loadPostMatchReturnPredictions');
+  const load=block(postMatchReturn,'async function loadPostMatchReturnCandidates','async function loadPostMatchReturnPredictions');
   assert.match(load,/supaSelectPaged\(cfg,'analysis_history'/);
   assert.match(load,/pageSize:500/);
   assert.match(load,/maxRows:5000/);
@@ -22,7 +22,7 @@ test('post-match return reads recent history through bounded pagination instead 
 });
 
 test('post-match return surfaces history truncation in ops and scheduler summary',()=>{
-  const process=block(worker,'async function processPostMatchReturns','async function sendTelegramMessage');
+  const process=block(postMatchReturn,'async function processPostMatchReturns','  return {');
   assert.match(process,/RETURN_HISTORY_TRUNCATED/);
   assert.match(process,/candidatePage\.truncated/);
   assert.match(process,/cap:5000/);
