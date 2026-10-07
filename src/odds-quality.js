@@ -11,23 +11,29 @@ function compactState(value = '') {
 }
 
 function sourceIsTrusted(meta = {}) {
+  const freshnessState=typeof meta?.freshnessState === 'string'
+    ? compactState(meta.freshnessState)
+    : '';
+  const provenanceState=typeof meta?.provenanceState === 'string'
+    ? compactState(meta.provenanceState)
+    : '';
   return meta?.confidenceBearing === true
     && meta?.available === true
     && meta?.usable === true
     && meta?.stale !== true
-    && ['fresh', 'cached'].includes(compactState(meta?.freshnessState))
-    && compactState(meta?.provenanceState) === 'verified';
+    && ['fresh', 'cached'].includes(freshnessState)
+    && provenanceState === 'verified';
 }
 
 export function inspectDecimalOdd(value) {
   if (value === null || value === undefined || value === '') {
     return { observed:false, valid:false, value:null, reason:'missing' };
   }
-  if (typeof value === 'boolean') {
+  if (typeof value !== 'number' && typeof value !== 'string') {
     return { observed:true, valid:false, value:null, reason:'invalid_type' };
   }
 
-  const raw = typeof value === 'number' ? String(value) : String(value).trim().replace(',', '.');
+  const raw = typeof value === 'number' ? String(value) : value.trim().replace(',', '.');
   if (!/^\d+(?:\.\d+)?$/.test(raw)) {
     return { observed:true, valid:false, value:null, reason:'invalid_format' };
   }
@@ -46,10 +52,10 @@ function inspectProbability(value) {
   if (value === null || value === undefined || value === '') {
     return { observed:false, valid:false, value:null, reason:'missing' };
   }
-  if (typeof value === 'boolean') {
+  if (typeof value !== 'number' && typeof value !== 'string') {
     return { observed:true, valid:false, value:null, reason:'invalid_type' };
   }
-  const raw = typeof value === 'number' ? String(value) : String(value).trim().replace(',', '.').replaceAll('%', '');
+  const raw = typeof value === 'number' ? String(value) : value.trim().replace(',', '.').replaceAll('%', '');
   if (!/^\d+(?:\.\d+)?$/.test(raw)) {
     return { observed:true, valid:false, value:null, reason:'invalid_format' };
   }
