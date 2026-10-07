@@ -251,7 +251,7 @@ jobs:
             # inspection but can briefly lag while its routing converges.
             RECOVERY_VERSION_PREFIX="${RECOVERY_VERSION_ID%%-*}"
             RECOVERY_URL="https://${RECOVERY_VERSION_PREFIX}-${PRODUCTION_HOST}"
-            node scripts/post-deploy-smoke.js "$RECOVERY_URL" "$RELEASE_VERSION" "$DEPLOY_SHA"
+            node scripts/post-deploy-smoke.js "$RECOVERY_URL" "$RELEASE_VERSION" "$DEPLOY_SHA" "$RECOVERY_VERSION_ID"
             node scripts/bottom-nav-render-smoke.js "$RECOVERY_URL"
 
             echo "recovery_mode=true" >> "$GITHUB_OUTPUT"
@@ -290,6 +290,7 @@ jobs:
           echo "Cloudflare version $RECOVERY_VERSION_ID now receives 100% traffic after passing the pre-promotion Version URL smoke." >> "$GITHUB_STEP_SUMMARY"
 
       - name: RC120 verify active production release identity
+        id: release_identity
         if: steps.production_changes.outputs.changed == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -315,28 +316,44 @@ jobs:
             echo "Cloudflare did not confirm the expected production release identity." >&2
             exit 1
           fi
+          read -r ACTIVE_VERSION_ID ACTIVE_RELEASE ACTIVE_SHA < <(
+            node scripts/verify-production-release-postcondition.js "$DEPLOYMENT_STATUS_JSON" "$VERSIONS_JSON" --print-active-rollback-target
+          )
+          if [[ ! "$ACTIVE_VERSION_ID" =~ ^[0-9a-fA-F-]{36}$ || "$ACTIVE_RELEASE" != "$RELEASE_VERSION" || "$ACTIVE_SHA" != "$DEPLOY_SHA" ]]; then
+            echo "Verified production identity could not be exported safely for runtime smoke." >&2
+            exit 1
+          fi
+          echo "active_version_id=$ACTIVE_VERSION_ID" >> "$GITHUB_OUTPUT"
           echo "### RC120 active production release identity verified" >> "$GITHUB_STEP_SUMMARY"
-          echo "Cloudflare control plane confirms release $RELEASE_VERSION for deploy SHA $DEPLOY_SHA at 100% traffic." >> "$GITHUB_STEP_SUMMARY"
+          echo "Cloudflare control plane confirms release $RELEASE_VERSION for deploy SHA $DEPLOY_SHA at 100% traffic (version $ACTIVE_VERSION_ID)." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify production deployment
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
           CONFIGURED_URL: ${{ vars.CLOUDFLARE_WORKER_URL }}
           ACTIVE_RUNTIME_SHA: ${{ steps.production_changes.outputs.active_sha }}
+          ACTIVE_RUNTIME_VERSION_ID: ${{ steps.production_changes.outputs.previous_version_id }}
+          VERIFIED_VERSION_ID: ${{ steps.release_identity.outputs.active_version_id }}
           RUNTIME_CHANGED: ${{ steps.production_changes.outputs.changed }}
         shell: bash
         run: |
           set -euo pipefail
           SMOKE_URL="${CONFIGURED_URL:-${DEPLOYMENT_URL:-$PRODUCTION_URL}}"
           EXPECTED_RUNTIME_SHA="$DEPLOY_SHA"
+          EXPECTED_VERSION_ID="$VERIFIED_VERSION_ID"
           if [[ "$RUNTIME_CHANGED" != "true" ]]; then
             EXPECTED_RUNTIME_SHA="$ACTIVE_RUNTIME_SHA"
+            EXPECTED_VERSION_ID="$ACTIVE_RUNTIME_VERSION_ID"
           fi
           if [[ ! "$EXPECTED_RUNTIME_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "Unable to resolve the production runtime SHA for smoke verification." >&2
             exit 1
           fi
-          node scripts/post-deploy-smoke.js "$SMOKE_URL" "$RELEASE_VERSION" "$EXPECTED_RUNTIME_SHA"
+          if [[ ! "$EXPECTED_VERSION_ID" =~ ^[0-9a-fA-F-]{36}$ ]]; then
+            echo "Unable to resolve the immutable Cloudflare Version ID for smoke verification." >&2
+            exit 1
+          fi
+          node scripts/post-deploy-smoke.js "$SMOKE_URL" "$RELEASE_VERSION" "$EXPECTED_RUNTIME_SHA" "$EXPECTED_VERSION_ID"
           node scripts/bottom-nav-render-smoke.js "$SMOKE_URL"
           echo "### Cloudflare production verified" >> "$GITHUB_STEP_SUMMARY"
           echo "Release $RELEASE_VERSION runtime SHA $EXPECTED_RUNTIME_SHA passed post-deploy and rendered smoke." >> "$GITHUB_STEP_SUMMARY"
