@@ -34,3 +34,9 @@ test('production deploy requires merged-PR provenance for the exact deploy SHA',
   assert.match(workflow,/verify-main-pr-provenance\.js "\$GITHUB_REPOSITORY" "\$DEPLOY_SHA" main/);
   assert.match(workflow,/P1 gate: require merged PR provenance for production deploy/);
 });
+
+
+test('current release snapshot remains explicitly PR-gated',()=>{
+  assert.match(workflow,/P1 gate: require merged PR provenance for production deploy/);
+  assert.match(workflow,/verify-main-pr-provenance\.js "\$GITHUB_REPOSITORY" "\$DEPLOY_SHA" main/);
+});
