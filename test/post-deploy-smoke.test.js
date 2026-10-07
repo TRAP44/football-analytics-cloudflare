@@ -194,6 +194,57 @@ test('post-deploy smoke binds exact deployment SHA to the app manifest',async()=
   );
 });
 
+test('post-deploy smoke accepts missing runtime tag only when the immutable Cloudflare Version ID is pre-verified',async()=>{
+  const runtimeWithoutTag={
+    ...deploymentIdentity,
+    deploySha:null,
+    cloudflareVersionTag:null,
+  };
+  const result=await runDeploymentSmoke('https://football.example.test',VERSION,DEPLOY_SHA,{
+    fetchImpl:healthyFetch({deployment:runtimeWithoutTag}),
+    expectedVersionId:deploymentIdentity.cloudflareVersionId,
+    retries:1,
+    retryDelayMs:0,
+  });
+  assert.equal(result.ok,true);
+
+  await assert.rejects(
+    runDeploymentSmoke('https://football.example.test',VERSION,DEPLOY_SHA,{
+      fetchImpl:healthyFetch({deployment:runtimeWithoutTag}),
+      retries:1,
+      retryDelayMs:0,
+    }),
+    /no verified Cloudflare Version ID was supplied/,
+  );
+  await assert.rejects(
+    runDeploymentSmoke('https://football.example.test',VERSION,DEPLOY_SHA,{
+      fetchImpl:healthyFetch({deployment:runtimeWithoutTag}),
+      expectedVersionId:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      retries:1,
+      retryDelayMs:0,
+    }),
+    /Version ID does not match/,
+  );
+});
+
+test('post-deploy smoke never masks a present but malformed runtime tag with the Version ID fallback',async()=>{
+  await assert.rejects(
+    runDeploymentSmoke('https://football.example.test',VERSION,DEPLOY_SHA,{
+      fetchImpl:healthyFetch({
+        deployment:{
+          ...deploymentIdentity,
+          deploySha:null,
+          cloudflareVersionTag:'not-a-sha',
+        },
+      }),
+      expectedVersionId:deploymentIdentity.cloudflareVersionId,
+      retries:1,
+      retryDelayMs:0,
+    }),
+    /RELEASE_IDENTITY_DEPLOY_SHA_REQUIRED/,
+  );
+});
+
 test('post-deploy smoke rejects malformed release identity from the app manifest',async()=>{
   await assert.rejects(
     runDeploymentSmoke('https://football.example.test',VERSION,DEPLOY_SHA,{
