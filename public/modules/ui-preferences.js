@@ -2,6 +2,8 @@ import {
   UI_PREFERENCES_KEY,
   DEFAULT_UI_PREFERENCES,
   ACCENT_PALETTES,
+  normalizeUiPreferences,
+  updateUiPreference,
 } from './app-runtime.js';
 
 export function createInterfacePreferencesController({
@@ -48,8 +50,9 @@ export function createInterfacePreferencesController({
     return parts.length ? parts.join(' · ') : 'По умолчанию';
   }
 
-  function applyInterfacePreferences({ announce = false } = {}) {
-    const prefs = state.uiPreferences || DEFAULT_UI_PREFERENCES;
+  function applyInterfacePreferences({ announce = false, persisted = true } = {}) {
+    const prefs = normalizeUiPreferences(state.uiPreferences);
+    state.uiPreferences = prefs;
     document.documentElement.dataset.theme = prefs.theme;
     document.documentElement.dataset.buttonStyle = prefs.buttonStyle;
     applyAccentPreference(prefs);
@@ -80,13 +83,28 @@ export function createInterfacePreferencesController({
       try { tg?.setBackgroundColor(background); } catch {}
     });
 
-    if (announce) toast('Оформление применено');
+    if (announce) {
+      toast(persisted
+        ? 'Оформление применено'
+        : 'Оформление применено до закрытия приложения');
+    }
   }
 
   function saveInterfacePreference(key, value) {
-    state.uiPreferences = { ...state.uiPreferences, [key]: value };
-    try { storage.setItem(UI_PREFERENCES_KEY, JSON.stringify(state.uiPreferences)); } catch {}
-    applyInterfacePreferences({ announce: true });
+    const next = updateUiPreference(state.uiPreferences, key, value);
+    if (!next) return false;
+
+    state.uiPreferences = next;
+    let persisted = false;
+    try {
+      if (typeof storage?.setItem === 'function') {
+        storage.setItem(UI_PREFERENCES_KEY, JSON.stringify(next));
+        persisted = true;
+      }
+    } catch {}
+
+    applyInterfacePreferences({ announce: true, persisted });
+    return persisted;
   }
 
   return {
