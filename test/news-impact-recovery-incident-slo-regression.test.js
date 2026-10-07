@@ -1,365 +1,230 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createNewsImpactRecoveryRuntime } from '../src/news-impact-recovery-runtime.js';
 
-// Consolidated recovery incident/SLO regression coverage (historical RC85-RC89).
-
-// test/news-impact-recovery-incident-center-rc85.test.js
-{
 const worker=fs.readFileSync('src/worker.js','utf8');
+const recoverySource=fs.readFileSync('src/news-impact-recovery-runtime.js','utf8');
+const growth=fs.readFileSync('src/growth-analytics-runtime.js','utf8');
+const router=fs.readFileSync('src/router.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
 
-test('RC85 derives privacy-safe recovery incident events from categorical guards',()=>{
-  assert.match(worker,/function buildNewsImpactRecoveryIncidentEvents\(/);
-  assert.match(worker,/NEWS_IMPACT_RECOVERY_INCIDENT_CODES/);
-  assert.match(worker,/guardReason,/);
-  assert.match(worker,/priority:(?:guardReason|event\.guardReason)==='performance_drift' \? 'high' : 'medium'/);
-  const start=worker.indexOf('function buildNewsImpactRecoveryIncidentEvents');
-  const end=worker.indexOf('function newsImpactRecoveryIncidentKey',start);
-  const block=worker.slice(start,end);
-  assert.doesNotMatch(block,/telegram_id\s*:/);
-  assert.doesNotMatch(block,/rawError|error\.message|stack|query/);
-});
+const FAILURE_CODES=new Set([
+  'provider_rate_limit','provider_unavailable','quota_exhausted','analysis_warming',
+  'match_missing','invalid_fixture','data_invalid','telegram_delivery','timeout','server_error',
+]);
+const ACTION_CODES=new Set(['full_ai','squads','market','recheck','news','share']);
+const RECOVERY_CODES=new Set(['retry','retry_soon','retry_later','wait_quota_reset','open_search','open_full_ai']);
+const GUARD_CODES=new Set(['performance_drift','recent_regression','fixed_default','insufficient_sample']);
+const INCIDENT_CODES=new Set(['performance_drift','recent_regression']);
 
-test('RC85 incident lifecycle marks current failures active and normalized guards recovered',()=>{
-  assert.match(worker,/function buildNewsImpactRecoveryIncidentCenter\(/);
-  assert.match(worker,/(?:status:active|const status=active) \? 'active' : 'recovered'/);
-  assert.match(worker,/currentGuardReason/);
-  assert.match(worker,/currentOnly:true/);
-  assert.match(worker,/strategy_evidence_unavailable/);
-});
+function runtime() {
+  return createNewsImpactRecoveryRuntime({
+    NEWS_IMPACT_ACTION_CODES:ACTION_CODES,
+    NEWS_IMPACT_ACTION_LABELS:Object.fromEntries([...ACTION_CODES].map(code=>[code,code])),
+    NEWS_IMPACT_FAILURE_CODES:FAILURE_CODES,
+    NEWS_IMPACT_FAILURE_LABELS:Object.fromEntries([...FAILURE_CODES].map(code=>[code,code])),
+    NEWS_IMPACT_RECOVERY_CODES:RECOVERY_CODES,
+    NEWS_IMPACT_RECOVERY_LABELS:Object.fromEntries([...RECOVERY_CODES].map(code=>[code,code])),
+    NEWS_IMPACT_RECOVERY_STRATEGY_GUARD_CODES:GUARD_CODES,
+    NEWS_IMPACT_RECOVERY_INCIDENT_CODES:INCIDENT_CODES,
+    NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES:30,
+    NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES:120,
+    NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES:360,
+  });
+}
 
-test('RC85 summarizes active recovered and priority counts',()=>{
-  assert.match(worker,/function summarizeNewsImpactRecoveryIncidents\(/);
-  assert.match(worker,/active:list\.filter\(x=>x\.status==='active'\)\.length/);
-  assert.match(worker,/recovered:list\.filter\(x=>x\.status==='recovered'\)\.length/);
-  assert.match(worker,/highActive:list\.filter/);
-  assert.match(worker,/mediumActive:list\.filter/);
-});
-
-test('RC85 uses the shared 30-day loader and exposes only sanitized incident data',()=>{
-  assert.match(worker,/incidentEvents=buildNewsImpactRecoveryIncidentEvents\(failures/);
-  assert.match(worker,/newsImpactRecoveryStrategyLoaded\.incidentEvents/);
-  assert.match(worker,/newsImpactRecoveryIncidents=buildNewsImpactRecoveryIncidentCenter/);
-  assert.match(worker,/newsImpactRecoveryIncidentSummary=summarizeNewsImpactRecoveryIncidents/);
-  assert.match(worker,/newsImpactRecoveryIncidents,/);
-  assert.match(worker,/newsImpactRecoveryIncidentSummary,/);
-});
-
-test('RC85 admin has a localized incident center with lifecycle state',()=>{
-  assert.match(app,/Recovery Incident Center/);
-  assert.match(app,/активен/);
-  assert.match(app,/восстановлен/);
-  assert.match(app,/текущее состояние/);
-  assert.match(app,/В Incident Center нет Telegram ID и raw error/);
-});
-
-test('RC85 deterministic incident drill and health contract',()=>{
-  assert.match(worker,/function newsImpactRecoveryIncidentDrill\(/);
-  assert.match(worker,/newsImpactRecoveryIncidentSelfTest: newsImpactRecoveryIncidentDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  for (const flag of ['newsImpactRecoveryIncidentCenter','newsImpactRecoveryIncidentLifecycle','newsImpactRecoveryIncidentPrivacyGuard']) {
-    assert.ok(worker.includes(flag + ": 'enabled'"), 'missing ' + flag);
+test('RC85-RC89 implementations live in the shared recovery runtime and Worker delegates to them',()=>{
+  for (const name of [
+    'buildNewsImpactRecoveryIncidentEvents',
+    'buildNewsImpactRecoveryIncidentCenter',
+    'summarizeNewsImpactRecoveryIncidents',
+    'buildNewsImpactRecoveryIncidentAcknowledgements',
+    'buildNewsImpactRecoveryIncidentEpisodeHistory',
+    'newsImpactRecoveryEpisodeSloState',
+    'buildNewsImpactRecoveryIncidentSloDashboard',
+    'buildNewsImpactRecoveryIncidentSloBreachFeed',
+  ]) {
+    assert.match(recoverySource,new RegExp('function '+name+'\\('),name+' implementation missing');
+    assert.match(worker,new RegExp('function '+name+'\\(\\.\\.\\.args\\).*getNewsImpactRecoveryRuntime\\(\\)\\.'+name),name+' worker delegate missing');
   }
 });
 
-test('RC85 needs no new Supabase migration',()=>{
-  const files=fs.readdirSync('supabase/migrations').filter(x=>/^supabase_migration_v6_\d/.test(x));
-  assert.ok(files.includes('supabase_migration_v6_15.sql'));
-  assert.ok(!files.some(x=>/rc85/i.test(x)));
-});
-}
+test('RC85 incident events are privacy-safe and malformed collections fail closed',()=>{
+  const r=runtime();
+  assert.deepEqual(r.buildNewsImpactRecoveryIncidentEvents({broken:true}),[]);
 
-// test/news-impact-recovery-incident-ack-rc86.test.js
-{
-const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/router.js','utf8');
-const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
-
-test('RC86 persists acknowledgements as categorical growth events only',()=>{
-  assert.match(worker,/NEWS_IMPACT_RECOVERY_INCIDENT_ACK_EVENT = 'news_impact_recovery_incident_ack'/);
-  assert.match(worker,/eventName:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_EVENT/);
-  assert.match(worker,/incident_guard:code/);
-  assert.match(worker,/incident_seen_at:lastSeenAt/);
-  assert.match(worker,/ack_state:'acknowledged'/);
-  const start=worker.indexOf('async function apiNewsImpactRecoveryIncidentAck');
-  const end=worker.indexOf('async function apiLaunchFunnel',start);
-  const block=worker.slice(start,end);
-  assert.doesNotMatch(block,/rawError|error\.message|stack|note:/);
+  const rows=[
+    {created_at:'2026-09-23T10:00:00Z',metadata:{reason:'server_error',action:'full_ai',recovery:'retry',strategy:'fixed',strategy_guard:'performance_drift'}},
+    {created_at:'2026-09-23T10:10:00Z',metadata:{reason:'server_error',action:'full_ai',recovery:'retry',strategy:'fixed',strategy_guard:'performance_drift'}},
+    {created_at:'2026-09-23T10:20:00Z',metadata:{reason:'server_error',action:'full_ai',recovery:'retry',strategy:'fixed',strategy_guard:'fixed_default'}},
+    {created_at:'2026-09-23T10:30:00Z',metadata:{
+      reason:{toString(){throw new Error('must not coerce');}},
+      action:'share',
+      strategy_guard:{toString(){throw new Error('must not coerce');}},
+    }},
+  ];
+  const events=r.buildNewsImpactRecoveryIncidentEvents(rows,{limit:true});
+  assert.equal(events.length,2);
+  assert.equal(events[0].reason,'server_error');
+  assert.equal(events[0].priority,'high');
+  assert.equal(events[0].episodeRecoveredAt,'2026-09-23T10:20:00.000Z');
+  assert.equal(Object.prototype.hasOwnProperty.call(events[0],'telegram_id'),false);
 });
 
-test('RC86 acknowledgement is scoped to the exact incident occurrence',()=>{
-  assert.match(worker,/function buildNewsImpactRecoveryIncidentAcknowledgements\(/);
-  assert.match(worker,/incidentSeenAt/);
-  assert.match(worker,/ack\.incidentSeenAt/);
-  assert.match(worker,/ack\.acknowledgedAt/);
-  assert.match(worker,/canAcknowledge:Boolean\(active && !currentOnly/);
-});
+test('RC86 acknowledgements require exact categorical strings and cannot precede the incident',()=>{
+  const r=runtime();
+  assert.deepEqual(r.buildNewsImpactRecoveryIncidentAcknowledgements({broken:true}),[]);
 
-test('RC86 suppresses acknowledged warnings until a new incident occurrence',()=>{
-  assert.match(worker,/alertSuppressed:acknowledged/);
-  assert.match(worker,/const suppressed=new Set/);
-  assert.match(worker,/suppressed\.has\(newsImpactRecoveryIncidentKey/);
-  assert.match(worker,/suppressedAlerts:list\.filter/);
-  assert.match(app,/новый failure автоматически снова требует внимания/);
-});
+  const acknowledgements=r.buildNewsImpactRecoveryIncidentAcknowledgements([
+    {created_at:'2026-09-23T10:05:00Z',metadata:{reason:'server_error',action:'full_ai',incident_guard:'performance_drift',incident_seen_at:'2026-09-23T10:00:00Z'}},
+    {created_at:'2026-09-23T09:59:00Z',metadata:{reason:'server_error',action:'full_ai',incident_guard:'performance_drift',incident_seen_at:'2026-09-23T10:00:00Z'}},
+    {created_at:'2026-09-23T10:06:00Z',metadata:{reason:{toString(){throw new Error('must not coerce');}},action:'full_ai',incident_guard:'performance_drift',incident_seen_at:'2026-09-23T10:00:00Z'}},
+  ]);
+  assert.equal(acknowledgements.length,1);
+  assert.equal(acknowledgements[0].acknowledgedAt,'2026-09-23T10:05:00.000Z');
 
-test('RC86 exposes a fixed runbook for each incident type',()=>{
-  assert.match(worker,/function newsImpactRecoveryIncidentRunbook\(/);
-  assert.match(worker,/Performance drift/);
-  assert.match(worker,/Recent regression/);
-  assert.match(worker,/Strategy evidence unavailable/);
-  assert.match(worker,/automaticSafety/);
-  assert.match(app,/Автозащита:/);
-});
-
-test('RC86 acknowledgement endpoint is admin-only and conflict-safe',()=>{
+  assert.match(growth,/typeof body\?\.reason==='string'/);
+  assert.match(growth,/typeof body\?\.code==='string'/);
+  assert.match(growth,/typeof body\?\.lastSeenAt==='string'/);
   assert.match(worker,/\/api\/recovery-incident-ack/);
   assert.match(worker,/isAdminUser\(user, cfg\)/);
-  assert.match(worker,/Инцидент уже изменился или больше не активен/);
-  assert.match(worker,/memory\.newsImpactRecoveryStrategy=\{value:null,loadedAt:0\}/);
+  assert.match(router,/recovery-incident-ack/);
 });
 
-test('RC86 admin UI acknowledges without hiding an active incident',()=>{
-  assert.match(app,/recoveryIncidentAckPending: new Set\(\)/);
-  assert.match(app,/async function acknowledgeRecoveryIncident/);
-  assert.match(app,/✓ Просмотрено/);
-  assert.match(app,/активен · просмотрен/);
-  assert.match(app,/Recovery Incident Center/);
+test('RC85 incident center and summary restore the lifecycle contract',()=>{
+  const r=runtime();
+  const events=r.buildNewsImpactRecoveryIncidentEvents([
+    {created_at:'2026-09-23T15:00:00Z',metadata:{reason:'server_error',action:'full_ai',recovery:'retry',strategy:'fixed',strategy_guard:'performance_drift'}},
+  ]);
+  const incidents=r.buildNewsImpactRecoveryIncidentCenter([
+    {reason:'server_error',reasonLabel:'Server',action:'full_ai',actionLabel:'AI',strategy:'fixed',selectedRecovery:'retry',selectedRecoveryLabel:'Retry',guardReason:'performance_drift'},
+  ],events,[],'ok',{asOfMs:Date.parse('2026-09-23T18:00:00Z')});
+  assert.equal(incidents.length,1);
+  assert.equal(incidents[0].status,'active');
+  assert.equal(incidents[0].effectivePriority,'critical');
+  assert.equal(incidents[0].slo.ageMinutes,180);
+
+  const summary=r.summarizeNewsImpactRecoveryIncidents(incidents);
+  assert.equal(summary.active,1);
+  assert.equal(summary.criticalActive,1);
+  assert.equal(summary.ackSloBreached,1);
+
+  assert.deepEqual(r.summarizeNewsImpactRecoveryIncidents({broken:true}),{
+    total:0,active:0,recovered:0,highActive:0,mediumActive:0,
+    acknowledgedActive:0,unacknowledgedActive:0,suppressedAlerts:0,escalatedActive:0,
+    criticalActive:0,ackSloBreached:0,recoverySloBreached:0,
+    ackMeasured:0,recoveryMeasured:0,avgAckMinutes:null,avgRecoveryMinutes:null,latest:null,
+  });
 });
 
-test('RC86 deterministic ack self-test and health contract',()=>{
-  assert.match(worker,/function newsImpactRecoveryIncidentAckDrill\(/);
+test('RC87 SLO state rejects malformed chronology instead of reporting a false success',()=>{
+  const r=runtime();
+  const asOfMs=Date.parse('2026-09-23T11:00:00Z');
+
+  assert.equal(r.newsImpactRecoveryEpisodeSloState({startedAt:{toString(){throw new Error('must not coerce');}}},asOfMs),null);
+  assert.equal(r.newsImpactRecoveryEpisodeSloState({
+    startedAt:'2026-09-23T10:00:00Z',
+    recoveredAt:'2026-09-23T09:59:00Z',
+  },asOfMs),null);
+
+  const earlyAck=r.newsImpactRecoveryEpisodeSloState({
+    startedAt:'2026-09-23T10:00:00Z',
+    firstAcknowledgedAt:'2026-09-23T09:59:00Z',
+  },asOfMs);
+  assert.equal(earlyAck.ackMet,false);
+  assert.equal(earlyAck.ackBreached,true);
+
+  const futureRecovery=r.newsImpactRecoveryEpisodeSloState({
+    startedAt:'2026-09-23T10:00:00Z',
+    recoveredAt:'2026-09-23T12:00:00Z',
+  },asOfMs);
+  assert.equal(futureRecovery.recoveryLatencyMinutes,null);
+  assert.equal(futureRecovery.recoveryStatus,'pending');
+});
+
+test('RC88 dashboard handles malformed options and keeps literal active state',()=>{
+  const r=runtime();
+  const asOfMs=Date.parse('2026-09-23T18:00:00Z');
+  const empty=r.buildNewsImpactRecoveryIncidentSloDashboard({broken:true},null);
+  assert.equal(empty.weeks,4);
+  assert.equal(empty.summary.episodes,0);
+
+  const dashboard=r.buildNewsImpactRecoveryIncidentSloDashboard([
+    {
+      reason:'server_error',action:'full_ai',
+      startedAt:'2026-09-23T16:00:00Z',
+      firstAcknowledgedAt:null,recoveredAt:null,
+      active:'false',
+      guardCodes:['performance_drift',{toString(){throw new Error('must not coerce');}}],
+    },
+  ],{asOfMs,weeks:true});
+  assert.equal(dashboard.weeks,4);
+  assert.equal(dashboard.summary.episodes,1);
+  assert.equal(dashboard.summary.active,0);
+  assert.equal(dashboard.summary.recovered,1);
+  assert.deepEqual(dashboard.repeated,[]);
+});
+
+test('RC89 breach feed rejects malformed containers, coercive labels and truthy active strings',()=>{
+  const r=runtime();
+  const asOfMs=Date.parse('2026-09-23T18:00:00Z');
+  assert.deepEqual(
+    r.buildNewsImpactRecoveryIncidentSloBreachFeed({broken:true},null).items,
+    [],
+  );
+
+  const feed=r.buildNewsImpactRecoveryIncidentSloBreachFeed([
+    {
+      reason:'server_error',reasonLabel:{toString(){throw new Error('must not coerce');}},
+      action:'full_ai',actionLabel:'AI',
+      startedAt:'2026-09-23T10:00:00Z',
+      lastSeenAt:'2026-09-23T12:00:00Z',
+      active:'false',
+      occurrences:true,
+      guardCodes:['performance_drift',{toString(){throw new Error('must not coerce');}}],
+    },
+    {
+      reason:{toString(){throw new Error('must not coerce');}},
+      action:'share',startedAt:'2026-09-23T10:00:00Z',active:true,
+    },
+  ],{asOfMs,limit:true});
+  assert.equal(feed.items.length,1);
+  assert.equal(feed.items[0].reason,'server_error');
+  assert.equal(feed.items[0].reasonLabel,'server_error');
+  assert.equal(feed.items[0].active,false);
+  assert.equal(feed.items[0].occurrences,0);
+  assert.deepEqual(feed.items[0].guards,['performance_drift']);
+  assert.equal(feed.privacy.telegramIdsExposed,false);
+  assert.equal(feed.privacy.rawErrorsExposed,false);
+  assert.equal(feed.privacy.freeTextExposed,false);
+  assert.equal(feed.routingChanged,false);
+});
+
+test('RC85-RC89 admin, health and storage contracts remain present',()=>{
+  for (const textValue of [
+    'Recovery Incident Center',
+    'Incident SLO Dashboard · 4 недели',
+    'SLO Breach Feed',
+    'ACK SLO просрочено',
+    'Recovery SLO просрочено',
+  ]) assert.ok(app.includes(textValue),textValue);
+
+  for (const flag of [
+    'newsImpactRecoveryIncidentCenter',
+    'newsImpactRecoveryIncidentAcknowledgement',
+    'newsImpactRecoveryIncidentSlo',
+    'newsImpactRecoveryIncidentSloDashboard',
+    'newsImpactRecoveryIncidentSloBreachFeed',
+  ]) assert.ok(worker.includes(flag + ": 'enabled'"),flag);
+
+  assert.match(worker,/newsImpactRecoveryIncidentSelfTest: newsImpactRecoveryIncidentDrill\(\)\.pass \? 'enabled' : 'failed'/);
   assert.match(worker,/newsImpactRecoveryIncidentAckSelfTest: newsImpactRecoveryIncidentAckDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  for (const flag of ['newsImpactRecoveryIncidentAcknowledgement','newsImpactRecoveryIncidentRunbook','newsImpactRecoveryIncidentAlertSuppression','newsImpactRecoveryIncidentAckPrivacyGuard']) {
-    assert.ok(worker.includes(flag + ": 'enabled'"), 'missing ' + flag);
-  }
-});
-
-test('RC86 reuses growth_events and needs no Supabase migration',()=>{
-  assert.match(worker,/NEWS_IMPACT_RECOVERY_INCIDENT_ACK_EVENT/);
-  assert.match(worker,/incidentAckRows=rows\.filter/);
-  const files=fs.readdirSync('supabase/migrations').filter(x=>/^supabase_migration_v6_\d/.test(x));
-  assert.ok(files.includes('supabase_migration_v6_15.sql'));
-  assert.ok(!files.some(x=>/rc86/i.test(x)));
-});
-}
-
-// test/news-impact-recovery-incident-slo-rc87.test.js
-{
-const worker=fs.readFileSync('src/worker.js','utf8');
-const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
-
-test('RC87 derives incident episodes and recovery timestamps from factual failure guards',()=>{
-  assert.match(worker,/function buildNewsImpactRecoveryIncidentEvents\(/);
-  assert.match(worker,/episodeStartedAt/);
-  assert.match(worker,/episodeLastSeenAt/);
-  assert.match(worker,/episodeRecoveredAt/);
-  assert.match(worker,/open\.episode\.recoveredAt=new Date\(event\.at\)\.toISOString\(\)/);
-});
-
-test('RC87 defines acknowledgement and recovery SLO targets',()=>{
-  assert.match(worker,/NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES = 30/);
-  assert.match(worker,/NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES = 120/);
-  assert.match(worker,/NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES = 360/);
-  assert.match(worker,/ackStatus/);
-  assert.match(worker,/recoveryStatus/);
-  assert.match(worker,/ackLatencyMinutes/);
-  assert.match(worker,/recoveryLatencyMinutes/);
-});
-
-test('RC87 escalates overdue active incidents without changing routing',()=>{
-  assert.match(worker,/effectivePriority='critical'/);
-  assert.match(worker,/escalationReason='recovery_slo_breach'/);
-  assert.match(worker,/escalationReason='ack_critical_overdue'/);
-  assert.match(worker,/escalationReason='ack_slo_breach'/);
-  assert.match(worker,/persistence:'none'/);
-  assert.match(worker,/fallback:'fixed'/);
-});
-
-test('RC87 summarizes escalations and SLO breaches',()=>{
-  assert.match(worker,/escalatedActive:list\.filter/);
-  assert.match(worker,/criticalActive:list\.filter/);
-  assert.match(worker,/ackSloBreached:list\.filter/);
-  assert.match(worker,/recoverySloBreached:list\.filter/);
-  assert.match(worker,/avgAckMinutes/);
-  assert.match(worker,/avgRecoveryMinutes/);
-});
-
-test('RC87 adds SLO escalation alerts',()=>{
-  assert.match(worker,/incident_recovery_slo_breach/);
-  assert.match(worker,/incident_ack_slo_breach/);
-  assert.match(worker,/critical:list\.filter\(x=>x\.severity==='critical'\)\.length/);
-  assert.match(app,/ACK SLO просрочено/);
-  assert.match(app,/Recovery SLO просрочено/);
-  assert.match(app,/приоритет повышен/);
-});
-
-test('RC87 admin explains latency and routing isolation',()=>{
-  assert.match(app,/SLO: просмотр/);
-  assert.match(app,/возраст/);
-  assert.match(app,/просмотр:/);
-  assert.match(app,/восстановление:/);
-  assert.match(app,/Эскалация меняет только административный приоритет, а не recovery-routing/);
-});
-
-test('RC87 deterministic SLO drill and health contract',()=>{
-  assert.match(worker,/function newsImpactRecoveryIncidentSloDrill\(/);
   assert.match(worker,/newsImpactRecoveryIncidentSloSelfTest: newsImpactRecoveryIncidentSloDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  for (const flag of ['newsImpactRecoveryIncidentSlo','newsImpactRecoveryIncidentEscalation','newsImpactRecoveryIncidentLatencyMetrics']) {
-    assert.ok(worker.includes(flag + ": 'enabled'"), 'missing ' + flag);
-  }
-});
-
-test('RC87 keeps SLO derived and needs no new Supabase migration',()=>{
-  assert.match(worker,/newsImpactRecoveryIncidentSloGuard/);
-  assert.match(worker,/derived_from_incident_age_and_ack_state/);
-  const files=fs.readdirSync('supabase/migrations').filter(x=>/^supabase_migration_v6_\d/.test(x));
-  assert.ok(files.includes('supabase_migration_v6_15.sql'));
-  assert.ok(!files.some(x=>/rc87/i.test(x)));
-});
-}
-
-// test/news-impact-recovery-incident-slo-dashboard-rc88.test.js
-{
-const worker=fs.readFileSync('src/worker.js','utf8');
-const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
-
-test('RC88 builds factual incident episode history from adverse to safe guards',()=>{
-  assert.match(worker,/function buildNewsImpactRecoveryIncidentEpisodeHistory\(/);
-  assert.match(worker,/openByPair=new Map\(\)/);
-  assert.match(worker,/episode\.recoveredAt=new Date\(event\.at\)\.toISOString\(\)/);
-  assert.match(worker,/episode\.occurrences\+=1/);
-  assert.match(worker,/guardCodes/);
-});
-
-test('RC88 keeps full acknowledgement history for first-review latency',()=>{
-  assert.match(worker,/function buildNewsImpactRecoveryIncidentAcknowledgementHistory\(/);
-  assert.match(worker,/firstAcknowledgedAt/);
-  assert.match(worker,/incidentSeenAt/);
-  const start=worker.indexOf('function buildNewsImpactRecoveryIncidentAcknowledgementHistory');
-  const end=worker.indexOf('function buildNewsImpactRecoveryIncidentEpisodeHistory',start);
-  const block=worker.slice(start,end);
-  assert.doesNotMatch(block,/telegram_id\s*:/);
-  assert.doesNotMatch(block,/rawError|error\.message|stack|query/);
-});
-
-test('RC88 calculates weekly ACK and recovery SLO compliance',()=>{
-  assert.match(worker,/function buildNewsImpactRecoveryIncidentSloDashboard\(/);
-  assert.match(worker,/function newsImpactRecoveryEpisodeSloState\(/);
-  assert.match(worker,/ackSloPct:newsImpactRecoverySloPct/);
-  assert.match(worker,/recoverySloPct:newsImpactRecoverySloPct/);
-  assert.match(worker,/avgAckMinutes/);
-  assert.match(worker,/avgRecoveryMinutes/);
-  assert.match(worker,/weekly/);
-});
-
-test('RC88 excludes immature short auto-recovery from ACK breach denominator',()=>{
-  assert.match(worker,/const ackEligible=Number\.isFinite\(ackMs\) \|\| elapsedMinutes>=NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES/);
-  assert.match(worker,/const ackBreached=ackEligible && !ackMet/);
-});
-
-test('RC88 ranks recurring reason plus action episode pairs',()=>{
-  assert.match(worker,/const recurrence=new Map\(\)/);
-  assert.match(worker,/const key=`\$\{episode\.reason\}\|\$\{episode\.action\}`/);
-  assert.match(worker,/filter\(x=>x\.episodes>=2\)/);
-  assert.match(worker,/recoveryBreaches/);
-  assert.match(worker,/ackBreaches/);
-});
-
-test('RC88 admin renders weekly trend and recurring issues without changing routing',()=>{
-  assert.match(app,/Incident SLO Dashboard · 4 недели/);
-  assert.match(app,/Повторяющиеся Recovery-проблемы/);
-  assert.match(app,/ACK breaches/);
-  assert.match(app,/Recovery breaches/);
-  assert.match(app,/routing не меняется/);
-});
-
-test('RC88 dashboard is exposed from the shared runtime loader',()=>{
-  assert.match(worker,/incidentEpisodeHistory=buildNewsImpactRecoveryIncidentEpisodeHistory\(failures,incidentAckRows\)/);
-  assert.match(worker,/newsImpactRecoveryStrategyLoaded\.incidentEpisodeHistory/);
-  assert.match(worker,/newsImpactRecoveryIncidentSloDashboard=newsImpactRecoveryStrategyLoaded\.available/);
-  assert.match(worker,/buildNewsImpactRecoveryIncidentSloDashboard\(/);
-  assert.match(worker,/newsImpactRecoveryIncidentSloDashboard,/);
-});
-
-test('RC88 deterministic dashboard drill and health contract',()=>{
-  assert.match(worker,/function newsImpactRecoveryIncidentSloDashboardDrill\(/);
   assert.match(worker,/newsImpactRecoveryIncidentSloDashboardSelfTest: newsImpactRecoveryIncidentSloDashboardDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  for (const flag of ['newsImpactRecoveryIncidentSloDashboard','newsImpactRecoveryIncidentWeeklyTrend','newsImpactRecoveryIncidentRecurrence']) {
-    assert.ok(worker.includes(flag + ": 'enabled'"), 'missing ' + flag);
-  }
-});
-
-test('RC88 needs no new Supabase migration',()=>{
-  const files=fs.readdirSync('supabase/migrations').filter(x=>/^supabase_migration_v6_\d/.test(x));
-  assert.ok(files.includes('supabase_migration_v6_15.sql'));
-  assert.ok(!files.some(x=>/rc88/i.test(x)));
-});
-}
-
-// test/news-impact-recovery-incident-breach-feed-rc89.test.js
-{
-const worker=fs.readFileSync('src/worker.js','utf8');
-const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
-
-test('RC89 derives breach feed only from existing incident episode SLO state',()=>{
-  assert.match(worker,/function buildNewsImpactRecoveryIncidentSloBreachFeed\(/);
-  assert.match(worker,/newsImpactRecoveryEpisodeSloState\(episode,asOfMs\)/);
-  assert.match(worker,/!slo\.ackBreached && !slo\.recoveryBreached/);
-  assert.match(worker,/breachTypes\.push\('ack'\)/);
-  assert.match(worker,/breachTypes\.push\('recovery'\)/);
-});
-
-test('RC89 uses existing critical ACK and recovery thresholds without new routing policy',()=>{
-  assert.match(worker,/NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES/);
-  assert.match(worker,/episode\.active && slo\.recoveryBreached/);
-  assert.match(worker,/routingChanged:false/);
-  assert.doesNotMatch(worker,/RC89_ACK|RC89_RECOVERY|BREACH_TARGET_MINUTES/);
-});
-
-test('RC89 breach feed keeps privacy-safe categorical drilldown',()=>{
-  const start=worker.indexOf('function buildNewsImpactRecoveryIncidentSloBreachFeed');
-  const end=worker.indexOf('function buildNewsImpactRecoveryIncidentCenter',start);
-  const block=worker.slice(start,end);
-  assert.doesNotMatch(block,/telegram_id\s*:/);
-  assert.doesNotMatch(block,/raw_error\s*:|error\.message|stack\s*:|query\s*:/);
-  assert.match(block,/freeTextExposed:false/);
-  assert.match(block,/rawErrorsExposed:false/);
-  assert.match(block,/telegramIdsExposed:false/);
-});
-
-test('RC89 groups recurring breach pairs by reason plus action',()=>{
-  assert.match(worker,/String\(item\.reason \|\| ''\)\+'\|'\+String\(item\.action \|\| ''\)/);
-  assert.match(worker,/filter\(x=>x\.breachEpisodes>=2\)/);
-  assert.match(worker,/activeBreaches/);
-  assert.match(worker,/ackBreaches/);
-  assert.match(worker,/recoveryBreaches/);
-});
-
-test('RC89 exposes breach feed from shared episode history',()=>{
-  assert.match(worker,/newsImpactRecoveryIncidentSloBreachFeed=newsImpactRecoveryStrategyLoaded\.available/);
-  assert.match(worker,/newsImpactRecoveryStrategyLoaded\.incidentEpisodeHistory/);
-  assert.match(worker,/newsImpactRecoveryIncidentSloBreachFeed,/);
-});
-
-test('RC89 admin renders factual breach drilldown',()=>{
-  assert.match(app,/SLO Breach Feed/);
-  assert.match(app,/ACK latency/);
-  assert.match(app,/recovery latency/);
-  assert.match(app,/RC89 — drilldown/);
-  assert.match(app,/routing-решения не добавляются/);
-});
-
-test('RC89 deterministic drill and health contract',()=>{
-  assert.match(worker,/function newsImpactRecoveryIncidentSloBreachFeedDrill\(/);
   assert.match(worker,/newsImpactRecoveryIncidentSloBreachFeedSelfTest: newsImpactRecoveryIncidentSloBreachFeedDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  for (const flag of ['newsImpactRecoveryIncidentSloBreachFeed','newsImpactRecoveryIncidentBreachDrilldown','newsImpactRecoveryIncidentBreachPrivacyGuard']) {
-    assert.ok(worker.includes(flag + ": 'enabled'"), 'missing ' + flag);
-  }
-});
 
-test('RC89 needs no new Supabase migration',()=>{
   const files=fs.readdirSync('supabase/migrations').filter(x=>/^supabase_migration_v6_\d/.test(x));
   assert.ok(files.includes('supabase_migration_v6_15.sql'));
-  assert.ok(!files.some(x=>/rc89/i.test(x)));
+  assert.ok(!files.some(x=>/rc8[5-9]/i.test(x)));
 });
-}
