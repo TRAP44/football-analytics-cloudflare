@@ -77,14 +77,14 @@ export function createTelegramWebhookHandler(deps) {
   }
 
   function normalizeError(error, fallbackMessage = 'Telegram webhook processing failed.') {
-    if (error instanceof Error) return error;
-    const source=plainObject(error);
+    const source=error instanceof Error ? error : plainObject(error);
     const normalized=new Error(textValue(source?.message,500) || fallbackMessage);
     const code=textValue(source?.code,80);
     if (code) normalized.code=code;
     if (source?.telegramWebhookRetrySafe === true) normalized.telegramWebhookRetrySafe=true;
     const retryAfter=positiveRetryAfter(source?.retryAfter,0);
     if (retryAfter>0) normalized.retryAfter=retryAfter;
+    if (error instanceof Error) normalized.cause=error;
     return normalized;
   }
 
@@ -136,10 +136,7 @@ export function createTelegramWebhookHandler(deps) {
   function invalidProcessResponseError() {
     return Object.assign(
       new Error('Telegram update processor returned an invalid response.'),
-      {
-        code:'TELEGRAM_UPSTREAM',
-        telegramWebhookRetrySafe:true,
-      },
+      {code:'TELEGRAM_UPSTREAM'},
     );
   }
 
@@ -286,6 +283,7 @@ export function createTelegramWebhookHandler(deps) {
       burst=enforceTelegramBurst(update);
     } catch (caught) {
       const error=normalizeError(caught);
+      if (!textValue(error.code,80)) error.code='TELEGRAM_UPSTREAM';
       const disposition=classifyTelegramWebhookFailure(error,cfg);
       error.telegramWebhookRetry=Boolean(disposition.retry);
       error.telegramWebhookDisposition=disposition;
@@ -301,7 +299,10 @@ export function createTelegramWebhookHandler(deps) {
 
     if (burst?.blocked === true) {
       safeCompleteLocal(claim.key);
-      if (ownsPersistentClaim) await safeCompletePersistent(cfg,claim.key);
+      if (ownsPersistentClaim) {
+        const completed=await safeCompletePersistent(cfg,claim.key);
+        if (!completed) throw attachDisposition(dedupeUnavailableError(),cfg);
+      }
       const callbackId=textValue(update?.callback_query?.id,120);
       const retryAfter=positiveRetryAfter(burst.retryAfter,1);
       if (callbackId) {
