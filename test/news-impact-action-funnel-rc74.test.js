@@ -9,7 +9,9 @@ const admin=fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
 
 test('RC74 builds per-decision News Impact action conversion',()=>{
   assert.match(recovery,/function buildNewsImpactActionFunnel\(/);
-  assert.match(recovery,/NEWS_IMPACT_FUNNEL_DECISIONS\.map/);
+  assert.match(recovery,/const funnelDecisions=Array\.isArray\(NEWS_IMPACT_FUNNEL_DECISIONS\)/);
+  assert.match(recovery,/const safeDecisionRows=Array\.isArray\(decisionRows\)/);
+  assert.match(recovery,/const safeActionRows=Array\.isArray\(actionRows\)/);
   assert.match(recovery,/decisionUsers\.has\(uid\)/);
   assert.match(recovery,/const conversionPct=users \? Math\.round\(\(actedUsers\.size\/users\)\*1000\)\/10 : 0/);
   assert.match(recovery,/observedUsers:observedDecisionUsers\.size/);
