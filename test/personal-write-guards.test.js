@@ -12,6 +12,8 @@ import {
 const worker = fs.readFileSync('src/worker.js', 'utf8');
 const favorites = fs.readFileSync('src/user-favorites.js', 'utf8');
 const reminders = fs.readFileSync('src/user-reminders.js', 'utf8');
+const serviceWiring = fs.readFileSync('src/service-wiring-runtime.js', 'utf8');
+const schemaRuntime = fs.readFileSync('src/supabase-schema-runtime.js', 'utf8');
 const http = fs.readFileSync('src/http.js', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/supabase_migration_v6_19_1.sql', 'utf8').toLowerCase();
 
@@ -149,20 +151,20 @@ test('v6.19.1 serializes per-user writes and keeps RPCs backend-only', () => {
 test('personal write storage boundaries use guarded RPCs instead of direct upserts', () => {
   assert.match(favorites, /save_favorite_guarded/);
   assert.doesNotMatch(favorites, /supaUpsert\(cfg, 'favorites'/);
-  assert.match(worker, /createUserFavoritesService\(\{/);
+  assert.match(serviceWiring, /createUserFavoritesService\(\{/);
   assert.doesNotMatch(worker, /async function addFavorite\(/);
 
   assert.match(reminders, /save_match_reminder_guarded/);
   assert.doesNotMatch(reminders, /supaUpsert\(cfg, 'match_reminders'/);
-  assert.match(worker, /createUserRemindersService\(\{/);
+  assert.match(serviceWiring, /createUserRemindersService\(\{/);
   assert.doesNotMatch(worker, /async function addReminder\(/);
   assert.match(http, /FAVORITES_LIMIT/);
   assert.match(http, /REMINDERS_LIMIT/);
-  assert.match(worker, /personalWriteLimits:\s*PERSONAL_WRITE_LIMITS/);
+  assert.match(worker, /createSupabaseSchemaRuntime\(\{[\s\S]*PERSONAL_WRITE_LIMITS/);
 });
 
 test('personal write guard contract is a blocking schema-drift dependency', () => {
   assert.match(worker, /readPersonalWriteGuardContract/);
-  assert.match(worker, /missing\.push\('personal_write_guards'\)/);
-  assert.match(worker, /summary\.ok && fingerprint\.ok && personalWriteGuards\.ok/);
+  assert.match(schemaRuntime, /missing\.push\('personal_write_guards'\)/);
+  assert.match(schemaRuntime, /summary\.ok && fingerprint\.ok && personalWriteGuards\.ok/);
 });
