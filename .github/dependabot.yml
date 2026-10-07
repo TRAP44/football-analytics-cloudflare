@@ -15,6 +15,7 @@ updates:
       include: "scope"
     groups:
       npm-minor-patch:
+        applies-to: "version-updates"
         patterns:
           - "*"
         update-types:
@@ -35,6 +36,7 @@ updates:
       include: "scope"
     groups:
       github-actions-minor-patch:
+        applies-to: "version-updates"
         patterns:
           - "*"
         update-types:
