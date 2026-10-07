@@ -2,16 +2,17 @@ import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const worker = fs.readFileSync('src/worker.js', 'utf8');
+const schemaRuntime = fs.readFileSync('src/supabase-schema-runtime.js', 'utf8');
+const monitorRuntime = fs.readFileSync('src/production-monitor-runtime.js', 'utf8');
 const scheduled = fs.readFileSync('src/scheduled-jobs.js', 'utf8');
 
 test('production monitor distinguishes confirmed drift from transient schema probe outages', () => {
-  assert.match(worker, /function schemaProbeStatusKind\(/);
-  assert.match(worker, /function classifySupabaseSchemaProbeFailures\(/);
-  assert.match(worker, /schemaStatus === 'unavailable'/);
-  assert.match(worker, /schemaFailureMode:/);
-  assert.match(worker, /Schema probe недоступен/);
-  assert.match(worker, /Release остаётся fail-closed, но потеря схемы не утверждается/);
+  assert.match(schemaRuntime, /function schemaProbeStatusKind\(/);
+  assert.match(schemaRuntime, /function classifySupabaseSchemaProbeFailures\(/);
+  assert.match(monitorRuntime, /schemaStatus === 'unavailable'/);
+  assert.match(monitorRuntime, /schemaFailureMode:/);
+  assert.match(monitorRuntime, /schemaUnavailable:/);
+  assert.match(monitorRuntime, /Production работает, но нужен контроль/);
 });
 
 test('production monitor waits for reminder reads before deep Supabase schema probes', () => {
