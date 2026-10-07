@@ -2,11 +2,12 @@ export const CLIENT_VERSION = '6.120.0-rc144';
 export const CLIENT_API_CONTRACT = 5;
 export const CLIENT_RELEASE_CHANNEL = 'rc144';
 export const FRONTEND_ASSET_REVISION = '6.120.0-launch49';
-export const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.19 + миграции до v6.29.1)';
+export const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.19 + миграции до v6.29.11)';
 
 export const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 export const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
 export const MATCH_WATCHLIST_KEY = 'matchradar:watchlist:v1';
+
 export const DEFAULT_UI_PREFERENCES = Object.freeze({
   theme: 'system',
   accent: 'system',
@@ -32,46 +33,159 @@ export const ACCENT_PALETTES = Object.freeze({
   }),
 });
 
-export function readUiPreferences(storage = localStorage) {
+const UI_THEME_VALUES=Object.freeze(['system','dark','light','ocean']);
+const UI_ACCENT_VALUES=Object.freeze(['system','green','blue','violet','amber']);
+const UI_BUTTON_STYLE_VALUES=Object.freeze(['soft','compact']);
+
+function plainObject(value) {
   try {
-    const saved = JSON.parse(storage.getItem(UI_PREFERENCES_KEY) || '{}');
-    return {
-      theme: ['system', 'dark', 'light', 'ocean'].includes(saved.theme) ? saved.theme : DEFAULT_UI_PREFERENCES.theme,
-      accent: ['system', 'green', 'blue', 'violet', 'amber'].includes(saved.accent) ? saved.accent : DEFAULT_UI_PREFERENCES.accent,
-      buttonStyle: ['soft', 'compact'].includes(saved.buttonStyle) ? saved.buttonStyle : DEFAULT_UI_PREFERENCES.buttonStyle,
-    };
+    return value && typeof value==='object' && !Array.isArray(value)
+      ? value
+      : null;
   } catch {
-    return { ...DEFAULT_UI_PREFERENCES };
+    return null;
   }
 }
 
-
-export function readMatchWatchlist(storage = localStorage) {
+function safeRead(value,key) {
   try {
-    const raw = JSON.parse(storage.getItem(MATCH_WATCHLIST_KEY) || '[]');
-    if (!Array.isArray(raw)) return [];
-    const seen = new Set();
-    return raw
-      .map(item => ({
-        fixtureId: Number(item?.fixtureId || 0),
-        homeName: String(item?.homeName || '').trim().slice(0, 160),
-        awayName: String(item?.awayName || '').trim().slice(0, 160),
-        league: String(item?.league || '').trim().slice(0, 160),
-        date: String(item?.date || '').trim().slice(0, 80),
-        homeId: Number(item?.homeId || 0),
-        awayId: Number(item?.awayId || 0),
-        homeLogo: String(item?.homeLogo || '').trim().slice(0, 2048),
-        awayLogo: String(item?.awayLogo || '').trim().slice(0, 2048),
-        addedAt: String(item?.addedAt || '').trim().slice(0, 80),
-      }))
-      .filter(item => {
-        if (!Number.isSafeInteger(item.fixtureId) || item.fixtureId <= 0 || seen.has(item.fixtureId)) return false;
-        if (!item.homeName || !item.awayName) return false;
-        seen.add(item.fixtureId);
-        return true;
-      })
-      .slice(0, 50);
+    return value?.[key];
+  } catch {
+    return undefined;
+  }
+}
+
+function safeStorageText(storage,key) {
+  try {
+    const getItem=safeRead(storage,'getItem');
+    if (typeof getItem!=='function') return '';
+    const value=getItem.call(storage,key);
+    return typeof value==='string' ? value : '';
+  } catch {
+    return '';
+  }
+}
+
+function safeText(value,max) {
+  if (typeof value!=='string') return '';
+  return value
+    .replace(/[\u0000-\u001f\u007f]+/g,' ')
+    .replace(/\s+/g,' ')
+    .trim()
+    .slice(0,max);
+}
+
+function positiveInteger(value) {
+  if (typeof value==='number') {
+    return Number.isSafeInteger(value) && value>0 ? value : 0;
+  }
+  if (typeof value!=='string') return 0;
+  const raw=value.trim();
+  if (!/^\d+$/.test(raw)) return 0;
+  const parsed=Number(raw);
+  return Number.isSafeInteger(parsed) && parsed>0 ? parsed : 0;
+}
+
+function optionalPositiveInteger(value) {
+  if (
+    value===undefined
+    || value===null
+    || value===''
+    || value===0
+  ) return 0;
+  return positiveInteger(value);
+}
+
+function safeHttpUrl(value) {
+  if (typeof value!=='string' || !value.trim()) return '';
+  try {
+    const url=new URL(value.trim());
+    if (!['http:','https:'].includes(url.protocol)) return '';
+    if (url.username || url.password) return '';
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
+
+function defaultsCopy() {
+  return {...DEFAULT_UI_PREFERENCES};
+}
+
+export function readUiPreferences(storage=globalThis.localStorage) {
+  const raw=safeStorageText(storage,UI_PREFERENCES_KEY);
+  if (!raw) return defaultsCopy();
+
+  let saved;
+  try {
+    saved=plainObject(JSON.parse(raw));
+  } catch {
+    return defaultsCopy();
+  }
+  if (!saved) return defaultsCopy();
+
+  const theme=safeRead(saved,'theme');
+  const accent=safeRead(saved,'accent');
+  const buttonStyle=safeRead(saved,'buttonStyle');
+
+  return {
+    theme:typeof theme==='string' && UI_THEME_VALUES.includes(theme)
+      ? theme
+      : DEFAULT_UI_PREFERENCES.theme,
+    accent:typeof accent==='string' && UI_ACCENT_VALUES.includes(accent)
+      ? accent
+      : DEFAULT_UI_PREFERENCES.accent,
+    buttonStyle:
+      typeof buttonStyle==='string'
+      && UI_BUTTON_STYLE_VALUES.includes(buttonStyle)
+        ? buttonStyle
+        : DEFAULT_UI_PREFERENCES.buttonStyle,
+  };
+}
+
+function normalizeWatchlistItem(value) {
+  const item=plainObject(value);
+  if (!item) return null;
+
+  const fixtureId=positiveInteger(safeRead(item,'fixtureId'));
+  const homeName=safeText(safeRead(item,'homeName'),160);
+  const awayName=safeText(safeRead(item,'awayName'),160);
+  if (!fixtureId || !homeName || !awayName) return null;
+
+  return {
+    fixtureId,
+    homeName,
+    awayName,
+    league:safeText(safeRead(item,'league'),160),
+    date:safeText(safeRead(item,'date'),80),
+    homeId:optionalPositiveInteger(safeRead(item,'homeId')),
+    awayId:optionalPositiveInteger(safeRead(item,'awayId')),
+    homeLogo:safeHttpUrl(safeRead(item,'homeLogo')).slice(0,2048),
+    awayLogo:safeHttpUrl(safeRead(item,'awayLogo')).slice(0,2048),
+    addedAt:safeText(safeRead(item,'addedAt'),80),
+  };
+}
+
+export function readMatchWatchlist(storage=globalThis.localStorage) {
+  const raw=safeStorageText(storage,MATCH_WATCHLIST_KEY);
+  if (!raw) return [];
+
+  let parsed;
+  try {
+    parsed=JSON.parse(raw);
   } catch {
     return [];
   }
+  if (!Array.isArray(parsed)) return [];
+
+  const seen=new Set();
+  const out=[];
+  for (const value of parsed.slice(0,200)) {
+    const item=normalizeWatchlistItem(value);
+    if (!item || seen.has(item.fixtureId)) continue;
+    seen.add(item.fixtureId);
+    out.push(item);
+    if (out.length>=50) break;
+  }
+  return out;
 }
