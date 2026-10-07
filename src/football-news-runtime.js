@@ -785,27 +785,69 @@ export function createFootballNewsRuntime(deps) {
     });
   }
   
-  async function sendFavoriteTeamNews(request,cfg,userId,chatId,teamId,{force=false}={}) {
-    const favorites=await getFavorites(userId,cfg);
-    const team=favorites.find(x=>Number(x.team_id)===Number(teamId));
-    if (!team) {
-      await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'Эта команда не найдена в вашем избранном.'});
+  async function sendFavoriteTeamNews(request,cfg,userId,chatId,teamId,options={}) {
+    const id=positiveInteger(teamId);
+    if (!id) {
+      await telegramApi('sendMessage',cfg,{
+        chat_id:chatId,
+        text:'Эта команда не найдена в вашем избранном.',
+      });
       return;
     }
-    const [news,matches]=await Promise.all([
-      favoriteTeamFootballNews(team,cfg,force),
-      botTeamIdMatches(teamId,cfg).catch(()=>[]),
+    const favorites=safeArray(await getFavorites(userId,cfg));
+    const team=favorites
+      .map(plainObject)
+      .filter(Boolean)
+      .find(item=>positiveInteger(safeRead(item,'team_id'))===id);
+    if (!team) {
+      await telegramApi('sendMessage',cfg,{
+        chat_id:chatId,
+        text:'Эта команда не найдена в вашем избранном.',
+      });
+      return;
+    }
+    const [news,matchesRaw]=await Promise.all([
+      favoriteTeamFootballNews(team,cfg,safeRead(options,'force')===true),
+      Promise.resolve(botTeamIdMatches(id,cfg)).catch(()=>[]),
     ]);
-    const fixture=newsRelevantFixture(news.items?.[0] || {},matches || [])?.fixture
-      || (matches || []).find(x=>x.live || (!x.finished && Date.parse(x.date || 0)>=Date.now()-2*60*60*1000))
+    const matches=safeArray(matchesRaw);
+    const items=safeArray(safeRead(news,'items'));
+    const linked=newsRelevantFixture(items[0] || {},matches);
+    const fixture=plainObject(safeRead(linked,'fixture'))
+      || matches.find(raw=>{
+        const match=plainObject(raw);
+        if (!match) return false;
+        if (safeRead(match,'live')===true) return true;
+        if (safeRead(match,'finished')===true) return false;
+        const dateMs=strictPublishedMs(safeText(safeRead(match,'date'),80));
+        return dateMs!==null && dateMs>=Date.now()-2*60*60*1000;
+      })
       || null;
+    const fixtureId=positiveInteger(safeRead(fixture,'fixtureId'));
     const extra=[];
-    if (fixture?.fixtureId) extra.push([{text:'⚽ Проверить ближайший матч',callback_data:`news:match:${Number(fixture.fixtureId)}`}]);
-    extra.push([{text:'🔄 Обновить',callback_data:`news:team_refresh:${Number(teamId)}`},{text:'📰 Все новости',callback_data:'news:general'}]);
+    if (fixtureId) {
+      extra.push([{
+        text:'⚽ Проверить ближайший матч',
+        callback_data:`news:match:${fixtureId}`,
+      }]);
+    }
+    extra.push([
+      {text:'🔄 Обновить',callback_data:`news:team_refresh:${id}`},
+      {text:'📰 Все новости',callback_data:'news:general'},
+    ]);
     await telegramApi('sendMessage',cfg,{
-      chat_id:chatId,parse_mode:'HTML',
-      text:newsFeedText(news.items,{title:'MatchRadar AI · Новости',teamName:team.team_name || '',fixture,fixtures:matches || []}),
-      reply_markup:newsConversionKeyboard(news.items,extra,{fixtureId:Number(fixture?.fixtureId || 0),fixtures:matches || []}),
+      chat_id:chatId,
+      parse_mode:'HTML',
+      text:newsFeedText(items,{
+        title:'MatchRadar AI · Новости',
+        teamName:safeText(safeRead(team,'team_name'),120),
+        fixture,
+        fixtures:matches,
+      }),
+      reply_markup:newsConversionKeyboard(items,extra,{
+        fixtureId,
+        fixtures:matches,
+      }),
       disable_web_page_preview:true,
     });
   }
