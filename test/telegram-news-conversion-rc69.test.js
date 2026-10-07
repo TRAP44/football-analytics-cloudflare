@@ -40,7 +40,7 @@ test('direct club news can open the known fixture without repeated search',()=>{
 
 test('general news team CTA falls back to the existing match search flow',()=>{
   assert.match(worker,/news:ai_team:\(\[a-z0-9\]\{2,32\}\)/);
-  assert.match(worker,//sendBotFootballSearch\\\(request,cfg,callbackUserId,callbackChatId,teamName\\\)//);
+  assert.match(worker,/sendBotFootballSearch\(request,cfg,callbackUserId,callbackChatId,teamName\)/);
 });
 
 test('launch analytics exposes news AI intent and RC69 deterministic health',()=>{
