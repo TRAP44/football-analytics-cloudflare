@@ -183,3 +183,27 @@ test('trusted XI raises confidence diagnostics without becoming a sixth blend si
   assert.equal(confidence.diagnostics.startingXiConfidencePct,100);
   assert.ok(confidence.score>=72);
 });
+
+
+test('balanced confirmed XIs do not create a synthetic probability edge',()=>{
+  const model=runtime();
+  const stats=playerStats();
+  const sameIds=Array.from({length:11},(_,i)=>i+1);
+  const strength=model.buildStartingXiStrength({
+    lineups:{
+      home:lineup(sameIds),
+      away:lineup(sameIds),
+    },
+    homePlayerStats:stats,
+    awayPlayerStats:stats,
+  });
+
+  assert.equal(strength.trusted,true);
+  assert.equal(strength.probabilityShift,0);
+
+  const base={home:42,draw:29,away:29};
+  const adjusted=model.applyLineupStrengthAdjustment(base,strength);
+  assert.ok(Math.abs(adjusted.home-base.home)<0.0001);
+  assert.ok(Math.abs(adjusted.draw-base.draw)<0.0001);
+  assert.ok(Math.abs(adjusted.away-base.away)<0.0001);
+});
