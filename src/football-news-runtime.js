@@ -227,10 +227,9 @@ export function createFootballNewsRuntime(deps) {
   }
   
   function newsPublishedAtFromDayToken(token = '') {
-    const value=String(token || '');
-    if (!/^\d{8}$/.test(value)) return '';
-    const iso=`${value.slice(0,4)}-${value.slice(4,6)}-${value.slice(6,8)}T12:00:00Z`;
-    return Number.isFinite(Date.parse(iso)) ? iso : '';
+    if (typeof token!=='string' || !/^\d{8}$/.test(token)) return '';
+    const iso=`${token.slice(0,4)}-${token.slice(4,6)}-${token.slice(6,8)}T12:00:00Z`;
+    return strictPublishedMs(iso)!==null ? iso : '';
   }
   
   function newsTeamHint(item = {}) {
@@ -367,25 +366,40 @@ export function createFootballNewsRuntime(deps) {
     return 'Сначала сверяем источник; без привязки к конкретному матчу AI-оценку не меняем.';
   }
   
-  function newsConversionKeyboard(items = [], extraRows = [], { fixtureId=0, fixtures=[] } = {}) {
+  function newsConversionKeyboard(items = [], extraRows = [], options = {}) {
     const rows=[];
-    for (const [index,item] of (items || []).slice(0,4).entries()) {
-      const row=[{text:`↗ Источник ${index+1}`,url:item.url}];
-      const smartLink=(fixtures || []).length ? newsRelevantFixture(item,fixtures) : null;
-      const linkedFixtureId=Number(smartLink?.fixture?.fixtureId || fixtureId || 0);
+    const fixtures=safeArray(safeRead(options,'fixtures'));
+    const fallbackFixtureId=positiveInteger(safeRead(options,'fixtureId'));
+    for (const [index,item] of safeArray(items).slice(0,4).entries()) {
+      const value=plainObject(item);
+      if (!value) continue;
+      const url=externalNewsUrl(safeRead(value,'url'));
+      if (!url) continue;
+      const row=[{text:`↗ Источник ${index+1}`,url}];
+      const smartLink=fixtures.length ? newsRelevantFixture(value,fixtures) : null;
+      const linkedFixtureId=
+        positiveInteger(safeRead(plainObject(safeRead(smartLink,'fixture')),'fixtureId'))
+        || fallbackFixtureId;
       if (linkedFixtureId>0) {
-        const dayToken=newsPublishedDayToken(item);
+        const dayToken=newsPublishedDayToken(value);
         row.push({text:'🧠 Проверить с AI',callback_data:`news:ai_match:${linkedFixtureId}${dayToken ? `:${dayToken}` : ''}`});
       } else {
-        const hint=newsTeamHint(item);
-        if (hint?.token) {
-          const dayToken=newsPublishedDayToken(item);
-          row.push({text:`🧠 ${String(hint.canonical).slice(0,18)}`,callback_data:`news:ai_team:${hint.token}${dayToken ? `:${dayToken}` : ''}`});
+        const hint=newsTeamHint(value);
+        const token=safeText(safeRead(hint,'token'),32);
+        if (token) {
+          const dayToken=newsPublishedDayToken(value);
+          const canonical=safeText(safeRead(hint,'canonical'),18,'Команда');
+          row.push({text:`🧠 ${canonical}`,callback_data:`news:ai_team:${token}${dayToken ? `:${dayToken}` : ''}`});
         }
       }
       rows.push(row);
     }
-    return {inline_keyboard:[...rows,...extraRows]};
+    return {
+      inline_keyboard:[
+        ...rows,
+        ...safeArray(extraRows).filter(Array.isArray),
+      ],
+    };
   }
   
   function newsConversionDrill() {
@@ -509,34 +523,87 @@ export function createFootballNewsRuntime(deps) {
   }
   
   async function currentGeneralFootballNews(cfg, force = false) {
+    const refresh=force===true;
     const bucket=Math.floor(Date.now()/(30*60*1000));
-    const key=`bot:news:general:${force ? bucket : 'current'}:v1`;
-    if (!force) {
-      const cached=await getCache('bot:news:general:current:v1',cfg).catch(()=>null);
-      if (cached?.items) return {...cached,cached:true};
+    const key=`bot:news:general:${refresh ? bucket : 'current'}:v2`;
+    if (!refresh) {
+      const cached=plainObject(
+        await Promise.resolve(getCache('bot:news:general:current:v2',cfg))
+          .catch(()=>null),
+      );
+      const cachedItems=safeRead(cached,'items');
+      if (Array.isArray(cachedItems)) {
+        return {
+          items:dedupeFootballNews(cachedItems,7),
+          available:safeRead(cached,'available')===true,
+          reason:safeText(safeRead(cached,'reason'),80),
+          generatedAt:safeText(safeRead(cached,'generatedAt'),80),
+          cached:true,
+        };
+      }
     }
     const search=await tavilyNewsSearch(
       'soccer football latest news injuries suspensions lineups coaches Champions League Premier League La Liga Serie A Bundesliga Ligue 1',
-      cfg,{days:2,maxResults:7}
+      cfg,{days:2,maxResults:7},
     );
-    const payload={items:search.results || [],available:search.available,reason:search.reason,generatedAt:new Date().toISOString()};
-    await setCache('bot:news:general:current:v1',0,payload,cfg,30).catch(()=>null);
-    if (force) await setCache(key,0,payload,cfg,30).catch(()=>null);
+    const payload={
+      items:safeArray(safeRead(search,'results')),
+      available:safeRead(search,'available')===true,
+      reason:safeText(safeRead(search,'reason'),80),
+      generatedAt:new Date().toISOString(),
+    };
+    await Promise.resolve(
+      setCache('bot:news:general:current:v2',0,payload,cfg,30),
+    ).catch(()=>null);
+    if (refresh) {
+      await Promise.resolve(setCache(key,0,payload,cfg,30)).catch(()=>null);
+    }
     return {...payload,cached:false};
   }
   
   async function favoriteTeamFootballNews(team = {}, cfg, force = false) {
-    const id=Number(team.team_id || team.id || 0);
-    const name=String(team.team_name || team.name || '').trim();
-    if (!id || !name) return {items:[],available:false,reason:'team_missing'};
-    const key=`bot:news:team:${id}:v1`;
-    if (!force) {
-      const cached=await getCache(key,cfg).catch(()=>null);
-      if (cached?.items) return {...cached,cached:true};
+    const value=plainObject(team) || {};
+    const id=
+      positiveInteger(safeRead(value,'team_id'))
+      || positiveInteger(safeRead(value,'id'));
+    const name=
+      safeText(safeRead(value,'team_name'),120)
+      || safeText(safeRead(value,'name'),120);
+    if (!id || !name) {
+      return {items:[],available:false,reason:'team_missing'};
     }
-    const search=await tavilyNewsSearch(`${name} football latest injuries suspension lineup coach team news`,cfg,{days:5,maxResults:6});
-    const payload={teamId:id,teamName:name,items:search.results || [],available:search.available,reason:search.reason,generatedAt:new Date().toISOString()};
-    await setCache(key,id,payload,cfg,30).catch(()=>null);
+    const key=`bot:news:team:${id}:v2`;
+    if (force!==true) {
+      const cached=plainObject(
+        await Promise.resolve(getCache(key,cfg)).catch(()=>null),
+      );
+      const cachedItems=safeRead(cached,'items');
+      if (Array.isArray(cachedItems)) {
+        return {
+          teamId:id,
+          teamName:name,
+          items:dedupeFootballNews(cachedItems,6),
+          available:safeRead(cached,'available')===true,
+          reason:safeText(safeRead(cached,'reason'),80),
+          generatedAt:safeText(safeRead(cached,'generatedAt'),80),
+          cached:true,
+        };
+      }
+    }
+    const search=await tavilyNewsSearch(
+      `${name} football latest injuries suspension lineup coach team news`,
+      cfg,
+      {days:5,maxResults:6},
+    );
+    const payload={
+      teamId:id,
+      teamName:name,
+      items:safeArray(safeRead(search,'results')),
+      available:safeRead(search,'available')===true,
+      reason:safeText(safeRead(search,'reason'),80),
+      generatedAt:new Date().toISOString(),
+    };
+    await Promise.resolve(setCache(key,id,payload,cfg,30)).catch(()=>null);
     return {...payload,cached:false};
   }
   
@@ -613,13 +680,43 @@ export function createFootballNewsRuntime(deps) {
   }
   
   async function currentMorningFootballNews(cfg) {
-    const date=todayUtc();
-    const key=`bot:news:morning:${date}:v1`;
-    const cached=await getCache(key,cfg).catch(()=>null);
-    if (cached?.items) return cached;
+    const date=safeText(todayUtc(),16);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return {
+        date:'',
+        items:[],
+        available:false,
+        degraded:true,
+        reason:'date_invalid',
+        generatedAt:new Date().toISOString(),
+      };
+    }
+    const key=`bot:news:morning:${date}:v2`;
+    const cached=plainObject(
+      await Promise.resolve(getCache(key,cfg)).catch(()=>null),
+    );
+    const cachedItems=safeRead(cached,'items');
+    if (Array.isArray(cachedItems)) {
+      return {
+        date,
+        items:dedupeFootballNews(cachedItems,2),
+        available:safeRead(cached,'available')===true,
+        degraded:safeRead(cached,'degraded')===true,
+        reason:safeText(safeRead(cached,'reason'),80),
+        generatedAt:safeText(safeRead(cached,'generatedAt'),80),
+        cached:true,
+      };
+    }
     const news=await currentGeneralFootballNews(cfg,false);
-    const payload={date,items:(news.items || []).slice(0,2),generatedAt:new Date().toISOString()};
-    await setCache(key,0,payload,cfg,360).catch(()=>null);
+    const payload={
+      date,
+      items:dedupeFootballNews(safeRead(news,'items'),2),
+      available:safeRead(news,'available')===true,
+      degraded:safeRead(news,'available')!==true,
+      reason:safeText(safeRead(news,'reason'),80),
+      generatedAt:new Date().toISOString(),
+    };
+    await Promise.resolve(setCache(key,0,payload,cfg,360)).catch(()=>null);
     return payload;
   }
   
