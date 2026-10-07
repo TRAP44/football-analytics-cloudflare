@@ -68,13 +68,29 @@ function normalizeTelegramResult(value) {
 }
 
 function validReminderRow(row) {
-  return Boolean(
-    row
-    && typeof row === 'object'
-    && !Array.isArray(row)
-    && positiveSafeInteger(row.telegram_id)
-    && positiveSafeInteger(row.fixture_id)
-  );
+  if (
+    !row
+    || typeof row !== 'object'
+    || Array.isArray(row)
+    || !positiveSafeInteger(row.telegram_id)
+    || !positiveSafeInteger(row.fixture_id)
+  ) return false;
+
+  if (
+    row.kickoff_notify !== undefined
+    && row.kickoff_notify !== null
+    && typeof row.kickoff_notify !== 'boolean'
+  ) return false;
+
+  if (
+    row.remind_before_minutes !== undefined
+    && row.remind_before_minutes !== null
+  ) {
+    const reminderMinutes=integerCandidate(row.remind_before_minutes);
+    if (![15,30,60].includes(reminderMinutes)) return false;
+  }
+
+  return true;
 }
 
 export function createReminderDeliveryService({
