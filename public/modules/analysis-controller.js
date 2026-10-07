@@ -192,6 +192,8 @@ export function createAnalysisController({
     ? toast
     : ()=>{};
 
+  let operationSeq=0;
+
   function currentView() {
     const value=safeCall(activeViewId);
     return typeof value==='string' && value
@@ -297,6 +299,7 @@ export function createAnalysisController({
     }
 
     const previousCenter=safeRead(state,'currentCenter');
+    const operation=++operationSeq;
     state.currentCenter=null;
     state.analysisActionPending=true;
     safeCall(syncBusy);
@@ -514,13 +517,10 @@ export function createAnalysisController({
         });
       }
     } finally {
-      if (requestSeq===safeRead(state,'analysisRequestSeq')) {
+      if (operation===operationSeq) {
         state.analysisActionPending=false;
-      } else if (safeRead(state,'analysisActionPending')===true) {
-        // Navigation may invalidate this request without starting another one.
-        state.analysisActionPending=false;
+        safeCall(syncBusy);
       }
-      safeCall(syncBusy);
       setButtonState(button,{disabled:false,text:original});
     }
   }
