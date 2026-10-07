@@ -25,6 +25,7 @@ const RELEASE_TESTS = Object.freeze([
   'test/pass-purchase-ui.test.js',
   'test/personal-data-write-consistency.test.js',
   'test/personal-feed.test.js',
+  'test/personal-surfaces-visual-polish.test.js',
   'test/post-deploy-smoke.test.js',
   'test/production-deploy-noop-smoke-rc144.test.js',
   'test/production-deploy-provenance-rc111.test.js',
