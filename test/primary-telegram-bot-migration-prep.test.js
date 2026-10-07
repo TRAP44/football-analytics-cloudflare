@@ -16,6 +16,11 @@ const router = fs.readFileSync('src/router.js','utf8');
 const userDataApi = fs.readFileSync('src/user-data-api-runtime.js','utf8');
 const accessControl = fs.readFileSync('src/access-control.js','utf8');
 const reminderDeliveryService = fs.readFileSync('src/reminder-delivery-service.js','utf8');
+const bootstrap = fs.readFileSync('src/worker-bootstrap-runtime.js','utf8');
+const authGrowthWiring = fs.readFileSync('src/auth-growth-wiring-runtime.js','utf8');
+const billingApi = fs.readFileSync('src/billing-api-runtime.js','utf8');
+const publisherRuntime = fs.readFileSync('src/publisher-runtime.js','utf8');
+const serviceWiring = fs.readFileSync('src/service-wiring-runtime.js','utf8');
 
 async function signedInitData(botToken, userId = 24681012) {
   const params = new URLSearchParams();
@@ -119,15 +124,15 @@ test('user data remains keyed by Telegram user id, independent of bot username',
 });
 
 test('webhook, start attribution, reminders, billing and Mini App URL contracts stay on primary bot', () => {
-  assert.match(worker,/request\.method === 'POST' && url\.pathname === '\/telegram\/webhook'/);
-  assert.match(worker,/const expectedUrl = `\$\{new URL\(request\.url\)\.origin\}\/telegram\/webhook`/);
-  assert.match(worker,/function telegramStartPayload\(/);
-  assert.match(worker,/async function ensureLaunchAttribution\(userId, rawStartParam, cfg\)/);
-  assert.match(worker,/createReminderDeliveryService\(\{/);
-  assert.match(worker,/sendTelegramMessage,/);
+  assert.match(bootstrap,/request\.method === 'POST' && url\.pathname === '\/telegram\/webhook'/);
+  assert.match(billingApi,/expectedUrl:`\$\{new URL\(request\.url\)\.origin\}\/telegram\/webhook`/);
+  assert.match(worker,/function telegramStartPayload\(\.\.\.args\)/);
+  assert.match(authGrowthWiring,/ensureLaunchAttribution,/);
+  assert.match(serviceWiring,/createReminderDeliveryService\(\{/);
+  assert.match(serviceWiring,/sendTelegramMessage,/);
   assert.match(reminderDeliveryService,/async function processDueReminders\(cfg\)/);
   assert.match(reminderDeliveryService,/sendTelegramMessage\(row\.telegram_id, text, cfg\)/);
-  assert.match(worker,/makeInvoicePayload\(user\.id, plan, cfg\.botToken\)/);
+  assert.match(billingApi,/makeInvoicePayload\(user\.id, plan, cfg\.botToken\)/);
   assert.match(telegramLinks,/function telegramWebAppUrl\(request, params = \{\}\)/);
   assert.match(telegramLinks,/url\.pathname = '\/'/);
 });
@@ -139,22 +144,12 @@ test('primary identity cache never logs or stores the raw bot token', () => {
 });
 
 test('fixture share and channel publisher CTA use the current primary bot identity resolver', () => {
-  const shareStart=worker.indexOf('async function apiFixtureShareLink');
-  const shareEnd=worker.indexOf('\nfunction fixtureShareCardText',shareStart);
-  const shareBlock=worker.slice(shareStart,shareEnd);
-  assert.match(shareBlock,/fixtureTelegramDeepLink\(cfg,fixtureId/);
-  assert.match(shareBlock,/telegramShareComposerUrl\(link\.url/);
-
-  const cardStart=worker.indexOf('async function sendBotFixtureShareCard');
-  const cardEnd=worker.indexOf('\nasync function apiChannelPublisherTest',cardStart);
-  const cardBlock=worker.slice(cardStart,cardEnd);
-  assert.match(cardBlock,/fixtureTelegramDeepLink\(cfg,fixtureId/);
-
-  const publisherStart=worker.indexOf('async function apiChannelPublisherTest');
-  const publisherEnd=worker.indexOf('\nasync function ',publisherStart+30);
-  const publisherBlock=worker.slice(publisherStart,publisherEnd);
-  assert.match(publisherBlock,/fixtureTelegramDeepLink\(cfg,fixtureId,\{source:'channel',campaign:'publisher_mvp',content:'manual'\}\)/);
-  assert.match(publisherBlock,/cta:\{text:'Открыть матч в MatchRadar',url:link\.url\}/);
+  assert.match(publisherRuntime,/fixtureTelegramDeepLink\(cfg,fixtureId,\{source,campaign,content,referralCode\}\)/);
+  assert.match(publisherRuntime,/telegramShareComposerUrl\(link\.url/);
+  assert.match(publisherRuntime,/fixtureTelegramDeepLink\(cfg,safeFixtureId,\{source:'social',campaign:'match_share',content:'telegram',referralCode\}\)/);
+  assert.match(publisherRuntime,/fixtureTelegramDeepLink\(cfg,fixtureId,\{source:'channel',campaign:'publisher_mvp',content:'manual'\}\)/);
+  assert.match(publisherRuntime,/cta:\{text:'Открыть матч в MatchRadar',url:link\.url\}/);
+  assert.match(worker,/function apiFixtureShareLink\(\.\.\.args\) \{ return getPublisherRuntime\(\)\.apiFixtureShareLink/);
 });
 
 test('/api/me and admin identity remain keyed by Telegram user id after primary bot migration', () => {
@@ -168,7 +163,7 @@ test('/api/me and admin identity remain keyed by Telegram user id after primary 
   assert.match(apiMeBlock,/getPreferences\(userId, cfg\)/);
   assert.match(apiMeBlock,/const admin=isAdminUser\(user,cfg\) === true/);
   assert.match(accessControl,/cfg\.adminTelegramIds/);
-  assert.match(accessControl,/Number\(id\) === userId/);
+  assert.match(accessControl,/telegramIdCandidate\(id\) === userId/);
 });
 
 test('disabled monetization remains fail-closed during primary bot migration', () => {
