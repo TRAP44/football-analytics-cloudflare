@@ -60,6 +60,18 @@ function cleanText(value,fallback='',maxLength=280) {
 function timestampString(value) {
   if (typeof value !== 'string' || !value.trim()) return null;
   const raw=value.trim();
+  const calendar=/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(raw);
+  if (!calendar) return null;
+  const year=Number(calendar[1]);
+  const month=Number(calendar[2]);
+  const day=Number(calendar[3]);
+  if (!Number.isSafeInteger(year) || month<1 || month>12 || day<1) return null;
+  const maxDay=new Date(Date.UTC(year,month,0)).getUTCDate();
+  if (day>maxDay) return null;
+  if (
+    raw.length>10
+    && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/i.test(raw)
+  ) return null;
   const timestamp=Date.parse(raw);
   if (!Number.isFinite(timestamp)) return null;
   try {
