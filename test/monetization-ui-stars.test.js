@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { billingUiSnapshot } from '../public/modules/billing.js';
 
-const worker = (fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
+const worker = fs.readFileSync('src/worker.js','utf8');
+const telegramUpdate = fs.readFileSync('src/telegram-update-orchestration.js','utf8');
+const billingRuntime = fs.readFileSync('src/billing-runtime.js','utf8');
+const billingApi = fs.readFileSync('src/billing-api-runtime.js','utf8');
 const router = fs.readFileSync('src/router.js', 'utf8');
-const app = fs.readFileSync('public/app.js', 'utf8');
 const analysisController = fs.readFileSync('public/modules/analysis-controller.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8');
@@ -42,45 +44,45 @@ test('expired subscription renders as FREE without trusting stale client plan st
 });
 
 test('billing endpoints remain fail-closed while MONETIZATION_ENABLED is false', () => {
-  const gate = router.indexOf("if (!cfg.monetizationEnabled) return json");
-  const plans = router.indexOf("url.pathname === '/api/billing/plans'");
-  const invoice = router.indexOf("url.pathname === '/api/billing/invoice'");
+  const gate = router.indexOf("if (cfg?.monetizationEnabled !== true) return json");
+  const plans = router.indexOf("pathname === '/api/billing/plans'");
+  const invoice = router.indexOf("pathname === '/api/billing/invoice'");
   assert.ok(gate > 0 && plans > gate && invoice > gate);
   assert.match(billingModule, /state\.profile\?\.features\?\.monetizationEnabled === false/);
-  assert.match(worker, /enabled: Boolean\(cfg\.monetizationEnabled\)/);
+  assert.match(billingApi, /enabled: Boolean\(cfg\.monetizationEnabled\)/);
   assert.match(env, /MONETIZATION_ENABLED=false/);
   assert.doesNotMatch(env, /MONETIZATION_ENABLED=true/);
 });
 
 test('subscription and Pass payment truth remains server-side and XTR validated', () => {
-  assert.match(worker, /payment\.currency !== 'XTR'/);
-  assert.match(worker, /Number\(payment\.total_amount\) !== Number\(planCfg\.stars\)/);
-  assert.match(worker, /parseInvoicePayload\(payment\.invoice_payload, cfg\.botToken\)/);
-  assert.match(worker, /parsePassInvoicePayload\(payment\.invoice_payload, cfg\.botToken\)/);
-  assert.match(worker, /activatePassPurchase\(\{/);
-  assert.match(worker, /getStarTransactions/);
-  assert.match(worker, /editUserStarSubscription/);
-  assert.match(worker, /telegram_payment_charge_id/);
+  assert.match(billingRuntime, /payment\.currency !== 'XTR'/);
+  assert.match(billingRuntime, /amount!==positiveInt\(planCfg\.stars\)/);
+  assert.match(billingRuntime, /parseInvoicePayload\(payment\.invoice_payload, cfg\.botToken\)/);
+  assert.match(billingRuntime, /parsePassInvoicePayload\(payment\.invoice_payload, cfg\.botToken\)/);
+  assert.match(billingRuntime, /activatePassPurchase\(\{/);
+  assert.match(billingRuntime, /getStarTransactions/);
+  assert.match(billingApi, /editUserStarSubscription/);
+  assert.match(billingRuntime, /telegram_payment_charge_id/);
   assert.doesNotMatch(billingModule, /\b199\b|\b399\b/);
 });
 
 test('manual Telegram Stars refund requires server admin authorization and verified charge ownership', () => {
-  assert.match(router, /\/api\/admin\/billing\/refund/);
-  assert.match(router, /if \(!isAdminUser\(user, cfg\)\) return adminForbidden\(\)/);
-  assert.match(worker, /async function findRefundableBillingCharge/);
-  assert.match(worker, /listUserEntitlements\(uid, cfg\)/);
-  assert.match(worker, /async function apiBillingRefund/);
-  assert.match(worker, /reason\.length < 3/);
-  assert.match(worker, /refundStarPayment/);
-  assert.match(worker, /applyRefundedPayment\(targetUserId, chargeId, cfg\)/);
-  assert.match(worker, /CHARGE_ALREADY_REFUNDED/);
-  assert.match(worker, /reconciled:true/);
+  assert.match(router, /pathname === '\/api\/admin\/billing\/refund'/);
+  assert.match(router, /if \(!adminAllowed\(\)\) return adminForbidden\(\)/);
+  assert.match(billingRuntime, /async function findRefundableBillingCharge/);
+  assert.match(billingRuntime, /listUserEntitlements\(uid, cfg\)/);
+  assert.match(billingApi, /async function apiBillingRefund\(/);
+  assert.match(billingApi, /reason\.length < 3/);
+  assert.match(billingApi, /refundStarPayment/);
+  assert.match(billingApi, /applyRefundedPayment\(targetUserId, chargeId, cfg\)/);
+  assert.match(billingApi, /CHARGE_ALREADY_REFUNDED/);
+  assert.match(billingApi, /reconciled:true/);
 });
 
 test('Telegram bot exposes payment support without enabling monetization', () => {
-  assert.match(worker, /paysupport/);
-  assert.match(worker, /Поддержка по оплате MatchRadar/);
-  assert.match(worker, /Возврат выполняется только после ручной проверки/);
+  assert.match(telegramUpdate, /paysupport/);
+  assert.match(telegramUpdate, /Поддержка по оплате MatchRadar/);
+  assert.match(telegramUpdate, /Возврат выполняется только после ручной проверки/);
 });
 
 test('Profile contains compact FREE PRO PREMIUM billing UI and four-item bottom navigation stays unchanged', () => {
@@ -120,4 +122,11 @@ test('billing layout has explicit narrow-screen safeguards for 320-430 class wid
   assert.match(css, /@media \(max-width:430px\)[\s\S]*billing-pricing-grid \{ grid-template-columns:1fr/);
   assert.match(css, /@media \(max-width:360px\)[\s\S]*billing-panel/);
   assert.match(css, /billing-actions[\s\S]*flex-wrap:wrap/);
+});
+
+test('billing composition root delegates to the current modular runtimes', () => {
+  assert.match(worker,/createBillingRuntime/);
+  assert.match(worker,/createBillingApiRuntime/);
+  assert.match(worker,/applySuccessfulPayment/);
+  assert.match(worker,/apiBillingRefund/);
 });
