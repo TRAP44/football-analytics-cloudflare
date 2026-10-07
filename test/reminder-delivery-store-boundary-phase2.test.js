@@ -427,12 +427,17 @@ test('non-Supabase fallback preserves no-op lifecycle semantics', async () => {
   assert.equal(calls.length,0);
 });
 
-test('worker delegates delivery persistence to the store boundary', () => {
+test('worker delegates delivery persistence through service wiring', () => {
   const worker=fs.readFileSync('src/worker.js','utf8');
+  const wiring=fs.readFileSync('src/service-wiring-runtime.js','utf8');
   assert.match(worker,/import \{ createReminderDeliveryStore \} from '\.\/reminder-delivery-store\.js'/);
-  assert.match(worker,/createReminderDeliveryStore\(\{/);
-  assert.doesNotMatch(worker,/async function clearStaleReminderClaims\(cfg\)/);
-  assert.doesNotMatch(worker,/async function claimReminderDelivery\(row, kind, cfg\)/);
-  assert.doesNotMatch(worker,/async function finishReminderDelivery\(row, kind, claimAt, cfg\)/);
-  assert.doesNotMatch(worker,/async function releaseReminderClaim\(row, kind, claimAt, errorMessage, cfg/);
+  assert.match(worker,/createReminderDeliveryStore,/);
+  assert.match(wiring,/\} = createReminderDeliveryStore\(\{/);
+  for (const name of [
+    'clearStaleReminderClaims',
+    'claimReminderDelivery',
+    'finishReminderDelivery',
+    'releaseReminderClaim',
+  ]) assert.match(wiring,new RegExp('\\b'+name+'\\b'));
+  assert.doesNotMatch(worker,/async function (?:clearStaleReminderClaims|claimReminderDelivery|finishReminderDelivery|releaseReminderClaim)\(/);
 });
