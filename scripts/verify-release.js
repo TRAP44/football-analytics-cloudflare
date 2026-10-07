@@ -83,7 +83,8 @@ if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version
 if (releaseContract.applicationVersion !== pkg.version) failures.push('release-contract applicationVersion must match package.json');
 if (!runtimeMatch || runtimeMatch[1] !== pkg.version) failures.push('release-contract runtimeVersion must be <package.version>-rc<number>');
 if (!baselinePath || !fs.existsSync(baselinePath)) failures.push('release-contract freshInstallBaseline must reference an existing file');
-if (!releaseContract.latestMigration || !fs.existsSync(releaseContract.latestMigration)) failures.push('release-contract latestMigration must reference an existing file');
+if (!latestMigrationPath || !fs.existsSync(latestMigrationPath)) failures.push('release-contract latestMigration must reference an existing file');
+if (!latestMigrationVersion) failures.push('release-contract latestMigration must use supabase_migration_v<version>.sql naming');
 if (releaseContract.databaseContract?.version !== 2) failures.push('release-contract databaseContract.version must remain 2');
 if (releaseContract.databaseContract?.rpc !== 'backend_readiness_contract_v2') failures.push('release-contract databaseContract.rpc must remain backend_readiness_contract_v2');
 if (!releaseContract.databaseContract?.compatibleFingerprints?.includes(releaseContract.databaseContract?.fingerprint)) failures.push('release-contract compatibleFingerprints must include the production fingerprint');
