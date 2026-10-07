@@ -107,7 +107,7 @@ export function validateMigrationPlan(repoRoot, releaseContract) {
   }
 
   for (const item of buildMigrationPlan('fresh')) {
-    const sourcePath = path.join(paths.repoRoot, item.source);
+    const sourcePath = path.join(repoRoot, item.source);
     if (!fs.existsSync(sourcePath)) {
       throw new Error('Missing Supabase CI migration source: ' + item.source);
     }
