@@ -246,6 +246,14 @@ test('RC138 applies final semantic lineup reliability across analysis, live and 
   assert.match(matchCenterRuntime,/staleLineupView=semanticLineupView\(/);
   assert.match(
     matchCenterRuntime,
+    /lineupsConfirmed:lineupsTrusted[\s\S]*cachedLineupView\.quality\?\.bothConfirmed===true/,
+  );
+  assert.match(
+    matchCenterRuntime,
+    /lineupsConfirmed:staleLineupsTrusted[\s\S]*staleLineupView\.quality\?\.bothConfirmed===true/,
+  );
+  assert.match(
+    matchCenterRuntime,
     /lineups=objectValue\(synchronizeLineupQuality\(lineups,lineupQuality\)\)/,
   );
 });
