@@ -90,14 +90,14 @@ export function createBillingApiRuntime(deps = {}) {
   }
 
   async function apiBillingPlans(request, cfg, user) {
-    const webhook = cfg.monetizationEnabled
+    const webhook = cfg.monetizationEnabled === true
       ? await billingWebhookStatus(request, cfg)
       : { ready:false, reason:'monetization_paused', expectedUrl:`${new URL(request.url).origin}/telegram/webhook`, currentUrl:'', lastError:'' };
     const quota = await getQuota(user.id, cfg);
     const record = await getUserRecord(user.id, cfg);
     return json({
-      enabled: Boolean(cfg.monetizationEnabled),
-      ready: Boolean(cfg.monetizationEnabled && webhook.ready),
+      enabled: cfg.monetizationEnabled === true,
+      ready: Boolean(cfg.monetizationEnabled === true && webhook.ready),
       reason: webhook.reason || '',
       webhook: { expectedUrl: webhook.expectedUrl, currentUrl: webhook.currentUrl || '', lastError: webhook.lastError || '' },
       current: {
@@ -127,7 +127,7 @@ export function createBillingApiRuntime(deps = {}) {
     }
     return json({
       entitlement: await resolveUserEntitlements(user.id, fixtureId, cfg),
-      paymentsEnabled: Boolean(cfg.monetizationEnabled),
+      paymentsEnabled: cfg.monetizationEnabled === true,
       products: {
         MATCH_PASS: passProductConfig(PASS_TYPES.MATCH, cfg),
         DAY_PASS: passProductConfig(PASS_TYPES.DAY, cfg),
