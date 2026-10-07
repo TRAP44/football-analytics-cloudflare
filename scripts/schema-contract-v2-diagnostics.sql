@@ -1,3 +1,5 @@
+begin transaction read only;
+
 \set ON_ERROR_STOP on
 
 with contract_roles(role_name) as (
@@ -286,3 +288,4 @@ cross join contract_roles r
 where n.nspname='public'
 order by p.proname,pg_get_function_identity_arguments(p.oid),r.role_name;
 
+rollback;
