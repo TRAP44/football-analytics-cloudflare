@@ -49,7 +49,11 @@ test('billing endpoints remain fail-closed while MONETIZATION_ENABLED is false',
   const invoice = router.indexOf("pathname === '/api/billing/invoice'");
   assert.ok(gate > 0 && plans > gate && invoice > gate);
   assert.match(billingModule, /state\.profile\?\.features\?\.monetizationEnabled === false/);
-  assert.match(billingApi, /enabled: Boolean\(cfg\.monetizationEnabled\)/);
+  assert.match(billingApi, /enabled: cfg\.monetizationEnabled === true/);
+  assert.match(billingApi, /ready: Boolean\(cfg\.monetizationEnabled === true && webhook\.ready\)/);
+  assert.match(billingApi, /paymentsEnabled: cfg\.monetizationEnabled === true/);
+  assert.doesNotMatch(billingApi, /enabled: Boolean\(cfg\.monetizationEnabled\)/);
+  assert.doesNotMatch(billingApi, /paymentsEnabled: Boolean\(cfg\.monetizationEnabled\)/);
   assert.match(env, /MONETIZATION_ENABLED=false/);
   assert.doesNotMatch(env, /MONETIZATION_ENABLED=true/);
 });
