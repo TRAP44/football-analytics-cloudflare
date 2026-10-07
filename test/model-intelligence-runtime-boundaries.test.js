@@ -10,10 +10,11 @@ const marketParsing=createMarketParsingRuntime();
 function deps(overrides={}) {
   return {
     MODEL_BASE_WEIGHTS:{
-      market:0.42,
-      apiPrediction:0.24,
-      recentForm:0.26,
-      h2h:0.08,
+      market:0.40,
+      apiPrediction:0.20,
+      recentForm:0.22,
+      seasonStrength:0.13,
+      h2h:0.05,
     },
     apiFootball:async()=>[],
     getCache:async()=>null,
