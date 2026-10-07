@@ -88,6 +88,11 @@ export function createAdminReleaseMonitorModule(deps) {
     const da = dd.alertDelivery || {};
     const reliability = dd.reliability || {};
     const slo = dd.reliabilitySlo || {};
+    const digestHistoryNotice = dd.historyTruncated === true
+      ? 'История Daily Digest усечена safety-cap: reliability-метрики за выбранный период неполные.'
+      : dd.historyPersistent === false
+        ? 'Persistent история Daily Digest временно недоступна: показаны fallback-данные, reliability нельзя считать полной.'
+        : '';
     const sloState = String(slo.state || 'collecting');
     const sloStateLabel = sloState === 'healthy' ? 'SLO в норме' : sloState === 'watch' ? 'SLO требует контроля' : 'SLO собирает данные';
     const sloReasons = Array.isArray(slo.reasons) && slo.reasons.length ? slo.reasons : (slo.reason ? [slo.reason] : []);
@@ -119,6 +124,7 @@ export function createAdminReleaseMonitorModule(deps) {
         <div><span>Последнее восстановление</span><strong>${di.lastRecoveryAt ? escapeHtml(relativeAge(di.lastRecoveryAt)) : '—'}</strong><small>история ${Number(di.historyCount || 0)}</small></div>
         <div><span>Alert delivery</span><strong>${Number(alertStates.sent || 0)} sent</strong><small>retry ${Number(alertStates.retry_pending || 0)} · unknown ${Number(alertStates.unknown || 0)} · terminal ${Number(alertStates.terminal_failed || 0)}</small></div>
       </div>
+      ${digestHistoryNotice ? `<div class="data-notice">⚠️ ${escapeHtml(digestHistoryNotice)}</div>` : ''}
       <div class="release-monitor-section-head"><strong>Надёжность · ${Number(reliability.days || r.digestDays || 7)} дн.</strong><span>${Number(reliability.sampleDays || 0)}/${Number(reliability.expectedDays || reliability.days || 0)} дней · coverage ${reliabilityCoverage}</span></div>
       <div class="release-client-grid">
         <div><span>Reliability SLO</span><strong>${escapeHtml(sloStateLabel)}</strong><small>${escapeHtml(humanizeTechnicalText(slo.code || slo.reason || ''))}${sloReasons.length > 1 ? ` · ${sloReasons.length} сигналов` : ''}</small></div>
