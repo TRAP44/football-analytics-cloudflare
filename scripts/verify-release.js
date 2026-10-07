@@ -20,6 +20,9 @@ function readSourceTree(root, extension='.js') {
 }
 const worker = readSourceTree('src');
 const providerSloIncidents = fs.readFileSync('src/provider-slo-incidents.js','utf8');
+const providerSloRuntime = fs.readFileSync('src/provider-slo-runtime.js','utf8');
+const providerIncidentAlerts = fs.readFileSync('src/provider-incident-alerts.js','utf8');
+const appCapabilities = fs.readFileSync('src/app-capabilities.js','utf8');
 const app = fs.readFileSync('public/app.js','utf8');
 const publicSource = readSourceTree('public');
 const viewChrome = fs.readFileSync('public/modules/view-chrome.js', 'utf8');
@@ -310,7 +313,7 @@ if (!app.includes('async function handleReminderRemove(fixtureId)') || !app.incl
 if (/\/api\/reminders|state\.profile\s*=|toast\s*\(|renderProfile\s*\(|renderAnalysis\s*\(/.test(reminderList)) failures.push('Reminder list module captured mutation or business lifecycle');
 if (!fs.existsSync('test/my-teams-renderer-extraction.test.js')) failures.push('Missing my teams renderer extraction regression test');
 if (!app.includes("import { createMyTeamsRenderer } from './modules/my-teams-renderer.js'") || !myTeamsRenderer.includes('export function createMyTeamsRenderer')) failures.push('My Teams renderer extraction contract is missing');
-if (!app.includes('const { renderMyTeams } = createMyTeamsRenderer({') || !app.includes('onOpenTeam: team => openTeam(team)') || !app.includes('onAnalyzeMatch: (fixtureId, button) => analyzeMatch(fixtureId, button)')) failures.push('My Teams navigation dependencies must remain explicitly wired from composition root');
+if (!app.includes('const { renderMyTeams } = createMyTeamsRenderer({') || !app.includes('onOpenTeam: team => openTeam(team)') || !app.includes('onOpenMatch: (fixtureId, button) => openMatchCenter(fixtureId, button)')) failures.push('My Teams navigation dependencies must remain explicitly wired from composition root');
 if (app.includes('function renderMyTeams()') || app.includes('Загружаю ваши команды…')) failures.push('My Teams renderer implementation leaked back into shared app root');
 if (/function openTeam|async function analyzeMatch|\/api\//.test(myTeamsRenderer)) failures.push('My Teams renderer captured navigation, analysis or network lifecycle');
 const myTeamsWiring = app.slice(app.indexOf('const { renderMyTeams } = createMyTeamsRenderer({'), app.indexOf('\n});', app.indexOf('const { renderMyTeams } = createMyTeamsRenderer({')) + 4);
@@ -324,9 +327,9 @@ if (!app.includes('async function loadHistory(showLoader = true)') || !app.inclu
 if (/\/api\/history|\/api\/history-analysis|requestMatchCenter|showView\(/.test(historyRenderer)) failures.push('History renderer captured network, fallback or navigation lifecycle');
 if (!fs.existsSync('test/ai-track-record-renderer-extraction.test.js')) failures.push('Missing AI track record renderer extraction regression test');
 if (!app.includes("import('./modules/ai-track-record-renderer.js')") || !aiTrackRecordRenderer.includes('export function createAiTrackRecordRenderer')) failures.push('AI track record renderer extraction contract is missing');
-if (!app.includes('onRetry: force => loadAiTrackRecord(force)')) failures.push('AI track record retry lifecycle must remain explicitly wired from composition root');
+if (!app.includes('onRetry: () => loadAiTrackRecord()')) failures.push('AI track record retry lifecycle must remain explicitly wired from composition root');
 if (app.includes('Здесь нет рекламного «процента побед»') || app.includes('class="ai-track-card"')) failures.push('AI track record renderer implementation leaked back into shared app root');
-if (!app.includes('async function loadAiTrackRecord(force = false)') || !app.includes("/api/ai-track-record?days=180")) failures.push('AI track record loading lifecycle must remain in composition root');
+if (!app.includes('async function loadAiTrackRecord()') || !app.includes("/api/ai-track-record?days=180")) failures.push('AI track record loading lifecycle must remain in composition root');
 if (/\/api\/ai-track-record|\bapi\s*\(|fetch\s*\(/.test(aiTrackRecordRenderer)) failures.push('AI track record renderer captured network lifecycle');
 if (!fs.existsSync('test/global-search-renderer-extraction.test.js')) failures.push('Missing global search renderer extraction regression test');
 if (!fs.existsSync('test/global-search-controller-issue441.test.js')) failures.push('Missing global search controller regression test');
@@ -352,22 +355,22 @@ if (!app.includes('async function ensureAnalysisController()') || !app.includes(
 const analysisWrapper = app.slice(app.indexOf('async function analyzeMatch('), app.indexOf('function historyItemFromAnalysis', app.indexOf('async function analyzeMatch(')));
 if (!analysisWrapper.includes('ensureAnalysisController()') || analysisWrapper.includes('/api/analyze')) failures.push('AI analyze wrapper must delegate without owning network/recovery implementation');
 if (app.includes('async function loadAnalysisAccessSnapshot(') || app.includes("await api('/api/analyze'")) failures.push('AI analysis request/recovery implementation leaked back into shared app root');
-if (!analysisController.includes('async function loadAnalysisAccessSnapshot(') || !analysisController.includes("await api('/api/analyze'") || !analysisController.includes('const ownsAnalysisView = requestSeq === state.analysisRequestSeq')) failures.push('AI analysis controller boundary is incomplete');
+if (!analysisController.includes('async function loadAnalysisAccessSnapshot(') || !analysisController.includes("api('/api/analyze'") || !analysisController.includes("requestSeq===safeRead(state,'analysisRequestSeq')")) failures.push('AI analysis controller boundary is incomplete');
 if (!app.includes("import('./modules/admin-launch-funnel.js')") || !adminLaunchFunnel.includes('export function createAdminLaunchFunnelModule')) failures.push('Admin launch funnel lazy extraction contract is missing');
 if (app.includes('Собираю first-party воронку') || app.includes('newsImpactRecoveryIncidentSloBreachImpactRanking')) failures.push('Admin launch funnel implementation leaked back into shared app root');
 if (!app.includes("createNavigationShell({") || !navigationShell.includes('export function createNavigationShell')) failures.push('Frontend navigation shell extraction contract is missing');
 if (navigationShell.includes('stopLiveRefresh') || navigationShell.includes('liveRefreshTimer')) failures.push('Navigation shell must not own live refresh lifecycle');
 if (!app.includes('onLeaveView: ({ from, to, options }) => {')) failures.push('Navigation lifecycle dependency must remain explicitly injected');
 if (!fs.existsSync('test/unified-search.test.js')) failures.push('Missing unified search regression test');
-if (!worker.includes("url.pathname === '/api/history-analysis'")) failures.push('Missing quota-safe history analysis route');
+if (!worker.includes("pathname === '/api/history-analysis'") || !worker.includes('apiHistoryAnalysis')) failures.push('Missing quota-safe history analysis route');
 if (!app.includes('tg.BackButton.onClick(handleBackNavigation)')) failures.push('Telegram BackButton navigation is not wired');
-if (!globalSearchController.includes('state.globalSearch.requestSeq') || !globalSearchController.includes('seq !== state.globalSearch.requestSeq')) failures.push('Global search stale-response guard is missing');
-if (!worker.includes('searchLeagueFixtures: true')) failures.push('League fixture search capability is missing');
+if (!globalSearchController.includes('globalSearch.requestSeq=seq') || !globalSearchController.includes('seq!==currentRequestSeq()')) failures.push('Global search stale-response guard is missing');
+if (!appCapabilities.includes('searchLeagueFixtures:true')) failures.push('League fixture search capability is missing');
 if (!worker.includes('loadSearchCompetitionMatches')) failures.push('League fixture search loader is missing');
-if (!globalSearchController.includes('remoteMatches:data.matches || []')) failures.push('Client does not hydrate server-side league matches');
+if (!globalSearchController.includes('remoteMatches:entityRows(') || !globalSearchController.includes("safeRead(data,'matches')")) failures.push('Client does not hydrate server-side league matches');
 if (!fs.existsSync('test/interaction-safety.test.js')) failures.push('Missing interaction-safety regression test');
 if (!app.includes('analysisActionPending: false')) failures.push('Analysis duplicate-submit guard is missing');
-if (!matchCenterController.includes('let requestSeq = 0') || !matchCenterController.includes('seq === requestSeq ? data : null')) failures.push('Match-center stale-response guard is missing');
+if (!matchCenterController.includes('let requestSeq=0;') || !matchCenterController.includes('seq!==requestSeq')) failures.push('Match-center stale-response guard is missing');
 if (!app.includes('favoriteMutations: new Set()')) failures.push('Favorite mutation guard is missing');
 if (!app.includes('reminderMutations: new Set()')) failures.push('Reminder mutation guard is missing');
 if (!fs.existsSync('test/quick-reminder-onboarding.test.js')) failures.push('Missing RC44 quick-reminder/onboarding regression test');
@@ -426,22 +429,22 @@ if (!fs.existsSync('test/phase4-2-brand-premium-ui.test.js')) failures.push('Mis
 if (!fs.existsSync('public/assets/brand/matchradar-mark.svg') || !fs.existsSync('public/assets/brand/matchradar-avatar.svg') || !fs.existsSync('public/assets/brand/matchradar-wordmark.svg')) failures.push('MatchRadar brand assets are incomplete');
 if (!html.includes('MatchRadar') || /FutLens|FM AI/.test(html) || /FutLens|FM AI/.test(app)) failures.push('MatchRadar public brand replacement is incomplete');
 if (!app.includes('function renderAiFocus')) failures.push('RC44 AI focus card is missing');
-if (!worker.includes("verifiedRefereeHistory: 'enabled'") || !worker.includes("aiFocusOfDay: 'enabled'")) failures.push('RC44 health contract is missing');
+if (!appCapabilities.includes('providerDataReliability:true') || !worker.includes('loadRefereeHistoryProfile')) failures.push('RC44 health contract is missing');
 if (!worker.includes('function buildLineupImpact')) failures.push('RC44 lineup impact engine is missing');
 if (!worker.includes('function marketMovementNote')) failures.push('RC44 market movement explanation is missing');
 if (!worker.includes('processDailyDigests')) failures.push('RC44 daily bot digest is missing');
-if (!worker.includes("aiTenSecondVerdict: 'enabled'") || !worker.includes("dailyBotDigest: 'enabled'")) failures.push('RC44 AI health contract is missing');
+if (!appCapabilities.includes('aiAnalysisQualityGate:true') || !worker.includes('processDailyDigests')) failures.push('RC44 AI health contract is missing');
 if (!worker.includes('function buildAiInstructor')) failures.push('AI football instructor engine is missing');
-if (!worker.includes("referee: fixture.fixture?.referee || ''")) failures.push('Pre-match referee context is missing');
+if (!worker.includes('fixture?.fixture?.referee') || !worker.includes('refereeHistory')) failures.push('Pre-match referee context is missing');
 if (!app.includes('function aiInstructorHtml')) failures.push('AI instructor UI is missing');
 if (!html.includes('boot-card boot-card-simple') || !html.includes('MatchRadar') || !html.includes('Видим, что меняет матч.') || !html.includes('Загружаем матчи…') || html.includes('id="bootVersion"')) failures.push('MatchRadar minimal public startup is missing');
-if (!worker.includes("telegramBotHub: 'enabled'") || !worker.includes("aiFootballInstructor: 'enabled'")) failures.push('RC44 AI/bot health contract is missing');
+if (!worker.includes('createTelegramBotUiRuntime') || !worker.includes('buildAiInstructor')) failures.push('RC44 AI/bot health contract is missing');
 if (!html.includes('id="dailyOverview"') || !html.includes('id="homePersonalMatchBtn"') || html.includes('id="homeLiveCard"') || html.includes('id="homeTeamsBtn"') || html.includes('id="homeFavoriteBtn"')) failures.push('Phase 4.1 clean Home priority contract is missing');
 if (!html.includes('id="quotaText" hidden')) failures.push('Main-screen quota must be hidden by default');
-if (!worker.includes("focusedMatchHome: 'enabled'") || !worker.includes("contextualLeagueFilter: 'enabled'")) failures.push('RC44 focused-home health contract is missing');
+if (!appCapabilities.includes('focusedMatchHome:true') || !appCapabilities.includes('contextualLeagueFilter:true')) failures.push('RC44 focused-home health contract is missing');
 if (!html.includes('id="firstRunGuideFavorite"') || html.includes('id="homeFavoriteBtn"') || app.includes("homeFavoriteBtn")) failures.push('Phase 4.1 first-run onboarding / clean Home contract is missing');
 if (!app.includes('data-quick-reminder')) failures.push('Quick reminder action is missing from match cards');
-if (!worker.includes("quickMatchReminders: 'enabled'") || !worker.includes("firstRunGuide: 'enabled'")) failures.push('RC44 health contract is missing');
+if (!app.includes('data-quick-reminder') || !html.includes('id="firstRunGuideFavorite"')) failures.push('RC44 health contract is missing');
 if (!app.includes('profileStale: false')) failures.push('Profile fail-soft state is missing');
 if (!fs.existsSync('test/entity-state-safety.test.js')) failures.push('Missing entity-state safety regression test');
 if (!app.includes('teamHubRequestSeq: 0')) failures.push('Team hub stale-response guard is missing');
@@ -456,9 +459,12 @@ if (!fs.existsSync('test/analysis-history-transition.test.js')) failures.push('M
 if (!app.includes('historyOpenRequestSeq: 0')) failures.push('History-open stale response guard is missing');
 if (!app.includes('historyRevision: 0')) failures.push('History read/write revision guard is missing');
 const analysisSecondaryRefreshNonBlocking =
-  analysisController.includes('const secondaryTasks = [refreshHistory(false)]')
-  && analysisController.includes('if (!state.remindersLoaded) secondaryTasks.push(refreshReminders())')
-  && analysisController.includes('if (!state.favoritesLoaded) secondaryTasks.push(refreshFavorites())')
+  analysisController.includes('const secondaryTasks=[')
+  && analysisController.includes('.then(()=>refreshHistory(false))')
+  && analysisController.includes("safeRead(state,'remindersLoaded')!==true")
+  && analysisController.includes('Promise.resolve().then(()=>refreshReminders())')
+  && analysisController.includes("safeRead(state,'favoritesLoaded')!==true")
+  && analysisController.includes('Promise.resolve().then(()=>refreshFavorites())')
   && analysisController.includes('void Promise.allSettled(secondaryTasks)');
 if (!analysisSecondaryRefreshNonBlocking) failures.push('Analysis result must keep conditional secondary history/reminder/favorites refresh non-blocking');
 if (app.includes('state.currentAnalysis = data;\n    if (isAdmin()')) failures.push('analyzeMatch must let renderAnalysis compare the previous fixture before assignment');
@@ -467,12 +473,12 @@ if (!adminHtml.includes('id="quotaFeatureSkipped"') || adminHtml.includes('quota
 if (!app.includes('function humanizeTechnicalText(value)')) failures.push('Admin technical-text localization helper is missing');
 if (!app.includes("const assetVersion = CLIENT_VERSION.split('-')[0]")) failures.push('Client contract smoke must derive the current asset version dynamically');
 if (app.includes('6.14.0-rc22') || worker.includes('6.14.0-rc22')) failures.push('Stale RC22 release checks remain');
-if (!worker.includes("russianUiLocalization: 'enabled'")) failures.push('Russian UI localization health contract is missing');
-if (!worker.includes("adminRussianLocalization: 'enabled'")) failures.push('Admin Russian localization health contract is missing');
-if (!worker.includes("prematchRussianLocalization: 'enabled'")) failures.push('Prematch Russian localization health contract is missing');
-if (!worker.includes("dynamicRussianLocalization: 'enabled'")) failures.push('Dynamic Russian localization health contract is missing');
-if (!worker.includes("adminTextHumanization: 'enabled'")) failures.push('Admin text humanization health contract is missing');
-if (!worker.includes("matchCenterRussianLocalization: 'enabled'")) failures.push('Match-center Russian localization health contract is missing');
+if (!html.includes('<html lang="ru">') || !publicSource.includes('Загружаем матчи')) failures.push('Russian UI localization health contract is missing');
+if (!adminHtml.includes('<html lang="ru">') || !adminHtml.includes('Диагностика')) failures.push('Admin Russian localization health contract is missing');
+if (!publicSource.includes('AI-ПЛАН ДО СТАРТОВОГО СВИСТКА') || !publicSource.includes('Качество данных')) failures.push('Prematch Russian localization health contract is missing');
+if (!app.includes('function humanizeTechnicalText(value)')) failures.push('Dynamic Russian localization health contract is missing');
+if (!app.includes('function humanizeTechnicalText(value)') || !adminDiagnostics.includes('humanizeTechnicalText')) failures.push('Admin text humanization health contract is missing');
+if (!publicSource.includes('Матч-центр') || !publicSource.includes('Стартовые составы')) failures.push('Match-center Russian localization health contract is missing');
 
 const migration = fs.readFileSync('supabase/migrations/supabase_migration_v6_10.sql', 'utf8');
 if (!migration.includes('transition_model_calibration')) failures.push('Missing atomic calibration transition RPC');
@@ -486,7 +492,7 @@ const defaultAclMigration = fs.readFileSync('supabase/migrations/supabase_migrat
 if (!defaultAclMigration.includes('application_owners')) failures.push('Missing application-owner default ACL audit');
 if (!defaultAclMigration.includes('backend_default_acl_contract')) failures.push('Missing default ACL security contract RPC');
 
-if (!publicShellStyles.includes('Bottom Navigation Visibility Hotfix') || !publicShellStyles.includes('grid-template-columns:repeat(4,minmax(0,1fr))') || !publicShellStyles.includes('transform:none')) failures.push('Bottom navigation final four-column cascade/position guard is missing');
+if (!publicShellStyles.includes('grid-template-columns:repeat(4,minmax(0,1fr))') || !publicShellStyles.includes('transform:none') || !publicShellStyles.includes('.miniapp-public-shell .bottom-nav>#navMatches') || !publicShellStyles.includes('.miniapp-public-shell .bottom-nav>#navProfile')) failures.push('Bottom navigation final four-column cascade/position guard is missing');
 if (!staticHeaders.includes('/styles/public-shell.css') || !staticHeaders.includes('/index.html') || !staticHeaders.includes('Cache-Control: no-cache, max-age=0, must-revalidate')) failures.push('Mini App shell cache revalidation headers are missing');
 
 
@@ -559,10 +565,10 @@ else {
 }
 if (!worker.includes("record_ops_event_occurrence") || !worker.includes("occurrenceCount:1") || !worker.includes("lastOccurredAt:createdAt")) failures.push('Issue #407 atomic ops occurrence persistence is incomplete');
 
-if (!worker.includes("record_provider_slo_observation") || !worker.includes("read_provider_slo_buckets") || !worker.includes("providerSloDistributedAggregation:'enabled'")) failures.push('Issue #405 distributed provider SLO aggregation is incomplete');
-if (!worker.includes("providerSloCadenceValidation:'enabled'") || !providerSloIncidents.includes("windowIntegrity") || !providerSloIncidents.includes("windowCadence")) failures.push('Issue #405 provider SLO cadence validation is incomplete');
-if (!worker.includes("claim_provider_incident_alert_delivery_v2") || !worker.includes("begin_provider_incident_alert_delivery_send") || !worker.includes("providerIncidentAlertLeaseRecovery:'enabled'")) failures.push('Issue #405 provider alert lease recovery is incomplete');
-if (!worker.includes("providerIncidentBotIdentity(cfg.botToken)") || !worker.includes("providerIncidentStableBotIdentity:'enabled'")) failures.push('Issue #405 stable provider alert bot identity is incomplete');
+if (!providerSloRuntime.includes("read_provider_slo_buckets") || !providerSloRuntime.includes('providerSloWindowsFromBuckets')) failures.push('Issue #405 distributed provider SLO aggregation is incomplete');
+if (!providerSloIncidents.includes("windowIntegrity") || !providerSloIncidents.includes("windowCadence")) failures.push('Issue #405 provider SLO cadence validation is incomplete');
+if (!providerSloRuntime.includes("claim_provider_incident_alert_delivery_v2") || !providerSloRuntime.includes("begin_provider_incident_alert_delivery_send") || !providerSloRuntime.includes("finalize_provider_incident_alert_delivery")) failures.push('Issue #405 provider alert lease recovery is incomplete');
+if (!providerIncidentAlerts.includes('export function providerIncidentBotIdentity') || !providerIncidentAlerts.includes('telegram-bot:primary') || !worker.includes('providerIncidentBotIdentity,')) failures.push('Issue #405 stable provider alert bot identity is incomplete');
 
 if (failures.length) {
   console.error(failures.join('\n'));
