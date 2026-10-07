@@ -39,8 +39,9 @@ test('readiness uses a lightweight confirmed Supabase probe while diagnostics ke
 });
 test('public readiness adds a bounded completed-result cache without weakening internal readiness checks', () => {
   const health=fs.readFileSync('src/public-health.js','utf8');
-  assert.match(worker,/createPublicHealthRuntime/);
-  assert.match(worker,/computeReadiness:.*computeReadinessSnapshot/);
+  const orchestration=fs.readFileSync('src/operational-orchestration-runtime.js','utf8');
+  assert.match(orchestration,/createPublicHealthRuntime/);
+  assert.match(orchestration,/computeReadiness:publicStatusRuntime\.computeReadinessSnapshot/);
   assert.match(health,/PUBLIC_READINESS_CACHE_MS = 15_000/);
   assert.match(health,/if \(inFlight\) return await inFlight/);
   assert.match(health,/current-Number\(cached\.at \|\| 0\) < Math\.max/);
