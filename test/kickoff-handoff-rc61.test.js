@@ -24,7 +24,7 @@ const css=readRepoFile('public/styles.css');
 const telegram=readRepoFile('src/telegram-bot-orchestration-runtime.js');
 const worker=readRepoFile('src/worker.js');
 
-test('RC61 classifies prematch imminent live finished and unknown kickoff phases',()=>{
+test('RC61 classifies prematch imminent live clock-started finished and unknown kickoff phases',()=>{
   const pre=lifecycle.analysisKickoffHandoff(
     {match:{date:'2026-09-23T20:00:00Z',status:'NS'}},
     NOW,
@@ -37,6 +37,14 @@ test('RC61 classifies prematch imminent live finished and unknown kickoff phases
     {match:{date:'2026-09-23T17:55:00Z',status:'1H'}},
     NOW,
   );
+  const clockStarted=lifecycle.analysisKickoffHandoff(
+    {match:{date:'2026-09-23T18:00:00Z',status:'NS'}},
+    NOW,
+  );
+  const justBefore=lifecycle.analysisKickoffHandoff(
+    {match:{date:'2026-09-23T18:00:01Z',status:'NS'}},
+    NOW,
+  );
   const finished=lifecycle.analysisKickoffHandoff(
     {match:{date:'2026-09-23T15:00:00Z',status:'FT'}},
     NOW,
@@ -46,18 +54,20 @@ test('RC61 classifies prematch imminent live finished and unknown kickoff phases
     NOW,
   );
 
-  assert.deepEqual([pre.state,imminent.state,live.state,finished.state,unknown.state],[
-    'prematch','imminent','live','finished','unknown',
+  assert.deepEqual([pre.state,imminent.state,live.state,clockStarted.state,justBefore.state,finished.state,unknown.state],[
+    'prematch','imminent','live','live','imminent','finished','unknown',
   ]);
   assert.equal(pre.locked,false);
   assert.equal(imminent.locked,false);
   assert.equal(live.locked,true);
+  assert.equal(clockStarted.locked,true);
+  assert.equal(justBefore.locked,false);
   assert.equal(finished.locked,true);
   assert.equal(unknown.locked,true);
 
   const drill=lifecycle.analysisKickoffHandoffDrill();
   assert.equal(drill.pass,true);
-  assert.ok(drill.cases>=5);
+  assert.ok(drill.cases>=6);
 });
 
 test('analysis response always carries freshness and kickoff handoff metadata',()=>{
@@ -70,6 +80,20 @@ test('analysis response always carries freshness and kickoff handoff metadata',(
   assert.equal(payload.kickoffHandoff.state,'prematch');
   assert.equal(payload.kickoffHandoff.locked,false);
   assert.equal(payload.freshness.state,'fresh');
+});
+
+test('freshness and kickoff handoff agree at the scheduled kickoff even if provider status still says NS',()=>{
+  const payload=lifecycle.analysisResponsePayload({
+    generatedAt:'2026-09-23T17:59:00Z',
+    match:{fixtureId:8,date:'2026-09-23T18:00:00Z',status:'NS'},
+    lineupImpact:{homeConfirmed:true,awayConfirmed:true},
+  });
+
+  assert.equal(payload.kickoffHandoff.state,'live');
+  assert.equal(payload.kickoffHandoff.locked,true);
+  assert.equal(payload.freshness.state,'started');
+  assert.equal(payload.freshness.needsRecheck,false);
+  assert.equal(payload.freshness.reasonCode,'match_started');
 });
 
 test('Telegram freezes the prematch signal after kickoff',()=>{
