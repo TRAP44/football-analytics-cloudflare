@@ -25,7 +25,10 @@ test('first-run guidance stays available without a permanent Home favorite card'
   assert.doesNotMatch(html, /id="homeFavoriteBtn"/);
   assert.doesNotMatch(app, /homeFavoriteBtn/);
 });
-test('RC38 health advertises the new UX contracts', () => {
-  assert.match(worker, /quickMatchReminders:\s*'enabled'/);
-  assert.match(worker, /firstRunGuide:\s*'enabled'/);
+test('current public manifest keeps the launch UX capabilities enabled', () => {
+  const capabilities=fs.readFileSync('src/app-capabilities.js','utf8');
+  assert.match(capabilities,/focusedMatchHome:true/);
+  assert.match(capabilities,/contextualLeagueFilter:true/);
+  assert.match(capabilities,/matchAtAGlanceCockpit:true/);
+  assert.doesNotMatch(worker,/quickMatchReminders:\s*'disabled'|firstRunGuide:\s*'disabled'/);
 });
