@@ -99,8 +99,11 @@ function normalizeBaseUrl(value) {
       'Production URL must not contain credentials, query or hash.',
     );
   }
-  url.pathname=url.pathname.replace(/\/+$/,'');
-  return url.toString().replace(/\/+$/,'');
+  if (url.pathname && url.pathname !== '/') {
+    throw new Error('Production URL must be an origin URL without a path.');
+  }
+  url.pathname='/';
+  return url.origin;
 }
 
 function escapeMarkdownCell(value) {
