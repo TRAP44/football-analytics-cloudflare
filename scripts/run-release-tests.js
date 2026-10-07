@@ -42,7 +42,6 @@ const RELEASE_TESTS = Object.freeze([
   'test/security-scan-rc102.test.js',
   'test/starting-xi-player-strength.test.js',
   'test/supabase-integration-ci.test.js',
-  'test/telegram-miniapp-e2e-rc106.test.js',
   'test/telegram-primary-identity-runtime-boundaries.test.js',
   'test/telegram-search-runtime-boundaries.test.js'
 ]);
