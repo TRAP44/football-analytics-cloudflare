@@ -468,7 +468,7 @@ export async function runBoundedDailyDigest({
 
       const main = await sendWithRateLimit(() => sendDigest(row));
       if (!main.ok) {
-        stats.failed+=1;
+        if (!main.budgetExhausted) stats.failed+=1;
         // Explicit rate-limit non-delivery and budget exhaustion occur before
         // a confirmed Telegram send, so both are safe to release for a later slot.
         const retryableWithoutSend=main.disposition?.rateLimited===true || main.budgetExhausted===true;
