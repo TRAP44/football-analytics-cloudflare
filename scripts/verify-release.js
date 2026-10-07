@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import { auditFrontendAssetContract } from './frontend-asset-audit.js';
+import { FRONTEND_ASSET_REVISION } from '../public/modules/app-runtime.js';
 
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
@@ -36,6 +38,7 @@ const launchFunnelFrontend = app + '\n' + adminLaunchFunnel;
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
+const statusHtml = fs.readFileSync('public/status.html', 'utf8');
 const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 const publicShellStyles = fs.readFileSync('public/styles/public-shell.css', 'utf8');
@@ -109,17 +112,18 @@ if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker
 if (!expectedRc || !worker.includes(`const RC_NAME = '${expectedRc}'`)) failures.push(`Worker RC name must be ${expectedRc || 'derived from runtimeVersion'}`);
 if (!appRuntime.includes(`CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
 if (!expectedChannel || !appRuntime.includes(`CLIENT_RELEASE_CHANNEL = '${expectedChannel}'`)) failures.push(`Client release channel must be ${expectedChannel || 'derived from runtimeVersion'}`);
-const frontendAssetRevision = /<meta name="frontend-asset-revision" content="([^"]+)" \/>/.exec(html)?.[1] || '';
-const adminFrontendAssetRevision = /<meta name="frontend-asset-revision" content="([^"]+)" \/>/.exec(adminHtml)?.[1] || '';
-const runtimeFrontendAssetRevision = /FRONTEND_ASSET_REVISION = '([^']+)'/.exec(appRuntime)?.[1] || '';
-if (!frontendAssetRevision || frontendAssetRevision === pkg.version || !frontendAssetRevision.startsWith(`${pkg.version}-`)) failures.push('Frontend asset revision must cache-bust the package version');
-if (!runtimeFrontendAssetRevision || runtimeFrontendAssetRevision !== frontendAssetRevision) failures.push('Frontend runtime asset revision must match public HTML');
-if (adminFrontendAssetRevision !== frontendAssetRevision) failures.push('Admin and public frontend asset revisions must match');
-for (const [name, surface] of [['public', html], ['admin', adminHtml]]) {
-  if (!surface.includes(`/app.js?v=${frontendAssetRevision}`) || !surface.includes(`/styles.css?v=${frontendAssetRevision}`) || !surface.includes(`/styles/public-shell.css?v=${frontendAssetRevision}`)) failures.push(`${name} frontend JS/CSS cache-bust tokens must match the frontend asset revision`);
+for (const finding of auditFrontendAssetContract({
+  packageVersion:pkg.version,
+  runtimeRevision:FRONTEND_ASSET_REVISION,
+  surfaces:{
+    public:html,
+    admin:adminHtml,
+    status:statusHtml,
+  },
+  headers:staticHeaders,
+})) {
+  failures.push(`Frontend asset contract: ${finding}`);
 }
-if (!html.includes(`/styles/premium-ui.css?v=${frontendAssetRevision}`)) failures.push('Public premium UI cache-bust token must match the frontend asset revision');
-if (!staticHeaders.includes('/styles/premium-ui.css') || !staticHeaders.includes('/modules/*')) failures.push('Frontend cache policy must explicitly revalidate premium UI and frontend modules');
 if (!premiumUiStyles.includes('--mr-touch-target: 44px')) failures.push('Public UI canonical touch-target contract is missing');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
