@@ -181,3 +181,9 @@ test('Cloudflare credential preflight never prints secret values',()=>{
     findings.join('\n'),
   );
 });
+
+
+test('production deploy uses an ephemeral hosted runner',()=>{
+  assert.match(deploy,/runs-on:\s*ubuntu-latest/);
+  assert.doesNotMatch(deploy,/runs-on:\s*\[self-hosted/);
+});
