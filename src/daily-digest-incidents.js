@@ -501,25 +501,45 @@ export function summarizeDailyDigestOperationalStatus(rows = [], ledgerRows = []
 export function summarizeDailyDigestReliability(rows = [], { days = 7, nowMs = Date.now() } = {}) {
   const windowDays=normalizedWindowDays(days);
   const endMs=normalizedNowMs(nowMs);
-  const startMs=endMs-windowDays*24*3600_000;
-  const events=(Array.isArray(rows) ? rows : [])
+  const endDate=new Date(endMs);
+  const startMs=Date.UTC(
+    endDate.getUTCFullYear(),
+    endDate.getUTCMonth(),
+    endDate.getUTCDate()-(windowDays-1),
+  );
+
+  const candidateEvents=(Array.isArray(rows) ? rows : [])
     .map(normalizeEvent)
     .filter(event => {
-      const atMs=Date.parse(event.at || '');
-      return Number.isFinite(atMs)
+      const atMs=trustedTimestampMs(event.at);
+      return atMs !== null
         && atMs>=startMs
         && atMs<=endMs
         && isDailyDigestEvent(event);
     })
     .sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
 
+  let invalidEvidenceRuns=0;
+  const events=[];
+  for (const event of candidateEvents) {
+    if (!dateForEvent(event)) {
+      invalidEvidenceRuns+=1;
+      continue;
+    }
+    events.push(event);
+  }
+
   const grouped=new Map();
   for (const event of events) {
     const date=dateForEvent(event);
-    if (!date) continue;
     if (!grouped.has(date)) grouped.set(date,[]);
     grouped.get(date).push(event);
   }
+
+  const evidenceCount=value=>
+    typeof value==='number' && Number.isSafeInteger(value) && value>=0 ? value : null;
+  const evidenceRate=value=>
+    typeof value==='number' && Number.isFinite(value) && value>=0 && value<=1 ? value : null;
 
   let totalSent=0;
   let totalClaimed=0;
@@ -531,7 +551,6 @@ export function summarizeDailyDigestReliability(rows = [], { days = 7, nowMs = D
   let degradedDays=0;
   let truncatedDays=0;
   let maxBacklog=0;
-  let invalidEvidenceRuns=0;
   const daily=[];
 
   for (const [date,list] of [...grouped.entries()].sort((a,b)=>a[0].localeCompare(b[0]))) {
@@ -547,27 +566,67 @@ export function summarizeDailyDigestReliability(rows = [], { days = 7, nowMs = D
 
     for (const event of list) {
       const meta=event.metadata || {};
-      const sentValue=nonNegativeCount(meta.sent);
-      const claimedValue=nonNegativeCount(meta.claimed);
-      const failedValue=nonNegativeCount(meta.failed);
-      const rateLimitedValue=nonNegativeCount(meta.rateLimited);
-      const backlogRaw=meta.remaining ?? meta.backlog;
-      const backlog=nonNegativeCount(backlogRaw);
+      const sentCandidate=evidenceCount(meta.sent);
+      const claimedCandidate=evidenceCount(meta.claimed);
+      const failedCandidate=evidenceCount(meta.failed);
+      const rateLimitedCandidate=evidenceCount(meta.rateLimited);
+      const eligibleCandidate=meta.eligible === undefined || meta.eligible === null
+        ? null
+        : evidenceCount(meta.eligible);
+      const remainingCandidate=meta.remaining === undefined || meta.remaining === null
+        ? null
+        : evidenceCount(meta.remaining);
+      const backlogCandidate=meta.backlog === undefined || meta.backlog === null
+        ? null
+        : evidenceCount(meta.backlog);
+      const sealedCandidate=meta.sealedClaims === undefined || meta.sealedClaims === null
+        ? null
+        : evidenceCount(meta.sealedClaims);
+      const completionCandidate=meta.completionRate === undefined || meta.completionRate === null
+        ? null
+        : evidenceRate(meta.completionRate);
 
-      const suppliedCounts=[
-        ['sent',meta.sent],
-        ['claimed',meta.claimed],
-        ['failed',meta.failed],
-        ['rateLimited',meta.rateLimited],
-        ['backlog',backlogRaw],
-        ['sealedClaims',meta.sealedClaims],
-      ].filter(([,value])=>value !== undefined && value !== null);
-      const malformedCount=suppliedCounts.some(([,value])=>strictNonNegativeInteger(value)===null);
+      const suppliedCountInvalid=[
+        [meta.sent,sentCandidate],
+        [meta.claimed,claimedCandidate],
+        [meta.failed,failedCandidate],
+        [meta.rateLimited,rateLimitedCandidate],
+        [meta.eligible,eligibleCandidate],
+        [meta.remaining,remainingCandidate],
+        [meta.backlog,backlogCandidate],
+        [meta.sealedClaims,sealedCandidate],
+      ].some(([raw,parsed])=>raw !== undefined && raw !== null && parsed === null);
+
+      const sentValue=sentCandidate ?? 0;
+      const claimedValue=claimedCandidate ?? 0;
+      const failedValue=failedCandidate ?? 0;
+      const rateLimitedValue=rateLimitedCandidate ?? 0;
+      const backlog=remainingCandidate ?? backlogCandidate ?? 0;
+      const inconsistentBacklog=remainingCandidate !== null
+        && backlogCandidate !== null
+        && remainingCandidate !== backlogCandidate;
+      const impossibleDelivery=sentValue>claimedValue
+        || (eligibleCandidate !== null && claimedValue>eligibleCandidate);
+      const expectedCompletion=claimedValue>0
+        ? Number((sentValue/claimedValue).toFixed(4))
+        : null;
+      const inconsistentCompletion=completionCandidate !== null
+        && expectedCompletion !== null
+        && Math.abs(completionCandidate-expectedCompletion)>0.0001;
       const malformedRate=meta.completionRate !== undefined
         && meta.completionRate !== null
-        && boundedRate(meta.completionRate)===null;
-      const impossibleDelivery=sentValue>claimedValue;
-      if (malformedCount || malformedRate || impossibleDelivery) invalidEvidenceRuns+=1;
+        && completionCandidate === null;
+      const malformedTruncated=meta.truncated !== undefined
+        && typeof meta.truncated !== 'boolean';
+
+      if (
+        suppliedCountInvalid
+        || malformedRate
+        || malformedTruncated
+        || inconsistentBacklog
+        || impossibleDelivery
+        || inconsistentCompletion
+      ) invalidEvidenceRuns+=1;
 
       sent+=sentValue;
       claimed+=claimedValue;
@@ -575,16 +634,23 @@ export function summarizeDailyDigestReliability(rows = [], { days = 7, nowMs = D
       rateLimited+=rateLimitedValue;
       if (backlog>0) backlogRuns+=1;
       dayMaxBacklog=Math.max(dayMaxBacklog,backlog);
-      sealed ||= event.code==='DAILY_DIGEST_SEALED_CLAIMS' || nonNegativeCount(meta.sealedClaims)>0;
+      sealed ||= event.code==='DAILY_DIGEST_SEALED_CLAIMS' || (sealedCandidate ?? 0)>0;
       degraded ||= event.code==='DAILY_DIGEST_RUN_DEGRADED';
       truncated ||= event.code==='DAILY_DIGEST_RUN_TRUNCATED' || meta.truncated === true;
     }
 
     const final=list.at(-1);
     const finalMeta=final?.metadata || {};
-    const finalRemaining=nonNegativeCount(finalMeta.remaining ?? finalMeta.backlog);
+    const finalRemainingCandidate=finalMeta.remaining === undefined || finalMeta.remaining === null
+      ? null
+      : evidenceCount(finalMeta.remaining);
+    const finalBacklogCandidate=finalMeta.backlog === undefined || finalMeta.backlog === null
+      ? null
+      : evidenceCount(finalMeta.backlog);
+    const finalRemaining=finalRemainingCandidate ?? finalBacklogCandidate ?? 0;
+    const finalCompletion=evidenceRate(finalMeta.completionRate);
     const completionRate=claimed>0 ? Number((sent/claimed).toFixed(4))
-      : boundedRate(finalMeta.completionRate) !== null ? boundedRate(finalMeta.completionRate)
+      : finalCompletion !== null ? finalCompletion
         : finalRemaining===0 && failed===0 ? 1 : null;
 
     totalSent+=sent;
@@ -618,24 +684,31 @@ export function summarizeDailyDigestReliability(rows = [], { days = 7, nowMs = D
   }
 
   const incidentReport=buildDailyDigestIncidentReport(events,{nowMs:endMs});
-  const periodIncidentDates=incidentReport.history.filter(item => {
-    const t=Date.parse(String(item.startedAt || ''));
-    return Number.isFinite(t) && t>=startMs && t<=endMs;
+  const incidentEpisodes=incidentReport.history.filter(item => {
+    const t=trustedTimestampMs(item.startedAt);
+    return t !== null && t>=startMs && t<=endMs;
   });
-  const recovered=periodIncidentDates.filter(item=>item.recoveredAt && Number.isFinite(Number(item.durationMinutes)));
+  const incidentDays=new Set(incidentEpisodes.map(item=>String(item.date || '')).filter(Boolean));
+  const recovered=incidentEpisodes.filter(item=>
+    item.recoveredAt
+    && typeof item.durationMinutes==='number'
+    && Number.isFinite(item.durationMinutes)
+    && item.durationMinutes>=0
+  );
   const averageRecoveryMinutes=recovered.length
-    ? Number((recovered.reduce((sum,item)=>sum+Number(item.durationMinutes || 0),0)/recovered.length).toFixed(1))
+    ? Number((recovered.reduce((sum,item)=>sum+item.durationMinutes,0)/recovered.length).toFixed(1))
     : null;
 
   return {
-    available:events.length>0,
+    available:candidateEvents.length>0,
     days:windowDays,
     windowStartedAt:new Date(startMs).toISOString(),
     windowEndedAt:new Date(endMs).toISOString(),
     sampleDays:daily.length,
     expectedDays:windowDays,
-    coverageRate:Number((daily.length/windowDays).toFixed(4)),
+    coverageRate:Number((Math.min(windowDays,daily.length)/windowDays).toFixed(4)),
     runs:events.length,
+    observedEvents:candidateEvents.length,
     totals:{
       sent:totalSent,
       claimed:totalClaimed,
@@ -655,16 +728,18 @@ export function summarizeDailyDigestReliability(rows = [], { days = 7, nowMs = D
     evidenceValid:invalidEvidenceRuns===0,
     invalidEvidenceRuns,
     incidents:{
-      count:periodIncidentDates.length,
+      count:incidentDays.size,
+      episodes:incidentEpisodes.length,
       recovered:recovered.length,
-      active:periodIncidentDates.filter(item=>item.active).length,
+      active:incidentEpisodes.filter(item=>item.active).length,
       averageRecoveryMinutes,
-      maxRecoveryMinutes:recovered.length ? Math.max(...recovered.map(item=>Number(item.durationMinutes || 0))) : null,
+      maxRecoveryMinutes:recovered.length ? Math.max(...recovered.map(item=>item.durationMinutes)) : null,
     },
     daily,
     policy:{
       aggregateOnly:true,
       userIdentifiers:false,
+      incidentCountUnit:'days',
     },
   };
 }
@@ -735,7 +810,7 @@ export function assessDailyDigestReliabilitySlo(rows = [], {
       reason:'evidence_incomplete',
       date,
       message:'Daily Digest reliability SLO cannot be confirmed because persistent history is incomplete.',
-      reliability:summarizeDailyDigestReliability(normalized,{days:windowDays,nowMs:now}),
+      reliability:summarizeDailyDigestReliability(rows,{days:windowDays,nowMs:now}),
       policy,
       diagnostics,
     };
@@ -755,7 +830,7 @@ export function assessDailyDigestReliabilitySlo(rows = [], {
     };
   }
 
-  const reliability=summarizeDailyDigestReliability(normalized,{days:windowDays,nowMs:now});
+  const reliability=summarizeDailyDigestReliability(rows,{days:windowDays,nowMs:now});
   if (!afterMissingRunGrace(now,policy) && todayEvents.length===0) {
     return {
       state:'collecting',
