@@ -13,17 +13,21 @@ function boundedScore(value) {
 }
 
 function compactState(value = '') {
-  return compactText(value).toLowerCase().replace(/\s+/g, '_');
+  if (typeof value !== 'string') return '';
+  return value.trim().toLowerCase().replace(/\s+/g, '_');
 }
 
 function explicitLineupStale(meta = {}) {
-  const state = compactState(meta?.state);
-  const freshness = compactState(meta?.freshness);
-  const source = compactState(meta?.source);
+  const state=compactState(meta?.state);
+  const freshness=compactState(meta?.freshness);
+  const freshnessState=compactState(meta?.freshnessState);
+  const source=compactState(meta?.source);
   return meta?.stale === true
     || state === 'stale'
     || state === 'stale_data'
     || freshness === 'stale'
+    || freshnessState === 'stale'
+    || source === 'stale'
     || source === 'stale-cache';
 }
 
@@ -36,17 +40,29 @@ function lineupProvenanceKnown(meta = {}) {
 }
 
 function lineupSourceReliability(meta = {}) {
-  const stale = explicitLineupStale(meta);
-  const provenanceKnown = lineupProvenanceKnown(meta);
-  const source = compactState(meta?.source);
-  const freshness = compactState(meta?.freshness);
-  const cached = !stale && (source === 'cache' || freshness === 'cached');
+  const stale=explicitLineupStale(meta);
+  const provenanceKnown=lineupProvenanceKnown(meta);
+  const source=compactState(meta?.source);
+  const freshness=compactState(meta?.freshness);
+  const freshnessState=compactState(meta?.freshnessState);
+  const cached=!stale && (
+    source==='cache'
+    || freshness==='cached'
+    || freshnessState==='cached'
+  );
+  const explicitlyUnknown=freshnessState==='unknown';
   return {
     stale,
     cached,
     provenanceKnown,
-    freshnessState: stale ? 'stale' : cached ? 'cached' : 'fresh',
-    provenanceState: provenanceKnown ? 'verified' : 'unknown',
+    freshnessState:stale
+      ? 'stale'
+      : cached
+        ? 'cached'
+        : explicitlyUnknown
+          ? 'unknown'
+          : 'fresh',
+    provenanceState:provenanceKnown ? 'verified' : 'unknown',
   };
 }
 
