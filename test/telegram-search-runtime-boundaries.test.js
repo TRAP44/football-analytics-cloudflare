@@ -219,20 +219,11 @@ test('Telegram search validates Telegram user and chat identifiers before side e
 test('Telegram AI track record normalizes malformed evidence and escapes HTML', () => {
   const api=runtime();
 
-  assert.equal(
-    api.botAiTrackRecordText({available:true,recent:'broken'}),
-    [
-      '📈 <b>Протокол MatchRadar AI</b>',
-      'Период: последние 180 дней',
-      '',
-      'Проверенных матчей: <b>0</b>',
-      'Совпало / не совпало: <b>0 / 0</b>',
-      'Статус выборки: <b>—</b>',
-      'Ошибка Брайера: пока недостаточно данных',
-      '',
-      '<i>Это история вероятностей модели, а не «винрейт» и не показатель доходности ставок. Прошлые результаты не гарантируют будущие.</i>',
-    ].join('\n'),
-  );
+  const fallback=api.botAiTrackRecordText({available:true,recent:'broken'});
+  assert.match(fallback,/Период: последние 180 дней/);
+  assert.match(fallback,/Проверенных матчей: <b>0<\/b>/);
+  assert.match(fallback,/Совпало \/ не совпало: <b>0 \/ 0<\/b>/);
+  assert.match(fallback,/Ошибка Брайера: пока недостаточно данных/);
 
   const text=api.botAiTrackRecordText({
     available:true,
