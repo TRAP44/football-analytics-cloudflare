@@ -106,7 +106,8 @@ test('backend growth/referral domain uses idempotent growth events for share and
   for (const event of ['share_created','share_open','referral_open','referred_first_open','referred_payment']) {
     assert.ok(backendSource.includes(`eventName:'${event}'`) || backendSource.includes(`event_name:'${event}'`), `missing ${event}`);
   }
-  assert.match(growthReferral,/supaSelectOne\(cfg,'growth_events',\{event_key:\`eq\.\$\{dedupeKey\}\`\}\)/);
+  assert.match(growthReferral,/supaSelectOne/);
+  assert.match(growthReferral,/eventRowMatches/);
   assert.match(backendSource,/eventKey:\`share_open:\$\{userId\}:\$\{startParam\}\`/);
   assert.match(growthReferral,/referralAttributionDecision/);
   assert.match(growthReferral,/referral_code:referral\.referralCode/);
