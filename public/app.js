@@ -4788,94 +4788,144 @@ function smartInsightCardHtml(insight, match) {
 
 function matchChangeNarrativeHtml(d = {}, match = {}) {
   const items = [];
-  const mode = String(d.mode || '');
-  const events = Array.isArray(d.events) ? d.events : [];
-  const latest = [...events].reverse().find(event => {
-    const type = String(event?.type || '').toLowerCase();
-    const detail = String(event?.detail || '').toLowerCase();
-    return type.includes('goal')
-      || type.includes('card')
-      || type.includes('subst')
-      || detail.includes('goal')
-      || detail.includes('card')
-      || detail.includes('subst');
-  });
+  const mode = typeof d?.mode === 'string' ? d.mode : '';
+  const trusted = key => {
+    const meta=d?.dataFreshness?.[key];
+    return d?.availability?.[key] === true
+      && meta?.confidenceBearing === true
+      && meta?.stale !== true
+      && String(meta?.provenanceState || '').toLowerCase() === 'verified';
+  };
+  const scalar = (value,min=-Infinity,max=Infinity) => {
+    const number = typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+        && /^[+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)$/.test(value.trim())
+          ? Number(value.trim().replace(',','.'))
+          : NaN;
+    return Number.isFinite(number) && number >= min && number <= max
+      ? number
+      : null;
+  };
 
-  if (latest && mode !== 'upcoming') {
-    const type = String(latest.type || '').toLowerCase();
-    const detail = String(latest.detail || '').toLowerCase();
-    const icon = type.includes('goal') || detail.includes('goal')
-      ? '⚽'
-      : type.includes('card') || detail.includes('card')
-        ? '🟨'
-        : '🔄';
-    const actor = latest.player || latest.teamName || (latest.side === 'home' ? match.home?.name : latest.side === 'away' ? match.away?.name : '');
+  const events = Array.isArray(d?.events) ? d.events : [];
+  const eventsTrusted = mode === 'live'
+    ? trusted('events')
+    : mode === 'finished'
+      ? d?.availability?.events === true
+      : false;
+  const latest = eventsTrusted
+    ? [...events].filter(event => {
+        const minute=scalar(event?.minute,0,180);
+        const extra=scalar(event?.extra ?? 0,0,30);
+        const text=`${event?.type || ''} ${event?.detail || ''}`.toLowerCase();
+        return Number.isSafeInteger(minute)
+          && Number.isSafeInteger(extra)
+          && /goal|card|subst/.test(text);
+      }).sort((x,y)=>
+        (Number(y.minute)+Number(y.extra || 0))
+        -(Number(x.minute)+Number(x.extra || 0))
+      )[0]
+    : null;
+
+  if (latest) {
+    const value=`${latest?.type || ''} ${latest?.detail || ''}`.toLowerCase();
+    const actor=latest.player
+      || latest.teamName
+      || (latest.side === 'home'
+        ? match.home?.name
+        : latest.side === 'away'
+          ? match.away?.name
+          : '');
     items.push({
-      icon,
-      title: `${minuteLabel(latest)} · ${publicText(latest.label || latest.detail || latest.type || 'Событие матча')}`,
-      text: actor ? String(actor) : 'Новое событие в хронологии матча.',
-      tone: type.includes('goal') || detail.includes('goal') ? 'strong' : 'neutral',
+      kind:'change',
+      icon:value.includes('goal') ? '⚽' : value.includes('card') ? '🟨' : '🔄',
+      title:`${minuteLabel(latest)} · ${publicText(latest.label || latest.detail || latest.type || 'Событие матча')}`,
+      text:actor ? String(actor) : 'Новое подтверждённое событие в хронологии матча.',
+      tone:value.includes('goal') ? 'strong' : 'neutral',
     });
   }
 
-  if (mode === 'live' && d.livePressure) {
-    const home = Number(d.livePressure.home);
-    const away = Number.isFinite(Number(d.livePressure.away)) ? Number(d.livePressure.away) : (Number.isFinite(home) ? 100 - home : NaN);
-    const leader = d.livePressure.leader === 'home'
-      ? match.home?.name
-      : d.livePressure.leader === 'away'
-        ? match.away?.name
-        : '';
-    if (leader && Number.isFinite(home) && Number.isFinite(away) && Math.abs(home - away) >= 12) {
+  if (mode === 'live' && trusted('statistics') && d?.livePressure) {
+    const home=scalar(d.livePressure.home,0,100);
+    const away=scalar(d.livePressure.away,0,100);
+    if (
+      home !== null
+      && away !== null
+      && Math.abs(home + away - 100) <= 2
+      && Math.abs(home-away) >= 12
+    ) {
+      const leader=home > away
+        ? match.home?.name || 'Хозяева'
+        : match.away?.name || 'Гости';
       items.push({
-        icon: '⚡',
-        title: `Давление сейчас на стороне: ${leader}`,
-        text: `Текущий индекс давления: ${Math.round(home)}:${Math.round(away)}.`,
-        tone: 'strong',
+        kind:'state',
+        icon:'⚡',
+        title:`Давление сейчас на стороне: ${leader}`,
+        text:`Текущий индекс давления: ${Math.round(home)}:${Math.round(away)}.`,
+        tone:'strong',
       });
     }
   }
 
-  const movement = d.oddsMovement?.probabilityChange || null;
-  if (movement && typeof movement === 'object') {
-    const labels = {
-      home: match.home?.name || 'П1',
-      draw: 'Ничья',
-      away: match.away?.name || 'П2',
-    };
-    const strongest = Object.entries(movement)
-      .map(([key, value]) => ({ key, value: Number(value) }))
-      .filter(row => Number.isFinite(row.value))
-      .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))[0];
-    if (strongest && Math.abs(strongest.value) >= 0.5) {
-      items.push({
-        icon: strongest.value > 0 ? '📈' : '📉',
-        title: `Изменилась оценка: ${labels[strongest.key] || strongest.key}`,
-        text: `Сдвиг расчётной рыночной вероятности: ${signedPp(strongest.value)}.`,
-        tone: strongest.value > 0 ? 'up' : 'down',
-      });
+  const movement = mode === 'live'
+    && trusted('liveOdds')
+    && scalar(d?.oddsMovement?.sample,2,100000) !== null
+    ? d?.oddsMovement?.probabilityChange
+    : null;
+  if (movement && typeof movement === 'object' && !Array.isArray(movement)) {
+    const rows=['home','draw','away'].map(key=>({
+      key,
+      value:scalar(movement[key],-100,100),
+    }));
+    if (
+      rows.every(row=>row.value !== null)
+      && Math.abs(rows.reduce((sum,row)=>sum+row.value,0)) <= 1
+    ) {
+      const labels={
+        home:match.home?.name || 'П1',
+        draw:'Ничья',
+        away:match.away?.name || 'П2',
+      };
+      const strongest=rows.sort(
+        (x,y)=>Math.abs(y.value)-Math.abs(x.value),
+      )[0];
+      if (strongest && Math.abs(strongest.value) >= .5) {
+        items.push({
+          kind:'change',
+          icon:strongest.value > 0 ? '📈' : '📉',
+          title:`Изменилась оценка: ${labels[strongest.key]}`,
+          text:`Сдвиг расчётной рыночной вероятности: ${signedPp(strongest.value)}.`,
+          tone:strongest.value > 0 ? 'up' : 'down',
+        });
+      }
     }
   }
 
-  if (mode === 'upcoming') {
-    const homeAbsences = Number(d.absences?.home?.length || 0);
-    const awayAbsences = Number(d.absences?.away?.length || 0);
-    const totalAbsences = homeAbsences + awayAbsences;
-    if (totalAbsences > 0) {
+  if (mode === 'upcoming' && trusted('injuries')) {
+    const homeAbsences=Array.isArray(d?.absences?.home)
+      ? Math.min(d.absences.home.length,200)
+      : 0;
+    const awayAbsences=Array.isArray(d?.absences?.away)
+      ? Math.min(d.absences.away.length,200)
+      : 0;
+    if (homeAbsences + awayAbsences > 0) {
       items.push({
-        icon: '🩺',
-        title: 'Есть изменения по доступности игроков',
-        text: `${match.home?.name || 'Хозяева'}: ${homeAbsences} · ${match.away?.name || 'Гости'}: ${awayAbsences}.`,
-        tone: 'neutral',
+        kind:'state',
+        icon:'🩺',
+        title:'Отмечены подтверждённые потери состава',
+        text:`${match.home?.name || 'Хозяева'}: ${homeAbsences} · ${match.away?.name || 'Гости'}: ${awayAbsences}.`,
+        tone:'neutral',
       });
     }
   }
 
   if (!items.length) return '';
-  const visible = items.slice(0, 3);
+  const visible=items.slice(0,3);
+  const changed=visible.some(item=>item.kind === 'change');
   return `<section class="panel match-change-panel">
     <div class="center-section-title">
-      <div><span class="center-priority-label">RADAR</span><h2>Что изменилось</h2><p>Последние сигналы, которые реально меняют картину матча</p></div>
+      <div><span class="center-priority-label">RADAR</span><h2>${changed ? 'Что изменилось' : 'Что важно сейчас'}</h2><p>${changed ? 'Подтверждённые изменения, которые реально меняют картину матча' : 'Текущие подтверждённые сигналы без выдуманной динамики'}</p></div>
     </div>
     <div class="match-change-list">
       ${visible.map(item => `<article class="match-change-item ${escapeHtml(item.tone || 'neutral')}">
