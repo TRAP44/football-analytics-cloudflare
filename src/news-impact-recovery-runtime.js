@@ -356,38 +356,53 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     channel='telegram',
     delivery='',
   }={}) {
+    const safeUserId=newsImpactPositiveId(userId);
+    const safeFixtureId=newsImpactPositiveId(fixtureId);
     const safeDecision=cleanNewsImpactDecisionCode(decision);
     const safeAction=cleanNewsImpactActionCode(action);
     const outcome=newsImpactOutcomeCode(safeAction);
-    if (!safeDecision || !safeAction || !outcome) return false;
+    const safeChannel=typeof channel==='string' ? channel.trim().slice(0,24) : '';
+    const safeDelivery=typeof delivery==='string' ? delivery.trim().slice(0,24) : '';
+    if (!safeUserId || !safeFixtureId || !safeDecision || !safeAction || !outcome) return false;
     return await recordGrowthEvent(cfg,{
-      userId,
+      userId:safeUserId,
       eventName:'news_impact_outcome',
-      channel,
-      fixtureId,
+      channel:safeChannel || 'telegram',
+      fixtureId:safeFixtureId,
       metadata:{
         decision:safeDecision,
         action:safeAction,
         outcome,
-        ...(delivery ? {delivery:String(delivery).slice(0,24)} : {}),
+        ...(safeDelivery ? {delivery:safeDelivery} : {}),
       },
     });
   }
   
   function newsImpactJourneyKey(row = {}) {
-    const uid=Number(row.telegram_id || 0);
-    const fixtureId=Number(row.fixture_id || 0);
+    const uid=newsImpactPositiveId(row?.telegram_id);
+    const fixtureId=newsImpactPositiveId(row?.fixture_id);
     const decision=newsImpactRowDecision(row);
     const action=newsImpactRowAction(row);
     return uid && fixtureId && decision && action ? `${uid}|${fixtureId}|${decision}|${action}` : '';
   }
   
   function buildNewsImpactActionOutcomeQuality(actionRows = [], outcomeRows = [], options = {}) {
-    const asOfMs=Number.isFinite(Number(options?.asOfMs)) ? Number(options.asOfMs) : Date.now();
-    const outcomeWindowMinutes=Math.max(1,Math.min(30,Number(options?.outcomeWindowMinutes || NEWS_IMPACT_OUTCOME_WINDOW_MINUTES)));
+    const safeOptions=options && typeof options==='object' && !Array.isArray(options) ? options : {};
+    const optionAsOf=newsImpactFiniteNumber(safeOptions.asOfMs);
+    const asOfMs=optionAsOf ?? Date.now();
+    const configuredWindow=newsImpactFiniteNumber(safeOptions.outcomeWindowMinutes);
+    const defaultWindow=newsImpactFiniteNumber(NEWS_IMPACT_OUTCOME_WINDOW_MINUTES) ?? 5;
+    const outcomeWindowMinutes=Math.max(1,Math.min(30,configuredWindow ?? defaultWindow));
     const outcomeWindowMs=outcomeWindowMinutes*60_000;
+    const safeActionRows=Array.isArray(actionRows) ? actionRows : [];
+    const safeOutcomeRows=Array.isArray(outcomeRows) ? outcomeRows : [];
+    const actionCodes=NEWS_IMPACT_ACTION_CODES instanceof Set
+      ? [...NEWS_IMPACT_ACTION_CODES]
+      : Array.isArray(NEWS_IMPACT_ACTION_CODES)
+        ? NEWS_IMPACT_ACTION_CODES.filter(code=>typeof code==='string')
+        : [];
     const actionByKey=new Map();
-    for (const row of actionRows || []) {
+    for (const row of safeActionRows) {
       const key=newsImpactJourneyKey(row);
       const actionAt=newsImpactEventTime(row);
       if (!key || !Number.isFinite(actionAt)) continue;
@@ -396,17 +411,22 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     }
     const confirmed=new Set();
     const outcomeCodesByKey=new Map();
-    for (const row of outcomeRows || []) {
+    for (const row of safeOutcomeRows) {
       const key=newsImpactJourneyKey(row);
       const outcomeAt=newsImpactEventTime(row);
       const action=actionByKey.get(key);
       if (!key || !action || !Number.isFinite(outcomeAt)) continue;
       if (outcomeAt<action.actionAt || outcomeAt>action.actionAt+outcomeWindowMs) continue;
+      const metadata=row?.metadata && typeof row.metadata==='object' && !Array.isArray(row.metadata)
+        ? row.metadata
+        : null;
+      const code=typeof metadata?.outcome==='string' ? metadata.outcome.slice(0,32) : '';
+      const expected=newsImpactOutcomeCode(newsImpactRowAction(action.row));
+      if (!code || !expected || code!==expected) continue;
       confirmed.add(key);
-      const code=String(row?.metadata && typeof row.metadata==='object' ? row.metadata.outcome || '' : '').slice(0,32);
-      if (code) outcomeCodesByKey.set(key,code);
+      outcomeCodesByKey.set(key,code);
     }
-    return [...NEWS_IMPACT_ACTION_CODES].map(actionCode=>{
+    return actionCodes.map(actionCode=>{
       const observed=[...actionByKey.entries()].filter(([,value])=>newsImpactRowAction(value.row)===actionCode);
       const eligible=observed.filter(([key,value])=>confirmed.has(key) || value.actionAt<=asOfMs-outcomeWindowMs);
       const confirmedKeys=eligible.filter(([key])=>confirmed.has(key)).map(([key])=>key);
@@ -422,7 +442,7 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       }
       return {
         action:actionCode,
-        label:NEWS_IMPACT_ACTION_LABELS[actionCode] || actionCode,
+        label:NEWS_IMPACT_ACTION_LABELS?.[actionCode] || actionCode,
         observed:observed.length,
         attempts,
         pending,
@@ -435,7 +455,14 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   }
   
   function newsImpactOutcomeBottleneck(rows = []) {
-    const eligible=(rows || []).filter(x=>Boolean(x?.confidence?.eligibleForBottleneck));
+    const eligible=(Array.isArray(rows) ? rows : []).filter(x=>
+      x
+      && typeof x==='object'
+      && !Array.isArray(x)
+      && x?.confidence?.eligibleForBottleneck===true
+      && newsImpactFiniteNumber(x.completionPct)!==null
+      && newsImpactFiniteNumber(x.attempts)!==null
+    );
     if (!eligible.length) return null;
     return [...eligible].sort((a,b)=>Number(a.completionPct || 0)-Number(b.completionPct || 0) || Number(b.attempts || 0)-Number(a.attempts || 0))[0] || null;
   }
