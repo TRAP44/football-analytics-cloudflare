@@ -211,6 +211,29 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     return parsed!==null && Number.isSafeInteger(parsed) && parsed>0 ? parsed : fallback;
   }
 
+  function newsImpactNonNegativeNumber(value, fallback = 0) {
+    const parsed=newsImpactFiniteNumber(value);
+    return parsed!==null && parsed>=0 ? parsed : fallback;
+  }
+
+  function newsImpactSignedNumber(value, fallback = 0) {
+    const parsed=newsImpactFiniteNumber(value);
+    return parsed!==null ? parsed : fallback;
+  }
+
+  function newsImpactPercentage(value, fallback = 0) {
+    const parsed=newsImpactFiniteNumber(value);
+    return parsed!==null && parsed>=0 && parsed<=100 ? parsed : fallback;
+  }
+
+  function newsImpactText(value, fallback = '') {
+    return typeof value==='string' ? value : fallback;
+  }
+
+  function newsImpactDirection(value) {
+    return ['increased','decreased','unchanged'].includes(value) ? value : 'unchanged';
+  }
+
   function newsImpactConversionConfidence(actedUsers = 0, users = 0) {
     const n=newsImpactCount(users);
     const k=Math.min(n,newsImpactCount(actedUsers));
@@ -2007,13 +2030,16 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   
   
   function newsImpactRecoveryIncidentOverdueWithinWindow(episode = null, windowStartMs = 0, windowEndMs = Date.now()) {
-    if (!episode || !Number.isFinite(windowStartMs) || !Number.isFinite(windowEndMs) || windowEndMs<=windowStartMs) return null;
-    const startMs=Date.parse(String(episode.startedAt || ''));
+    if (!episode || typeof episode!=='object' || Array.isArray(episode) || !Number.isFinite(windowStartMs) || !Number.isFinite(windowEndMs) || windowEndMs<=windowStartMs) return null;
+    const startedAt=newsImpactText(episode.startedAt);
+    const recoveredAt=newsImpactText(episode.recoveredAt);
+    const acknowledgedAt=newsImpactText(episode.firstAcknowledgedAt);
+    const startMs=startedAt ? Date.parse(startedAt) : NaN;
     if (!Number.isFinite(startMs) || startMs>=windowEndMs) return null;
-    const recoveredMs=Date.parse(String(episode.recoveredAt || ''));
+    const recoveredMs=recoveredAt ? Date.parse(recoveredAt) : NaN;
     const terminalMs=Number.isFinite(recoveredMs) && recoveredMs<windowEndMs ? recoveredMs : windowEndMs;
     if (terminalMs<=windowStartMs) return null;
-    const ackMs=Date.parse(String(episode.firstAcknowledgedAt || ''));
+    const ackMs=acknowledgedAt ? Date.parse(acknowledgedAt) : NaN;
     const ackTerminalMs=Number.isFinite(ackMs) && ackMs<terminalMs ? ackMs : terminalMs;
     const overlapMinutes=(fromMs,toMs)=>{
       const from=Math.max(windowStartMs,fromMs);
@@ -2160,41 +2186,59 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   
   
   function buildNewsImpactRecoveryIncidentSloImpactConcentration(impactRanking = {}) {
-    const ranking=Array.isArray(impactRanking?.ranking) ? impactRanking.ranking : [];
-    const totalPairs=Math.max(0,Number(impactRanking?.summary?.pairs || ranking.length));
-    const cumulativePct=(count)=>Math.round(ranking.slice(0,count).reduce((sum,row)=>sum+Number(row?.contributionPct || 0),0)*10)/10;
+    const source=impactRanking && typeof impactRanking==='object' && !Array.isArray(impactRanking)
+      ? impactRanking
+      : null;
+    const ranking=(source && Array.isArray(source.ranking) ? source.ranking : [])
+      .filter(row=>
+        row
+        && typeof row==='object'
+        && !Array.isArray(row)
+        && typeof row.reason==='string'
+        && row.reason
+        && typeof row.action==='string'
+        && row.action
+      );
+    const reportedPairs=newsImpactFiniteNumber(source?.summary?.pairs);
+    const totalPairs=reportedPairs!==null && Number.isSafeInteger(reportedPairs) && reportedPairs>=0
+      ? reportedPairs
+      : ranking.length;
+    const cumulativePct=(count)=>Math.min(
+      100,
+      Math.round(ranking.slice(0,count).reduce((sum,row)=>sum+newsImpactPercentage(row.contributionPct),0)*10)/10,
+    );
     const top1Pct=cumulativePct(1);
     const top3Pct=cumulativePct(3);
     const top5Pct=cumulativePct(5);
     const concentrationRows=ranking.slice(0,5).map((row,index)=>({
       rank:index+1,
-      reason:String(row?.reason || ''),
-      reasonLabel:String(row?.reasonLabel || row?.reason || ''),
-      action:String(row?.action || ''),
-      actionLabel:String(row?.actionLabel || row?.action || ''),
-      contributionPct:Number(row?.contributionPct || 0),
+      reason:row.reason,
+      reasonLabel:newsImpactText(row.reasonLabel,row.reason),
+      action:row.action,
+      actionLabel:newsImpactText(row.actionLabel,row.action),
+      contributionPct:newsImpactPercentage(row.contributionPct),
       cumulativeContributionPct:cumulativePct(index+1),
-      totalOverdueMinutes:Number(row?.totalOverdueMinutes || 0),
-      activeEpisodes:Number(row?.activeEpisodes || 0),
+      totalOverdueMinutes:newsImpactNonNegativeNumber(row.totalOverdueMinutes),
+      activeEpisodes:newsImpactCount(row.activeEpisodes),
     }));
     return {
-      available:impactRanking?.available!==false,
-      generatedAt:impactRanking?.generatedAt || null,
+      available:Boolean(source && source.available!==false),
+      generatedAt:newsImpactText(source?.generatedAt) || null,
       summary:{
         pairs:totalPairs,
-        totalOverdueMinutes:Number(impactRanking?.summary?.totalOverdueMinutes || 0),
+        totalOverdueMinutes:newsImpactNonNegativeNumber(source?.summary?.totalOverdueMinutes),
         top1ContributionPct:top1Pct,
         top3ContributionPct:top3Pct,
         top5ContributionPct:top5Pct,
         residualAfterTop5Pct:Math.max(0,Math.round((100-top5Pct)*10)/10),
-        coveredPairs:Math.min(5,totalPairs),
+        coveredPairs:Math.min(5,totalPairs,ranking.length),
       },
       rows:concentrationRows,
       methodology:'cumulative_share_of_total_overdue_minutes',
       thresholds:{
-        ackMinutes:Number(impactRanking?.thresholds?.ackMinutes || NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES),
-        criticalAckMinutes:Number(impactRanking?.thresholds?.criticalAckMinutes || NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES),
-        recoveryMinutes:Number(impactRanking?.thresholds?.recoveryMinutes || NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES),
+        ackMinutes:newsImpactNonNegativeNumber(source?.thresholds?.ackMinutes,newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES)),
+        criticalAckMinutes:newsImpactNonNegativeNumber(source?.thresholds?.criticalAckMinutes,newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES)),
+        recoveryMinutes:newsImpactNonNegativeNumber(source?.thresholds?.recoveryMinutes,newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES)),
         source:'rc87_existing_slo',
       },
       privacy:{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false},
@@ -2204,8 +2248,16 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   }
   
   
-  function buildNewsImpactRecoveryIncidentSloImpactConcentrationTrend(episodeRows = [], {asOfMs = Date.now(), weeks = 4} = {}) {
-    const safeWeeks=Math.max(2,Math.min(4,Number(weeks || 4)));
+  function buildNewsImpactRecoveryIncidentSloImpactConcentrationTrend(episodeRows = [], options = {}) {
+    const safeOptions=options && typeof options==='object' && !Array.isArray(options) ? options : {};
+    const configuredWeeks=newsImpactFiniteNumber(safeOptions.weeks);
+    const safeWeeks=configuredWeeks!==null && Number.isSafeInteger(configuredWeeks)
+      ? Math.max(2,Math.min(4,configuredWeeks))
+      : 4;
+    const configuredAsOf=newsImpactFiniteNumber(safeOptions.asOfMs);
+    const candidateAsOf=configuredAsOf!==null ? new Date(configuredAsOf).getTime() : NaN;
+    const asOfMs=Number.isFinite(candidateAsOf) ? candidateAsOf : Date.now();
+    const safeEpisodes=Array.isArray(episodeRows) ? episodeRows : [];
     const weekMs=7*86400_000;
     const weekly=[];
     const direction=(delta)=>delta>0 ? 'increased' : delta<0 ? 'decreased' : 'unchanged';
@@ -2213,28 +2265,33 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       const windowEndMs=asOfMs-i*weekMs;
       const windowStartMs=windowEndMs-weekMs;
       const groups=new Map();
-      for (const episode of episodeRows || []) {
+      for (const episode of safeEpisodes) {
+        if (!episode || typeof episode!=='object' || Array.isArray(episode)) continue;
+        const reason=newsImpactText(episode.reason);
+        const action=newsImpactText(episode.action);
+        if (!reason || !action) continue;
         const burden=newsImpactRecoveryIncidentOverdueWithinWindow(episode,windowStartMs,windowEndMs);
-        if (!burden || burden.totalOverdueMinutes<=0) continue;
-        const key=String(episode.reason || '')+'|'+String(episode.action || '');
+        const burdenMinutes=newsImpactNonNegativeNumber(burden?.totalOverdueMinutes);
+        if (!burden || burdenMinutes<=0) continue;
+        const key=reason+'|'+action;
         const bucket=groups.get(key) || {
-          reason:String(episode.reason || ''),
-          reasonLabel:String(episode.reasonLabel || episode.reason || ''),
-          action:String(episode.action || ''),
-          actionLabel:String(episode.actionLabel || episode.action || ''),
+          reason,
+          reasonLabel:newsImpactText(episode.reasonLabel,reason),
+          action,
+          actionLabel:newsImpactText(episode.actionLabel,action),
           totalOverdueMinutes:0,
         };
-        bucket.totalOverdueMinutes+=Number(burden.totalOverdueMinutes || 0);
+        bucket.totalOverdueMinutes+=burdenMinutes;
         groups.set(key,bucket);
       }
       const all=[...groups.values()].sort((a,b)=>
         b.totalOverdueMinutes-a.totalOverdueMinutes
-        || String(a.reason).localeCompare(String(b.reason))
-        || String(a.action).localeCompare(String(b.action))
+        || a.reason.localeCompare(b.reason)
+        || a.action.localeCompare(b.action)
       );
-      const totalOverdueMinutes=all.reduce((sum,row)=>sum+Number(row.totalOverdueMinutes || 0),0);
+      const totalOverdueMinutes=all.reduce((sum,row)=>sum+newsImpactNonNegativeNumber(row.totalOverdueMinutes),0);
       const share=(count)=>totalOverdueMinutes>0
-        ? Math.round((all.slice(0,count).reduce((sum,row)=>sum+Number(row.totalOverdueMinutes || 0),0)/totalOverdueMinutes)*1000)/10
+        ? Math.min(100,Math.round((all.slice(0,count).reduce((sum,row)=>sum+newsImpactNonNegativeNumber(row.totalOverdueMinutes),0)/totalOverdueMinutes)*1000)/10)
         : 0;
       const top1ContributionPct=share(1);
       const top3ContributionPct=share(3);
@@ -2253,28 +2310,28 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
           reasonLabel:all[0].reasonLabel,
           action:all[0].action,
           actionLabel:all[0].actionLabel,
-          totalOverdueMinutes:Number(all[0].totalOverdueMinutes || 0),
+          totalOverdueMinutes:newsImpactNonNegativeNumber(all[0].totalOverdueMinutes),
         } : null,
       });
     }
     const current=weekly[weekly.length-1] || {pairs:0,totalOverdueMinutes:0,top1ContributionPct:0,top3ContributionPct:0,top5ContributionPct:0};
     const previous=weekly[weekly.length-2] || current;
-    const top1DeltaPctPoints=Math.round((Number(current.top1ContributionPct || 0)-Number(previous.top1ContributionPct || 0))*10)/10;
-    const top3DeltaPctPoints=Math.round((Number(current.top3ContributionPct || 0)-Number(previous.top3ContributionPct || 0))*10)/10;
-    const top5DeltaPctPoints=Math.round((Number(current.top5ContributionPct || 0)-Number(previous.top5ContributionPct || 0))*10)/10;
+    const top1DeltaPctPoints=Math.round((newsImpactPercentage(current.top1ContributionPct)-newsImpactPercentage(previous.top1ContributionPct))*10)/10;
+    const top3DeltaPctPoints=Math.round((newsImpactPercentage(current.top3ContributionPct)-newsImpactPercentage(previous.top3ContributionPct))*10)/10;
+    const top5DeltaPctPoints=Math.round((newsImpactPercentage(current.top5ContributionPct)-newsImpactPercentage(previous.top5ContributionPct))*10)/10;
     return {
       available:true,
       weeks:safeWeeks,
       generatedAt:new Date(asOfMs).toISOString(),
       summary:{
-        currentPairs:Number(current.pairs || 0),
-        previousPairs:Number(previous.pairs || 0),
-        pairDelta:Number(current.pairs || 0)-Number(previous.pairs || 0),
-        currentOverdueMinutes:Number(current.totalOverdueMinutes || 0),
-        previousOverdueMinutes:Number(previous.totalOverdueMinutes || 0),
-        top1ContributionPct:Number(current.top1ContributionPct || 0),
-        top3ContributionPct:Number(current.top3ContributionPct || 0),
-        top5ContributionPct:Number(current.top5ContributionPct || 0),
+        currentPairs:newsImpactCount(current.pairs),
+        previousPairs:newsImpactCount(previous.pairs),
+        pairDelta:newsImpactCount(current.pairs)-newsImpactCount(previous.pairs),
+        currentOverdueMinutes:newsImpactNonNegativeNumber(current.totalOverdueMinutes),
+        previousOverdueMinutes:newsImpactNonNegativeNumber(previous.totalOverdueMinutes),
+        top1ContributionPct:newsImpactPercentage(current.top1ContributionPct),
+        top3ContributionPct:newsImpactPercentage(current.top3ContributionPct),
+        top5ContributionPct:newsImpactPercentage(current.top5ContributionPct),
         top1DeltaPctPoints,
         top3DeltaPctPoints,
         top5DeltaPctPoints,
@@ -2285,9 +2342,9 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       weekly,
       methodology:'weekly_cumulative_share_of_total_overdue_minutes',
       thresholds:{
-        ackMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
-        criticalAckMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
-        recoveryMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,
+        ackMinutes:newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES),
+        criticalAckMinutes:newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES),
+        recoveryMinutes:newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES),
         source:'rc87_existing_slo',
       },
       privacy:{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false},
@@ -2303,55 +2360,66 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     concentration = {},
     concentrationTrend = {},
   ) {
-    const topPair=Array.isArray(impactRanking?.ranking) && impactRanking.ranking.length ? impactRanking.ranking[0] : null;
-    const rankingSummary=impactRanking?.summary || {};
-    const trendSummary=impactTrend?.summary || {};
-    const concentrationSummary=concentration?.summary || {};
-    const concentrationTrendSummary=concentrationTrend?.summary || {};
-    const available=[impactRanking,impactTrend,concentration,concentrationTrend].every(x=>x?.available!==false);
+    const rankingSource=impactRanking && typeof impactRanking==='object' && !Array.isArray(impactRanking) ? impactRanking : null;
+    const trendSource=impactTrend && typeof impactTrend==='object' && !Array.isArray(impactTrend) ? impactTrend : null;
+    const concentrationSource=concentration && typeof concentration==='object' && !Array.isArray(concentration) ? concentration : null;
+    const concentrationTrendSource=concentrationTrend && typeof concentrationTrend==='object' && !Array.isArray(concentrationTrend) ? concentrationTrend : null;
+    const topPair=Array.isArray(rankingSource?.ranking)
+      && rankingSource.ranking[0]
+      && typeof rankingSource.ranking[0]==='object'
+      && !Array.isArray(rankingSource.ranking[0])
+      ? rankingSource.ranking[0]
+      : null;
+    const rankingSummary=rankingSource?.summary && typeof rankingSource.summary==='object' && !Array.isArray(rankingSource.summary) ? rankingSource.summary : {};
+    const trendSummary=trendSource?.summary && typeof trendSource.summary==='object' && !Array.isArray(trendSource.summary) ? trendSource.summary : {};
+    const concentrationSummary=concentrationSource?.summary && typeof concentrationSource.summary==='object' && !Array.isArray(concentrationSource.summary) ? concentrationSource.summary : {};
+    const concentrationTrendSummary=concentrationTrendSource?.summary && typeof concentrationTrendSource.summary==='object' && !Array.isArray(concentrationTrendSource.summary) ? concentrationTrendSource.summary : {};
+    const available=[rankingSource,trendSource,concentrationSource,concentrationTrendSource].every(x=>x && x.available!==false);
+    const generatedAt=[rankingSource?.generatedAt,trendSource?.generatedAt,concentrationTrendSource?.generatedAt,concentrationSource?.generatedAt]
+      .find(value=>typeof value==='string' && value) || null;
     return {
       available,
-      generatedAt:impactRanking?.generatedAt || impactTrend?.generatedAt || concentrationTrend?.generatedAt || concentration?.generatedAt || null,
+      generatedAt,
       summary:{
-        cumulativeOverdueMinutes:Number(rankingSummary.totalOverdueMinutes || 0),
-        cumulativeAckOverdueMinutes:Number(rankingSummary.ackOverdueMinutes || 0),
-        cumulativeRecoveryOverdueMinutes:Number(rankingSummary.recoveryOverdueMinutes || 0),
-        breachPairs:Number(rankingSummary.pairs || 0),
-        activePairs:Number(rankingSummary.activePairs || 0),
-        breachEpisodes:Number(rankingSummary.breachEpisodes || 0),
-        currentWeekOverdueMinutes:Number(trendSummary.currentOverdueMinutes || 0),
-        previousWeekOverdueMinutes:Number(trendSummary.previousOverdueMinutes || 0),
-        weekDeltaMinutes:Number(trendSummary.deltaMinutes || 0),
-        weeklyIncreasedPairs:Number(trendSummary.increasedPairs || 0),
-        weeklyDecreasedPairs:Number(trendSummary.decreasedPairs || 0),
-        weeklyUnchangedPairs:Number(trendSummary.unchangedPairs || 0),
-        top1ContributionPct:Number(concentrationSummary.top1ContributionPct || 0),
-        top3ContributionPct:Number(concentrationSummary.top3ContributionPct || 0),
-        top5ContributionPct:Number(concentrationSummary.top5ContributionPct || 0),
-        top1WeeklyDeltaPctPoints:Number(concentrationTrendSummary.top1DeltaPctPoints || 0),
-        top3WeeklyDeltaPctPoints:Number(concentrationTrendSummary.top3DeltaPctPoints || 0),
-        top5WeeklyDeltaPctPoints:Number(concentrationTrendSummary.top5DeltaPctPoints || 0),
-        top1WeeklyDirection:String(concentrationTrendSummary.top1Direction || 'unchanged'),
-        top3WeeklyDirection:String(concentrationTrendSummary.top3Direction || 'unchanged'),
-        top5WeeklyDirection:String(concentrationTrendSummary.top5Direction || 'unchanged'),
+        cumulativeOverdueMinutes:newsImpactNonNegativeNumber(rankingSummary.totalOverdueMinutes),
+        cumulativeAckOverdueMinutes:newsImpactNonNegativeNumber(rankingSummary.ackOverdueMinutes),
+        cumulativeRecoveryOverdueMinutes:newsImpactNonNegativeNumber(rankingSummary.recoveryOverdueMinutes),
+        breachPairs:newsImpactCount(rankingSummary.pairs),
+        activePairs:newsImpactCount(rankingSummary.activePairs),
+        breachEpisodes:newsImpactCount(rankingSummary.breachEpisodes),
+        currentWeekOverdueMinutes:newsImpactNonNegativeNumber(trendSummary.currentOverdueMinutes),
+        previousWeekOverdueMinutes:newsImpactNonNegativeNumber(trendSummary.previousOverdueMinutes),
+        weekDeltaMinutes:newsImpactSignedNumber(trendSummary.deltaMinutes),
+        weeklyIncreasedPairs:newsImpactCount(trendSummary.increasedPairs),
+        weeklyDecreasedPairs:newsImpactCount(trendSummary.decreasedPairs),
+        weeklyUnchangedPairs:newsImpactCount(trendSummary.unchangedPairs),
+        top1ContributionPct:newsImpactPercentage(concentrationSummary.top1ContributionPct),
+        top3ContributionPct:newsImpactPercentage(concentrationSummary.top3ContributionPct),
+        top5ContributionPct:newsImpactPercentage(concentrationSummary.top5ContributionPct),
+        top1WeeklyDeltaPctPoints:newsImpactSignedNumber(concentrationTrendSummary.top1DeltaPctPoints),
+        top3WeeklyDeltaPctPoints:newsImpactSignedNumber(concentrationTrendSummary.top3DeltaPctPoints),
+        top5WeeklyDeltaPctPoints:newsImpactSignedNumber(concentrationTrendSummary.top5DeltaPctPoints),
+        top1WeeklyDirection:newsImpactDirection(concentrationTrendSummary.top1Direction),
+        top3WeeklyDirection:newsImpactDirection(concentrationTrendSummary.top3Direction),
+        top5WeeklyDirection:newsImpactDirection(concentrationTrendSummary.top5Direction),
       },
-      topPair:topPair ? {
-        reason:String(topPair.reason || ''),
-        reasonLabel:String(topPair.reasonLabel || topPair.reason || ''),
-        action:String(topPair.action || ''),
-        actionLabel:String(topPair.actionLabel || topPair.action || ''),
-        totalOverdueMinutes:Number(topPair.totalOverdueMinutes || 0),
-        contributionPct:Number(topPair.contributionPct || 0),
-        activeEpisodes:Number(topPair.activeEpisodes || 0),
-        ackOverdueMinutes:Number(topPair.ackOverdueMinutes || 0),
-        recoveryOverdueMinutes:Number(topPair.recoveryOverdueMinutes || 0),
+      topPair:topPair && typeof topPair.reason==='string' && typeof topPair.action==='string' ? {
+        reason:topPair.reason,
+        reasonLabel:newsImpactText(topPair.reasonLabel,topPair.reason),
+        action:topPair.action,
+        actionLabel:newsImpactText(topPair.actionLabel,topPair.action),
+        totalOverdueMinutes:newsImpactNonNegativeNumber(topPair.totalOverdueMinutes),
+        contributionPct:newsImpactPercentage(topPair.contributionPct),
+        activeEpisodes:newsImpactCount(topPair.activeEpisodes),
+        ackOverdueMinutes:newsImpactNonNegativeNumber(topPair.ackOverdueMinutes),
+        recoveryOverdueMinutes:newsImpactNonNegativeNumber(topPair.recoveryOverdueMinutes),
       } : null,
       sourceReleases:['RC93','RC94','RC95','RC96'],
       methodology:'summary_of_existing_slo_impact_views',
       thresholds:{
-        ackMinutes:Number(impactRanking?.thresholds?.ackMinutes || NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES),
-        criticalAckMinutes:Number(impactRanking?.thresholds?.criticalAckMinutes || NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES),
-        recoveryMinutes:Number(impactRanking?.thresholds?.recoveryMinutes || NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES),
+        ackMinutes:newsImpactNonNegativeNumber(rankingSource?.thresholds?.ackMinutes,newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES)),
+        criticalAckMinutes:newsImpactNonNegativeNumber(rankingSource?.thresholds?.criticalAckMinutes,newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES)),
+        recoveryMinutes:newsImpactNonNegativeNumber(rankingSource?.thresholds?.recoveryMinutes,newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES)),
         source:'rc87_existing_slo',
       },
       privacy:{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false},
@@ -2365,52 +2433,97 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     impactRanking = {},
     impactTrend = {},
     executiveSummary = {},
-    {limit = 5} = {},
+    options = {},
   ) {
-    const safeLimit=Math.max(1,Math.min(10,Number(limit || 5)));
-    const ranking=Array.isArray(impactRanking?.ranking) ? impactRanking.ranking : [];
-    const trendPairs=Array.isArray(impactTrend?.pairs) ? impactTrend.pairs : [];
+    const rankingSource=impactRanking && typeof impactRanking==='object' && !Array.isArray(impactRanking) ? impactRanking : null;
+    const trendSource=impactTrend && typeof impactTrend==='object' && !Array.isArray(impactTrend) ? impactTrend : null;
+    const executiveSource=executiveSummary && typeof executiveSummary==='object' && !Array.isArray(executiveSummary) ? executiveSummary : null;
+    const safeOptions=options && typeof options==='object' && !Array.isArray(options) ? options : {};
+    const configuredLimit=newsImpactFiniteNumber(safeOptions.limit);
+    const safeLimit=configuredLimit!==null && Number.isSafeInteger(configuredLimit)
+      ? Math.max(1,Math.min(10,configuredLimit))
+      : 5;
+    const ranking=(rankingSource && Array.isArray(rankingSource.ranking) ? rankingSource.ranking : [])
+      .filter(row=>
+        row
+        && typeof row==='object'
+        && !Array.isArray(row)
+        && typeof row.reason==='string'
+        && row.reason
+        && typeof row.action==='string'
+        && row.action
+        && newsImpactNonNegativeNumber(row.totalOverdueMinutes)>0
+      );
+    const trendPairs=(trendSource && Array.isArray(trendSource.pairs) ? trendSource.pairs : [])
+      .filter(row=>
+        row
+        && typeof row==='object'
+        && !Array.isArray(row)
+        && typeof row.reason==='string'
+        && row.reason
+        && typeof row.action==='string'
+        && row.action
+      );
     const trendByKey=new Map(trendPairs.map(row=>[
-      String(row?.reason || '')+'|'+String(row?.action || ''),
+      row.reason+'|'+row.action,
       row,
     ]));
     const rows=ranking.map(row=>{
-      const key=String(row?.reason || '')+'|'+String(row?.action || '');
+      const key=row.reason+'|'+row.action;
       const trend=trendByKey.get(key) || {};
+      const weekDeltaMinutes=newsImpactSignedNumber(trend.deltaMinutes);
       return {
-        reason:String(row?.reason || ''),
-        reasonLabel:String(row?.reasonLabel || row?.reason || ''),
-        action:String(row?.action || ''),
-        actionLabel:String(row?.actionLabel || row?.action || ''),
-        totalOverdueMinutes:Number(row?.totalOverdueMinutes || 0),
-        contributionPct:Number(row?.contributionPct || 0),
-        activeEpisodes:Number(row?.activeEpisodes || 0),
-        ackOverdueMinutes:Number(row?.ackOverdueMinutes || 0),
-        recoveryOverdueMinutes:Number(row?.recoveryOverdueMinutes || 0),
-        currentWeekOverdueMinutes:Number(trend?.currentOverdueMinutes || 0),
-        previousWeekOverdueMinutes:Number(trend?.previousOverdueMinutes || 0),
-        weekDeltaMinutes:Number(trend?.deltaMinutes || 0),
-        weekDirection:String(trend?.direction || 'unchanged'),
-        currentContributionPct:Number(trend?.currentContributionPct || 0),
+        reason:row.reason,
+        reasonLabel:newsImpactText(row.reasonLabel,row.reason),
+        action:row.action,
+        actionLabel:newsImpactText(row.actionLabel,row.action),
+        totalOverdueMinutes:newsImpactNonNegativeNumber(row.totalOverdueMinutes),
+        contributionPct:newsImpactPercentage(row.contributionPct),
+        activeEpisodes:newsImpactCount(row.activeEpisodes),
+        ackOverdueMinutes:newsImpactNonNegativeNumber(row.ackOverdueMinutes),
+        recoveryOverdueMinutes:newsImpactNonNegativeNumber(row.recoveryOverdueMinutes),
+        currentWeekOverdueMinutes:newsImpactNonNegativeNumber(trend.currentOverdueMinutes),
+        previousWeekOverdueMinutes:newsImpactNonNegativeNumber(trend.previousOverdueMinutes),
+        weekDeltaMinutes,
+        weekDirection:weekDeltaMinutes>0 ? 'increased' : weekDeltaMinutes<0 ? 'decreased' : 'unchanged',
+        currentContributionPct:newsImpactPercentage(trend.currentContributionPct),
       };
     }).sort((a,b)=>
       b.currentWeekOverdueMinutes-a.currentWeekOverdueMinutes
       || b.weekDeltaMinutes-a.weekDeltaMinutes
       || b.totalOverdueMinutes-a.totalOverdueMinutes
-      || String(a.reason).localeCompare(String(b.reason))
-      || String(a.action).localeCompare(String(b.action))
+      || a.reason.localeCompare(b.reason)
+      || a.action.localeCompare(b.action)
     ).slice(0,safeLimit).map((row,index)=>({...row,queuePosition:index+1}));
   
-    const summary=executiveSummary?.summary || {};
+    const summary=executiveSource?.summary && typeof executiveSource.summary==='object' && !Array.isArray(executiveSource.summary)
+      ? executiveSource.summary
+      : {};
+    const rankingSummary=rankingSource?.summary && typeof rankingSource.summary==='object' && !Array.isArray(rankingSource.summary)
+      ? rankingSource.summary
+      : {};
+    const trendSummary=trendSource?.summary && typeof trendSource.summary==='object' && !Array.isArray(trendSource.summary)
+      ? trendSource.summary
+      : {};
+    const preferNonNegative=(primary,fallback)=>{
+      const value=newsImpactFiniteNumber(primary);
+      return value!==null && value>=0 ? value : newsImpactNonNegativeNumber(fallback);
+    };
+    const preferSigned=(primary,fallback)=>{
+      const value=newsImpactFiniteNumber(primary);
+      return value!==null ? value : newsImpactSignedNumber(fallback);
+    };
+    const generatedAt=[executiveSource?.generatedAt,trendSource?.generatedAt,rankingSource?.generatedAt]
+      .find(value=>typeof value==='string' && value) || null;
     return {
-      available:[impactRanking,impactTrend,executiveSummary].every(x=>x?.available!==false),
-      generatedAt:executiveSummary?.generatedAt || impactTrend?.generatedAt || impactRanking?.generatedAt || null,
+      available:[rankingSource,trendSource,executiveSource].every(x=>x && x.available!==false),
+      generatedAt,
       summary:{
         queuedPairs:rows.length,
-        breachPairs:Number(summary.breachPairs || impactRanking?.summary?.pairs || 0),
-        activePairs:Number(summary.activePairs || impactRanking?.summary?.activePairs || 0),
-        currentWeekOverdueMinutes:Number(summary.currentWeekOverdueMinutes || impactTrend?.summary?.currentOverdueMinutes || 0),
-        weekDeltaMinutes:Number(summary.weekDeltaMinutes || impactTrend?.summary?.deltaMinutes || 0),
+        breachPairs:newsImpactCount(preferNonNegative(summary.breachPairs,rankingSummary.pairs)),
+        activePairs:newsImpactCount(preferNonNegative(summary.activePairs,rankingSummary.activePairs)),
+        currentWeekOverdueMinutes:preferNonNegative(summary.currentWeekOverdueMinutes,trendSummary.currentOverdueMinutes),
+        weekDeltaMinutes:preferSigned(summary.weekDeltaMinutes,trendSummary.deltaMinutes),
         increasingQueuedPairs:rows.filter(x=>x.weekDirection==='increased').length,
         decreasingQueuedPairs:rows.filter(x=>x.weekDirection==='decreased').length,
         unchangedQueuedPairs:rows.filter(x=>x.weekDirection==='unchanged').length,
@@ -2419,704 +2532,14 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       ordering:'current_week_overdue_then_week_delta_then_cumulative_overdue',
       sourceReleases:['RC93','RC94','RC97'],
       thresholds:{
-        ackMinutes:Number(impactRanking?.thresholds?.ackMinutes || NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES),
-        criticalAckMinutes:Number(impactRanking?.thresholds?.criticalAckMinutes || NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES),
-        recoveryMinutes:Number(impactRanking?.thresholds?.recoveryMinutes || NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES),
+        ackMinutes:newsImpactNonNegativeNumber(rankingSource?.thresholds?.ackMinutes,newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES)),
+        criticalAckMinutes:newsImpactNonNegativeNumber(rankingSource?.thresholds?.criticalAckMinutes,newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES)),
+        recoveryMinutes:newsImpactNonNegativeNumber(rankingSource?.thresholds?.recoveryMinutes,newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES)),
         source:'rc87_existing_slo',
       },
       privacy:{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false},
       routingChanged:false,
       persistence:'none',
-    };
-  }
-  
-  function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents = [], acknowledgements = [], evidenceReason = 'ok', options = {}) {
-    const priorityRank={critical:0,high:1,medium:2,low:3};
-    const asOfMs=Number.isFinite(Number(options?.asOfMs)) ? Number(options.asOfMs) : Date.now();
-    const current=new Map((strategyRows || []).map(row=>[`${row.reason}|${row.action}`,row]));
-    const ackMap=new Map((acknowledgements || []).map(row=>[newsImpactRecoveryIncidentKey(row.reason,row.action,row.code),row]));
-    const groups=new Map();
-    for (const event of incidentEvents || []) {
-      const key=newsImpactRecoveryIncidentKey(event.reason,event.action,event.guardReason);
-      const bucket=groups.get(key) || {
-        code:event.guardReason,
-        priority:event.priority || (event.guardReason==='performance_drift' ? 'high' : 'medium'),
-        reason:event.reason,
-        reasonLabel:event.reasonLabel || event.reason,
-        action:event.action,
-        actionLabel:event.actionLabel || event.action,
-        firstSeenAt:event.at,
-        lastSeenAt:event.at,
-        occurrences:0,
-        lastStrategy:event.strategy || 'fixed',
-        lastRecovery:event.recovery || '',
-        lastRecoveryLabel:event.recoveryLabel || event.recovery || '',
-        episodeStartedAt:event.episodeStartedAt || event.at,
-        episodeLastSeenAt:event.episodeLastSeenAt || event.at,
-        episodeRecoveredAt:event.episodeRecoveredAt || null,
-        episodeOccurrences:Number(event.episodeOccurrences || 1),
-      };
-      bucket.occurrences+=1;
-      if (Date.parse(event.at)<Date.parse(bucket.firstSeenAt)) bucket.firstSeenAt=event.at;
-      if (Date.parse(event.at)>Date.parse(bucket.lastSeenAt)) {
-        bucket.lastSeenAt=event.at;
-        bucket.lastStrategy=event.strategy || bucket.lastStrategy;
-        bucket.lastRecovery=event.recovery || bucket.lastRecovery;
-        bucket.lastRecoveryLabel=event.recoveryLabel || bucket.lastRecoveryLabel;
-        bucket.episodeStartedAt=event.episodeStartedAt || event.at;
-        bucket.episodeLastSeenAt=event.episodeLastSeenAt || event.at;
-        bucket.episodeRecoveredAt=event.episodeRecoveredAt || null;
-        bucket.episodeOccurrences=Number(event.episodeOccurrences || 1);
-      }
-      groups.set(key,bucket);
-    }
-  
-    const withAcknowledgement=(item,active,currentOnly=false)=>{
-      const ack=ackMap.get(newsImpactRecoveryIncidentKey(item.reason,item.action,item.code)) || null;
-      const acknowledged=Boolean(
-        active
-        && !currentOnly
-        && item.lastSeenAt
-        && ack
-        && String(ack.incidentSeenAt || '')===String(item.lastSeenAt || '')
-        && Date.parse(ack.acknowledgedAt)>=Date.parse(item.lastSeenAt),
-      );
-      const status=active ? 'active' : 'recovered';
-      const startedAt=item.episodeStartedAt || item.firstSeenAt || null;
-      const lastEpisodeSeenAt=item.episodeLastSeenAt || item.lastSeenAt || null;
-      const recoveredAt=!active ? (item.episodeRecoveredAt || null) : null;
-      const startedMs=Date.parse(String(startedAt || ''));
-      const recoveredMs=Date.parse(String(recoveredAt || ''));
-      const acknowledgedMs=Date.parse(String(acknowledged ? ack?.acknowledgedAt || '' : ''));
-      const ageMinutes=active && Number.isFinite(startedMs)
-        ? Math.max(0,Math.floor((asOfMs-startedMs)/60000))
-        : null;
-      const ackLatencyMinutes=acknowledged && Number.isFinite(startedMs) && Number.isFinite(acknowledgedMs)
-        ? Math.max(0,Math.round((acknowledgedMs-startedMs)/60000))
-        : null;
-      const recoveryLatencyMinutes=!active && Number.isFinite(startedMs) && Number.isFinite(recoveredMs)
-        ? Math.max(0,Math.round((recoveredMs-startedMs)/60000))
-        : null;
-      const ackStatus=currentOnly || !Number.isFinite(startedMs)
-        ? 'unavailable'
-        : acknowledged
-          ? (Number(ackLatencyMinutes || 0)<=NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES ? 'met' : 'breached')
-          : active
-            ? (Number(ageMinutes || 0)>=NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES ? 'breached' : 'pending')
-            : 'unavailable';
-      const recoveryStatus=currentOnly || !Number.isFinite(startedMs)
-        ? 'unavailable'
-        : active
-          ? (Number(ageMinutes || 0)>=NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES ? 'breached' : 'pending')
-          : Number.isFinite(recoveredMs)
-            ? (Number(recoveryLatencyMinutes || 0)<=NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES ? 'met' : 'breached')
-            : 'unavailable';
-      let effectivePriority=item.priority || 'medium';
-      let escalationReason='';
-      if (active && recoveryStatus==='breached') {
-        effectivePriority='critical';
-        escalationReason='recovery_slo_breach';
-      } else if (active && !acknowledged && Number(ageMinutes || 0)>=NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES) {
-        effectivePriority='critical';
-        escalationReason='ack_critical_overdue';
-      } else if (active && !acknowledged && ackStatus==='breached') {
-        effectivePriority=effectivePriority==='medium' ? 'high' : 'critical';
-        escalationReason='ack_slo_breach';
-      }
-      return {
-        ...item,
-        status,
-        acknowledged,
-        acknowledgedAt:acknowledged ? ack.acknowledgedAt : null,
-        alertSuppressed:acknowledged,
-        canAcknowledge:Boolean(active && !currentOnly && item.lastSeenAt && NEWS_IMPACT_RECOVERY_INCIDENT_CODES.has(item.code)),
-        runbook:newsImpactRecoveryIncidentRunbook(item.code),
-        currentOnly:Boolean(currentOnly),
-        effectivePriority,
-        escalated:effectivePriority!==(item.priority || 'medium'),
-        escalationReason,
-        slo:{
-          startedAt,
-          lastSeenAt:lastEpisodeSeenAt,
-          recoveredAt,
-          ageMinutes,
-          ackTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
-          ackCriticalMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
-          recoveryTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,
-          ackLatencyMinutes,
-          recoveryLatencyMinutes,
-          ackStatus,
-          recoveryStatus,
-        },
-      };
-    };
-  
-    const rows=[...groups.values()].map(item=>{
-      const now=current.get(`${item.reason}|${item.action}`) || null;
-      const active=Boolean(now && now.guardReason===item.code);
-      return withAcknowledgement({
-        ...item,
-        currentStrategy:now?.strategy || '',
-        currentRecovery:now?.selectedRecovery || '',
-        currentRecoveryLabel:now?.selectedRecoveryLabel || now?.selectedRecovery || '',
-        currentGuardReason:now?.guardReason || '',
-      },active,false);
-    });
-  
-    for (const now of strategyRows || []) {
-      if (!NEWS_IMPACT_RECOVERY_INCIDENT_CODES.has(String(now.guardReason || ''))) continue;
-      const exists=rows.some(x=>x.reason===now.reason && x.action===now.action && x.code===now.guardReason && x.status==='active');
-      if (exists) continue;
-      rows.push(withAcknowledgement({
-        code:now.guardReason,
-        priority:now.guardReason==='performance_drift' ? 'high' : 'medium',
-        reason:now.reason,
-        reasonLabel:now.reasonLabel || now.reason,
-        action:now.action,
-        actionLabel:now.actionLabel || now.action,
-        firstSeenAt:null,
-        lastSeenAt:null,
-        occurrences:0,
-        lastStrategy:now.strategy || 'fixed',
-        lastRecovery:now.selectedRecovery || '',
-        lastRecoveryLabel:now.selectedRecoveryLabel || now.selectedRecovery || '',
-        currentStrategy:now.strategy || '',
-        currentRecovery:now.selectedRecovery || '',
-        currentRecoveryLabel:now.selectedRecoveryLabel || now.selectedRecovery || '',
-        currentGuardReason:now.guardReason || '',
-      },true,true));
-    }
-  
-    if (String(evidenceReason || 'ok')!=='ok') {
-      rows.unshift({
-        code:'strategy_evidence_unavailable',
-        priority:'medium',
-        reason:'',
-        reasonLabel:'Recovery Strategy',
-        action:'',
-        actionLabel:'',
-        firstSeenAt:null,
-        lastSeenAt:null,
-        occurrences:0,
-        lastStrategy:'fixed',
-        lastRecovery:'',
-        lastRecoveryLabel:'',
-        status:'active',
-        currentStrategy:'fixed',
-        currentRecovery:'',
-        currentRecoveryLabel:'',
-        currentGuardReason:String(evidenceReason || 'evidence_unavailable'),
-        currentOnly:true,
-        acknowledged:false,
-        acknowledgedAt:null,
-        alertSuppressed:false,
-        canAcknowledge:false,
-        runbook:newsImpactRecoveryIncidentRunbook('strategy_evidence_unavailable'),
-        effectivePriority:'medium',
-        escalated:false,
-        escalationReason:'',
-        slo:{
-          startedAt:null,lastSeenAt:null,recoveredAt:null,ageMinutes:null,
-          ackTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
-          ackCriticalMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
-          recoveryTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,
-          ackLatencyMinutes:null,recoveryLatencyMinutes:null,ackStatus:'unavailable',recoveryStatus:'unavailable',
-        },
-      });
-    }
-  
-    return rows.sort((a,b)=>(a.status==='active'?0:1)-(b.status==='active'?0:1)
-      || (a.acknowledged?1:0)-(b.acknowledged?1:0)
-      || (priorityRank[a.effectivePriority || a.priority] ?? 9)-(priorityRank[b.effectivePriority || b.priority] ?? 9)
-      || (Date.parse(b.lastSeenAt || 0)-Date.parse(a.lastSeenAt || 0))
-      || String(a.reason || '').localeCompare(String(b.reason || ''))
-      || String(a.action || '').localeCompare(String(b.action || '')))
-      .slice(0,30);
-  }
-  function summarizeNewsImpactRecoveryIncidents(rows = []) {
-    const list=Array.isArray(rows) ? rows : [];
-    const ackLatencies=list.map(x=>Number(x?.slo?.ackLatencyMinutes)).filter(Number.isFinite);
-    const recoveryLatencies=list.map(x=>Number(x?.slo?.recoveryLatencyMinutes)).filter(Number.isFinite);
-    return {
-      total:list.length,
-      active:list.filter(x=>x.status==='active').length,
-      recovered:list.filter(x=>x.status==='recovered').length,
-      highActive:list.filter(x=>x.status==='active' && x.priority==='high').length,
-      mediumActive:list.filter(x=>x.status==='active' && x.priority==='medium').length,
-      acknowledgedActive:list.filter(x=>x.status==='active' && x.acknowledged).length,
-      unacknowledgedActive:list.filter(x=>x.status==='active' && !x.acknowledged).length,
-      suppressedAlerts:list.filter(x=>x.status==='active' && x.alertSuppressed).length,
-      escalatedActive:list.filter(x=>x.status==='active' && x.escalated).length,
-      criticalActive:list.filter(x=>x.status==='active' && x.effectivePriority==='critical').length,
-      ackSloBreached:list.filter(x=>x.status==='active' && x?.slo?.ackStatus==='breached').length,
-      recoverySloBreached:list.filter(x=>x.status==='active' && x?.slo?.recoveryStatus==='breached').length,
-      ackMeasured:ackLatencies.length,
-      recoveryMeasured:recoveryLatencies.length,
-      avgAckMinutes:ackLatencies.length ? Math.round((ackLatencies.reduce((a,b)=>a+b,0)/ackLatencies.length)*10)/10 : null,
-      avgRecoveryMinutes:recoveryLatencies.length ? Math.round((recoveryLatencies.reduce((a,b)=>a+b,0)/recoveryLatencies.length)*10)/10 : null,
-      latest:list.filter(x=>x.lastSeenAt).sort((a,b)=>Date.parse(b.lastSeenAt)-Date.parse(a.lastSeenAt))[0] || null,
-    };
-  }
-  
-  async function loadNewsImpactRecoveryStrategyEvidence(cfg) {
-    const now=Date.now();
-    const cached=memory.newsImpactRecoveryStrategy || {value:null,loadedAt:0};
-    if (cached.value && now-Number(cached.loadedAt || 0)<NEWS_IMPACT_RECOVERY_STRATEGY_CACHE_MS) return cached.value;
-    if (!hasSupabase(cfg)) {
-      const value={available:false,truncated:false,reason:'supabase_unavailable',evidence:[],recentEvidence:[],priorEvidence:[],transitionHistory:[],incidentEvents:[],incidentAcknowledgements:[],incidentEpisodeHistory:[]};
-      memory.newsImpactRecoveryStrategy={value,loadedAt:now};
-      return value;
-    }
-    try {
-      const since=new Date(now-NEWS_IMPACT_RECOVERY_STRATEGY_LOOKBACK_DAYS*86400_000).toISOString();
-      const page=await supaSelectPaged(cfg,'growth_events',{
-        created_at:`gte.${since}`,
-        event_name:`in.(news_impact_outcome_failure,news_impact_recovery_attempt,news_impact_outcome,${NEWS_IMPACT_RECOVERY_INCIDENT_ACK_EVENT})`,
-      },{pageSize:1000,maxRows:10000,order:'created_at.asc'});
-      const rows=page.rows || [];
-      const attempts=rows.filter(x=>String(x.event_name || '')==='news_impact_recovery_attempt');
-      const outcomes=rows.filter(x=>String(x.event_name || '')==='news_impact_outcome');
-      const failures=rows.filter(x=>String(x.event_name || '')==='news_impact_outcome_failure');
-      const incidentAckRows=rows.filter(x=>String(x.event_name || '')===NEWS_IMPACT_RECOVERY_INCIDENT_ACK_EVENT);
-      const recentCutoffMs=now-NEWS_IMPACT_RECOVERY_STABILITY_WINDOW_DAYS*86400_000;
-      const recentAttempts=attempts.filter(row=>{
-        const at=newsImpactEventTime(row);
-        return Number.isFinite(at) && at>=recentCutoffMs;
-      });
-      const priorAttempts=attempts.filter(row=>{
-        const at=newsImpactEventTime(row);
-        return Number.isFinite(at) && at<recentCutoffMs;
-      });
-      const evidence=buildNewsImpactRecoveryStrategyEvidence(attempts,outcomes,failures,{asOfMs:now});
-      const recentEvidence=buildNewsImpactRecoveryStrategyEvidence(recentAttempts,outcomes,failures,{asOfMs:now});
-      const priorEvidence=buildNewsImpactRecoveryStrategyEvidence(priorAttempts,outcomes,failures,{asOfMs:now});
-      const transitionHistory=buildNewsImpactRecoveryTransitionHistory(failures,{limit:20});
-      const incidentEvents=buildNewsImpactRecoveryIncidentEvents(failures,{limit:100});
-      const incidentAcknowledgements=buildNewsImpactRecoveryIncidentAcknowledgements(incidentAckRows);
-      const incidentEpisodeHistory=buildNewsImpactRecoveryIncidentEpisodeHistory(failures,incidentAckRows);
-      const value={available:!page.truncated,truncated:Boolean(page.truncated),reason:page.truncated?'truncated':'ok',evidence,recentEvidence,priorEvidence,transitionHistory,incidentEvents,incidentAcknowledgements,incidentEpisodeHistory};
-      memory.newsImpactRecoveryStrategy={value,loadedAt:now};
-      return value;
-    } catch {
-      const value={available:false,truncated:false,reason:'load_failed',evidence:[],recentEvidence:[],priorEvidence:[],transitionHistory:[],incidentEvents:[],incidentAcknowledgements:[],incidentEpisodeHistory:[]};
-      memory.newsImpactRecoveryStrategy={value,loadedAt:now};
-      return value;
-    }
-  }
-  
-  async function selectNewsImpactRecoveryStrategy(cfg, reason = 'server_error', action = '') {
-    const fixed=newsImpactRecoveryForFailure(reason,action);
-    const loaded=await loadNewsImpactRecoveryStrategyEvidence(cfg);
-    if (!loaded.available) {
-      return {...fixed,strategy:'fixed',guardReason:loaded.reason || 'evidence_unavailable'};
-    }
-    const decision=newsImpactRecoveryStrategyDecision(reason,action,loaded.evidence,loaded.recentEvidence);
-    const driftDecision=newsImpactRecoveryDriftDecision(decision,loaded.priorEvidence,loaded.recentEvidence);
-    const recovery=newsImpactRecoveryPresentation(reason,action,driftDecision.selectedRecovery);
-    return {...recovery,strategy:driftDecision.strategy,guardReason:driftDecision.guardReason,driftStatus:driftDecision.driftStatus};
-  }
-  
-  function newsImpactRecoveryStrategyDrill() {
-    const fixedRetry={reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',recovery:'retry',recoveryLabel:'повторить',observed:30,attempts:30,pending:0,recovered:6,failed:24,successPct:20,confidence:newsImpactConversionConfidence(6,30)};
-    const better={reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',recovery:'open_full_ai',recoveryLabel:'открыть полный AI',observed:30,attempts:30,pending:0,recovered:25,failed:5,successPct:83.3,confidence:newsImpactConversionConfidence(25,30)};
-    const adaptive=newsImpactRecoveryStrategyDecision('server_error','full_ai',[fixedRetry,better]);
-    const lowBase={...fixedRetry,attempts:9,recovered:2,failed:7,successPct:22.2,confidence:newsImpactConversionConfidence(2,9)};
-    const guarded=newsImpactRecoveryStrategyDecision('server_error','full_ai',[lowBase,better]);
-    const overlapA={...fixedRetry,recovered:15,failed:15,successPct:50,confidence:newsImpactConversionConfidence(15,30)};
-    const overlapB={...better,recovered:18,failed:12,successPct:60,confidence:newsImpactConversionConfidence(18,30)};
-    const overlap=newsImpactRecoveryStrategyDecision('server_error','full_ai',[overlapA,overlapB]);
-    return {
-      pass:adaptive.strategy==='adaptive'
-        && adaptive.selectedRecovery==='open_full_ai'
-        && adaptive.liftPctPoints>NEWS_IMPACT_RECOVERY_STRATEGY_MIN_LIFT_PCT_POINTS
-        && guarded.strategy==='fixed'
-        && guarded.guardReason==='baseline_sample'
-        && overlap.strategy==='fixed'
-        && overlap.guardReason==='no_significant_better',
-      cases:6,
-    };
-  }
-  
-  function newsImpactRecoveryStabilityDrill() {
-    const fixedLong={reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',recovery:'retry',recoveryLabel:'повторить',observed:40,attempts:40,pending:0,recovered:8,failed:32,successPct:20,confidence:newsImpactConversionConfidence(8,40)};
-    const candidateLong={reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',recovery:'open_full_ai',recoveryLabel:'открыть полный AI',observed:40,attempts:40,pending:0,recovered:34,failed:6,successPct:85,confidence:newsImpactConversionConfidence(34,40)};
-    const fixedRecent={...fixedLong,observed:10,attempts:10,recovered:3,failed:7,successPct:30,confidence:newsImpactConversionConfidence(3,10)};
-    const candidateRecent={...candidateLong,observed:10,attempts:10,recovered:8,failed:2,successPct:80,confidence:newsImpactConversionConfidence(8,10)};
-    const stable=newsImpactRecoveryStrategyDecision('server_error','full_ai',[fixedLong,candidateLong],[fixedRecent,candidateRecent]);
-    const lowRecent={...candidateRecent,observed:5,attempts:5,recovered:4,failed:1,successPct:80,confidence:newsImpactConversionConfidence(4,5)};
-    const sampleGuard=newsImpactRecoveryStrategyDecision('server_error','full_ai',[fixedLong,candidateLong],[fixedRecent,lowRecent]);
-    const regressedRecent={...candidateRecent,recovered:2,failed:8,successPct:20,confidence:newsImpactConversionConfidence(2,10)};
-    const regressionGuard=newsImpactRecoveryStrategyDecision('server_error','full_ai',[fixedLong,candidateLong],[fixedRecent,regressedRecent]);
-    return {
-      pass:stable.strategy==='adaptive'
-        && stable.guardReason==='stable_significant_better'
-        && stable.selectedRecovery==='open_full_ai'
-        && sampleGuard.strategy==='fixed'
-        && sampleGuard.guardReason==='stability_sample'
-        && sampleGuard.proposedRecovery==='open_full_ai'
-        && regressionGuard.strategy==='fixed'
-        && regressionGuard.guardReason==='recent_regression',
-      cases:7,
-    };
-  }
-  
-  function newsImpactRecoveryDriftDrill() {
-    const adaptive={
-      reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',
-      fixedRecovery:'retry',fixedRecoveryLabel:'повторить',selectedRecovery:'open_full_ai',selectedRecoveryLabel:'открыть полный AI',
-      proposedRecovery:'open_full_ai',proposedRecoveryLabel:'открыть полный AI',strategy:'adaptive',
-      guardReason:'stable_significant_better',stability:'confirmed',
-      fixedAttempts:50,fixedSuccessPct:35,fixedConfidence:newsImpactConversionConfidence(18,50),
-      selectedAttempts:60,selectedSuccessPct:88.3,selectedConfidence:newsImpactConversionConfidence(53,60),liftPctPoints:53.3,
-    };
-    const prior=[{reason:'server_error',action:'full_ai',recovery:'open_full_ai',attempts:50,recovered:45,failed:5,successPct:90,confidence:newsImpactConversionConfidence(45,50)}];
-    const driftRecent=[{reason:'server_error',action:'full_ai',recovery:'open_full_ai',attempts:10,recovered:4,failed:6,successPct:40,confidence:newsImpactConversionConfidence(4,10)}];
-    const stableRecent=[{reason:'server_error',action:'full_ai',recovery:'open_full_ai',attempts:10,recovered:8,failed:2,successPct:80,confidence:newsImpactConversionConfidence(8,10)}];
-    const shortRecent=[{reason:'server_error',action:'full_ai',recovery:'open_full_ai',attempts:5,recovered:2,failed:3,successPct:40,confidence:newsImpactConversionConfidence(2,5)}];
-    const blocked=newsImpactRecoveryDriftDecision(adaptive,prior,driftRecent);
-    const stable=newsImpactRecoveryDriftDecision(adaptive,prior,stableRecent);
-    const insufficient=newsImpactRecoveryDriftDecision(adaptive,prior,shortRecent);
-    return {
-      pass:blocked.strategy==='fixed'
-        && blocked.guardReason==='performance_drift'
-        && blocked.driftDetected===true
-        && blocked.selectedRecovery==='retry'
-        && stable.strategy==='adaptive'
-        && stable.driftStatus==='stable'
-        && insufficient.strategy==='adaptive'
-        && insufficient.driftStatus==='insufficient',
-      cases:8,
-    };
-  }
-  
-  function newsImpactRecoveryTransitionDrill() {
-    const rows=[
-      {telegram_id:1,created_at:'2026-09-01T10:00:00Z',metadata:{reason:'server_error',action:'full_ai',recovery:'retry',strategy:'fixed',strategy_guard:'baseline_sample'}},
-      {telegram_id:2,created_at:'2026-09-05T10:00:00Z',metadata:{reason:'server_error',action:'full_ai',recovery:'open_full_ai',strategy:'adaptive',strategy_guard:'stable_significant_better'}},
-      {telegram_id:3,created_at:'2026-09-10T10:00:00Z',metadata:{reason:'server_error',action:'full_ai',recovery:'open_full_ai',strategy:'adaptive',strategy_guard:'stable_significant_better'}},
-      {telegram_id:4,created_at:'2026-09-15T10:00:00Z',metadata:{reason:'server_error',action:'full_ai',recovery:'retry',strategy:'fixed',strategy_guard:'performance_drift'}},
-      {telegram_id:5,created_at:'2026-09-16T10:00:00Z',metadata:{reason:'timeout',action:'share',recovery:'retry_soon',strategy:'fixed',strategy_guard:'fixed_default'}},
-    ];
-    const history=buildNewsImpactRecoveryTransitionHistory(rows);
-    const summary=summarizeNewsImpactRecoveryTransitions(history);
-    const alerts=buildNewsImpactRecoveryAdminAlerts([
-      {reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',guardReason:'performance_drift',driftDropPctPoints:22.5},
-      {reason:'timeout',reasonLabel:'Тайм-аут',action:'share',actionLabel:'Поделиться',guardReason:'stability_sample',proposedRecovery:'retry_soon'},
-    ],'ok');
-    return {
-      pass:history.length===2
-        && summary.fixedToAdaptive===1
-        && summary.adaptiveToFixed===1
-        && history[0]?.guardReason==='performance_drift'
-        && !Object.prototype.hasOwnProperty.call(history[0] || {},'telegram_id')
-        && alerts.filter(x=>x.severity==='warning').length===1
-        && alerts.filter(x=>x.severity==='info').length===1
-        && summarizeNewsImpactRecoveryAlerts(alerts).total===2,
-      cases:8,
-    };
-  }
-  
-  function newsImpactRecoveryIncidentDrill() {
-    const events=[
-      {at:'2026-09-10T10:00:00.000Z',reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',strategy:'fixed',recovery:'retry',recoveryLabel:'повторить',guardReason:'performance_drift',priority:'high'},
-      {at:'2026-09-11T10:00:00.000Z',reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',strategy:'fixed',recovery:'retry',recoveryLabel:'повторить',guardReason:'performance_drift',priority:'high'},
-      {at:'2026-09-12T10:00:00.000Z',reason:'timeout',reasonLabel:'Тайм-аут',action:'share',actionLabel:'Поделиться',strategy:'fixed',recovery:'retry_soon',recoveryLabel:'повторить скоро',guardReason:'recent_regression',priority:'medium'},
-    ];
-    const current=[
-      {reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',strategy:'adaptive',selectedRecovery:'open_full_ai',selectedRecoveryLabel:'открыть полный AI',guardReason:'stable_significant_better'},
-      {reason:'timeout',reasonLabel:'Тайм-аут',action:'share',actionLabel:'Поделиться',strategy:'fixed',selectedRecovery:'retry_soon',selectedRecoveryLabel:'повторить скоро',guardReason:'recent_regression'},
-      {reason:'provider_unavailable',reasonLabel:'Провайдер временно недоступен',action:'full_ai',actionLabel:'Полный AI',strategy:'fixed',selectedRecovery:'retry_later',selectedRecoveryLabel:'повторить позже',guardReason:'performance_drift'},
-    ];
-    const incidents=buildNewsImpactRecoveryIncidentCenter(current,events,[],'ok');
-    const summary=summarizeNewsImpactRecoveryIncidents(incidents);
-    return {
-      pass:incidents.length===3
-        && summary.active===2
-        && summary.recovered===1
-        && summary.highActive===1
-        && summary.mediumActive===1
-        && incidents.some(x=>x.reason==='server_error' && x.status==='recovered' && x.occurrences===2)
-        && incidents.some(x=>x.reason==='provider_unavailable' && x.status==='active' && x.currentOnly===true)
-        && !Object.prototype.hasOwnProperty.call(incidents[0] || {},'telegram_id'),
-      cases:8,
-    };
-  }
-  
-  function newsImpactRecoveryIncidentSloDashboardDrill() {
-    const asOfMs=Date.parse('2026-09-23T18:00:00.000Z');
-    const failures=[
-      {created_at:'2026-09-02T10:00:00.000Z',metadata:{reason:'server_error',action:'full_ai',strategy_guard:'performance_drift'}},
-      {created_at:'2026-09-02T10:20:00.000Z',metadata:{reason:'server_error',action:'full_ai',strategy_guard:'fixed_default'}},
-      {created_at:'2026-09-10T10:00:00.000Z',metadata:{reason:'timeout',action:'share',strategy_guard:'recent_regression'}},
-      {created_at:'2026-09-10T17:00:00.000Z',metadata:{reason:'timeout',action:'share',strategy_guard:'fixed_default'}},
-      {created_at:'2026-09-17T10:00:00.000Z',metadata:{reason:'provider_unavailable',action:'full_ai',strategy_guard:'performance_drift'}},
-      {created_at:'2026-09-22T10:00:00.000Z',metadata:{reason:'server_error',action:'full_ai',strategy_guard:'recent_regression'}},
-      {created_at:'2026-09-22T10:15:00.000Z',metadata:{reason:'server_error',action:'full_ai',strategy_guard:'fixed_default'}},
-    ];
-    const acknowledgements=[
-      {created_at:'2026-09-02T10:10:00.000Z',metadata:{reason:'server_error',action:'full_ai',incident_guard:'performance_drift',incident_seen_at:'2026-09-02T10:00:00.000Z'}},
-      {created_at:'2026-09-10T10:40:00.000Z',metadata:{reason:'timeout',action:'share',incident_guard:'recent_regression',incident_seen_at:'2026-09-10T10:00:00.000Z'}},
-      {created_at:'2026-09-17T10:10:00.000Z',metadata:{reason:'provider_unavailable',action:'full_ai',incident_guard:'performance_drift',incident_seen_at:'2026-09-17T10:00:00.000Z'}},
-      {created_at:'2026-09-22T10:05:00.000Z',metadata:{reason:'server_error',action:'full_ai',incident_guard:'recent_regression',incident_seen_at:'2026-09-22T10:00:00.000Z'}},
-    ];
-    const episodes=buildNewsImpactRecoveryIncidentEpisodeHistory(failures,acknowledgements);
-    const dashboard=buildNewsImpactRecoveryIncidentSloDashboard(episodes,{asOfMs,weeks:4});
-    const serverRepeat=dashboard.repeated.find(x=>x.reason==='server_error' && x.action==='full_ai');
-    return {
-      pass:episodes.length===4
-        && dashboard.weekly.length===4
-        && dashboard.summary.episodes===4
-        && dashboard.summary.ackEligible===4
-        && dashboard.summary.ackMet===3
-        && dashboard.summary.recoveryEligible===4
-        && dashboard.summary.recoveryMet===2
-        && dashboard.summary.recurringPairs===1
-        && serverRepeat?.episodes===2
-        && dashboard.summary.ackDeltaPctPoints===100
-        && dashboard.privacy.telegramIdsExposed===false
-        && dashboard.privacy.rawErrorsExposed===false,
-      cases:11,
-    };
-  }
-  
-  
-  function newsImpactRecoveryIncidentSloBreachFeedDrill() {
-    const asOfMs=Date.parse('2026-09-23T18:00:00.000Z');
-    const episodes=[
-      {
-        reason:'server_error',reasonLabel:'Ошибка сервера',action:'full_ai',actionLabel:'Полный AI',
-        startedAt:'2026-09-23T08:00:00.000Z',lastSeenAt:'2026-09-23T12:00:00.000Z',recoveredAt:null,
-        occurrences:3,guardCodes:['performance_drift'],firstAcknowledgedAt:null,active:true,
-      },
-      {
-        reason:'timeout',reasonLabel:'Таймаут',action:'share',actionLabel:'Поделиться',
-        startedAt:'2026-09-20T08:00:00.000Z',lastSeenAt:'2026-09-20T10:00:00.000Z',recoveredAt:'2026-09-20T15:30:00.000Z',
-        occurrences:2,guardCodes:['recent_regression'],firstAcknowledgedAt:'2026-09-20T08:10:00.000Z',active:false,
-      },
-      {
-        reason:'match_missing',reasonLabel:'Матч не найден',action:'news',actionLabel:'Новости',
-        startedAt:'2026-09-22T10:00:00.000Z',lastSeenAt:'2026-09-22T10:10:00.000Z',recoveredAt:'2026-09-22T10:20:00.000Z',
-        occurrences:1,guardCodes:['recent_regression'],firstAcknowledgedAt:null,active:false,
-      },
-    ];
-    const feed=buildNewsImpactRecoveryIncidentSloBreachFeed(episodes,{asOfMs,limit:20});
-    return {
-      pass:feed.summary.breachEpisodes===2
-        && feed.summary.activeBreaches===1
-        && feed.summary.critical===1
-        && feed.summary.ackBreaches===1
-        && feed.summary.recoveryBreaches===2
-        && feed.items[0]?.severity==='critical'
-        && feed.items.some(x=>x.reason==='timeout' && x.recoveryStatus==='breached' && x.ackStatus==='met')
-        && feed.routingChanged===false
-        && feed.privacy.telegramIdsExposed===false
-        && feed.privacy.rawErrorsExposed===false
-        && feed.privacy.freeTextExposed===false,
-      cases:10,
-    };
-  }
-  
-  
-  function newsImpactRecoveryIncidentSloBreachWatchlistDrill() {
-    const feed={
-      available:true,
-      generatedAt:'2026-09-23T18:00:00.000Z',
-      items:[
-        {reason:'server_error',action:'full_ai',active:true,severity:'critical',ageMinutes:610,breachTypes:['ack','recovery'],startedAt:'2026-09-23T08:00:00.000Z'},
-        {reason:'timeout',action:'share',active:true,severity:'high',ageMinutes:70,breachTypes:['ack'],startedAt:'2026-09-23T16:50:00.000Z'},
-        {reason:'timeout',action:'share',active:false,severity:'high',ageMinutes:450,breachTypes:['recovery'],startedAt:'2026-09-20T08:00:00.000Z'},
-      ],
-      repeated:[
-        {reason:'server_error',action:'full_ai',breachEpisodes:3,activeBreaches:1},
-        {reason:'timeout',action:'share',breachEpisodes:2,activeBreaches:0},
-      ],
-    };
-    const watchlist=buildNewsImpactRecoveryIncidentSloBreachWatchlist(feed,{limit:10});
-    return {
-      pass:watchlist.summary.active===2
-        && watchlist.summary.criticalActive===1
-        && watchlist.summary.ackActive===2
-        && watchlist.summary.recoveryActive===1
-        && watchlist.summary.oldestActiveMinutes===610
-        && watchlist.summary.repeatedActivePairs===1
-        && watchlist.items[0]?.reason==='server_error'
-        && watchlist.thresholds.source==='rc87_existing_slo'
-        && watchlist.routingChanged===false
-        && watchlist.persistence==='none'
-        && watchlist.privacy.telegramIdsExposed===false
-        && watchlist.privacy.rawErrorsExposed===false
-        && watchlist.privacy.freeTextExposed===false,
-      cases:13,
-    };
-  }
-  
-  
-  function newsImpactRecoveryIncidentSloBreachTriageDrill() {
-    const watchlist={
-      available:true,
-      generatedAt:'2026-09-23T18:00:00.000Z',
-      thresholds:{ackMinutes:30,criticalAckMinutes:120,recoveryMinutes:360,source:'rc87_existing_slo'},
-      items:[
-        {reason:'server_error',action:'full_ai',active:true,severity:'critical',ageMinutes:610,breachTypes:['ack','recovery'],startedAt:'2026-09-23T08:00:00.000Z'},
-        {reason:'provider_unavailable',action:'full_ai',active:true,severity:'critical',ageMinutes:180,breachTypes:['ack'],startedAt:'2026-09-23T15:00:00.000Z'},
-        {reason:'timeout',action:'share',active:true,severity:'high',ageMinutes:70,breachTypes:['ack'],startedAt:'2026-09-23T16:50:00.000Z'},
-      ],
-    };
-    const triage=buildNewsImpactRecoveryIncidentSloBreachTriage(watchlist,{limit:10});
-    return {
-      pass:triage.summary.total===3
-        && triage.summary.recoveryOverdue===1
-        && triage.summary.ackCritical===1
-        && triage.summary.ackOverdue===1
-        && triage.items[0]?.triageStage==='recovery_overdue'
-        && triage.items[1]?.triageStage==='ack_critical'
-        && triage.items[2]?.triageStage==='ack_overdue'
-        && triage.thresholds.source==='rc87_existing_slo'
-        && triage.routingChanged===false
-        && triage.persistence==='none'
-        && triage.privacy.telegramIdsExposed===false
-        && triage.privacy.rawErrorsExposed===false
-        && triage.privacy.freeTextExposed===false,
-      cases:13,
-    };
-  }
-  
-  
-  function newsImpactRecoveryIncidentSloBreachTriageTrendDrill() {
-    const asOfMs=Date.parse('2026-09-23T18:00:00.000Z');
-    const episodes=[
-      {
-        reason:'server_error',reasonLabel:'Ошибка сервера',action:'full_ai',actionLabel:'Полный AI',
-        startedAt:'2026-09-03T08:00:00.000Z',recoveredAt:null,firstAcknowledgedAt:null,
-      },
-      {
-        reason:'timeout',reasonLabel:'Таймаут',action:'share',actionLabel:'Поделиться',
-        startedAt:'2026-09-15T08:00:00.000Z',recoveredAt:null,firstAcknowledgedAt:'2026-09-15T09:00:00.000Z',
-      },
-      {
-        reason:'provider_unavailable',reasonLabel:'Провайдер недоступен',action:'full_ai',actionLabel:'Полный AI',
-        startedAt:'2026-09-23T15:30:00.000Z',recoveredAt:null,firstAcknowledgedAt:null,
-      },
-      {
-        reason:'match_missing',reasonLabel:'Матч не найден',action:'news',actionLabel:'Новости',
-        startedAt:'2026-09-10T10:00:00.000Z',recoveredAt:'2026-09-11T10:00:00.000Z',firstAcknowledgedAt:null,
-      },
-    ];
-    const trend=buildNewsImpactRecoveryIncidentSloBreachTriageTrend(episodes,{asOfMs,weeks:4});
-    const server=trend.stuck.find(x=>x.reason==='server_error' && x.action==='full_ai');
-    return {
-      pass:trend.weekly.length===4
-        && trend.summary.currentTotal===3
-        && trend.weekly[0].total===0
-        && trend.weekly[1].total===1
-        && trend.weekly[2].total===2
-        && trend.weekly[3].recoveryOverdue===2
-        && trend.summary.totalDelta===1
-        && trend.summary.recoveryOverdueDelta===0
-        && trend.summary.stuckPairs===2
-        && server?.weeksPresent===3
-        && server?.recoveryOverdueWeeks===3
-        && trend.thresholds.source==='rc87_existing_slo'
-        && trend.routingChanged===false
-        && trend.persistence==='none'
-        && trend.privacy.telegramIdsExposed===false,
-      cases:14,
-    };
-  }
-  
-  
-  function newsImpactRecoveryIncidentSloBreachImpactRankingDrill() {
-    const asOfMs=Date.parse('2026-09-23T18:00:00.000Z');
-    const episodes=[
-      {
-        reason:'server_error',reasonLabel:'Ошибка сервера',action:'full_ai',actionLabel:'Полный AI',
-        startedAt:'2026-09-23T08:00:00.000Z',recoveredAt:null,firstAcknowledgedAt:null,
-      },
-      {
-        reason:'server_error',reasonLabel:'Ошибка сервера',action:'full_ai',actionLabel:'Полный AI',
-        startedAt:'2026-09-22T12:00:00.000Z',recoveredAt:'2026-09-22T20:00:00.000Z',firstAcknowledgedAt:'2026-09-22T13:00:00.000Z',
-      },
-      {
-        reason:'timeout',reasonLabel:'Таймаут',action:'share',actionLabel:'Поделиться',
-        startedAt:'2026-09-23T16:00:00.000Z',recoveredAt:null,firstAcknowledgedAt:'2026-09-23T17:00:00.000Z',
-      },
-      {
-        reason:'match_missing',reasonLabel:'Матч не найден',action:'news',actionLabel:'Новости',
-        startedAt:'2026-09-23T17:50:00.000Z',recoveredAt:'2026-09-23T17:55:00.000Z',firstAcknowledgedAt:null,
-      },
-    ];
-    const result=buildNewsImpactRecoveryIncidentSloBreachImpactRanking(episodes,{asOfMs,limit:10});
-    const top=result.ranking[0];
-    const second=result.ranking[1];
-    return {
-      pass:result.summary.pairs===2
-        && result.summary.activePairs===2
-        && result.summary.breachEpisodes===3
-        && result.summary.totalOverdueMinutes===990
-        && result.summary.ackOverdueMinutes===630
-        && result.summary.recoveryOverdueMinutes===360
-        && result.summary.topContributionPct===97
-        && top?.reason==='server_error'
-        && top?.action==='full_ai'
-        && top?.totalOverdueMinutes===960
-        && top?.ackOverdueMinutes===600
-        && top?.recoveryOverdueMinutes===360
-        && top?.contributionPct===97
-        && second?.reason==='timeout'
-        && second?.totalOverdueMinutes===30
-        && result.methodology==='sum_minutes_above_existing_ack_and_recovery_slo'
-        && result.thresholds.source==='rc87_existing_slo'
-        && result.routingChanged===false
-        && result.persistence==='none'
-        && result.privacy.telegramIdsExposed===false,
-      cases:18,
-    };
-  }
-  
-  
-  function newsImpactRecoveryIncidentSloBreachImpactTrendDrill() {
-    const asOfMs=Date.parse('2026-09-23T18:00:00.000Z');
-    const episodes=[
-      {
-        reason:'server_error',reasonLabel:'Ошибка сервера',action:'full_ai',actionLabel:'Полный AI',
-        startedAt:'2026-09-03T00:00:00.000Z',recoveredAt:'2026-09-12T00:00:00.000Z',firstAcknowledgedAt:'2026-09-03T02:00:00.000Z',
-      },
-      {
-        reason:'timeout',reasonLabel:'Таймаут',action:'share',actionLabel:'Поделиться',
-        startedAt:'2026-09-17T18:00:00.000Z',recoveredAt:null,firstAcknowledgedAt:'2026-09-17T19:00:00.000Z',
-      },
-      {
-        reason:'provider_unavailable',reasonLabel:'Провайдер недоступен',action:'market',actionLabel:'Рынок',
-        startedAt:'2026-09-01T00:00:00.000Z',recoveredAt:null,firstAcknowledgedAt:null,
-      },
-    ];
-    const trend=buildNewsImpactRecoveryIncidentSloBreachImpactTrend(episodes,{asOfMs,weeks:4,limit:10});
-    const timeout=trend.pairs.find(x=>x.reason==='timeout');
-    const server=trend.pairs.find(x=>x.reason==='server_error');
-    const provider=trend.pairs.find(x=>x.reason==='provider_unavailable');
-    return {
-      pass:trend.weekly.length===4
-        && trend.weekly[2].totalOverdueMinutes===23400
-        && trend.weekly[3].totalOverdueMinutes===28470
-        && trend.summary.currentOverdueMinutes===28470
-        && trend.summary.previousOverdueMinutes===23400
-        && trend.summary.deltaMinutes===5070
-        && trend.summary.increasedPairs===1
-        && trend.summary.decreasedPairs===1
-        && trend.summary.unchangedPairs===1
-        && timeout?.deltaMinutes===8310
-        && timeout?.direction==='increased'
-        && timeout?.currentContributionPct===29.2
-        && server?.deltaMinutes===-3240
-        && server?.direction==='decreased'
-        && provider?.deltaMinutes===0
-        && provider?.direction==='unchanged'
-        && trend.methodology==='weekly_overlap_minutes_above_existing_ack_and_recovery_slo'
-        && trend.thresholds.source==='rc87_existing_slo'
-        && trend.routingChanged===false
-        && trend.persistence==='none'
-        && trend.privacy.telegramIdsExposed===false,
-      cases:18,
     };
   }
   
