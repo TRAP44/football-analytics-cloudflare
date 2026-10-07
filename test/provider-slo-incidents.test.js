@@ -206,6 +206,12 @@ test('collecting windows break confirmation and never generate an alert', () => 
 test('runbook points to the observed provider failure modes without automatic control changes', () => {
   const report = buildProviderSloIncidentTimeline([
     window('2026-09-28T10:00:00Z','incident',{
+      requests:100,
+      successes:80,
+      failures:20,
+      retries:30,
+      timeouts:10,
+      rateLimits:8,
       successRatePct:80,
       timeoutRatePct:10,
       rateLimitRatePct:8,
@@ -213,6 +219,12 @@ test('runbook points to the observed provider failure modes without automatic co
       avgAttemptLatencyMs:6000,
     }),
     window('2026-09-28T10:15:00Z','incident',{
+      requests:100,
+      successes:82,
+      failures:18,
+      retries:28,
+      timeouts:9,
+      rateLimits:7,
       successRatePct:82,
       timeoutRatePct:9,
       rateLimitRatePct:7,
