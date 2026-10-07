@@ -2010,9 +2010,9 @@ const apiProductionReadiness = (...args) => getReleaseReadinessRuntime().apiProd
 const rcCheck = (...args) => getReleaseReadinessRuntime().rcCheck(...args);
 const rcReadRoute = (...args) => getReleaseReadinessRuntime().rcReadRoute(...args);
 
-const NEWS_BLOCKED_HOST_RE = /(?:facebook|instagram|tiktok|twitter|x\.com|youtube|youtu\.be|pinterest|betting|bet365|tips?ster|prediction)/i;
-const NEWS_MAJOR_SOURCE_RE = /(?:reuters|apnews|bbc\.|espn|skysports|theathletic|goal\.|marca\.|as\.com|lequipe|kicker|gazzetta)/i;
-const NEWS_OFFICIAL_SOURCE_RE = /(?:uefa\.|fifa\.|premierleague\.com|laliga\.com|bundesliga\.com|legaseriea\.it|ligue1\.com)/i;
+const NEWS_BLOCKED_HOST_RE = /(?:^|\.)(?:facebook\.com|instagram\.com|tiktok\.com|twitter\.com|x\.com|youtube\.com|youtu\.be|pinterest\.[a-z.]+|bet365\.com)$/i;
+const NEWS_MAJOR_SOURCE_RE = /(?:^|\.)(?:reuters\.com|apnews\.com|bbc\.(?:com|co\.uk)|espn\.com|skysports\.com|theathletic\.com|goal\.com|marca\.com|as\.com|lequipe\.fr|kicker\.de|gazzetta\.it)$/i;
+const NEWS_OFFICIAL_SOURCE_RE = /(?:^|\.)(?:uefa\.com|fifa\.com|premierleague\.com|laliga\.com|bundesliga\.com|legaseriea\.it|ligue1\.com)$/i;
 
 let footballNewsRuntime = null;
 function getFootballNewsRuntime() {
