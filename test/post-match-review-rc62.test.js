@@ -18,9 +18,9 @@ test('RC62 uses the immutable first pre-match model snapshot',()=> {
 });
 
 test('finished Match Center settles existing prediction and builds review',()=> {
-  assert.match(matchCenter,/if \(finished\) await settlePredictionsFromFixtures\(\[fixture\], cfg\)/);
-  assert.match(matchCenter,/postMatchPredictionCandidate=finished[\s\S]{0,180}?loadModelPredictionForFixture/);
-  assert.match(matchCenter,/if \(finished\)[\s\S]{0,240}?buildPostMatchReview/);
+  assert.match(matchCenter,/if \(finished\) \{[\s\S]{0,120}?optionalAsync\(settlePredictionsFromFixtures,\[fixture\],cfg\)/);
+  assert.match(matchCenter,/postMatchPredictionCandidate=finished[\s\S]{0,260}?loadModelPredictionForFixture/);
+  assert.match(matchCenter,/if \(finished\) \{[\s\S]{0,420}?buildPostMatchReview/);
   assert.match(matchCenter,/postMatchReview,/);
 });
 
