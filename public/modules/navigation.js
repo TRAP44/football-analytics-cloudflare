@@ -13,16 +13,20 @@ export const PUBLIC_VIEW_IDS = Object.freeze([
 ]);
 
 export function normalizeBackTarget(target, currentView = '') {
-  const candidate = String(target || '');
-  if (!PUBLIC_VIEW_IDS.includes(candidate) || candidate === currentView) return CANONICAL_HOME_VIEW;
+  const candidate = typeof target === 'string' ? target : '';
+  const current = typeof currentView === 'string' ? currentView : '';
+  if (!PUBLIC_VIEW_IDS.includes(candidate) || candidate === current) return CANONICAL_HOME_VIEW;
   return candidate;
 }
 
 export function backTargetForView(view, state = {}) {
-  if (view === 'analysisView') return normalizeBackTarget(state.analysisBackView, 'analysisView');
-  if (view === 'teamView') return normalizeBackTarget(state.teamBackView, 'teamView');
-  if (view === 'playerView') return normalizeBackTarget(state.playerBackView, 'playerView');
-  if (view === 'tournamentView') return normalizeBackTarget(state.tournamentBackView, 'tournamentView');
+  const source=state && typeof state === 'object' && !Array.isArray(state)
+    ? state
+    : {};
+  if (view === 'analysisView') return normalizeBackTarget(source.analysisBackView, 'analysisView');
+  if (view === 'teamView') return normalizeBackTarget(source.teamBackView, 'teamView');
+  if (view === 'playerView') return normalizeBackTarget(source.playerBackView, 'playerView');
+  if (view === 'tournamentView') return normalizeBackTarget(source.tournamentBackView, 'tournamentView');
   return CANONICAL_HOME_VIEW;
 }
 
