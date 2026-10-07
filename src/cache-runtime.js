@@ -217,7 +217,7 @@ export function createSharedCacheRuntime({
       }
       if (typeof value!=='string' || !value.trim()) return null;
       const raw=value.trim();
-      const calendar=/^(\d{4})-(\d{2})-(\d{2})(?:$|T|\s)/.exec(raw);
+      const calendar=/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(raw);
       if (!calendar) return null;
       const year=Number(calendar[1]);
       const month=Number(calendar[2]);
@@ -225,8 +225,17 @@ export function createSharedCacheRuntime({
       if (!Number.isSafeInteger(year) || month<1 || month>12 || day<1) return null;
       const maxDay=new Date(Date.UTC(year,month,0)).getUTCDate();
       if (day>maxDay) return null;
+      if (
+        raw.length>10
+        && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/i.test(raw)
+      ) return null;
       const parsed=Date.parse(raw);
       return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+    };
+    const timestampPresent=value=>{
+      if (value instanceof Date) return true;
+      if (typeof value==='string') return Boolean(value.trim());
+      return value !== null && value !== undefined;
     };
 
     const provider=text(meta.provider,80)
@@ -238,19 +247,23 @@ export function createSharedCacheRuntime({
       source.generatedAt,
       source.fetchedAt,
     ];
-    const sourceUpdatedAt=timestampCandidates
-      .map(timestamp)
-      .find(Boolean) || null;
+    let sourceUpdatedAt=null;
+    for (const candidate of timestampCandidates) {
+      if (!timestampPresent(candidate)) continue;
+      sourceUpdatedAt=timestamp(candidate);
+      break;
+    }
 
     const freshnessCandidate=(
       text(meta.freshness,40)
       || text(meta.freshnessState,40)
     ).toLowerCase().replace(/\s+/g,'_');
-    const freshness=source.stale===true
+    const measurableSource=Boolean(provider && sourceUpdatedAt);
+    const freshness=source.stale===true || freshnessCandidate==='stale'
       ? 'stale'
-      : ['fresh','cached','stale','unknown'].includes(freshnessCandidate)
+      : measurableSource && ['fresh','cached'].includes(freshnessCandidate)
         ? freshnessCandidate
-        : provider
+        : measurableSource
           ? 'fresh'
           : 'unknown';
 
