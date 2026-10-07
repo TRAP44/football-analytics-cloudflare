@@ -94,6 +94,33 @@ test('live pressure only compares paired valid metrics', () => {
   assert.equal(mixed.leader,'home');
 });
 
+test('derived pressure direction cannot be overridden by contradictory metadata', () => {
+  const live=runtime();
+
+  assert.equal(
+    live.livePerformanceSide({
+      statistics:{items:[]},
+      pressure:{home:70,away:30,leader:'away'},
+    }),
+    'home',
+  );
+
+  const coach=live.buildLiveAiCoach({
+    statistics:{items:[]},
+    events:[],
+    pressure:{home:70,away:30,leader:'away'},
+    score:{home:null,away:null},
+    elapsed:30,
+    homeName:'Home',
+    awayName:'Away',
+    smartInsights:{available:true,dataScore:50},
+    prematch:null,
+  });
+
+  assert.equal(coach.current.performanceSide,'home');
+  assert.equal(coach.current.pressureLeaderLabel,'Home');
+});
+
 test('statistics and recent-event helpers fail closed on malformed boundaries', () => {
   const live=runtime();
 
@@ -103,6 +130,14 @@ test('statistics and recent-event helpers fail closed on malformed boundaries', 
   );
   assert.equal(
     live.smartStat({items:[{key:'Ball Possession',home:150}]},'Ball Possession','home'),
+    null,
+  );
+  assert.equal(
+    live.smartStat({items:[{key:'Total Shots',home:'0x10'}]},'Total Shots','home'),
+    null,
+  );
+  assert.equal(
+    live.smartStat({items:[{key:'Total Shots',home:'1e2'}]},'Total Shots','home'),
     null,
   );
   assert.equal(
@@ -133,7 +168,7 @@ test('statistics and recent-event helpers fail closed on malformed boundaries', 
   assert.equal(recent.leader,'home');
 });
 
-test('live market shift requires a coherent complete 1X2 probability delta', () => {
+test('live market shift requires a coherent complete 1X2 probability delta and reports the positive mover', () => {
   const live=runtime();
 
   assert.equal(
@@ -154,6 +189,15 @@ test('live market shift requires a coherent complete 1X2 probability delta', () 
       probabilityChange:{home:'4.25',draw:'-1.2',away:'-3.05'},
     }),
     {side:'home',delta:4.3},
+  );
+
+  // The largest absolute move is away -8, but the market moved toward
+  // home/draw (+4 each). Reporting "toward away: -8" is semantically wrong.
+  assert.deepEqual(
+    live.liveMarketShift({
+      probabilityChange:{home:4,draw:4,away:-8},
+    }),
+    {side:'home',delta:4},
   );
 });
 
@@ -201,6 +245,29 @@ test('live coach does not invent a nil-nil score when score is unavailable', () 
 
   assert.equal(knownZero.current.scoreKnown,true);
   assert.equal(knownZero.state,'weakened');
+});
+
+test('smart match insights do not count future-only events as current evidence', () => {
+  const live=runtime();
+
+  const result=live.buildSmartMatchInsights({
+    statistics:{items:[]},
+    events:[
+      {minute:70,side:'home',type:'goal',detail:'Normal Goal'},
+    ],
+    pressure:null,
+    score:{home:null,away:null},
+    elapsed:60,
+    status:'2H',
+    homeName:'Home',
+    awayName:'Away',
+    playerLeaders:{home:[],away:[]},
+    absences:{home:[],away:[]},
+  });
+
+  assert.equal(result.available,false);
+  assert.equal(result.dataScore,0);
+  assert.equal(result.insights.length,0);
 });
 
 test('smart match insights tolerate malformed arrays and suppress score-derived claims without score', () => {
