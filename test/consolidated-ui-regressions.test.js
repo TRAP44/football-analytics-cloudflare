@@ -1,44 +1,131 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import {
+  dateTime,
+  favoriteStarSvg,
+  safeDate,
+  timeOf,
+} from '../public/modules/client-core.js';
 
-const app = fs.readFileSync('public/app.js', 'utf8');
-const css = fs.readFileSync('public/styles/premium-ui.css', 'utf8');
-const core = fs.readFileSync('public/modules/client-core.js', 'utf8');
+const app=fs.readFileSync('public/app.js','utf8');
+const css=fs.readFileSync('public/styles/premium-ui.css','utf8');
 
-test('standard MatchRadar action buttons share one centered 44px geometry contract', () => {
-  assert.match(css, /--mr-touch-target:\s*44px/);
-  assert.match(css, /\.miniapp-public-shell :is\([\s\S]*\.primary-btn,[\s\S]*\.filter-btn[\s\S]*\) \{[\s\S]*min-height:\s*var\(--mr-touch-target\)[\s\S]*align-items:\s*center[\s\S]*justify-content:\s*center[\s\S]*text-align:\s*center/);
-  assert.match(css, /:has\(> button:only-child\)[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\)/);
-  assert.doesNotMatch(css.slice(css.indexOf('/* Public component contracts — Issue #323')), /!important/);
+function section(source,start,end) {
+  const from=source.indexOf(start);
+  assert.ok(from>=0,`missing section start: ${start}`);
+  const to=end ? source.indexOf(end,from+start.length) : source.length;
+  assert.ok(!end || to>from,`missing section end: ${end}`);
+  return source.slice(from,to);
+}
+
+test('public date rendering rejects ambiguous dates and uses midnight as 00:xx, never 24:xx', () => {
+  for (const value of [true,false,null,undefined,'','   ','not-a-date','2026-02-30T12:00:00.000Z']) {
+    assert.equal(safeDate(value),null,String(value));
+  }
+
+  const midnight=new Date(2026,0,2,0,5,0,0);
+  assert.equal(timeOf(midnight),'00:05');
+  assert.match(dateTime(midnight),/00:05/);
+  assert.doesNotMatch(dateTime(midnight),/24:05/);
+
+  const cloned=safeDate(midnight);
+  assert.ok(cloned instanceof Date);
+  assert.notEqual(cloned,midnight);
+  assert.equal(cloned.getTime(),midnight.getTime());
 });
 
-test('compact favorite controls use a common SVG geometry', () => {
-  assert.match(app, /function favoriteStarSvg\(active = false\)/);
-  assert.match(app, /class="fav-star-icon"/);
-  const favStart = app.indexOf('const favoriteButton = team =>');
-  const favEnd = app.indexOf('\n\n  return `', favStart);
-  assert.doesNotMatch(app.slice(favStart, favEnd), /\? '★' : '☆'/);
-  assert.match(css, /\.fav-star-icon \{[\s\S]*width:\s*19px;[\s\S]*height:\s*19px/);
-  assert.match(app, /analysis-favorite-star">\$\{favoriteStarSvg\(homeFavorite\)\}/);
-  assert.match(app, /analysis-favorite-star">\$\{favoriteStarSvg\(awayFavorite\)\}/);
+test('favorite star primitive has one SVG geometry and requires a real boolean active state', () => {
+  const inactive=favoriteStarSvg(false);
+  const active=favoriteStarSvg(true);
+
+  for (const markup of [inactive,active]) {
+    assert.match(markup,/class="fav-star-icon"/);
+    assert.match(markup,/viewBox="0 0 24 24"/);
+    assert.match(markup,/aria-hidden="true"/);
+    assert.match(markup,/focusable="false"/);
+    assert.doesNotMatch(markup,/★|☆/);
+  }
+
+  assert.match(inactive,/fill="none"/);
+  assert.match(active,/fill="currentColor"/);
+  assert.match(favoriteStarSvg('true'),/fill="none"/);
+  assert.match(favoriteStarSvg(1),/fill="none"/);
+
+  assert.match(
+    app,
+    /import \{[^}]*favoriteStarSvg[^}]*\} from '\.\/modules\/client-core\.js';/,
+  );
+  assert.match(app,/\$\{favoriteStarSvg\(active\)\}/);
+  assert.match(app,/analysis-favorite-star">\$\{favoriteStarSvg\(homeFavorite\)\}/);
+  assert.match(app,/analysis-favorite-star">\$\{favoriteStarSvg\(awayFavorite\)\}/);
 });
 
-test('public match center does not render stale snapshot warning cards or visible refresh seconds', () => {
-  const centerStart = app.indexOf('function renderMatchCenter');
-  const centerEnd = app.indexOf('async function openMatchCenter', centerStart);
-  const center = app.slice(centerStart, centerEnd);
-  assert.doesNotMatch(center, /Показан последний сохранённый снимок/);
-  assert.doesNotMatch(center, /Автообновление через \$\{/);
-  assert.match(center, /Обновляется автоматически/);
+test('standard public actions keep a centered 44px touch geometry contract', () => {
+  assert.match(css,/--mr-touch-target:\s*44px/);
+  assert.match(
+    css,
+    /\.miniapp-public-shell :is\([\s\S]*?\.primary-btn,[\s\S]*?\.filter-btn,[\s\S]*?\.icon-btn[\s\S]*?\) \{[\s\S]*?min-height:\s*var\(--mr-touch-target\);[\s\S]*?display:\s*inline-flex;[\s\S]*?align-items:\s*center;[\s\S]*?justify-content:\s*center;[\s\S]*?text-align:\s*center;/,
+  );
+  assert.match(
+    css,
+    /:is\(\.icon-btn, \.fav-star\.compact\) \{[\s\S]*?min-width:\s*var\(--mr-touch-target\);[\s\S]*?width:\s*var\(--mr-touch-target\);[\s\S]*?height:\s*var\(--mr-touch-target\);/,
+  );
+  assert.match(
+    css,
+    /:has\(> button:only-child\) \{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
+  );
+
+  const contractTail=section(css,'/* Public component contracts.');
+  assert.doesNotMatch(contractTail,/!important/);
 });
 
-test('Radar Feed uses namespaced tones without legacy .ai compatibility CSS', () => {
-  assert.doesNotMatch(css, /\.radar-feed-item\.ai(?:\W|$)/);
-  assert.match(css, /\.radar-feed-item\.tone-ai \.radar-feed-pulse/);
+test('compact and analysis favorite controls share the same 19px SVG primitive', () => {
+  assert.match(
+    css,
+    /\.miniapp-public-shell \.fav-star-icon \{[\s\S]*?width:\s*19px;[\s\S]*?height:\s*19px;/,
+  );
+  assert.match(
+    css,
+    /\.miniapp-public-shell \.analysis-favorite-star \.fav-star-icon \{[\s\S]*?width:\s*19px;[\s\S]*?height:\s*19px;/,
+  );
+  assert.match(
+    css,
+    /\.miniapp-public-shell \.match-secondary-actions > span \{[\s\S]*?grid-template-columns:\s*44px 44px;/,
+  );
 });
 
-test('time rendering is explicit 24-hour h23 and match time is plain text, not a pill', () => {
-  assert.match(core, /hourCycle: 'h23'/);
-  assert.match(css, /\.match-time-label \{[\s\S]*border:\s*0;[\s\S]*background:\s*transparent;/);
+test('public match center hides stale snapshot/countdown copy and keeps a stable live status', () => {
+  const center=section(app,'function renderMatchCenter','async function openMatchCenter');
+
+  assert.doesNotMatch(center,/Показан последний сохранённый снимок/);
+  assert.doesNotMatch(center,/Автообновление через \$\{/);
+  assert.doesNotMatch(center,/liveRefreshSeconds|retryAfter/);
+  assert.match(center,/<small id="liveRefreshText">Обновляется автоматически<\/small>/);
+});
+
+test('Radar Feed tone classes stay namespaced and legacy .ai styling cannot leak in', () => {
+  assert.doesNotMatch(css,/\.radar-feed-item\.ai(?:\W|$)/);
+  assert.match(css,/\.radar-feed-item\.tone-live \.radar-feed-pulse/);
+  assert.match(css,/\.radar-feed-item\.tone-ai \.radar-feed-pulse/);
+  assert.match(css,/\.radar-feed-item\.tone-reminder \.radar-feed-pulse/);
+  assert.match(css,/\.radar-feed-item\.tone-watching \.radar-feed-pulse/);
+});
+
+test('match time remains plain tabular text instead of a badge/pill', () => {
+  const rule=section(
+    css,
+    '.miniapp-public-shell .match-time-label {',
+    '@media (max-width: 430px)',
+  );
+  assert.match(rule,/min-height:\s*auto;/);
+  assert.match(rule,/padding:\s*0;/);
+  assert.match(rule,/border:\s*0;/);
+  assert.match(rule,/border-radius:\s*0;/);
+  assert.match(rule,/background:\s*transparent;/);
+  assert.match(rule,/box-shadow:\s*none;/);
+  assert.match(rule,/font-variant-numeric:\s*tabular-nums;/);
+
+  const card=section(app,'function matchCardHtml','function bindMatchActions');
+  assert.match(card,/match-time-label">\$\{escapeHtml\(timeOf\(m\.date\)\)\}/);
 });
