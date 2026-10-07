@@ -1,0 +1,1 @@
+Public launch gate trigger for 2026-10-07. Runtime-neutral; forces the Quality workflow to re-verify the merged release SHA before production deployment.
