@@ -168,6 +168,44 @@ test('high-impact web headlines are downgraded until a trusted source confirms t
   assert.equal(gatedOfficial.verification,'source_backed');
 });
 
+test('news helper boundaries tolerate hostile article metadata without coercion',()=>{
+  const {api}=harness();
+
+  const hostileCategory={};
+  Object.defineProperty(hostileCategory,'impact',{
+    enumerable:true,
+    get(){throw new Error('hostile impact getter');},
+  });
+  Object.defineProperty(hostileCategory,'code',{
+    enumerable:true,
+    get(){throw new Error('hostile code getter');},
+  });
+
+  assert.doesNotThrow(
+    ()=>api.footballNewsImpactText(hostileCategory,true),
+  );
+  assert.match(
+    api.footballNewsImpactText(hostileCategory,true),
+    /Проверяем/,
+  );
+
+  const hostileItem={
+    url:'https://example.com/a',
+    title:'Arsenal injury update',
+    content:'injury',
+    category:hostileCategory,
+  };
+  assert.doesNotThrow(()=>api.applyNewsTrustGate(hostileItem));
+
+  assert.equal(
+    api.newsConversionHook(
+      {title:'Arsenal update',content:'club news',category:{code:'club'}},
+      {fixtureId:{valueOf(){throw new Error('must not coerce fixture');}}},
+    ).includes('Найти ближайший матч Arsenal'),
+    true,
+  );
+});
+
 test('news publication time is deterministic and invalid calendar tokens fail closed',()=>{
   const {api}=harness();
 
