@@ -55,9 +55,27 @@ function parseAttributes(tag) {
   return out;
 }
 
+function stripHtmlComments(html) {
+  if (typeof html!=='string' || !html) return '';
+  let cursor=0;
+  let out='';
+  while (cursor<html.length) {
+    const start=html.indexOf('<!--',cursor);
+    if (start<0) {
+      out+=html.slice(cursor);
+      break;
+    }
+    out+=html.slice(cursor,start);
+    const end=html.indexOf('-->',start+4);
+    if (end<0) break;
+    cursor=end+3;
+  }
+  return out;
+}
+
 function tags(html,name) {
-  if (typeof html!=='string') return [];
-  const source=html.replace(/<!--[\s\S]*?-->/g,'');
+  const source=stripHtmlComments(html);
+  if (!source) return [];
   const re=new RegExp('<'+name+'\\b[^>]*>','gi');
   return source.match(re) || [];
 }
