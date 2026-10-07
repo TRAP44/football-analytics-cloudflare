@@ -116,8 +116,11 @@ if (releaseContract.databaseContract?.sensitiveMutationLeaseFinalization?.source
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
 if (!expectedRc || !worker.includes(`const RC_NAME = '${expectedRc}'`)) failures.push(`Worker RC name must be ${expectedRc || 'derived from runtimeVersion'}`);
-if (!appRuntime.includes(`CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!expectedChannel || !appRuntime.includes(`CLIENT_RELEASE_CHANNEL = '${expectedChannel}'`)) failures.push(`Client release channel must be ${expectedChannel || 'derived from runtimeVersion'}`);
+if (CLIENT_VERSION !== expected) failures.push(`Client version must be ${expected}`);
+if (!expectedChannel || CLIENT_RELEASE_CHANNEL !== expectedChannel) failures.push(`Client release channel must be ${expectedChannel || 'derived from runtimeVersion'}`);
+if (!worker.includes(`const API_CONTRACT_VERSION = ${CLIENT_API_CONTRACT};`)) failures.push('Client and worker API contract versions must match');
+if (latestMigrationVersion && !SUPABASE_SCHEMA_HINT.includes(`миграции до v${latestMigrationVersion}`)) failures.push('Client Supabase schema hint must match release-contract latestMigration');
+if (latestMigrationVersion && !worker.includes(`миграции до v${latestMigrationVersion}`)) failures.push('Worker Supabase schema guidance must match release-contract latestMigration');
 for (const finding of auditFrontendAssetContract({
   packageVersion:pkg.version,
   runtimeRevision:FRONTEND_ASSET_REVISION,
