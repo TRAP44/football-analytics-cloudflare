@@ -67,6 +67,23 @@ test('fixture deep-link Match Center has Home as its fallback parent', () => {
   assert.equal(backTargetForView('analysisView', { analysisBackView: 'matchesView' }), 'matchesView');
   assert.match(app, /async function openLaunchFixture[\s\S]*?if \(action === 'center'\) return openMatchCenter\(id, null\)/);
   assert.match(app, /analysisBackView:\s*'matchesView'/);
+  const branchStart=app.indexOf("} else if (fixtureId > 0 && ['analysis','center'].includes(action))");
+  const branchEnd=app.indexOf("} else {",branchStart);
+  assert.ok(branchStart >= 0 && branchEnd > branchStart);
+  const deepLinkBranch=app.slice(branchStart,branchEnd);
+  assert.match(deepLinkBranch, /showView\(CANONICAL_HOME_VIEW\)/);
+  assert.doesNotMatch(deepLinkBranch, /showView\('searchView'/);
+});
+
+test('navigation parent resolution fails closed on malformed state and target values', () => {
+  assert.equal(backTargetForView('analysisView', null), 'matchesView');
+  assert.equal(backTargetForView('teamView', []), 'matchesView');
+  assert.equal(backTargetForView('playerView', 'broken'), 'matchesView');
+  assert.equal(
+    normalizeBackTarget({ toString(){ throw new Error('must not coerce'); } }, 'teamView'),
+    'matchesView',
+  );
+  assert.equal(normalizeBackTarget('teamView', { bad:true }), 'teamView');
 });
 
 test('Telegram BackButton is available on every non-Home public view and routes through the same parent resolver', () => {
