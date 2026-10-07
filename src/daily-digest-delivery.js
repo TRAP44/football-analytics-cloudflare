@@ -11,33 +11,67 @@ export const DAILY_DIGEST_POLICY = Object.freeze({
   sealedClaimAgeMs: 5 * 60 * 1000,
 });
 
+function finiteNumberCandidate(value) {
+  if (value === null || value === undefined || typeof value === 'boolean') return null;
+  if (typeof value === 'string' && !value.trim()) return null;
+  const number=Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function strictTimestampMs(value) {
+  if (value instanceof Date) {
+    const ms=value.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const raw=value.trim();
+  const calendar=/^(\d{4})-(\d{2})-(\d{2})(?:$|T|\s)/.exec(raw);
+  if (!calendar) return null;
+  const year=Number(calendar[1]);
+  const month=Number(calendar[2]);
+  const day=Number(calendar[3]);
+  if (!Number.isSafeInteger(year) || month<1 || month>12 || day<1) return null;
+  const maxDay=new Date(Date.UTC(year,month,0)).getUTCDate();
+  if (day>maxDay) return null;
+  const parsed=Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function strictUtcDate(value) {
+  const raw=typeof value==='string' ? value.trim() : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return '';
+  const parsed=strictTimestampMs(`${raw}T00:00:00.000Z`);
+  return parsed === null ? '' : new Date(parsed).toISOString().slice(0,10)===raw ? raw : '';
+}
+
 function asTime(value) {
-  const parsed = value instanceof Date ? value.getTime() : Number(value);
-  return Number.isFinite(parsed) ? parsed : Date.now();
+  const parsed=strictTimestampMs(value);
+  return parsed === null ? Date.now() : parsed;
 }
 
 function nonNegativeInteger(value, fallback = 0) {
-  const number = Number(value);
-  if (!Number.isFinite(number) || number < 0) return fallback;
-  return Math.floor(number);
+  const number=finiteNumberCandidate(value);
+  if (number === null || !Number.isSafeInteger(number) || number < 0) return fallback;
+  return number;
 }
 
 function positiveInteger(value, fallback, max = Number.MAX_SAFE_INTEGER) {
-  const number = Number(value);
-  const fallbackNumber = Number(fallback);
-  const safeFallback = Number.isFinite(fallbackNumber) && fallbackNumber > 0
-    ? Math.floor(fallbackNumber)
+  const number=finiteNumberCandidate(value);
+  const fallbackNumber=finiteNumberCandidate(fallback);
+  const safeFallback=fallbackNumber !== null && Number.isSafeInteger(fallbackNumber) && fallbackNumber > 0
+    ? fallbackNumber
     : 1;
-  if (!Number.isFinite(number) || number <= 0) return Math.min(max, safeFallback);
-  return Math.max(1, Math.min(max, Math.floor(number)));
+  if (number === null || !Number.isSafeInteger(number) || number <= 0) return Math.min(max,safeFallback);
+  return Math.max(1,Math.min(max,number));
 }
 
 function positiveFinite(value, fallback, max = Number.MAX_SAFE_INTEGER) {
-  const number = Number(value);
-  const fallbackNumber = Number(fallback);
-  const safeFallback = Number.isFinite(fallbackNumber) && fallbackNumber > 0 ? fallbackNumber : 1;
-  if (!Number.isFinite(number) || number <= 0) return Math.min(max, safeFallback);
-  return Math.max(1, Math.min(max, number));
+  const number=finiteNumberCandidate(value);
+  const fallbackNumber=finiteNumberCandidate(fallback);
+  const safeFallback=fallbackNumber !== null && fallbackNumber > 0 ? fallbackNumber : 1;
+  if (number === null || number <= 0) return Math.min(max,safeFallback);
+  return Math.max(1,Math.min(max,number));
 }
 
 export function isDailyDigestExecutionWindow(scheduledAt) {
@@ -53,30 +87,48 @@ export function planDailyDigestRecipients(rows = [], {
   truncated = false,
   now = Date.now(),
 } = {}) {
-  const deliveryDate = String(date || '');
-  const nowMs = asTime(now);
-  const scannedRows = Array.isArray(rows) ? rows : [];
-  const due = scannedRows.filter(row =>
-    Number(row?.hour_utc ?? DAILY_DIGEST_POLICY.deliveryHourUtc) === Number(hourUtc)
-    && String(row?.last_sent_date || '') !== deliveryDate
-  );
-  const claimedToday = due.filter(row => String(row?.delivery_claim_date || '') === deliveryDate);
-  const activeClaims = claimedToday.filter(row => {
-    const lockedUntil = Date.parse(String(row?.delivery_locked_until || ''));
-    return Number.isFinite(lockedUntil) && lockedUntil > nowMs;
+  const deliveryDate=strictUtcDate(date);
+  const nowMs=asTime(now);
+  const scannedRows=Array.isArray(rows) ? rows : [];
+  const requestedHour=finiteNumberCandidate(hourUtc);
+  const normalizedHour=requestedHour !== null && Number.isSafeInteger(requestedHour) && requestedHour>=0 && requestedHour<=23
+    ? requestedHour
+    : null;
+  const validPlan=Boolean(deliveryDate && normalizedHour !== null);
+  const due=validPlan ? scannedRows.filter(row => {
+    const rawHour=row?.hour_utc ?? DAILY_DIGEST_POLICY.deliveryHourUtc;
+    const rowHour=finiteNumberCandidate(rawHour);
+    return rowHour !== null
+      && Number.isSafeInteger(rowHour)
+      && rowHour===normalizedHour
+      && String(row?.last_sent_date || '')!==deliveryDate;
+  }) : [];
+  const claimedToday=due.filter(row=>String(row?.delivery_claim_date || '')===deliveryDate);
+  const claimState=new Map(claimedToday.map(row=>{
+    const lockedUntil=strictTimestampMs(row?.delivery_locked_until);
+    return [row,{
+      lockedUntil,
+      active:lockedUntil === null || lockedUntil>nowMs,
+    }];
+  }));
+  const activeClaims=claimedToday.filter(row=>claimState.get(row)?.active===true);
+  const expiredClaims=claimedToday.filter(row=>{
+    const state=claimState.get(row);
+    return state?.lockedUntil !== null && state?.active===false;
   });
-  const sealedClaims = activeClaims.filter(row => {
-    const claimedAt = Date.parse(String(row?.delivery_claimed_at || ''));
-    const age = Number.isFinite(claimedAt) ? Math.max(0, nowMs - claimedAt) : Number.POSITIVE_INFINITY;
-    return age >= DAILY_DIGEST_POLICY.sealedClaimAgeMs;
+  const sealedClaims=activeClaims.filter(row=>{
+    const lockedUntil=claimState.get(row)?.lockedUntil;
+    const claimedAt=strictTimestampMs(row?.delivery_claimed_at);
+    if (lockedUntil === null || claimedAt === null) return true;
+    const age=Math.max(0,nowMs-claimedAt);
+    return age>=DAILY_DIGEST_POLICY.sealedClaimAgeMs;
   });
-  const freshClaims = activeClaims.filter(row => !sealedClaims.includes(row));
-  const activeClaimAgesMs = activeClaims
-    .map(row => Date.parse(String(row?.delivery_claimed_at || '')))
-    .filter(Number.isFinite)
-    .map(value => Math.max(0, nowMs - value));
-  const expiredClaims = claimedToday.filter(row => !activeClaims.includes(row));
-  const pending = due.filter(row => String(row?.delivery_claim_date || '') !== deliveryDate || expiredClaims.includes(row));
+  const freshClaims=activeClaims.filter(row=>!sealedClaims.includes(row));
+  const activeClaimAgesMs=activeClaims
+    .map(row=>strictTimestampMs(row?.delivery_claimed_at))
+    .filter(value=>value !== null)
+    .map(value=>Math.max(0,nowMs-value));
+  const pending=due.filter(row=>String(row?.delivery_claim_date || '')!==deliveryDate || expiredClaims.includes(row));
   const boundedMax = positiveInteger(
     maxRecipients,
     DAILY_DIGEST_POLICY.maxRecipientsPerRun,
@@ -98,7 +150,9 @@ export function planDailyDigestRecipients(rows = [], {
     deferred: Math.max(0, pending.length - boundedMax),
     remaining: Math.max(0, pending.length - boundedMax),
     backlog: Math.max(0, pending.length - boundedMax),
-    truncated: Boolean(truncated),
+    truncated: truncated === true,
+    invalidDate:!deliveryDate,
+    invalidHour:normalizedHour === null,
   };
 }
 
