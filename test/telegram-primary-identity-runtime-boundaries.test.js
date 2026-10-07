@@ -125,6 +125,13 @@ test('Telegram primary identity tolerates cache failures but validates getMe pay
     }),
     /username is unavailable/,
   );
+  await assert.rejects(
+    () => resolvePrimaryTelegramBotUsername({
+      botToken:TOKEN,
+      getMe:async () => ({id:111111111,username:'MatchRadarAIBot',is_bot:false}),
+    }),
+    /identity is not a bot/,
+  );
 });
 
 test('Telegram update dedupe identity rejects malformed update containers and oversized fallback ids', () => {
