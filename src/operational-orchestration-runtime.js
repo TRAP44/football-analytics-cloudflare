@@ -797,19 +797,3 @@ export function createOperationalOrchestrationRuntime(deps = {}) {
 
   return Object.freeze(exportedRuntime);
 }
-    API_ROUTE_DEPS,
-    captureModelPrediction,
-    handleScheduled,
-    handleTelegramWebhook,
-    publicStatusRouter,
-    settlePredictionsFromFixtures,
-    settlementDriftAdjudicationSelfTest,
-    settlementDriftBeforeSnapshot,
-    settlementDriftProviderSnapshot,
-    settlementFinalitySelfTest,
-    settlementRunLedgerSelfTest,
-    trustedMetricsGateSelfTest,
-    verifiedBrierScore,
-    verifiedSettledRows
-  });
-}
