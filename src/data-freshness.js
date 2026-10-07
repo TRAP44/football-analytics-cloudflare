@@ -66,7 +66,15 @@ function normalizedMode(value) {
 function defaultFreshnessLimit(feature, mode) {
   const config=DEFAULT_FRESHNESS_LIMITS[normalizedFeature(feature)] || {};
   const normalized=normalizedMode(mode);
-  return Number(config[normalized || ''] || config.upcoming || 3600);
+  if (normalized) return Number(config[normalized] || config.upcoming || 3600);
+  const knownLimits=Object.values(config).filter(value=>typeof value==='number' && Number.isFinite(value) && value>0);
+  return knownLimits.length ? Math.min(...knownLimits) : 3600;
+}
+
+function timestampSupplied(value) {
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'string') return value.trim()!=='';
+  return true;
 }
 
 function policyTtlState(meta = {}, { feature = meta?.feature || 'data', mode = 'upcoming' } = {}) {
@@ -114,12 +122,8 @@ export function assessFeatureFreshness(meta = {}, {
   const sourceKnown=Boolean(source && source!=='unknown' && source!=='none');
   const provenanceKnown=providerKnown && sourceKnown;
 
-  const sourceUpdatedSupplied=sourceMeta.sourceUpdatedAt !== undefined
-    && sourceMeta.sourceUpdatedAt !== null
-    && String(sourceMeta.sourceUpdatedAt).trim()!=='';
-  const fetchedAtSupplied=sourceMeta.fetchedAt !== undefined
-    && sourceMeta.fetchedAt !== null
-    && String(sourceMeta.fetchedAt).trim()!=='';
+  const sourceUpdatedSupplied=timestampSupplied(sourceMeta.sourceUpdatedAt);
+  const fetchedAtSupplied=timestampSupplied(sourceMeta.fetchedAt);
   const sourceUpdatedAtMs=timestampMs(sourceMeta.sourceUpdatedAt);
   const fetchedAtMs=timestampMs(sourceMeta.fetchedAt);
   const sourceUpdatedAt=sourceUpdatedAtMs!==null
