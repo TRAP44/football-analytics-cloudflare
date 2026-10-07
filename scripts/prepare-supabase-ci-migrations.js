@@ -132,6 +132,30 @@ export function validateMigrationPlan(repoRoot, releaseContract) {
   }
 }
 
+function nearestExistingAncestor(value) {
+  let current=path.resolve(value);
+  while (!fs.existsSync(current)) {
+    const parent=path.dirname(current);
+    if (parent===current) break;
+    current=parent;
+  }
+  return current;
+}
+
+function resolvedPathThroughExistingAncestors(value) {
+  const absolute=path.resolve(value);
+  const ancestor=nearestExistingAncestor(absolute);
+  const ancestorReal=fs.realpathSync(ancestor);
+  const remainder=path.relative(ancestor,absolute);
+  return path.resolve(ancestorReal,remainder);
+}
+
+function pathInside(parent,candidate) {
+  const relative=path.relative(parent,candidate);
+  return relative===''
+    || (!relative.startsWith('..'+path.sep) && relative!=='..' && !path.isAbsolute(relative));
+}
+
 function validatedStagePaths(repoRoot,targetDir) {
   if (typeof repoRoot !== 'string' || !repoRoot.trim()) {
     throw new TypeError('Supabase CI repoRoot is required.');
@@ -153,11 +177,12 @@ function validatedStagePaths(repoRoot,targetDir) {
     throw new Error('Supabase CI targetDir must end with supabase/migrations.');
   }
 
-  const relativeToRepo=path.relative(repo,target);
-  const targetInsideRepo=relativeToRepo===''
-    || (!relativeToRepo.startsWith('..'+path.sep) && relativeToRepo!=='..' && !path.isAbsolute(relativeToRepo));
-  if (targetInsideRepo) {
-    throw new Error('Refusing to stage generated CI migrations inside the source repository.');
+  const repoReal=fs.realpathSync(repo);
+  const targetResolved=resolvedPathThroughExistingAncestors(target);
+  if (pathInside(repoReal,targetResolved)) {
+    throw new Error(
+      'Refusing to stage generated CI migrations inside the source repository, including through symlinked paths.',
+    );
   }
 
   return {repoRoot:repo,targetDir:target};
