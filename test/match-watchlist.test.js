@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { MATCH_WATCHLIST_KEY, readMatchWatchlist } from '../public/modules/app-runtime.js';
+import { FRONTEND_ASSET_REVISION, MATCH_WATCHLIST_KEY, readMatchWatchlist } from '../public/modules/app-runtime.js';
 
 const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
 const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
@@ -25,6 +25,8 @@ test('match watchlist is local, bounded and fail-safe', () => {
         { fixtureId: 10, homeName: 'Home', awayName: 'Away', league: 'League', date: '2026-10-01T18:00:00Z' },
         { fixtureId: 10, homeName: 'Duplicate', awayName: 'Away', date: '2026-10-01T18:00:00Z' },
         { fixtureId: 0, homeName: 'Invalid', awayName: 'Away' },
+        { fixtureId: true, homeName: 'Coerced', awayName: 'Away' },
+        { fixtureId: [11], homeName: 'Array id', awayName: 'Away' },
       ]);
     },
   };
@@ -33,7 +35,51 @@ test('match watchlist is local, bounded and fail-safe', () => {
   assert.equal(items[0].fixtureId, 10);
   assert.equal(items[0].homeName, 'Home');
 
-  assert.deepEqual(readMatchWatchlist({ getItem() { throw new Error('blocked'); } }), []);
+  assert.deepEqual(
+    readMatchWatchlist({
+      getItem() {
+        return JSON.stringify([{
+          fixtureId: 11,
+          homeName: 'Safe',
+          awayName: 'Away',
+          homeLogo: 'javascript:alert(1)',
+          awayLogo: 'https://example.com/logo.png',
+        }]);
+      },
+    }),
+    [{
+      fixtureId: 11,
+      homeName: 'Safe',
+      awayName: 'Away',
+      league: '',
+      date: '',
+      homeId: 0,
+      awayId: 0,
+      homeLogo: '',
+      awayLogo: 'https://example.com/logo.png',
+      addedAt: '',
+    }],
+  );
+
+  const bounded=readMatchWatchlist({
+    getItem() {
+      return JSON.stringify(Array.from({length:80},(_,index)=>({
+        fixtureId:index+1,
+        homeName:'Home '+index,
+        awayName:'Away '+index,
+      })));
+    },
+  });
+  assert.equal(bounded.length,50);
+
+  assert.deepEqual(
+    readMatchWatchlist({
+      getItem() {
+        throw new Error('blocked');
+      },
+    }),
+    [],
+  );
 });
 
 test('watchlist helpers persist locally without backend or provider requests', () => {
@@ -67,9 +113,34 @@ test('watchlist controls stay compact on the public mobile shell', () => {
   assert.match(shell, /\.radar-feed-item\.watching \.radar-feed-pulse/);
 });
 
-test('match watchlist ships with coherent frontend asset revision', () => {
-  for (const surface of [html, adminHtml]) {
-    assert.match(surface, /frontend-asset-revision" content="6\.120\.0-launch\d+"/);
-    assert.match(surface, /\/app\.js\?v=6\.120\.0-launch\d+/);
+test('match watchlist ships with one exact frontend asset revision across public and admin shells', () => {
+  assert.equal(FRONTEND_ASSET_REVISION,'6.120.0-launch54');
+
+  const revisions=[html,adminHtml].map(surface=>
+    surface.match(
+      /frontend-asset-revision" content="([^"]+)"/,
+    )?.[1] || '',
+  );
+  assert.deepEqual(
+    revisions,
+    [FRONTEND_ASSET_REVISION,FRONTEND_ASSET_REVISION],
+  );
+
+  for (const surface of [html,adminHtml]) {
+    assert.ok(
+      surface.includes(
+        '/styles.css?v='+FRONTEND_ASSET_REVISION,
+      ),
+    );
+    assert.ok(
+      surface.includes(
+        '/styles/public-shell.css?v='+FRONTEND_ASSET_REVISION,
+      ),
+    );
+    assert.ok(
+      surface.includes(
+        '/app.js?v='+FRONTEND_ASSET_REVISION,
+      ),
+    );
   }
 });
