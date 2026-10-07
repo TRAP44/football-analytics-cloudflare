@@ -258,6 +258,22 @@ export function createOperationalOrchestrationRuntime(deps = {}) {
   if (!memory || typeof memory !== 'object' || Array.isArray(memory)) {
     throw new TypeError('memory is required');
   }
+
+  function plainObject(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    try {
+      Object.getPrototypeOf(value);
+      return value;
+    } catch {
+      return null;
+    }
+  }
+
+  function safeRead(value,key) {
+    if (!value || typeof value !== 'object') return undefined;
+    try { return value[key]; } catch { return undefined; }
+  }
+
   for (const [name, fn] of Object.entries({
     claimScheduledJob,
     renewScheduledJob,
@@ -273,18 +289,32 @@ export function createOperationalOrchestrationRuntime(deps = {}) {
   }
 
   function providerCooldownTimestamp() {
-    const raw=memory.provider?.cooldownUntil;
+    const provider=plainObject(safeRead(memory,'provider'));
+    const raw=safeRead(provider,'cooldownUntil');
     if (raw === null || raw === undefined || raw === '') return 0;
-    if (typeof raw === 'number') return Number.isFinite(raw) ? raw : NaN;
-    if (typeof raw !== 'string') return NaN;
+
+    if (typeof raw === 'number') {
+      return Number.isSafeInteger(raw) && raw >= 0 && raw <= 8.64e15
+        ? raw
+        : NaN;
+    }
+    if (typeof raw !== 'string' || raw.length > 64) return NaN;
+
     const text=raw.trim();
     if (!text) return 0;
     if (/^\d+$/.test(text)) {
       const number=Number(text);
-      return Number.isSafeInteger(number) && number >= 0 ? number : NaN;
+      return Number.isSafeInteger(number) && number >= 0 && number <= 8.64e15
+        ? number
+        : NaN;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(text)) {
+      return NaN;
     }
     const timestamp=Date.parse(text);
-    return Number.isFinite(timestamp) ? timestamp : NaN;
+    return Number.isFinite(timestamp) && timestamp >= 0 && timestamp <= 8.64e15
+      ? timestamp
+      : NaN;
   }
 
   const releaseFieldEvidenceRuntime=createReleaseFieldEvidenceRuntime({
@@ -300,6 +330,12 @@ export function createOperationalOrchestrationRuntime(deps = {}) {
     providerSnapshot,
   });
   
+  if (
+    !plainObject(releaseFieldEvidenceRuntime)
+    || typeof safeRead(releaseFieldEvidenceRuntime,'scheduleReleaseFieldEvidence') !== 'function'
+  ) {
+    throw new TypeError('Release field evidence runtime is invalid');
+  }
   const { scheduleReleaseFieldEvidence }=releaseFieldEvidenceRuntime;
   
   const publicStatusRuntime=createPublicStatusRuntime({
@@ -314,12 +350,27 @@ export function createOperationalOrchestrationRuntime(deps = {}) {
     expectedSchemaContractVersion:EXPECTED_SCHEMA_CONTRACT_VERSION,
     expectedSchemaFingerprint:EXPECTED_SCHEMA_FINGERPRINT,
   });
+  if (
+    !plainObject(publicStatusRuntime)
+    || typeof safeRead(publicStatusRuntime,'serviceStatus') !== 'function'
+    || typeof safeRead(publicStatusRuntime,'computeReadinessSnapshot') !== 'function'
+  ) {
+    throw new TypeError('Public status runtime is invalid');
+  }
   
   const publicHealthRuntime=createPublicHealthRuntime({
     computeReadiness:publicStatusRuntime.computeReadinessSnapshot,
     version:APP_VERSION,
     releaseCandidate:RC_NAME,
   });
+  if (
+    !plainObject(publicHealthRuntime)
+    || typeof safeRead(publicHealthRuntime,'liveSnapshot') !== 'function'
+    || typeof safeRead(publicHealthRuntime,'readinessSnapshot') !== 'function'
+    || typeof safeRead(publicHealthRuntime,'healthSnapshot') !== 'function'
+  ) {
+    throw new TypeError('Public health runtime is invalid');
+  }
   
   const publicStatusRouter=createPublicStatusRouter({
     publicStatusRuntime,
@@ -390,6 +441,9 @@ export function createOperationalOrchestrationRuntime(deps = {}) {
     sendBotAiTrackRecord,
     sendDigestControls,
   });
+  if (typeof processTelegramUpdate !== 'function') {
+    throw new TypeError('Telegram update processor is invalid');
+  }
   
   const TELEGRAM_WEBHOOK_DEPS = Object.freeze({
     claimTelegramUpdate,
@@ -404,7 +458,10 @@ export function createOperationalOrchestrationRuntime(deps = {}) {
     releaseTelegramUpdatePersistent,
     telegramApi,
   });
-  const handleTelegramWebhook = createTelegramWebhookHandler(TELEGRAM_WEBHOOK_DEPS);
+  const handleTelegramWebhook=createTelegramWebhookHandler(TELEGRAM_WEBHOOK_DEPS);
+  if (typeof handleTelegramWebhook !== 'function') {
+    throw new TypeError('Telegram webhook handler is invalid');
+  }
   
   const {
     buildModelRemediationReport,
@@ -682,6 +739,12 @@ export function createOperationalOrchestrationRuntime(deps = {}) {
     providerTransitionProfile,
     publicDataCapabilities,
   });
+  for (const [name,value] of Object.entries(API_ROUTE_DEPS)) {
+    if (name === 'memory') continue;
+    if (typeof value !== 'function') {
+      throw new TypeError(`API route dependency ${name} is invalid`);
+    }
+  }
   
   const { handleScheduled } = createScheduledJobsRuntime({
     settleBacktestDaily,
@@ -705,8 +768,35 @@ export function createOperationalOrchestrationRuntime(deps = {}) {
     completeScheduledJob,
     releaseScheduledJob,
   });
+  if (typeof handleScheduled !== 'function') {
+    throw new TypeError('Scheduled jobs runtime is invalid');
+  }
 
-  return Object.freeze({
+  const exportedRuntime={
+    API_ROUTE_DEPS,
+    captureModelPrediction,
+    handleScheduled,
+    handleTelegramWebhook,
+    publicStatusRouter,
+    settlePredictionsFromFixtures,
+    settlementDriftAdjudicationSelfTest,
+    settlementDriftBeforeSnapshot,
+    settlementDriftProviderSnapshot,
+    settlementFinalitySelfTest,
+    settlementRunLedgerSelfTest,
+    trustedMetricsGateSelfTest,
+    verifiedBrierScore,
+    verifiedSettledRows,
+  };
+  for (const [name,value] of Object.entries(exportedRuntime)) {
+    if (name === 'API_ROUTE_DEPS' || name === 'publicStatusRouter') continue;
+    if (typeof value !== 'function') {
+      throw new TypeError(`Operational runtime export ${name} is invalid`);
+    }
+  }
+
+  return Object.freeze(exportedRuntime);
+}
     API_ROUTE_DEPS,
     captureModelPrediction,
     handleScheduled,
