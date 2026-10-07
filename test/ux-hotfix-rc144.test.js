@@ -71,7 +71,7 @@ test('quick discovery sections are not permanently suppressed by public-shell CS
     assert.ok(forcedHidden.every(r => r.selector.includes('[hidden]')), id + ': ' + forcedHidden.map(r => r.selector).join(', '));
   }
   assert.match(app, /function setDiscoveryHomeVisibility\(visible\)/);
-  assert.match(globalSearchRenderer, /setDiscoveryHomeVisibility\(!query\)/);
+  assert.match(globalSearchRenderer, /safeCall\(setDiscoveryHomeVisibility,!query\)/);
 });
 
 test('startup hides release identifiers while About shows the public app version', () => {
