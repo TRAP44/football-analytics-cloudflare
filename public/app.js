@@ -2372,9 +2372,9 @@ async function toggleFavorite(team) {
   state.favoriteMutations.add(teamId);
   syncFavoriteMutationUi(teamId);
   try {
-    const rows = Array.isArray(state.favorites) ? state.favorites : [];
     if (active) {
       await api(`/api/favorites?teamId=${teamId}`, { method: 'DELETE' });
+      const rows = Array.isArray(state.favorites) ? state.favorites : [];
       state.favorites = rows.filter(x => positiveEntityId(x?.teamId) !== teamId);
       state.favoritesLoaded = true;
       state.favoritesRevision += 1;
@@ -2388,6 +2388,7 @@ async function toggleFavorite(team) {
       if (!item || typeof item !== 'object' || Array.isArray(item) || positiveEntityId(item.teamId) !== teamId) {
         throw new TypeError('Сервис избранного вернул некорректный результат.');
       }
+      const rows = Array.isArray(state.favorites) ? state.favorites : [];
       state.favorites = [item, ...rows.filter(x => positiveEntityId(x?.teamId) !== teamId)];
       state.favoritesLoaded = true;
       state.favoritesRevision += 1;
@@ -5595,9 +5596,9 @@ async function toggleReminder(match) {
   state.reminderMutations.add(fixtureId);
   syncReminderMutationUi(fixtureId);
   try {
-    const rows = Array.isArray(state.reminders) ? state.reminders : [];
     if (active) {
       await api(`/api/reminders?fixtureId=${fixtureId}`, { method: 'DELETE' });
+      const rows = Array.isArray(state.reminders) ? state.reminders : [];
       state.reminders = rows.filter(x => positiveEntityId(x?.fixtureId) !== fixtureId);
       state.remindersLoaded = true;
       state.remindersRevision += 1;
@@ -5621,6 +5622,7 @@ async function toggleReminder(match) {
       if (!item || typeof item !== 'object' || Array.isArray(item) || positiveEntityId(item.fixtureId) !== fixtureId) {
         throw new TypeError('Сервис напоминаний вернул некорректный результат.');
       }
+      const rows = Array.isArray(state.reminders) ? state.reminders : [];
       state.reminders = [item, ...rows.filter(x => positiveEntityId(x?.fixtureId) !== fixtureId)];
       state.remindersLoaded = true;
       state.remindersRevision += 1;
