@@ -20,6 +20,7 @@ export function createLiveMatchIntelligenceRuntime(deps) {
 
   function finiteNumber(value) {
     if (value === null || value === undefined || value === '') return null;
+    if (typeof value !== 'number' && typeof value !== 'string') return null;
     const number=numericValue(value);
     return Number.isFinite(number) ? number : null;
   }
@@ -203,7 +204,7 @@ export function createLiveMatchIntelligenceRuntime(deps) {
     const cutoff=Math.max(0,minute-15);
     const recent=eventRows.filter(event=>{
       const eventAt=eventMinute(event?.minute);
-      return eventAt !== null && eventAt >= cutoff && eventAt <= minute+15;
+      return eventAt !== null && eventAt >= cutoff && eventAt <= minute;
     });
     if (!recent.length) return null;
   
@@ -354,7 +355,7 @@ export function createLiveMatchIntelligenceRuntime(deps) {
     )));
     const recentCritical=minuteValue !== null && eventRows.some(event=>{
       const eventAt=eventMinute(event?.minute);
-      if (eventAt === null || eventAt < Math.max(0,minute-10) || eventAt > minute+15) return false;
+      if (eventAt === null || eventAt < Math.max(0,minute-10) || eventAt > minute) return false;
       const type=String(event?.type || '').toLowerCase();
       const detail=String(event?.detail || '').toLowerCase();
       return type==='goal' || (type==='card' && detail.includes('red'));
