@@ -4918,12 +4918,23 @@ function liveAiCoachHtml(ai, match) {
   const xgText = Number.isFinite(Number(xg.home)) && Number.isFinite(Number(xg.away)) ? `${Number(xg.home).toFixed(2)}:${Number(xg.away).toFixed(2)}` : '—';
   const xgQualityLabel = publicText(ai.current?.xgQuality?.label || '');
   const watch = Array.isArray(ai.watchNext) ? ai.watchNext.slice(0,3) : [];
+  const currentMinute = typeof ai.current?.minute === 'number' && Number.isFinite(ai.current.minute)
+    ? Math.max(0,Math.min(180,Math.round(ai.current.minute)))
+    : null;
+  const scoreKnown = ai.current?.scoreKnown === true
+    && typeof match?.score?.home === 'number'
+    && Number.isFinite(match.score.home)
+    && typeof match?.score?.away === 'number'
+    && Number.isFinite(match.score.away);
+  const scoreText = scoreKnown
+    ? `${match.score.home}:${match.score.away}`
+    : '—:—';
   return `<section class="panel live-ai-coach ${tone}">
-    <div class="live-ai-head"><div><span>AI В ЭФИРЕ · ${Number(match.elapsed || 0) ? `${Number(match.elapsed)}′` : 'сейчас'}</span><h2>${escapeHtml(publicText(ai.headline || 'Читаю матч в реальном времени'))}</h2></div><b>${Math.round(Number(ai.confidence || 0))}%</b></div>
+    <div class="live-ai-head"><div><span>AI В ЭФИРЕ · ${currentMinute !== null ? `${currentMinute}′` : 'сейчас'}</span><h2>${escapeHtml(publicText(ai.headline || 'Читаю матч в реальном времени'))}</h2></div><b>${Math.round(Number(ai.confidence || 0))}%</b></div>
     <p class="live-ai-summary">${escapeHtml(publicText(ai.summary || ''))}</p>
     <div class="live-ai-decision"><span>Решение AI сейчас</span><strong>${escapeHtml(publicText(ai.action?.label || 'Наблюдать'))}</strong><small>${escapeHtml(publicText(ai.action?.reason || 'Дождитесь более устойчивой картины.'))}</small></div>
     <div class="live-ai-grid">
-      <div><span>Счёт</span><strong>${match.score?.home ?? 0}:${match.score?.away ?? 0}</strong><small>${Number(match.elapsed || 0) ? `${Number(match.elapsed)} мин.` : 'Матч идёт'}</small></div>
+      <div><span>Счёт</span><strong>${scoreText}</strong><small>${currentMinute !== null ? `${currentMinute} мин.` : 'Матч идёт'}</small></div>
       <div><span>Давление</span><strong>${pressureText}</strong><small>${escapeHtml(publicText(ai.current?.pressureLeaderLabel || 'Баланс'))}</small></div>
       <div><span>xG</span><strong>${xgText}</strong><small>${escapeHtml(publicText(ai.current?.chanceLabel || 'По доступным данным'))}${xgQualityLabel ? ` · ${escapeHtml(xgQualityLabel)}` : ''}</small></div>
       <div><span>Риск сценария</span><strong>${escapeHtml(publicText(ai.volatility?.label || 'Средний'))}</strong><small>${escapeHtml(publicText(ai.volatility?.reason || 'Матч может быстро измениться.'))}</small></div>
