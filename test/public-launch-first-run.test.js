@@ -24,7 +24,7 @@ test('first run actions reuse existing search surfaces and dismiss the guide',()
   const searchBlock=firstRun.slice(searchStart,favoriteStart);
   const favoriteBlock=firstRun.slice(favoriteStart,firstRun.indexOf('return {',favoriteStart));
   assert.match(searchBlock,/dismissFirstRunGuide\(\)/);
-  assert.match(searchBlock,/elementById\('matchSearch'\)\?\.focus/);
+  assert.match(searchBlock,/focusMatchSearch\(\)/);
   assert.match(favoriteBlock,/dismissFirstRunGuide\(\)/);
   assert.match(favoriteBlock,/showView\('searchView'\)/);
   assert.match(favoriteBlock,/globalSearchInput/);
@@ -33,20 +33,20 @@ test('first run actions reuse existing search surfaces and dismiss the guide',()
 
 test('first run guide is one-time local UI state with privacy-safe product actions',()=>{
   assert.match(firstRun,/FIRST_RUN_GUIDE_KEY/);
-  assert.match(firstRun,/storage\.getItem\(FIRST_RUN_GUIDE_KEY\)/);
-  assert.match(firstRun,/storage\.setItem\(FIRST_RUN_GUIDE_KEY, '1'\)/);
-  assert.match(firstRun,/sendProductAction\('first_run_search', 'matchesView'\)/);
-  assert.match(firstRun,/sendProductAction\('first_run_favorite', 'searchView'\)/);
+  assert.match(firstRun,/storageObject\.getItem\(FIRST_RUN_GUIDE_KEY\)/);
+  assert.match(firstRun,/storageObject\.setItem\(FIRST_RUN_GUIDE_KEY,'1'\)/);
+  assert.match(firstRun,/safeCall\(sendProductAction,'first_run_search','matchesView'\)/);
+  assert.match(firstRun,/safeCall\(sendProductAction,'first_run_favorite','searchView'\)/);
   assert.match(app,/function sendProductAction[\s\S]*?try \{[\s\S]*?sendClientTelemetry\('product_action'/);
 });
 
 test('direct launch intent bypasses the guide and is not overwritten by the default Home route',()=>{
   assert.match(firstRun,/function hasDirectLaunchIntent\(\)/);
-  assert.match(firstRun,/guide\.hidden = dismissed \|\| hasDirectLaunchIntent\(\)/);
+  assert.match(firstRun,/const hidden=dismissed \|\| hasDirectLaunchIntent\(\)/);
   assert.match(firstRun,/view === 'search'/);
   assert.match(firstRun,/view === 'history'/);
   assert.match(firstRun,/\['analysis', 'center'\]\.includes\(action\)/);
-  assert.match(app,/if \(!hasDirectLaunchIntent\(\)\) showView\('matchesView'\)/);
+  assert.match(firstRun,/startParam[\s\S]*view==='search'[\s\S]*view==='history'[\s\S]*\['analysis','center'\]\.includes\(action\)/);
 });
 
 test('first run guide keeps mobile touch targets and collapses to one column on narrow screens',()=>{
