@@ -152,7 +152,7 @@ export function createServiceWiringRuntime(deps = {}) {
     hasSupabase,
     loadRuntimeControls,
     supaSelectPaged,
-    loadLineupNotificationSnapshot,
+    loadLineupSnapshot: loadLineupNotificationSnapshot,
     deliverClaimedReminder,
     filterNotificationRecipients: filterSmartNotificationRecipients,
     recordOpsEvent,
