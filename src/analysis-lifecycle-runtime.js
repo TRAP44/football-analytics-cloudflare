@@ -268,6 +268,10 @@ export function createAnalysisLifecycleRuntime(deps) {
       {match:{date:'2026-09-23T17:55:00Z',status:'1H'}},
       ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW,
     );
+    const clockStarted=analysisKickoffHandoff(
+      {match:{date:'2026-09-23T18:00:00Z',status:'NS'}},
+      ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW,
+    );
     const finished=analysisKickoffHandoff(
       {match:{date:'2026-09-23T15:00:00Z',status:'FT'}},
       ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW,
@@ -283,11 +287,13 @@ export function createAnalysisLifecycleRuntime(deps) {
         && !imminent.locked
         && live.state==='live'
         && live.locked
+        && clockStarted.state==='live'
+        && clockStarted.locked
         && finished.state==='finished'
         && finished.locked
         && unknown.state==='unknown'
         && unknown.locked,
-      cases:5,
+      cases:6,
     };
   }
 
