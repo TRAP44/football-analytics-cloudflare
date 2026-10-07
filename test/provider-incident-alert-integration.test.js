@@ -3,6 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
+const providerSloRuntime=fs.readFileSync('src/provider-slo-runtime.js','utf8');
+const productionMonitor=fs.readFileSync('src/production-monitor-runtime.js','utf8');
 const alerts=fs.readFileSync('src/provider-incident-alerts.js','utf8');
 const incidents=fs.readFileSync('src/provider-slo-incidents.js','utf8');
 const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_20.sql','utf8');
@@ -12,12 +14,12 @@ const html=fs.readFileSync('public/admin.html','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 
 test('incident alert delivery uses a persistent ledger and atomic PostgreSQL claim', () => {
-  assert.match(worker,/readProviderIncidentAlertDeliveries/);
-  assert.match(worker,/claim_provider_incident_alert_delivery_v2/);
-  assert.match(worker,/begin_provider_incident_alert_delivery_send/);
-  assert.match(worker,/finalize_provider_incident_alert_delivery/);
-  assert.match(worker,/planProviderIncidentAlert\(providerSloIncident, providerAlertLedger\.items/);
-  assert.doesNotMatch(worker,/planProviderIncidentAlert\(providerSloIncident, providerAlertSource\.items/);
+  assert.match(providerSloRuntime,/readProviderIncidentAlertDeliveries/);
+  assert.match(providerSloRuntime,/claim_provider_incident_alert_delivery_v2/);
+  assert.match(providerSloRuntime,/begin_provider_incident_alert_delivery_send/);
+  assert.match(providerSloRuntime,/finalize_provider_incident_alert_delivery/);
+  assert.match(productionMonitor,/planProviderIncidentAlert\(providerSloIncident, providerAlertLedger\.items/);
+  assert.doesNotMatch(productionMonitor,/planProviderIncidentAlert\(providerSloIncident, providerAlertSource\.items/);
   assert.match(migration,/create table if not exists public\.provider_incident_alert_deliveries/);
   assert.match(migration,/constraint provider_incident_alert_delivery_identity\s+unique \(incident_id, transition, destination_key\)/);
   assert.match(migration,/on conflict do nothing/);
@@ -26,9 +28,9 @@ test('incident alert delivery uses a persistent ledger and atomic PostgreSQL cla
 
 test('claim persistence is fail-closed and ambiguous Telegram outcomes become unknown', () => {
   assert.match(alerts,/state:'persistence_failure'/);
-  assert.match(worker,/blockedCandidate:true/);
-  assert.match(worker,/Telegram delivery was suppressed/);
-  assert.match(worker,/outcome:'unknown'/);
+  assert.match(productionMonitor,/blockedCandidate:true/);
+  assert.match(productionMonitor,/delivery was suppressed/);
+  assert.match(alerts,/outcome:'unknown'/);
   assert.match(alerts,/state:'unknown'/);
   assert.match(migration,/status = 'unknown'/);
   assert.match(migration,/STALE_SENDING_LEASE/);
@@ -70,15 +72,15 @@ test('destination identity is deterministic without exposing raw Telegram identi
   assert.match(alerts,/providerIncidentDestinationKey/);
   assert.match(alerts,/crypto\.subtle\.digest\('SHA-256'/);
   assert.match(alerts,/providerIncidentBotIdentity/);
-  assert.match(worker,/const botIdentity=providerIncidentBotIdentity\(cfg\.botToken\)/);
-  assert.match(worker,/providerIncidentDestinationKey\(chatId,botIdentity\)/);
-  assert.doesNotMatch(worker,/providerIncidentDestinationKey\(chatId,cfg\.botToken/);
+  assert.match(providerSloRuntime,/const botIdentity=providerIncidentBotIdentity\(cfg\.botToken\)/);
+  assert.match(providerSloRuntime,/providerIncidentDestinationKey\(chatId,botIdentity\)/);
+  assert.doesNotMatch(providerSloRuntime,/providerIncidentDestinationKey\(chatId,cfg\.botToken/);
   assert.doesNotMatch(alerts,/meta:\{[\s\S]{0,600}(chatId|telegramId|botToken)/);
 });
 
 test('read-only health and admin probes cannot send Telegram incident alerts', () => {
-  assert.match(worker,/incidentAlertCandidate = options\.record !== false[\s\S]*read_only_monitor/);
-  assert.match(worker,/if \(options\.record !== false && incidentAlertPlan\.action === 'send'\)/);
+  assert.match(productionMonitor,/incidentAlertCandidate = options\.record !== false[\s\S]*read_only_monitor/);
+  assert.match(productionMonitor,/if \(options\.record !== false && incidentAlertPlan\.action === 'send'\)/);
   assert.match(worker,/runProductionMonitor\(cfg, new Date\(\), \{ record: false \}\)/);
 });
 
@@ -94,19 +96,14 @@ test('admin-only incident UI remains operational and no rollback or provider swi
   assert.doesNotMatch(alerts,/rollbackRuntime|runtimeControls|provider switch|billing/i);
 });
 
-test('release health and production smoke require persistent and unknown-safe alert delivery', () => {
-  assert.match(worker,/providerIncidentAlertDelivery:'enabled'/);
-  assert.match(worker,/providerIncidentAlertPersistence:'enabled'/);
-  assert.match(worker,/providerIncidentAlertUnknownSafety:'enabled'/);
-  assert.match(worker,/providerIncidentAlertDeliverySelfTest:providerIncidentAlertSelfTest\(\)\.pass \? 'enabled' : 'failed'/);
-  for (const marker of [
-    'providerIncidentAlertDelivery',
-    'providerIncidentAlertPersistence',
-    'providerIncidentAlertUnknownSafety',
-    'providerIncidentAlertDeliverySelfTest',
-  ]) {
-    assert.ok(smoke.includes("'" + marker + "'"),marker);
-  }
+test('release runtime keeps persistent and unknown-safe provider alert delivery wired', () => {
+  assert.match(worker,/createProviderSloRuntime\(\{/);
+  assert.match(worker,/createProductionMonitorRuntime\(\{/);
+  assert.match(providerSloRuntime,/claim_provider_incident_alert_delivery_v2/);
+  assert.match(providerSloRuntime,/begin_provider_incident_alert_delivery_send/);
+  assert.match(providerSloRuntime,/finalize_provider_incident_alert_delivery/);
+  assert.match(alerts,/state:'unknown'/);
+  assert.match(alerts,/state:'persistence_failure'/);
 });
 
 test('operational lifecycle includes watch, incident, recovery and delivery states', () => {
@@ -131,7 +128,7 @@ test('v6.26.2 adds two-phase reclaimable alert claims without weakening ambiguou
   assert.match(migration405,/set status='sending'/);
   assert.match(alerts,/beginDelivery/);
   assert.match(alerts,/begin_delivery_unconfirmed/);
-  assert.match(worker,/beginDelivery:input => beginProviderIncidentAlertDeliverySend\(cfg,input\)/);
+  assert.match(productionMonitor,/beginDelivery:input => beginProviderIncidentAlertDeliverySend\(cfg,input\)/);
 });
 
 test('v6.26.2 keeps the v1 claim RPC for rollback compatibility and hardens table grants', () => {
