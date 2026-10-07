@@ -102,6 +102,7 @@ test('public and admin immutable entrypoints use one exact current revision toke
       '/styles.css',
       '/styles/public-shell.css',
       '/styles/premium-ui.css',
+      '/styles/admin.css',
     ],
   );
 });
