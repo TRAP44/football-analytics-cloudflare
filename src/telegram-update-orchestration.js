@@ -390,10 +390,15 @@ export function createTelegramUpdateProcessor(deps) {
     const newsImpactRecoveryAction=data.match(/^ni:r:(material|detail|stable|guarded|baseline_missing|unavailable):(squads|market|recheck|news|share):(retry|retry_soon|retry_later|wait_quota_reset|open_full_ai):(\d+)$/);
     if (callbackChatId && (newsImpactAction || newsImpactRecoveryAction)) {
       const matched=newsImpactRecoveryAction || newsImpactAction;
-      const decision=cleanNewsImpactDecisionCode(matched[1]);
-      const action=cleanNewsImpactActionCode(matched[2]);
-      const recoveryCode=newsImpactRecoveryAction ? cleanNewsImpactRecoveryCode(matched[3]) : '';
+      const decision=textValue(safeCall(cleanNewsImpactDecisionCode,'',matched[1]),40);
+      const action=textValue(safeCall(cleanNewsImpactActionCode,'',matched[2]),40);
+      const recoveryCode=newsImpactRecoveryAction
+        ? textValue(safeCall(cleanNewsImpactRecoveryCode,'',matched[3]),40)
+        : '';
       const fixtureId=positiveInteger(matched[newsImpactRecoveryAction ? 4 : 3]);
+      if (!decision || !action || !fixtureId || (newsImpactRecoveryAction && !recoveryCode)) {
+        return json({ok:false,error:'news_impact_action_invalid'},400);
+      }
       if (recoveryCode) {
         await swallowAsync(recordNewsImpactRecoveryAttempt,cfg,{
           userId:callbackUserId,
@@ -456,7 +461,8 @@ export function createTelegramUpdateProcessor(deps) {
     const newsAiMatchAction=datedNewsAiMatchAction || legacyNewsAiMatchAction;
     if (callbackChatId && newsAiMatchAction) {
       const fixtureId=positiveInteger(newsAiMatchAction[1]);
-      const newsPublishedAt=newsPublishedAtFromDayToken(datedNewsAiMatchAction?.[2] || '');
+      if (!fixtureId) return json({ok:false,error:'fixture_id_invalid'},400);
+      const newsPublishedAt=safeCall(newsPublishedAtFromDayToken,null,datedNewsAiMatchAction?.[2] || '');
       backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_ai_intent',channel:'telegram',fixtureId,metadata:{mode:'direct_fixture',linking:'smart_fixture'}});
       backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_return',channel:'telegram',fixtureId,metadata:{origin:'news_ai_cta'}});
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Сравниваю AI до и после новости…'}).catch(()=>null);
@@ -472,9 +478,11 @@ export function createTelegramUpdateProcessor(deps) {
         await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Не удалось определить клуб',show_alert:true}).catch(()=>null);
         return json({ok:true});
       }
-      const publishedAt=newsPublishedAtFromDayToken(datedNewsAiTeamAction?.[2] || '');
+      const publishedAt=safeCall(newsPublishedAtFromDayToken,null,datedNewsAiTeamAction?.[2] || '');
       if (publishedAt) {
-        const parts={first:team.canonical,second:'',query:team.canonical,intent:'analysis'};
+        const canonical=textValue(team.canonical,80);
+        if (!canonical) return json({ok:false,error:'news_team_invalid'},400);
+        const parts={first:canonical,second:'',query:canonical,intent:'analysis'};
         const matches=await swallowAsync(botRemoteTeamMatches,parts,cfg) || [];
         const link=plainObject(safeCall(
           newsRelevantFixture,
@@ -484,6 +492,7 @@ export function createTelegramUpdateProcessor(deps) {
         ));
         if (link?.fixture?.fixtureId) {
           const fixtureId=positiveInteger(link.fixture.fixtureId);
+          if (!fixtureId) return json({ok:false,error:'fixture_id_invalid'},400);
           backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_ai_intent',channel:'telegram',fixtureId,metadata:{mode:'team_smart_link',team:newsTeamToken(team),linking:'smart_fixture'}});
           backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_return',channel:'telegram',fixtureId,metadata:{origin:'news_ai_smart_link'}});
           await swallowAsync(telegramApi,'answerCallbackQuery',cfg,{callback_query_id:callbackId,text:`Нашёл релевантный матч ${textValue(team.canonical,80) || 'клуба'}`});
@@ -501,6 +510,7 @@ export function createTelegramUpdateProcessor(deps) {
     const newsMatchAction=data.match(/^news:match:(\d+)$/);
     if (callbackChatId && newsMatchAction) {
       const fixtureId=positiveInteger(newsMatchAction[1]);
+      if (!fixtureId) return json({ok:false,error:'fixture_id_invalid'},400);
       backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_return',channel:'telegram',fixtureId,metadata:{origin:'team_news'}});
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Открываю матч из новости…'}).catch(()=>null);
       await sendBotFixtureMenu(request,cfg,callbackUserId,callbackChatId,fixtureId);
@@ -508,19 +518,24 @@ export function createTelegramUpdateProcessor(deps) {
     }
     const newsTeamAction=data.match(/^news:team:(\d+)$/);
     if (callbackChatId && newsTeamAction) {
+      const teamId=positiveInteger(newsTeamAction[1]);
+      if (!teamId) return json({ok:false,error:'team_id_invalid'},400);
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Ищу новости клуба…'}).catch(()=>null);
-      await sendFavoriteTeamNews(request,cfg,callbackUserId,callbackChatId,positiveInteger(newsTeamAction[1]),{force:false});
+      await sendFavoriteTeamNews(request,cfg,callbackUserId,callbackChatId,teamId,{force:false});
       return json({ok:true});
     }
     const newsTeamRefresh=data.match(/^news:team_refresh:(\d+)$/);
     if (callbackChatId && newsTeamRefresh) {
+      const teamId=positiveInteger(newsTeamRefresh[1]);
+      if (!teamId) return json({ok:false,error:'team_id_invalid'},400);
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Обновляю новости клуба…'}).catch(()=>null);
-      await sendFavoriteTeamNews(request,cfg,callbackUserId,callbackChatId,positiveInteger(newsTeamRefresh[1]),{force:true});
+      await sendFavoriteTeamNews(request,cfg,callbackUserId,callbackChatId,teamId,{force:true});
       return json({ok:true});
     }
     const favoriteToggle=data.match(/^favorite:toggle:(\d+):(\d+)$/);
     if (callbackChatId && favoriteToggle) {
       const teamId=positiveInteger(favoriteToggle[1]), fixtureId=positiveInteger(favoriteToggle[2]);
+      if (!teamId || !fixtureId) return json({ok:false,error:'favorite_toggle_invalid'},400);
       try {
         const result=plainObject(await toggleBotFavorite(callbackUserId,teamId,cfg));
         if (!result || typeof result.active !== 'boolean') throw new Error('Некорректный ответ избранного.');
@@ -560,8 +575,10 @@ export function createTelegramUpdateProcessor(deps) {
     }
     const favoriteAction=data.match(/^favorite:team:(\d+)$/);
     if (callbackChatId && favoriteAction) {
+      const teamId=positiveInteger(favoriteAction[1]);
+      if (!teamId) return json({ok:false,error:'team_id_invalid'},400);
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Ищу матчи клуба…'}).catch(()=>null);
-      await sendBotFavoriteTeamMatches(request,cfg,callbackUserId,callbackChatId,positiveInteger(favoriteAction[1]));
+      await sendBotFavoriteTeamMatches(request,cfg,callbackUserId,callbackChatId,teamId);
       return json({ok:true});
     }
     if (callbackChatId && data === 'postmatch:return:off') {
@@ -584,6 +601,7 @@ export function createTelegramUpdateProcessor(deps) {
     const returnReview=data.match(/^match:return_review:(\d+)$/);
     if (callbackChatId && returnReview) {
       const fixtureId=positiveInteger(returnReview[1]);
+      if (!fixtureId) return json({ok:false,error:'fixture_id_invalid'},400);
       backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'post_match_return_open',channel:'telegram',fixtureId});
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Открываю итог AI…'}).catch(()=>null);
       await sendBotFixtureSection(request,cfg,callbackUserId,callbackChatId,fixtureId,'review');
@@ -592,6 +610,7 @@ export function createTelegramUpdateProcessor(deps) {
     const shareAction=data.match(/^match:share:(\d+)$/);
     if (callbackChatId && shareAction) {
       const fixtureId=positiveInteger(shareAction[1]);
+      if (!fixtureId) return json({ok:false,error:'fixture_id_invalid'},400);
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Готовлю ссылку…'}).catch(()=>null);
       try { await sendBotFixtureShareCard(request,cfg,callbackUserId,callbackChatId,fixtureId); }
       catch { await telegramApi('sendMessage',cfg,{chat_id:callbackChatId,text:'Не удалось подготовить ссылку на этот матч.'}).catch(()=>null); }
@@ -601,6 +620,7 @@ export function createTelegramUpdateProcessor(deps) {
     if (callbackChatId && matchAction) {
       const section = matchAction[1];
       const fixtureId = positiveInteger(matchAction[2]);
+      if (!fixtureId) return json({ok:false,error:'fixture_id_invalid'},400);
       await telegramApi('answerCallbackQuery', cfg, {
         callback_query_id: callbackId,
         text: section === 'menu' ? 'Готовлю короткую AI-оценку…' : section === 'review' ? 'Сверяю прогноз с фактом…' : 'Собираю футбольные данные…',
