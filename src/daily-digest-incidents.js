@@ -777,7 +777,12 @@ export function assessDailyDigestReliabilitySlo(rows = [], {
   const now=normalizedNowMs(nowMs);
   const date=utcDate(now);
   const windowDays=normalizedWindowDays(days);
-  const startMs=now-windowDays*24*3600_000;
+  const nowDate=new Date(now);
+  const startMs=Date.UTC(
+    nowDate.getUTCFullYear(),
+    nowDate.getUTCMonth(),
+    nowDate.getUTCDate()-(windowDays-1),
+  );
   const normalized=(Array.isArray(rows) ? rows : [])
     .map(normalizeEvent)
     .filter(event=>{
@@ -824,7 +829,7 @@ export function assessDailyDigestReliabilitySlo(rows = [], {
       reason:'missing_run',
       date,
       message:`Daily Digest has no operational run event for ${date} after the 08:15 UTC grace point.`,
-      reliability:summarizeDailyDigestReliability(normalized,{days:windowDays,nowMs:now}),
+      reliability:summarizeDailyDigestReliability(rows,{days:windowDays,nowMs:now}),
       policy,
       diagnostics,
     };
