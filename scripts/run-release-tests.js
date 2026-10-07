@@ -20,6 +20,7 @@ const RELEASE_TESTS = Object.freeze([
   'test/openligadb-events-rc132.test.js',
   'test/operational-orchestration-runtime.test.js',
   'test/ops-release-identity-persistence.test.js',
+  'test/p0-core-match-ai-flow.test.js',
   'test/post-deploy-smoke.test.js',
   'test/production-deploy-noop-smoke-rc144.test.js',
   'test/production-deploy-provenance-rc111.test.js',
