@@ -732,21 +732,6 @@ main { position: relative; z-index: 1; }
 .summary-pill.quality { color: #86efac; border-color: rgba(34,197,94,.2); background: rgba(34,197,94,.045); }
 .summary-pill.quality b { color: #bbf7d0; }
 .summary-pill.muted-pill { border-style: dashed; }
-  margin-bottom: 13px;
-  border-radius: 21px;
-  border-color: var(--line-soft);
-  background: color-mix(in srgb, var(--surface) 68%, transparent);
-  box-shadow: 0 12px 34px rgba(0,0,0,.08), inset 0 1px rgba(255,255,255,.02);
-}
-  min-height: 60px;
-  border-bottom-color: var(--line-soft);
-  background: linear-gradient(135deg, color-mix(in srgb,var(--surface) 97%,transparent), color-mix(in srgb,var(--accent) 3%, var(--surface)));
-  padding: 10px 12px;
-}
-  border-radius: 13px;
-  background: rgba(148,163,184,.045);
-  border: 1px solid var(--line-soft);
-}
 .match-card {
   position: relative;
   overflow: hidden;
