@@ -44,7 +44,7 @@ test('Dependabot groups routine minor and patch maintenance but leaves major upd
 });
 
 
-test('public PR automation cannot execute untrusted repository code on the persistent runner', () => {
+test('public PR automation stays on ephemeral runners and fork database work stays blocked', () => {
   assert.match(codeql, /runs-on:\s*ubuntu-latest/);
   assert.match(privileged, /runs-on:\s*ubuntu-latest/);
 
@@ -54,6 +54,8 @@ test('public PR automation cannot execute untrusted repository code on the persi
   );
   assert.match(qualityUnitJob, /runs-on:\s*ubuntu-latest/);
   assert.doesNotMatch(qualityUnitJob, /self-hosted/);
+  assert.match(quality, /database-integration:[\s\S]*runs-on:\s*ubuntu-latest/);
+  assert.doesNotMatch(quality, /database-integration:[\s\S]*runs-on:\s*\[self-hosted/);
 
   assert.match(
     quality,
