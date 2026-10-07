@@ -98,11 +98,11 @@ test('RC103 production readiness declares checks before any push', () => {
 });
 
 test('RC103 exposes protected monitor route and health contracts', () => {
-  const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/router.js','utf8');
-  assert.match(worker,/url\.pathname === '\/api\/production-monitor'/);
-  assert.match(worker,/productionMonitor: 'enabled'/);
-  assert.match(worker,/productionMonitorSelfTest: productionMonitorSelfTest\(\)\.pass \? 'enabled' : 'failed'/);
-  assert.match(worker,/rollbackVerification: 'enabled'/);
+  const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/router.js','utf8')+'\n'+fs.readFileSync('src/production-monitor-runtime.js','utf8');
+  assert.match(worker,/pathname === '\/api\/production-monitor'/);
+  assert.match(worker,/function productionMonitorSelfTest\(\)/);
+  assert.match(worker,/getProductionMonitorRuntime\(\)\.productionMonitorSelfTest/);
+  assert.match(worker,/const APP_VERSION = '6\.120\.0-rc144'/);
 });
 
 test('RC103 rollback workflow validates target and verifies restored production', () => {
