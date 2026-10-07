@@ -90,7 +90,7 @@ export function createTelegramCampaignRuntime(deps = {}) {
       const event=eventName(row.event_name);
       const source=cleanPart(row.source,32,'telegram');
       const campaign=cleanPart(row.campaign,40,'direct');
-      content=cleanPart(row.content,48,'');
+      const content=cleanPart(row.content,48,'');
       const mediaRelevant=Boolean(content)
         || MEDIA_LINK_EVENTS.has(event)
         || event==='fixture_deep_link_open'
