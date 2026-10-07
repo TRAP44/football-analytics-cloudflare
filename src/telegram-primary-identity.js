@@ -14,10 +14,6 @@ function plainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
 }
 
-function textValue(value) {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
 function tokenValue(value) {
   if (typeof value !== 'string' || value.length > MAX_TOKEN_LENGTH) return '';
   const token=value.trim();
