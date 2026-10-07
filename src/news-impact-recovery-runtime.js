@@ -43,19 +43,22 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   } = deps;
 
   function newsImpactDecisionCard(newsImpact = {}) {
-    if (!newsImpact?.requested) return null;
-    const reason=String(newsImpact.reasonCode || '');
-    if (newsImpact.compared && newsImpact.material) return {
+    if (!newsImpact || typeof newsImpact!=='object' || Array.isArray(newsImpact) || newsImpact.requested!==true) return null;
+    const compared=newsImpact.compared===true;
+    const material=newsImpact.material===true;
+    const stable=newsImpact.stable===true;
+    const reason=typeof newsImpact.reasonCode==='string' ? newsImpact.reasonCode.trim() : '';
+    if (compared && material) return {
       code:'material',icon:'🔴',label:'Существенное изменение',
       headline:'После новости свежая проверка обнаружила заметный сдвиг во входных данных AI.',
       action:'Открыть полный разбор и проверить обновлённый сценарий матча.',priority:4,
     };
-    if (newsImpact.compared && newsImpact.stable) return {
+    if (compared && stable) return {
       code:'stable',icon:'🟢',label:'Сценарий стабилен',
       headline:'После новости значимых изменений в AI-входах не найдено.',
       action:'Срочного действия нет; продолжайте следить за составами и рынком.',priority:1,
     };
-    if (newsImpact.compared) return {
+    if (compared) return {
       code:'detail',icon:'🟡',label:'Изменились детали',
       headline:'Изменились отдельные данные, но основной AI-сценарий не сдвинулся существенно.',
       action:'Проверить изменившиеся блоки перед стартом матча.',priority:2,
@@ -3429,34 +3432,65 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   }
   
   function newsImpactDecisionKeyboard(request, match = {}, favorites = [], newsImpact = null) {
-    const fixtureId=Number(match?.fixtureId || 0);
-    if (!fixtureId) return footballBotKeyboard(request);
+    const fixtureId=newsImpactPositiveId(match?.fixtureId);
+    if (!fixtureId) {
+      try {
+        const fallback=typeof footballBotKeyboard==='function' ? footballBotKeyboard(request) : null;
+        return fallback && typeof fallback==='object' && !Array.isArray(fallback)
+          ? fallback
+          : {inline_keyboard:[]};
+      } catch {
+        return {inline_keyboard:[]};
+      }
+    }
     const card=newsImpactDecisionCard(newsImpact);
     const decision=cleanNewsImpactDecisionCode(card?.code) || 'unavailable';
-    const tracked=(action,text)=>({text,callback_data:newsImpactActionCallback(decision,action,fixtureId)});
-    const fullAi=(text)=>({text,web_app:{url:newsImpactTrackedAnalysisUrl(request,fixtureId,decision)}});
+    const tracked=(action,text)=>{
+      const callbackData=newsImpactActionCallback(decision,action,fixtureId);
+      return callbackData ? {text,callback_data:callbackData} : null;
+    };
+    const fullAi=(text)=>{
+      const url=newsImpactTrackedAnalysisUrl(request,fixtureId,decision);
+      return url ? {text,web_app:{url}} : null;
+    };
     const rows=[];
+    const pushRow=(...buttons)=>{
+      const safeButtons=buttons.filter(Boolean);
+      if (safeButtons.length) rows.push(safeButtons);
+    };
     if (decision==='material') {
-      rows.push([fullAi('📊 Открыть обновлённый AI-разбор')]);
-      rows.push([tracked('squads','👥 Проверить составы'),tracked('market','💹 Проверить рынок')]);
+      pushRow(fullAi('📊 Открыть обновлённый AI-разбор'));
+      pushRow(tracked('squads','👥 Проверить составы'),tracked('market','💹 Проверить рынок'));
     } else if (decision==='detail') {
-      rows.push([fullAi('🧠 Открыть полный разбор')]);
-      rows.push([tracked('recheck','🔄 Перепроверить AI')]);
+      pushRow(fullAi('🧠 Открыть полный разбор'));
+      pushRow(tracked('recheck','🔄 Перепроверить AI'));
     } else if (decision==='stable') {
-      rows.push([tracked('news','📰 Ещё новости'),fullAi('📊 Полный AI-разбор')]);
+      pushRow(tracked('news','📰 Ещё новости'),fullAi('📊 Полный AI-разбор'));
     } else {
-      rows.push([tracked('recheck','🔄 Повторить AI-проверку'),fullAi('📊 Полный AI-разбор')]);
+      pushRow(tracked('recheck','🔄 Повторить AI-проверку'),fullAi('📊 Полный AI-разбор'));
     }
-    const favoriteRow=favoriteMatchTeamRow(match,favorites);
+    let favoriteRow=[];
+    try {
+      const candidate=typeof favoriteMatchTeamRow==='function' ? favoriteMatchTeamRow(match,Array.isArray(favorites) ? favorites : []) : [];
+      favoriteRow=Array.isArray(candidate) ? candidate.filter(Boolean) : [];
+    } catch {}
     if (favoriteRow.length) rows.push(favoriteRow);
-    rows.push([tracked('share','↗ Поделиться матчем')]);
+    pushRow(tracked('share','↗ Поделиться матчем'));
     return {inline_keyboard:rows};
   }
   function newsImpactDecisionDrill() {
     const material=newsImpactDecisionCard({requested:true,compared:true,material:true,stable:false,reasonCode:'material_change'});
     const stable=newsImpactDecisionCard({requested:true,compared:true,material:false,stable:true,reasonCode:'stable'});
     const guarded=newsImpactDecisionCard({requested:true,compared:false,material:false,stable:true,reasonCode:'snapshot_not_before_news'});
-    return {pass:material?.code==='material' && material?.priority===4 && stable?.code==='stable' && guarded?.code==='guarded' && guarded?.label==='Причинность не подтверждается',cases:5};
+    const malformed=newsImpactDecisionCard({requested:true,compared:'false',material:'true',stable:'true',reasonCode:'snapshot_not_before_news'});
+    return {pass:material?.code==='material'
+      && material?.priority===4
+      && stable?.code==='stable'
+      && guarded?.code==='guarded'
+      && guarded?.label==='Причинность не подтверждается'
+      && malformed?.code==='guarded'
+      && newsImpactDecisionCard({requested:'true',compared:true})===null,
+      cases:7};
   }
 
   return {
