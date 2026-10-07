@@ -13,6 +13,7 @@
     "npm run check",
     "npm test",
     "npm run lint",
+    "npm run verify:supabase",
     "npm run verify:release",
     "npm run verify:worker"
   ],
