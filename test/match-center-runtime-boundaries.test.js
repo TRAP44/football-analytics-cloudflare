@@ -180,6 +180,103 @@ test('cache outages fail soft while cross-fixture cache rows are rejected', asyn
   assert.equal((await cacheDown.apiMatchCenter(request(),{})).status,200);
 });
 
+test('upcoming cache is bypassed once scheduled kickoff has passed', async () => {
+  let providerCalls=0;
+  const liveFixture=fixture({
+    fixture:{
+      ...fixture().fixture,
+      date:'2020-01-01T12:00:00Z',
+      status:{short:'1H',long:'First Half',elapsed:8},
+    },
+  });
+  const events=[];
+  const runtime=createMatchCenterRuntime(baseDeps({
+    getCache:async()=>({
+      generatedAt:'2020-01-01T11:59:00Z',
+      mode:'upcoming',
+      match:{
+        fixtureId:123,
+        date:'2020-01-01T12:00:00Z',
+        status:'NS',
+      },
+      refreshSeconds:0,
+    }),
+    loadProviderFixture:async()=>{
+      providerCalls+=1;
+      return liveFixture;
+    },
+    recordOpsEvent:async(_cfg,event)=>events.push(event),
+  }));
+
+  const response=await runtime.apiMatchCenter(request(),{});
+
+  assert.equal(providerCalls,1);
+  assert.equal(response.status,200);
+  assert.equal(response.body.mode,'live');
+  assert.ok(
+    events.some(
+      event=>event.code==='MATCH_CENTER_CACHE_KICKOFF_EXPIRED',
+    ),
+  );
+});
+
+test('cached live refresh cadence is recomputed from current runtime controls and budget', async () => {
+  const cached={
+    generatedAt:new Date().toISOString(),
+    mode:'live',
+    match:{
+      fixtureId:123,
+      date:'2030-01-01T12:00:00Z',
+      status:'1H',
+    },
+    refreshSeconds:15,
+    availability:{},
+    dataFreshness:{},
+  };
+
+  const disabled=createMatchCenterRuntime(baseDeps({
+    getCache:async()=>cached,
+    runtimeControlsSnapshot:()=>({liveEnabled:false}),
+    providerBudgetProfile:()=>({
+      paid:true,
+      mode:'normal',
+      liveRefreshSeconds:20,
+    }),
+  }));
+  assert.equal(
+    (await disabled.apiMatchCenter(request(),{})).body.refreshSeconds,
+    0,
+  );
+
+  const malformed=createMatchCenterRuntime(baseDeps({
+    getCache:async()=>cached,
+    runtimeControlsSnapshot:()=>({}),
+    providerBudgetProfile:()=>({
+      paid:true,
+      mode:'normal',
+      liveRefreshSeconds:20,
+    }),
+  }));
+  assert.equal(
+    (await malformed.apiMatchCenter(request(),{})).body.refreshSeconds,
+    0,
+  );
+
+  const currentBudget=createMatchCenterRuntime(baseDeps({
+    getCache:async()=>cached,
+    runtimeControlsSnapshot:()=>({liveEnabled:true}),
+    providerBudgetProfile:()=>({
+      paid:true,
+      mode:'normal',
+      liveRefreshSeconds:1,
+    }),
+  }));
+  assert.equal(
+    (await currentBudget.apiMatchCenter(request(),{})).body.refreshSeconds,
+    10,
+  );
+});
+
 test('cached live signals are revalidated against current feature freshness', async () => {
   let providerCalls=0;
   const cached={
@@ -413,7 +510,7 @@ test('live prematch handoff rejects cross-fixture AI snapshots', async () => {
   assert.equal(prematchSeen,null);
 });
 
-test('live refresh interval is bounded and runtime controls can disable it', async () => {
+test('live refresh interval is bounded and runtime controls fail closed when malformed', async () => {
   const liveFixture=fixture({
     fixture:{
       ...fixture().fixture,
@@ -433,6 +530,20 @@ test('live refresh interval is bounded and runtime controls can disable it', asy
     runtimeControlsSnapshot:()=>({liveEnabled:false}),
   }));
   assert.equal((await disabled.apiMatchCenter(request(),{})).body.refreshSeconds,0);
+
+  const malformed=createMatchCenterRuntime(baseDeps({
+    loadProviderFixture:async()=>liveFixture,
+    providerBudgetProfile:()=>({paid:false,mode:'normal',liveRefreshSeconds:30}),
+    runtimeControlsSnapshot:()=>({liveEnabled:'true'}),
+  }));
+  assert.equal((await malformed.apiMatchCenter(request(),{})).body.refreshSeconds,0);
+
+  const unavailable=createMatchCenterRuntime(baseDeps({
+    loadProviderFixture:async()=>liveFixture,
+    providerBudgetProfile:()=>({paid:false,mode:'normal',liveRefreshSeconds:30}),
+    runtimeControlsSnapshot:()=>{throw new Error('controls unavailable');},
+  }));
+  assert.equal((await unavailable.apiMatchCenter(request(),{})).body.refreshSeconds,0);
 });
 
 test('cache write failures do not erase a completed Match Center response', async () => {
@@ -478,6 +589,32 @@ test('transient provider failure serves stale live data without stale AI signals
   assert.equal(response.body.availability.events,false);
   assert.equal(response.body.availability.xg,false);
   assert.equal(response.body.retryAfter,12);
+  assert.equal(response.body.refreshSeconds,30);
+});
+
+test('stale LIVE fallback also honors a current live kill switch', async () => {
+  const stale={
+    generatedAt:'2026-10-07T10:00:00Z',
+    mode:'live',
+    match:{fixtureId:123,status:'1H'},
+    refreshSeconds:30,
+    availability:{},
+    dataFreshness:{},
+  };
+  const runtime=createMatchCenterRuntime(baseDeps({
+    loadProviderFixture:async()=>{
+      throw new Error('provider down');
+    },
+    getStaleCache:async()=>stale,
+    isRetryableFootballTransportError:()=>true,
+    runtimeControlsSnapshot:()=>({liveEnabled:false}),
+  }));
+
+  const response=await runtime.apiMatchCenter(request(),{});
+
+  assert.equal(response.status,200);
+  assert.equal(response.body.stale,true);
+  assert.equal(response.body.refreshSeconds,0);
 });
 
 test('finished Match Center rejects a cross-fixture model prediction', async () => {
