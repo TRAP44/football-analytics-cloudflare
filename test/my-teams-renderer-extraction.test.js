@@ -39,7 +39,7 @@ function createHarness(overrides = {}) {
     matches: [],
     ...overrides.state,
   };
-  const calls = { open: [], analyze: [] };
+  const calls = { open: [], match: [] };
   const module = createMyTeamsRenderer({
     state,
     elementById: id => elements.get(id) || null,
@@ -47,7 +47,7 @@ function createHarness(overrides = {}) {
     safeUrl: value => String(value || '').startsWith('https://') ? String(value) : '',
     timeOf: value => 'TIME:' + String(value ?? ''),
     onOpenTeam: team => calls.open.push(team),
-    onAnalyzeMatch: (fixtureId, btn) => calls.analyze.push({ fixtureId, btn }),
+    onOpenMatch: (fixtureId, btn) => calls.match.push({ fixtureId, btn }),
   });
   return { module, state, root, onboarding, calls };
 }
@@ -56,7 +56,7 @@ test('my teams renderer lives outside app while navigation and analysis stay in 
   assert.match(app, /import \{ createMyTeamsRenderer \} from '\.\/modules\/my-teams-renderer\.js'/);
   assert.match(app, /const \{ renderMyTeams \} = createMyTeamsRenderer\(\{/);
   assert.match(app, /onOpenTeam: team => openTeam\(team\)/);
-  assert.match(app, /onAnalyzeMatch: \(fixtureId, button\) => analyzeMatch\(fixtureId, button\)/);
+  assert.match(app, /onOpenMatch: \(fixtureId, button\) => openMatchCenter\(fixtureId, button\)/);
   assert.doesNotMatch(app, /function renderMyTeams\(\)/);
   const wiringStart = app.indexOf('const { renderMyTeams } = createMyTeamsRenderer({');
   const wiringEnd = app.indexOf('\n});', wiringStart) + 4;
@@ -152,8 +152,8 @@ test('unsafe team logos use placeholder and delegated callbacks preserve sanitiz
   root.openButtons[0].click();
   root.fixtureButtons[0].click();
   assert.deepEqual(calls.open, [{ id: 7, name: 'Team <Seven>', logo: '' }]);
-  assert.equal(calls.analyze[0].fixtureId, 9);
-  assert.equal(calls.analyze[0].btn, root.fixtureButtons[0]);
+  assert.equal(calls.match[0].fixtureId, 9);
+  assert.equal(calls.match[0].btn, root.fixtureButtons[0]);
 });
 
 test('missing my teams root fails soft without callbacks', () => {
@@ -165,8 +165,50 @@ test('missing my teams root fails soft without callbacks', () => {
     safeUrl: value => String(value ?? ''),
     timeOf: value => String(value ?? ''),
     onOpenTeam: () => { calls += 1; },
-    onAnalyzeMatch: () => { calls += 1; },
+    onOpenMatch: () => { calls += 1; },
   });
   assert.doesNotThrow(() => module.renderMyTeams());
   assert.equal(calls, 0);
+});
+
+
+test('my teams renderer fails soft on malformed state and ignores invalid callback ids', () => {
+  const { module, root, onboarding, calls } = createHarness({
+    state:{
+      favorites:[
+        null,
+        { teamId:true, teamName:'Boolean ID' },
+        { teamId:'7', teamName:'Valid Team', teamLogo:{ toString(){ throw new Error('must not coerce'); } } },
+      ],
+      matches:[
+        null,
+        { fixtureId:'bad', live:true, home:{id:7,name:'Broken'}, away:{id:8,name:'Away'} },
+        { fixtureId:11, live:'false', finished:false, date:'not-a-date', home:{id:7,name:'Bad date'}, away:{id:8,name:'Away'} },
+        { fixtureId:12, live:false, finished:false, date:'2026-10-09T10:00:00Z', home:{id:7,name:'Valid Team'}, away:{id:8,name:'Away'} },
+      ],
+    },
+  });
+  root.openButtons=[button({openTeam:'true',teamName:'Tampered',teamLogo:''})];
+  root.fixtureButtons=[button({teamFixture:'NaN'})];
+
+  assert.doesNotThrow(()=>module.renderMyTeams());
+  assert.equal(onboarding.hidden,true);
+  assert.match(root.innerHTML,/Valid Team/);
+  assert.match(root.innerHTML,/data-team-fixture="12"/);
+  assert.doesNotMatch(root.innerHTML,/Boolean ID|data-team-fixture="11"/);
+
+  root.openButtons[0].click();
+  root.fixtureButtons[0].click();
+  assert.deepEqual(calls.open,[]);
+  assert.deepEqual(calls.match,[]);
+});
+
+test('my teams malformed collection containers degrade to the empty onboarding state', () => {
+  const { module, root, onboarding }=createHarness({
+    state:{ favorites:null, matches:{ broken:true }, favoritesLoading:false, favoritesLoaded:true },
+  });
+  onboarding.hidden=true;
+  assert.doesNotThrow(()=>module.renderMyTeams());
+  assert.equal(root.innerHTML,'');
+  assert.equal(onboarding.hidden,false);
 });
