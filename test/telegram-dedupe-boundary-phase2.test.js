@@ -46,9 +46,10 @@ test('Phase 2 Telegram dedupe boundary keeps Supabase fail-open fallback semanti
 
 test('Phase 2 Telegram dedupe boundary keeps health classification semantics', () => {
   const { api } = runtime();
-  assert.equal(api.telegramDedupeHealthState({available:true}).state,'healthy');
-  assert.equal(api.telegramDedupeHealthState({available:true,staleProcessing:1}).state,'watch');
-  assert.equal(api.telegramDedupeHealthState({available:true,staleProcessing:5}).state,'incident');
+  assert.equal(api.telegramDedupeHealthState({available:true}).state,'watch');
+  assert.equal(api.telegramDedupeHealthState({available:true,staleProcessing:0,failedRecent:0,failedCurrent:0}).state,'healthy');
+  assert.equal(api.telegramDedupeHealthState({available:true,staleProcessing:1,failedRecent:0,failedCurrent:0}).state,'watch');
+  assert.equal(api.telegramDedupeHealthState({available:true,staleProcessing:5,failedRecent:0,failedCurrent:0}).state,'incident');
   assert.equal(api.telegramDedupeObservabilitySelfTest().pass,true);
 });
 
