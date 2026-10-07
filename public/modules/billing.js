@@ -6,7 +6,11 @@ const PASS_META = Object.freeze({
 });
 
 function safeFixtureId(value) {
-  const id = Number(value || 0);
+  if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0 ? value : 0;
+  if (typeof value !== 'string' || value.length > 24) return 0;
+  const raw=value.trim();
+  if (!/^\d+$/.test(raw)) return 0;
+  const id=Number(raw);
   return Number.isSafeInteger(id) && id > 0 ? id : 0;
 }
 
@@ -304,22 +308,38 @@ export function createBillingModule({
         const expiry = row?.expiresAt ? new Date(row.expiresAt).getTime() : Number.NaN;
         return row?.active || (row?.reason === 'fixture_mismatch' && Number.isFinite(expiry) && expiry > Date.now());
       }).slice(0,4);
-      active.hidden = visible.length === 0;
-      active.innerHTML = visible.length ? visible.map(row => {
-        const type = String(row.type || '');
-        const title = PASS_META[type]?.title || type;
-        const scope = type === 'MATCH_PASS' && row.fixtureId
-          ? ' · только матч №' + Number(row.fixtureId)
-          : type === 'DAY_PASS'
-            ? ' · все поддерживаемые матчи'
-            : '';
-        const usage = row.usageLimit != null
-          ? ' · использовано ' + Number(row.usageCount || 0) + '/' + Number(row.usageLimit)
-            + ' · осталось ' + Math.max(0, Number(row.usageLimit || 0) - Number(row.usageCount || 0))
+      active.hidden=visible.length===0;
+      active.replaceChildren();
+      for (const row of visible) {
+        const type=PASS_TYPES.includes(String(row?.type || '').toUpperCase())
+          ? String(row.type).toUpperCase()
           : '';
-        const expiry = type === 'MATCH_PASS' ? '' : (row.expiresAt ? ' · до ' + dateTime(row.expiresAt) : '');
-        return '<div class="active-pass-row"><strong>' + title + '</strong><span>' + scope.replace(/^ · /,'') + usage + expiry + '</span></div>';
-      }).join('') : '';
+        if (!type) continue;
+        const title=PASS_META[type].title;
+        const fixtureId=safeFixtureId(row?.fixtureId);
+        const usageCount=Math.max(0,Number.isSafeInteger(Number(row?.usageCount)) ? Number(row.usageCount) : 0);
+        const usageLimit=row?.usageLimit == null
+          ? null
+          : Math.max(0,Number.isSafeInteger(Number(row.usageLimit)) ? Number(row.usageLimit) : 0);
+        const scope=type === 'MATCH_PASS' && fixtureId
+          ? 'только матч №' + fixtureId
+          : type === 'DAY_PASS'
+            ? 'все поддерживаемые матчи'
+            : '';
+        const usage=usageLimit !== null
+          ? 'использовано ' + usageCount + '/' + usageLimit + ' · осталось ' + Math.max(0,usageLimit-usageCount)
+          : '';
+        const expiry=type === 'MATCH_PASS' || !row?.expiresAt ? '' : 'до ' + dateTime(row.expiresAt);
+        const line=document.createElement('div');
+        line.className='active-pass-row';
+        const strong=document.createElement('strong');
+        strong.textContent=title;
+        const span=document.createElement('span');
+        span.textContent=[scope,usage,expiry].filter(Boolean).join(' · ');
+        line.append(strong,span);
+        active.append(line);
+      }
+      active.hidden=active.children.length===0;
     }
   }
 
