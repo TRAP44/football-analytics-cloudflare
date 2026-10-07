@@ -64,6 +64,46 @@ export function createDiagnosticsRuntime({
     return value;
   }
 
+  function sanitizeDiagnosticValue(value,depth=0,seen=new WeakSet()) {
+    if (value===null || typeof value==='boolean') return value;
+    if (typeof value==='number') return Number.isFinite(value) ? value : null;
+    if (typeof value==='string') return safeText(value,1000);
+    if (typeof value==='bigint') return safeText(value,120);
+    if (value instanceof Date) return strictTimestamp(value);
+    if (depth>=5 || !value || typeof value!=='object') return null;
+    if (seen.has(value)) return null;
+    seen.add(value);
+
+    if (Array.isArray(value)) {
+      return value
+        .slice(0,50)
+        .map(item=>sanitizeDiagnosticValue(item,depth+1,seen))
+        .filter(item=>item!==undefined);
+    }
+
+    const object=plainObject(value);
+    if (!object) return null;
+    const out={};
+    let keys=[];
+    try {
+      keys=Object.keys(object).slice(0,80);
+    } catch {
+      return out;
+    }
+    for (const rawKey of keys) {
+      const key=safeText(rawKey,120);
+      if (!key || Object.prototype.hasOwnProperty.call(out,key)) continue;
+      const sanitized=sanitizeDiagnosticValue(safeRead(object,rawKey),depth+1,seen);
+      if (sanitized!==undefined) out[key]=sanitized;
+    }
+    return out;
+  }
+
+  function diagnosticObject(value,fallback) {
+    const sanitized=sanitizeDiagnosticValue(value);
+    return plainObject(sanitized) || fallback;
+  }
+
   function telemetryValue(name) {
     const telemetry=plainObject(safeRead(memory,'telemetry'));
     return finiteNumber(safeRead(telemetry,name),{min:0}) ?? 0;
@@ -131,7 +171,7 @@ export function createDiagnosticsRuntime({
     if (status!==null && Number.isInteger(status)) out.status=status;
     const durationMs=finiteNumber(safeRead(row,'duration_ms'),{min:0,max:3_600_000});
     if (durationMs!==null) out.duration_ms=durationMs;
-    const metadata=plainObject(safeRead(row,'metadata'));
+    const metadata=diagnosticObject(safeRead(row,'metadata'),null);
     if (metadata) out.metadata=metadata;
     return Object.keys(out).length ? out : null;
   }
@@ -255,32 +295,32 @@ export function createDiagnosticsRuntime({
       ),
     ]);
 
-    const supabase=plainObject(supabaseRaw) || {
+    const supabase=diagnosticObject(supabaseRaw,{
       configured:supabaseConfigured,
       ok:false,
       status:'invalid_diagnostics',
       diagnosticsError:true,
-    };
-    const integrity=plainObject(integrityRaw) || {
+    });
+    const integrity=diagnosticObject(integrityRaw,{
       available:false,
       migrationReady:false,
       lastRun:null,
       recentIssues:[],
       diagnosticsError:true,
-    };
-    const telegramWebhook=plainObject(telegramRaw) || {
+    });
+    const telegramWebhook=diagnosticObject(telegramRaw,{
       available:false,
       state:'unknown',
       staleProcessing:0,
       failedCurrent:0,
       diagnosticsError:true,
-    };
-    const providerObservability=plainObject(providerObservabilityRaw) || {
+    });
+    const providerObservability=diagnosticObject(providerObservabilityRaw,{
       available:false,
       overall:{state:'unknown'},
       incident:{activeIncident:null},
       diagnosticsError:true,
-    };
+    });
 
     const providerRaw=safeSyncCall(
       providerSnapshot,
@@ -292,14 +332,14 @@ export function createDiagnosticsRuntime({
         diagnosticsError:true,
       }),
     );
-    const provider=plainObject(providerRaw) || {
+    const provider=diagnosticObject(providerRaw,{
       health:'warning',
       cooldownActive:false,
       dailyUsedPct:null,
       diagnosticsError:true,
-    };
+    });
     const runtimeRaw=safeSyncCall(telemetrySnapshot,[],()=>({diagnosticsError:true}));
-    const runtime=plainObject(runtimeRaw) || {diagnosticsError:true};
+    const runtime=diagnosticObject(runtimeRaw,{diagnosticsError:true});
 
     const providerHealth=safeText(safeRead(provider,'health'),32,'warning');
     const providerOverall=plainObject(safeRead(providerObservability,'overall')) || {};
