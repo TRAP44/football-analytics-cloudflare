@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
+import { homeMatchScoreLabel } from '../public/modules/home-match-priority.js';
+
 const html=fs.readFileSync('public/index.html','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const css=fs.readFileSync('public/styles/public-shell.css','utf8');
@@ -34,6 +36,77 @@ test('Match Center premium polish keeps the existing data and interaction contra
   assert.match(center,/scrollIntoView/);
 });
 
+test('Match Center score presentation never invents a result when provider score is missing',()=>{
+  assert.equal(
+    homeMatchScoreLabel({
+      live:true,
+      finished:false,
+      score:{home:null,away:null},
+    }),
+    '— : —',
+  );
+  assert.equal(
+    homeMatchScoreLabel({
+      live:false,
+      finished:true,
+      score:{home:null,away:null},
+    }),
+    '— : —',
+  );
+  assert.equal(
+    homeMatchScoreLabel({
+      live:false,
+      finished:true,
+      score:{home:3,away:1},
+    }),
+    '3 : 1',
+  );
+
+  const center=block(app,'function renderMatchCenter','async function openMatchCenter');
+  assert.match(
+    center,
+    /homeMatchScoreLabel\(\{\.\.\.m,live,finished\}\)/,
+  );
+  assert.doesNotMatch(
+    center,
+    /score\.home \?\? 0|score\.away \?\? 0/,
+  );
+});
+
+test('AI visual scores are bounded before presentation',()=>{
+  const hero=block(app,'function smartInsightsHeroHtml','function smartInsightsFullHtml');
+  const full=block(app,'function smartInsightsFullHtml','function liveAiCoachHtml');
+  const live=block(app,'function liveAiCoachHtml','function postMatchReviewHtml');
+
+  assert.match(hero,/Math\.round\(clampPercent\(si\.dataScore\)\)/);
+  assert.match(full,/Math\.round\(clampPercent\(si\.dataScore\)\)/);
+  assert.match(live,/Math\.round\(clampPercent\(ai\.confidence\)\)/);
+  assert.doesNotMatch(hero,/Number\(si\.dataScore \|\| 0\)/);
+  assert.doesNotMatch(live,/Math\.round\(Number\(ai\.confidence \|\| 0\)\)/);
+});
+
+test('Match Center escapes insight metrics and validates visual market/player values',()=>{
+  const insight=block(app,'function smartInsightCardHtml','function matchChangeNarrativeHtml');
+  const market=block(app,'function centerMarketHtml','function centerAbsenceSummary');
+  const players=block(app,'function centerPlayersHtml','function playerPositionLabel');
+
+  assert.match(insight,/escapeHtml\(publicText\(value\)\)/);
+  assert.match(insight,/metricValue\(m\?\.home\)/);
+  assert.match(insight,/metricValue\(m\?\.away\)/);
+
+  assert.match(market,/Number\.isFinite\(numeric\) && numeric>1 && numeric<1000/);
+  assert.doesNotMatch(
+    market,
+    /d\.liveOdds\.odds\?\.home \?\? '—'|d\.liveOdds\.odds\?\.draw \?\? '—'|d\.liveOdds\.odds\?\.away \?\? '—'/,
+  );
+
+  assert.match(
+    players,
+    /typeof p\?\.rating==='number' && Number\.isFinite\(p\.rating\)/,
+  );
+  assert.doesNotMatch(players,/p\.rating \? p\.rating\.toFixed/);
+});
+
 test('AI analysis keeps probabilities decision factors risks and detailed data in that order',()=>{
   const analysis=block(app,'function renderAnalysis','function safeUrl');
   const hero=analysis.indexOf('match-experience-hero');
@@ -42,6 +115,7 @@ test('AI analysis keeps probabilities decision factors risks and detailed data i
   const glance=analysis.indexOf('analysisGlanceHtml(d)');
   const details=analysis.indexOf('analysis-more-data');
   assert.ok(hero>=0 && hero<outcome && outcome<probs && probs<glance && glance<details);
+
   const glanceFn=block(app,'function analysisGlanceHtml','function renderAnalysis');
   assert.match(glanceFn,/slice\(0, 3\)/);
   assert.match(glanceFn,/Главные факторы/);
@@ -56,14 +130,28 @@ test('match center and AI polish preserves mobile and touch behavior',()=>{
     '.analysis-tab-btn',
   ]) assert.ok(css.includes(selector),selector);
   assert.match(css,/\.center-hero-actions > button\{[\s\S]*?min-height:44px/);
-  for(const width of [360,390,430]) assert.match(css,new RegExp('max-width:'+width+'px'));
+  for(const width of [360,390,430]) {
+    assert.match(css,new RegExp('max-width:'+width+'px'));
+  }
   assert.match(css,/prefers-reduced-motion:reduce/);
 });
 
-test('frontend revision refreshes the polished Match Center assets',()=>{
-  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch\d+"/);
-  assert.match(html,/styles\.css\?v=6\.120\.0-launch\d+/);
-  assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-launch\d+/);
-  assert.match(html,/app\.js\?v=6\.120\.0-launch\d+/);
-  assert.doesNotMatch(html,/6\.120\.0-ui1/);
+test('frontend asset revision is consistent after Match Center presentation changes',()=>{
+  const revision=html.match(
+    /frontend-asset-revision" content="([^"]+)"/,
+  )?.[1];
+
+  assert.equal(revision,'6.120.0-launch50');
+  for(const asset of [
+    'styles.css',
+    'styles/public-shell.css',
+    'styles/premium-ui.css',
+    'app.js',
+  ]) {
+    assert.ok(
+      html.includes('/'+asset+'?v='+revision),
+      asset,
+    );
+  }
+  assert.doesNotMatch(html,/6\.120\.0-launch49/);
 });
