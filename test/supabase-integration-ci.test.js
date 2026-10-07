@@ -8,13 +8,30 @@ import {
   buildMigrationPlan,
   validateMigrationPlan,
 } from '../scripts/prepare-supabase-ci-migrations.js';
+import {
+  validateSupabaseMigrationContract,
+} from '../scripts/verify-supabase-contract.js';
 
+const repoRoot = new URL('..', import.meta.url).pathname;
 const quality = fs.readFileSync(
   new URL('../.github/workflows/quality.yml', import.meta.url),
   'utf8',
 );
+const prepareScript = fs.readFileSync(
+  new URL('../scripts/prepare-supabase-ci-migrations.js', import.meta.url),
+  'utf8',
+);
+const packageJson = JSON.parse(
+  fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+);
 const releaseContract = JSON.parse(
   fs.readFileSync(new URL('../release-contract.json', import.meta.url), 'utf8'),
+);
+const migrationManifest = JSON.parse(
+  fs.readFileSync(
+    new URL('../supabase/migration-order.json', import.meta.url),
+    'utf8',
+  ),
 );
 
 test('Issue #433 fresh migration plan follows the documented baseline contract', () => {
@@ -32,19 +49,38 @@ test('Issue #433 fresh migration plan follows the documented baseline contract',
 test('Issue #433 upgrade plan stops before latest and appends only latest migration', () => {
   const base = buildMigrationPlan('upgrade-base');
   const latest = buildMigrationPlan('latest-only');
+  const previousManifestPath = migrationManifest.freshInstallAfterBaseline.at(-2).path;
 
   assert.equal(base[0].source, releaseContract.freshInstallBaseline);
-  assert.equal(base.at(-1).source, 'supabase/migrations/supabase_migration_v6_29_11.sql');
+  assert.equal(base.at(-1).source, `supabase/${previousManifestPath}`);
   assert.equal(latest.length, 1);
   assert.equal(latest[0].source, releaseContract.latestMigration);
   assert.ok(base.at(-1).version < latest[0].version);
 });
 
-test('Issue #433 migration plan matches release-contract and every canonical source exists', () => {
-  validateMigrationPlan(
-    new URL('..', import.meta.url).pathname,
-    releaseContract,
+test('Supabase migration manifest is the executable source for CI staging', () => {
+  const expectedPostBaseline = migrationManifest.freshInstallAfterBaseline
+    .map((entry) => `supabase/${entry.path}`);
+
+  assert.equal(migrationManifest.formatVersion, 2);
+  assert.equal(
+    FRESH_BASELINE,
+    `supabase/${migrationManifest.baseline}`,
   );
+  assert.deepEqual(POST_BASELINE_MIGRATIONS, expectedPostBaseline);
+  assert.doesNotMatch(
+    prepareScript,
+    /'supabase\/migrations\/supabase_migration_v6_29_12\.sql'/,
+  );
+
+  const verified = validateSupabaseMigrationContract(repoRoot);
+  assert.equal(verified.migrationCount, 47);
+  assert.equal(verified.latestMigration, releaseContract.latestMigration);
+  assert.equal(verified.doctorReadOnly, true);
+});
+
+test('Issue #433 migration plan matches release-contract and every canonical source exists', () => {
+  validateMigrationPlan(repoRoot, releaseContract);
 });
 
 test('Issue #433 Quality contains a secret-free executable Supabase database gate', () => {
@@ -61,6 +97,12 @@ test('Issue #433 Quality contains a secret-free executable Supabase database gat
   assert.match(quality, /NEW_WORKER_READY/);
   assert.match(quality, /migration up/);
   assert.match(quality, /Fresh-install baseline unexpectedly applied/);
+  assert.match(quality, /npm run verify:supabase/);
+  assert.equal(
+    packageJson.scripts['verify:supabase'],
+    'node scripts/verify-supabase-contract.js',
+  );
+  assert.ok(releaseContract.qualityGate.includes('npm run verify:supabase'));
   assert.doesNotMatch(quality, /secrets\.SUPABASE_/);
 });
 
@@ -97,7 +139,10 @@ test('Issue #438 CI contract proves complete v2 drift detection and rollout comp
   assert.match(quality, /freshInstallFingerprint/);
   assert.ok(quality.includes('expected_legacy_fingerprint="$FRESH_LEGACY_FP"'));
   assert.ok(quality.includes('expected_v2_fingerprint="$FRESH_V2_FP"'));
-  assert.doesNotMatch(quality, /test "$LEGACY_FP" = "c2c22ec25aacfcf1b9938b0850cebf49"/);
+  assert.doesNotMatch(
+    quality,
+    /test "\$LEGACY_FP" = "c2c22ec25aacfcf1b9938b0850cebf49"/,
+  );
 });
 
 test('Issue #433 keeps database integration in the same Quality workflow used by deploy', () => {
