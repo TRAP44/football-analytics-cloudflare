@@ -1242,7 +1242,6 @@ let billingApiRuntime = null;
 function getBillingApiRuntime() {
   if (!billingApiRuntime) {
     billingApiRuntime = createBillingApiRuntime({
-      CHANNEL_PUBLISH_IDEMPOTENCY_MINUTES,
       PASS_TYPES,
       SUBSCRIPTION_PERIOD_SECONDS,
       adminForbidden,
@@ -1250,8 +1249,6 @@ function getBillingApiRuntime() {
       billingPlanConfig,
       billingWebhookStatus,
       createPassInvoicePayload,
-      createSharedCacheRuntime,
-      createTelegramLinksRuntime,
       findRefundableBillingCharge,
       getQuota,
       getUserRecord,
