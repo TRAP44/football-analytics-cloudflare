@@ -46,10 +46,11 @@ test('My Teams reuses favorites and existing match catalog',()=>{
   const end=myTeamsRenderer.indexOf('return Object.freeze',start);
   const body=myTeamsRenderer.slice(start,end);
   assert.match(body,/state\.favorites/);
-  assert.match(body,/state\.matches\.filter/);
-  assert.match(body,/onAnalyzeMatch/);
+  assert.match(body,/state\.matches/);
+  assert.match(body,/matches\.filter/);
+  assert.match(body,/onOpenMatch/);
   assert.doesNotMatch(body,/api\(/);
-  assert.match(app,/onAnalyzeMatch: \(fixtureId, button\) => analyzeMatch\(fixtureId, button\)/);
+  assert.match(app,/onOpenMatch: \(fixtureId, button\) => openMatchCenter\(fixtureId, button\)/);
 });
 test('Match Center first level keeps AI confidence data quality three factors and risks',()=>{
   const start=app.indexOf('function analysisGlanceHtml');
