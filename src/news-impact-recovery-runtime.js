@@ -78,13 +78,15 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   }
 
   function cleanNewsImpactDecisionCode(value = '') {
-    const code=String(value || '').toLowerCase().trim();
-    return NEWS_IMPACT_DECISION_CODES.has(code) ? code : '';
+    if (typeof value !== 'string') return '';
+    const code=value.toLowerCase().trim();
+    return NEWS_IMPACT_DECISION_CODES?.has?.(code) ? code : '';
   }
   
   function cleanNewsImpactActionCode(value = '') {
-    const code=String(value || '').toLowerCase().trim();
-    return NEWS_IMPACT_ACTION_CODES.has(code) ? code : '';
+    if (typeof value !== 'string') return '';
+    const code=value.toLowerCase().trim();
+    return NEWS_IMPACT_ACTION_CODES?.has?.(code) ? code : '';
   }
   
   function newsImpactActionCallback(decision, action, fixtureId) {
@@ -140,11 +142,35 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   }
   
   function newsImpactRowDecision(row = {}) {
-    return cleanNewsImpactDecisionCode(row?.metadata && typeof row.metadata==='object' ? row.metadata.decision : '');
+    const metadata=row?.metadata && typeof row.metadata==='object' && !Array.isArray(row.metadata)
+      ? row.metadata
+      : null;
+    return cleanNewsImpactDecisionCode(metadata?.decision);
   }
   
   function newsImpactRowAction(row = {}) {
-    return cleanNewsImpactActionCode(row?.metadata && typeof row.metadata==='object' ? row.metadata.action : '');
+    const metadata=row?.metadata && typeof row.metadata==='object' && !Array.isArray(row.metadata)
+      ? row.metadata
+      : null;
+    return cleanNewsImpactActionCode(metadata?.action);
+  }
+
+  function newsImpactPositiveId(value) {
+    if (typeof value==='number') return Number.isSafeInteger(value) && value>0 ? value : 0;
+    if (typeof value!=='string') return 0;
+    const raw=value.trim();
+    if (!/^\d+$/.test(raw)) return 0;
+    const parsed=Number(raw);
+    return Number.isSafeInteger(parsed) && parsed>0 ? parsed : 0;
+  }
+
+  function newsImpactFiniteNumber(value) {
+    if (typeof value==='number') return Number.isFinite(value) ? value : null;
+    if (typeof value!=='string') return null;
+    const raw=value.trim();
+    if (!raw) return null;
+    const parsed=Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
   }
   
   function newsImpactConversionConfidence(actedUsers = 0, users = 0) {
@@ -175,21 +201,32 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   }
   
   function newsImpactEventTime(row = {}) {
-    const at=Date.parse(String(row?.created_at || ''));
+    const createdAt=typeof row?.created_at==='string' ? row.created_at.trim() : '';
+    if (!createdAt) return NaN;
+    const at=Date.parse(createdAt);
     return Number.isFinite(at) ? at : NaN;
   }
   
   function buildNewsImpactActionFunnel(decisionRows = [], actionRows = [], options = {}) {
-    const asOfMs=Number.isFinite(Number(options?.asOfMs)) ? Number(options.asOfMs) : Date.now();
-    const actionWindowMinutes=Math.max(1,Math.min(180,Number(options?.actionWindowMinutes || NEWS_IMPACT_ACTION_WINDOW_MINUTES)));
+    const safeOptions=options && typeof options==='object' && !Array.isArray(options) ? options : {};
+    const optionAsOf=newsImpactFiniteNumber(safeOptions.asOfMs);
+    const asOfMs=optionAsOf ?? Date.now();
+    const configuredWindow=newsImpactFiniteNumber(safeOptions.actionWindowMinutes);
+    const defaultWindow=newsImpactFiniteNumber(NEWS_IMPACT_ACTION_WINDOW_MINUTES) ?? 30;
+    const actionWindowMinutes=Math.max(1,Math.min(180,configuredWindow ?? defaultWindow));
     const actionWindowMs=actionWindowMinutes*60_000;
     const maturityCutoff=asOfMs-actionWindowMs;
-    return NEWS_IMPACT_FUNNEL_DECISIONS.map(([code,label])=>{
+    const safeDecisionRows=Array.isArray(decisionRows) ? decisionRows : [];
+    const safeActionRows=Array.isArray(actionRows) ? actionRows : [];
+    const funnelDecisions=Array.isArray(NEWS_IMPACT_FUNNEL_DECISIONS) ? NEWS_IMPACT_FUNNEL_DECISIONS : [];
+    return funnelDecisions
+      .filter(row=>Array.isArray(row) && typeof row[0]==='string' && typeof row[1]==='string')
+      .map(([code,label])=>{
       const observedDecisionUsers=new Set();
       const decisionTimesByUser=new Map();
-      for (const row of decisionRows) {
+      for (const row of safeDecisionRows) {
         if (newsImpactRowDecision(row)!==code) continue;
-        const uid=Number(row.telegram_id || 0);
+        const uid=newsImpactPositiveId(row?.telegram_id);
         const decisionAt=newsImpactEventTime(row);
         if (!uid) continue;
         observedDecisionUsers.add(uid);
@@ -202,9 +239,9 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       const immatureUsers=[...observedDecisionUsers].filter(uid=>!decisionUsers.has(uid)).length;
       const actionUsersByCode={};
       for (const action of NEWS_IMPACT_ACTION_CODES) actionUsersByCode[action]=new Set();
-      for (const row of actionRows) {
+      for (const row of safeActionRows) {
         if (newsImpactRowDecision(row)!==code) continue;
-        const uid=Number(row.telegram_id || 0);
+        const uid=newsImpactPositiveId(row?.telegram_id);
         const action=newsImpactRowAction(row);
         const actionAt=newsImpactEventTime(row);
         if (!uid || !action || !decisionUsers.has(uid) || !Number.isFinite(actionAt)) continue;
@@ -239,7 +276,14 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   }
   
   function newsImpactActionFunnelBottleneck(rows = []) {
-    const eligible=(rows || []).filter(x=>Boolean(x?.confidence?.eligibleForBottleneck));
+    const eligible=(Array.isArray(rows) ? rows : []).filter(x=>
+      x
+      && typeof x==='object'
+      && !Array.isArray(x)
+      && x?.confidence?.eligibleForBottleneck===true
+      && newsImpactFiniteNumber(x.conversionPct)!==null
+      && newsImpactFiniteNumber(x.users)!==null
+    );
     if (!eligible.length) return null;
     return [...eligible].sort((a,b)=>Number(a.conversionPct || 0)-Number(b.conversionPct || 0) || Number(b.users || 0)-Number(a.users || 0))[0] || null;
   }
