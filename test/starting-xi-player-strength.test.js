@@ -185,6 +185,7 @@ test('trusted XI raises confidence diagnostics without becoming a sixth blend si
 });
 
 
+// Quality baseline: balanced XI must remain neutral.
 test('balanced confirmed XIs do not create a synthetic probability edge',()=>{
   const model=runtime();
   const stats=playerStats();
