@@ -1,132 +1,368 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createBetaPhase5Runtime } from '../src/beta-phase5-runtime.js';
 
-const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../src/router.js',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../src/auth-user.js',import.meta.url),'utf8');
-const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../public/modules/global-search-controller.js',import.meta.url),'utf8');
-const matchCenterController=readFileSync(new URL('../public/modules/match-center-controller.js',import.meta.url),'utf8');
-const analysisController=readFileSync(new URL('../public/modules/analysis-controller.js',import.meta.url),'utf8');
-const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
-const adminHtml=readFileSync(new URL('../public/admin.html',import.meta.url),'utf8');
+const BETA_COHORT='closed_beta_v1';
+const PHASE5_COHORT='phase5_public_v2';
+const SUBJECT_A='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const SUBJECT_B='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const SESSION_A='11111111111111111111111111111111';
 
-function block(source,start,end){
-  const a=source.indexOf(start);
-  assert.notEqual(a,-1,start);
-  const b=source.indexOf(end,a+start.length);
-  assert.notEqual(b,-1,end);
-  return source.slice(a,b);
+function createHarness(overrides = {}) {
+  const events=[];
+  const now=new Date();
+  const runtime=createBetaPhase5Runtime({
+    APP_VERSION:'6.120.0',
+    CLOSED_BETA_COHORT:BETA_COHORT,
+    PHASE5_VALIDATION_COHORT:PHASE5_COHORT,
+    RC_NAME:'RC144',
+    RELEASE_CHANNEL:'production',
+    billingWebhookStatus:async()=>({ready:true,pendingUpdates:0,reason:''}),
+    collectDiagnostics:async()=>({
+      supabase:{ok:true,status:'ok'},
+      telegramWebhook:{state:'healthy'},
+    }),
+    hasSupabase:()=>true,
+    isClosedBetaUser:user=>Number(user?.id)===101,
+    json:(body,status=200)=>({body,status}),
+    providerSnapshot:()=>({
+      plan:'PRO',
+      dailyLimit:7500,
+      dailyRemaining:7000,
+      minuteLimit:300,
+      minuteRemaining:280,
+      updatedAt:now.toISOString(),
+    }),
+    readOpsEventsRange:async()=>({items:[],persistent:true,truncated:false}),
+    recordOpsEvent:async(_cfg,event)=>{events.push(event); return event;},
+    redactOpsString:(value,max=500)=>String(value ?? '').slice(0,max),
+    ...overrides,
+  });
+  return {runtime,events,now};
 }
 
-test('closed beta telemetry adds bounded operation timings only',()=>{
-  assert.match(worker,/operation_timing/);
-  assert.match(worker,/CLIENT_TIMING_OPERATIONS = new Set\(\['search', 'match', 'ai', 'live'\]\)/);
-  const metadata=block(worker,'function clientTelemetryMetadata','async function apiClientTelemetry');
-  assert.match(metadata,/durationMs/);
-  assert.doesNotMatch(metadata,/query|teamName|leagueName|searchText/);
-  assert.match(app,/function sendOperationTiming/);
-  assert.match(app,/operationTiming\('search'/);
-  assert.match(matchCenterController,/timing\('match'/);
-  assert.match(analysisController,/timing\('ai'/);
-  assert.match(matchCenterController,/timing\('live'/);
+function betaMeta(subject=SUBJECT_A, extra={}) {
+  return {
+    betaCohort:BETA_COHORT,
+    betaMembershipVerified:true,
+    betaSubject:subject,
+    ...extra,
+  };
+}
+
+function betaClientRow({at,code,reason='',durationMs,subject=SUBJECT_A,metadata={}}) {
+  return {
+    created_at:at,
+    source:'client',
+    event_type:'client_telemetry',
+    code,
+    ...(durationMs !== undefined ? {duration_ms:durationMs} : {}),
+    metadata:betaMeta(subject,{
+      ...(reason ? {reason} : {}),
+      ...metadata,
+    }),
+  };
+}
+
+function phase5Meta(extra={}) {
+  return {
+    validationCohort:PHASE5_COHORT,
+    validationVerified:true,
+    validationSubject:SUBJECT_A,
+    validationSession:SESSION_A,
+    ...extra,
+  };
+}
+
+test('closed beta timing evidence ignores ambiguous and out-of-range durations', () => {
+  const {runtime}=createHarness();
+  const valid=[100,200,300,400,500,600,700,800,900,1000];
+  const rows=[
+    ...valid.map(duration_ms=>({
+      source:'client',
+      event_type:'client_telemetry',
+      code:'OPERATION_TIMING',
+      duration_ms,
+      metadata:{reason:'search'},
+    })),
+    ...[false,null,'',-1,120001,Infinity].map(duration_ms=>({
+      source:'client',
+      event_type:'client_telemetry',
+      code:'OPERATION_TIMING',
+      duration_ms,
+      metadata:{reason:'search'},
+    })),
+    {
+      source:'client',
+      event_type:'client_telemetry',
+      code:'OPERATION_TIMING',
+      duration_ms:1,
+      metadata:{reason:'ai'},
+    },
+  ];
+
+  const summary=runtime.betaTimingSummary(rows,'search');
+  assert.equal(summary.samples,10);
+  assert.equal(summary.medianMs,550);
+  assert.equal(summary.p90Ms,910);
+  assert.equal(runtime.betaPercentileMs([false,null,'',100,200,300],0.5),200);
+  assert.equal(runtime.betaPercentileMs({not:'an array'},0.5),null);
 });
 
-test('beta feedback is explicit and does not attach identity or logs to the record',()=>{
-  const endpoint=block(worker,'async function apiBetaFeedback','function betaMetricSummary');
-  assert.match(endpoint,/explicitUserFeedback:true/);
-  assert.doesNotMatch(endpoint,/user\.id|telegram_id|query|initData|error\.message/);
-  assert.match(html,/id="betaFeedbackOpenBtn"[^>]*>Сообщить о проблеме<\/button>/);
-  assert.match(html,/Telegram ID, поисковые запросы, введённые названия команд и технические логи/);
+test('explicit beta feedback requires verified membership and records no automatic identity fields', async () => {
+  const {runtime,events}=createHarness();
+
+  const denied=await runtime.apiBetaFeedback(
+    {method:'POST',json:async()=>({category:'search',severity:'MAJOR',note:'Search is empty'})},
+    {},
+    {id:202},
+  );
+  assert.equal(denied.status,403);
+  assert.equal(denied.body.code,'BETA_MEMBERSHIP_REQUIRED');
+  assert.equal(events.length,0);
+
+  const invalid=await runtime.apiBetaFeedback(
+    {method:'POST',json:async()=>({category:'unknown',severity:'MAJOR',note:'Search is empty'})},
+    {},
+    {id:101},
+  );
+  assert.equal(invalid.status,400);
+  assert.equal(events.length,0);
+
+  const accepted=await runtime.apiBetaFeedback(
+    {method:'POST',json:async()=>({category:' Search ',severity:'major',note:'Search result is empty'})},
+    {},
+    {id:101,username:'private-user'},
+  );
+  assert.deepEqual(accepted,{status:200,body:{ok:true}});
+  assert.equal(events.length,1);
+
+  const event=events[0];
+  assert.equal(event.code,'BETA_FEEDBACK');
+  assert.equal(event.meta.category,'search');
+  assert.equal(event.meta.betaSeverity,'MAJOR');
+  assert.equal(event.meta.explicitUserFeedback,true);
+  assert.equal(event.meta.betaMembershipVerified,true);
+  assert.equal('userId' in event.meta,false);
+  assert.equal('telegramId' in event.meta,false);
+  assert.equal('username' in event.meta,false);
+  assert.doesNotMatch(JSON.stringify(event),/private-user|202/);
 });
 
-test('beta dashboard returns aggregate product metrics health timings and classified issues',()=>{
-  const endpoint=block(worker,'async function apiBetaDashboard','async function readOpsEventsRange');
-  for (const event of [
-    'miniapp_open','miniapp_search_used','miniapp_search_found','miniapp_search_empty',
-    'miniapp_match_open','miniapp_ai_start','miniapp_ai_complete','miniapp_live_open',
-    'miniapp_history_open','miniapp_profile_open','miniapp_error',
-  ]) assert.match(endpoint,new RegExp(event));
-  assert.match(endpoint,/telegramIdsReturned:false/);
-  assert.match(endpoint,/searchQueriesReturned:false/);
-  assert.match(endpoint,/errorTextsReturned:false/);
-  assert.match(endpoint,/feedbackTextsReturned:false/);
-  const timing=block(worker,'function betaTimingSummary','function betaFeedbackCounts');
-  assert.match(timing,/medianMs/);
-  assert.match(timing,/p90Ms/);
-  assert.match(endpoint,/providerRateLimit/);
-  assert.match(endpoint,/timeout/);
-  assert.match(endpoint,/activeProblems/);
-  const classifications=block(worker,'function buildBetaIssueGroups','async function apiBetaDashboard');
-  assert.match(classifications,/BLOCKER/);
-  assert.match(classifications,/MAJOR/);
-  assert.match(classifications,/MINOR/);
+test('one subjective feedback remains evidence-pending until repeated or correlated evidence exists', () => {
+  const {runtime}=createHarness();
+  const base={
+    metrics:{
+      searchUsed:{events:5},
+      matchOpen:{events:0},
+      aiStart:{events:0},
+      liveOpen:{events:0},
+      miniAppLaunch:{events:5},
+      historyOpen:{events:0},
+      profileOpen:{events:0},
+    },
+    errorRows:[],
+    timings:{},
+    clientErrorRows:[],
+  };
+
+  const single=runtime.buildBetaIssueGroups({
+    ...base,
+    feedbackRows:[{metadata:{category:'search',betaSeverity:'MAJOR'}}],
+  }).find(issue=>issue.category==='search');
+
+  assert.equal(single.classification,'NEEDS_MORE_EVIDENCE');
+  assert.equal(single.active,false);
+  assert.equal(single.evidence,'needs_more_evidence');
+
+  const repeated=runtime.buildBetaIssueGroups({
+    ...base,
+    feedbackRows:[
+      {metadata:{category:'search',betaSeverity:'MAJOR'}},
+      {metadata:{category:'search',betaSeverity:'MAJOR'}},
+    ],
+  }).find(issue=>issue.category==='search');
+
+  assert.equal(repeated.classification,'MAJOR');
+  assert.equal(repeated.active,true);
+  assert.equal(repeated.evidence,'repeated_feedback');
 });
 
-test('single subjective feedback is not automatically promoted to an active beta issue',()=>{
-  const issues=block(worker,'function buildBetaIssueGroups','async function apiBetaDashboard');
-  assert.match(issues,/feedback\.severity\.BLOCKER>=2/);
-  assert.match(issues,/feedback\.severity\.MAJOR>=2/);
-  assert.match(issues,/feedback\.severity\.MINOR>=2/);
-  assert.match(issues,/correlated/);
-  assert.match(issues,/needs_more_evidence/);
+test('closed beta dashboard aggregates only verified in-window cohort rows and exposes truncation', async () => {
+  const {now}=createHarness();
+  const inside=new Date(now.getTime()-60_000).toISOString();
+  const future=new Date(now.getTime()+10*60_000).toISOString();
+  const rows=[
+    betaClientRow({at:inside,code:'BOOT_OK'}),
+    betaClientRow({at:inside,code:'PRODUCT_ACTION',reason:'search_used'}),
+    betaClientRow({at:inside,code:'OPERATION_TIMING',reason:'search',durationMs:250}),
+    {
+      created_at:inside,
+      source:'beta',
+      event_type:'beta_feedback',
+      code:'BETA_FEEDBACK',
+      message:'sensitive-feedback-text',
+      metadata:betaMeta(SUBJECT_A,{category:'search',betaSeverity:'MINOR',explicitUserFeedback:true}),
+    },
+    {
+      ...betaClientRow({at:inside,code:'BOOT_OK',subject:SUBJECT_B}),
+      metadata:betaMeta(SUBJECT_B,{betaMembershipVerified:false,rawQuery:'should-not-return'}),
+    },
+    betaClientRow({at:inside,code:'BOOT_OK',subject:'not-a-valid-subject'}),
+    betaClientRow({at:'not-a-date',code:'BOOT_OK',subject:SUBJECT_B}),
+    betaClientRow({at:future,code:'BOOT_OK',subject:SUBJECT_B}),
+  ];
+
+  const {runtime}=createHarness({
+    readOpsEventsRange:async()=>({items:rows,persistent:true,truncated:true}),
+  });
+  const result=await runtime.apiBetaDashboard(
+    {url:'https://example.test/api/beta-dashboard?days=garbage'},
+    {
+      betaAccessEnabled:true,
+      betaTelegramIds:[101,102],
+      adminTelegramIds:[],
+      botToken:'configured',
+    },
+  );
+
+  assert.equal(result.status,200);
+  assert.equal(result.body.periodDays,7);
+  assert.equal(result.body.metrics.miniAppLaunch.events,1);
+  assert.equal(result.body.metrics.searchUsed.events,1);
+  assert.equal(result.body.journey.betaUsers,1);
+  assert.equal(result.body.timings.search.samples,1);
+  assert.equal(result.body.sample.opsSampleLimited,true);
+  assert.ok(result.body.expansionDecision.hardBlockers.includes('beta_ops_sample_truncated'));
+
+  assert.equal(result.body.privacy.telegramIdsReturned,false);
+  assert.equal(result.body.privacy.searchQueriesReturned,false);
+  assert.equal(result.body.privacy.errorTextsReturned,false);
+  assert.equal(result.body.privacy.feedbackTextsReturned,false);
+  const serialized=JSON.stringify(result.body);
+  assert.doesNotMatch(serialized,/sensitive-feedback-text|should-not-return/);
 });
 
-test('admin first level is owner status while Phase 5 and technical tools stay under details',()=>{
+test('Phase 5 journey and provider summaries reject untimed or malformed evidence', () => {
+  const {runtime}=createHarness();
+  const at=new Date().toISOString();
+
+  const journey=runtime.phase5JourneySummary([
+    {
+      created_at:'not-a-date',
+      source:'client',
+      event_type:'client_telemetry',
+      code:'BOOT_OK',
+      metadata:phase5Meta(),
+    },
+  ]);
+  assert.equal(journey.verifiedNormalUsers,0);
+  assert.equal(journey.sessions,0);
+
+  const provider=runtime.phase5ProviderSummary([
+    {
+      created_at:at,
+      source:'phase5',
+      event_type:'provider_usage',
+      code:'PHASE5_PROVIDER_USAGE',
+      metadata:phase5Meta({
+        requestKind:'search',
+        networkRequests:2,
+        cacheHits:1,
+        staleCacheHits:0,
+        quotaBlocks:0,
+        sharedCooldowns:0,
+      }),
+    },
+    {
+      created_at:at,
+      source:'phase5',
+      event_type:'provider_usage',
+      code:'PHASE5_PROVIDER_USAGE',
+      metadata:phase5Meta({
+        requestKind:'search',
+        networkRequests:true,
+        cacheHits:'999',
+        quotaBlocks:false,
+      }),
+    },
+    {
+      created_at:at,
+      source:'phase5',
+      event_type:'provider_usage',
+      code:'PHASE5_PROVIDER_USAGE',
+      metadata:phase5Meta({
+        requestKind:'unexpected_kind',
+        networkRequests:500,
+      }),
+    },
+  ],{sessions:1,users:1,fullJourneys:1});
+
+  assert.equal(provider.networkRequests,2);
+  assert.equal(provider.cacheHits,1);
+  assert.equal(provider.requestsPerSession,2);
+  assert.equal(provider.byFeature.search.requests,2);
+  assert.equal('unexpected_kind' in provider.byFeature,false);
+});
+
+test('Phase 5 evidence gate does not coerce boolean or string counters into readiness', () => {
+  const {runtime}=createHarness();
+  const gate=runtime.phase5EvidenceGate({
+    journey:{verifiedNormalUsers:'500',sessions:true,fullCompleted:'500'},
+    timings:{
+      search:{samples:'500'},
+      match:{samples:true},
+      ai:{samples:'500'},
+      live:{samples:true},
+    },
+    coverage:{samples:'500',live:{samples:'500'}},
+    opsSampleLimited:'false',
+  });
+
+  assert.equal(gate.thresholdsMet,false);
+  for (const item of Object.values(gate.requirements)) {
+    assert.equal(item.actual,0);
+    assert.equal(item.pass,false);
+  }
+  assert.equal(gate.liveStatus,'INSUFFICIENT_LIVE_SAMPLE');
+  assert.equal(gate.opsSampleLimited,false);
+});
+
+test('Phase 5 dashboard defaults malformed periods and honors backend truncation explicitly', async () => {
+  const {runtime}=createHarness({
+    readOpsEventsRange:async()=>({items:[],persistent:true,truncated:true}),
+  });
+
+  const result=await runtime.apiPhase5Dashboard(
+    {url:'https://example.test/api/phase5-dashboard?days=not-a-number'},
+    {betaAccessEnabled:false,botToken:'configured'},
+  );
+
+  assert.equal(result.status,200);
+  assert.equal(result.body.periodDays,7);
+  assert.equal(result.body.evidenceGate.opsSampleLimited,true);
+  assert.equal(result.body.evidenceGate.thresholdsMet,false);
+  assert.equal(result.body.sample.opsSampleLimited,true);
+});
+
+test('routing and UI keep observation admin-only while explicit feedback remains user-facing', () => {
+  const router=readFileSync(new URL('../src/router.js',import.meta.url),'utf8');
+  const publicHtml=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
+  const adminHtml=readFileSync(new URL('../public/admin.html',import.meta.url),'utf8');
+  const dashboardModule=readFileSync(new URL('../public/modules/admin-beta-dashboard.js',import.meta.url),'utf8');
+
+  assert.match(
+    router,
+    /pathname === '\/api\/beta-dashboard'[\s\S]*?!adminAllowed\(\)[\s\S]*?adminForbidden\(\)/,
+  );
+  assert.match(router,/pathname === '\/api\/beta-feedback'[\s\S]*?apiBetaFeedback\(request, cfg, user\)/);
+  assert.match(publicHtml,/id="betaFeedbackOpenBtn"[^>]*>Сообщить о проблеме<\/button>/);
+  assert.doesNotMatch(publicHtml,/id="betaFeedbackOpenBtn"[^>]*data-admin-only/);
+
   assert.match(adminHtml,/OWNER DASHBOARD/);
-  assert.match(adminHtml,/id="adminOverviewDatabase"/);
-  assert.match(adminHtml,/id="adminOverviewNotifications"/);
-  assert.match(adminHtml,/id="adminOverviewAi"/);
   assert.match(adminHtml,/id="betaHealthPanel"/);
   assert.match(adminHtml,/id="betaDashboardPanel"/);
   assert.match(adminHtml,/id="adminAdvancedTools"/);
-  assert.match(adminHtml,/Расширенные инструменты/);
-  const organize=block(app,'function organizeAdminConsole','async function loadAdvancedAdminTools');
-  for (const panel of ['#betaHealthPanel','#betaDashboardPanel','runtime-controls-panel','provider-status-panel','diagnostics-panel','model-quality-panel']) {
-    assert.ok(organize.includes(panel),panel);
-  }
-});
-
-test('beta dashboard is admin-only while feedback remains available to beta users',()=>{
-  assert.match(worker,/url\.pathname === '\/api\/beta-dashboard'[\s\S]*isAdminUser\(user, cfg\)/);
-  assert.match(worker,/url\.pathname === '\/api\/beta-feedback'/);
-  assert.doesNotMatch(html,/beta-feedback-panel" data-admin-only/);
-});
-
-
-test('closed beta dashboard requires verified server-side membership and excludes pre-boundary cohort rows',()=>{
-  assert.match(worker,/const CLOSED_BETA_COHORT = 'closed_beta_v1'/);
-  const telemetry=block(worker,'async function apiClientTelemetry','const BETA_FEEDBACK_CATEGORIES');
-  assert.match(telemetry,/isClosedBetaUser\(user, cfg\)/);
-  assert.match(telemetry,/betaMembershipVerified:\s*true/);
-  const feedback=block(worker,'async function apiBetaFeedback','function betaMetricSummary');
-  assert.match(feedback,/isClosedBetaUser\(user,cfg\)/);
-  assert.match(feedback,/betaMembershipVerified:true/);
-  const dashboard=block(worker,'async function apiBetaDashboard','async function readOpsEventsRange');
-  assert.match(dashboard,/metadata\?\.betaCohort/);
-  assert.match(dashboard,/betaMembershipVerified===true/);
-  assert.match(dashboard,/cohort:CLOSED_BETA_COHORT/);
-  assert.match(dashboard,/membershipBoundary:'server_allowlist_verified'/);
-  const subject=block(worker,'async function closedBetaTelemetrySubject','const CLIENT_TELEMETRY_VIEWS');
-  assert.match(subject,/hmacSha256/);
-  assert.match(subject,/cfg\.botToken/);
-  assert.match(subject,/slice\(0,32\)/);
-  assert.match(telemetry,/!betaParticipant && event === 'boot_ok'/);
-  assert.match(telemetry,/!betaParticipant && event === 'product_action'/);
-  assert.match(telemetry,/!betaParticipant && event === 'action_error'/);
-  assert.match(dashboard,/betaClientRows/);
-  assert.match(dashboard,/betaSubject/);
-  assert.match(dashboard,/telegramIdsStoredInBetaTelemetry:false/);
-  assert.doesNotMatch(dashboard,/growth_events|telegram_id/);
-});
-
-test('strict beta API gate runs only after Telegram initData validation and before normal API routing',()=>{
-  const auth=block(worker,'async function getRequestUser','async function upsertUser');
-  assert.match(auth,/validateTelegramInitData/);
-  assert.match(auth,/const telegramValidated = Boolean\(user\)/);
-  assert.match(auth,/user\.__telegramValidated = telegramValidated/);
-  const userAt=worker.indexOf('const user = await getRequestUser(request, cfg)');
-  const betaAt=worker.indexOf('const betaAccess = closedBetaAccessDecision(user, cfg)',userAt);
-  const runtimeAt=worker.indexOf('const runtimeState = await loadRuntimeControls(cfg)',userAt);
-  assert.ok(userAt>=0 && betaAt>userAt && runtimeAt>betaAt);
-  assert.match(worker,/CLOSED_BETA_ACCESS_REQUIRED/);
-  assert.match(worker,/apiBetaFeedback\(request, cfg, user\)/);
+  assert.match(dashboardModule,/\/api\/phase5-dashboard\?days=/);
 });
