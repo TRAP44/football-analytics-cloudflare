@@ -73,6 +73,13 @@ export function createGrowthReferralRuntime(deps = {}) {
       .slice(0,max);
   }
 
+  function boundedOpaqueText(value,max=512) {
+    if (typeof value!=='string') return '';
+    if (!value || value.length>max) return '';
+    if (/[\u0000-\u001f\u007f]/.test(value)) return '';
+    return value;
+  }
+
   function safeCall(fn,...args) {
     try {
       return fn(...args);
@@ -167,7 +174,7 @@ export function createGrowthReferralRuntime(deps = {}) {
   }
 
   async function stableEventKeyToken(value = '') {
-    const raw=safeText(value,512);
+    const raw=boundedOpaqueText(value,512);
     if (!raw) return '';
     if (/^[A-Za-z0-9._:-]{1,160}$/.test(raw)) return raw;
     const subtle=globalThis.crypto?.subtle;
@@ -492,7 +499,7 @@ export function createGrowthReferralRuntime(deps = {}) {
     const id=positiveSafeInteger(userId);
     if (!id) return '';
 
-    const token=safeText(safeRead(cfg,'botToken'),512);
+    const token=boundedOpaqueText(safeRead(cfg,'botToken'),512);
     const rawCode=await safeAsyncCall(opaqueReferralCode,id,token);
     const code=normalizedReferralCode(rawCode);
     if (!code) return '';
@@ -744,7 +751,7 @@ export function createGrowthReferralRuntime(deps = {}) {
   async function recordReferredPayment(userId,payment,plan,cfg) {
     const id=positiveSafeInteger(userId);
     const value=plainObject(payment) || {};
-    const chargeId=safeText(
+    const chargeId=boundedOpaqueText(
       safeRead(value,'telegram_payment_charge_id'),
       512,
     );
