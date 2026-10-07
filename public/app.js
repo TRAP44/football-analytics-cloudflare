@@ -25,6 +25,7 @@ import { analysisAccessUsageHtml, buildAnalysisAccessUsage } from './modules/ana
 import { createGlobalSearchRenderer } from './modules/global-search-renderer.js';
 import { createGlobalSearchController } from './modules/global-search-controller.js';
 import { buildPlayerComparisonCandidates, playerComparisonHtml, samePlayer } from './modules/player-comparison.js';
+import { homeMatchSections as buildHomeMatchSections, selectHomePersonalMatch } from './modules/home-match-priority.js';
 import { createPlayerFollowModule } from './modules/player-follow.js';
 import {
   CLIENT_VERSION,
@@ -2821,23 +2822,12 @@ function personalMatchInsight(match, signals = personalContextSignals()) {
 }
 
 function homePersonalMatch(signals = personalContextSignals(), nowMs = Date.now()) {
-  if (!signals.hasPersonalData) return null;
-  const rows = state.matches
-    .filter(match => !match.finished && !match.youthReserve)
-    .map(match => ({ match, insight:personalMatchInsight(match, signals) }))
-    .filter(item => item.insight.favorite || item.insight.viewedTeam)
-    .sort((a, b) => {
-      if (Boolean(a.match.live) !== Boolean(b.match.live)) return a.match.live ? -1 : 1;
-      const scoreDelta = Number(b.insight.score || 0) - Number(a.insight.score || 0);
-      if (scoreDelta) return scoreDelta;
-      const aDate = Date.parse(a.match.date || '') || Number.POSITIVE_INFINITY;
-      const bDate = Date.parse(b.match.date || '') || Number.POSITIVE_INFINITY;
-      const aFuture = aDate >= nowMs ? 0 : 1;
-      const bFuture = bDate >= nowMs ? 0 : 1;
-      if (aFuture !== bFuture) return aFuture - bFuture;
-      return aDate - bDate;
-    });
-  return rows[0] || null;
+  return selectHomePersonalMatch({
+    matches:state.matches,
+    signals,
+    nowMs,
+    insightForMatch:match=>personalMatchInsight(match,signals),
+  });
 }
 
 function homePersonalMatchMeta(item) {
@@ -3272,28 +3262,7 @@ function renderAiFocus() {
   wrap.querySelectorAll('[data-ai-rank-history]').forEach(button => button.addEventListener('click', event => openHistoryAnalysis(Number(event.currentTarget.dataset.aiRankHistory), event.currentTarget)));
 }
 function homeMatchSections(list, nowMs = Date.now()) {
-  const soonWindowMs = 3 * 60 * 60 * 1000;
-  const sections = [
-    { key:'live', label:'Сейчас идут', tone:'live', matches:[] },
-    { key:'soon', label:'Скоро начнутся', tone:'soon', matches:[] },
-    { key:'later', label:'Позже', tone:'later', matches:[] },
-    { key:'finished', label:'Завершённые', tone:'finished', matches:[] },
-  ];
-  for (const match of list) {
-    if (match.live) {
-      sections[0].matches.push(match);
-      continue;
-    }
-    if (match.finished) {
-      sections[3].matches.push(match);
-      continue;
-    }
-    const kickoffMs = Date.parse(match.date || '');
-    const startsInMs = Number.isFinite(kickoffMs) ? kickoffMs - nowMs : Number.POSITIVE_INFINITY;
-    if (startsInMs >= 0 && startsInMs <= soonWindowMs) sections[1].matches.push(match);
-    else sections[2].matches.push(match);
-  }
-  return sections.filter(section => section.matches.length);
+  return buildHomeMatchSections(list,nowMs);
 }
 
 function homeMatchSectionsHtml(list) {
