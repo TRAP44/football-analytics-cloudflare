@@ -301,6 +301,12 @@ export function createModelIntelligenceRuntime(deps) {
       components.push({value,weight});
     };
 
+    const homeVenuePpg=finiteRange(h?.homePpg,0,3);
+    const awayVenuePpg=finiteRange(a?.awayPpg,0,3);
+    if (homeVenuePpg !== null && awayVenuePpg !== null) {
+      add(clamp((homeVenuePpg-awayVenuePpg)*4.5,-9,9),1);
+    }
+
     const homeAttack=finiteRange(h?.goalsForPerMatch,0,10);
     const awayAttack=finiteRange(a?.goalsForPerMatch,0,10);
     if (homeAttack !== null && awayAttack !== null) {
