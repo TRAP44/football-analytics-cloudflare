@@ -290,8 +290,19 @@ export function createOperationalOrchestrationRuntime(deps = {}) {
 
   function providerCooldownTimestamp() {
     const provider=plainObject(safeRead(memory,'provider'));
+    if (!provider) return NaN;
+
+    let hasCooldown=false;
+    try {
+      hasCooldown=Object.hasOwn(provider,'cooldownUntil');
+    } catch {
+      return NaN;
+    }
+    if (!hasCooldown) return 0;
+
     const raw=safeRead(provider,'cooldownUntil');
-    if (raw === null || raw === undefined || raw === '') return 0;
+    if (raw === null || raw === '') return 0;
+    if (raw === undefined) return NaN;
 
     if (typeof raw === 'number') {
       return Number.isSafeInteger(raw) && raw >= 0 && raw <= 8.64e15
@@ -308,9 +319,32 @@ export function createOperationalOrchestrationRuntime(deps = {}) {
         ? number
         : NaN;
     }
-    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(text)) {
+
+    const iso=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|[+-]\d{2}:\d{2})$/.exec(text);
+    if (!iso) return NaN;
+
+    const year=Number(iso[1]);
+    const month=Number(iso[2]);
+    const day=Number(iso[3]);
+    const hour=Number(iso[4]);
+    const minute=Number(iso[5]);
+    const second=Number(iso[6]);
+    if (
+      month < 1 || month > 12
+      || day < 1
+      || day > new Date(Date.UTC(year,month,0)).getUTCDate()
+      || hour > 23
+      || minute > 59
+      || second > 59
+    ) {
       return NaN;
     }
+
+    if (iso[8] !== 'Z') {
+      const offset=/^[+-](\d{2}):(\d{2})$/.exec(iso[8]);
+      if (!offset || Number(offset[1]) > 23 || Number(offset[2]) > 59) return NaN;
+    }
+
     const timestamp=Date.parse(text);
     return Number.isFinite(timestamp) && timestamp >= 0 && timestamp <= 8.64e15
       ? timestamp
