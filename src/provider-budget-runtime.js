@@ -22,7 +22,7 @@ export function createProviderBudgetRuntime(deps) {
     }
     if (typeof value !== 'string' || value.length > 48) return null;
     const raw=value.trim();
-    if (!raw || !/^(?:\\d+|\\d+\\.\\d+|\\.\\d+)$/.test(raw)) return null;
+    if (!raw || !/^(?:\d+|\d+\.\d+|\.\d+)$/.test(raw)) return null;
     const number=Number(raw);
     return Number.isFinite(number) && number >= 0 ? number : null;
   }
