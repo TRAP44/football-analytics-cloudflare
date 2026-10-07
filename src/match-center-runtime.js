@@ -247,6 +247,41 @@ export function createMatchCenterRuntime(deps) {
     return payload;
   }
 
+  function strictTimestampMs(value) {
+    if (typeof value!=='string' || !value.trim()) return null;
+    const raw=value.trim();
+    if (
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/i.test(raw)
+    ) return null;
+    const timestamp=Date.parse(raw);
+    return Number.isFinite(timestamp) ? timestamp : null;
+  }
+
+  function upcomingCachePastKickoff(payload,nowMs=Date.now()) {
+    const value=objectValue(payload);
+    if (!value || safeText(value.mode,24)!=='upcoming') return false;
+    const kickoffMs=strictTimestampMs(safeRead(objectValue(value.match),'date'));
+    const now=finiteNumber(nowMs);
+    return kickoffMs!==null && now!==null && now>=kickoffMs;
+  }
+
+  function currentLiveRefreshSeconds(mode,budget=null) {
+    if (mode!=='live') return 0;
+
+    let controls=null;
+    try { controls=objectValue(runtimeControlsSnapshot()); } catch {}
+    if (controls?.liveEnabled!==true) return 0;
+
+    let profile=objectValue(budget);
+    if (!profile) {
+      try { profile=objectValue(providerBudgetProfile()); } catch {}
+    }
+    const configured=positiveSafeInteger(profile?.liveRefreshSeconds);
+    return configured!==null
+      ? Math.max(10,Math.min(300,configured))
+      : 0;
+  }
+
   function prematchAnalysisPayload(value,fixtureId) {
     const payload=objectValue(value);
     if (!payload) return null;
@@ -357,14 +392,20 @@ export function createMatchCenterRuntime(deps) {
     // with a hard minimum of 10 seconds.
     const baseCacheKey=`match-center:${fixtureId}:v17-event-evidence-rc144`;
     const cachedCandidate=await optionalAsync(getCache,baseCacheKey,cfg);
-    const cached=matchCenterCachePayload(cachedCandidate,fixtureId);
+    const cachedPayload=matchCenterCachePayload(cachedCandidate,fixtureId);
+    const cachedKickoffExpired=upcomingCachePastKickoff(cachedPayload);
+    const cached=cachedKickoffExpired ? null : cachedPayload;
     if (cachedCandidate && !cached) {
       await safeRecordOps(cfg,{
         severity:'warning',
         source:'cache',
         eventType:'match_center_cache_rejected',
-        code:'MATCH_CENTER_CACHE_INVALID',
-        message:'Match Center ignored a cache entry whose fixture identity or mode was invalid.',
+        code:cachedKickoffExpired
+          ? 'MATCH_CENTER_CACHE_KICKOFF_EXPIRED'
+          : 'MATCH_CENTER_CACHE_INVALID',
+        message:cachedKickoffExpired
+          ? 'Match Center ignored an upcoming cache entry after scheduled kickoff.'
+          : 'Match Center ignored a cache entry whose fixture identity or mode was invalid.',
         meta:{fixtureId},
       });
     }
@@ -453,6 +494,7 @@ export function createMatchCenterRuntime(deps) {
               && Boolean(cached.liveOdds),
           } : {}),
         },
+        refreshSeconds:currentLiveRefreshSeconds(cachedMode),
         cached:true,
       });
     }
@@ -555,6 +597,7 @@ export function createMatchCenterRuntime(deps) {
           cached:true,
           stale:true,
           warning:'Данные матча показаны из последнего сохранённого снимка. Устаревшие live-сигналы исключены из аналитики.',
+          refreshSeconds:currentLiveRefreshSeconds(staleMode),
           retryAfter:boundedRetryAfter(error?.retryAfter,60),
         });
       }
@@ -943,16 +986,10 @@ export function createMatchCenterRuntime(deps) {
       finalBudget=objectValue(providerBudgetProfile()) || budgetProfile;
     } catch {}
 
-    let runtimeControls={};
-    try { runtimeControls=objectValue(runtimeControlsSnapshot()) || {}; } catch {}
-    const configuredRefreshSeconds=positiveSafeInteger(
-      finalBudget?.liveRefreshSeconds,
+    const refreshSeconds=currentLiveRefreshSeconds(
+      centerMode,
+      finalBudget,
     );
-    const refreshSeconds=live
-      && runtimeControls.liveEnabled!==false
-      && configuredRefreshSeconds!==null
-        ? Math.max(10,Math.min(300,configuredRefreshSeconds))
-        : 0;
 
     let rawFormattedStatistics={items:[],home:{values:{}},away:{values:{}}};
     try {
