@@ -418,6 +418,45 @@ test('send menu isolates growth telemetry failures and preserves multiline AI co
   assert.match(message.payload.text,/first line\nsecond line/);
 });
 
+test('one-tap telemetry keeps handoff source categorical and never stores caller text', async () => {
+  const rawSource='arsenal vs chelsea user query';
+  const first=runtime();
+  await first.api.sendBotFixtureMenu(
+    request,
+    {},
+    7,
+    700,
+    123,
+    {source:rawSource},
+  );
+  const firstEvents=first.growth.filter(event=>
+    ['match_open','quick_ai','ai_handoff'].includes(event.eventName)
+  );
+  assert.ok(firstEvents.length>=3);
+  assert.equal(
+    firstEvents.some(event=>event?.metadata?.source===rawSource),
+    false,
+  );
+  assert.ok(firstEvents.every(event=>
+    ['match_select','deep_link','news_impact'].includes(event?.metadata?.source)
+  ));
+
+  const attributed=runtime();
+  await attributed.api.sendBotFixtureMenu(
+    request,
+    {},
+    7,
+    701,
+    123,
+    {source:rawSource,attribution:{source:'social'}},
+  );
+  const attributedEvents=attributed.growth.filter(event=>
+    ['match_open','quick_ai','ai_handoff'].includes(event.eventName)
+  );
+  assert.ok(attributedEvents.length>=3);
+  assert.ok(attributedEvents.every(event=>event?.metadata?.source==='deep_link'));
+});
+
 test('oversized HTML handoff copy fails soft instead of truncating markup', async () => {
   const {api,sent}=runtime({
     botAiHandoffText:()=>`<b>${'x'.repeat(5000)}</b>`,
