@@ -79,6 +79,20 @@ test('season strength refuses to guess from a single structural metric',()=>{
   );
 });
 
+test('season venue profile and table rank can form a structural signal',()=>{
+  const model=runtime();
+  const probabilities=model.seasonStrengthProbabilities(
+    {rank:3},
+    {rank:11},
+    {derived:{homePpg:2.4}},
+    {derived:{awayPpg:0.9}},
+  );
+
+  assert.ok(probabilities);
+  assert.ok(probabilities.home>probabilities.away);
+  assert.ok(Math.abs(sumProbabilities(probabilities)-100)<0.0001);
+});
+
 test('five-signal blend exposes season strength with its configured weight',()=>{
   const model=runtime();
   const seasonStrength={home:58,draw:24,away:18};
