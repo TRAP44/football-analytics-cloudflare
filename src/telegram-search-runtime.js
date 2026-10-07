@@ -309,13 +309,13 @@ export function createTelegramSearchRuntime(deps = {}) {
   function botMatchLine(match, index = 0) {
     const source=validMatch(match);
     if (!source) return '';
-    const home=telegramHtmlEscape(plainObject(source.home)?.name ?? source.homeName ?? 'Хозяева');
-    const away=telegramHtmlEscape(plainObject(source.away)?.name ?? source.awayName ?? 'Гости');
-    const league=telegramHtmlEscape(source.league || 'Турнир');
+    const home=telegramHtmlEscape(safeText(plainObject(source.home)?.name ?? source.homeName,120,'Хозяева'));
+    const away=telegramHtmlEscape(safeText(plainObject(source.away)?.name ?? source.awayName,120,'Гости'));
+    const league=telegramHtmlEscape(safeText(source.league,160,'Турнир'));
 
     let status='время уточняется';
     if (source.live === true) {
-      status=`🔴 ${telegramHtmlEscape(source.statusLabel || 'идёт сейчас')}`;
+      status=`🔴 ${telegramHtmlEscape(safeText(source.statusLabel,80,'идёт сейчас'))}`;
     } else if (source.finished === true) {
       const score=plainObject(source.score) || {};
       const homeScore=telegramHtmlEscape(safeText(score.home,12,'—'));
@@ -328,7 +328,7 @@ export function createTelegramSearchRuntime(deps = {}) {
 
     const selection=plainObject(source.selection);
     const primary=selection?.primary === true
-      ? `⭐ <b>Основной матч для анализа</b> · ${telegramHtmlEscape(selection.reason)}\n`
+      ? `⭐ <b>Основной матч для анализа</b> · ${telegramHtmlEscape(safeText(selection.reason,240))}\n`
       : '';
     const position=nonNegativeInteger(index,0,100) + 1;
     return `${primary}${position}. <b>${home} — ${away}</b>\n${league} · ${status}`;
@@ -489,7 +489,7 @@ export function createTelegramSearchRuntime(deps = {}) {
           recognized:known,
         },
       });
-      const canonical=telegramHtmlEscape(searchPlan.best?.canonical || parts.first);
+      const canonical=telegramHtmlEscape(safeText(searchPlan.best?.canonical,120,parts.first));
       const payload={
         chat_id:cid,
         parse_mode:'HTML',
