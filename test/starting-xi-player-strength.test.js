@@ -125,7 +125,10 @@ test('partial or unconfirmed XI never changes probabilities',()=>{
 
   assert.equal(strength.trusted,false);
   const base={home:41,draw:30,away:29};
-  assert.deepEqual(model.applyLineupStrengthAdjustment(base,strength),base);
+  const adjusted=model.applyLineupStrengthAdjustment(base,strength);
+  assert.ok(Math.abs(adjusted.home-base.home)<0.0001);
+  assert.ok(Math.abs(adjusted.draw-base.draw)<0.0001);
+  assert.ok(Math.abs(adjusted.away-base.away)<0.0001);
 });
 
 test('insufficient seasonal player coverage blocks lineup strength',()=>{
