@@ -76,13 +76,16 @@ test('RC103 rejects public technical Supabase health', async () => {
 
 
 test('RC103 schedules a read-only production monitor every 15 minutes', () => {
-  const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/router.js','utf8')+'\n'+fs.readFileSync('src/scheduled-jobs.js','utf8');
-  assert.match(worker,/async function runProductionMonitor\(/);
-  assert.match(worker,/scheduledAt\.getUTCMinutes\(\) % 15 === 0/);
-  assert.match(worker,/consumesFootballApi: false/);
-  assert.match(worker,/autoRollback: false/);
-  assert.match(worker,/source: 'monitor'/);
-  assert.match(worker,/eventType: 'production_monitor'/);
+  const worker=fs.readFileSync('src/worker.js','utf8');
+  const monitor=fs.readFileSync('src/production-monitor-runtime.js','utf8');
+  const scheduled=fs.readFileSync('src/scheduled-jobs.js','utf8');
+  assert.match(worker,/createProductionMonitorRuntime/);
+  assert.match(monitor,/async function runProductionMonitor\(/);
+  assert.match(scheduled,/scheduledAt\.getUTCMinutes\(\) % 15 === 0/);
+  assert.match(monitor,/consumesFootballApi: false/);
+  assert.match(monitor,/autoRollback: false/);
+  assert.match(monitor,/source: 'monitor'/);
+  assert.match(monitor,/eventType: 'production_monitor'/);
 });
 
 test('RC103 production readiness declares checks before any push', () => {
