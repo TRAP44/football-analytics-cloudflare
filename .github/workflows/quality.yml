@@ -45,6 +45,8 @@ jobs:
       - run: npm run security:privileged
       - run: npm run lint
       - run: npm run check
+      - name: Run full Node test suite
+        run: npm test
       - run: npm run verify:supabase
       - name: Run release-critical tests
         run: npm run test:release
