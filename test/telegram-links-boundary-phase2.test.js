@@ -95,6 +95,13 @@ test('Telegram Mini App query boundary rejects malformed containers keys and ove
     () => api.telegramWebAppUrl(request,{q:'safe\u0000unsafe'}),
     /Некорректный параметр Telegram-ссылки/,
   );
+  assert.throws(
+    () => api.telegramWebAppUrl(
+      request,
+      Object.fromEntries(Array.from({length:25},(_,index)=>['p'+index,String(index)])),
+    ),
+    /Слишком много параметров Telegram-ссылки/,
+  );
 
   const url=new URL(api.telegramWebAppUrl(request,{
     view:'search',
@@ -137,6 +144,14 @@ test('Telegram campaign and fixture share builders tolerate malformed option con
   assert.equal(
     api.campaignStartParam([]),
     'media__social__launch__promo',
+  );
+  assert.equal(
+    api.fixtureShareStartParam(12345,{referralCode:12345}),
+    '',
+  );
+  assert.equal(
+    api.fixtureShareStartParam(12345,{source:'x'.repeat(5000)}),
+    'fx12345__social__match_share__analysis',
   );
 });
 
@@ -248,6 +263,15 @@ test('Telegram links boundary resolves current primary bot identity through cach
   assert.match(link.url,/^https:\/\/t\.me\/MatchRadarAIBot\?start=/);
   assert.match(link.startParam,/^fx12345__/);
   assert.deepEqual(calls,['getMe']);
+});
+
+test('Telegram links boundary rejects oversized bot tokens before calling Telegram', async () => {
+  const {api,calls}=runtime();
+  await assert.rejects(
+    () => api.telegramBotUsername({botToken:'x'.repeat(513)}),
+    /TELEGRAM_BOT_TOKEN is required/,
+  );
+  assert.deepEqual(calls,[]);
 });
 
 test('Telegram share composer preserves URL and truncates oversized text', () => {
