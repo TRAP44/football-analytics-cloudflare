@@ -107,7 +107,7 @@ export function validateMigrationPlan(repoRoot, releaseContract) {
   }
 
   for (const item of buildMigrationPlan('fresh')) {
-    const sourcePath = path.join(repoRoot, item.source);
+    const sourcePath = path.join(paths.repoRoot, item.source);
     if (!fs.existsSync(sourcePath)) {
       throw new Error('Missing Supabase CI migration source: ' + item.source);
     }
@@ -132,27 +132,59 @@ export function validateMigrationPlan(repoRoot, releaseContract) {
   }
 }
 
+function validatedStagePaths(repoRoot,targetDir) {
+  if (typeof repoRoot !== 'string' || !repoRoot.trim()) {
+    throw new TypeError('Supabase CI repoRoot is required.');
+  }
+  if (typeof targetDir !== 'string' || !targetDir.trim()) {
+    throw new TypeError('Supabase CI targetDir is required.');
+  }
+
+  const repo=path.resolve(repoRoot);
+  const target=path.resolve(targetDir);
+  const parsedTarget=path.parse(target);
+  if (target===parsedTarget.root) {
+    throw new Error('Refusing to stage Supabase migrations into a filesystem root.');
+  }
+  if (
+    path.basename(target)!=='migrations'
+    || path.basename(path.dirname(target))!=='supabase'
+  ) {
+    throw new Error('Supabase CI targetDir must end with supabase/migrations.');
+  }
+
+  const relativeToRepo=path.relative(repo,target);
+  const targetInsideRepo=relativeToRepo===''
+    || (!relativeToRepo.startsWith('..'+path.sep) && relativeToRepo!=='..' && !path.isAbsolute(relativeToRepo));
+  if (targetInsideRepo) {
+    throw new Error('Refusing to stage generated CI migrations inside the source repository.');
+  }
+
+  return {repoRoot:repo,targetDir:target};
+}
+
 export function stageMigrationPlan({
   repoRoot,
   targetDir,
   mode = 'fresh',
   clear = true,
 }) {
+  const paths=validatedStagePaths(repoRoot,targetDir);
   const contract = JSON.parse(
-    fs.readFileSync(path.join(repoRoot, 'release-contract.json'), 'utf8'),
+    fs.readFileSync(path.join(paths.repoRoot, 'release-contract.json'), 'utf8'),
   );
-  validateMigrationPlan(repoRoot, contract);
+  validateMigrationPlan(paths.repoRoot, contract);
 
   if (clear) {
-    fs.rmSync(targetDir, { recursive: true, force: true });
+    fs.rmSync(paths.targetDir, { recursive: true, force: true });
   }
-  fs.mkdirSync(targetDir, { recursive: true });
+  fs.mkdirSync(paths.targetDir, { recursive: true });
 
   const plan = buildMigrationPlan(mode);
   for (const item of plan) {
     fs.copyFileSync(
-      path.join(repoRoot, item.source),
-      path.join(targetDir, item.filename),
+      path.join(paths.repoRoot, item.source),
+      path.join(paths.targetDir, item.filename),
     );
   }
   return plan;
