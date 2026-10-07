@@ -118,10 +118,17 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
   const fetchImpl = options.fetchImpl || fetch;
   const retries = boundedNumber(options.retries,10,1,20);
   const retryDelayMs = boundedNumber(options.retryDelayMs,6000,0,60000);
-  const expectedMonetization = String(options.expectedMonetization || 'paused').toLowerCase() === 'enabled' ? 'enabled' : 'paused';
-  const rcNumber = /-rc(\d+)$/i.exec(String(expectedVersion || ''))?.[1];
-  if (!rcNumber) throw new Error('Expected version must end with -rc<number>.');
-  const expectedReleaseCandidate = `RC${rcNumber}`;
+  const monetizationRaw=typeof options.expectedMonetization === 'string'
+    ? options.expectedMonetization.trim().toLowerCase()
+    : 'paused';
+  if (!['enabled','paused'].includes(monetizationRaw)) {
+    throw new Error('Expected monetization state must be enabled or paused.');
+  }
+  const expectedMonetization=monetizationRaw;
+  const versionRaw=typeof expectedVersion === 'string' ? expectedVersion.trim() : '';
+  const versionMatch=/^\d+\.\d+\.\d+-rc(\d+)$/i.exec(versionRaw);
+  if (!versionMatch) throw new Error('Expected version must use <semver>-rc<number>.');
+  const expectedReleaseCandidate=`RC${versionMatch[1]}`;
   let readiness = null;
   let health = null;
   let lastHealthError = '';
@@ -248,9 +255,12 @@ async function main() {
     const wrangler = JSON.parse(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8'));
     configuredMonetization = String(wrangler?.vars?.MONETIZATION_ENABLED || '').toLowerCase() === 'true' ? 'enabled' : 'paused';
   } catch {}
-  const requestedMonetization = process.env.EXPECTED_MONETIZATION || configuredMonetization;
-  const expectedMonetization = String(requestedMonetization).toLowerCase() === 'enabled' ? 'enabled' : 'paused';
-  const result = await runDeploymentSmoke(baseUrl, expectedVersion, expectedSha, { expectedMonetization });
+  const requestedMonetization=process.env.EXPECTED_MONETIZATION || configuredMonetization;
+  const expectedMonetization=String(requestedMonetization).trim().toLowerCase();
+  if (!['enabled','paused'].includes(expectedMonetization)) {
+    throw new Error('EXPECTED_MONETIZATION must be enabled or paused.');
+  }
+  const result=await runDeploymentSmoke(baseUrl,expectedVersion,expectedSha,{expectedMonetization});
   console.log(`Post-deploy smoke passed: ${result.version} sha=${expectedSha} at ${result.origin} (${result.checks} checks).`);
 }
 
