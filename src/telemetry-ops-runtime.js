@@ -427,6 +427,7 @@ export function createTelemetryOpsRuntime(deps = {}) {
         memoryExisting.last_occurred_at=createdAt;
         memoryExisting.metadata={
           ...safeOpsMetadata(safeRead(memoryExisting,'metadata')),
+          ...row.metadata,
           occurrenceCount:nextCount,
           lastOccurredAt:createdAt,
         };
@@ -493,6 +494,7 @@ export function createTelemetryOpsRuntime(deps = {}) {
             memoryExisting.last_occurred_at=row.last_occurred_at;
             memoryExisting.metadata={
               ...safeOpsMetadata(safeRead(memoryExisting,'metadata')),
+              ...row.metadata,
               occurrenceCount:row.occurrence_count,
               lastOccurredAt:row.last_occurred_at,
             };
