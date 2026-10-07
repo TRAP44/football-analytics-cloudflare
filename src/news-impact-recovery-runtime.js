@@ -2957,6 +2957,191 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   }
 
 
+  function newsImpactRecoveryIncidentSloBreachWatchlistDrill() {
+    const feed={
+      available:true,
+      generatedAt:'2026-09-23T18:00:00.000Z',
+      items:[
+        {reason:'server_error',action:'full_ai',active:true,severity:'critical',ageMinutes:610,breachTypes:['ack','recovery'],startedAt:'2026-09-23T08:00:00.000Z'},
+        {reason:'timeout',action:'share',active:true,severity:'high',ageMinutes:70,breachTypes:['ack'],startedAt:'2026-09-23T16:50:00.000Z'},
+        {reason:'timeout',action:'share',active:'true',severity:'high',ageMinutes:450,breachTypes:['recovery'],startedAt:'2026-09-20T08:00:00.000Z'},
+      ],
+      repeated:[
+        {reason:'server_error',action:'full_ai',breachEpisodes:3,activeBreaches:1},
+        {reason:'timeout',action:'share',breachEpisodes:2,activeBreaches:0},
+      ],
+    };
+    const watchlist=buildNewsImpactRecoveryIncidentSloBreachWatchlist(feed,{limit:true});
+    const malformed=buildNewsImpactRecoveryIncidentSloBreachWatchlist({broken:true},null);
+    return {
+      pass:watchlist.summary.active===2
+        && watchlist.summary.criticalActive===1
+        && watchlist.summary.ackActive===2
+        && watchlist.summary.recoveryActive===1
+        && watchlist.summary.oldestActiveMinutes===610
+        && watchlist.summary.repeatedActivePairs===1
+        && watchlist.items[0]?.reason==='server_error'
+        && watchlist.items.length===2
+        && malformed.available===true
+        && malformed.items.length===0
+        && watchlist.thresholds.source==='rc87_existing_slo'
+        && watchlist.routingChanged===false
+        && watchlist.persistence==='none'
+        && watchlist.privacy.telegramIdsExposed===false,
+      cases:14,
+    };
+  }
+
+  function newsImpactRecoveryIncidentSloBreachTriageDrill() {
+    const watchlist={
+      available:true,
+      generatedAt:'2026-09-23T18:00:00.000Z',
+      thresholds:{ackMinutes:30,criticalAckMinutes:120,recoveryMinutes:360,source:'rc87_existing_slo'},
+      items:[
+        {reason:'server_error',action:'full_ai',active:true,severity:'critical',ageMinutes:610,breachTypes:['ack','recovery'],startedAt:'2026-09-23T08:00:00.000Z'},
+        {reason:'provider_unavailable',action:'full_ai',active:true,severity:'critical',ageMinutes:180,breachTypes:['ack'],startedAt:'2026-09-23T15:00:00.000Z'},
+        {reason:'timeout',action:'share',active:true,severity:'high',ageMinutes:70,breachTypes:['ack'],startedAt:'2026-09-23T16:50:00.000Z'},
+      ],
+    };
+    const triage=buildNewsImpactRecoveryIncidentSloBreachTriage(watchlist,{limit:true});
+    const malformed=buildNewsImpactRecoveryIncidentSloBreachTriage({items:{broken:true}},null);
+    return {
+      pass:triage.summary.total===3
+        && triage.summary.recoveryOverdue===1
+        && triage.summary.ackCritical===1
+        && triage.summary.ackOverdue===1
+        && triage.items[0]?.triageStage==='recovery_overdue'
+        && triage.items[1]?.triageStage==='ack_critical'
+        && triage.items[2]?.triageStage==='ack_overdue'
+        && malformed.items.length===0
+        && triage.thresholds.source==='rc87_existing_slo'
+        && triage.routingChanged===false
+        && triage.persistence==='none'
+        && triage.privacy.telegramIdsExposed===false,
+      cases:12,
+    };
+  }
+
+  function newsImpactRecoveryIncidentSloBreachTriageTrendDrill() {
+    const asOfMs=Date.parse('2026-09-23T18:00:00.000Z');
+    const episodes=[
+      {
+        reason:'server_error',reasonLabel:'Ошибка сервера',action:'full_ai',actionLabel:'Полный AI',
+        startedAt:'2026-09-03T08:00:00.000Z',recoveredAt:null,firstAcknowledgedAt:null,
+      },
+      {
+        reason:'timeout',reasonLabel:'Таймаут',action:'share',actionLabel:'Поделиться',
+        startedAt:'2026-09-15T08:00:00.000Z',recoveredAt:null,firstAcknowledgedAt:'2026-09-15T09:00:00.000Z',
+      },
+      {
+        reason:'provider_unavailable',reasonLabel:'Провайдер недоступен',action:'full_ai',actionLabel:'Полный AI',
+        startedAt:'2026-09-23T15:30:00.000Z',recoveredAt:null,firstAcknowledgedAt:null,
+      },
+      {
+        reason:'match_missing',reasonLabel:'Матч не найден',action:'news',actionLabel:'Новости',
+        startedAt:'2026-09-10T10:00:00.000Z',recoveredAt:'2026-09-11T10:00:00.000Z',firstAcknowledgedAt:null,
+      },
+    ];
+    const trend=buildNewsImpactRecoveryIncidentSloBreachTriageTrend(episodes,{asOfMs,weeks:4});
+    const malformed=buildNewsImpactRecoveryIncidentSloBreachTriageTrend({broken:true},null);
+    const server=trend.stuck.find(item=>item.reason==='server_error' && item.action==='full_ai');
+    return {
+      pass:trend.weekly.length===4
+        && trend.summary.currentTotal===3
+        && trend.weekly[0].total===0
+        && trend.weekly[1].total===1
+        && trend.weekly[2].total===2
+        && trend.weekly[3].recoveryOverdue===2
+        && trend.summary.totalDelta===1
+        && trend.summary.recoveryOverdueDelta===0
+        && trend.summary.stuckPairs===2
+        && server?.weeksPresent===3
+        && server?.recoveryOverdueWeeks===3
+        && malformed.weekly.length===4
+        && malformed.summary.currentTotal===0,
+      cases:13,
+    };
+  }
+
+  function newsImpactRecoveryIncidentSloBreachImpactRankingDrill() {
+    const asOfMs=Date.parse('2026-09-23T18:00:00.000Z');
+    const episodes=[
+      {
+        reason:'server_error',reasonLabel:'Ошибка сервера',action:'full_ai',actionLabel:'Полный AI',
+        startedAt:'2026-09-23T08:00:00.000Z',recoveredAt:null,firstAcknowledgedAt:null,
+      },
+      {
+        reason:'server_error',reasonLabel:'Ошибка сервера',action:'full_ai',actionLabel:'Полный AI',
+        startedAt:'2026-09-22T12:00:00.000Z',recoveredAt:'2026-09-22T20:00:00.000Z',firstAcknowledgedAt:'2026-09-22T13:00:00.000Z',
+      },
+      {
+        reason:'timeout',reasonLabel:'Таймаут',action:'share',actionLabel:'Поделиться',
+        startedAt:'2026-09-23T16:00:00.000Z',recoveredAt:null,firstAcknowledgedAt:'2026-09-23T17:00:00.000Z',
+      },
+      {
+        reason:'match_missing',reasonLabel:'Матч не найден',action:'news',actionLabel:'Новости',
+        startedAt:'2026-09-23T17:50:00.000Z',recoveredAt:'2026-09-23T17:55:00.000Z',firstAcknowledgedAt:null,
+      },
+    ];
+    const result=buildNewsImpactRecoveryIncidentSloBreachImpactRanking(episodes,{asOfMs,limit:true});
+    const malformed=buildNewsImpactRecoveryIncidentSloBreachImpactRanking({broken:true},null);
+    const top=result.ranking[0];
+    return {
+      pass:result.summary.pairs===2
+        && result.summary.activePairs===2
+        && result.summary.breachEpisodes===3
+        && result.summary.totalOverdueMinutes===990
+        && result.summary.ackOverdueMinutes===630
+        && result.summary.recoveryOverdueMinutes===360
+        && result.summary.topContributionPct===97
+        && top?.reason==='server_error'
+        && top?.totalOverdueMinutes===960
+        && top?.contributionPct===97
+        && malformed.ranking.length===0
+        && malformed.summary.totalOverdueMinutes===0,
+      cases:12,
+    };
+  }
+
+  function newsImpactRecoveryIncidentSloBreachImpactTrendDrill() {
+    const asOfMs=Date.parse('2026-09-23T18:00:00.000Z');
+    const episodes=[
+      {
+        reason:'server_error',reasonLabel:'Ошибка сервера',action:'full_ai',actionLabel:'Полный AI',
+        startedAt:'2026-09-03T00:00:00.000Z',recoveredAt:'2026-09-12T00:00:00.000Z',firstAcknowledgedAt:'2026-09-03T02:00:00.000Z',
+      },
+      {
+        reason:'timeout',reasonLabel:'Таймаут',action:'share',actionLabel:'Поделиться',
+        startedAt:'2026-09-17T18:00:00.000Z',recoveredAt:null,firstAcknowledgedAt:'2026-09-17T19:00:00.000Z',
+      },
+      {
+        reason:'provider_unavailable',reasonLabel:'Провайдер недоступен',action:'market',actionLabel:'Рынок',
+        startedAt:'2026-09-01T00:00:00.000Z',recoveredAt:null,firstAcknowledgedAt:null,
+      },
+    ];
+    const trend=buildNewsImpactRecoveryIncidentSloBreachImpactTrend(episodes,{asOfMs,weeks:4,limit:true});
+    const malformed=buildNewsImpactRecoveryIncidentSloBreachImpactTrend({broken:true},null);
+    const timeout=trend.pairs.find(item=>item.reason==='timeout');
+    const server=trend.pairs.find(item=>item.reason==='server_error');
+    const provider=trend.pairs.find(item=>item.reason==='provider_unavailable');
+    return {
+      pass:trend.weekly.length===4
+        && trend.weekly[2].totalOverdueMinutes===23400
+        && trend.weekly[3].totalOverdueMinutes===28470
+        && trend.summary.deltaMinutes===5070
+        && timeout?.deltaMinutes===8310
+        && timeout?.direction==='increased'
+        && server?.deltaMinutes===-3240
+        && server?.direction==='decreased'
+        && provider?.deltaMinutes===0
+        && provider?.direction==='unchanged'
+        && malformed.weekly.length===4
+        && malformed.summary.currentOverdueMinutes===0,
+      cases:12,
+    };
+  }
+
+
   function buildNewsImpactRecoveryIncidentSloImpactConcentration(impactRanking = {}) {
     const source=impactRanking && typeof impactRanking==='object' && !Array.isArray(impactRanking)
       ? impactRanking
