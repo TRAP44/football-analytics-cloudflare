@@ -117,11 +117,11 @@ export function phase5SessionToken(scope = globalThis) {
     const storage = scope?.sessionStorage;
     const existing = String(storage?.getItem(PHASE5_SESSION_KEY) || '').toLowerCase();
     if (/^[0-9a-f]{32}$/.test(existing)) return existing;
-    const bytes = new Uint8Array(16);
-    if (scope?.crypto?.getRandomValues) scope.crypto.getRandomValues(bytes);
-    else for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
-    const token = [...bytes].map(value => value.toString(16).padStart(2, '0')).join('');
-    storage?.setItem(PHASE5_SESSION_KEY, token);
+    if (typeof scope?.crypto?.getRandomValues !== 'function') return '';
+    const bytes=new Uint8Array(16);
+    scope.crypto.getRandomValues(bytes);
+    const token=[...bytes].map(value=>value.toString(16).padStart(2,'0')).join('');
+    storage?.setItem(PHASE5_SESSION_KEY,token);
     return token;
   } catch {
     return '';
@@ -130,14 +130,55 @@ export function phase5SessionToken(scope = globalThis) {
 
 export function createApiClient(deps) {
   const { state, tg, inflightGetRequests, observeServerVersion, showBootRecovery, applyRuntimeUi, normalizeApiError, noteRequestSuccess, noteRequestFailure } = deps;
-  const validationSession = phase5SessionToken();
+  if (
+    !state
+    || !(inflightGetRequests instanceof Map)
+    || typeof observeServerVersion !== 'function'
+    || typeof showBootRecovery !== 'function'
+    || typeof applyRuntimeUi !== 'function'
+    || typeof normalizeApiError !== 'function'
+    || typeof noteRequestSuccess !== 'function'
+    || typeof noteRequestFailure !== 'function'
+  ) {
+    throw new TypeError('API client requires explicit runtime dependencies.');
+  }
+  const validationSession=phase5SessionToken();
+
+  function apiPath(value) {
+    if (typeof value !== 'string' || value.length < 5 || value.length > 2048) return '';
+    const raw=value.trim();
+    if (!raw.startsWith('/api/') || raw.startsWith('//') || /[\\\u0000-\u001f\u007f]/.test(raw)) return '';
+    try {
+      const url=new URL(raw,globalThis.location?.origin || 'https://local.invalid');
+      if (url.origin !== (globalThis.location?.origin || 'https://local.invalid')) return '';
+      return `${url.pathname}${url.search}`;
+    } catch {
+      return '';
+    }
+  }
+
+  function timeoutValue(value) {
+    if (value === undefined || value === null || value === '') return 12000;
+    const raw=typeof value === 'number'
+      ? value
+      : typeof value === 'string' && /^\d+$/.test(value.trim())
+        ? Number(value.trim())
+        : Number.NaN;
+    return Number.isFinite(raw) ? Math.max(1000,Math.min(30000,Math.round(raw))) : 12000;
+  }
+
   return async function api(path, options = {}) {
-  const method = String(options.method || 'GET').toUpperCase();
-  const isGet = method === 'GET';
-  const timeoutMs = Number(options.timeoutMs || 12000);
+  const safePath=apiPath(path);
+  if (!safePath) throw Object.assign(new TypeError('Недопустимый API-маршрут.'),{status:400,payload:{category:'client_contract'}});
+  const method=String(options.method || 'GET').toUpperCase();
+  if (!['GET','POST','PUT','PATCH','DELETE'].includes(method)) {
+    throw Object.assign(new TypeError('Недопустимый HTTP-метод.'),{status:400,payload:{category:'client_contract'}});
+  }
+  const isGet=method === 'GET';
+  const timeoutMs=timeoutValue(options.timeoutMs);
   const retryable = isGet && options.retry !== false;
   const dedupe = isGet && options.dedupe !== false;
-  const requestKey = `${method}:${path}`;
+  const requestKey=`${method}:${safePath}`;
 
   if (dedupe && inflightGetRequests.has(requestKey)) {
     state.clientPerf.deduped += 1;
@@ -157,7 +198,7 @@ export function createApiClient(deps) {
       if (validationSession) headers.set('x-phase5-session', validationSession);
       try {
         const { timeoutMs: _timeoutMs, retry: _retry, dedupe: _dedupe, ...fetchOptions } = options;
-        const response = await fetch(path, { ...fetchOptions, method, headers, signal: controller.signal });
+        const response=await fetch(safePath,{...fetchOptions,method,headers,signal:controller.signal});
         const serverVersion = String(response.headers.get('x-app-version') || '');
         if (serverVersion) observeServerVersion(serverVersion, response);
         if (state.compatibilityBlocked) {
