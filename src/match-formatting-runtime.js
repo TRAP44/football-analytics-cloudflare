@@ -117,10 +117,18 @@ export function createMatchFormattingRuntime(deps) {
   function formatH2H(rowsInput, homeId, awayId) {
     let homeWins=0,draws=0,awayWins=0;
     const matches=[];
+    const seenFixtureIds=new Set();
     const teams=teamContext(homeId,awayId);
     if (!teams.valid) return {homeWins,draws,awayWins,matches};
     for (const entry of rows(rowsInput)) {
-      if (!isFinishedStatus(entry?.fixture?.status?.short)) continue;
+      const finishedStatus=safeText(
+        entry?.fixture?.status?.short,
+        16,
+      ).toUpperCase();
+      if (!isFinishedStatus(finishedStatus)) continue;
+      const fixtureId=positiveSafeInteger(entry?.fixture?.id);
+      if (fixtureId && seenFixtureIds.has(fixtureId)) continue;
+      if (fixtureId) seenFixtureIds.add(fixtureId);
       const rowHomeId=positiveSafeInteger(entry?.teams?.home?.id);
       const rowAwayId=positiveSafeInteger(entry?.teams?.away?.id);
       if (!rowHomeId || !rowAwayId || rowHomeId===rowAwayId) continue;
@@ -135,8 +143,16 @@ export function createMatchFormattingRuntime(deps) {
       let winnerId=null;
       const homeWinner=entry?.teams?.home?.winner;
       const awayWinner=entry?.teams?.away?.winner;
-      if (homeWinner === true && awayWinner !== true) winnerId=rowHomeId;
-      else if (awayWinner === true && homeWinner !== true) winnerId=rowAwayId;
+      if (
+        finishedStatus==='PEN'
+        && homeWinner === true
+        && awayWinner !== true
+      ) winnerId=rowHomeId;
+      else if (
+        finishedStatus==='PEN'
+        && awayWinner === true
+        && homeWinner !== true
+      ) winnerId=rowAwayId;
       else if (homeGoals>awayGoals) winnerId=rowHomeId;
       else if (awayGoals>homeGoals) winnerId=rowAwayId;
 
