@@ -31,8 +31,11 @@ function isAcceptedSuppression(result={}) {
   const suppressions=Array.isArray(result.suppressions) ? result.suppressions : [];
   return suppressions.some(suppression => {
     const status=String(suppression?.status || '').trim();
-    // CodeQL in-source suppressions can omit status; preserve that supported form.
-    return !status || status==='accepted';
+    const kind=String(suppression?.kind || '').trim();
+    if (status==='accepted') return true;
+    // CodeQL in-source suppressions can omit status. Do not treat an
+    // unreviewed external suppression as accepted merely because status is absent.
+    return !status && kind==='inSource';
   });
 }
 
