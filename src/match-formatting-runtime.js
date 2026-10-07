@@ -16,16 +16,25 @@ export function createMatchFormattingRuntime(deps) {
     return Array.isArray(value) ? value : [];
   }
 
+  function integerCandidate(value) {
+    if (typeof value==='number') {
+      return Number.isSafeInteger(value) ? value : null;
+    }
+    if (typeof value!=='string') return null;
+    const raw=value.trim();
+    if (!/^\d+$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isSafeInteger(number) ? number : null;
+  }
+
   function positiveSafeInteger(value, max = Number.MAX_SAFE_INTEGER) {
-    if (value === null || value === undefined || value === '') return null;
-    const number=Number(value);
-    return Number.isSafeInteger(number) && number > 0 && number <= max ? number : null;
+    const number=integerCandidate(value);
+    return number!==null && number>0 && number<=max ? number : null;
   }
 
   function nonNegativeSafeInteger(value, max = Number.MAX_SAFE_INTEGER) {
-    if (value === null || value === undefined || value === '') return null;
-    const number=Number(value);
-    return Number.isSafeInteger(number) && number >= 0 && number <= max ? number : null;
+    const number=integerCandidate(value);
+    return number!==null && number>=0 && number<=max ? number : null;
   }
 
   function safeText(value, max = 160) {
