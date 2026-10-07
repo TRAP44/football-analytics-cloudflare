@@ -225,6 +225,7 @@ export function createAppCapabilitiesRuntime({
         oneTapAiHandoff:true,
         focusedMatchHome:true,
         contextualLeagueFilter:true,
+        matchAtAGlanceCockpit:true,
         telegramMiniAppE2E:true,
         telegramWebhookPersistentDedupe:true,
         telegramWebhookDedupeObservability:true,
