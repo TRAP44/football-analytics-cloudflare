@@ -55,6 +55,63 @@ export function createSettlementRuntime(deps) {
     todayUtc,
   } = deps;
 
+  if (!memory || typeof memory !== 'object' || Array.isArray(memory)) {
+    throw new TypeError('Settlement runtime memory is required.');
+  }
+  if (!(memory.modelPredictions instanceof Map)) {
+    throw new TypeError('Settlement runtime requires modelPredictions memory map.');
+  }
+  if (!memory.modelRemediation || typeof memory.modelRemediation !== 'object' || Array.isArray(memory.modelRemediation)) {
+    throw new TypeError('Settlement runtime requires modelRemediation memory state.');
+  }
+  if (!Array.isArray(memory.modelRemediation.actions)) {
+    throw new TypeError('Settlement runtime requires modelRemediation actions array.');
+  }
+  if (!(SETTLEMENT_DRIFT_ACTIONS instanceof Set)) {
+    throw new TypeError('Settlement runtime requires settlement drift actions.');
+  }
+  if (!enc || typeof enc.encode !== 'function') {
+    throw new TypeError('Settlement runtime requires a text encoder.');
+  }
+
+  const requiredFunctions={
+    actualOutcomeFromGoals,
+    brierFromProbabilities,
+    buildSettlementDriftResolution,
+    bytesToHex,
+    fetchWithTimeout,
+    fixtureIdentity,
+    fixtureStatusShort,
+    freeQuotaHealthy,
+    getCache,
+    hasSupabase,
+    isFinishedStatus,
+    loadProviderFixturesForDate,
+    loadRuntimeControls,
+    parseJsonObject,
+    predictionOutcomeKey,
+    probeOptionalTable,
+    providerSnapshot,
+    recordOpsEvent,
+    redactOpsString,
+    regulationScore,
+    scoreBrier,
+    setCache,
+    signalProbabilitySnapshot,
+    stalePredictionCandidates,
+    supaHeaders,
+    supaInsertIgnore,
+    supaPatch,
+    supaSelectMany,
+    supaSelectOne,
+    supaSelectPaged,
+    supaUpsert,
+    todayUtc,
+  };
+  for (const [name,fn] of Object.entries(requiredFunctions)) {
+    if (typeof fn !== 'function') throw new TypeError(`Settlement runtime requires ${name}.`);
+  }
+
   function integerCandidate(value) {
     if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
     if (typeof value !== 'string' || value.length > 24) return null;
@@ -563,13 +620,13 @@ export function createSettlementRuntime(deps) {
       truncatedPotentially: settled.length >= 500 || pending.length >= 500,
       checks,
       examples: {
-        invalidProbabilityFixtures: invalidProbabilities.slice(0, 8).map(row => Number(row?.fixture_id || 0)).filter(Boolean),
-        invalidSnapshotFixtures: invalidSnapshotMetadata.slice(0, 8).map(row => Number(row?.fixture_id || 0)).filter(Boolean),
-        lateSnapshotFixtures: snapshotAfterKickoff.slice(0, 8).map(row => Number(row?.fixture_id || 0)).filter(Boolean),
-        stalePendingFixtures: stalePending.slice(0, 8).map(row => Number(row?.fixture_id || 0)).filter(Boolean),
-        invalidOutcomeFixtures: invalidSettledOutcome.slice(0, 8).map(row => Number(row?.fixture_id || 0)).filter(Boolean),
-        inconsistentPredictionFixtures: inconsistentPrediction.slice(0, 8).map(row => Number(row?.fixture_id || 0)).filter(Boolean),
-        invalidCorrectFlagFixtures: invalidCorrectFlag.slice(0, 8).map(row => Number(row?.fixture_id || 0)).filter(Boolean),
+        invalidProbabilityFixtures: invalidProbabilities.slice(0, 8).map(row=>positiveSafeInteger(row?.fixture_id)).filter(id=>id!==null),
+        invalidSnapshotFixtures: invalidSnapshotMetadata.slice(0, 8).map(row=>positiveSafeInteger(row?.fixture_id)).filter(id=>id!==null),
+        lateSnapshotFixtures: snapshotAfterKickoff.slice(0, 8).map(row=>positiveSafeInteger(row?.fixture_id)).filter(id=>id!==null),
+        stalePendingFixtures: stalePending.slice(0, 8).map(row=>positiveSafeInteger(row?.fixture_id)).filter(id=>id!==null),
+        invalidOutcomeFixtures: invalidSettledOutcome.slice(0, 8).map(row=>positiveSafeInteger(row?.fixture_id)).filter(id=>id!==null),
+        inconsistentPredictionFixtures: inconsistentPrediction.slice(0, 8).map(row=>positiveSafeInteger(row?.fixture_id)).filter(id=>id!==null),
+        invalidCorrectFlagFixtures: invalidCorrectFlag.slice(0, 8).map(row=>positiveSafeInteger(row?.fixture_id)).filter(id=>id!==null),
         invalidFixtureRows: invalidFixtureIds.length,
         duplicateFixtures,
       },
@@ -855,13 +912,13 @@ export function createSettlementRuntime(deps) {
 
   async function settlementDriftResolutionToken(row, event) {
     const source = [
-      Number(row?.fixture_id || 0),
+      positiveSafeInteger(row?.fixture_id) || 0,
       String(row?.settlement_verification_state || ''),
       String(row?.status || ''),
       String(row?.actual_home_goals ?? ''),
       String(row?.actual_away_goals ?? ''),
       String(row?.actual_outcome || ''),
-      Number(event?.id || 0),
+      positiveSafeInteger(event?.id) || 0,
       String(event?.observed_at || ''),
       String(event?.provider_home_goals ?? ''),
       String(event?.provider_away_goals ?? ''),
@@ -926,7 +983,7 @@ export function createSettlementRuntime(deps) {
     const rows = await supaSelectMany(cfg, 'model_predictions', {
       status: 'eq.settled',
       settlement_verification_state: 'eq.drift',
-    }, { limit: Math.max(1, Math.min(20, Number(limit || 20))), order: 'kickoff_at.desc' });
+    }, { limit:Math.max(1,Math.min(20,positiveSafeInteger(limit) || 20)), order:'kickoff_at.desc' });
     if (!rows.length) return { schemaReady: true, schemaStatus: 'ok', items: [], unresolved: 0 };
   
     const ids = [...new Set(rows.map(row => positiveSafeInteger(row?.fixture_id)).filter(id => id !== null))];
@@ -936,8 +993,8 @@ export function createSettlementRuntime(deps) {
     }, { limit: Math.min(100, Math.max(20, ids.length * 4)), order: 'observed_at.desc' });
     const eventByFixture = new Map();
     for (const event of events || []) {
-      const id = Number(event.fixture_id);
-      if (!eventByFixture.has(id)) eventByFixture.set(id, event);
+      const id=positiveSafeInteger(event?.fixture_id);
+      if (id!==null && !eventByFixture.has(id)) eventByFixture.set(id,event);
     }
     const eventIds = [...new Set([...eventByFixture.values()].map(event => positiveSafeInteger(event?.id)).filter(id => id !== null))];
     let resolutions = [];
@@ -946,11 +1003,15 @@ export function createSettlementRuntime(deps) {
         source_event_id: `in.(${eventIds.join(',')})`,
       }, { limit: eventIds.length + 5, order: 'created_at.desc' }).catch(() => []);
     }
-    const resolutionByEvent = new Map((resolutions || []).map(row => [Number(row.source_event_id), row]));
+    const resolutionByEvent=new Map(
+      (resolutions || [])
+        .map(row=>[positiveSafeInteger(row?.source_event_id),row])
+        .filter(([id])=>id!==null),
+    );
   
-    const items = await Promise.all(rows.map(async row => {
-      const event = eventByFixture.get(Number(row.fixture_id)) || null;
-      const locked = event ? resolutionByEvent.get(Number(event.id)) || null : null;
+    const items=await Promise.all(rows.map(async row=>{
+      const event=eventByFixture.get(positiveSafeInteger(row?.fixture_id)) || null;
+      const locked=event ? resolutionByEvent.get(positiveSafeInteger(event?.id)) || null : null;
       const providerStatus = String(event?.provider_status || '').toUpperCase();
       const providerHome = nonNegativeSafeInteger(event?.provider_home_goals);
       const providerAway = nonNegativeSafeInteger(event?.provider_away_goals);
@@ -1024,7 +1085,7 @@ export function createSettlementRuntime(deps) {
       state: 'eq.drift',
     }, { limit: 1, order: 'observed_at.desc' });
     const event = events?.[0] || null;
-    if (!event || Number(event.id) !== eventId) {
+    if (!event || positiveSafeInteger(event.id)!==eventId) {
       const error = new Error('Событие расхождения изменилось. Обновите предварительную проверку.');
       error.code = 'SETTLEMENT_DRIFT_EVENT_STALE';
       throw error;
@@ -1312,11 +1373,11 @@ export function createSettlementRuntime(deps) {
       triggerSource: String(row?.trigger_source || (row?.action_type === 'auto_recover' ? 'cron' : 'admin')),
       status: String(row?.status || ''),
       reason: String(row?.reason || ''),
-      candidateCount: Number(row?.candidate_count || 0),
-      inspectedCount: Number(row?.inspected_count || 0),
-      settledCount: Number(row?.settled_count || 0),
-      skippedCount: Number(row?.skipped_count || 0),
-      attemptNo: Math.max(1, Number(row?.attempt_no || 1)),
+      candidateCount:boundedCount(row?.candidate_count),
+      inspectedCount:boundedCount(row?.inspected_count),
+      settledCount:boundedCount(row?.settled_count),
+      skippedCount:boundedCount(row?.skipped_count),
+      attemptNo:Math.max(1,Math.min(SETTLEMENT_RUN_MAX_ATTEMPTS,positiveSafeInteger(row?.attempt_no) || 1)),
       retryOfActionId: row?.retry_of_action_id ? String(row.retry_of_action_id) : null,
       detail: parseJsonObject(row?.detail),
     };
@@ -1325,7 +1386,7 @@ export function createSettlementRuntime(deps) {
   async function loadRemediationActions(cfg, limit = 10) {
     if (!hasSupabase(cfg)) return memory.modelRemediation.actions.slice(0, limit).map(publicRemediationAction);
     const rows = await supaSelectMany(cfg, 'prediction_integrity_actions', {}, {
-      limit: Math.max(1, Math.min(20, Number(limit || 10))),
+      limit:Math.max(1,Math.min(20,positiveSafeInteger(limit) || 10)),
       order: 'created_at.desc',
     });
     return rows.map(publicRemediationAction);
@@ -1383,7 +1444,13 @@ export function createSettlementRuntime(deps) {
     if (String(latestAction.status || '') !== 'interrupted') {
       return { attemptNo: 1, retryOfActionId: null, retryExhausted: false };
     }
-    const previousAttempt = Math.max(1, Number(latestAction.attempt_no || latestAction.attemptNo || 1));
+    const previousAttempt=Math.max(
+      1,
+      Math.min(
+        SETTLEMENT_RUN_MAX_ATTEMPTS,
+        positiveSafeInteger(latestAction.attempt_no ?? latestAction.attemptNo) || 1,
+      ),
+    );
     if (previousAttempt >= SETTLEMENT_RUN_MAX_ATTEMPTS) {
       return {
         attemptNo: SETTLEMENT_RUN_MAX_ATTEMPTS,
@@ -1499,7 +1566,7 @@ export function createSettlementRuntime(deps) {
     const openUntil = row.circuit_open_until || row.circuitOpenUntil || null;
     const openTs = openUntil ? Date.parse(openUntil) : 0;
     return {
-      consecutiveFailures: Math.max(0, Number(row.consecutive_failures ?? row.consecutiveFailures ?? 0)),
+      consecutiveFailures:boundedCount(row.consecutive_failures ?? row.consecutiveFailures,1000),
       circuitOpenUntil: openUntil,
       circuitOpen: Number.isFinite(openTs) && openTs > Date.now(),
       lastRunAt: row.last_run_at || row.lastRunAt || null,
@@ -1521,7 +1588,7 @@ export function createSettlementRuntime(deps) {
     const current = await loadSettlementReliability(cfg).catch(() => normalizeSettlementReliability());
     const merged = {
       id: 'global',
-      consecutive_failures: Math.max(0, Number(patch.consecutiveFailures ?? current.consecutiveFailures ?? 0)),
+      consecutive_failures:boundedCount(patch.consecutiveFailures ?? current.consecutiveFailures,1000),
       circuit_open_until: patch.circuitOpenUntil !== undefined ? patch.circuitOpenUntil : current.circuitOpenUntil,
       last_run_at: patch.lastRunAt !== undefined ? patch.lastRunAt : current.lastRunAt,
       last_status: String(patch.lastStatus ?? current.lastStatus ?? 'never').slice(0, 32),
@@ -1554,7 +1621,7 @@ export function createSettlementRuntime(deps) {
         lastError: meta.error || '',
       });
     }
-    const failures = Number(current.consecutiveFailures || 0) + 1;
+    const failures=Math.min(1000,boundedCount(current.consecutiveFailures,1000)+1);
     const circuitOpenUntil = failures >= SETTLEMENT_CIRCUIT_FAILURE_THRESHOLD
       ? new Date(Date.now() + SETTLEMENT_CIRCUIT_OPEN_HOURS * 3600_000).toISOString()
       : current.circuitOpenUntil;
@@ -1589,7 +1656,7 @@ export function createSettlementRuntime(deps) {
       skippedCount: 0,
       fixtureIds: [],
       detail: {
-        previousFailures: Number(before.consecutiveFailures || 0),
+        previousFailures:boundedCount(before.consecutiveFailures,1000),
         previousOpenUntil: before.circuitOpenUntil || null,
       },
     });
@@ -1615,15 +1682,18 @@ export function createSettlementRuntime(deps) {
       reason: redactOpsString(action.reason || '', 220),
       updated_at: now,
       finished_at: actionStatus === 'started' ? null : now,
-      attempt_no: Math.max(1, Math.min(SETTLEMENT_RUN_MAX_ATTEMPTS, Number(action.attemptNo || 1))),
-      retry_of_action_id: action.retryOfActionId ? String(action.retryOfActionId) : null,
-      admin_telegram_id: positiveSafeInteger(user?.id),
-      candidate_count: Number(action.candidateCount || 0),
-      inspected_count: Number(action.inspectedCount || 0),
-      settled_count: Number(action.settledCount || 0),
-      skipped_count: Number(action.skippedCount || 0),
-      fixture_ids: (action.fixtureIds || []).map(positiveSafeInteger).filter(id => id !== null).slice(0, 20),
-      detail: action.detail || {},
+      attempt_no:Math.max(1,Math.min(SETTLEMENT_RUN_MAX_ATTEMPTS,positiveSafeInteger(action.attemptNo) || 1)),
+      retry_of_action_id:action.retryOfActionId ? safeText(action.retryOfActionId,120) || null : null,
+      admin_telegram_id:positiveSafeInteger(user?.id),
+      candidate_count:boundedCount(action.candidateCount),
+      inspected_count:boundedCount(action.inspectedCount),
+      settled_count:boundedCount(action.settledCount),
+      skipped_count:boundedCount(action.skippedCount),
+      fixture_ids:(Array.isArray(action.fixtureIds) ? action.fixtureIds : [])
+        .map(positiveSafeInteger)
+        .filter(id=>id!==null)
+        .slice(0,20),
+      detail:plainObject(action.detail) || {},
     };
     if (hasSupabase(cfg)) await supaInsertIgnore(cfg, 'prediction_integrity_actions', row, 'action_id');
     memory.modelRemediation.actions.unshift({ ...row, created_at: now });
@@ -1638,10 +1708,10 @@ export function createSettlementRuntime(deps) {
       status: finalStatus,
       updated_at: now,
       finished_at: finalStatus === 'started' ? null : now,
-      inspected_count: Number(patch.inspectedCount || 0),
-      settled_count: Number(patch.settledCount || 0),
-      skipped_count: Number(patch.skippedCount || 0),
-      detail: patch.detail || {},
+      inspected_count:boundedCount(patch.inspectedCount),
+      settled_count:boundedCount(patch.settledCount),
+      skipped_count:boundedCount(patch.skippedCount),
+      detail:plainObject(patch.detail) || {},
     };
     if (hasSupabase(cfg)) {
       await supaPatch(cfg, 'prediction_integrity_actions', { action_id: `eq.${String(actionId)}` }, update);
@@ -1703,12 +1773,12 @@ export function createSettlementRuntime(deps) {
         stalePending: candidates.length,
         selectedCount: batch.selected.length,
         candidateToken,
-        fixtureIds: batch.selected.map(row => Number(row.fixture_id)),
+        fixtureIds:batch.selected.map(row=>positiveSafeInteger(row?.fixture_id)).filter(id=>id!==null),
         estimatedProviderCalls: batch.dates.length,
         maxFixturesPerRun: 20,
         maxDatesPerRun: 5,
         candidates: batch.selected.map(row => ({
-          fixtureId: Number(row.fixture_id),
+          fixtureId:positiveSafeInteger(row?.fixture_id),
           kickoffAt: row.kickoff_at,
           league: String(row.league_name || ''),
           home: String(row.home_name || ''),
@@ -1731,7 +1801,7 @@ export function createSettlementRuntime(deps) {
         reliability: {
           schemaReady: Boolean(reliabilitySchema.ok),
           schemaStatus: reliabilitySchema.status || (reliabilitySchema.ok ? 'ok' : 'missing'),
-          consecutiveFailures: Number(reliability.consecutiveFailures || 0),
+          consecutiveFailures:boundedCount(reliability.consecutiveFailures,1000),
           circuitOpen: Boolean(reliability.circuitOpen),
           circuitOpenUntil: reliability.circuitOpenUntil || null,
           lastRunAt: reliability.lastRunAt || null,
