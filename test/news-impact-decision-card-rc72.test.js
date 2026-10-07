@@ -50,7 +50,68 @@ test('RC72 deterministic decision contract remains wired through the recovery ru
   assert.match(recovery,/material\?\.code==='material'/);
   assert.match(recovery,/stable\?\.code==='stable'/);
   assert.match(recovery,/guarded\?\.code==='guarded'/);
-  assert.match(recovery,/cases:5/);
+  assert.match(recovery,/malformed\?\.code==='guarded'/);
+  assert.match(recovery,/cases:7/);
   assert.match(worker,/function newsImpactDecisionDrill\(\.\.\.args\).*getNewsImpactRecoveryRuntime\(\)\.newsImpactDecisionDrill/s);
   assert.match(worker,/createNewsImpactRecoveryRuntime/);
+});
+
+test('RC72 decision states and keyboard fail closed on malformed flags, ids and link generation',()=>{
+  let fallbackCalls=0;
+  const runtime=createNewsImpactRecoveryRuntime({
+    NEWS_IMPACT_ACTION_CODES:new Set(['full_ai','squads','market','recheck','news','share']),
+    NEWS_IMPACT_DECISION_CODES:new Set(['material','stable','detail','guarded','baseline_missing','unavailable']),
+    NEWS_IMPACT_RECOVERY_CODES:new Set(['retry','open_full_ai']),
+    footballBotKeyboard:()=>{
+      fallbackCalls+=1;
+      return {inline_keyboard:[[{text:'fallback',callback_data:'home'}]]};
+    },
+    favoriteMatchTeamRow:()=>[],
+    telegramAnalysisHandoffParams:(fixtureId,tab)=>({fixtureId,action:'analysis',tab,handoff:'1'}),
+    telegramWebAppUrl:()=>{ throw new Error('link failed'); },
+  });
+
+  assert.equal(runtime.newsImpactDecisionCard({requested:'true',compared:true,material:true}),null);
+  assert.equal(
+    runtime.newsImpactDecisionCard({
+      requested:true,
+      compared:'false',
+      material:'true',
+      stable:'true',
+      reasonCode:'snapshot_not_before_news',
+    })?.code,
+    'guarded',
+  );
+  assert.doesNotThrow(()=>runtime.newsImpactDecisionCard({
+    requested:true,
+    reasonCode:{toString(){throw new Error('must not coerce');}},
+  }));
+  assert.equal(runtime.newsImpactDecisionCard({
+    requested:true,
+    reasonCode:{toString(){throw new Error('must not coerce');}},
+  })?.code,'unavailable');
+
+  const fallback=runtime.newsImpactDecisionKeyboard({}, {fixtureId:true}, [], {requested:true});
+  assert.equal(fallbackCalls,1);
+  assert.equal(fallback.inline_keyboard[0][0].callback_data,'home');
+
+  const keyboard=runtime.newsImpactDecisionKeyboard(
+    {},
+    {fixtureId:'123'},
+    [],
+    {requested:true,compared:true,material:true,stable:false},
+  );
+  assert.ok(keyboard.inline_keyboard.length>0);
+  assert.ok(keyboard.inline_keyboard.every(row=>Array.isArray(row) && row.length>0));
+  assert.equal(
+    keyboard.inline_keyboard.flat().some(button=>button?.web_app?.url===''),
+    false,
+  );
+  assert.equal(
+    keyboard.inline_keyboard.flat().some(button=>Object.prototype.hasOwnProperty.call(button,'web_app')),
+    false,
+  );
+  assert.ok(
+    keyboard.inline_keyboard.flat().some(button=>button.callback_data==='news:impact:material:market:123'),
+  );
 });
