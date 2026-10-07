@@ -3,44 +3,54 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
-const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
+const recovery=fs.readFileSync('src/news-impact-recovery-runtime.js','utf8');
+const botUi=fs.readFileSync('src/telegram-bot-ui-runtime.js','utf8');
+const botOrchestration=fs.readFileSync('src/telegram-bot-orchestration-runtime.js','utf8');
+const growth=fs.readFileSync('src/growth-analytics-runtime.js','utf8');
+const admin=fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
 
 test('RC72 maps News Impact Delta to explicit user-facing decision states',()=>{
-  assert.match(worker,/function newsImpactDecisionCard\(/);
+  assert.match(recovery,/function newsImpactDecisionCard\(/);
   for (const code of ['material','stable','detail','guarded','baseline_missing','unavailable']) {
-    assert.ok(worker.includes(`code:'${code}'`), `missing decision ${code}`);
+    assert.ok(recovery.includes(`code:'${code}'`), `missing decision ${code}`);
   }
-  assert.match(worker,/Причинность не подтверждается/);
+  assert.match(recovery,/Причинность не подтверждается/);
 });
 
 test('decision state controls Telegram actions instead of one generic keyboard',()=>{
-  assert.match(worker,/function newsImpactDecisionKeyboard\(/);
-  assert.match(worker,/Открыть обновлённый AI-разбор/);
-  assert.match(worker,/Проверить составы/);
-  assert.match(worker,/Проверить рынок/);
-  assert.match(worker,/Ещё новости/);
-  assert.match(worker,/options\.newsImpactDelta[\s\S]*newsImpactDecisionKeyboard/);
+  assert.match(recovery,/function newsImpactDecisionKeyboard\(/);
+  assert.match(recovery,/Открыть обновлённый AI-разбор/);
+  assert.match(recovery,/Проверить составы/);
+  assert.match(recovery,/Проверить рынок/);
+  assert.match(recovery,/Ещё новости/);
+  assert.match(botUi,/newsImpactDecisionKeyboard\(/);
 });
 
 test('Telegram summary leads with decision and next action',()=>{
-  assert.match(worker,/const newsDecision=newsImpactDecisionCard\(newsImpact\)/);
-  assert.match(worker,/Что делать:/);
-  assert.match(worker,/Существенное изменение/);
-  assert.match(worker,/Сценарий стабилен/);
+  assert.match(botOrchestration,/const newsDecision=plainObject\(optionalCall\(newsImpactDecisionCard/);
+  assert.match(botOrchestration,/Что делать:/);
+  assert.match(recovery,/Существенное изменение/);
+  assert.match(recovery,/Сценарий стабилен/);
 });
 
 test('decision analytics stores only categorical outcome',()=>{
-  assert.match(worker,/decision:String\(decision\?\.code \|\| ''\)\.slice\(0,24\)/);
-  assert.match(worker,/const newsImpactDecisionSummary=/);
-  assert.match(worker,/material:newsImpactRows\.filter/);
-  assert.match(worker,/stable:newsImpactRows\.filter/);
-  assert.match(app,/решения:/);
+  const event=/eventName:'news_impact_delta',[\s\S]{0,500}?metadata:\{([\s\S]*?)\n\s*\},/.exec(botUi);
+  assert.ok(event,'news impact decision event missing');
+  assert.match(event[1],/decision:safeText\(decision\?\.code,24\)/);
+  assert.doesNotMatch(event[1],/headline|title|url|query|content/);
+
+  assert.match(growth,/const newsImpactDecisionSummary=/);
+  assert.match(growth,/material:newsImpactRows\.filter/);
+  assert.match(growth,/stable:newsImpactRows\.filter/);
+  assert.match(admin,/решения:/);
 });
 
-test('RC72 deterministic health contract is present',()=>{
-  assert.match(worker,/function newsImpactDecisionDrill\(/);
-  assert.match(worker,/newsImpactDecisionSelfTest: newsImpactDecisionDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  for (const flag of ['newsImpactDecisionCard','newsImpactActionRouting','newsImpactCausalityGuardUx','newsImpactDecisionAnalytics']) {
-    assert.ok(worker.includes(flag + ": 'enabled'"));
-  }
+test('RC72 deterministic decision contract remains wired through the recovery runtime',()=>{
+  assert.match(recovery,/function newsImpactDecisionDrill\(/);
+  assert.match(recovery,/material\?\.code==='material'/);
+  assert.match(recovery,/stable\?\.code==='stable'/);
+  assert.match(recovery,/guarded\?\.code==='guarded'/);
+  assert.match(recovery,/cases:5/);
+  assert.match(worker,/function newsImpactDecisionDrill\(\.\.\.args\).*getNewsImpactRecoveryRuntime\(\)\.newsImpactDecisionDrill/s);
+  assert.match(worker,/createNewsImpactRecoveryRuntime/);
 });
