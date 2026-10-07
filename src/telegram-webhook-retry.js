@@ -6,6 +6,11 @@ const RETRYABLE_CODES = new Set([
   'TELEGRAM_DEDUPE_UNAVAILABLE',
 ]);
 
+const RETRY_SAFE_CODES = new Set([
+  'BILLING_REFUND_RECONCILIATION',
+  'TELEGRAM_DEDUPE_UNAVAILABLE',
+]);
+
 const MAX_ATTEMPT_COUNTER = 1_000_000;
 const MAX_RETRY_AFTER_SECONDS = 86_400;
 const MAX_LABEL_LENGTH = 80;
@@ -90,25 +95,24 @@ function safeIncrement(value) {
 
 function attemptStateSnapshot(cfg) {
   const source=plainObject(cfg);
-  if (!source) return {present:false,state:null,valid:true};
+  if (!source) return {present:false,state:null};
 
   let present=false;
   try {
     present=Object.prototype.hasOwnProperty.call(source,'telegramWebhookAttempt');
   } catch {
-    return {present:true,state:null,valid:false};
+    return {present:true,state:null};
   }
-  if (!present) return {present:false,state:null,valid:true};
+  if (!present) return {present:false,state:null};
 
   let raw;
   try { raw=source.telegramWebhookAttempt; }
-  catch { return {present:true,state:null,valid:false}; }
+  catch { return {present:true,state:null}; }
 
   const state=plainObject(raw);
   return {
     present:true,
     state,
-    valid:Boolean(state),
   };
 }
 
@@ -210,7 +214,8 @@ export function classifyTelegramWebhookFailure(error, cfg) {
 
   const code=codeValue(safeRead(error,'code'));
   const transient=RETRYABLE_CODES.has(code);
-  const retrySafe=safeRead(error,'telegramWebhookRetrySafe') === true;
+  const retrySafe=safeRead(error,'telegramWebhookRetrySafe') === true
+    && RETRY_SAFE_CODES.has(code);
   const successfulEffects=effectSnapshot.value;
   const unsafeMutations=mutationSnapshot.value;
   const retry=Boolean(
