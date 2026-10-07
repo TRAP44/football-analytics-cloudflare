@@ -103,7 +103,22 @@ export function createUserDataApiRuntime(deps) {
   }
 
   function safeRows(value) {
-    return Array.isArray(value) ? value.filter(item=>plainObject(item)) : [];
+    if (!Array.isArray(value)) {
+      const error=new TypeError('Personal-data store returned an invalid collection.');
+      error.code='PERSONAL_DATA_INVALID_RESPONSE';
+      throw error;
+    }
+    const rows=[];
+    for (const item of value) {
+      const row=plainObject(item);
+      if (!row) {
+        const error=new TypeError('Personal-data store returned an invalid row.');
+        error.code='PERSONAL_DATA_INVALID_RESPONSE';
+        throw error;
+      }
+      rows.push(row);
+    }
+    return rows;
   }
 
   function safeText(value, max = 2048) {
