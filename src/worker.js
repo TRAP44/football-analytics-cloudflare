@@ -838,49 +838,7 @@ function fixtureTelegramDeepLink(...args) { return getTelegramLinksRuntime().fix
 function telegramCampaignDeepLink(...args) { return getTelegramLinksRuntime().telegramCampaignDeepLink(...args); }
 function telegramShareComposerUrl(...args) { return getTelegramLinksRuntime().telegramShareComposerUrl(...args); }
 
-function telegramMiniAppE2EDrill() {
-  const request=new Request('https://app.example/');
-  const match={
-    fixtureId:12345,
-    status:'NS',
-    home:{id:101,name:'Home FC',logo:''},
-    away:{id:202,name:'Away FC',logo:''},
-    league:'Test League',
-  };
-  const mainKeyboard=footballBotKeyboard(request);
-  const searchKeyboard=footballSearchHandoffKeyboard(request,match,'https://app.example/?view=search');
-  const quickKeyboard=footballQuickAiHandoffKeyboard(request,match,[], '');
-  const actionKeyboard=footballMatchActionKeyboard(request,match,'',[]);
-  const flatten=keyboard=>(keyboard?.inline_keyboard || keyboard?.keyboard || []).flat();
-  const mainButtons=flatten(mainKeyboard).map(x=>String(x?.text || ''));
-  const searchButtons=flatten(searchKeyboard);
-  const quickButtons=flatten(quickKeyboard);
-  const actionButtons=flatten(actionKeyboard);
-  const searchSelect=searchButtons.find(x=>String(x?.callback_data || '')===`match:menu:${match.fixtureId}`);
-  const fullButton=quickButtons.find(x=>String(x?.text || '').includes('Полный AI'));
-  const fullUrl=String(fullButton?.web_app?.url || '');
-  let handoffOk=false;
-  try {
-    const u=new URL(fullUrl);
-    handoffOk=Number(u.searchParams.get('fixtureId'))===match.fixtureId
-      && u.searchParams.get('action')==='analysis'
-      && u.searchParams.get('tab')==='brief'
-      && u.searchParams.get('handoff')==='1';
-  } catch {}
-  const favoriteCallbacks=new Set(actionButtons.map(x=>String(x?.callback_data || '')).filter(x=>x.startsWith('favorite:toggle:')));
-  return {
-    pass:mainButtons.includes('🔎 Найти матч')
-      && Boolean(searchSelect)
-      && handoffOk
-      && favoriteCallbacks.has('favorite:toggle:101:12345')
-      && favoriteCallbacks.has('favorite:toggle:202:12345'),
-    cases:5,
-    search:Boolean(searchSelect),
-    handoff:handoffOk,
-    favorites:favoriteCallbacks.size,
-  };
-}
-
+function telegramMiniAppE2EDrill(...args) { return getTelegramBotUiRuntime().telegramMiniAppE2EDrill(...args); }
 
 let publisherRuntime = null;
 function getPublisherRuntime() {
