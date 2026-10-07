@@ -155,7 +155,7 @@ test('RC120 control-plane identity verification runs after deploy and before HTT
   );
   const deploy = workflow.indexOf('command: deploy --keep-vars');
   const postcondition = workflow.indexOf('- name: RC120 verify active production release identity');
-  const smoke = workflow.indexOf('node scripts/post-deploy-smoke.js');
+  const smoke = workflow.indexOf('node scripts/post-deploy-smoke.js', postcondition);
   assert.ok(deploy >= 0);
   assert.ok(postcondition > deploy);
   assert.ok(smoke > postcondition);

@@ -90,6 +90,35 @@ test('production mutation is blocked when rollback preflight is moved behind dep
   );
 });
 
+test('schema-drift recovery cannot promote an unverified uploaded version',()=>{
+  const weakened=deploy
+    .replace('            node scripts/verify-schema-drift-recovery.js "$SMOKE_URL"\n','')
+    .replace('            node scripts/post-deploy-smoke.js "$RECOVERY_URL" "$RELEASE_VERSION" "$DEPLOY_SHA"\n','');
+
+  const findings=audit({deploy:weakened});
+  assert.ok(
+    findings.some(message=>
+      message.includes('rollback preflight recovery')
+      && (
+        message.includes('verify-schema-drift-recovery')
+        || message.includes('post-deploy-smoke')
+      )
+    ),
+    findings.join('\n'),
+  );
+});
+
+test('schema-drift recovery promotion stays between preflight and production identity verification',()=>{
+  const preflight=deploy.indexOf('- name: Preflight previous-known-good rollback target');
+  const promote=deploy.indexOf('- name: Promote schema-drift recovery candidate');
+  const identity=deploy.indexOf('- name: RC120 verify active production release identity');
+  assert.ok(preflight>=0 && promote>preflight && identity>promote);
+  assert.match(
+    deploy.slice(promote,identity),
+    /wrangler versions deploy "\$RECOVERY_VERSION_ID@100%" -y/,
+  );
+});
+
 test('production deploy requires immutable GitHub Action pins',()=>{
   const weakened=deploy.replace(
     'cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0',
