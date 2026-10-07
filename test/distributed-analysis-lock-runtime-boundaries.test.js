@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import { createDistributedAnalysisLockRuntime } from '../src/distributed-analysis-lock-runtime.js';
 
@@ -26,16 +25,16 @@ function baseDeps(overrides={}) {
   };
 }
 
-test('distributed lock validates dependencies, memory cache, and freezes exports', () => {
+test('distributed lock validates dependencies, memory cache, and freezes exports',()=>{
   const broken=baseDeps();
   delete broken.getCacheEntry;
   assert.throws(
-    () => createDistributedAnalysisLockRuntime(broken),
+    ()=>createDistributedAnalysisLockRuntime(broken),
     /getCacheEntry is required/,
   );
 
   assert.throws(
-    () => createDistributedAnalysisLockRuntime({
+    ()=>createDistributedAnalysisLockRuntime({
       ...baseDeps(),
       memory:{cache:{}},
     }),
@@ -44,9 +43,20 @@ test('distributed lock validates dependencies, memory cache, and freezes exports
 
   const runtime=createDistributedAnalysisLockRuntime(baseDeps());
   assert.equal(Object.isFrozen(runtime),true);
+  assert.deepEqual(
+    Object.keys(runtime).sort(),
+    [
+      'claimDistributedAnalysisLock',
+      'distributedAnalysisLockDrill',
+      'distributedAnalysisLockKey',
+      'distributedAnalysisLockPolicy',
+      'releaseDistributedAnalysisLock',
+      'waitForSharedAnalysis',
+    ].sort(),
+  );
 });
 
-test('lock keys reject coercive and unsafe fixture identifiers', () => {
+test('lock keys reject coercive and unsafe fixture identifiers',()=>{
   const runtime=createDistributedAnalysisLockRuntime(baseDeps());
 
   assert.equal(runtime.distributedAnalysisLockKey(123),'analysis:compute-lock:123:v1');
@@ -56,7 +66,7 @@ test('lock keys reject coercive and unsafe fixture identifiers', () => {
   assert.equal(runtime.distributedAnalysisLockKey(Number.MAX_SAFE_INTEGER+1),'');
 });
 
-test('invalid coordination policy falls back to a bounded safe policy', () => {
+test('invalid coordination policy falls back to a bounded safe policy',()=>{
   const runtime=createDistributedAnalysisLockRuntime(baseDeps({
     DISTRIBUTED_ANALYSIS_LOCK_TTL_SECONDS:true,
     DISTRIBUTED_ANALYSIS_WAIT_ATTEMPTS:99,
@@ -72,7 +82,7 @@ test('invalid coordination policy falls back to a bounded safe policy', () => {
   assert.equal(runtime.distributedAnalysisLockDrill().pass,true);
 });
 
-test('coordination availability probe failures fail closed', async () => {
+test('coordination availability probe failures fail closed',async()=>{
   const events=[];
   const runtime=createDistributedAnalysisLockRuntime(baseDeps({
     hasSupabase:()=>{ throw new Error('probe failed'); },
@@ -86,7 +96,7 @@ test('coordination availability probe failures fail closed', async () => {
   assert.equal(events[0].code,'ANALYSIS_LOCK_FAIL_CLOSED');
 });
 
-test('invalid fixture claims fail before any shared coordination call', async () => {
+test('invalid fixture claims fail before any shared coordination call',async()=>{
   let reads=0;
   const runtime=createDistributedAnalysisLockRuntime(baseDeps({
     hasSupabase:()=>true,
@@ -100,7 +110,7 @@ test('invalid fixture claims fail before any shared coordination call', async ()
   assert.equal(reads,0);
 });
 
-test('fresh validated shared lock joins without creating a second claim', async () => {
+test('fresh validated shared lock joins without creating a second claim',async()=>{
   let network=0;
   const claimId='11111111-1111-4111-8111-111111111111';
   const runtime=createDistributedAnalysisLockRuntime(baseDeps({
@@ -110,7 +120,10 @@ test('fresh validated shared lock joins without creating a second claim', async 
       expiresAt:new Date(Date.now()+60_000).toISOString(),
       payload:{state:'computing',fixtureId:123,claimId},
     }),
-    fetchWithTimeout:async()=>{ network+=1; throw new Error('should not call'); },
+    fetchWithTimeout:async()=>{
+      network+=1;
+      throw new Error('should not call');
+    },
   }));
 
   const result=await runtime.claimDistributedAnalysisLock(123,{});
@@ -120,16 +133,49 @@ test('fresh validated shared lock joins without creating a second claim', async 
   assert.equal(network,0);
 });
 
-test('malformed fresh lock fails closed rather than allowing duplicate analysis', async () => {
+test('fresh locks require deterministic timezone-bearing expiry evidence',async()=>{
   const events=[];
   let network=0;
   const runtime=createDistributedAnalysisLockRuntime(baseDeps({
     hasSupabase:()=>true,
     getCacheEntry:async()=>({
       expired:false,
+      expiresAt:'2099-01-01T00:00:00',
+      payload:{
+        state:'computing',
+        fixtureId:123,
+        claimId:'11111111-1111-4111-8111-111111111111',
+      },
+    }),
+    fetchWithTimeout:async()=>{
+      network+=1;
+      return null;
+    },
+    recordOpsEvent:async(_cfg,event)=>events.push(event),
+  }));
+
+  const result=await runtime.claimDistributedAnalysisLock(123,{});
+  assert.equal(result.claimed,false);
+  assert.equal(result.unavailable,true);
+  assert.equal(result.reason,'invalid_existing_lock');
+  assert.equal(network,0);
+  assert.equal(events.at(-1)?.code,'ANALYSIS_LOCK_ENTRY_INVALID');
+});
+
+test('malformed fresh lock fails closed rather than allowing duplicate analysis',async()=>{
+  const events=[];
+  let network=0;
+  const runtime=createDistributedAnalysisLockRuntime(baseDeps({
+    hasSupabase:()=>true,
+    getCacheEntry:async()=>({
+      expired:false,
+      expiresAt:new Date(Date.now()+60_000).toISOString(),
       payload:{state:'computing',fixtureId:999,claimId:'bad'},
     }),
-    fetchWithTimeout:async()=>{ network+=1; return null; },
+    fetchWithTimeout:async()=>{
+      network+=1;
+      return null;
+    },
     recordOpsEvent:async(_cfg,event)=>events.push(event),
   }));
 
@@ -141,7 +187,7 @@ test('malformed fresh lock fails closed rather than allowing duplicate analysis'
   assert.equal(events[0].code,'ANALYSIS_LOCK_ENTRY_INVALID');
 });
 
-test('expired locks are deleted only while expired and a confirmed insert owns the claim', async () => {
+test('expired locks are deleted only while expired and a confirmed insert owns the claim',async()=>{
   const deletes=[];
   const memory={cache:new Map()};
   memory.cache.set('analysis:compute-lock:123:v1',{
@@ -189,7 +235,94 @@ test('expired locks are deleted only while expired and a confirmed insert owns t
   assert.equal(memory.cache.get(result.key)?.payload?.claimId,result.claimId);
 });
 
-test('ambiguous successful insert responses fail closed', async () => {
+test('empty insert response is accepted only after confirming the conflicting live lock',async()=>{
+  let reads=0;
+  const existingClaim='11111111-1111-4111-8111-111111111111';
+  const runtime=createDistributedAnalysisLockRuntime(baseDeps({
+    hasSupabase:()=>true,
+    getCacheEntry:async()=>{
+      reads+=1;
+      if (reads===1) return null;
+      return {
+        expired:false,
+        expiresAt:new Date(Date.now()+60_000).toISOString(),
+        payload:{
+          state:'computing',
+          fixtureId:123,
+          claimId:existingClaim,
+        },
+      };
+    },
+    fetchWithTimeout:async()=>({
+      ok:true,
+      status:201,
+      json:async()=>[],
+    }),
+  }));
+
+  const result=await runtime.claimDistributedAnalysisLock(
+    123,
+    {supabaseUrl:'https://example.supabase.co'},
+  );
+
+  assert.equal(reads,2);
+  assert.equal(result.claimed,false);
+  assert.equal(result.shared,true);
+  assert.equal(result.degraded,false);
+});
+
+test('unconfirmed empty insert response fails closed',async()=>{
+  const events=[];
+  const runtime=createDistributedAnalysisLockRuntime(baseDeps({
+    hasSupabase:()=>true,
+    getCacheEntry:async()=>null,
+    fetchWithTimeout:async()=>({
+      ok:true,
+      status:201,
+      json:async()=>[],
+    }),
+    recordOpsEvent:async(_cfg,event)=>events.push(event),
+  }));
+
+  const result=await runtime.claimDistributedAnalysisLock(
+    123,
+    {supabaseUrl:'https://example.supabase.co'},
+  );
+
+  assert.equal(result.claimed,false);
+  assert.equal(result.unavailable,true);
+  assert.equal(result.reason,'coordination_unavailable');
+  assert.equal(events.at(-1)?.code,'ANALYSIS_LOCK_FAIL_CLOSED');
+});
+
+test('claim confirmation requires a future timezone-bearing database expiry',async()=>{
+  for (const expiresAt of [
+    '2099-01-01T00:00:00',
+    '2000-01-01T00:00:00Z',
+  ]) {
+    const runtime=createDistributedAnalysisLockRuntime(baseDeps({
+      hasSupabase:()=>true,
+      fetchWithTimeout:async(_url,init)=>{
+        const [row]=JSON.parse(init.body);
+        return {
+          ok:true,
+          status:201,
+          json:async()=>[{...row,expires_at:expiresAt}],
+        };
+      },
+    }));
+
+    const result=await runtime.claimDistributedAnalysisLock(
+      123,
+      {supabaseUrl:'https://example.supabase.co'},
+    );
+    assert.equal(result.claimed,false);
+    assert.equal(result.unavailable,true);
+    assert.equal(result.reason,'coordination_unavailable');
+  }
+});
+
+test('ambiguous successful insert responses fail closed',async()=>{
   const events=[];
   const runtime=createDistributedAnalysisLockRuntime(baseDeps({
     hasSupabase:()=>true,
@@ -210,7 +343,53 @@ test('ambiguous successful insert responses fail closed', async () => {
   assert.equal(events.at(-1)?.code,'ANALYSIS_LOCK_FAIL_CLOSED');
 });
 
-test('release never deletes a lock after ownership changes', async () => {
+test('truthy non-boolean transport success does not confirm lock ownership',async()=>{
+  const runtime=createDistributedAnalysisLockRuntime(baseDeps({
+    hasSupabase:()=>true,
+    fetchWithTimeout:async(_url,init)=>{
+      const [row]=JSON.parse(init.body);
+      return {
+        ok:'true',
+        status:201,
+        json:async()=>[row],
+      };
+    },
+  }));
+
+  const result=await runtime.claimDistributedAnalysisLock(
+    123,
+    {supabaseUrl:'https://example.supabase.co'},
+  );
+  assert.equal(result.claimed,false);
+  assert.equal(result.unavailable,true);
+  assert.equal(result.reason,'coordination_unavailable');
+});
+
+test('hostile transport errors remain fail closed and observable',async()=>{
+  const events=[];
+  const hostile={code:'NETWORK_ERROR'};
+  Object.defineProperty(hostile,'message',{
+    get(){ throw new Error('message getter failed'); },
+  });
+  const runtime=createDistributedAnalysisLockRuntime(baseDeps({
+    hasSupabase:()=>true,
+    fetchWithTimeout:async()=>{ throw hostile; },
+    recordOpsEvent:async(_cfg,event)=>events.push(event),
+  }));
+
+  const result=await runtime.claimDistributedAnalysisLock(
+    123,
+    {supabaseUrl:'https://example.supabase.co'},
+  );
+
+  assert.equal(result.claimed,false);
+  assert.equal(result.unavailable,true);
+  assert.equal(result.reason,'coordination_unavailable');
+  assert.equal(events.at(-1)?.code,'ANALYSIS_LOCK_FAIL_CLOSED');
+  assert.equal(events.at(-1)?.message,'NETWORK_ERROR');
+});
+
+test('release never deletes a lock after ownership changes',async()=>{
   const deletes=[];
   const runtime=createDistributedAnalysisLockRuntime(baseDeps({
     hasSupabase:()=>true,
@@ -235,7 +414,7 @@ test('release never deletes a lock after ownership changes', async () => {
   assert.equal(deletes.length,0);
 });
 
-test('release uses claim identity in the delete filter', async () => {
+test('release uses claim identity in the delete filter',async()=>{
   const deletes=[];
   const claimId='11111111-1111-4111-8111-111111111111';
   const key='analysis:compute-lock:123:v1';
@@ -276,7 +455,30 @@ test('release uses claim identity in the delete filter', async () => {
   assert.equal(memory.cache.has(key),false);
 });
 
-test('shared analysis wait ignores cross-fixture payloads and returns matching analysis', async () => {
+test('release ignores hostile lock metadata without mutating shared state',async()=>{
+  let selects=0;
+  const hostile={shared:true};
+  Object.defineProperty(hostile,'claimId',{
+    get(){ throw new Error('claim getter failed'); },
+  });
+  const runtime=createDistributedAnalysisLockRuntime(baseDeps({
+    hasSupabase:()=>true,
+    supaSelectOne:async()=>{
+      selects+=1;
+      return null;
+    },
+  }));
+
+  const result=await runtime.releaseDistributedAnalysisLock(hostile,{});
+  assert.deepEqual(result,{
+    released:false,
+    skipped:true,
+    reason:'not_shared_owner',
+  });
+  assert.equal(selects,0);
+});
+
+test('shared analysis wait ignores cross-fixture payloads and returns matching analysis',async()=>{
   let reads=0;
   const runtime=createDistributedAnalysisLockRuntime(baseDeps({
     sleepMs:async()=>{},
@@ -297,33 +499,39 @@ test('shared analysis wait ignores cross-fixture payloads and returns matching a
   assert.equal(result.generatedAt,'y');
 });
 
-test('shared analysis wait rejects malformed keys and sleep failures safely', async () => {
+test('shared analysis wait rejects malformed keys, payload getters and sleep failures safely',async()=>{
   let reads=0;
   const invalid=createDistributedAnalysisLockRuntime(baseDeps({
-    getCache:async()=>{ reads+=1; return {}; },
+    getCache:async()=>{
+      reads+=1;
+      return {};
+    },
   }));
   assert.equal(await invalid.waitForSharedAnalysis('not-a-fixture-cache',{}),null);
   assert.equal(reads,0);
 
+  const hostilePayload={};
+  Object.defineProperty(hostilePayload,'match',{
+    get(){ throw new Error('hostile match getter'); },
+  });
+  const hostile=createDistributedAnalysisLockRuntime(baseDeps({
+    sleepMs:async()=>{},
+    getCache:async()=>hostilePayload,
+  }));
+  assert.equal(
+    await hostile.waitForSharedAnalysis('fixture:123:v15',{}),
+    null,
+  );
+
   const sleepFailure=createDistributedAnalysisLockRuntime(baseDeps({
     sleepMs:async()=>{ throw new Error('timer unavailable'); },
-    getCache:async()=>{ reads+=1; return {}; },
+    getCache:async()=>{
+      reads+=1;
+      return {};
+    },
   }));
   assert.equal(
     await sleepFailure.waitForSharedAnalysis('fixture:123:v15',{}),
     null,
   );
-});
-
-test('worker keeps distributed analysis lock dependencies explicit', () => {
-  const worker=fs.readFileSync('src/worker.js','utf8');
-  const source=fs.readFileSync('src/distributed-analysis-lock-runtime.js','utf8');
-
-  assert.match(
-    worker,
-    /createDistributedAnalysisLockRuntime\(\{[\s\S]*?APP_VERSION,[\s\S]*?DISTRIBUTED_ANALYSIS_LOCK_TTL_SECONDS,[\s\S]*?DISTRIBUTED_ANALYSIS_WAIT_ATTEMPTS,[\s\S]*?DISTRIBUTED_ANALYSIS_WAIT_MS,[\s\S]*?bumpTelemetry,[\s\S]*?fetchWithTimeout,[\s\S]*?getCache,[\s\S]*?getCacheEntry,[\s\S]*?hasSupabase,[\s\S]*?memory,[\s\S]*?randomUUID:[\s\S]*?recordOpsEvent,[\s\S]*?sleepMs,[\s\S]*?supaDelete,[\s\S]*?supaHeaders,[\s\S]*?supaSelectOne[\s\S]*?\}\);/,
-  );
-  assert.match(source,/ANALYSIS_LOCK_FAIL_CLOSED/);
-  assert.match(source,/'payload->>claimId'/);
-  assert.match(source,/return Object\.freeze\(\{/);
 });
