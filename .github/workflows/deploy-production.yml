@@ -246,7 +246,11 @@ jobs:
 
             PRODUCTION_HOST="${PRODUCTION_URL#https://}"
             PRODUCTION_HOST="${PRODUCTION_HOST%%/*}"
-            RECOVERY_URL="https://${RECOVERY_ALIAS}-${PRODUCTION_HOST}"
+            # Smoke the immutable Version URL resolved from the exact uploaded
+            # Cloudflare version. The human-readable alias is convenient for
+            # inspection but can briefly lag while its routing converges.
+            RECOVERY_VERSION_PREFIX="${RECOVERY_VERSION_ID%%-*}"
+            RECOVERY_URL="https://${RECOVERY_VERSION_PREFIX}-${PRODUCTION_HOST}"
             node scripts/post-deploy-smoke.js "$RECOVERY_URL" "$RELEASE_VERSION" "$DEPLOY_SHA"
             node scripts/bottom-nav-render-smoke.js "$RECOVERY_URL"
 
