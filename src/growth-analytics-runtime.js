@@ -541,12 +541,18 @@ export function createGrowthAnalyticsRuntime(deps = {}) {
     const newsImpactActionConfidenceGuard={minUsers:NEWS_IMPACT_FUNNEL_MIN_USERS,stableUsers:NEWS_IMPACT_FUNNEL_STABLE_USERS,interval:'wilson_95'};
     const newsImpactActionAttributionGuard={actionWindowMinutes:NEWS_IMPACT_ACTION_WINDOW_MINUTES,maturationMinutes:NEWS_IMPACT_ACTION_WINDOW_MINUTES,requiresActionAfterDecision:true,allowsBoundaryFollowup:true};
     const previousNewsImpactRows=previousWindowRows.filter(x=>String(x.event_name || '')==='news_impact_delta');
-    const previousNewsImpactActionRows=previousWindowRows.filter(x=>String(x.event_name || '')==='news_impact_action');
+    const previousNewsImpactActionRows=comparisonRows.filter(x=>String(x.event_name || '')==='news_impact_action');
     const previousPeriodEndMs=Date.parse(since);
+    const previousAttributionAsOfMs=Number.isFinite(previousPeriodEndMs)
+      ? Math.min(
+          analyticsNowMs,
+          previousPeriodEndMs+NEWS_IMPACT_ACTION_WINDOW_MINUTES*60_000,
+        )
+      : analyticsNowMs;
     const previousNewsImpactActionFunnel=buildNewsImpactActionFunnel(
       previousNewsImpactRows,
       previousNewsImpactActionRows,
-      {asOfMs:Number.isFinite(previousPeriodEndMs) ? previousPeriodEndMs : analyticsNowMs},
+      {asOfMs:previousAttributionAsOfMs},
     );
     const newsImpactActionTrend=trendAvailable ? buildNewsImpactActionTrend(newsImpactActionFunnel,previousNewsImpactActionFunnel) : [];
     const newsImpactActionTrendGuard={comparisonDays:days,requiresBothPeriods:true,signalRule:'non_overlapping_wilson_95'};
