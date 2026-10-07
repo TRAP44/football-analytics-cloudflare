@@ -33,7 +33,7 @@ export function createSettlementRuntime(deps) {
     isFinishedStatus,
     loadProviderFixturesForDate,
     loadRuntimeControls,
-    memory,
+    memory: memoryInput,
     parseJsonObject,
     predictionOutcomeKey,
     probeOptionalTable,
@@ -55,17 +55,17 @@ export function createSettlementRuntime(deps) {
     todayUtc,
   } = deps;
 
-  if (!memory || typeof memory !== 'object' || Array.isArray(memory)) {
-    throw new TypeError('Settlement runtime memory is required.');
-  }
+  const memory=memoryInput && typeof memoryInput === 'object' && !Array.isArray(memoryInput)
+    ? memoryInput
+    : {};
   if (!(memory.modelPredictions instanceof Map)) {
-    throw new TypeError('Settlement runtime requires modelPredictions memory map.');
+    memory.modelPredictions=new Map();
   }
   if (!memory.modelRemediation || typeof memory.modelRemediation !== 'object' || Array.isArray(memory.modelRemediation)) {
-    throw new TypeError('Settlement runtime requires modelRemediation memory state.');
+    memory.modelRemediation={};
   }
   if (!Array.isArray(memory.modelRemediation.actions)) {
-    throw new TypeError('Settlement runtime requires modelRemediation actions array.');
+    memory.modelRemediation.actions=[];
   }
   if (!(SETTLEMENT_DRIFT_ACTIONS instanceof Set)) {
     throw new TypeError('Settlement runtime requires settlement drift actions.');

@@ -6,6 +6,7 @@ const app = fs.readFileSync('public/app.js', 'utf8') + '\n' + fs.readFileSync('p
 const navigationShell = fs.readFileSync('public/modules/navigation-shell.js', 'utf8');
 const historyRenderer = fs.readFileSync('public/modules/history-renderer.js', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8')+'\n'+fs.readFileSync('src/router.js', 'utf8');
+const userDataApi = fs.readFileSync('src/user-data-api-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8');
 
@@ -28,12 +29,12 @@ test('inactive views and tab panels are not focusable or exposed to assistive te
 });
 
 test('history opens cached analysis read-only without spending another analysis quota', () => {
-  const match = worker.match(/async function apiHistoryAnalysis[\s\S]*?\n}\n\n\nasync function apiFavorites/);
+  const match = userDataApi.match(/async function apiHistoryAnalysis[\s\S]*?\n  }\n\s*\n\s*async function apiFavorites/);
   assert.ok(match, 'apiHistoryAnalysis must exist');
-  assert.match(match[0], /getHistory\(user\.id, cfg\)/);
+  assert.match(match[0], /getHistory\(userId,cfg\)/);
   assert.match(match[0], /getStaleCache\(cacheKey, cfg\)/);
   assert.doesNotMatch(match[0], /incrementUsage\(/);
-  assert.match(worker, /url\.pathname === '\/api\/history-analysis'/);
+  assert.match(worker, /pathname === '\/api\/history-analysis'/);
   assert.match(historyRenderer, /openHistoryAnalysis\(Number\(btn\.dataset\.fixture\), btn\)/);
 });
 

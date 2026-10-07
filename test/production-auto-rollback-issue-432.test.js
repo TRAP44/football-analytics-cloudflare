@@ -24,6 +24,9 @@ function stampedVersion({
 } = {}) {
   return {
     id,
+    metadata: {
+      created_on: '2026-10-07T12:00:00.000Z',
+    },
     annotations: {
       'workers/message': `release=${release} sha=${sha}`,
       'workers/tag': sha,

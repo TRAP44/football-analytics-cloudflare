@@ -31,21 +31,32 @@ export function createModelIntelligenceRuntime(deps) {
   }
 
   const MODEL_SIGNAL_NAMES=Object.freeze(['market','apiPrediction','recentForm','seasonStrength','h2h']);
+  const LEGACY_REQUIRED_SIGNAL_NAMES=Object.freeze(['market','apiPrediction','recentForm','h2h']);
   if (!MODEL_BASE_WEIGHTS || typeof MODEL_BASE_WEIGHTS !== 'object' || Array.isArray(MODEL_BASE_WEIGHTS)) {
     throw new TypeError('MODEL_BASE_WEIGHTS is required');
   }
   const baseWeightValues={};
   let baseWeightTotal=0;
   for (const name of MODEL_SIGNAL_NAMES) {
-    const weight=Number(MODEL_BASE_WEIGHTS[name]);
+    const raw=MODEL_BASE_WEIGHTS[name];
+    if (name==='seasonStrength' && (raw===undefined || raw===null || raw==='')) {
+      baseWeightValues[name]=0;
+      continue;
+    }
+    const weight=Number(raw);
     if (!Number.isFinite(weight) || weight <= 0) {
       throw new TypeError(`MODEL_BASE_WEIGHTS.${name} must be positive`);
     }
     baseWeightValues[name]=weight;
     baseWeightTotal+=weight;
   }
+  for (const name of LEGACY_REQUIRED_SIGNAL_NAMES) {
+    if (!(baseWeightValues[name]>0)) {
+      throw new TypeError(`MODEL_BASE_WEIGHTS.${name} must be positive`);
+    }
+  }
   const baseWeights=Object.freeze(Object.fromEntries(
-    MODEL_SIGNAL_NAMES.map(name=>[name,baseWeightValues[name]/baseWeightTotal]),
+    MODEL_SIGNAL_NAMES.map(name=>[name,baseWeightTotal>0 ? baseWeightValues[name]/baseWeightTotal : 0]),
   ));
 
   function positiveSafeInteger(value) {

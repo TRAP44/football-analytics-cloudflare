@@ -36,6 +36,7 @@ const lifecycle=createLifecycle();
 const analysisRuntime=readRepoFile('src/analysis-runtime.js');
 const telegramUpdate=readRepoFile('src/telegram-update-orchestration.js');
 const telegramBot=readRepoFile('src/telegram-bot-orchestration-runtime.js');
+const botUi=readRepoFile('src/telegram-bot-ui-runtime.js');
 const growth=readRepoFile('src/growth-analytics-runtime.js');
 const app=readRepoFile('public/app.js')+'\n'+readRepoFile('public/modules/admin-launch-funnel.js');
 const worker=readRepoFile('src/worker.js');
@@ -45,7 +46,6 @@ test('RC71 only requests News Impact recheck through explicit Telegram AI action
   assert.match(telegramUpdate,/newsImpactDelta:true,newsPublishedAt:publishedAt/);
   assert.match(telegramUpdate,/source:'news_impact'/);
 
-  const botUi=readRepoFile('src/telegram-bot-ui-runtime.js');
   assert.match(botUi,/newsImpactRecheck:true/);
   assert.match(botUi,/newsPublishedAt:String\(options\.newsPublishedAt \|\| ''\)\.slice\(0,40\)/);
 });
