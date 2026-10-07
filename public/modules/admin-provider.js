@@ -497,5 +497,13 @@ export function createAdminProviderModule(deps = {}) {
   
   
 
-  return { renderProviderAudit, renderExpandedDataReleaseGate, runProviderE2E, renderProvider, loadProvider, probeProvider, runProviderCoverageAudit };
+  return Object.freeze({
+    renderProviderAudit,
+    renderExpandedDataReleaseGate,
+    runProviderE2E,
+    renderProvider,
+    loadProvider,
+    probeProvider,
+    runProviderCoverageAudit,
+  });
 }
