@@ -116,7 +116,12 @@ export function auditPublicFiles(paths, readFile=file=>fs.readFileSync(file,'utf
       || /(?:^|\/)_(?:headers|redirects)$/i.test(file);
     if (!textAsset) continue;
     let text='';
-    try { text=readFile(file); } catch { continue; }
+    try {
+      text=readFile(file);
+    } catch {
+      findings.push({path:file,type:'unreadable_public_asset'});
+      continue;
+    }
     for (const name of PUBLIC_SECRET_REFERENCES) {
       if (text.includes(name)) findings.push({path:file,type:'server_secret_name_in_public_asset',name});
     }
