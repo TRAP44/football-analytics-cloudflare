@@ -54,8 +54,14 @@ function responseStatus(value) {
   return Number.isSafeInteger(value)
     && value>=200
     && value<=599
+    && ![204,205,304].includes(value)
       ? value
       : 500;
+}
+
+function protectedHeader(name) {
+  return IMMUTABLE_JSON_HEADERS.has(name)
+    || name.startsWith('access-control-');
 }
 
 function numericCandidate(value) {
@@ -168,7 +174,7 @@ export function createHttpRuntime(options={}) {
 
     for (const [name,value] of safeHeaderEntries(extraHeaders)) {
       const normalizedName=name.toLowerCase();
-      if (IMMUTABLE_JSON_HEADERS.has(normalizedName)) continue;
+      if (protectedHeader(normalizedName)) continue;
       try {
         headers.set(name,value);
       } catch {}
