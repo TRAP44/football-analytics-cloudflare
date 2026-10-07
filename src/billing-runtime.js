@@ -1,4 +1,7 @@
 export function createBillingRuntime(deps = {}) {
+  if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
+    throw new TypeError('Billing runtime dependencies are required.');
+  }
   const {
     BILLING_PLANS,
     STAR_SYNC_MAX_PAGES,
@@ -27,15 +30,79 @@ export function createBillingRuntime(deps = {}) {
     supaUpsert
   } = deps;
 
+  if (!BILLING_PLANS || typeof BILLING_PLANS !== 'object' || Array.isArray(BILLING_PLANS)) {
+    throw new TypeError('Billing runtime requires BILLING_PLANS.');
+  }
+  if (!memory || typeof memory !== 'object' || Array.isArray(memory)) {
+    throw new TypeError('Billing runtime requires memory.');
+  }
+  for (const [name,fn] of Object.entries({
+    activatePassPurchase,
+    bytesToHex,
+    constantTimeEqual,
+    fetchWithTimeout,
+    getQuota,
+    getUserRecord,
+    hasSupabase,
+    hmacSha256,
+    listUserEntitlements,
+    markTelegramWebhookEffect,
+    markTelegramWebhookMutation,
+    parsePassInvoicePayload,
+    passProductConfig,
+    recordOpsEvent,
+    recordReferredPayment,
+    refundPassByCharge,
+    supaPatch,
+    supaSelectOne,
+    supaUpsert,
+  })) {
+    if (typeof fn !== 'function') throw new TypeError(`Billing runtime requires ${name}.`);
+  }
+  if (!enc || typeof enc.encode !== 'function') throw new TypeError('Billing runtime requires a text encoder.');
+
+  function integerCandidate(value) {
+    if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+    if (typeof value !== 'string' || value.length > 24) return null;
+    const raw=value.trim();
+    if (!/^\d+$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isSafeInteger(number) ? number : null;
+  }
+
+  function positiveInt(value) {
+    const number=integerCandidate(value);
+    return number !== null && number > 0 ? number : null;
+  }
+
+  function nonNegativeInt(value) {
+    const number=integerCandidate(value);
+    return number !== null && number >= 0 ? number : null;
+  }
+
+  function boundedRetryAfter(value) {
+    const seconds=nonNegativeInt(value);
+    return seconds === null ? 0 : Math.min(seconds,7*24*60*60);
+  }
+
+  function safeText(value,max=512) {
+    if (typeof value !== 'string') return '';
+    return value.trim().slice(0,max);
+  }
+
+  function unixSeconds(value,fallback=null) {
+    const seconds=nonNegativeInt(value);
+    return seconds !== null && seconds <= 8_640_000_000_000 ? seconds : fallback;
+  }
+
   function billingPlanConfig(plan, cfg) {
-    const key = String(plan || '').toUpperCase();
-    if (!BILLING_PLANS[key]) return null;
-    return {
-      key,
-      ...BILLING_PLANS[key],
-      stars: Number(cfg.starsPrices?.[key] || BILLING_PLANS[key].stars),
-      dailyLimit: Number(cfg.limits?.[key] || BILLING_PLANS[key].dailyLimit),
-    };
+    const key=safeText(plan,24).toUpperCase();
+    if (!key || !Object.hasOwn(BILLING_PLANS,key)) return null;
+    const base=BILLING_PLANS[key];
+    const stars=positiveInt(cfg?.starsPrices?.[key]) ?? positiveInt(base?.stars);
+    const dailyLimit=positiveInt(cfg?.limits?.[key]) ?? positiveInt(base?.dailyLimit);
+    if (stars === null || dailyLimit === null) return null;
+    return {key,...base,stars,dailyLimit};
   }
   
   async function invoiceSignature(base, botToken) {
@@ -43,19 +110,24 @@ export function createBillingRuntime(deps = {}) {
   }
   
   async function makeInvoicePayload(userId, plan, botToken) {
-    const nonceBytes = crypto.getRandomValues(new Uint8Array(6));
-    const nonce = bytesToHex(nonceBytes);
-    const base = `fa1|${Number(userId)}|${String(plan).toUpperCase()}|${nonce}`;
-    return `${base}|${await invoiceSignature(base, botToken)}`;
+    const uid=positiveInt(userId);
+    const planCfg=billingPlanConfig(plan,{});
+    const token=typeof botToken === 'string' ? botToken : '';
+    if (uid === null || !planCfg || !token) throw new TypeError('Invalid subscription invoice parameters.');
+    const nonceBytes=crypto.getRandomValues(new Uint8Array(6));
+    const nonce=bytesToHex(nonceBytes);
+    const base=`fa1|${uid}|${planCfg.key}|${nonce}`;
+    return `${base}|${await invoiceSignature(base,token)}`;
   }
   
   async function parseInvoicePayload(payload, botToken) {
-    const parts = String(payload || '').split('|');
+    if (typeof payload !== 'string' || payload.length > 512 || typeof botToken !== 'string' || !botToken) return null;
+    const parts=payload.split('|');
     if (parts.length !== 5 || parts[0] !== 'fa1') return null;
-    const [, uidRaw, planRaw, nonce, sig] = parts;
-    const uid = Number(uidRaw);
-    const plan = String(planRaw || '').toUpperCase();
-    if (!Number.isSafeInteger(uid) || !BILLING_PLANS[plan] || !/^[0-9a-f]{12}$/i.test(nonce) || !/^[0-9a-f]{24}$/i.test(sig)) return null;
+    const [,uidRaw,planRaw,nonce,sig]=parts;
+    const uid=positiveInt(uidRaw);
+    const plan=safeText(planRaw,24).toUpperCase();
+    if (uid === null || !Object.hasOwn(BILLING_PLANS,plan) || !/^[0-9a-f]{12}$/i.test(nonce) || !/^[0-9a-f]{24}$/i.test(sig)) return null;
     const base = `fa1|${uid}|${plan}|${nonce}`;
     const expected = await invoiceSignature(base, botToken);
     if (!constantTimeEqual(expected.toLowerCase(), sig.toLowerCase())) return null;
@@ -63,7 +135,13 @@ export function createBillingRuntime(deps = {}) {
   }
   
   async function telegramApi(method, cfg, body = {}) {
-    if (!cfg.botToken) {
+    const safeMethod=safeText(method,80);
+    if (!/^[A-Za-z][A-Za-z0-9]{0,79}$/.test(safeMethod)) {
+      const error=new Error('Некорректный метод Telegram API.');
+      error.code='TELEGRAM_METHOD';
+      throw error;
+    }
+    if (typeof cfg?.botToken !== 'string' || !cfg.botToken) {
       const error = new Error('TELEGRAM_BOT_TOKEN не настроен.');
       error.code = 'TELEGRAM_CONFIG';
       throw error;
@@ -71,25 +149,25 @@ export function createBillingRuntime(deps = {}) {
   
     let r;
     try {
-      r = await fetchWithTimeout(`https://api.telegram.org/bot${cfg.botToken}/${method}`, {
+      r = await fetchWithTimeout(`https://api.telegram.org/bot${cfg.botToken}/${safeMethod}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body || {}),
-      }, 8000, `Telegram ${method}`);
+      }, 8000, `Telegram ${safeMethod}`);
     } catch (cause) {
       const timedOut = String(cause?.code || '') === 'UPSTREAM_TIMEOUT';
-      const error = new Error(cause?.message || (timedOut ? `Telegram ${method} timeout` : `Telegram ${method} network error`));
+      const error = new Error(cause?.message || (timedOut ? `Telegram ${safeMethod} timeout` : `Telegram ${safeMethod} network error`));
       error.code = timedOut ? 'TELEGRAM_TIMEOUT' : 'TELEGRAM_NETWORK';
-      error.retryAfter = Math.max(0, Number(cause?.retryAfter || 0));
+      error.retryAfter=boundedRetryAfter(cause?.retryAfter);
       throw error;
     }
   
     const data = await r.json().catch(() => ({}));
     if (!r.ok || !data?.ok) {
-      const status = Number(r.status || 0);
-      const error = new Error(data?.description || `Telegram ${method}: HTTP ${status}`);
+      const status=nonNegativeInt(r?.status) ?? 0;
+      const error = new Error(data?.description || `Telegram ${safeMethod}: HTTP ${status}`);
       error.status = status;
-      error.retryAfter = Math.max(0, Number(data?.parameters?.retry_after || r.headers.get('retry-after') || 0));
+      error.retryAfter=boundedRetryAfter(data?.parameters?.retry_after ?? r.headers.get('retry-after'));
       error.code = status === 429
         ? 'TELEGRAM_RATE_LIMIT'
         : status >= 500
@@ -98,18 +176,23 @@ export function createBillingRuntime(deps = {}) {
       throw error;
     }
   
-    if (!/^get[A-Z]/.test(String(method || ''))) markTelegramWebhookEffect(cfg, method);
+    if (!/^get[A-Z]/.test(safeMethod)) markTelegramWebhookEffect(cfg,safeMethod);
     return data.result;
   }
   
   async function updateUserSubscription(userId, fields, cfg) {
-    markTelegramWebhookMutation(cfg, 'user_subscription');
-    const patch = { ...fields, plan_updated_at: new Date().toISOString() };
+    const uid=positiveInt(userId);
+    if (uid === null || !fields || typeof fields !== 'object' || Array.isArray(fields)) {
+      throw new TypeError('Invalid subscription update.');
+    }
+    markTelegramWebhookMutation(cfg,'user_subscription');
+    const patch={...fields,plan_updated_at:new Date().toISOString()};
     if (hasSupabase(cfg)) {
-      await supaPatch(cfg, 'users', { telegram_id: `eq.${Number(userId)}` }, patch);
+      await supaPatch(cfg,'users',{telegram_id:`eq.${uid}`},patch);
     } else {
-      const old = memory.users.get(Number(userId)) || { telegram_id: Number(userId), plan: 'FREE' };
-      memory.users.set(Number(userId), { ...old, ...patch });
+      if (!(memory.users instanceof Map)) throw new TypeError('Billing user memory is unavailable.');
+      const old=memory.users.get(uid) || {telegram_id:uid,plan:'FREE'};
+      memory.users.set(uid,{...old,...patch});
     }
   }
   
@@ -124,9 +207,9 @@ export function createBillingRuntime(deps = {}) {
   }
   
   async function findRefundableBillingCharge(userId, paymentChargeId, cfg) {
-    const uid = Number(userId);
-    const chargeId = String(paymentChargeId || '').trim();
-    if (!Number.isSafeInteger(uid) || uid <= 0 || !chargeId || chargeId.length > 240) return null;
+    const uid=positiveInt(userId);
+    const chargeId=safeText(paymentChargeId,240);
+    if (uid === null || !chargeId) return null;
   
     let payment = null;
     if (hasSupabase(cfg)) {
@@ -136,7 +219,7 @@ export function createBillingRuntime(deps = {}) {
       });
     } else {
       const row = memory.billingPayments.get(chargeId) || null;
-      if (row && Number(row.telegram_id) === uid) payment = row;
+      if (row && positiveInt(row?.telegram_id) === uid) payment=row;
     }
     if (payment) return {
       kind: 'subscription',
@@ -147,7 +230,7 @@ export function createBillingRuntime(deps = {}) {
     const entitlements = await listUserEntitlements(uid, cfg);
     const entitlement = entitlements.find(row =>
       String(row.payment_charge_id || row.paymentChargeId || '') === chargeId
-      && Number(row.telegram_id || row.telegramId || 0) === uid
+      && positiveInt(row.telegram_id ?? row.telegramId) === uid
     );
     if (!entitlement) return null;
     return {
@@ -158,9 +241,9 @@ export function createBillingRuntime(deps = {}) {
   }
   
   async function applyRefundedPayment(userId, paymentChargeId, cfg) {
-    const uid = Number(userId);
-    const chargeId = String(paymentChargeId || '').trim();
-    if (!Number.isSafeInteger(uid) || uid <= 0 || !chargeId) return { updated:false, reason:'invalid_refund' };
+    const uid=positiveInt(userId);
+    const chargeId=safeText(paymentChargeId,240);
+    if (uid === null || !chargeId) return {updated:false,reason:'invalid_refund'};
   
     try {
       markTelegramWebhookMutation(cfg, 'billing_refund');
@@ -174,7 +257,7 @@ export function createBillingRuntime(deps = {}) {
         });
       } else {
         const row = memory.billingPayments.get(chargeId);
-        if (row && Number(row.telegram_id) === uid) {
+        if (row && positiveInt(row?.telegram_id) === uid) {
           memory.billingPayments.set(chargeId, { ...row, status:'refunded', updated_at:new Date().toISOString() });
         }
       }
@@ -205,9 +288,12 @@ export function createBillingRuntime(deps = {}) {
   }
   
   async function applySuccessfulPayment(userId, payment, cfg, fallbackDate = Math.floor(Date.now() / 1000)) {
-    if (!payment || payment.currency !== 'XTR') return false;
-    const chargeId = String(payment.telegram_payment_charge_id || '');
-    if (!chargeId) return false;
+    const uid=positiveInt(userId);
+    if (uid === null || !payment || typeof payment !== 'object' || Array.isArray(payment) || payment.currency !== 'XTR') return false;
+    const chargeId=safeText(payment.telegram_payment_charge_id,240);
+    const amount=positiveInt(payment.total_amount);
+    const paidAt=unixSeconds(fallbackDate,Math.floor(Date.now()/1000));
+    if (!chargeId || amount === null || paidAt === null) return false;
   
     // A refunded-charge lookup is a billing safety boundary. Storage failures must
     // fail closed rather than treating an unknown charge as safe to activate.
@@ -232,27 +318,27 @@ export function createBillingRuntime(deps = {}) {
   
     const subscription = await parseInvoicePayload(payment.invoice_payload, cfg.botToken);
     if (subscription) {
-      if (Number(subscription.userId) !== Number(userId)) return false;
+      if (positiveInt(subscription.userId)!==uid) return false;
       const planCfg = billingPlanConfig(subscription.plan, cfg);
-      if (!planCfg || Number(payment.total_amount) !== Number(planCfg.stars)) return false;
+      if (!planCfg || amount!==positiveInt(planCfg.stars)) return false;
   
-      const expiresUnix = Number(payment.subscription_expiration_date || 0)
-        || (Number(fallbackDate || Math.floor(Date.now() / 1000)) + SUBSCRIPTION_PERIOD_SECONDS);
+      const expiresUnix=unixSeconds(payment.subscription_expiration_date,null)
+        ?? (paidAt+SUBSCRIPTION_PERIOD_SECONDS);
       const expiresAt = new Date(expiresUnix * 1000).toISOString();
   
       await saveBillingPayment({
         telegram_payment_charge_id: chargeId,
-        telegram_id: Number(userId),
+        telegram_id:uid,
         plan: subscription.plan,
-        stars_amount: Number(payment.total_amount),
+        stars_amount:amount,
         currency: 'XTR',
         invoice_payload: String(payment.invoice_payload || ''),
         provider_payment_charge_id: payment.provider_payment_charge_id || null,
         subscription_expiration_date: expiresAt,
-        is_recurring: Boolean(payment.is_recurring),
-        is_first_recurring: Boolean(payment.is_first_recurring),
+        is_recurring:payment.is_recurring === true,
+        is_first_recurring:payment.is_first_recurring === true,
         status: 'paid',
-        created_at: new Date(Number(fallbackDate || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
+        created_at:new Date(paidAt*1000).toISOString(),
       }, cfg);
   
       await updateUserSubscription(userId, {
@@ -266,20 +352,20 @@ export function createBillingRuntime(deps = {}) {
     }
   
     const pass = await parsePassInvoicePayload(payment.invoice_payload, cfg.botToken);
-    if (!pass || Number(pass.userId) !== Number(userId)) return false;
+    if (!pass || positiveInt(pass.userId)!==uid) return false;
     const product = passProductConfig(pass.passType, cfg);
-    if (!product || Number(payment.total_amount) !== Number(product.stars)) return false;
+    if (!product || amount!==positiveInt(product.stars)) return false;
   
     const activated = await activatePassPurchase({
-      telegramId: Number(userId),
+      telegramId:uid,
       passType: pass.passType,
       fixtureId: pass.fixtureId,
-      starsAmount: Number(payment.total_amount),
+      starsAmount:amount,
       paymentChargeId: chargeId,
       invoicePayload: String(payment.invoice_payload || ''),
-      paidAt: new Date(Number(fallbackDate || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
+      paidAt:new Date(paidAt*1000).toISOString(),
     }, cfg);
-    return Boolean(activated?.activated || activated?.duplicate);
+    return activated?.activated === true || activated?.duplicate === true;
   }
   
   async function billingWebhookStatus(request, cfg) {
@@ -294,7 +380,7 @@ export function createBillingRuntime(deps = {}) {
         ready,
         expectedUrl,
         currentUrl: info?.url || '',
-        pendingUpdates: Number(info?.pending_update_count || 0),
+        pendingUpdates:nonNegativeInt(info?.pending_update_count) ?? 0,
         lastError: info?.last_error_message || '',
         reason: ready ? '' : 'webhook_url_mismatch',
       };
@@ -325,6 +411,8 @@ export function createBillingRuntime(deps = {}) {
   }
   
   async function syncBillingFromStars(userId, cfg) {
+    const uid=positiveInt(userId);
+    if (uid === null) return {synced:false,subscriptionSynced:false,passVerified:0,refundsReconciled:0,transactionPagesScanned:0,transactionHistoryTruncated:false,quota:null};
     const history=await loadStarTransactionsForSync(cfg);
     const list=history.transactions;
     const refundedChargeIds=new Set();
@@ -338,7 +426,7 @@ export function createBillingRuntime(deps = {}) {
     for (const item of list) {
       const receiver=item?.receiver;
       if (!receiver || receiver.type !== 'user' || receiver.transaction_type !== 'invoice_payment') continue;
-      if (Number(receiver.user?.id) !== Number(userId)) continue;
+      if (positiveInt(receiver.user?.id)!==uid) continue;
       const chargeId=String(item?.id || '').trim();
       if (!chargeId || refundedChargeIds.has(chargeId)) continue;
       refundedChargeIds.add(chargeId);
@@ -350,35 +438,37 @@ export function createBillingRuntime(deps = {}) {
     for (const item of list) {
       const source = item?.source;
       if (!source || source.type !== 'user' || source.transaction_type !== 'invoice_payment') continue;
-      if (Number(source.user?.id) !== Number(userId)) continue;
+      if (positiveInt(source.user?.id)!==uid) continue;
       const chargeId=String(item?.id || '').trim();
       if (!chargeId || refundedChargeIds.has(chargeId) || seenIncomingCharges.has(chargeId)) continue;
       seenIncomingCharges.add(chargeId);
   
       const pass = await parsePassInvoicePayload(source.invoice_payload, cfg.botToken);
-      if (pass && Number(pass.userId) === Number(userId)) {
+      if (pass && positiveInt(pass.userId)===uid) {
         const product = passProductConfig(pass.passType, cfg);
-        if (product && Number(item.amount) === Number(product.stars)) {
+        if (product && positiveInt(item.amount)===positiveInt(product.stars)) {
           const applied = await applySuccessfulPayment(userId, {
             currency: 'XTR',
-            total_amount: Number(item.amount),
+            total_amount:positiveInt(item.amount),
             invoice_payload: source.invoice_payload,
             telegram_payment_charge_id: chargeId,
             provider_payment_charge_id: '',
             is_recurring: false,
             is_first_recurring: false,
-          }, cfg, Number(item.date || Math.floor(Date.now() / 1000)));
+          },cfg,unixSeconds(item.date,Math.floor(Date.now()/1000)));
           if (applied) passVerified += 1;
         }
         continue;
       }
   
       const parsed = await parseInvoicePayload(source.invoice_payload, cfg.botToken);
-      if (!parsed || Number(parsed.userId) !== Number(userId)) continue;
+      if (!parsed || positiveInt(parsed.userId)!==uid) continue;
       const planCfg = billingPlanConfig(parsed.plan, cfg);
-      if (!planCfg || Number(item.amount) !== Number(planCfg.stars)) continue;
-      const period = Number(source.subscription_period || SUBSCRIPTION_PERIOD_SECONDS);
-      const expiresUnix = Number(item.date || 0) + period;
+      if (!planCfg || positiveInt(item.amount)!==positiveInt(planCfg.stars)) continue;
+      const period=positiveInt(source.subscription_period) ?? SUBSCRIPTION_PERIOD_SECONDS;
+      const itemDate=unixSeconds(item.date,null);
+      if (itemDate===null) continue;
+      const expiresUnix=itemDate+period;
       if (!best || expiresUnix > best.expiresUnix) best = { item, source, parsed, expiresUnix, chargeId };
     }
   
@@ -386,14 +476,14 @@ export function createBillingRuntime(deps = {}) {
     if (best && best.expiresUnix * 1000 > Date.now()) {
       subscriptionSynced = await applySuccessfulPayment(userId, {
         currency: 'XTR',
-        total_amount: Number(best.item.amount),
+        total_amount:positiveInt(best.item.amount),
         invoice_payload: best.source.invoice_payload,
         telegram_payment_charge_id: best.chargeId,
         provider_payment_charge_id: '',
         subscription_expiration_date: best.expiresUnix,
         is_recurring: true,
         is_first_recurring: false,
-      }, cfg, Number(best.item.date || Math.floor(Date.now() / 1000)));
+      },cfg,unixSeconds(best.item.date,Math.floor(Date.now()/1000)));
     }
   
     return {
@@ -407,7 +497,7 @@ export function createBillingRuntime(deps = {}) {
     };
   }
 
-  return {
+  return Object.freeze({
     billingPlanConfig,
     invoiceSignature,
     makeInvoicePayload,
@@ -421,5 +511,5 @@ export function createBillingRuntime(deps = {}) {
     billingWebhookStatus,
     loadStarTransactionsForSync,
     syncBillingFromStars
-  };
+  });
 }
