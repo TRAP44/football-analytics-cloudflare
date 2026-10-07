@@ -853,7 +853,7 @@ export function createFootballNewsRuntime(deps) {
   }
   
   async function currentMorningFootballNews(cfg) {
-    const date=safeText(todayUtc(),16);
+    const date=safeText(safeCall(todayUtc),16);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return {
         date:'',
@@ -894,8 +894,23 @@ export function createFootballNewsRuntime(deps) {
   }
   
   function morningNewsText(items = []) {
-    if (!items.length) return '';
-    return ['📰 <b>Главное за утро</b>','',...items.slice(0,2).map((item,i)=>`${i+1}. ${item.category.icon} <b>${telegramHtmlEscape(item.title)}</b>\n${telegramHtmlEscape(item.category.label)} · ${newsImpactBadge(item.category.impact)}\nИсточник: ${telegramHtmlEscape(item.source || 'веб-источник')} · ${telegramHtmlEscape(item.trust?.label || 'Веб-источник')}`),'','Откройте источник или нажмите «Новости», чтобы увидеть объяснение MatchRadar AI.'].join('\n');
+    const validItems=safeArray(items)
+      .map(normalizeFootballNewsResult)
+      .filter(Boolean)
+      .map(applyNewsTrustGate)
+      .slice(0,2);
+    if (!validItems.length) return '';
+    return [
+      '📰 <b>Главное за утро</b>',
+      '',
+      ...validItems.map((item,index)=>{
+        const category=plainObject(safeRead(item,'category')) || {};
+        const trust=plainObject(safeRead(item,'trust')) || {};
+        return `${index+1}. ${safeText(safeRead(category,'icon'),8,'📰')} <b>${html(safeRead(item,'title'))}</b>\n${html(safeRead(category,'label') || 'Футбол')} · ${newsImpactBadge(safeRead(category,'impact'))}\nИсточник: ${html(safeRead(item,'source') || 'веб-источник')} · ${html(safeRead(trust,'label') || 'Веб-источник')}`;
+      }),
+      '',
+      'Откройте источник или нажмите «Новости», чтобы увидеть объяснение MatchRadar AI.',
+    ].join('\n');
   }
   
   async function tavilySearch(query, cfg) {
@@ -925,7 +940,7 @@ export function createFootballNewsRuntime(deps) {
     }
   }
 
-  return {
+  return Object.freeze({
     externalNewsUrl,
     newsSourceDomain,
     newsSourceTrust,
@@ -958,5 +973,5 @@ export function createFootballNewsRuntime(deps) {
     currentMorningFootballNews,
     morningNewsText,
     tavilySearch,
-  };
+  });
 }
