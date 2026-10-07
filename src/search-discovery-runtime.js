@@ -50,20 +50,32 @@ export function createSearchDiscoveryRuntime(deps) {
     return String(value).trim().slice(0,max);
   }
 
+  function integerCandidate(value) {
+    if (typeof value==='number') {
+      return Number.isSafeInteger(value) ? value : null;
+    }
+    if (typeof value!=='string') return null;
+    const raw=value.trim();
+    if (!/^\d+$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isSafeInteger(number) ? number : null;
+  }
+
   function positiveSafeInteger(value) {
-    if (value === null || value === undefined || value === '') return null;
-    const number=Number(value);
-    return Number.isSafeInteger(number) && number > 0 ? number : null;
+    const number=integerCandidate(value);
+    return number!==null && number>0 ? number : null;
   }
 
   function safeSeason(value, fallback = new Date().getUTCFullYear()) {
-    const number=Number(value);
     const current=new Date().getUTCFullYear();
-    if (Number.isSafeInteger(number) && number>=1900 && number<=current+2) return number;
-    const fallbackNumber=Number(fallback);
-    return Number.isSafeInteger(fallbackNumber) && fallbackNumber>=1900 && fallbackNumber<=current+2
-      ? fallbackNumber
-      : null;
+    const number=integerCandidate(value);
+    if (number!==null && number>=1900 && number<=current+2) return number;
+    const fallbackNumber=integerCandidate(fallback);
+    return fallbackNumber!==null
+      && fallbackNumber>=1900
+      && fallbackNumber<=current+2
+        ? fallbackNumber
+        : null;
   }
 
   function finiteScore(value, fallback = 0) {
@@ -105,15 +117,22 @@ export function createSearchDiscoveryRuntime(deps) {
 
   function competitionCachePayload(value, leagueId) {
     if (!value || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.matches)) return null;
-    const sourceId=positiveSafeInteger(value?.matchSource?.id);
-    if (sourceId && sourceId !== leagueId) return null;
+    const source=value?.matchSource;
+    const sourceId=positiveSafeInteger(source?.id);
+    if (
+      !source
+      || typeof source!=='object'
+      || Array.isArray(source)
+      || source?.kind!=='competition'
+      || sourceId!==leagueId
+    ) return null;
     return value;
   }
 
   function teamFixtureCachePayload(value, teamId) {
     if (!value || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.fixtures)) return null;
     const sourceId=positiveSafeInteger(value?.teamId);
-    if (sourceId && sourceId !== teamId) return null;
+    if (sourceId!==teamId) return null;
     return value;
   }
 
