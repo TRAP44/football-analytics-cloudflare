@@ -1,4 +1,7 @@
 export function createChannelPublishIdempotencyRuntime(deps = {}) {
+  if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
+    throw new TypeError('Channel publish idempotency dependencies are required.');
+  }
   const {
     APP_VERSION,
     CHANNEL_PUBLISH_IDEMPOTENCY_MINUTES,
@@ -12,9 +15,48 @@ export function createChannelPublishIdempotencyRuntime(deps = {}) {
     supaHeaders
   } = deps;
 
+  if (!memory || typeof memory !== 'object' || Array.isArray(memory) || !(memory.cache instanceof Map)) {
+    throw new TypeError('Channel publish idempotency requires cache memory map.');
+  }
+  for (const [name,fn] of Object.entries({
+    fetchWithTimeout,
+    getCacheEntry,
+    hasSupabase,
+    recordOpsEvent,
+    setCache,
+    supaDelete,
+    supaHeaders,
+  })) {
+    if (typeof fn !== 'function') throw new TypeError(`Channel publish idempotency requires ${name}.`);
+  }
+
+  function integerCandidate(value) {
+    if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+    if (typeof value !== 'string' || value.length > 24) return null;
+    const raw=value.trim();
+    if (!/^\d+$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isSafeInteger(number) ? number : null;
+  }
+
+  function nonNegativeId(value) {
+    const number=integerCandidate(value);
+    return number !== null && number >= 0 ? number : 0;
+  }
+
+  function positiveId(value) {
+    const number=integerCandidate(value);
+    return number !== null && number > 0 ? number : null;
+  }
+
+  function safeText(value,max=160) {
+    if (typeof value !== 'string') return '';
+    return value.trim().slice(0,max);
+  }
+
   async function claimChannelPublishIdempotency(cacheKey, meta = {}, cfg) {
-    const key=String(cacheKey || '').slice(0,160);
-    const fixtureId=Number(meta.fixtureId || 0);
+    const key=safeText(cacheKey,160);
+    const fixtureId=nonNegativeId(meta?.fixtureId);
     if (!key.startsWith('telegram:channel-publish:v1:')) return {claimed:false,unavailable:true};
     try {
       const existing=await getCacheEntry(key,cfg,true);
@@ -23,7 +65,7 @@ export function createChannelPublishIdempotencyRuntime(deps = {}) {
           claimed:false,
           duplicate:true,
           inProgress:existing.payload?.state === 'publishing',
-          messageId:Number(existing.payload?.messageId || 0) || null,
+          messageId:positiveId(existing.payload?.messageId),
         };
       }
       if (existing?.expired) {
@@ -37,7 +79,7 @@ export function createChannelPublishIdempotencyRuntime(deps = {}) {
         state:'publishing',
         claimId,
         fixtureId,
-        channelId:String(meta.channelId || '').slice(0,80),
+        channelId:safeText(meta?.channelId,80),
         claimedAt:new Date().toISOString(),
         version:APP_VERSION,
       };
@@ -65,7 +107,7 @@ export function createChannelPublishIdempotencyRuntime(deps = {}) {
         claimed:false,
         duplicate:true,
         inProgress:current?.payload?.state === 'publishing',
-        messageId:Number(current?.payload?.messageId || 0) || null,
+        messageId:positiveId(current?.payload?.messageId),
         shared:true,
       };
     } catch (error) {
@@ -83,21 +125,22 @@ export function createChannelPublishIdempotencyRuntime(deps = {}) {
   }
   
   async function completeChannelPublishIdempotency(cacheKey, meta = {}, cfg) {
-    const key=String(cacheKey || '').slice(0,160);
-    await setCache(key,Number(meta.fixtureId || 0),{
+    const key=safeText(cacheKey,160);
+    const fixtureId=nonNegativeId(meta?.fixtureId);
+    await setCache(key,fixtureId,{
       state:'sent',
-      claimId:String(meta.claimId || ''),
-      fixtureId:Number(meta.fixtureId || 0),
-      channelId:String(meta.channelId || '').slice(0,80),
-      messageId:Number(meta.messageId || 0) || null,
+      claimId:safeText(meta?.claimId,80),
+      fixtureId,
+      channelId:safeText(meta?.channelId,80),
+      messageId:positiveId(meta?.messageId),
       sentAt:new Date().toISOString(),
       version:APP_VERSION,
     },cfg,CHANNEL_PUBLISH_IDEMPOTENCY_MINUTES);
   }
   
   async function releaseChannelPublishIdempotency(cacheKey, meta = {}, cfg) {
-    const key=String(cacheKey || '').slice(0,160);
-    const claimId=String(meta.claimId || '');
+    const key=safeText(cacheKey,160);
+    const claimId=safeText(meta?.claimId,80);
     if (!key || !claimId) return;
     try {
       const current=await getCacheEntry(key,cfg,true).catch(()=>null);
@@ -109,9 +152,9 @@ export function createChannelPublishIdempotencyRuntime(deps = {}) {
     }
   }
 
-  return {
+  return Object.freeze({
     claimChannelPublishIdempotency,
     completeChannelPublishIdempotency,
     releaseChannelPublishIdempotency
-  };
+  });
 }
