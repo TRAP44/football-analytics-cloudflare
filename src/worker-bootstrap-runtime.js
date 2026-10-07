@@ -220,9 +220,50 @@ export function createWorkerBootstrapRuntime(deps = {}) {
     };
   }
 
-  function guardUnavailable(cfg,url,code,message,telemetryKey='securityShapeBlocks') {
+  function normalizedPublicErrorBody(value) {
+    const source=plainObject(value);
+    if (!source) {
+      return {
+        error:'Сервис временно недоступен. Попробуйте повторить действие через несколько секунд.',
+        code:'SERVER_ERROR',
+        category:'service',
+        recoverable:true,
+      };
+    }
+    const retryAfter=boundedRetryAfter(safeRead(source,'retryAfter'),null);
+    return {
+      error:safeText(
+        safeRead(source,'error'),
+        500,
+        'Сервис временно недоступен. Попробуйте повторить действие через несколько секунд.',
+      ),
+      code:safeText(safeRead(source,'code'),80,'SERVER_ERROR') || 'SERVER_ERROR',
+      category:safeText(safeRead(source,'category'),80,'service') || 'service',
+      recoverable:safeRead(source,'recoverable') === true,
+      ...(retryAfter ? {retryAfter} : {}),
+    };
+  }
+
+  function normalizedNewsImpactRecovery(value) {
+    const source=plainObject(value);
+    if (!source) return null;
+    const code=safeText(safeRead(source,'code'),80);
+    const action=safeText(safeRead(source,'action'),80);
+    const message=safeText(safeRead(source,'message'),500);
+    if (!code || !action || !message) return null;
+    return {
+      code,
+      action,
+      message,
+      strategy:safeText(safeRead(source,'strategy'),40,'fixed') || 'fixed',
+      guardReason:safeText(safeRead(source,'guardReason'),120),
+      driftStatus:safeText(safeRead(source,'driftStatus'),80),
+    };
+  }
+
+  async function guardUnavailable(cfg,url,code,message,telemetryKey='securityShapeBlocks') {
     safeTelemetry(telemetryKey);
-    void safeRecord(cfg,{
+    await safeRecord(cfg,{
       severity:'error',
       source:'security',
       eventType:'request_guard',
@@ -352,8 +393,8 @@ export function createWorkerBootstrapRuntime(deps = {}) {
           code:securityShape.code || 'REQUEST_REJECTED',
           message:'Public request blocked by the pre-auth security gate.',
           endpoint:url.pathname,
-          status:Number(securityShape.status || 400),
-          transitionKey:'security-request-guard:' + String(securityShape.code || 'REQUEST_REJECTED') + ':' + minuteBucket,
+          status:boundedStatus(securityShape.status,400),
+          transitionKey:'security-request-guard:' + (securityShape.code || 'REQUEST_REJECTED') + ':' + minuteBucket,
           meta:{
             method:safeText(request?.method || 'GET',16,'GET').toUpperCase(),
             minuteBucket,
@@ -401,7 +442,7 @@ export function createWorkerBootstrapRuntime(deps = {}) {
             source: 'telegram',
             eventType: 'webhook',
             code: retry ? 'TELEGRAM_WEBHOOK_RETRY' : 'TELEGRAM_WEBHOOK_SUPPRESSED_RETRY',
-            message: error?.message || error,
+            message:safeRedact(safeRead(error,'message') || error,240),
             endpoint: '/telegram/webhook',
             status,
             meta: {
@@ -413,7 +454,7 @@ export function createWorkerBootstrapRuntime(deps = {}) {
               lastMutation:safeText(safeRead(disposition,'lastMutation'),120),
             },
           });
-          const retryAfter=retry ? boundedRetryAfter(disposition?.retryAfter,null,3600) : null;
+          const retryAfter=retry ? boundedRetryAfter(safeRead(disposition,'retryAfter'),null,3600) : null;
           return json(
             retry ? { ok: false, retry: true } : { ok: false },
             status,
@@ -492,8 +533,8 @@ export function createWorkerBootstrapRuntime(deps = {}) {
               retryAfter:5,
             },503,{'retry-after':'5'});
           }
-          if (abuse.blocked === true) {
-            const retryAfter=boundedRetryAfter(abuse.retryAfter,30,3600);
+          if (safeRead(abuse,'blocked') === true) {
+            const retryAfter=boundedRetryAfter(safeRead(abuse,'retryAfter'),30,3600);
             return json({
               error:'Слишком много неуспешных попыток авторизации. Повторите позже.',
               code:'INVALID_AUTH_BURST',
@@ -518,7 +559,7 @@ export function createWorkerBootstrapRuntime(deps = {}) {
             'securityAccessGuardFailures',
           );
         }
-        if (!betaAccess.allowed) {
+        if (safeRead(betaAccess,'allowed') !== true) {
           await safeRecord(cfg,{
             severity:'warning',
             source:'access',
@@ -631,13 +672,8 @@ export function createWorkerBootstrapRuntime(deps = {}) {
         try { rateLimited=isFootballRateLimitError(error) === true; } catch {}
         let mapped;
         try { mapped=plainObject(publicRouteError(error,rateLimited)); } catch {}
-        const body=plainObject(mapped?.body) || {
-          error:'Сервис временно недоступен. Попробуйте повторить действие через несколько секунд.',
-          code:'SERVER_ERROR',
-          category:'service',
-          recoverable:true,
-        };
-        const status=boundedStatus(mapped?.status,502);
+        const body=normalizedPublicErrorBody(safeRead(mapped,'body'));
+        const status=boundedStatus(safeRead(mapped,'status'),502);
         if (!rateLimited) {
           safeTelemetry('routeErrors');
           await safeRecord(cfg,{
@@ -651,11 +687,10 @@ export function createWorkerBootstrapRuntime(deps = {}) {
           });
         }
         const retryAfter=boundedRetryAfter(body.retryAfter,null);
+        const recovery=normalizedNewsImpactRecovery(safeRead(error,'newsImpactRecovery'));
         return json({
           ...body,
-          ...(plainObject(safeRead(error,'newsImpactRecovery'))
-            ? {newsImpactRecovery:plainObject(safeRead(error,'newsImpactRecovery'))}
-            : {}),
+          ...(recovery ? {newsImpactRecovery:recovery} : {}),
           provider:safeProviderCapabilities(),
         },status,retryAfter ? {'retry-after':String(retryAfter)} : {});
       }
@@ -710,7 +745,7 @@ export function createWorkerBootstrapRuntime(deps = {}) {
 
       let lockdown=true;
       try {
-        lockdown=isSecurityLockdownControls(runtimeState.value) === true;
+        lockdown=isSecurityLockdownControls(safeRead(runtimeState,'value')) === true;
       } catch {
         lockdown=true;
       }
@@ -725,8 +760,8 @@ export function createWorkerBootstrapRuntime(deps = {}) {
           transitionKey: `security-lockdown:cron:${hourBucket}`,
           meta: {
             hourBucket,
-            controlPlaneFailClosed: Boolean(runtimeState.value?.controlPlaneFailClosed),
-            runtimeSource: String(runtimeState.source || ''),
+            controlPlaneFailClosed:safeRead(safeRead(runtimeState,'value'),'controlPlaneFailClosed') === true,
+            runtimeSource:safeText(safeRead(runtimeState,'source'),80),
           },
         });
         return undefined;
@@ -747,12 +782,29 @@ export function createWorkerBootstrapRuntime(deps = {}) {
               });
               return false;
             });
-          if (typeof ctx?.waitUntil === 'function') ctx.waitUntil(reconciliation);
-          else await reconciliation;
+          if (typeof ctx?.waitUntil === 'function') {
+            try { ctx.waitUntil(reconciliation); }
+            catch { await reconciliation; }
+          } else {
+            await reconciliation;
+          }
         }
       }
   
-      return handleScheduled(controller,cfg,ctx);
+      try {
+        return await handleScheduled(controller,cfg,ctx);
+      } catch (error) {
+        safeTelemetry('scheduledErrors');
+        await safeRecord(cfg,{
+          severity:'error',
+          source:'cron',
+          eventType:'scheduled_execution',
+          code:'SCHEDULED_HANDLER_FAILED',
+          message:safeRedact(safeRead(error,'message') || error,240),
+          status:500,
+        });
+        return undefined;
+      }
     },
   });
 }
