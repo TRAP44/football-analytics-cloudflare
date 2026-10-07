@@ -101,6 +101,30 @@ function incidentId(date = '') {
   return 'digest-' + String(date || 'unknown');
 }
 
+function strictNonNegativeInteger(value) {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  }
+  if (typeof value !== 'string') return null;
+  const raw=value.trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const number=Number(raw);
+  return Number.isSafeInteger(number) && number >= 0 ? number : null;
+}
+
+function incidentEpisode(value) {
+  const episode=strictNonNegativeInteger(value);
+  return episode !== null && episode >= 1 ? episode : 1;
+}
+
+function incidentAlertKey(incident = {}, kind = 'incident') {
+  const id=String(incident?.incidentId || '').trim();
+  if (!id) return '';
+  const base=`${id}:${kind}`;
+  const episode=incidentEpisode(incident?.episode);
+  return episode > 1 ? `${base}:${episode}` : base;
+}
+
 export function buildDailyDigestIncidentReport(rows = [], { nowMs = Date.now() } = {}) {
   const now=normalizedNowMs(nowMs);
   const events = (Array.isArray(rows) ? rows : [])
@@ -124,42 +148,80 @@ export function buildDailyDigestIncidentReport(rows = [], { nowMs = Date.now() }
 
   const history = [];
   for (const [date, list] of byDate.entries()) {
-    const firstAlert = list.find(event => ALERTABLE_CODES.has(event.code));
-    if (!firstAlert) continue;
-    const last = list.at(-1);
-    const recovered = HEALTHY_CODES.has(last?.code) && Date.parse(last.at) > Date.parse(firstAlert.at);
-    const latestAlert = [...list].reverse().find(event => ALERTABLE_CODES.has(event.code)) || firstAlert;
-    const meta = latestAlert.metadata || {};
-    const startedAt = firstAlert.at;
-    const recoveredAt = recovered ? last.at : null;
-    const endMs = recoveredAt ? Date.parse(recoveredAt) : normalizedNowMs(nowMs);
-    const startMs = Date.parse(startedAt);
-    history.push({
-      incidentId:incidentId(date),
-      date,
-      active:!recovered,
-      state:recovered ? 'recovered' : 'incident',
-      highestState:'incident',
-      severity:'warning',
-      startedAt,
-      latestAt:last?.at || latestAlert.at,
-      recoveredAt,
-      durationMinutes:Number.isFinite(startMs) && Number.isFinite(endMs)
-        ? Math.max(0, Math.round(((endMs-startMs)/60000)*10)/10)
-        : null,
-      fingerprint:'daily_digest|' + date,
-      diagnostics:{
-        code:latestAlert.code,
-        remaining:nonNegativeCount(meta.remaining ?? meta.backlog),
-        sealedClaims:nonNegativeCount(meta.sealedClaims),
-        failed:nonNegativeCount(meta.failed),
-        completionRate:boundedRate(meta.completionRate) ?? 1,
-        oldestActiveClaimAgeMs:nonNegativeNumber(meta.oldestActiveClaimAgeMs),
-      },
-    });
+    const episodes=[];
+    let current=null;
+    let episodeNumber=0;
+
+    for (const event of list) {
+      if (ALERTABLE_CODES.has(event.code)) {
+        if (!current) {
+          episodeNumber+=1;
+          current={
+            episode:episodeNumber,
+            firstAlert:event,
+            latestAlert:event,
+            recoveredAt:null,
+          };
+        } else {
+          current.latestAlert=event;
+        }
+        continue;
+      }
+
+      if (
+        current
+        && HEALTHY_CODES.has(event.code)
+        && Date.parse(event.at) > Date.parse(current.firstAlert.at)
+      ) {
+        current.recoveredAt=event.at;
+        episodes.push(current);
+        current=null;
+      }
+    }
+    if (current) episodes.push(current);
+
+    for (const episodeState of episodes) {
+      const firstAlert=episodeState.firstAlert;
+      const latestAlert=episodeState.latestAlert;
+      const meta=latestAlert.metadata || {};
+      const startedAt=firstAlert.at;
+      const recoveredAt=episodeState.recoveredAt;
+      const endMs=recoveredAt ? Date.parse(recoveredAt) : now;
+      const startMs=Date.parse(startedAt);
+      const episode=episodeState.episode;
+      history.push({
+        incidentId:incidentId(date),
+        episode,
+        date,
+        active:!recoveredAt,
+        state:recoveredAt ? 'recovered' : 'incident',
+        highestState:'incident',
+        severity:'warning',
+        startedAt,
+        latestAt:recoveredAt || latestAlert.at,
+        recoveredAt,
+        durationMinutes:Number.isFinite(startMs) && Number.isFinite(endMs)
+          ? Math.max(0, Math.round(((endMs-startMs)/60000)*10)/10)
+          : null,
+        fingerprint:episode > 1
+          ? `daily_digest|${date}|episode:${episode}`
+          : 'daily_digest|' + date,
+        diagnostics:{
+          code:latestAlert.code,
+          remaining:nonNegativeCount(meta.remaining ?? meta.backlog),
+          sealedClaims:nonNegativeCount(meta.sealedClaims),
+          failed:nonNegativeCount(meta.failed),
+          completionRate:boundedRate(meta.completionRate) ?? 1,
+          oldestActiveClaimAgeMs:nonNegativeNumber(meta.oldestActiveClaimAgeMs),
+        },
+      });
+    }
   }
 
-  history.sort((a,b) => String(b.date).localeCompare(String(a.date)));
+  history.sort((a,b) =>
+    Date.parse(b.startedAt || '') - Date.parse(a.startedAt || '')
+    || Number(b.episode || 0) - Number(a.episode || 0)
+  );
   const activeIncident = history.find(item => item.active) || null;
   return {
     state:activeIncident ? 'incident' : history.length ? 'healthy' : 'collecting',
@@ -169,10 +231,28 @@ export function buildDailyDigestIncidentReport(rows = [], { nowMs = Date.now() }
 }
 
 function destinationRows(destinations = []) {
-  return (Array.isArray(destinations) ? destinations : []).map((item,index) => ({
-    slot:Number.isInteger(Number(item?.slot)) ? Number(item.slot) : index,
-    destinationKey:String(item?.destinationKey || item?.destination_key || ''),
-  })).filter(item => item.slot >= 0 && item.destinationKey);
+  const normalized=[];
+  const seenSlots=new Set();
+  const seenKeys=new Set();
+  for (const [index,item] of (Array.isArray(destinations) ? destinations : []).entries()) {
+    const rawSlot=item?.slot;
+    const slot=rawSlot === undefined || rawSlot === null || rawSlot === ''
+      ? index
+      : strictNonNegativeInteger(rawSlot);
+    const rawKey=item?.destinationKey ?? item?.destination_key;
+    const destinationKey=typeof rawKey === 'string' ? rawKey.trim() : '';
+    if (
+      slot === null
+      || !destinationKey
+      || destinationKey.length > 160
+      || seenSlots.has(slot)
+      || seenKeys.has(destinationKey)
+    ) continue;
+    seenSlots.add(slot);
+    seenKeys.add(destinationKey);
+    normalized.push({slot,destinationKey});
+  }
+  return normalized;
 }
 
 function ledgerRowsFor(rows = [], incidentId = '') {
@@ -193,7 +273,8 @@ export function planDailyDigestIncidentAlert(report = {}, ledgerRows = [], { des
 
   const active = report?.activeIncident;
   if (active?.active) {
-    const alertKey = active.incidentId + ':incident';
+    const alertKey=incidentAlertKey(active,'incident');
+    if (!alertKey) return {action:'none',reason:'invalid_incident'};
     const rows = ledgerRowsFor(ledgerRows,active.incidentId);
     const pending = targets.filter(target => !sentFor(rows,alertKey,target.destinationKey));
     if (!pending.length) return { action:'none', reason:'incident_alert_deduplicated' };
@@ -215,10 +296,11 @@ export function planDailyDigestIncidentAlert(report = {}, ledgerRows = [], { des
     : null;
   if (!recovered) return { action:'none', reason:'no_incident' };
   const rows = ledgerRowsFor(ledgerRows,recovered.incidentId);
-  const openKey = recovered.incidentId + ':incident';
+  const openKey=incidentAlertKey(recovered,'incident');
+  const alertKey=incidentAlertKey(recovered,'recovery');
+  if (!openKey || !alertKey) return {action:'none',reason:'invalid_incident'};
   const hadOpenAttempt = rows.some(row => String(row?.alert_key || row?.alertKey || '') === openKey);
   if (!hadOpenAttempt) return { action:'none', reason:'recovery_without_prior_incident_alert' };
-  const alertKey = recovered.incidentId + ':recovery';
   const pending = targets.filter(target => !sentFor(rows,alertKey,target.destinationKey));
   if (!pending.length) return { action:'none', reason:'recovery_alert_deduplicated' };
   return {
@@ -294,7 +376,9 @@ export function dailyDigestIncidentAlertOpsEvents(plan = {}, delivery = {}) {
         incidentId:plan.incidentId || null,
         alertKind:String(plan.kind || ''),
         deliveryKey:String(plan.alertKey || ''),
-        recipientSlots:items.map(x=>Number(x.slot)).filter(Number.isInteger),
+        recipientSlots:items
+          .map(x=>strictNonNegativeInteger(x?.slot))
+          .filter(slot=>slot !== null),
         recipientCount:items.length,
       },
     });
@@ -309,6 +393,7 @@ function digestLedgerSummary(rows = [], incidentId = '') {
   for (const row of relevant) {
     const status=String(row?.status || '').trim();
     if (Object.prototype.hasOwnProperty.call(states,status)) states[status]+=1;
+    else states.unknown+=1;
   }
   return {
     rows:relevant.length,
