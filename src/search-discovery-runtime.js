@@ -264,7 +264,12 @@ export function createSearchDiscoveryRuntime(deps) {
   }
   
   function searchText(value = '') {
-    return safeText(value,120)
+    const source=safeText(value,120);
+    if (!source) return '';
+    return source
+      .normalize('NFKC')
+      .replace(/[\u200B-\u200D\u2060\uFEFF]/g,' ')
+      .replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g,'')
       .trim()
       .toLowerCase()
       .replace(/ё/g, 'е')
@@ -278,7 +283,7 @@ export function createSearchDiscoveryRuntime(deps) {
       .replace(/[íìîï]/g, 'i')
       .replace(/ñ/g, 'n')
       .replace(/ž/g, 'z')
-      .replace(/[‐‑‒–—―\-_/\\|+.,!?;:()[\]{}'"\`´“”„«»]+/g, ' ')
+      .replace(/[‐‑‒–—―\-_/\\|+.,!?;:()[\]{}'’‘"\`´“”„«»]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
   }
@@ -302,6 +307,9 @@ export function createSearchDiscoveryRuntime(deps) {
     ['Шахтёр','Shakhtar Donetsk'],
     ['Олимпиакос!','Olympiakos Piraeus'],
     ['Динамо Киев','Dynamo Kyiv'],
+    ['Sa\u0303o Paulo','Sao Paulo'],
+    ['Ｒｅａｌ　Ｍａｄｒｉｄ','Real Madrid'],
+    ['Интер\u200BМайами','Inter Miami'],
   ]);
   
   function searchQualityDrill() {
