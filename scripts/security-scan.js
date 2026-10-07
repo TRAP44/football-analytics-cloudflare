@@ -49,6 +49,7 @@ export function scanTrackedFiles(paths, readFile = path => fs.readFileSync(path,
     try {
       text = readFile(path);
     } catch {
+      findings.push({ path, type: 'unreadable_tracked_file' });
       continue;
     }
     for (const type of scanTextForSecrets(text)) findings.push({ path, type });
