@@ -1,15 +1,90 @@
+import { FRONTEND_ASSET_REVISION } from './app-runtime.js';
+
 // Admin-only provider/ops boundary.
 // Loaded lazily only after the server-authenticated profile reports admin role.
 // Server-side authorization remains authoritative.
-export function createAdminProviderModule(deps) {
-  if (!document.querySelector('link[data-admin-styles]')) {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = '/styles/admin.css?v=6.120.0-launch49';
-    link.dataset.adminStyles = 'true';
-    document.head.append(link);
+export function adminProviderStylesheetHref(
+  revision=FRONTEND_ASSET_REVISION,
+) {
+  const value=typeof revision==='string' ? revision.trim() : '';
+  if (!/^\d+\.\d+\.\d+-launch\d+$/.test(value)) {
+    throw new TypeError('Admin stylesheet revision is invalid.');
   }
-  const { state, $, isAdmin, humanizeTechnicalText, escapeHtml, planLabel, dateTime, technicalStateLabel, freshnessSourceLabel, toast, api, renderAdminOverview } = deps;
+  return `/styles/admin.css?v=${encodeURIComponent(value)}`;
+}
+
+export function ensureAdminProviderStyles(
+  documentObject,
+  revision=FRONTEND_ASSET_REVISION,
+) {
+  if (
+    !documentObject
+    || typeof documentObject.querySelector!=='function'
+    || typeof documentObject.createElement!=='function'
+    || typeof documentObject.head?.append!=='function'
+  ) {
+    throw new TypeError('Admin stylesheet loader requires a document.');
+  }
+
+  const href=adminProviderStylesheetHref(revision);
+  let link=documentObject.querySelector('link[data-admin-styles]');
+  if (!link) {
+    link=documentObject.createElement('link');
+    documentObject.head.append(link);
+  }
+  link.rel='stylesheet';
+  link.href=href;
+  if (link.dataset && typeof link.dataset==='object') {
+    link.dataset.adminStyles='true';
+  } else if (typeof link.setAttribute==='function') {
+    link.setAttribute('data-admin-styles','true');
+  }
+  return link;
+}
+
+export function createAdminProviderModule(deps = {}) {
+  const {
+    document:documentObject=globalThis.document,
+    state,
+    $,
+    isAdmin,
+    humanizeTechnicalText,
+    escapeHtml,
+    planLabel,
+    dateTime,
+    technicalStateLabel,
+    freshnessSourceLabel,
+    toast,
+    api,
+    renderAdminOverview,
+  } = deps;
+
+  if (
+    !state
+    || typeof $!=='function'
+    || typeof isAdmin!=='function'
+    || typeof humanizeTechnicalText!=='function'
+    || typeof escapeHtml!=='function'
+    || typeof planLabel!=='function'
+    || typeof dateTime!=='function'
+    || typeof technicalStateLabel!=='function'
+    || typeof freshnessSourceLabel!=='function'
+    || typeof toast!=='function'
+    || typeof api!=='function'
+    || typeof renderAdminOverview!=='function'
+  ) {
+    throw new TypeError(
+      'Admin provider module requires state and explicit UI/API dependencies.',
+    );
+  }
+
+  let authenticatedAdmin=false;
+  try {
+    authenticatedAdmin=isAdmin()===true;
+  } catch {}
+  if (authenticatedAdmin) {
+    ensureAdminProviderStyles(documentObject);
+  }
 
   function providerAuditStateLabel(stateValue) {
     return ({
