@@ -211,7 +211,7 @@ export function buildDailyDigestIncidentReport(rows = [], { nowMs = Date.now() }
           remaining:nonNegativeCount(meta.remaining ?? meta.backlog),
           sealedClaims:nonNegativeCount(meta.sealedClaims),
           failed:nonNegativeCount(meta.failed),
-          completionRate:boundedRate(meta.completionRate) ?? 1,
+          completionRate:boundedRate(meta.completionRate),
           oldestActiveClaimAgeMs:nonNegativeNumber(meta.oldestActiveClaimAgeMs),
         },
       });
@@ -317,16 +317,25 @@ export function planDailyDigestIncidentAlert(report = {}, ledgerRows = [], { des
 }
 
 export function formatDailyDigestIncidentAlert(plan = {}) {
-  const incident = plan.incident || {};
-  const d = incident.diagnostics || {};
-  if (plan.kind === 'recovery') {
+  const incident = plan && typeof plan === 'object' && !Array.isArray(plan) ? (plan.incident || {}) : {};
+  const d = incident?.diagnostics && typeof incident.diagnostics === 'object' && !Array.isArray(incident.diagnostics)
+    ? incident.diagnostics
+    : {};
+  const duration=finiteNumberCandidate(incident.durationMinutes);
+  const completion=boundedRate(d.completionRate);
+  const remaining=nonNegativeCount(d.remaining);
+  const sealedClaims=nonNegativeCount(d.sealedClaims);
+  const failed=nonNegativeCount(d.failed);
+  const oldestClaimAgeMs=nonNegativeNumber(d.oldestActiveClaimAgeMs);
+
+  if (plan?.kind === 'recovery') {
     return [
       '✅ Daily Digest recovered',
       '',
       'Дата: ' + String(incident.date || '—'),
       'Incident ID: ' + String(incident.incidentId || '—'),
       'Восстановление: ' + (iso(incident.recoveredAt) || '—'),
-      'Длительность: ' + (Number.isFinite(Number(incident.durationMinutes)) ? Number(incident.durationMinutes).toFixed(1) + ' мин' : '—'),
+      'Длительность: ' + (duration !== null && duration >= 0 ? duration.toFixed(1) + ' мин' : '—'),
       'Backlog очищен, sealed/stuck состояние больше не активно.',
     ].join('\n');
   }
@@ -336,11 +345,11 @@ export function formatDailyDigestIncidentAlert(plan = {}) {
     '',
     'Дата: ' + String(incident.date || '—'),
     'Причина: ' + String(d.code || 'digest health threshold'),
-    'Осталось получателей: ' + String(Number(d.remaining || 0)),
-    'Sealed claims: ' + String(Number(d.sealedClaims || 0)),
-    'Failed: ' + String(Number(d.failed || 0)),
-    'Completion rate: ' + (Number.isFinite(Number(d.completionRate)) ? (Number(d.completionRate)*100).toFixed(1) + '%' : '—'),
-    'Oldest claim age: ' + Math.round(Number(d.oldestActiveClaimAgeMs || 0)/1000) + ' сек',
+    'Осталось получателей: ' + String(remaining),
+    'Sealed claims: ' + String(sealedClaims),
+    'Failed: ' + String(failed),
+    'Completion rate: ' + (completion !== null ? (completion*100).toFixed(1) + '%' : '—'),
+    'Oldest claim age: ' + Math.round(oldestClaimAgeMs/1000) + ' сек',
     'Incident ID: ' + String(incident.incidentId || '—'),
     '',
     'Проверь ops_events daily_digest и persistent claims. Автоматический rollback или отключение функций не выполняется.',
