@@ -16,9 +16,17 @@ export function requireDbUrl(value = process.env.DB_URL) {
   if (!['postgresql:','postgres:'].includes(url.protocol)) {
     throw new Error('DB_URL must use the PostgreSQL protocol.');
   }
-  const host = String(url.hostname || '').toLowerCase();
-  if (!['127.0.0.1','localhost','::1'].includes(host)) {
+  const host=String(url.hostname || '').toLowerCase();
+  if (!['127.0.0.1','localhost','::1','[::1]'].includes(host)) {
     throw new Error('Supabase concurrency gate refuses non-local DB_URL targets.');
+  }
+  if (url.search || url.hash) {
+    throw new Error(
+      'Supabase concurrency gate refuses DB_URL query/hash parameters because libpq connection parameters can override the validated local target.',
+    );
+  }
+  if (!url.pathname || url.pathname === '/') {
+    throw new Error('DB_URL must name the disposable local Supabase database.');
   }
   return raw;
 }
