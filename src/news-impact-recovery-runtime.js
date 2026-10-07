@@ -216,6 +216,11 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     return parsed!==null && parsed>=0 ? parsed : fallback;
   }
 
+  function newsImpactPositiveNumber(value, fallback) {
+    const parsed=newsImpactFiniteNumber(value);
+    return parsed!==null && parsed>0 ? parsed : fallback;
+  }
+
   function newsImpactSignedNumber(value, fallback = 0) {
     const parsed=newsImpactFiniteNumber(value);
     return parsed!==null ? parsed : fallback;
@@ -1827,8 +1832,11 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       ? ackCandidate
       : NaN;
 
-    const ackTarget=newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30);
-    const recoveryTarget=newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360);
+    const ackTarget=newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30);
+    const recoveryTarget=Math.max(
+      ackTarget,
+      newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360),
+    );
     const elapsedMinutes=Math.max(0,Math.round((terminalMs-startMs)/60000));
     const ackLatencyMinutes=Number.isFinite(ackMs) ? Math.max(0,Math.round((ackMs-startMs)/60000)) : null;
     const recoveryLatencyMinutes=Number.isFinite(recoveredMs) ? elapsedMinutes : null;
@@ -2327,7 +2335,10 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       const breachTypes=Array.isArray(item.breachTypes)
         ? [...new Set(item.breachTypes.filter(type=>type==='ack' || type==='recovery'))]
         : [];
+      if (!breachTypes.length) return null;
       const severity=['critical','high','medium'].includes(item.severity) ? item.severity : 'medium';
+      const ackLatency=newsImpactFiniteNumber(item.ackLatencyMinutes);
+      const recoveryLatency=newsImpactFiniteNumber(item.recoveryLatencyMinutes);
       return {
         reason,
         reasonLabel:newsImpactText(item.reasonLabel,reason),
@@ -2344,8 +2355,8 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
         guards:Array.isArray(item.guards) ? item.guards.filter(code=>typeof code==='string') : [],
         ackStatus:newsImpactText(item.ackStatus),
         recoveryStatus:newsImpactText(item.recoveryStatus),
-        ackLatencyMinutes:newsImpactFiniteNumber(item.ackLatencyMinutes),
-        recoveryLatencyMinutes:newsImpactFiniteNumber(item.recoveryLatencyMinutes),
+        ackLatencyMinutes:ackLatency!==null && ackLatency>=0 ? ackLatency : null,
+        recoveryLatencyMinutes:recoveryLatency!==null && recoveryLatency>=0 ? recoveryLatency : null,
       };
     };
     const sanitizeRepeated=(item)=>{
@@ -2394,9 +2405,9 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       items:activeSorted.slice(0,safeLimit),
       repeated:activeRepeatedPairs,
       thresholds:{
-        ackMinutes:newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30),
-        criticalAckMinutes:newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,120),
-        recoveryMinutes:newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360),
+        ackMinutes:newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30),
+        criticalAckMinutes:newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,120),
+        recoveryMinutes:newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360),
         source:'rc87_existing_slo',
       },
       privacy:{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false},
@@ -2416,17 +2427,23 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     const thresholds=source?.thresholds && typeof source.thresholds==='object' && !Array.isArray(source.thresholds)
       ? source.thresholds
       : {};
-    const ackMinutes=newsImpactNonNegativeNumber(
-      thresholds.ackMinutes,
-      newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30),
+    const defaultAckMinutes=newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30);
+    const defaultCriticalAckMinutes=Math.max(
+      defaultAckMinutes,
+      newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,120),
     );
-    const criticalAckMinutes=newsImpactNonNegativeNumber(
-      thresholds.criticalAckMinutes,
-      newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,120),
+    const defaultRecoveryMinutes=Math.max(
+      defaultCriticalAckMinutes,
+      newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360),
     );
-    const recoveryMinutes=newsImpactNonNegativeNumber(
-      thresholds.recoveryMinutes,
-      newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360),
+    const ackMinutes=newsImpactPositiveNumber(thresholds.ackMinutes,defaultAckMinutes);
+    const criticalAckMinutes=Math.max(
+      ackMinutes,
+      newsImpactPositiveNumber(thresholds.criticalAckMinutes,defaultCriticalAckMinutes),
+    );
+    const recoveryMinutes=Math.max(
+      criticalAckMinutes,
+      newsImpactPositiveNumber(thresholds.recoveryMinutes,defaultRecoveryMinutes),
     );
     const stageRank={recovery_overdue:0,ack_critical:1,ack_overdue:2};
     const triageItems=(Array.isArray(source?.items) ? source.items : [])
@@ -2438,15 +2455,23 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
         const breachTypes=Array.isArray(item.breachTypes)
           ? [...new Set(item.breachTypes.filter(type=>type==='ack' || type==='recovery'))]
           : [];
+        if (!breachTypes.length) return null;
         const ageMinutes=newsImpactNonNegativeNumber(item.ageMinutes);
-        let triageStage='ack_overdue';
-        let triageLabel='ACK просрочен';
-        if (breachTypes.includes('recovery') || ageMinutes>=recoveryMinutes) {
+        const ackLatency=newsImpactFiniteNumber(item.ackLatencyMinutes);
+        const acknowledged=ackLatency!==null && ackLatency>=0;
+        let triageStage='';
+        let triageLabel='';
+        if (breachTypes.includes('recovery') && ageMinutes>=recoveryMinutes) {
           triageStage='recovery_overdue';
           triageLabel='Recovery просрочен';
-        } else if (breachTypes.includes('ack') && ageMinutes>=criticalAckMinutes) {
+        } else if (!acknowledged && breachTypes.includes('ack') && ageMinutes>=criticalAckMinutes) {
           triageStage='ack_critical';
           triageLabel='ACK критически просрочен';
+        } else if (!acknowledged && breachTypes.includes('ack') && ageMinutes>=ackMinutes) {
+          triageStage='ack_overdue';
+          triageLabel='ACK просрочен';
+        } else {
+          return null;
         }
         return {
           reason,
@@ -2512,15 +2537,19 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     const ackLatencyMinutes=Number.isFinite(ackMs)
       ? Math.max(0,Math.round((ackMs-startMs)/60000))
       : null;
-    const ackTarget=newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30);
-    const criticalAck=newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,120);
-    const recoveryTarget=newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360);
-    const ackBreached=Number.isFinite(ackMs)
-      ? Number(ackLatencyMinutes)>ackTarget
-      : ageMinutes>=ackTarget;
+    const ackTarget=newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30);
+    const criticalAck=Math.max(
+      ackTarget,
+      newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,120),
+    );
+    const recoveryTarget=Math.max(
+      criticalAck,
+      newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360),
+    );
     if (ageMinutes>=recoveryTarget) return 'recovery_overdue';
-    if (ackBreached && ageMinutes>=criticalAck) return 'ack_critical';
-    if (ackBreached) return 'ack_overdue';
+    if (Number.isFinite(ackMs)) return null;
+    if (ageMinutes>=criticalAck) return 'ack_critical';
+    if (ageMinutes>=ackTarget) return 'ack_overdue';
     return null;
   }
 
@@ -2612,9 +2641,9 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       weekly,
       stuck,
       thresholds:{
-        ackMinutes:newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30),
-        criticalAckMinutes:newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,120),
-        recoveryMinutes:newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360),
+        ackMinutes:newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30),
+        criticalAckMinutes:newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,120),
+        recoveryMinutes:newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360),
         source:'rc87_existing_slo',
       },
       privacy:{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false},
@@ -2647,8 +2676,11 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       : NaN;
     const ackTerminalMs=Number.isFinite(ackMs) ? ackMs : terminalMs;
     const ackElapsedMinutes=Math.max(0,Math.round((ackTerminalMs-startMs)/60000));
-    const ackTarget=newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30);
-    const recoveryTarget=newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360);
+    const ackTarget=newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30);
+    const recoveryTarget=Math.max(
+      ackTarget,
+      newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360),
+    );
     const ackOverdueMinutes=Math.max(0,ackElapsedMinutes-ackTarget);
     const recoveryOverdueMinutes=Math.max(0,elapsedMinutes-recoveryTarget);
     return {
@@ -2745,9 +2777,9 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       },
       ranking,
       thresholds:{
-        ackMinutes:newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30),
-        criticalAckMinutes:newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,120),
-        recoveryMinutes:newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360),
+        ackMinutes:newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30),
+        criticalAckMinutes:newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,120),
+        recoveryMinutes:newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360),
         source:'rc87_existing_slo',
       },
       methodology:'sum_minutes_above_existing_ack_and_recovery_slo',
@@ -2790,8 +2822,11 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       const to=Math.min(windowEndMs,toMs);
       return to>from ? Math.max(0,Math.round((to-from)/60000)) : 0;
     };
-    const ackTarget=newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30);
-    const recoveryTarget=newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360);
+    const ackTarget=newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30);
+    const recoveryTarget=Math.max(
+      ackTarget,
+      newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360),
+    );
     const ackOverdueStartMs=startMs+ackTarget*60000;
     const recoveryOverdueStartMs=startMs+recoveryTarget*60000;
     const ackOverdueMinutes=overlapMinutes(ackOverdueStartMs,ackTerminalMs);
@@ -2944,9 +2979,9 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       weekly,
       pairs:pairTrends.slice(0,safeLimit),
       thresholds:{
-        ackMinutes:newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30),
-        criticalAckMinutes:newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,120),
-        recoveryMinutes:newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360),
+        ackMinutes:newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30),
+        criticalAckMinutes:newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,120),
+        recoveryMinutes:newsImpactPositiveNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360),
         source:'rc87_existing_slo',
       },
       methodology:'weekly_overlap_minutes_above_existing_ack_and_recovery_slo',
