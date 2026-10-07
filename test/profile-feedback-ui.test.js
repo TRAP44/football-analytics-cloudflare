@@ -13,9 +13,11 @@ test('Profile removes the duplicate My Teams block and makes useful counters act
   assert.doesNotMatch(html, /id="profileMyTeamsBtn"/);
   assert.match(html, /id="profileFavoriteTeamsBtn"/);
   assert.match(html, /id="profileRemindersBtn"/);
-  assert.doesNotMatch(html, /id="remindersPanel"|id="reminderList"|Активные напоминания/);
+  assert.match(html, /id="remindersPanel"/);
+  assert.match(html, /id="reminderList"/);
+  assert.match(html, /Активные напоминания/);
   assert.match(app, /profileFavoriteTeamsBtn/);
-  assert.match(app, /profileRemindersBtn[^]*showView\('matchesView'\)/);
+  assert.match(app, /profileRemindersBtn[^]*remindersPanel[^]*scrollIntoView/);
 });
 
 test('Profile uses plain Russian copy and removes technical data availability chrome', () => {
