@@ -67,63 +67,116 @@ export function createSettlementRuntime(deps) {
     return Number.isSafeInteger(number) && number >= 0 ? number : null;
   }
 
+  function plainObject(value) {
+    return value && typeof value==='object' && !Array.isArray(value)
+      ? value
+      : null;
+  }
+
+  function rows(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  function safeText(value,max=180) {
+    if (typeof value!=='string') return '';
+    return value.trim().slice(0,max);
+  }
+
+  function finiteModelNumber(value,min=-Infinity,max=Infinity) {
+    return typeof value==='number'
+      && Number.isFinite(value)
+      && value>=min
+      && value<=max
+      ? value
+      : null;
+  }
+
   async function captureModelPrediction(payload, cfg) {
-    const match = payload?.match;
-    const probabilities = payload?.probabilities;
-    const fixtureId = positiveSafeInteger(match?.fixtureId);
-    const kickoffMs = Date.parse(match?.date || '');
-    const status = String(match?.status || '').toUpperCase();
-    const probabilityCheck = predictionProbabilityIntegrity({
-      home_prob: probabilities?.home,
-      draw_prob: probabilities?.draw,
-      away_prob: probabilities?.away,
+    const source=plainObject(payload);
+    const match=plainObject(source?.match);
+    const probabilities=plainObject(source?.probabilities);
+    if (!match || !probabilities) return false;
+
+    const fixtureId=positiveSafeInteger(match.fixtureId);
+    const kickoffRaw=safeText(match.date,80);
+    const kickoffMs=kickoffRaw ? Date.parse(kickoffRaw) : NaN;
+    const status=safeText(match.status,16).toUpperCase();
+    const probabilityCheck=predictionProbabilityIntegrity({
+      home_prob:probabilities.home,
+      draw_prob:probabilities.draw,
+      away_prob:probabilities.away,
     });
-    if (fixtureId === null || !probabilityCheck.valid || !Number.isFinite(kickoffMs)) return false;
-    if (!['NS', 'TBD'].includes(status)) return false;
+    if (fixtureId===null || !probabilityCheck.valid || !Number.isFinite(kickoffMs)) return false;
+    if (!['NS','TBD'].includes(status)) return false;
     // Backtest only genuine pre-match snapshots, never a prediction captured after kickoff.
-    if (kickoffMs <= Date.now() + 120_000) return false;
-    const predictedOutcome = predictionOutcomeKey(probabilities);
-    if (!predictedOutcome) return false;
-  
+    if (kickoffMs<=Date.now()+120_000) return false;
+
+    let predictedOutcome='';
+    try {
+      predictedOutcome=safeText(predictionOutcomeKey(probabilities),16).toLowerCase();
+    } catch {
+      return false;
+    }
+    if (!['home','draw','away'].includes(predictedOutcome)) return false;
+
+    const analysisVersion=safeText(source.analysisVersion,120);
+    const modelBreakdown=plainObject(source.modelBreakdown) || {};
+    const signals=rows(modelBreakdown.signals);
+    const signalWeights=plainObject(modelBreakdown.weights) || {};
+    let signalProbabilities={};
+    try {
+      signalProbabilities=plainObject(signalProbabilitySnapshot(signals)) || {};
+    } catch {}
+
+    const rawProbabilities=plainObject(source.rawProbabilities) || {};
+    const calibration=plainObject(source.modelCalibration) || {};
+    const dataPolicy=plainObject(source.dataPolicy) || {};
+    const completeness=plainObject(source.completeness) || {};
+    const goalModel=plainObject(source.goalModel) || {};
+    const confidence=plainObject(source.confidence) || {};
+    const dataProvenance=plainObject(source.dataProvenance) || {};
+
     const row = {
-      fixture_id: fixtureId,
-      analysis_version: String(payload.analysisVersion || '3.7.0-model-calibration'),
-      captured_at: new Date().toISOString(),
-      kickoff_at: new Date(kickoffMs).toISOString(),
-      league_id: positiveSafeInteger(match.leagueId),
-      league_name: String(match.league || ''),
-      home_id: positiveSafeInteger(match.home?.id),
-      away_id: positiveSafeInteger(match.away?.id),
-      home_name: String(match.home?.name || ''),
-      away_name: String(match.away?.name || ''),
-      home_prob: Number(probabilities.home),
-      draw_prob: Number(probabilities.draw),
-      away_prob: Number(probabilities.away),
-      predicted_outcome: predictedOutcome,
-      confidence_score: Number(payload.confidence?.score || 0) || null,
-      signal_names: (payload.modelBreakdown?.signals || []).map(x => String(x?.name || '')).filter(Boolean),
-      signal_weights: payload.modelBreakdown?.weights || {},
-      signal_probabilities: signalProbabilitySnapshot(payload.modelBreakdown?.signals || []),
-      raw_home_prob: Number.isFinite(Number(payload.rawProbabilities?.home)) ? Number(payload.rawProbabilities.home) : Number(probabilities.home),
-      raw_draw_prob: Number.isFinite(Number(payload.rawProbabilities?.draw)) ? Number(payload.rawProbabilities.draw) : Number(probabilities.draw),
-      raw_away_prob: Number.isFinite(Number(payload.rawProbabilities?.away)) ? Number(payload.rawProbabilities.away) : Number(probabilities.away),
-      calibration_mode: String(payload.modelCalibration?.mode || 'baseline'),
-      calibration_profile_fingerprint: String(payload.modelCalibration?.fingerprint || ''),
-      calibration_temperature: Number(payload.modelCalibration?.temperature || 1),
-      calibration_sample: Number(payload.modelCalibration?.sample || 0),
-      calibration_weights: payload.modelCalibration?.signalWeights || {},
-      data_mode: String(payload.dataPolicy?.mode || ''),
-      completeness_score: Number(payload.completeness?.score || 0),
-      completeness_max: Number(payload.completeness?.max || 0),
-      home_expected_goals: Number.isFinite(Number(payload.goalModel?.homeExpected)) ? Number(payload.goalModel.homeExpected) : null,
-      away_expected_goals: Number.isFinite(Number(payload.goalModel?.awayExpected)) ? Number(payload.goalModel.awayExpected) : null,
-      over25_prob: Number.isFinite(Number(payload.goalModel?.over25)) ? Number(payload.goalModel.over25) : null,
-      btts_prob: Number.isFinite(Number(payload.goalModel?.btts)) ? Number(payload.goalModel.btts) : null,
-      data_provenance: payload.dataProvenance || {},
-      model_inputs_version: String(payload.analysisVersion || ''),
-      status: 'pending',
+      fixture_id:fixtureId,
+      analysis_version:analysisVersion || '3.7.0-model-calibration',
+      captured_at:new Date().toISOString(),
+      kickoff_at:new Date(kickoffMs).toISOString(),
+      league_id:positiveSafeInteger(match.leagueId),
+      league_name:safeText(match.league,180),
+      home_id:positiveSafeInteger(plainObject(match.home)?.id),
+      away_id:positiveSafeInteger(plainObject(match.away)?.id),
+      home_name:safeText(plainObject(match.home)?.name,180),
+      away_name:safeText(plainObject(match.away)?.name,180),
+      home_prob:Number(probabilities.home),
+      draw_prob:Number(probabilities.draw),
+      away_prob:Number(probabilities.away),
+      predicted_outcome:predictedOutcome,
+      confidence_score:finiteModelNumber(confidence.score,0,100),
+      signal_names:signals
+        .map(signal=>safeText(plainObject(signal)?.name,120))
+        .filter(Boolean),
+      signal_weights:signalWeights,
+      signal_probabilities:signalProbabilities,
+      raw_home_prob:finiteModelNumber(rawProbabilities.home,0,100) ?? Number(probabilities.home),
+      raw_draw_prob:finiteModelNumber(rawProbabilities.draw,0,100) ?? Number(probabilities.draw),
+      raw_away_prob:finiteModelNumber(rawProbabilities.away,0,100) ?? Number(probabilities.away),
+      calibration_mode:safeText(calibration.mode,80) || 'baseline',
+      calibration_profile_fingerprint:safeText(calibration.fingerprint,160),
+      calibration_temperature:finiteModelNumber(calibration.temperature,0.01,100) ?? 1,
+      calibration_sample:finiteModelNumber(calibration.sample,0,Number.MAX_SAFE_INTEGER) ?? 0,
+      calibration_weights:plainObject(calibration.signalWeights) || {},
+      data_mode:safeText(dataPolicy.mode,80),
+      completeness_score:finiteModelNumber(completeness.score,0,100000) ?? 0,
+      completeness_max:finiteModelNumber(completeness.max,0,100000) ?? 0,
+      home_expected_goals:finiteModelNumber(goalModel.homeExpected,0,20),
+      away_expected_goals:finiteModelNumber(goalModel.awayExpected,0,20),
+      over25_prob:finiteModelNumber(goalModel.over25,0,100),
+      btts_prob:finiteModelNumber(goalModel.btts,0,100),
+      data_provenance:dataProvenance,
+      model_inputs_version:analysisVersion,
+      status:'pending',
     };
-  
+
     if (hasSupabase(cfg)) {
       try {
         // fixture_id is the primary key: the FIRST pre-match snapshot stays immutable.
