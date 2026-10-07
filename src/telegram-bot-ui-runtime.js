@@ -994,6 +994,86 @@ export function createTelegramBotUiRuntime(deps = {}) {
     return payload;
   }
 
+  function telegramMiniAppE2EDrill() {
+    let request;
+    try {
+      request=createRequest('https://app.example/');
+    } catch {
+      return {pass:false,cases:5,search:false,handoff:false,favorites:0};
+    }
+
+    const match={
+      fixtureId:12345,
+      status:'NS',
+      home:{id:101,name:'Home FC',logo:''},
+      away:{id:202,name:'Away FC',logo:''},
+      league:'Test League',
+    };
+
+    let mainKeyboard;
+    let searchKeyboard;
+    let quickKeyboard;
+    let actionKeyboard;
+    try {
+      mainKeyboard=footballBotKeyboard(request);
+      searchKeyboard=footballSearchHandoffKeyboard(request,match,'https://app.example/?view=search');
+      quickKeyboard=footballQuickAiHandoffKeyboard(request,match,[],'');
+      actionKeyboard=footballMatchActionKeyboard(request,match,'',[]);
+    } catch {
+      return {pass:false,cases:5,search:false,handoff:false,favorites:0};
+    }
+
+    const flatten=keyboard=>{
+      const source=objectValue(keyboard) || {};
+      const rows=Array.isArray(source.inline_keyboard)
+        ? source.inline_keyboard
+        : Array.isArray(source.keyboard)
+          ? source.keyboard
+          : [];
+      return rows.flatMap(row=>Array.isArray(row) ? row.filter(item=>objectValue(item)) : []);
+    };
+
+    const mainButtons=flatten(mainKeyboard).map(item=>safeText(item.text,120));
+    const searchButtons=flatten(searchKeyboard);
+    const quickButtons=flatten(quickKeyboard);
+    const actionButtons=flatten(actionKeyboard);
+
+    const searchSelect=searchButtons.find(
+      item=>safeText(item.callback_data,120)===`match:menu:${match.fixtureId}`,
+    );
+    const fullButton=quickButtons.find(
+      item=>safeText(item.text,120).includes('Полный AI'),
+    );
+    const fullUrl=safeText(objectValue(fullButton?.web_app)?.url,2000);
+
+    let handoffOk=false;
+    try {
+      const url=new URL(fullUrl);
+      handoffOk=positiveSafeInteger(url.searchParams.get('fixtureId'))===match.fixtureId
+        && url.searchParams.get('action')==='analysis'
+        && url.searchParams.get('tab')==='brief'
+        && url.searchParams.get('handoff')==='1';
+    } catch {}
+
+    const favoriteCallbacks=new Set(
+      actionButtons
+        .map(item=>safeText(item.callback_data,160))
+        .filter(value=>value.startsWith('favorite:toggle:')),
+    );
+
+    return {
+      pass:mainButtons.includes('🔎 Найти матч')
+        && Boolean(searchSelect)
+        && handoffOk
+        && favoriteCallbacks.has('favorite:toggle:101:12345')
+        && favoriteCallbacks.has('favorite:toggle:202:12345'),
+      cases:5,
+      search:Boolean(searchSelect),
+      handoff:handoffOk,
+      favorites:favoriteCallbacks.size,
+    };
+  }
+
   function botAiVerdictText(data={}) {
     const source=objectValue(data) || {};
     const match=objectValue(source.match) || {};
@@ -1095,5 +1175,6 @@ export function createTelegramBotUiRuntime(deps = {}) {
     sendBotFixtureMenu,
     botAnalyzeFixture,
     botAiVerdictText,
+    telegramMiniAppE2EDrill,
   });
 }
