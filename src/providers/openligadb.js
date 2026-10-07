@@ -7,12 +7,52 @@ const SUPPORTED = Object.freeze({
   1: { shortcuts: ['wm26'], label: 'FIFA World Cup' },
 });
 
+function strictInteger(value, min = Number.MIN_SAFE_INTEGER, max = Number.MAX_SAFE_INTEGER) {
+  let number=null;
+  if (typeof value === 'number') {
+    number=Number.isSafeInteger(value) ? value : null;
+  } else if (typeof value === 'string') {
+    const raw=value.trim();
+    if (!/^-?\d+$/.test(raw)) return null;
+    const parsed=Number(raw);
+    number=Number.isSafeInteger(parsed) ? parsed : null;
+  }
+  return number !== null && number >= min && number <= max ? number : null;
+}
+
+function safeText(value, max = 240) {
+  if (!['string','number','bigint'].includes(typeof value)) return '';
+  try {
+    return String(value)
+      .normalize('NFKC')
+      .replace(/[\u0000-\u001F\u007F]/g,' ')
+      .replace(/\s+/g,' ')
+      .trim()
+      .slice(0,max);
+  } catch {
+    return '';
+  }
+}
+
+function explicitBoolean(value) {
+  if (value === true || value === false) return value;
+  if (value === 1 || value === '1') return true;
+  if (value === 0 || value === '0') return false;
+  if (typeof value === 'string') {
+    const normalized=value.trim().toLowerCase();
+    if (normalized === 'true') return true;
+    if (normalized === 'false') return false;
+  }
+  return false;
+}
+
 export function openLigaCompetition(leagueId, season) {
-  const item = SUPPORTED[Number(leagueId)];
+  const id = strictInteger(leagueId, 1);
+  const year = strictInteger(season, 2000, 2100);
+  if (id === null || year === null) return null;
+  const item = SUPPORTED[id];
   if (!item) return null;
-  const year = Number(season || 0);
-  if (!Number.isInteger(year) || year < 2000 || year > 2100) return null;
-  return { ...item, leagueId: Number(leagueId), season: year };
+  return { ...item, leagueId: id, season: year };
 }
 
 export function normalizeOpenLigaStandings(rows = [], context = {}) {
@@ -72,7 +112,7 @@ export function openLigaTableUrls(leagueId, season) {
 
 
 function openLigaTextKey(value) {
-  return String(value || '')
+  return safeText(value, 240)
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
@@ -104,16 +144,21 @@ function openLigaKickoffMs(match = {}) {
     ?? match?.matchDateTime
     ?? match?.MatchDateTime
     ?? '';
-  const parsed = Date.parse(String(value || ''));
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const parsed = Date.parse(value.trim());
   return Number.isFinite(parsed) ? parsed : null;
 }
 
 function openLigaTeamName(team = {}) {
-  return String(team?.teamName ?? team?.TeamName ?? team?.shortName ?? team?.ShortName ?? '');
+  return safeText(
+    team?.teamName ?? team?.TeamName ?? team?.shortName ?? team?.ShortName ?? '',
+    180,
+  );
 }
 
 function findOpenLigaMatch(matches = [], context = {}) {
-  const kickoff = Date.parse(String(context.kickoffAt || ''));
+  const kickoffRaw=typeof context?.kickoffAt === 'string' ? context.kickoffAt.trim() : '';
+  const kickoff = kickoffRaw ? Date.parse(kickoffRaw) : NaN;
   if (!Number.isFinite(kickoff)) return null;
   const candidates = (Array.isArray(matches) ? matches : []).filter(match => {
     const home = openLigaTeamName(match?.team1 ?? match?.Team1 ?? {});
@@ -136,8 +181,7 @@ function findOpenLigaMatch(matches = [], context = {}) {
 
 function openLigaGoalNumber(goal = {}, key) {
   const value = goal?.[key] ?? goal?.[key[0].toUpperCase() + key.slice(1)];
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
+  return strictInteger(value, 0, 99);
 }
 
 function openLigaTeamFilter(value) {
@@ -159,6 +203,21 @@ export function openLigaMatchDataUrls(leagueId, season, teamName = '') {
 }
 
 export function normalizeOpenLigaMatchEvents(matches = [], context = {}) {
+  const homeId=strictInteger(context?.homeId, 1);
+  const awayId=strictInteger(context?.awayId, 1);
+  if (homeId === null || awayId === null || homeId === awayId) {
+    return {
+      available:false,
+      events:[],
+      reason:'fixture_context_invalid',
+      sourceMeta:{
+        provider:'openligadb',
+        label:'OpenLigaDB',
+        attribution:'OpenLigaDB · ODbL',
+      },
+    };
+  }
+
   const match = findOpenLigaMatch(matches, context);
   if (!match) {
     return {
@@ -181,21 +240,39 @@ export function normalizeOpenLigaMatchEvents(matches = [], context = {}) {
   for (const goal of goals) {
     const scoreHome = openLigaGoalNumber(goal, 'scoreTeam1');
     const scoreAway = openLigaGoalNumber(goal, 'scoreTeam2');
-    let side = '';
-    if (scoreHome !== null && scoreAway !== null) {
-      if (scoreHome > previousHome && scoreAway === previousAway) side = 'home';
-      else if (scoreAway > previousAway && scoreHome === previousHome) side = 'away';
-      previousHome = Math.max(previousHome, scoreHome);
-      previousAway = Math.max(previousAway, scoreAway);
-    }
-    if (!side) continue;
+    if (scoreHome === null || scoreAway === null) continue;
 
-    const minute = Math.max(0, Number(goal?.matchMinute ?? goal?.MatchMinute ?? 0) || 0);
-    const isPenalty = Boolean(goal?.isPenalty ?? goal?.IsPenalty);
-    const isOwnGoal = Boolean(goal?.isOwnGoal ?? goal?.IsOwnGoal);
-    const playerName = String(goal?.goalGetterName ?? goal?.GoalGetterName ?? '').trim();
-    const teamId = side === 'home' ? Number(context.homeId || 0) : Number(context.awayId || 0);
-    const teamName = side === 'home' ? String(context.homeName || '') : String(context.awayName || '');
+    const homeDelta=scoreHome-previousHome;
+    const awayDelta=scoreAway-previousAway;
+    const sequentialGoal=(
+      (homeDelta===1 && awayDelta===0)
+      || (homeDelta===0 && awayDelta===1)
+    );
+    if (!sequentialGoal) {
+      if (
+        scoreHome >= previousHome
+        && scoreAway >= previousAway
+        && scoreHome + scoreAway > previousHome + previousAway
+      ) {
+        previousHome=scoreHome;
+        previousAway=scoreAway;
+      }
+      continue;
+    }
+
+    const side=homeDelta===1 ? 'home' : 'away';
+    previousHome=scoreHome;
+    previousAway=scoreAway;
+
+    const minute = strictInteger(goal?.matchMinute ?? goal?.MatchMinute, 0, 130);
+    if (minute === null) continue;
+    const isPenalty = explicitBoolean(goal?.isPenalty ?? goal?.IsPenalty);
+    const isOwnGoal = explicitBoolean(goal?.isOwnGoal ?? goal?.IsOwnGoal);
+    const playerName = safeText(goal?.goalGetterName ?? goal?.GoalGetterName ?? '', 120);
+    const teamId = side === 'home' ? homeId : awayId;
+    const teamName = side === 'home'
+      ? safeText(context.homeName, 180)
+      : safeText(context.awayName, 180);
 
     events.push({
       time: { elapsed: minute, extra: 0 },
@@ -208,19 +285,20 @@ export function normalizeOpenLigaMatchEvents(matches = [], context = {}) {
     });
   }
 
-  const updatedAt = String(
+  const updatedAt = safeText(
     match?.lastUpdateDateTime
     ?? match?.LastUpdateDateTime
     ?? match?.matchDateTimeUTC
     ?? match?.MatchDateTimeUTC
     ?? '',
+    80,
   );
 
   return {
     available: events.length > 0,
     events,
     reason: events.length ? '' : 'goals_not_available',
-    sourceMatchId: Number(match?.matchID ?? match?.MatchID ?? 0) || null,
+    sourceMatchId: strictInteger(match?.matchID ?? match?.MatchID, 1),
     updatedAt,
     sourceMeta: {
       provider: 'openligadb',
