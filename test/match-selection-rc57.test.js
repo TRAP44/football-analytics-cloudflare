@@ -127,6 +127,10 @@ test('stale unfinished fixtures can never become a primary match that is absent 
     split.upcoming.some(row=>row.fixtureId===10),
     false,
   );
+  assert.deepEqual(
+    runtime.rankTeamDiscoveryMatches([staleScheduled],NOW),
+    [],
+  );
 
   const payload=runtime.teamSearchFixturePayload(
     {id:7,name:'Example FC'},
@@ -177,8 +181,20 @@ test('selection rejects ambiguous timestamps unknown competition identity and co
     }),
     NOW,
   );
+  assert.equal(ambiguous.temporalInvalid,true);
   assert.equal(ambiguous.staleUnfinished,true);
   assert.equal(ambiguous.lane,5);
+
+  const invalidFinished=runtime.matchSelectionProfile(
+    match(300,{
+      date:'not-a-timestamp',
+      category:'league',
+      finished:true,
+    }),
+    NOW,
+  );
+  assert.equal(invalidFinished.temporalInvalid,true);
+  assert.equal(invalidFinished.lane,5);
 
   const unknownCategory=runtime.matchSelectionProfile(
     match(31,{
@@ -246,10 +262,10 @@ test('server selection metadata stays internally consistent for the visible list
 test('Mini App preserves server primary selection without inventing a second ranking model',()=>{
   assert.match(
     app,
-    /mergeById\(\s*globalSearch\.remoteMatches,\s*local\.matches,\s*'fixtureId'/,
+    /const matches=mergedRows\(\s*safeRead\(globalSearch,'remoteMatches'\),\s*localMatches,\s*'fixtureId'/,
   );
-  assert.match(app,/selection/);
-  assert.match(app,/rank/);
+  assert.match(app,/matchSortTuple/);
+  assert.match(app,/left\.rank-right\.rank/);
   assert.match(app,/ОСНОВНОЙ МАТЧ/);
   assert.match(app,/primaryFixtureId/);
   assert.doesNotMatch(
