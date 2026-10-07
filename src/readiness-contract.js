@@ -92,9 +92,11 @@ export function normalizeCompositeReadinessResponse(
   raw,
   expectedFingerprint = '',
   expectedContractVersion = 2,
+  expectedAuthWindowMinutes = 5,
 ) {
   const expected=strictFingerprint(expectedFingerprint);
   const expectedVersion=positiveInteger(expectedContractVersion,2,1000);
+  const expectedAuthWindow=positiveInteger(expectedAuthWindowMinutes,5,60);
 
   if (
     !expected
@@ -127,14 +129,14 @@ export function normalizeCompositeReadinessResponse(
   const schemaOk=raw.schema.ok === true && fingerprintOk;
   const securityOk=raw.backendSecurity.ok === true;
   const authCount=integerCandidate(raw.recentSupabaseAuthFailures.count);
+  const authWindowMinutes=integerCandidate(raw.recentSupabaseAuthFailures.windowMinutes);
   const authAvailable=raw.recentSupabaseAuthFailures.available === true
     && authCount !== null
-    && authCount >= 0;
-  const authWindowMinutes=positiveInteger(
-    raw.recentSupabaseAuthFailures.windowMinutes,
-    0,
-    60,
-  );
+    && authCount >= 0
+    && authWindowMinutes !== null
+    && authWindowMinutes >= 1
+    && authWindowMinutes <= 60
+    && authWindowMinutes === expectedAuthWindow;
 
   const valid=
     typeof raw.connectivity.ok === 'boolean'
@@ -302,6 +304,7 @@ export function createCompositeReadinessRuntime({
           raw,
           fingerprint,
           contractVersion,
+          authWindowMinutes,
         );
       };
 
