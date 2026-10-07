@@ -16,6 +16,8 @@
   \quit 2
 \endif
 
+begin;
+
 create temp table issue438_contract_expectations (
   legacy_fingerprint text not null,
   v2_fingerprint text not null,
@@ -651,5 +653,7 @@ begin
   end if;
 end
 $search_path_restored$;
+
+rollback;
 
 select 'MatchRadar executable Supabase schema contract passed.' as result;
