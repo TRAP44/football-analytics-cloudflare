@@ -82,12 +82,18 @@ function responseFixtureId(value) {
   return positiveId(safeRead(match,'fixtureId'));
 }
 
-function matchCenterResponseError() {
-  const error=new Error(
-    'Ответ центра матча не прошёл проверку выбранного матча.',
-  );
-  error.code='MATCH_CENTER_RESPONSE_IDENTITY_MISMATCH';
+function matchCenterResponseError(code,message) {
+  const error=new Error(message);
+  error.code=code;
   return error;
+}
+
+function matchCenterResponseMode(value) {
+  const data=plainObject(value);
+  const mode=safeText(safeRead(data,'mode'),24);
+  return ['upcoming','live','finished'].includes(mode)
+    ? mode
+    : '';
 }
 
 export function createMatchCenterController({
@@ -238,7 +244,16 @@ export function createMatchCenterController({
         );
         if (seq!==requestSeq) return null;
         if (responseFixtureId(data)!==id) {
-          throw matchCenterResponseError();
+          throw matchCenterResponseError(
+            'MATCH_CENTER_RESPONSE_IDENTITY_MISMATCH',
+            'Ответ центра матча не прошёл проверку выбранного матча.',
+          );
+        }
+        if (!matchCenterResponseMode(data)) {
+          throw matchCenterResponseError(
+            'MATCH_CENTER_RESPONSE_MODE_INVALID',
+            'Ответ центра матча содержит некорректный режим матча.',
+          );
         }
         return data;
       } catch (error) {
@@ -404,6 +419,13 @@ export function createMatchCenterController({
       return;
     }
 
+    const previousFixtureId=currentCenterFixtureId();
+    if (previousFixtureId && previousFixtureId!==id) {
+      // A scheduled refresh for the previously open LIVE fixture must not
+      // compete with the foreground navigation request for another fixture.
+      deactivateLiveRefresh();
+    }
+
     if (safeRead(state,'analysisActionPending')===true) {
       const seq=safeRead(state,'analysisRequestSeq');
       state.analysisRequestSeq=
@@ -414,7 +436,7 @@ export function createMatchCenterController({
     if (sourceView!=='analysisView') {
       state.analysisBackView=sourceView;
     }
-    if (currentCenterFixtureId()!==id) {
+    if (previousFixtureId!==id) {
       state.currentCenterTab='summary';
     }
 
@@ -424,7 +446,7 @@ export function createMatchCenterController({
       typeof timingValue==='number' && Number.isFinite(timingValue)
         ? timingValue
         : Date.now();
-    const reusableCenter=currentCenterFixtureId()===id
+    const reusableCenter=previousFixtureId===id
       ? safeRead(state,'currentCenter')
       : null;
 
