@@ -92,52 +92,77 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   function newsImpactActionCallback(decision, action, fixtureId) {
     const d=cleanNewsImpactDecisionCode(decision);
     const a=cleanNewsImpactActionCode(action);
-    const id=Number(fixtureId || 0);
-    return d && a && Number.isSafeInteger(id) && id>0 ? `news:impact:${d}:${a}:${id}` : '';
+    const id=newsImpactPositiveId(fixtureId);
+    return d && a && id ? `news:impact:${d}:${a}:${id}` : '';
   }
   
   function newsImpactTrackedAnalysisUrl(request, fixtureId, decision) {
     const d=cleanNewsImpactDecisionCode(decision);
-    return telegramWebAppUrl(request,{
-      ...telegramAnalysisHandoffParams(fixtureId,'brief'),
-      ...(d ? {newsImpactDecision:d,newsImpactAction:'full_ai'} : {}),
-    });
+    const id=newsImpactPositiveId(fixtureId);
+    if (!d || !id) return '';
+    try {
+      const params=telegramAnalysisHandoffParams(id,'brief');
+      if (!params || typeof params!=='object' || Array.isArray(params)) return '';
+      return typeof telegramWebAppUrl==='function'
+        ? telegramWebAppUrl(request,{
+            ...params,
+            newsImpactDecision:d,
+            newsImpactAction:'full_ai',
+          })
+        : '';
+    } catch {
+      return '';
+    }
   }
   
   function cleanNewsImpactRecoveryCode(value = '') {
-    const code=String(value || '').toLowerCase().trim();
-    return NEWS_IMPACT_RECOVERY_CODES.has(code) ? code : '';
+    if (typeof value !== 'string') return '';
+    const code=value.toLowerCase().trim();
+    return NEWS_IMPACT_RECOVERY_CODES?.has?.(code) ? code : '';
   }
   
   function newsImpactRecoveryCallback(decision, action, recovery, fixtureId) {
     const d=cleanNewsImpactDecisionCode(decision);
     const a=cleanNewsImpactActionCode(action);
     const r=cleanNewsImpactRecoveryCode(recovery);
-    const id=Number(fixtureId || 0);
-    return d && a && r && Number.isSafeInteger(id) && id>0 ? `ni:r:${d}:${a}:${r}:${id}` : '';
+    const id=newsImpactPositiveId(fixtureId);
+    return d && a && r && id ? `ni:r:${d}:${a}:${r}:${id}` : '';
   }
   
   function newsImpactRecoveryAnalysisUrl(request, fixtureId, decision, sourceAction = '', recovery = 'open_full_ai') {
     const d=cleanNewsImpactDecisionCode(decision);
     const source=cleanNewsImpactActionCode(sourceAction);
     const r=cleanNewsImpactRecoveryCode(recovery) || 'open_full_ai';
-    return telegramWebAppUrl(request,{
-      ...telegramAnalysisHandoffParams(fixtureId,'brief'),
-      ...(d ? {newsImpactDecision:d,newsImpactAction:'full_ai'} : {}),
-      newsImpactRecoveryCode:r,
-      ...(source ? {newsImpactRecoveryFrom:source} : {}),
-    });
+    const id=newsImpactPositiveId(fixtureId);
+    if (!d || !id) return '';
+    try {
+      const params=telegramAnalysisHandoffParams(id,'brief');
+      if (!params || typeof params!=='object' || Array.isArray(params)) return '';
+      return typeof telegramWebAppUrl==='function'
+        ? telegramWebAppUrl(request,{
+            ...params,
+            newsImpactDecision:d,
+            newsImpactAction:'full_ai',
+            newsImpactRecoveryCode:r,
+            ...(source ? {newsImpactRecoveryFrom:source} : {}),
+          })
+        : '';
+    } catch {
+      return '';
+    }
   }
   
   function newsImpactActionDrill() {
     const callback=newsImpactActionCallback('material','market',12345);
     return {
       pass:callback==='news:impact:material:market:12345'
+        && newsImpactActionCallback('material','market',true)===''
+        && newsImpactActionCallback('material','market','12345')==='news:impact:material:market:12345'
         && cleanNewsImpactDecisionCode('stable')==='stable'
         && cleanNewsImpactDecisionCode('other')===''
         && cleanNewsImpactActionCode('full_ai')==='full_ai'
         && cleanNewsImpactActionCode('raw_text')==='',
-      cases:5,
+      cases:7,
     };
   }
   
