@@ -139,12 +139,22 @@ async function bodyWithinLimit(request, maxBytes) {
       if (size === null) return false;
       total+=size;
       if (!Number.isSafeInteger(total) || total>maxBytes) {
-        try { await reader.cancel(); } catch {}
+        try {
+          const cancellation=reader.cancel();
+          if (cancellation && typeof cancellation.catch==='function') {
+            void cancellation.catch(()=>{});
+          }
+        } catch {}
         return false;
       }
     }
   } catch {
-    try { await reader?.cancel?.(); } catch {}
+    try {
+      const cancellation=reader?.cancel?.();
+      if (cancellation && typeof cancellation.catch==='function') {
+        void cancellation.catch(()=>{});
+      }
+    } catch {}
     return false;
   }
 }
