@@ -130,7 +130,10 @@ export function assessLineupQuality(lineup = null) {
 
   const gridKnown = starters.filter(player => validGrid(player?.grid)).length;
   const invalidGridCount = starters.filter(player => {
-    const grid = compactText(player?.grid);
+    const raw=player?.grid;
+    if (raw === undefined || raw === null || raw === '') return false;
+    if (typeof raw !== 'string') return true;
+    const grid=compactText(raw);
     return Boolean(grid) && !validGrid(grid);
   }).length;
 
