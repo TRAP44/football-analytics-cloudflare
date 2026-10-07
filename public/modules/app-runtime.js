@@ -112,16 +112,8 @@ function defaultsCopy() {
   return {...DEFAULT_UI_PREFERENCES};
 }
 
-export function readUiPreferences(storage=globalThis.localStorage) {
-  const raw=safeStorageText(storage,UI_PREFERENCES_KEY);
-  if (!raw) return defaultsCopy();
-
-  let saved;
-  try {
-    saved=plainObject(JSON.parse(raw));
-  } catch {
-    return defaultsCopy();
-  }
+export function normalizeUiPreferences(value) {
+  const saved=plainObject(value);
   if (!saved) return defaultsCopy();
 
   const theme=safeRead(saved,'theme');
@@ -141,6 +133,34 @@ export function readUiPreferences(storage=globalThis.localStorage) {
         ? buttonStyle
         : DEFAULT_UI_PREFERENCES.buttonStyle,
   };
+}
+
+export function updateUiPreference(current,key,value) {
+  if (
+    typeof key!=='string'
+    || typeof value!=='string'
+    || !['theme','accent','buttonStyle'].includes(key)
+  ) return null;
+
+  const next=normalizeUiPreferences(current);
+  const candidate=normalizeUiPreferences({
+    ...next,
+    [key]:value,
+  });
+  return candidate[key]===value ? candidate : null;
+}
+
+export function readUiPreferences(storage=globalThis.localStorage) {
+  const raw=safeStorageText(storage,UI_PREFERENCES_KEY);
+  if (!raw) return defaultsCopy();
+
+  let saved;
+  try {
+    saved=JSON.parse(raw);
+  } catch {
+    return defaultsCopy();
+  }
+  return normalizeUiPreferences(saved);
 }
 
 function normalizeWatchlistItem(value) {
