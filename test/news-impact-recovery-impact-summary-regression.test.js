@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createNewsImpactRecoveryRuntime } from '../src/news-impact-recovery-runtime.js';
 
 // Consolidated recovery impact summary regression coverage (historical RC95-RC98).
 
@@ -12,7 +13,7 @@ const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/m
 test('RC95 derives concentration only from RC93 factual contribution shares',()=>{
   assert.match(worker,/function buildNewsImpactRecoveryIncidentSloImpactConcentration\(/);
   assert.match(worker,/const ranking=Array\.isArray\(impactRanking\?\.ranking\)/);
-  assert.match(worker,/cumulative_share_of_total_overdue_minutes/);
+  assert.match(recovery,/cumulative_share_of_total_overdue_minutes/);
   assert.match(worker,/top1ContributionPct/);
   assert.match(worker,/top3ContributionPct/);
   assert.match(worker,/top5ContributionPct/);
@@ -62,7 +63,7 @@ const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/m
 test('RC96 derives weekly concentration from factual overdue minutes',()=>{
   assert.match(worker,/function buildNewsImpactRecoveryIncidentSloImpactConcentrationTrend\(/);
   assert.match(worker,/newsImpactRecoveryIncidentOverdueWithinWindow\(episode,windowStartMs,windowEndMs\)/);
-  assert.match(worker,/weekly_cumulative_share_of_total_overdue_minutes/);
+  assert.match(recovery,/weekly_cumulative_share_of_total_overdue_minutes/);
   assert.match(worker,/top1ContributionPct/);
   assert.match(worker,/top3ContributionPct/);
   assert.match(worker,/top5ContributionPct/);
@@ -116,7 +117,7 @@ const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/m
 test('RC97 executive summary only composes existing RC93-RC96 views',()=>{
   assert.match(worker,/function buildNewsImpactRecoveryIncidentSloImpactExecutiveSummary\(/);
   assert.match(worker,/sourceReleases:\['RC93','RC94','RC95','RC96'\]/);
-  assert.match(worker,/methodology:'summary_of_existing_slo_impact_views'/);
+  assert.match(recovery,/methodology:'summary_of_existing_slo_impact_views'/);
   assert.match(worker,/newsImpactRecoveryIncidentSloImpactExecutiveSummary=buildNewsImpactRecoveryIncidentSloImpactExecutiveSummary\(/);
 });
 
@@ -167,7 +168,7 @@ const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/m
 
 test('RC98 composes factual ranking, trend and executive summary into a short focus queue',()=>{
   assert.match(worker,/function buildNewsImpactRecoveryIncidentSloImpactFocusQueue\(/);
-  assert.match(worker,/const trendByKey=new Map/);
+  assert.match(recovery,/const trendByKey=new Map/);
   assert.match(worker,/safeLimit=Math\.max\(1,Math\.min\(10,Number\(limit \|\| 5\)\)\)/);
   assert.match(worker,/queuePosition:index\+1/);
   assert.match(worker,/sourceReleases:\['RC93','RC94','RC97'\]/);
@@ -177,7 +178,7 @@ test('RC98 ordering is factual and does not introduce a severity score',()=>{
   assert.match(worker,/b\.currentWeekOverdueMinutes-a\.currentWeekOverdueMinutes/);
   assert.match(worker,/b\.weekDeltaMinutes-a\.weekDeltaMinutes/);
   assert.match(worker,/b\.totalOverdueMinutes-a\.totalOverdueMinutes/);
-  assert.match(worker,/ordering:'current_week_overdue_then_week_delta_then_cumulative_overdue'/);
+  assert.match(recovery,/ordering:'current_week_overdue_then_week_delta_then_cumulative_overdue'/);
   assert.match(worker,/routingChanged:false/);
   assert.match(worker,/persistence:'none'/);
 });
@@ -196,6 +197,62 @@ test('RC98 deterministic drill locks ordering and summary',()=>{
   assert.match(worker,/result\.rows\[0\]\?\.reason==='b'/);
   assert.match(worker,/result\.rows\[1\]\?\.reason==='a'/);
   assert.match(worker,/result\.rows\[2\]\?\.reason==='c'/);
+});
+
+
+
+test('RC95-RC98 impact summary runtime rejects malformed containers and coercive metrics',()=>{
+  const runtime=createNewsImpactRecoveryRuntime({
+    NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES:30,
+    NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES:120,
+    NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES:360,
+  });
+  const evil={toString(){throw new Error('must not coerce');}};
+
+  const empty=runtime.buildNewsImpactRecoveryIncidentSloImpactConcentration(null);
+  assert.equal(empty.available,false);
+  assert.deepEqual(empty.rows,[]);
+
+  const concentration=runtime.buildNewsImpactRecoveryIncidentSloImpactConcentration({
+    available:true,
+    summary:{pairs:true,totalOverdueMinutes:'bad'},
+    ranking:[
+      {reason:evil,action:'full_ai',contributionPct:100,totalOverdueMinutes:100},
+      {reason:'valid',action:'share',contributionPct:60,totalOverdueMinutes:60,activeEpisodes:1},
+    ],
+  });
+  assert.equal(concentration.summary.pairs,1);
+  assert.equal(concentration.summary.top1ContributionPct,60);
+  assert.equal(concentration.rows.length,1);
+
+  const trend=runtime.buildNewsImpactRecoveryIncidentSloImpactConcentrationTrend({broken:true},null);
+  assert.equal(trend.weeks,4);
+  assert.equal(trend.summary.currentOverdueMinutes,0);
+
+  const executive=runtime.buildNewsImpactRecoveryIncidentSloImpactExecutiveSummary(
+    null,
+    {available:true,summary:{deltaMinutes:true}},
+    {available:true,summary:{top1ContributionPct:150}},
+    {available:true,summary:{top1Direction:evil}},
+  );
+  assert.equal(executive.available,false);
+  assert.equal(executive.summary.weekDeltaMinutes,0);
+  assert.equal(executive.summary.top1ContributionPct,0);
+  assert.equal(executive.summary.top1WeeklyDirection,'unchanged');
+
+  const focus=runtime.buildNewsImpactRecoveryIncidentSloImpactFocusQueue(
+    {available:true,summary:{pairs:1,activePairs:1},ranking:[
+      {reason:'a',action:'full_ai',totalOverdueMinutes:100,contributionPct:50,activeEpisodes:1},
+      {reason:evil,action:'share',totalOverdueMinutes:999,contributionPct:99},
+    ]},
+    {available:true,summary:{currentOverdueMinutes:20,deltaMinutes:-5},pairs:[
+      {reason:'a',action:'full_ai',currentOverdueMinutes:20,previousOverdueMinutes:25,deltaMinutes:-5,direction:'increased',currentContributionPct:100},
+    ]},
+    {available:true,summary:{breachPairs:1,activePairs:1,currentWeekOverdueMinutes:20,weekDeltaMinutes:-5}},
+    {limit:true},
+  );
+  assert.equal(focus.rows.length,1);
+  assert.equal(focus.rows[0].weekDirection,'decreased');
 });
 
 test('RC98 health, privacy and storage boundaries remain fail-closed',()=>{
