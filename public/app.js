@@ -1113,24 +1113,40 @@ async function ensureMatchCenterExtras() {
 async function loadProfile() {
   const previousProfile = state.profile;
   try {
-    state.profile = await api('/api/me');
+    const nextProfile = await api('/api/me');
+    if (!nextProfile || typeof nextProfile !== 'object' || Array.isArray(nextProfile)) {
+      throw new TypeError('Профиль вернул некорректные данные.');
+    }
+    state.profile = nextProfile;
     state.profileStale = false;
     state.profileLoadError = '';
-    state.dataCapabilities = state.profile?.features?.dataCapabilities || state.dataCapabilities;
-    if (state.profile?.preferences) {
-      state.preferences = { ...state.preferences, ...state.profile.preferences };
+    const features = nextProfile.features && typeof nextProfile.features === 'object' && !Array.isArray(nextProfile.features)
+      ? nextProfile.features
+      : null;
+    if (features?.dataCapabilities && typeof features.dataCapabilities === 'object' && !Array.isArray(features.dataCapabilities)) {
+      state.dataCapabilities = features.dataCapabilities;
+    }
+    const preferences = nextProfile.preferences && typeof nextProfile.preferences === 'object' && !Array.isArray(nextProfile.preferences)
+      ? nextProfile.preferences
+      : null;
+    if (preferences) {
+      state.preferences = { ...state.preferences, ...preferences };
       if (!state.preferencesApplied) {
-        state.filter = state.preferences.defaultFilter || 'top';
+        state.filter = typeof state.preferences.defaultFilter === 'string' && state.preferences.defaultFilter
+          ? state.preferences.defaultFilter
+          : 'top';
         state.preferencesApplied = true;
         syncFilterButtons();
-        if (state.matches.length) renderMatches();
+        if (Array.isArray(state.matches) && state.matches.length) renderMatches();
       }
     }
     renderProfile();
-renderDiscoveryHome();
+    renderDiscoveryHome();
   } catch (e) {
-    const authFailure = Number(e?.status || 0) === 401 || e?.category === 'auth';
-    if (previousProfile && !authFailure) {
+    const status = typeof e?.status === 'number' && Number.isSafeInteger(e.status) ? e.status : 0;
+    const category = typeof e?.category === 'string' ? e.category : '';
+    const authFailure = status === 401 || category === 'auth';
+    if (previousProfile && typeof previousProfile === 'object' && !Array.isArray(previousProfile) && !authFailure) {
       state.profile = previousProfile;
       state.profileStale = true;
       state.profileLoadError = '';
@@ -1138,12 +1154,13 @@ renderDiscoveryHome();
       toast('Профиль временно не обновился — показаны последние данные.');
       return;
     }
+    const message = uiErrorMessage(e, 'Не удалось загрузить профиль.');
     state.profile = null;
     state.profileStale = false;
-    state.profileLoadError = e.message || 'Не удалось загрузить профиль.';
+    state.profileLoadError = message;
     applyAdminVisibility();
     sendActionError('profile', e, 'profileView');
-    toast(e.message);
+    toast(message);
   }
 }
 
@@ -2250,19 +2267,23 @@ async function loadReminders() {
 }
 
 async function handleReminderRemove(fixtureId) {
-  fixtureId = Number(fixtureId);
-  if (!fixtureId || state.reminderMutations.has(fixtureId)) return;
-  state.reminderMutations.add(fixtureId);
-  syncReminderMutationUi(fixtureId);
+  const id = positiveEntityId(fixtureId);
+  if (!id || state.reminderMutations.has(id)) return;
+  state.reminderMutations.add(id);
+  syncReminderMutationUi(id);
   try {
-    await api(`/api/reminders?fixtureId=${fixtureId}`, { method: 'DELETE' });
-    state.reminders = state.reminders.filter(x => Number(x.fixtureId) !== fixtureId);
+    await api(`/api/reminders?fixtureId=${id}`, { method: 'DELETE' });
+    const rows = Array.isArray(state.reminders) ? state.reminders : [];
+    state.reminders = rows.filter(x => positiveEntityId(x?.fixtureId) !== id);
     state.remindersLoaded = true;
     state.remindersRevision += 1;
-    if (state.profile) {
+    if (state.profile && typeof state.profile === 'object' && !Array.isArray(state.profile)) {
+      const stats = state.profile.stats && typeof state.profile.stats === 'object' && !Array.isArray(state.profile.stats)
+        ? state.profile.stats
+        : {};
       state.profile = {
         ...state.profile,
-        stats: { ...(state.profile.stats || {}), reminders: state.reminders.length },
+        stats: { ...stats, reminders: state.reminders.length },
       };
     }
     renderReminderList();
@@ -2270,10 +2291,10 @@ async function handleReminderRemove(fixtureId) {
     if (state.profile) renderProfile();
     toast('Напоминание отключено');
   } catch (e) {
-    toast(e.message);
+    toast(uiErrorMessage(e, 'Не удалось отключить напоминание.'));
   } finally {
-    state.reminderMutations.delete(fixtureId);
-    syncReminderMutationUi(fixtureId);
+    state.reminderMutations.delete(id);
+    syncReminderMutationUi(id);
   }
 }
 
@@ -2308,54 +2329,70 @@ async function savePreferencesFromUi() {
 }
 
 function favoriteSet() {
-  return new Set(state.favorites.map(x => Number(x.teamId)));
+  const rows = Array.isArray(state.favorites) ? state.favorites : [];
+  return new Set(rows.map(x => positiveEntityId(x?.teamId)).filter(Boolean));
 }
 
 function isFavorite(teamId) {
-  return favoriteSet().has(Number(teamId));
+  const id = positiveEntityId(teamId);
+  return id ? favoriteSet().has(id) : false;
 }
 
 function favoriteMutationSelector(teamId) {
-  const id = Number(teamId);
-  return `.fav-star[data-team-id="${id}"], .favorite-remove[data-team-id="${id}"], #teamFavoriteBtn[data-team-id="${id}"]`;
+  const id = positiveEntityId(teamId);
+  return id
+    ? `.fav-star[data-team-id="${id}"], .favorite-remove[data-team-id="${id}"], #teamFavoriteBtn[data-team-id="${id}"]`
+    : '';
 }
 
 function syncFavoriteMutationUi(teamId) {
-  const pending = state.favoriteMutations.has(Number(teamId));
-  document.querySelectorAll(favoriteMutationSelector(teamId)).forEach(button => {
+  const id = positiveEntityId(teamId);
+  if (!id) return;
+  const pending = state.favoriteMutations.has(id);
+  document.querySelectorAll(favoriteMutationSelector(id)).forEach(button => {
     button.disabled = pending;
     button.classList.toggle('is-pending', pending);
   });
 }
 
 async function toggleFavorite(team) {
-  const teamId = Number(team?.id || 0);
+  const teamId = positiveEntityId(team?.id);
   if (!teamId || state.favoriteMutations.has(teamId)) return;
+  const teamName = typeof team?.name === 'string' ? team.name : '';
+  const teamLogo = typeof team?.logo === 'string' ? team.logo : '';
   const active = isFavorite(teamId);
   state.favoritesLoadError = '';
   state.favoriteMutations.add(teamId);
   syncFavoriteMutationUi(teamId);
   try {
+    const rows = Array.isArray(state.favorites) ? state.favorites : [];
     if (active) {
       await api(`/api/favorites?teamId=${teamId}`, { method: 'DELETE' });
-      state.favorites = state.favorites.filter(x => Number(x.teamId) !== teamId);
+      state.favorites = rows.filter(x => positiveEntityId(x?.teamId) !== teamId);
       state.favoritesLoaded = true;
       state.favoritesRevision += 1;
-      toast(`${team.name}: удалено из избранного`);
+      toast(`${teamName || 'Команда'}: удалено из избранного`);
     } else {
       const data = await api('/api/favorites', {
         method: 'POST',
-        body: JSON.stringify({ teamId, teamName: team.name, teamLogo: team.logo || '' }),
+        body: JSON.stringify({ teamId, teamName, teamLogo }),
       });
-      state.favorites = [data.item, ...state.favorites.filter(x => Number(x.teamId) !== teamId)];
+      const item = data?.item;
+      if (!item || typeof item !== 'object' || Array.isArray(item) || positiveEntityId(item.teamId) !== teamId) {
+        throw new TypeError('Сервис избранного вернул некорректный результат.');
+      }
+      state.favorites = [item, ...rows.filter(x => positiveEntityId(x?.teamId) !== teamId)];
       state.favoritesLoaded = true;
       state.favoritesRevision += 1;
-      toast(`${team.name}: добавлено в избранное`);
+      toast(`${teamName || 'Команда'}: добавлено в избранное`);
     }
-    if (state.profile) {
+    if (state.profile && typeof state.profile === 'object' && !Array.isArray(state.profile)) {
+      const stats = state.profile.stats && typeof state.profile.stats === 'object' && !Array.isArray(state.profile.stats)
+        ? state.profile.stats
+        : {};
       state.profile = {
         ...state.profile,
-        stats: { ...(state.profile.stats || {}), favorites: state.favorites.length },
+        stats: { ...stats, favorites: state.favorites.length },
       };
       renderProfile();
     }
@@ -2366,7 +2403,7 @@ async function toggleFavorite(team) {
     renderMyTeams();
     if (state.currentAnalysis) renderAnalysis(state.currentAnalysis);
   } catch (e) {
-    toast(e.message);
+    toast(uiErrorMessage(e, 'Не удалось изменить избранное.'));
   } finally {
     state.favoriteMutations.delete(teamId);
     syncFavoriteMutationUi(teamId);
@@ -3849,14 +3886,28 @@ function openTournamentFromTeam(openTable = false) {
   state.tournamentBackView = 'teamView';
   const targetTab=tournamentTabForTeamShortcut(openTable);
   const comp=state.currentTeam?.data?.primaryCompetition;
-  if(!comp?.leagueId) return toast('Основной турнир команды пока не определён.');
-  const existing=state.matches.find(m=>Number(m.leagueId)===Number(comp.leagueId));
+  const leagueId=positiveEntityId(comp?.leagueId);
+  if(!leagueId) return toast('Основной турнир команды пока не определён.');
+  const rows=Array.isArray(state.matches) ? state.matches : [];
+  const existing=rows.find(m=>positiveEntityId(m?.leagueId)===leagueId);
   if(existing) {
-    openTournament(Number(comp.leagueId));
+    openTournament(leagueId);
     if (targetTab==='table') setTournamentTab('table', true);
     return;
   }
-  state.currentTournament={leagueId:Number(comp.leagueId),season:Number(comp.season||new Date().getFullYear()),name:comp.name||'Турнир',shortName:comp.shortName||comp.name||'Турнир',country:comp.country||'',logo:comp.logo||'',category:comp.category||'',tier:comp.tier||'standard'};
+  const season=positiveEntityId(comp?.season) || new Date().getFullYear();
+  state.currentTournament={
+    leagueId,
+    season,
+    name:typeof comp?.name==='string' && comp.name ? comp.name : 'Турнир',
+    shortName:typeof comp?.shortName==='string' && comp.shortName
+      ? comp.shortName
+      : (typeof comp?.name==='string' && comp.name ? comp.name : 'Турнир'),
+    country:typeof comp?.country==='string' ? comp.country : '',
+    logo:typeof comp?.logo==='string' ? comp.logo : '',
+    category:typeof comp?.category==='string' ? comp.category : '',
+    tier:typeof comp?.tier==='string' && comp.tier ? comp.tier : 'standard',
+  };
   renderTournamentHero();
   renderTournamentMatches();
   setTournamentTab(targetTab,targetTab==='table');
@@ -5361,18 +5412,27 @@ function bullets(items = [], empty = 'Нет существенных факто
 }
 
 function reminderFor(fixtureId) {
-  return state.reminders.find(x => Number(x.fixtureId) === Number(fixtureId)) || null;
+  const id = positiveEntityId(fixtureId);
+  if (!id) return null;
+  const rows = Array.isArray(state.reminders) ? state.reminders : [];
+  return rows.find(x => positiveEntityId(x?.fixtureId) === id) || null;
 }
 
 function hasReminder(fixtureId) {
   return Boolean(reminderFor(fixtureId));
 }
 
+function reminderMinutesValue() {
+  const value = state.preferences?.reminderMinutes;
+  return [15, 30, 60].includes(value) ? value : 30;
+}
+
 function syncQuickReminderButton(button, fixtureId) {
-  if (!button) return;
-  const pending = state.reminderMutations.has(Number(fixtureId));
-  const active = hasReminder(fixtureId);
-  const minutes = Number(state.preferences?.reminderMinutes || 30);
+  const id = positiveEntityId(fixtureId);
+  if (!button || !id) return;
+  const pending = state.reminderMutations.has(id);
+  const active = hasReminder(id);
+  const minutes = reminderMinutesValue();
   button.disabled = pending;
   button.classList.toggle('is-pending', pending);
   button.classList.toggle('active', active);
@@ -5386,85 +5446,92 @@ function syncQuickReminderButton(button, fixtureId) {
 
 function syncAllQuickReminderButtons() {
   document.querySelectorAll('.quick-reminder-btn[data-quick-reminder]').forEach(button => {
-    syncQuickReminderButton(button, Number(button.dataset.quickReminder));
+    syncQuickReminderButton(button, positiveEntityId(button.dataset.quickReminder));
   });
 }
 
 function syncReminderMutationUi(fixtureId) {
-  const pending = state.reminderMutations.has(Number(fixtureId));
+  const id = positiveEntityId(fixtureId);
+  if (!id) return;
+  const pending = state.reminderMutations.has(id);
   const button = $('reminderBtn');
-  if (button && Number(state.currentAnalysis?.match?.fixtureId || 0) === Number(fixtureId)) {
+  if (button && positiveEntityId(state.currentAnalysis?.match?.fixtureId) === id) {
     button.disabled = pending;
     button.classList.toggle('is-pending', pending);
   }
-  document.querySelectorAll(`.reminder-remove[data-fixture-id="${Number(fixtureId)}"]`).forEach(el => {
+  document.querySelectorAll(`.reminder-remove[data-fixture-id="${id}"]`).forEach(el => {
     el.disabled = pending;
     el.classList.toggle('is-pending', pending);
   });
-  document.querySelectorAll(`.quick-reminder-btn[data-quick-reminder="${Number(fixtureId)}"]`).forEach(el => {
-    syncQuickReminderButton(el, fixtureId);
+  document.querySelectorAll(`.quick-reminder-btn[data-quick-reminder="${id}"]`).forEach(el => {
+    syncQuickReminderButton(el, id);
   });
 }
 
 async function toggleReminder(match) {
-  if (!match?.fixtureId) return;
-  const fixtureId = Number(match.fixtureId);
-  if (state.reminderMutations.has(fixtureId)) return;
+  const fixtureId = positiveEntityId(match?.fixtureId);
+  if (!fixtureId || state.reminderMutations.has(fixtureId)) return;
   const active = hasReminder(fixtureId);
   state.remindersLoadError = '';
-  if (!active && !runtimeAllows('remindersEnabled')) {
+  let remindersEnabled = false;
+  try {
+    remindersEnabled = runtimeAllows('remindersEnabled') === true;
+  } catch {}
+  if (!active && !remindersEnabled) {
     toast('Новые уведомления временно приостановлены.');
     return;
   }
   state.reminderMutations.add(fixtureId);
   syncReminderMutationUi(fixtureId);
   try {
+    const rows = Array.isArray(state.reminders) ? state.reminders : [];
     if (active) {
       await api(`/api/reminders?fixtureId=${fixtureId}`, { method: 'DELETE' });
-      state.reminders = state.reminders.filter(x => Number(x.fixtureId) !== fixtureId);
+      state.reminders = rows.filter(x => positiveEntityId(x?.fixtureId) !== fixtureId);
       state.remindersLoaded = true;
       state.remindersRevision += 1;
       toast('Напоминание отключено');
     } else {
+      const reminderMinutes = reminderMinutesValue();
+      const kickoffNotify = state.preferences?.kickoffNotification === true;
       const data = await api('/api/reminders', {
         method: 'POST',
         body: JSON.stringify({
           fixtureId,
-          homeName: match.home?.name || '',
-          awayName: match.away?.name || '',
-          leagueName: match.league || '',
-          fixtureDate: match.date || '',
-          reminderMinutes: Number(state.preferences?.reminderMinutes || 30),
-          kickoffNotify: state.preferences?.kickoffNotification !== false,
+          homeName: typeof match?.home?.name === 'string' ? match.home.name : '',
+          awayName: typeof match?.away?.name === 'string' ? match.away.name : '',
+          leagueName: typeof match?.league === 'string' ? match.league : '',
+          fixtureDate: typeof match?.date === 'string' ? match.date : '',
+          reminderMinutes,
+          kickoffNotify,
         }),
       });
-      const item = data?.item || {
-        fixtureId,
-        homeName: match.home?.name || '',
-        awayName: match.away?.name || '',
-        leagueName: match.league || '',
-        fixtureDate: match.date || '',
-        remindBeforeMinutes: Number(state.preferences?.reminderMinutes || 30),
-        kickoffNotify: state.preferences?.kickoffNotification !== false,
-        deliveryStatus: 'scheduled',
-        deliveryAttempts: 0,
-      };
-      state.reminders = [item, ...state.reminders.filter(x => Number(x.fixtureId) !== fixtureId)];
+      const item = data?.item;
+      if (!item || typeof item !== 'object' || Array.isArray(item) || positiveEntityId(item.fixtureId) !== fixtureId) {
+        throw new TypeError('Сервис напоминаний вернул некорректный результат.');
+      }
+      state.reminders = [item, ...rows.filter(x => positiveEntityId(x?.fixtureId) !== fixtureId)];
       state.remindersLoaded = true;
       state.remindersRevision += 1;
       renderReminderList();
-      toast(`Напомним примерно за ${Number(item.remindBeforeMinutes || state.preferences?.reminderMinutes || 30)} минут до матча${item.kickoffNotify !== false ? ' и около старта' : ''}`);
+      const itemMinutes = [15, 30, 60].includes(item.remindBeforeMinutes)
+        ? item.remindBeforeMinutes
+        : reminderMinutes;
+      toast(`Напомним примерно за ${itemMinutes} минут до матча${item.kickoffNotify === true ? ' и около старта' : ''}`);
     }
-    if (state.profile) {
+    if (state.profile && typeof state.profile === 'object' && !Array.isArray(state.profile)) {
+      const stats = state.profile.stats && typeof state.profile.stats === 'object' && !Array.isArray(state.profile.stats)
+        ? state.profile.stats
+        : {};
       state.profile = {
         ...state.profile,
-        stats: { ...(state.profile.stats || {}), reminders: state.reminders.length },
+        stats: { ...stats, reminders: state.reminders.length },
       };
       renderProfile();
     }
     if (state.currentAnalysis) renderAnalysis(state.currentAnalysis);
   } catch (e) {
-    toast(e.message);
+    toast(uiErrorMessage(e, 'Не удалось изменить напоминание.'));
   } finally {
     state.reminderMutations.delete(fixtureId);
     syncReminderMutationUi(fixtureId);
