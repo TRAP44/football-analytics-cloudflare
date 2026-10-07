@@ -52,6 +52,7 @@ class FakeElement {
 
 function createHarness({
   initialView = 'matchesView',
+  homeView = 'matchesView',
   resolveBackTarget = view => view === 'analysisView' ? 'teamView' : 'matchesView',
   onLeaveView,
   onEffectError,
@@ -97,7 +98,7 @@ function createHarness({
     document,
     elementById: id => elements[id] || null,
     viewIds: VIEW_IDS,
-    homeView: 'matchesView',
+    homeView,
     resolveBackTarget,
     syncTopbar: id => effects.push(['topbar', id]),
     syncBackButtons: () => effects.push(['back-buttons']),
@@ -163,6 +164,44 @@ test('Back uses the injected parent resolver and restores the parent view', () =
   assert.equal(shell.handleBackNavigation(), true);
   assert.equal(shell.activeViewId(), 'matchesView');
   assert.equal(shell.handleBackNavigation(), false);
+});
+
+test('Back fails closed to Home when the parent resolver throws or returns the current view', () => {
+  const errors = [];
+  const throwing = createHarness({
+    resolveBackTarget: () => { throw new Error('resolver failed'); },
+    onEffectError: (error, context) => errors.push([error.message, context.effect]),
+  });
+  throwing.shell.showView('analysisView');
+  assert.doesNotThrow(() => throwing.shell.handleBackNavigation());
+  assert.equal(throwing.shell.activeViewId(), 'matchesView');
+  assert.deepEqual(errors, [['resolver failed', 'resolveBackTarget']]);
+
+  const looping = createHarness({
+    resolveBackTarget: view => view,
+  });
+  looping.shell.showView('teamView');
+  assert.equal(looping.shell.handleBackNavigation(), true);
+  assert.equal(looping.shell.activeViewId(), 'matchesView');
+});
+
+test('invalid configured Home and invalid showView targets fall back to the first real public view', () => {
+  const { shell, elements } = createHarness({ homeView:'missingView' });
+  assert.equal(shell.showView('unknownView'), 'matchesView');
+  assert.equal(shell.activeViewId(), 'matchesView');
+  assert.equal(elements.matchesView.hidden, false);
+  assert.equal(
+    VIEW_IDS.filter(id => !elements[id].hidden).length,
+    1,
+  );
+});
+
+test('showView accepts malformed options and never restores non-finite scroll offsets', () => {
+  const { shell, window } = createHarness();
+  window.scrollY = Number.POSITIVE_INFINITY;
+  assert.doesNotThrow(() => shell.showView('teamView', null));
+  shell.showView('matchesView', { restore:true });
+  assert.equal(window.scrollCalls.at(-1).top, 0);
 });
 
 test('direct initial navigation does not require an intermediate visible view', () => {
@@ -240,4 +279,7 @@ test('regression guard keeps navigation shell generic while Match Center owns li
   assert.doesNotMatch(shell, /stopLiveRefresh|liveRefreshTimer|provider|supabase|api\(/i);
   assert.match(app, /createFirstRunGuideController\([\s\S]*?showView:\s*\(id, options\) => showView\(id, options\)/);
   assert.match(app, /function applyLaunchIntent\(\)[\s\S]*?showView\('searchView'\)/);
+  assert.match(shell, /const safeHome=/);
+  assert.match(shell, /effect: 'resolveBackTarget'/);
+  assert.match(shell, /safeScrollOffset/);
 });
