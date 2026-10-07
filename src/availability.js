@@ -1,25 +1,41 @@
 import { createPlayerIdentityResolver, normalizePlayerName } from './player-identity.js';
 
 function compactText(value = '') {
-  return String(value || '').trim().replace(/\s+/g, ' ');
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/\s+/gu, ' ');
 }
 
 function normalizedName(value = '') {
   return normalizePlayerName(value);
 }
 
+function numericCandidate(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const raw=value.trim();
+  if (!/^-?(?:\d+|\d+\.\d+|\.\d+)$/.test(raw)) return null;
+  const number=Number(raw);
+  return Number.isFinite(number) ? number : null;
+}
+
+function integerCandidate(value) {
+  const number=numericCandidate(value);
+  return number !== null && Number.isSafeInteger(number) ? number : null;
+}
+
 function positiveSafeId(value) {
-  const number = Number(value);
-  return Number.isSafeInteger(number) && number > 0 ? number : 0;
+  const number = integerCandidate(value);
+  return number !== null && number > 0 ? number : 0;
 }
 
 function nonNegativeFinite(value) {
-  const number = Number(value);
-  return Number.isFinite(number) && number >= 0 ? number : 0;
+  const number = numericCandidate(value);
+  return number !== null && number >= 0 ? number : 0;
 }
 
 function nonNegativeInteger(value) {
-  return Math.floor(nonNegativeFinite(value));
+  const number=integerCandidate(value);
+  return number !== null && number >= 0 ? number : 0;
 }
 
 function categoryFromText(type = '', reason = '') {
@@ -69,7 +85,8 @@ function mergeAbsenceRows(current, next) {
     type: mergeReasons(current.type, next.type),
     status: status.key,
     statusLabel: status.label,
-    duplicateCount: Number(current.duplicateCount || 1) + Number(next.duplicateCount || 1),
+    duplicateCount: Math.max(1,nonNegativeInteger(current.duplicateCount) || 1)
+      + Math.max(1,nonNegativeInteger(next.duplicateCount) || 1),
   };
 }
 
@@ -300,7 +317,7 @@ export function assessFixtureAvailabilityQuality(rows = [], {
     state,
     label,
     reason,
-    mode:String(mode || 'upcoming'),
+    mode:compactText(mode) || 'upcoming',
     observed,
     sourceTrusted,
     rawCount:list.length,
@@ -313,10 +330,10 @@ export function assessFixtureAvailabilityQuality(rows = [], {
     acceptedIndices,
     rejectedIndices,
     issues,
-    provider:String(injuriesMeta?.provider || ''),
-    source:String(injuriesMeta?.source || ''),
-    freshnessState:String(injuriesMeta?.freshnessState || 'unknown'),
-    provenanceState:String(injuriesMeta?.provenanceState || 'unknown'),
+    provider:compactText(injuriesMeta?.provider),
+    source:compactText(injuriesMeta?.source),
+    freshnessState:compactText(injuriesMeta?.freshnessState) || 'unknown',
+    provenanceState:compactText(injuriesMeta?.provenanceState) || 'unknown',
     warnings:[
       ...(rejectedCount ? [`Исключены некорректные записи о потерях: ${rejectedCount}.`] : []),
       ...(ambiguousIdentityCount ? [`Неоднозначные name-only идентичности игроков: ${ambiguousIdentityCount}.`] : []),
@@ -330,7 +347,13 @@ export function assessFixtureAvailabilityQuality(rows = [], {
 
 export function sanitizeAvailabilityRows(rows = [], quality = {}) {
   if (!quality?.sourceTrusted) return [];
-  const accepted = new Set(Array.isArray(quality?.acceptedIndices) ? quality.acceptedIndices.map(Number) : []);
+  const accepted = new Set(
+    Array.isArray(quality?.acceptedIndices)
+      ? quality.acceptedIndices
+        .map(integerCandidate)
+        .filter(index=>index !== null && index >= 0)
+      : [],
+  );
   return (Array.isArray(rows) ? rows : []).filter((_, index) => accepted.has(index));
 }
 
@@ -387,11 +410,13 @@ export function annotateAvailabilityReliability(meta = {}, quality = {}) {
 
 
 function bounded(value, min, max) {
-  return Math.max(min, Math.min(max, Number(value) || 0));
+  const number=numericCandidate(value);
+  return Math.max(min, Math.min(max, number ?? 0));
 }
 
 function roundRoleWeight(value) {
-  return Math.round(Number(value || 0) * 100) / 100;
+  const number=numericCandidate(value);
+  return Math.round((number ?? 0) * 100) / 100;
 }
 
 function seasonPlayerIndex(playerStats = null) {
