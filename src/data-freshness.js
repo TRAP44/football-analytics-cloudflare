@@ -21,7 +21,7 @@ function objectRecord(value) {
 
 function compactState(value = '') {
   if (typeof value !== 'string') return '';
-  return value.trim().toLowerCase().replace(/s+/g, '_');
+  return value.trim().toLowerCase().replace(/\s+/g, '_');
 }
 
 function finiteNumber(value) {
@@ -36,7 +36,7 @@ function timestampMs(value) {
   }
   if (typeof value !== 'string' || !value.trim()) return null;
   const raw=value.trim();
-  const calendar=/^(d{4})-(d{2})-(d{2})(?:$|T|s)/.exec(raw);
+  const calendar=/^(\d{4})-(\d{2})-(\d{2})(?:$|T|\s)/.exec(raw);
   if (!calendar) return null;
   const year=Number(calendar[1]);
   const month=Number(calendar[2]);
