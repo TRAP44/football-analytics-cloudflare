@@ -137,6 +137,8 @@ test('malformed entitlement rows fail closed instead of broadening Pass access',
   assert.equal(entitlementDecision(row({ telegram_id: null }), { fixtureId: 777, now: NOW }).reason, 'invalid_owner');
   assert.equal(entitlementDecision(row({ fixture_id: 'broken' }), { fixtureId: 777, now: NOW }).reason, 'invalid_fixture');
   assert.equal(entitlementDecision(row({ starts_at: null }), { fixtureId: 777, now: NOW }).reason, 'invalid_window');
+  assert.equal(entitlementDecision(row({ status: undefined }), { fixtureId: 777, now: NOW }).reason, 'inactive');
+  assert.equal(entitlementDecision(row({ status: '' }), { fixtureId: 777, now: NOW }).reason, 'inactive');
   assert.equal(entitlementDecision(row({
     entitlement_type: 'DAY_PASS',
     fixture_id: 777,
@@ -370,6 +372,38 @@ test('v6.25 migration is additive, service-role-only and protects duplicate/conc
   assert.doesNotMatch(sql, /\bdrop\s+(table|column|schema)\b/i);
 });
 
+test('malformed entitlement store responses fail closed and block Pass sale readiness', async () => {
+  const malformedStore = createEntitlementService({
+    memory: { userEntitlements: new Map() },
+    hasSupabase: () => true,
+    supaSelectMany: async () => ({ unexpected: true }),
+    supaRpc: async () => { throw new Error('unexpected rpc'); },
+    getUserRecord: async () => ({
+      telegram_id: 42,
+      plan: 'FREE',
+      subscription_until: null,
+    }),
+  });
+
+  const resolved = await malformedStore.resolveUserEntitlements(42, 777, {}, NOW);
+  assert.equal(resolved.store.available, false);
+  assert.equal(resolved.store.reason, 'entitlement_store_unavailable');
+  assert.equal(resolved.source, 'free');
+  assert.equal(resolved.access.expandedAi, false);
+
+  const reservation = await malformedStore.reserveEntitlementUsage(
+    42,
+    { unexpected: true },
+    777,
+    {},
+  );
+  assert.deepEqual(reservation, {
+    allowed: false,
+    reserved: false,
+    reason: 'invalid_entitlements',
+  });
+});
+
 test('entitlement store failure denies Pass without breaking existing FREE or subscription access', async () => {
   const brokenStore = createEntitlementService({
     memory: { userEntitlements: new Map() },
@@ -402,51 +436,61 @@ test('entitlement store failure denies Pass without breaking existing FREE or su
   assert.equal(pro.access.expandedAi, true);
 });
 
-test('full AI uses Pass entitlement server-side instead of the FREE quota gate for the entitled scope', () => {
-  const worker = (fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
-  const start = worker.indexOf('async function apiAnalyze(');
-  const end = worker.indexOf('async function apiHistoryAnalysis', start);
-  const source = worker.slice(start, end > start ? end : start + 40000);
+test('full AI preserves the resolved active Pass array and bypasses FREE quota only after Pass reservation', () => {
+  const source = fs.readFileSync('src/analysis-runtime.js','utf8');
 
-  assert.match(source, /resolveUserEntitlements\(user\.id, fixtureId, cfg\)/);
-  assert.match(source, /const passCandidate = entitlementBefore\.source === 'pass'/);
-  assert.match(source, /if \(!freeRecheck && !passCandidate && quotaBefore\.left <= 0\)/);
-  assert.match(source, /reserveEntitlementUsage\(user\.id,entitlementBefore\.passes\.active,fixtureId,cfg,\{/);
+  assert.match(source, /resolveUserEntitlements,userId,fixtureId,cfg/);
+  assert.match(source, /const activePasses=Array\.isArray\(objectValue\(entitlementBefore\.passes\)\?\.active\)/);
+  assert.match(source, /\? entitlementBefore\.passes\.active\s*:\s*\[\]/);
+  assert.match(source, /const passCandidate=entitlementBefore\.source==='pass'[\s\S]*activePasses\.length>0/);
+  assert.doesNotMatch(source, /const activePass=objectValue\(objectValue\(entitlementBefore\.passes\)\?\.active\)/);
+  assert.match(source, /reserveEntitlementUsage\([\s\S]*userId,[\s\S]*activePasses,[\s\S]*fixtureId,[\s\S]*cfg/);
   assert.match(source, /const passOperationId=crypto\.randomUUID\(\)/);
-  assert.match(source, /durable:hasSupabase\(cfg\)/);
+  assert.match(source, /durable:safePredicate\(hasSupabase,cfg\)/);
   assert.match(source, /operationId:passOperationId/);
   assert.match(source, /ANALYSIS_PASS_RESERVATION_OUTCOME_UNKNOWN/);
-  assert.match(source, /if \(!freeRecheck && !passAccess\) \{\s*usageReservation=await reserveAnalysisQuota/);
-  assert.match(source, /const responseQuota=await getQuota\(user\.id,cfg\);\s*usageCommitted=true;/);
+  assert.match(source, /if \(!freeRecheck && !passAccess\) \{/);
+  assert.match(source, /usageReservation=objectValue\(await reserveAnalysisQuota\(userId,cfg\)\)/);
   assert.match(source, /finalizeAnalysisUsageReservation\(\{/);
-  assert.match(source, /disposition/);
-  assert.match(source, /refundEntitlementUsage\(user\.id,passUsageReservation\.entitlementId,cfg\)/);
+  assert.match(source, /refundEntitlementUsage/);
   assert.doesNotMatch(source, /users\.plan\s*=\s*['"]PASS['"]/);
 });
 
-test('Worker reuses the established billing route/webhook and keeps monetization default-off', () => {
-  const worker = (fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
-  const router = fs.readFileSync('src/router.js', 'utf8');
-  const env = fs.readFileSync('.env.example', 'utf8');
-  const release = JSON.parse(fs.readFileSync('release-contract.json', 'utf8'));
+test('modular billing runtime reuses Telegram Stars transport and keeps monetization default-off', () => {
+  const billingRuntime = fs.readFileSync('src/billing-runtime.js','utf8');
+  const billingApi = fs.readFileSync('src/billing-api-runtime.js','utf8');
+  const common = fs.readFileSync('src/common-infrastructure-runtime.js','utf8');
+  const router = fs.readFileSync('src/router.js','utf8');
+  const env = fs.readFileSync('.env.example','utf8');
+  const release = JSON.parse(fs.readFileSync('release-contract.json','utf8'));
+  const durableSql = fs.readFileSync('supabase/migrations/supabase_migration_v6_28.sql','utf8');
 
-  assert.match(worker, /parsePassInvoicePayload\(q\.invoice_payload, cfg\.botToken\)/);
-  assert.match(worker, /activatePassPurchase\(\{/);
-  assert.match(worker, /refundPassByCharge\(userId, chargeId, cfg\)/);
-  assert.match(worker, /getStarTransactions/);
-  assert.match(worker, /passVerified/);
-  assert.match(worker, /createInvoiceLink/);
-  assert.match(worker, /prices: \[\{ label: product\.title, amount: product\.stars \}\]/);
-  assert.match(worker, /BILLING_ENTITLEMENT_STORE_UNAVAILABLE/);
-  assert.match(worker, /BILLING_PASS_USAGE_LIMIT_REQUIRED/);
+  assert.match(billingRuntime, /parsePassInvoicePayload\(payment\.invoice_payload, cfg\.botToken\)/);
+  assert.match(billingRuntime, /activatePassPurchase\(\{/);
+  assert.match(billingRuntime, /refundPassByCharge\(userId, chargeId, cfg\)/);
+  assert.match(billingRuntime, /getStarTransactions/);
+  assert.match(billingRuntime, /passVerified/);
+
+  assert.match(billingApi, /createInvoiceLink/);
+  assert.match(billingApi, /prices: \[\{ label: product\.title, amount: product\.stars \}\]/);
+  assert.match(billingApi, /BILLING_ENTITLEMENT_STORE_UNAVAILABLE/);
+  assert.match(billingApi, /BILLING_PASS_USAGE_LIMIT_REQUIRED/);
+
+  assert.match(common, /WEEKEND_PASS: intEnv\(env\.WEEKEND_PASS_DURATION_HOURS, 168\)/);
+  assert.match(common, /WEEKEND_PASS: intEnv\(env\.WEEKEND_PASS_USAGE_LIMIT, 0\) \|\| null/);
+  assert.match(router, /pathname === '\/api\/entitlements'/);
+  assert.match(router, /pathname === '\/api\/billing\/invoice'/);
+  assert.match(router, /cfg\?\.monetizationEnabled !== true/);
+
   assert.match(env, /WEEKEND_PASS_DURATION_HOURS=168/);
   assert.match(env, /WEEKEND_PASS_USAGE_LIMIT=/);
-  assert.match(worker, /WEEKEND_PASS: intEnv\(env\.WEEKEND_PASS_DURATION_HOURS, 168\)/);
-  assert.match(router, /url\.pathname === '\/api\/entitlements'/);
-  assert.match(router, /url\.pathname === '\/api\/billing\/invoice'/);
-  assert.match(router, /if \(!cfg\.monetizationEnabled\) return json/);
   assert.match(env, /MONETIZATION_ENABLED=false/);
   assert.doesNotMatch(env, /MONETIZATION_ENABLED=true/);
+
+  assert.match(durableSql, /create or replace function public\.consume_pass_entitlement/i);
+  assert.match(durableSql, /private\.analysis_usage_reservations/i);
+  assert.match(durableSql, /'durable-v1'/i);
+
   assert.equal(release.productionSchema, '6.29');
-  assert.equal(release.latestMigration, 'supabase/migrations/supabase_migration_v6_29_1.sql');
+  assert.equal(release.latestMigration, 'supabase/migrations/supabase_migration_v6_29_13.sql');
 });
