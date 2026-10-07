@@ -235,6 +235,37 @@ test('response identity mismatch is rejected before Match Center rendering',asyn
   );
 });
 
+test('malformed Match Center mode is rejected instead of being rendered as an upcoming match',async()=>{
+  for (const mode of [
+    undefined,
+    'LIVE',
+    'unknown',
+    true,
+    {toString(){return 'live';}},
+  ]) {
+    const {controller,state,calls}=makeController({
+      api:async()=>({
+        mode,
+        match:{fixtureId:7},
+      }),
+    });
+
+    await assert.rejects(
+      ()=>controller.requestMatchCenter(7),
+      error=>error?.code==='MATCH_CENTER_RESPONSE_MODE_INVALID',
+    );
+
+    await controller.openMatchCenter(7,null);
+
+    assert.equal(state.currentCenter,null,String(mode));
+    assert.equal(
+      calls.some(row=>row[0]==='render'),
+      false,
+      String(mode),
+    );
+  }
+});
+
 test('extra request params are bounded scalars and cannot replace fixture identity',async()=>{
   let seenUrl='';
   const {controller}=makeController({
@@ -303,6 +334,41 @@ test('LIVE runtime control is strict and refresh interval is bounded',()=>{
   controller.startLiveRefresh(12);
   assert.equal(controller.isLiveRefreshActive(),true);
   assert.equal(timers[0].ms,60000);
+});
+
+test('opening a different fixture deactivates the previous LIVE refresh before foreground loading',async()=>{
+  const state=baseState();
+  state.currentCenter={
+    mode:'live',
+    refreshSeconds:30,
+    match:{fixtureId:1},
+  };
+  const pending=deferred();
+  const {controller,timers,cleared}=makeController({
+    state,
+    view:'analysisView',
+    api:async url=>{
+      assert.match(url,/fixtureId=2/);
+      return pending.promise;
+    },
+  });
+
+  controller.startLiveRefresh(1);
+  assert.equal(controller.isLiveRefreshActive(),true);
+  assert.equal(timers.length,1);
+
+  const opening=controller.openMatchCenter(2,null);
+  assert.deepEqual(cleared,[1]);
+  assert.equal(controller.isLiveRefreshActive(),false);
+
+  pending.resolve({
+    mode:'upcoming',
+    match:{fixtureId:2},
+  });
+  await opening;
+
+  assert.equal(state.currentCenter.match.fixtureId,2);
+  assert.equal(controller.isLiveRefreshActive(),false);
 });
 
 test('visibility lifecycle suspends and resumes active live refresh',()=>{
