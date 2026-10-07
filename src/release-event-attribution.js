@@ -80,7 +80,15 @@ export function scopeOpsEventsToDeployment(items = [], identity = {}, options = 
     if(created<deploymentStartMs||created>nowMs) continue;
 
     const itemSha=eventDeploySha(item);
-    if(hasDeploySha&&itemSha===deploySha){
+    if(!hasDeploySha){
+      // Without a trusted active deployment identity we cannot safely classify
+      // a stamped event as belonging to a prior deployment. Keep every
+      // in-window event actionable and explicitly unattributed instead.
+      unattributed.push(item);
+      actionableEntries.push({item,created,index});
+      continue;
+    }
+    if(itemSha===deploySha){
       exact.push(item);
       actionableEntries.push({item,created,index});
       continue;
