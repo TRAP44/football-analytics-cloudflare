@@ -19,7 +19,10 @@ permissions:
 
 concurrency:
   group: quality-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # PRs may supersede older commits. Main is a production gate: never cancel it
+  # just because another push arrives; serialize and let every trusted main run
+  # reach a real success/failure conclusion for deploy/monitor workflows.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
