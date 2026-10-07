@@ -4,19 +4,71 @@ import { DEFAULT_PRODUCTION_URL, runMonitorAttempt } from './external-production
 export const AVAILABILITY_INCIDENT_TITLE = '[monitor] MatchRadar production availability incident';
 export const INFRASTRUCTURE_INCIDENT_TITLE = '[monitor-infra] External Production Monitor execution failure';
 
+function plainObject(value) {
+  try {
+    return value && typeof value==='object' && !Array.isArray(value)
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeRead(value,key) {
+  try {
+    return value?.[key];
+  } catch {
+    return undefined;
+  }
+}
+
+function safeText(value,max=240) {
+  if (typeof value!=='string') return '';
+  return value
+    .replace(/[\u0000-\u001f\u007f]+/g,' ')
+    .replace(/\s+/g,' ')
+    .trim()
+    .slice(0,max);
+}
+
+function boundedNumericConfig(value,fallback,min,max) {
+  let parsed=null;
+  if (typeof value==='number' && Number.isFinite(value)) {
+    parsed=value;
+  } else if (
+    typeof value==='string'
+    && /^\d+(?:\.\d+)?$/.test(value.trim())
+  ) {
+    parsed=Number(value.trim());
+  }
+  if (parsed===null || !Number.isFinite(parsed)) return fallback;
+  return Math.max(min,Math.min(max,parsed));
+}
+
 export function parseTrackingIssueNumber(value) {
-  const n=Number(String(value || '').trim());
-  return Number.isSafeInteger(n) && n > 0 ? n : 0;
+  if (typeof value==='number') {
+    return Number.isSafeInteger(value) && value>0 ? value : 0;
+  }
+  if (typeof value!=='string') return 0;
+  const raw=value.trim();
+  if (!/^\d+$/.test(raw)) return 0;
+  const n=Number(raw);
+  return Number.isSafeInteger(n) && n>0 ? n : 0;
 }
 
 export function selectInfrastructureIncidentTarget(openIssues = [], configuredNumber = 0) {
   const number=parseTrackingIssueNumber(configuredNumber);
-  if (number > 0) {
+  if (number>0) {
     const tracked=(Array.isArray(openIssues) ? openIssues : [])
-      .find(issue=>!issue?.pull_request && Number(issue?.number || 0)===number);
-    if (tracked) return { kind:'tracking', number };
+      .find(issue=>{
+        const value=plainObject(issue);
+        return value
+          && safeRead(value,'pull_request')===undefined
+          && parseTrackingIssueNumber(safeRead(value,'number'))===number;
+      });
+    if (tracked) return {kind:'tracking',number};
   }
-  return { kind:'dedicated', number:0 };
+  return {kind:'dedicated',number:0};
 }
 
 function sleep(ms) {
@@ -24,7 +76,7 @@ function sleep(ms) {
 }
 
 function normalizeRepository(value) {
-  const repo = String(value || '').trim();
+  const repo=safeText(value,200);
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) {
     throw new Error('GITHUB_REPOSITORY is missing or invalid');
   }
@@ -51,7 +103,7 @@ async function githubRequest(path, {
   timeoutMs = 15000,
 } = {}) {
   const repo = normalizeRepository(repository);
-  const boundedTimeoutMs=Math.max(1000,Math.min(30000,Number(timeoutMs || 15000)));
+  const boundedTimeoutMs=boundedNumericConfig(timeoutMs,15000,1000,30000);
   const response = await fetchImpl(`https://api.github.com/repos/${repo}${path}`, {
     method,
     headers: githubHeaders(token),
@@ -65,36 +117,51 @@ async function githubRequest(path, {
   } catch {
     parsed = null;
   }
-  if (!response.ok) {
-    const detail = String(parsed?.message || text || response.statusText || 'github_request_failed').slice(0, 240);
-    throw new Error(`GitHub API ${method} ${path} failed with HTTP ${response.status}: ${detail}`);
+  if (safeRead(response,'ok')!==true) {
+    const detail=safeText(
+      safeRead(plainObject(parsed),'message')
+        || (typeof text==='string' ? text : '')
+        || safeRead(response,'statusText'),
+      240,
+    ) || 'github_request_failed';
+    const status=parseTrackingIssueNumber(safeRead(response,'status')) || 'unknown';
+    throw new Error(`GitHub API ${method} ${path} failed with HTTP ${status}: ${detail}`);
   }
   return parsed;
 }
 
 async function findOpenIssueByTitle(title, options = {}) {
-  const issues = await githubRequest('/issues?state=open&per_page=100', options);
+  const issues=await githubRequest('/issues?state=open&per_page=100',options);
   return Array.isArray(issues)
-    ? issues.find(issue => !issue?.pull_request && issue?.title === title) || null
+    ? issues.find(issue=>{
+        const value=plainObject(issue);
+        return value
+          && safeRead(value,'pull_request')===undefined
+          && safeRead(value,'title')===title;
+      }) || null
     : null;
 }
 
 async function upsertIncident(title, markdown, options = {}) {
   const existing = await findOpenIssueByTitle(title, options);
-  if (existing?.number) {
-    await githubRequest(`/issues/${existing.number}/comments`, {
+  const existingNumber=parseTrackingIssueNumber(safeRead(existing,'number'));
+  if (existingNumber) {
+    await githubRequest(`/issues/${existingNumber}/comments`, {
       ...options,
       method: 'POST',
       body: { body: markdown },
     });
-    return { action: 'commented', number: existing.number };
+    return { action:'commented', number:existingNumber };
   }
   const created = await githubRequest('/issues', {
     ...options,
     method: 'POST',
     body: { title, body: markdown },
   });
-  return { action: 'created', number: created?.number || null };
+  return {
+    action:'created',
+    number:parseTrackingIssueNumber(safeRead(created,'number')) || null,
+  };
 }
 
 async function upsertInfrastructureIncident(markdown, options = {}) {
@@ -126,20 +193,21 @@ async function upsertInfrastructureIncident(markdown, options = {}) {
 
 async function closeIncident(title, markdown, options = {}) {
   const existing = await findOpenIssueByTitle(title, options);
-  if (!existing?.number) return { action: 'absent', number: null };
+  const existingNumber=parseTrackingIssueNumber(safeRead(existing,'number'));
+  if (!existingNumber) return {action:'absent',number:null};
   if (markdown) {
-    await githubRequest(`/issues/${existing.number}/comments`, {
+    await githubRequest(`/issues/${existingNumber}/comments`, {
       ...options,
       method: 'POST',
       body: { body: markdown },
     });
   }
-  await githubRequest(`/issues/${existing.number}`, {
+  await githubRequest(`/issues/${existingNumber}`, {
     ...options,
     method: 'PATCH',
     body: { state: 'closed', state_reason: 'completed' },
   });
-  return { action: 'closed', number: existing.number };
+  return {action:'closed',number:existingNumber};
 }
 
 function primaryEvidence(outcome) {
@@ -159,63 +227,77 @@ function primaryEvidence(outcome) {
 }
 
 export function classifyPrimaryRunJobs(jobs = []) {
-  if (!Array.isArray(jobs) || jobs.length === 0) {
+  if (!Array.isArray(jobs) || jobs.length===0) {
     return {
-      category: 'monitor_infrastructure',
-      reason: 'no_jobs',
-      requiresFallback: true,
+      category:'monitor_infrastructure',
+      reason:'no_jobs',
+      requiresFallback:true,
     };
   }
 
-  const steps = jobs.flatMap(job => Array.isArray(job?.steps) ? job.steps : []);
-  if (steps.length === 0) {
+  const monitorJob=jobs
+    .map(plainObject)
+    .filter(Boolean)
+    .find(job=>safeRead(job,'name')==='monitor');
+  const job=monitorJob || jobs.map(plainObject).filter(Boolean)[0] || null;
+  const rawSteps=safeRead(job,'steps');
+  const steps=Array.isArray(rawSteps)
+    ? rawSteps.map(plainObject).filter(Boolean)
+    : [];
+  if (steps.length===0) {
     return {
-      category: 'monitor_infrastructure',
-      reason: 'zero_step_failure',
-      requiresFallback: true,
+      category:'monitor_infrastructure',
+      reason:'zero_step_failure',
+      requiresFallback:true,
     };
   }
 
-  const probe = steps.find(step => step?.name === 'Check production from external runner');
-  if (probe?.conclusion === 'success') {
+  const probe=steps.find(
+    step=>safeRead(step,'name')==='Check production from external runner',
+  );
+  const conclusion=safeRead(probe,'conclusion');
+  if (conclusion==='success') {
     return {
-      category: 'monitor_infrastructure',
-      reason: 'production_probe_passed_before_workflow_failure',
-      requiresFallback: false,
+      category:'monitor_infrastructure',
+      reason:'production_probe_passed_before_workflow_failure',
+      requiresFallback:false,
     };
   }
-  if (probe?.conclusion === 'failure') {
+  if (conclusion==='failure') {
     return {
-      category: 'ambiguous',
-      reason: 'production_probe_failed',
-      requiresFallback: true,
+      category:'ambiguous',
+      reason:'production_probe_failed',
+      requiresFallback:true,
     };
   }
 
   return {
-    category: 'monitor_infrastructure',
-    reason: 'production_probe_not_executed',
-    requiresFallback: true,
+    category:'monitor_infrastructure',
+    reason:'production_probe_not_executed',
+    requiresFallback:true,
   };
 }
 
 export function decideDiagnosticActions(primary, fallbackOk) {
-  const infraDefinitelyBroken = primary?.category === 'monitor_infrastructure';
-  if (primary?.requiresFallback === false) {
-    return { availability: 'close', infrastructure: 'open' };
+  const value=plainObject(primary);
+  const category=safeRead(value,'category');
+  const requiresFallback=safeRead(value,'requiresFallback');
+  const infraDefinitelyBroken=category==='monitor_infrastructure';
+  if (requiresFallback===false) {
+    return {availability:'close',infrastructure:'open'};
   }
-  if (fallbackOk === true) {
-    return { availability: 'close', infrastructure: 'open' };
+  if (fallbackOk===true) {
+    return {availability:'close',infrastructure:'open'};
   }
-  if (fallbackOk === false) {
+  if (fallbackOk===false) {
     return {
-      availability: 'open',
-      infrastructure: infraDefinitelyBroken ? 'open' : 'close',
+      availability:'open',
+      infrastructure:infraDefinitelyBroken ? 'open' : 'close',
     };
   }
   return {
-    availability: 'unchanged',
-    infrastructure: infraDefinitelyBroken ? 'open' : 'unchanged',
+    availability:'unchanged',
+    infrastructure:infraDefinitelyBroken ? 'open' : 'unchanged',
   };
 }
 
@@ -259,9 +341,24 @@ function diagnosisMarkdown({
 
 async function runFallbackProbe() {
   const baseUrl = String(process.env.PRODUCTION_URL || DEFAULT_PRODUCTION_URL).replace(/\/+$/, '');
-  const retries = Math.max(1, Math.min(3, Number(process.env.DIAGNOSTIC_MONITOR_RETRIES || 2)));
-  const timeoutMs = Math.max(1000, Math.min(30000, Number(process.env.EXTERNAL_MONITOR_TIMEOUT_MS || 10000)));
-  const readyWarningMs = Math.max(500, Math.min(9000, Number(process.env.EXTERNAL_MONITOR_READY_WARNING_MS || 3000)));
+  const retries=boundedNumericConfig(
+    process.env.DIAGNOSTIC_MONITOR_RETRIES,
+    2,
+    1,
+    3,
+  );
+  const timeoutMs=boundedNumericConfig(
+    process.env.EXTERNAL_MONITOR_TIMEOUT_MS,
+    10000,
+    1000,
+    30000,
+  );
+  const readyWarningMs=boundedNumericConfig(
+    process.env.EXTERNAL_MONITOR_READY_WARNING_MS,
+    3000,
+    500,
+    9000,
+  );
   let result = null;
   let attempts = 0;
   for (let attempt = 1; attempt <= retries; attempt += 1) {
