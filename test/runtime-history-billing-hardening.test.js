@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker = fs.readFileSync('src/worker.js', 'utf8');
+const billingApi = fs.readFileSync('src/billing-api-runtime.js', 'utf8');
 const runtimeControls = fs.readFileSync('src/runtime-controls.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8') + '\n' + fs.readFileSync('public/modules/admin-runtime-controls.js', 'utf8');
 
@@ -18,7 +19,7 @@ test('runtime history failures are surfaced instead of being rendered as an empt
   const runtimeApi = section(runtimeControls, 'async function apiRuntimeControls', 'async function apiRuntimeRollback');
   assert.match(runtimeApi, /RUNTIME_HISTORY_READ_FAILED/);
   assert.match(runtimeApi, /RUNTIME_HISTORY_POST_WRITE_READ_FAILED/);
-  assert.match(runtimeApi, /historyReady = false/);
+  assert.match(runtimeApi, /historyReady\s*=\s*false/);
   assert.match(runtimeApi, /historyReason/);
   assert.doesNotMatch(runtimeApi, /listRuntimeHistory\(cfg, 12\)\.catch\(\(\) => \[\]\)/);
 
@@ -43,10 +44,11 @@ test('runtime history failures are surfaced instead of being rendered as an empt
 });
 
 test('billing subscription mutation rejects malformed or missing actions instead of defaulting to cancel', () => {
-  const billing = section(worker, 'async function apiBillingSubscription', 'const {\n  getCacheEntry');
+  const billing = section(billingApi, 'async function apiBillingSubscription', 'async function apiBillingRefundLookup');
   assert.match(billing, /BILLING_INVALID_JSON/);
   assert.match(billing, /BILLING_INVALID_ACTION/);
   assert.match(billing, /\['cancel', 'resume'\]\.includes\(action\)/);
   assert.doesNotMatch(billing, /body\.action === 'resume' \? 'resume' : 'cancel'/);
   assert.match(billing, /is_canceled: action === 'cancel'/);
+  assert.match(worker,/createBillingApiRuntime\(\{/);
 });
