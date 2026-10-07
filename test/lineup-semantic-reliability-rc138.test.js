@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { annotateLineupReliability, assessMatchLineups } from '../src/lineup-quality.js';
+import {
+  annotateLineupReliability,
+  assessMatchLineups,
+  synchronizeLineupQuality,
+} from '../src/lineup-quality.js';
+import { applyFeatureFreshness } from '../src/data-freshness.js';
 
 function side(count, offset = 0) {
   return { startXI: Array.from({ length: count }, (_, i) => ({ id: offset + i + 1, name: `P ${offset + i + 1}` })) };
@@ -153,13 +158,94 @@ test('RC138 hardening accepts non-stale cached XI when provenance is preserved',
   assert.equal(quality.bothConfirmed, true);
 });
 
-const worker = fs.readFileSync('src/worker.js', 'utf8');
+test('RC138 synchronizes semantic reliability back into per-team lineup quality without mutating structural input', () => {
+  const lineups={
+    home:{...side(11),quality:{confirmed:true,state:'confirmed'}},
+    away:{...side(11,100),quality:{confirmed:true,state:'confirmed'}},
+  };
+  const quality=assessMatchLineups(lineups);
+  annotateLineupReliability(sourceMeta({
+    stale:true,
+    source:'stale-cache',
+    freshness:'stale',
+  }),quality);
 
-test('RC138 applies semantic lineup quality before provider reliability and completeness', () => {
-  assert.match(worker, /const lineupMeta=annotateLineupReliability\(lineupResult\.meta, lineupQuality\)/);
-  assert.match(worker, /lineups: lineupMeta/);
-  assert.match(worker, /lineupQuality\.bothConfirmed && 'lineups'/);
-  assert.match(worker, /h2hRows\.length, lineupQuality\.bothConfirmed, web\.answer/);
-  assert.match(worker, /byFeature\.lineups\?\.partial \? 75 : 80/);
-  assert.match(worker, /lineupsPartial: lineupQuality\.partialSides > 0/);
+  const synchronized=synchronizeLineupQuality(lineups,quality);
+
+  assert.equal(lineups.home.quality.confirmed,true);
+  assert.equal(lineups.away.quality.confirmed,true);
+  assert.equal(synchronized.home.quality.confirmed,false);
+  assert.equal(synchronized.away.quality.confirmed,false);
+  assert.equal(synchronized.home.quality.structurallyConfirmed,true);
+  assert.equal(synchronized.away.quality.structurallyConfirmed,true);
+  assert.equal(synchronized.home.quality.reliabilityReason,'lineup_stale');
+});
+
+test('RC138 re-applies semantic reliability after freshness evaluation', () => {
+  const now=Date.parse('2026-10-07T18:20:00.000Z');
+  const freshness=applyFeatureFreshness({
+    feature:'lineups',
+    provider:'api-football',
+    source:'network',
+    state:'available',
+    available:true,
+    usable:true,
+    observed:true,
+    fetchedAt:'2026-10-07T18:00:00.000Z',
+  },{
+    feature:'lineups',
+    mode:'upcoming',
+    now,
+  });
+  assert.equal(freshness.stale,true);
+  assert.equal(freshness.confidenceBearing,false);
+
+  const lineups={
+    home:{...side(11),quality:{confirmed:true}},
+    away:{...side(11,100),quality:{confirmed:true}},
+  };
+  const quality=assessMatchLineups(lineups);
+  const meta=annotateLineupReliability(freshness,quality);
+  const synchronized=synchronizeLineupQuality(lineups,quality);
+
+  assert.equal(meta.confirmed,false);
+  assert.equal(quality.bothConfirmed,false);
+  assert.equal(synchronized.home.quality.confirmed,false);
+  assert.equal(synchronized.away.quality.confirmed,false);
+});
+
+const worker=fs.readFileSync('src/worker.js','utf8');
+const analysisRuntime=fs.readFileSync('src/analysis-runtime.js','utf8');
+const matchCenterRuntime=fs.readFileSync('src/match-center-runtime.js','utf8');
+
+test('RC138 applies final semantic lineup reliability across analysis, live and cached Match Center paths', () => {
+  assert.match(
+    worker,
+    /annotateLineupReliability, assessLineupQuality, assessMatchLineups, synchronizeLineupQuality/,
+  );
+  assert.match(worker,/createMatchCenterRuntime\(\{[\s\S]*synchronizeLineupQuality/);
+  assert.match(worker,/createAnalysisRuntime\(\{[\s\S]*synchronizeLineupQuality/);
+
+  const freshnessIndex=analysisRuntime.indexOf(
+    'analysisFeatureMeta=objectValue(applyFeatureFreshnessMap',
+  );
+  const reapplyIndex=analysisRuntime.indexOf(
+    'analysisFeatureMeta.lineups=objectValue(annotateLineupReliability(',
+    freshnessIndex,
+  );
+  const synchronizeIndex=analysisRuntime.indexOf(
+    'synchronizeLineupQuality(lineups,lineupQuality)',
+    reapplyIndex,
+  );
+  assert.ok(freshnessIndex>=0);
+  assert.ok(reapplyIndex>freshnessIndex);
+  assert.ok(synchronizeIndex>reapplyIndex);
+
+  assert.match(matchCenterRuntime,/function semanticLineupView\(/);
+  assert.match(matchCenterRuntime,/cachedLineupView=semanticLineupView\(/);
+  assert.match(matchCenterRuntime,/staleLineupView=semanticLineupView\(/);
+  assert.match(
+    matchCenterRuntime,
+    /lineups=objectValue\(synchronizeLineupQuality\(lineups,lineupQuality\)\)/,
+  );
 });
