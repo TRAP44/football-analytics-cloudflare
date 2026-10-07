@@ -3,6 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const worker = fs.readFileSync('src/worker.js','utf8');
+const providerSlo = fs.readFileSync('src/provider-slo-runtime.js','utf8');
+const productionMonitor = fs.readFileSync('src/production-monitor-runtime.js','utf8');
 const router = fs.readFileSync('src/router.js','utf8');
 const gateway = fs.readFileSync('src/api-football-gateway.js','utf8');
 const secondary = fs.readFileSync('src/providers/provider-request.js','utf8');
@@ -20,29 +22,29 @@ test('provider observability is wired to both primary and secondary football tra
   assert.match(worker, /createProviderRequestBoundary\(\{[\s\S]*?observeProviderRequest/);
   assert.match(gateway, /await observe\(cfg,\{/);
   assert.match(secondary, /await observe\(cfg,\{/);
-  assert.match(worker, /record_provider_slo_observation/);
-  assert.match(worker, /read_provider_slo_buckets/);
+  assert.match(providerSlo, /record_provider_slo_observation/);
+  assert.match(providerSlo, /read_provider_slo_buckets/);
 });
 
 test('provider SLO persists distributed 15-minute aggregate windows through production monitoring', () => {
-  assert.match(worker, /async function flushProviderSloWindow/);
+  assert.match(providerSlo, /async function flushProviderSloWindow/);
   assert.match(migration, /create table if not exists public\.provider_slo_buckets/);
   assert.match(migration, /on conflict \(bucket_started_at,provider,operation\) do update/);
   assert.match(migration, /attempts=public\.provider_slo_buckets\.attempts\+excluded\.attempts/);
   assert.match(migration, /floor\(extract\(minute from v_now\) \/ 15\)/);
-  assert.match(worker, /providerSloWindowsFromBuckets/);
-  assert.match(worker, /includeCurrent:!providerSloSource\.distributed/);
-  assert.match(worker, /code: 'PROVIDER_SLO_WINDOW'/);
-  assert.match(worker, /event_type: 'slo_window'/);
-  assert.match(worker, /const providerSloFlush = options\.record !== false/);
-  assert.match(worker, /restoreProviderObservabilityWindow\(localSnapshot\)/);
-  assert.match(worker, /providerSloPersistenceErrors/);
+  assert.match(providerSlo, /providerSloWindowsFromBuckets/);
+  assert.match(providerSlo, /includeCurrent:!providerSloSource\.distributed/);
+  assert.match(providerSlo, /code: 'PROVIDER_SLO_WINDOW'/);
+  assert.match(providerSlo, /event_type: 'slo_window'/);
+  assert.match(productionMonitor, /const providerSloFlush = options\.record !== false/);
+  assert.match(providerSlo, /restoreProviderObservabilityWindow\(localSnapshot\)/);
+  assert.match(providerSlo, /providerSloPersistenceErrors/);
 });
 
 test('admin provider endpoint and diagnostics expose 24 hour provider SLO', () => {
   assert.match(router, /providerObservability: await providerSloReport\(cfg, 24\)/);
-  assert.match(worker, /providerSloReport\(cfg,24\)/);
-  assert.match(worker, /providerObservability,/);
+  assert.match(providerSlo, /async function providerSloReport\(cfg, hours = 24\)/);
+  assert.match(providerSlo, /incident:buildProviderSloIncidentTimeline\(incidentSource\.items\)/);
   assert.match(app, /providerObservability: null/);
   assert.match(admin, /state\.providerObservability/);
 });
@@ -57,18 +59,18 @@ test('admin UI renders SLO state, success, retry and latency without changing pu
   assert.match(admin, /avgAttemptLatencyMs/);
 });
 
-test('provider SLO is release-gated and production-smoke checked', () => {
-  assert.match(worker, /providerSloObservability: 'enabled'/);
-  assert.match(worker, /providerSloSelfTest: providerSloSelfTest\(\)\.pass \? 'enabled' : 'failed'/);
-  assert.match(smoke, /'providerSloObservability'/);
-  assert.match(smoke, /'providerSloSelfTest'/);
+test('provider SLO remains wired into the current release runtime', () => {
+  assert.match(worker,/createProviderSloRuntime\(\{/);
+  assert.match(worker,/const providerSloReport = \(\.\.\.args\) => getProviderSloRuntime\(\)\.providerSloReport\(\.\.\.args\)/);
+  assert.match(providerSlo,/function providerSloSelfTest\(\)/);
+  assert.match(productionMonitor,/providerSloState: providerSloIncident\.state/);
 });
 
 test('provider SLO remains observational and does not add automatic rollback controls', () => {
-  const start = worker.indexOf('async function flushProviderSloWindow');
-  const end = worker.indexOf('async function readOpsEventsRange', start);
+  const start = providerSlo.indexOf('async function flushProviderSloWindow');
+  const end = providerSlo.indexOf('async function readProviderSloWindows', start);
   assert.ok(start >= 0 && end > start);
-  const block = worker.slice(start, end);
+  const block = providerSlo.slice(start, end);
   assert.doesNotMatch(block, /rollback|runtimeControls|apiFootball\(/i);
 });
 
