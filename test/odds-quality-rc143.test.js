@@ -31,8 +31,10 @@ test('RC143 accepts a trusted internally consistent 1X2 market', () => {
   assert.ok(Math.abs(safe.probabilities.home+safe.probabilities.draw+safe.probabilities.away-100)<=0.2);
 });
 
-test('RC143 rejects malformed, out-of-range and economically impossible odds triples', () => {
+test('RC143 rejects malformed, coercible, out-of-range and economically impossible odds triples', () => {
   assert.equal(inspectDecimalOdd(true).reason,'invalid_type');
+  assert.equal(inspectDecimalOdd([2]).reason,'invalid_type');
+  assert.equal(inspectDecimalOdd({toString:()=> '2'}).reason,'invalid_type');
   assert.equal(inspectDecimalOdd('abc').reason,'invalid_format');
   assert.equal(inspectDecimalOdd(1).reason,'out_of_range');
   const market={odds:{home:100,draw:100,away:100},sources:2,provider:'api-football'};
@@ -45,6 +47,8 @@ test('RC143 rejects malformed, out-of-range and economically impossible odds tri
 
 test('RC143 exported probability derivation rejects coercible or impossible odds', () => {
   assert.equal(probabilitiesFromDecimalOdds({home:true,draw:3.5,away:4}),null);
+  assert.equal(probabilitiesFromDecimalOdds({home:[2],draw:3.5,away:4}),null);
+  assert.equal(probabilitiesFromDecimalOdds({home:{toString:()=> '2'},draw:3.5,away:4}),null);
   assert.equal(probabilitiesFromDecimalOdds({home:100,draw:100,away:100}),null);
   const probabilities=probabilitiesFromDecimalOdds({home:'2.0',draw:'3.5',away:'4'});
   assert.ok(probabilities);
@@ -78,6 +82,24 @@ test('RC143 fails closed for stale/unverified odds and provider provenance misma
   const annotated=annotateOddsReliability(trustedMeta,mismatch);
   assert.equal(annotated.available,false);
   assert.equal(annotated.confidenceBearing,false);
+});
+
+test('RC143 rejects coercible freshness/provenance states instead of trusting stringified metadata', () => {
+  const market={odds:{home:2,draw:3.5,away:4},sources:2,provider:'api-football'};
+
+  const arrayFreshness=assessOddsMarketQuality(market,{
+    oddsMeta:{...trustedMeta,freshnessState:['fresh']},
+  });
+  assert.equal(arrayFreshness.sourceTrusted,false);
+  assert.equal(arrayFreshness.confidenceBearing,false);
+  assert.equal(arrayFreshness.state,'source_untrusted');
+
+  const objectProvenance=assessOddsMarketQuality(market,{
+    oddsMeta:{...trustedMeta,provenanceState:{toString:()=> 'verified'}},
+  });
+  assert.equal(objectProvenance.sourceTrusted,false);
+  assert.equal(objectProvenance.confidenceBearing,false);
+  assert.equal(objectProvenance.state,'source_untrusted');
 });
 
 test('RC143 rejects markets without a positive bounded source count', () => {
