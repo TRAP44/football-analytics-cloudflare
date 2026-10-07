@@ -1,3 +1,81 @@
+const LAUNCH_FUNNEL_STAGE_DEFINITIONS=Object.freeze([
+  Object.freeze({key:'entry',label:'Вход',events:Object.freeze(['bot_start','miniapp_open'])}),
+  Object.freeze({key:'search',label:'Поиск',events:Object.freeze(['search'])}),
+  Object.freeze({key:'match_open',label:'Карточка матча',events:Object.freeze(['match_open'])}),
+  Object.freeze({key:'quick_ai',label:'AI в Telegram',events:Object.freeze(['quick_ai'])}),
+  Object.freeze({key:'full_ai',label:'Полный AI-разбор',events:Object.freeze(['full_ai'])}),
+]);
+
+function launchFunnelUserId(value) {
+  if (typeof value==='number') {
+    return Number.isSafeInteger(value) && value>0 ? value : 0;
+  }
+  if (typeof value!=='string') return 0;
+  const raw=value.trim();
+  if (!/^\d+$/.test(raw)) return 0;
+  const parsed=Number(raw);
+  return Number.isSafeInteger(parsed) && parsed>0 ? parsed : 0;
+}
+
+function launchFunnelInstant(value) {
+  if (typeof value!=='string' || !value.trim()) return null;
+  const parsed=Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function buildOrderedLaunchFunnel(rowsInput=[]) {
+  const rows=Array.isArray(rowsInput) ? rowsInput : [];
+  const stageByEvent=new Map();
+  LAUNCH_FUNNEL_STAGE_DEFINITIONS.forEach((stage,index)=>{
+    stage.events.forEach(eventName=>stageByEvent.set(eventName,index));
+  });
+
+  const timelines=new Map();
+  for (const row of rows) {
+    if (!row || typeof row!=='object' || Array.isArray(row)) continue;
+    const userId=launchFunnelUserId(row.telegram_id);
+    const stageIndex=stageByEvent.get(String(row.event_name || ''));
+    const at=launchFunnelInstant(row.created_at);
+    if (!userId || stageIndex===undefined || at===null) continue;
+
+    let perStage=timelines.get(userId);
+    if (!perStage) {
+      perStage=LAUNCH_FUNNEL_STAGE_DEFINITIONS.map(()=>[]);
+      timelines.set(userId,perStage);
+    }
+    perStage[stageIndex].push(at);
+  }
+
+  const stageUsers=LAUNCH_FUNNEL_STAGE_DEFINITIONS.map(()=>new Set());
+  for (const [userId,perStage] of timelines) {
+    let previousAt=Number.NEGATIVE_INFINITY;
+    for (let index=0; index<perStage.length; index+=1) {
+      const candidates=perStage[index].sort((a,b)=>a-b);
+      const nextAt=candidates.find(value=>value>=previousAt);
+      if (nextAt===undefined) break;
+      stageUsers[index].add(userId);
+      previousAt=nextAt;
+    }
+  }
+
+  const entryUsers=stageUsers[0].size;
+  return LAUNCH_FUNNEL_STAGE_DEFINITIONS.map((stage,index)=>{
+    const users=stageUsers[index].size;
+    const previousUsers=index===0 ? entryUsers : stageUsers[index-1].size;
+    return {
+      key:stage.key,
+      label:stage.label,
+      users,
+      fromEntryPct:entryUsers ? Math.round((users/entryUsers)*1000)/10 : 0,
+      fromPreviousPct:index===0
+        ? 100
+        : previousUsers
+          ? Math.round((users/previousUsers)*1000)/10
+          : 0,
+    };
+  });
+}
+
 export function createGrowthAnalyticsRuntime(deps = {}) {
   const {
     NEWS_IMPACT_ACTION_WINDOW_MINUTES,
@@ -149,20 +227,7 @@ export function createGrowthAnalyticsRuntime(deps = {}) {
       previousWindowRows=[];
     }
     const setFor=(names)=>new Set(rows.filter(x=>names.includes(String(x.event_name || ''))).map(x=>Number(x.telegram_id || 0)).filter(Boolean));
-    const entry=new Set([...setFor(['bot_start']),...setFor(['miniapp_open'])]);
-    const stages=[
-      ['entry','Вход',entry],
-      ['search','Поиск',setFor(['search'])],
-      ['match_open','Карточка матча',setFor(['match_open'])],
-      ['quick_ai','AI в Telegram',setFor(['quick_ai'])],
-      ['full_ai','Полный AI-разбор',setFor(['full_ai'])],
-    ];
-    const base=Math.max(1,entry.size);
-    const funnel=stages.map(([key,label,set],index)=>({
-      key,label,users:set.size,
-      fromEntryPct:entry.size ? Math.round((set.size/base)*1000)/10 : 0,
-      fromPreviousPct:index===0 ? 100 : stages[index-1][2].size ? Math.round((set.size/stages[index-1][2].size)*1000)/10 : 0,
-    }));
+    const funnel=buildOrderedLaunchFunnel(rows);
     const campaignMap=new Map();
     for (const row of rows) {
       const source=cleanLaunchPart(row.source || 'telegram',32) || 'telegram';
@@ -516,6 +581,7 @@ export function createGrowthAnalyticsRuntime(deps = {}) {
       truncated,
       uniqueUsers:new Set(rows.map(x=>Number(x.telegram_id || 0)).filter(Boolean)).size,
       funnel,
+      funnelMode:'ordered_unique_users',
       bottleneck,
       handoff:{users:handoffUsers.size,fullAiUsers:handoffToFull.size,conversionPct:handoffUsers.size?Math.round((handoffToFull.size/handoffUsers.size)*1000)/10:0},
       rechecks:{total:recheckRows.length,free:recheckFree,charged:Math.max(0,recheckRows.length-recheckFree),material:recheckMaterial,stable:recheckStable},
