@@ -137,6 +137,24 @@ test('Favorite Player persistence surfaces database failures instead of pretendi
   );
 });
 
+test('Favorite Player reads reject malformed stored rows instead of hiding corruption', async () => {
+  const supabase = backendRuntime({
+    hasSupabase: () => true,
+    supaSelectMany: async () => [null],
+  });
+  await assert.rejects(
+    () => supabase.service.getFavoritePlayers(42, { supabaseUrl:'https://db.test' }),
+    /Favorite players: invalid row state/,
+  );
+
+  const memory = backendRuntime();
+  memory.memory.favoritePlayers.set(42, { unexpected:true });
+  await assert.rejects(
+    () => memory.service.getFavoritePlayers(42, {}),
+    /Favorite players: invalid collection state/,
+  );
+});
+
 test('Player Follow frontend performs optimistic update and rolls back list/profile on failure', async () => {
   let rejectRequest;
   const state = {
