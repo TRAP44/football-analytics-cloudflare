@@ -125,7 +125,7 @@ test('recheck response and analytics expose bounded delta metadata',()=>{
 
 test('Telegram and Mini App explain what changed after recheck',()=>{
   assert.match(telegram,/Что изменилось после перепроверки/);
-  assert.match(telegram,/\(delta\.items \|\| \[\]\)\.slice\(0,3\)/);
+  assert.match(telegram,/rowsOrEmpty\(delta\.items,3\)\.map/);
   assert.match(app,/class="analysis-delta/);
   assert.match(app,/Прогноз стабилен/);
   assert.match(app,/item\.before && item\.after/);
