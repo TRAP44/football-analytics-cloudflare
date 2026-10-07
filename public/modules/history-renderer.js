@@ -163,10 +163,19 @@ export function createHistoryRenderer(options={}) {
   }
 
   function escapedUrl(value) {
-    const url=safeCall(safeUrl,value);
-    return typeof url==='string' && url
-      ? html(url)
-      : '';
+    const resolved=safeCall(safeUrl,value);
+    if (typeof resolved!=='string' || !resolved) return '';
+    try {
+      const url=new URL(resolved,'https://history.invalid');
+      if (
+        !['http:','https:'].includes(url.protocol)
+        || url.username
+        || url.password
+      ) return '';
+      return html(url.toString());
+    } catch {
+      return '';
+    }
   }
 
   function formattedDate(value) {
