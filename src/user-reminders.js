@@ -106,7 +106,15 @@ export function createUserRemindersService({
   }
 
   function reminderList(value) {
-    return Array.isArray(value) ? value.filter(item=>plainObject(item)) : [];
+    if (value === null || value === undefined) return [];
+    if (!Array.isArray(value)) throw new Error('Reminders: invalid collection state.');
+    const rows=[];
+    for (const item of value) {
+      const row=plainObject(item);
+      if (!row) throw new Error('Reminders: invalid row state.');
+      rows.push(row);
+    }
+    return rows;
   }
 
   function storedFixtureId(row) {
@@ -225,7 +233,7 @@ export function createUserRemindersService({
         {limit:PERSONAL_WRITE_LIMITS.reminders,order:'fixture_date.asc'},
       );
       if (!Array.isArray(rows)) throw new Error('Supabase reminders: invalid response payload.');
-      return rows.filter(item=>plainObject(item));
+      return reminderList(rows);
     }
 
     const now=Date.now();
