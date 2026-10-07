@@ -5407,7 +5407,7 @@ function formCard(title, form) {
 }
 
 function modelWeightsText(weights = {}) {
-  const names = { market: 'рынок', apiPrediction: 'прогноз источника', recentForm: 'форма', h2h: 'очные встречи' };
+  const names = { market: 'рынок', apiPrediction: 'прогноз источника', recentForm: 'форма', seasonStrength: 'сила сезона', h2h: 'очные встречи' };
   const parts = Object.entries(weights).filter(([,v]) => Number(v) > 0).map(([k,v]) => `${names[k] || k} ${Number(v).toFixed(0)}%`);
   return parts.length ? parts.join(' · ') : 'Недостаточно сигналов';
 }
