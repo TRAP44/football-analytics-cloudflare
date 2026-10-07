@@ -2,24 +2,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const worker=fs.readFileSync('src/worker.js','utf8');
+const releaseApi=fs.readFileSync('src/release-monitor-api-runtime.js','utf8');
 const router=fs.readFileSync('src/router.js','utf8');
 const releaseMonitor=fs.readFileSync('public/modules/admin-release-monitor.js','utf8');
 
 test('regression response endpoint is admin-only at the router boundary',()=>{
-  assert.match(router,/url\.pathname === '\/api\/post-deploy-regression-response'/);
-  const start=router.indexOf("if (url.pathname === '/api/post-deploy-regression-response')");
+  assert.match(router,/pathname === '\/api\/post-deploy-regression-response'/);
+  const start=router.indexOf("if (pathname === '/api/post-deploy-regression-response')");
   const block=router.slice(start,start+260);
-  assert.match(block,/isAdminUser\(user, cfg\)/);
+  assert.match(block,/adminAllowed\(\)/);
   assert.match(block,/adminForbidden\(\)/);
   assert.match(block,/apiPostDeployRegressionResponse/);
 });
 
 test('response writes require persistent ops history and exact active deployment identity',()=>{
-  const start=worker.indexOf('async function apiPostDeployRegressionResponse');
-  const end=worker.indexOf('async function apiReleaseMonitor',start);
+  const start=releaseApi.indexOf('async function apiPostDeployRegressionResponse');
+  const end=releaseApi.indexOf('async function apiReleaseMonitor',start);
   assert.ok(start>=0 && end>start);
-  const block=worker.slice(start,end);
+  const block=releaseApi.slice(start,end);
   assert.match(block,/currentReleaseIdentity\(cfg\)/);
   assert.match(block,/body\?\.deploySha/);
   assert.match(block,/readOpsEventsRange/);
@@ -31,9 +31,9 @@ test('response writes require persistent ops history and exact active deployment
 });
 
 test('release monitor exposes deployment-scoped lifecycle alert and response audit timeline',()=>{
-  const start=worker.indexOf('async function apiReleaseMonitor');
-  const end=worker.indexOf('async function apiDiagnostics',start);
-  const block=worker.slice(start,end);
+  const start=releaseApi.indexOf('async function apiReleaseMonitor');
+  const end=releaseApi.indexOf('  return Object.freeze({',start);
+  const block=releaseApi.slice(start,end);
   assert.match(block,/summarizePostDeployRegressionResponse/);
   assert.match(block,/release_regression_response/);
   assert.match(block,/postDeployRegressionTimeline/);
