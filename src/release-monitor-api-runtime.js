@@ -27,13 +27,23 @@ export function createReleaseMonitorApiRuntime(deps) {
     telemetrySnapshot,
   } = deps;
 
+  function boundedPositiveInteger(value, fallback, max) {
+    let number=null;
+    if (typeof value === 'number') number=value;
+    else if (typeof value === 'string' && /^\d+$/.test(value.trim())) number=Number(value.trim());
+    const safeFallback=Number.isSafeInteger(fallback) && fallback > 0 ? fallback : 1;
+    if (!Number.isSafeInteger(number) || number <= 0) return Math.min(max,safeFallback);
+    return Math.min(max,number);
+  }
+
   async function readOpsEventsRange(cfg, startIso, endIso, limit = 600) {
     const startMs = Date.parse(startIso || '');
     const endMs = Date.parse(endIso || '');
+    const cap=boundedPositiveInteger(limit,600,1000);
     const fallbackItems = memory.opsEvents.filter(item => {
       const t = Date.parse(item?.created_at || '');
       return Number.isFinite(t) && t >= startMs && t < endMs;
-    }).slice(0, limit);
+    }).slice(0, cap);
     const fallback = () => ({ persistent: false, migrationReady: false, items: fallbackItems });
     if (!hasSupabase(cfg)) return fallback();
     try {
@@ -42,10 +52,11 @@ export function createReleaseMonitorApiRuntime(deps) {
       url.searchParams.set('created_at', `gte.${startIso}`);
       url.searchParams.append('created_at', `lt.${endIso}`);
       url.searchParams.set('order', 'created_at.desc');
-      url.searchParams.set('limit', String(Math.max(1, Math.min(1000, Number(limit || 600)))));
+      url.searchParams.set('limit', String(cap));
       const r = await fetchWithTimeout(url, { headers: supaHeaders(cfg) }, 7000, 'Supabase release monitor');
       if (!r.ok) return fallback();
-      const items = await r.json().catch(() => []);
+      const items = await r.json();
+      if (!Array.isArray(items)) return fallback();
       return { persistent: true, migrationReady: true, items };
     } catch {
       return fallback();
@@ -55,7 +66,7 @@ export function createReleaseMonitorApiRuntime(deps) {
   async function readDailyDigestOpsEvents(cfg, startIso, endIso, limit = 1000) {
     const startMs=Date.parse(startIso || '');
     const endMs=Date.parse(endIso || '');
-    const cap=Math.max(1,Math.min(1000,Number(limit || 1000)));
+    const cap=boundedPositiveInteger(limit,1000,1000);
     const fallbackItems=memory.opsEvents.filter(item => {
       const t=Date.parse(item?.created_at || '');
       return Number.isFinite(t)
@@ -82,12 +93,13 @@ export function createReleaseMonitorApiRuntime(deps) {
       url.searchParams.set('limit',String(cap));
       const r=await fetchWithTimeout(url,{headers:supaHeaders(cfg)},7000,'Supabase daily digest reliability');
       if (!r.ok) return fallback();
-      const items=await r.json().catch(()=>[]);
+      const items=await r.json();
+      if (!Array.isArray(items)) return fallback();
       return {
         persistent:true,
         migrationReady:true,
-        items:Array.isArray(items)?items:[],
-        truncated:Array.isArray(items) && items.length>=cap,
+        items,
+        truncated:items.length>=cap,
       };
     } catch {
       return fallback();
@@ -98,7 +110,7 @@ export function createReleaseMonitorApiRuntime(deps) {
   async function readDailyDigestSloEvents(cfg, startIso, endIso, limit = 100) {
     const startMs=Date.parse(startIso || '');
     const endMs=Date.parse(endIso || '');
-    const cap=Math.max(1,Math.min(500,Number(limit || 100)));
+    const cap=boundedPositiveInteger(limit,100,500);
     const fallbackItems=memory.opsEvents.filter(item => {
       const t=Date.parse(item?.created_at || '');
       return Number.isFinite(t)
@@ -120,8 +132,9 @@ export function createReleaseMonitorApiRuntime(deps) {
       url.searchParams.set('limit',String(cap));
       const r=await fetchWithTimeout(url,{headers:supaHeaders(cfg)},7000,'Supabase daily digest SLO');
       if (!r.ok) return fallback();
-      const items=await r.json().catch(()=>[]);
-      return {persistent:true,items:Array.isArray(items)?items:[]};
+      const items=await r.json();
+      if (!Array.isArray(items)) return fallback();
+      return {persistent:true,items};
     } catch {
       return fallback();
     }
@@ -171,8 +184,9 @@ export function createReleaseMonitorApiRuntime(deps) {
   
   async function apiReleaseMonitor(request, cfg) {
     const url = new URL(request.url);
-    const hours = Math.max(1, Math.min(168, Number(url.searchParams.get('hours') || 24)));
-    const digestDays = Number(url.searchParams.get('digestDays') || 7) >= 30 ? 30 : 7;
+    const hours=boundedPositiveInteger(url.searchParams.get('hours') || 24,24,168);
+    const requestedDigestDays=boundedPositiveInteger(url.searchParams.get('digestDays') || 7,7,30);
+    const digestDays=requestedDigestDays>=30 ? 30 : 7;
     const force = url.searchParams.get('refresh') === '1';
     const cacheKey = `h${hours}:d${digestDays}`;
     const cached = memory.releaseMonitor?.[cacheKey];
