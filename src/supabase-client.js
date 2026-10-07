@@ -210,18 +210,32 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs 
   async function supaSelectPaged(cfg, table, params = {}, { pageSize = 500, maxRows = 5000, order = '' } = {}) {
     const rows = [];
     const size = boundedInteger(pageSize, 500, 1, 1000);
-    const requestedCap = boundedInteger(maxRows, 5000, 1, 10000);
-    const cap = Math.max(size, requestedCap);
+    const cap = boundedInteger(maxRows, 5000, 1, 10000);
+
     for (let offset = 0; offset < cap; offset += size) {
       const requested = Math.min(size, cap - offset);
+      const finalPage = offset + requested >= cap;
+      const inlineProbe = finalPage && requested < 1000;
+      const fetchLimit = inlineProbe ? requested + 1 : requested;
       const page = await supaSelectMany(cfg, table, { ...(plainObject(params) || {}), offset:String(offset) }, {
-        limit: requested,
+        limit: fetchLimit,
         order,
       });
+
       rows.push(...page.slice(0, requested));
       if (page.length < requested) return { rows, truncated:false };
+
+      if (finalPage) {
+        if (inlineProbe) return { rows:rows.slice(0, cap), truncated:page.length > requested };
+        const probe = await supaSelectMany(cfg, table, { ...(plainObject(params) || {}), offset:String(cap) }, {
+          limit:1,
+          order,
+        });
+        return { rows:rows.slice(0, cap), truncated:probe.length > 0 };
+      }
     }
-    return { rows:rows.slice(0, cap), truncated:rows.length >= cap };
+
+    return { rows:rows.slice(0, cap), truncated:false };
   }
 
   async function supaUpsert(cfg, table, rows, onConflict) {
