@@ -149,6 +149,14 @@ export function createMatchCenterRuntime(deps) {
       : null;
   }
 
+  function safeRead(value,key) {
+    try {
+      return value?.[key];
+    } catch {
+      return undefined;
+    }
+  }
+
   function safeText(value,max=240) {
     if (!['string','number','bigint'].includes(typeof value)) return '';
     try {
