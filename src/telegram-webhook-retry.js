@@ -202,8 +202,8 @@ export function classifyTelegramWebhookFailure(error, cfg) {
   const activeValue=state ? safeRead(state,'active') : false;
   const stateValid=!statePresent
     || (
-      Boolean(ledger || fallbackAttempt?.valid)
-      && typeof activeValue === 'boolean'
+      Boolean(ledger)
+      && activeValue === true
       && effectSnapshot.valid
       && mutationSnapshot.valid
     );
