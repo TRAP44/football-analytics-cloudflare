@@ -541,25 +541,54 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     };
   }
   
+  function newsImpactKnownCode(value, set, fallback = '') {
+    if (typeof value!=='string') return fallback;
+    const code=value.trim().toLowerCase();
+    return set?.has?.(code) ? code : fallback;
+  }
+
+  function newsImpactHttpStatus(value) {
+    const status=newsImpactFiniteNumber(value);
+    return status!==null && Number.isSafeInteger(status) && status>=100 && status<=599 ? status : 0;
+  }
+
   function newsImpactFailureCode(error = null, fallback = 'server_error') {
-    const status=Number(error?.status || error?.statusCode || error?.payload?.status || 0);
-    const code=String(error?.code || error?.payload?.code || '').toLowerCase();
-    const message=String(error?.message || error?.payload?.error || '').toLowerCase();
+    const payload=error?.payload && typeof error.payload==='object' && !Array.isArray(error.payload)
+      ? error.payload
+      : null;
+    const status=newsImpactHttpStatus(error?.status)
+      || newsImpactHttpStatus(error?.statusCode)
+      || newsImpactHttpStatus(payload?.status);
+    const code=typeof error?.code==='string'
+      ? error.code.toLowerCase()
+      : typeof payload?.code==='string'
+        ? payload.code.toLowerCase()
+        : '';
+    const message=typeof error?.message==='string'
+      ? error.message.toLowerCase()
+      : typeof payload?.error==='string'
+        ? payload.error.toLowerCase()
+        : '';
     const text=`${code} ${message}`;
-    if (isFootballRateLimitError(error) || /football.*(?:rate|limit)|provider.*(?:rate|limit)/.test(text)) return 'provider_rate_limit';
+    let providerRateLimited=false;
+    try {
+      providerRateLimited=typeof isFootballRateLimitError==='function' && isFootballRateLimitError(error)===true;
+    } catch {}
+    if (providerRateLimited || /football.*(?:rate|limit)|provider.*(?:rate|limit)/.test(text)) return 'provider_rate_limit';
     if (/provider|api-football|upstream/.test(text) && /unavailable|failed|error|503|502/.test(text)) return 'provider_unavailable';
     if (/analysis_warming|warming|already.*calculat|уже рассчитывается/.test(text)) return 'analysis_warming';
     if (status===408 || /timeout|timed out|тайм-аут/.test(text)) return 'timeout';
     if (/match_data_invalid|data_invalid|противоречив/.test(text) || status===409) return 'data_invalid';
     if (/invalid.*fixture|некорректн.*матч/.test(text)) return 'invalid_fixture';
     if (/match.*not.*found|матч не найден|fixture.*not.*found/.test(text) || status===404) return 'match_missing';
-    if (status===429) return 'quota_exhausted';
-    if (/telegram/.test(text) || ([400,403].includes(status) && fallback==='telegram_delivery')) return 'telegram_delivery';
-    return NEWS_IMPACT_FAILURE_CODES.has(String(fallback || '')) ? String(fallback) : 'server_error';
+    const safeFallback=newsImpactKnownCode(fallback,NEWS_IMPACT_FAILURE_CODES,'server_error');
+    if (status===429) return safeFallback==='telegram_delivery' ? 'telegram_delivery' : 'quota_exhausted';
+    if (/telegram/.test(text) || ([400,403].includes(status) && safeFallback==='telegram_delivery')) return 'telegram_delivery';
+    return safeFallback;
   }
   
   function newsImpactRecoveryForFailure(reason = 'server_error', action = '') {
-    const code=NEWS_IMPACT_FAILURE_CODES.has(String(reason || '')) ? String(reason) : 'server_error';
+    const code=newsImpactKnownCode(reason,NEWS_IMPACT_FAILURE_CODES,'server_error');
     const safeAction=cleanNewsImpactActionCode(action);
     if (code==='quota_exhausted') return {code:'wait_quota_reset',action:'wait',message:'Дневной лимит AI исчерпан. Повторите после обновления лимита.'};
     if (code==='provider_rate_limit') return {code:'retry_later',action:'retry',message:'Источник футбольных данных временно ограничил запросы. Повторите позже.'};
@@ -584,21 +613,23 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     strategyReason='',
     status=0,
   }={}) {
+    const safeUserId=newsImpactPositiveId(userId);
+    const safeFixtureId=newsImpactPositiveId(fixtureId);
     const safeDecision=cleanNewsImpactDecisionCode(decision);
     const safeAction=cleanNewsImpactActionCode(action);
-    const safeReason=NEWS_IMPACT_FAILURE_CODES.has(String(reason || '')) ? String(reason) : 'server_error';
+    const safeReason=newsImpactKnownCode(reason,NEWS_IMPACT_FAILURE_CODES,'server_error');
     const recommended=newsImpactRecoveryForFailure(safeReason,safeAction);
-    const safeRecovery=NEWS_IMPACT_RECOVERY_CODES.has(String(recovery || '')) ? String(recovery) : recommended.code;
-    const safeStrategy=String(strategy || '')==='adaptive' ? 'adaptive' : 'fixed';
-    const safeStrategyReason=NEWS_IMPACT_RECOVERY_STRATEGY_GUARD_CODES.has(String(strategyReason || ''))
-      ? String(strategyReason)
-      : '';
-    if (!safeDecision || !safeAction) return false;
+    const safeRecovery=newsImpactKnownCode(recovery,NEWS_IMPACT_RECOVERY_CODES,recommended.code);
+    const safeStrategy=strategy==='adaptive' ? 'adaptive' : 'fixed';
+    const safeStrategyReason=newsImpactKnownCode(strategyReason,NEWS_IMPACT_RECOVERY_STRATEGY_GUARD_CODES,'');
+    const safeChannel=typeof channel==='string' ? channel.trim().slice(0,24) : '';
+    const safeStatus=newsImpactHttpStatus(status);
+    if (!safeUserId || !safeFixtureId || !safeDecision || !safeAction) return false;
     return await recordGrowthEvent(cfg,{
-      userId,
+      userId:safeUserId,
       eventName:'news_impact_outcome_failure',
-      channel,
-      fixtureId,
+      channel:safeChannel || 'telegram',
+      fixtureId:safeFixtureId,
       metadata:{
         decision:safeDecision,
         action:safeAction,
@@ -606,23 +637,29 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
         recovery:safeRecovery,
         strategy:safeStrategy,
         ...(safeStrategyReason ? {strategy_guard:safeStrategyReason} : {}),
-        ...(Number(status || 0)>0 ? {status:Number(status)} : {}),
+        ...(safeStatus ? {status:safeStatus} : {}),
       },
     });
   }
   
   function buildNewsImpactFailureDiagnostics(rows = []) {
     const byReason=new Map();
-    for (const row of rows || []) {
-      const meta=row?.metadata && typeof row.metadata==='object' ? row.metadata : {};
-      const reason=NEWS_IMPACT_FAILURE_CODES.has(String(meta.reason || '')) ? String(meta.reason) : 'server_error';
+    const safeRows=Array.isArray(rows) ? rows : [];
+    for (const row of safeRows) {
+      if (!row || typeof row!=='object' || Array.isArray(row)) continue;
+      const meta=row.metadata && typeof row.metadata==='object' && !Array.isArray(row.metadata) ? row.metadata : {};
+      const reason=newsImpactKnownCode(meta.reason,NEWS_IMPACT_FAILURE_CODES,'server_error');
       const action=cleanNewsImpactActionCode(meta.action);
-      const recovery=NEWS_IMPACT_RECOVERY_CODES.has(String(meta.recovery || '')) ? String(meta.recovery) : newsImpactRecoveryForFailure(reason,action).code;
+      const recovery=newsImpactKnownCode(
+        meta.recovery,
+        NEWS_IMPACT_RECOVERY_CODES,
+        newsImpactRecoveryForFailure(reason,action).code,
+      );
       const bucket=byReason.get(reason) || {
-        reason,label:NEWS_IMPACT_FAILURE_LABELS[reason] || reason,events:0,users:new Set(),actions:{},recoveries:{},
+        reason,label:NEWS_IMPACT_FAILURE_LABELS?.[reason] || reason,events:0,users:new Set(),actions:{},recoveries:{},
       };
       bucket.events+=1;
-      const uid=Number(row.telegram_id || 0);
+      const uid=newsImpactPositiveId(row.telegram_id);
       if (uid) bucket.users.add(uid);
       if (action) bucket.actions[action]=(bucket.actions[action] || 0)+1;
       if (recovery) bucket.recoveries[recovery]=(bucket.recoveries[recovery] || 0)+1;
@@ -630,8 +667,8 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     }
     return [...byReason.values()].map(x=>({
       reason:x.reason,label:x.label,events:x.events,users:x.users.size,
-      actions:Object.entries(x.actions).map(([action,count])=>({action,label:NEWS_IMPACT_ACTION_LABELS[action] || action,count})).sort((a,b)=>b.count-a.count || a.action.localeCompare(b.action)),
-      recoveries:Object.entries(x.recoveries).map(([recovery,count])=>({recovery,label:NEWS_IMPACT_RECOVERY_LABELS[recovery] || recovery,count})).sort((a,b)=>b.count-a.count || a.recovery.localeCompare(b.recovery)),
+      actions:Object.entries(x.actions).map(([action,count])=>({action,label:NEWS_IMPACT_ACTION_LABELS?.[action] || action,count})).sort((a,b)=>b.count-a.count || a.action.localeCompare(b.action)),
+      recoveries:Object.entries(x.recoveries).map(([recovery,count])=>({recovery,label:NEWS_IMPACT_RECOVERY_LABELS?.[recovery] || recovery,count})).sort((a,b)=>b.count-a.count || a.recovery.localeCompare(b.recovery)),
     })).sort((a,b)=>b.events-a.events || a.reason.localeCompare(b.reason));
   }
   
@@ -640,6 +677,7 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       {telegram_id:1,metadata:{decision:'material',action:'full_ai',reason:'provider_rate_limit',recovery:'retry_later'}},
       {telegram_id:2,metadata:{decision:'material',action:'full_ai',reason:'provider_rate_limit',recovery:'retry_later'}},
       {telegram_id:1,metadata:{decision:'stable',action:'share',reason:'telegram_delivery',recovery:'retry'}},
+      {telegram_id:true,metadata:{decision:'stable',action:'share',reason:'telegram_delivery',recovery:'retry'}},
     ];
     const diagnostics=buildNewsImpactFailureDiagnostics(rows);
     const provider=diagnostics.find(x=>x.reason==='provider_rate_limit');
@@ -649,10 +687,14 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       pass:provider?.events===2
         && provider?.users===2
         && provider?.actions?.[0]?.action==='full_ai'
-        && telegram?.events===1
+        && telegram?.events===2
+        && telegram?.users===1
         && recovery?.code==='retry_soon'
-        && newsImpactFailureCode({status:429,code:'ANALYSIS_WARMING'},'server_error')==='analysis_warming',
-      cases:6,
+        && newsImpactFailureCode({status:429,code:'ANALYSIS_WARMING'},'server_error')==='analysis_warming'
+        && newsImpactFailureCode({status:429},'telegram_delivery')==='telegram_delivery'
+        && newsImpactFailureCode({status:true},'server_error')==='server_error'
+        && buildNewsImpactFailureDiagnostics({broken:true}).length===0,
+      cases:10,
     };
   }
   
