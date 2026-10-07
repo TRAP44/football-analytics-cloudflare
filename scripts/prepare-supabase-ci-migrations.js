@@ -1,85 +1,54 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-export const FRESH_BASELINE = 'supabase/baseline/supabase_baseline_v6_19.sql';
+import {
+  loadSupabaseMigrationContract,
+  validateSupabaseMigrationContract,
+} from './verify-supabase-contract.js';
 
+const DEFAULT_REPO_ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+);
+const DEFAULT_CONTRACT = loadSupabaseMigrationContract(DEFAULT_REPO_ROOT);
+
+export const FRESH_BASELINE = DEFAULT_CONTRACT.baselinePath;
 export const POST_BASELINE_MIGRATIONS = Object.freeze([
-  'supabase/migrations/supabase_migration_v6_20.sql',
-  'supabase/migrations/supabase_migration_v6_21.sql',
-  'supabase/migrations/supabase_migration_v6_21_1.sql',
-  'supabase/migrations/supabase_migration_v6_21_2.sql',
-  'supabase/migrations/supabase_migration_v6_21_3.sql',
-  'supabase/migrations/supabase_migration_v6_22.sql',
-  'supabase/migrations/supabase_migration_v6_23.sql',
-  'supabase/migrations/supabase_migration_v6_24.sql',
-  'supabase/migrations/supabase_migration_v6_25.sql',
-  'supabase/migrations/supabase_migration_v6_25_1.sql',
-  'supabase/migrations/supabase_migration_v6_25_2.sql',
-  'supabase/migrations/supabase_migration_v6_26.sql',
-  'supabase/migrations/supabase_migration_v6_26_1.sql',
-  'supabase/migrations/supabase_migration_v6_26_2.sql',
-  'supabase/migrations/supabase_migration_v6_26_3.sql',
-  'supabase/migrations/supabase_migration_v6_27.sql',
-  'supabase/migrations/supabase_migration_v6_27_1.sql',
-  'supabase/migrations/supabase_migration_v6_27_2.sql',
-  'supabase/migrations/supabase_migration_v6_27_3.sql',
-  'supabase/migrations/supabase_migration_v6_28.sql',
-  'supabase/migrations/supabase_migration_v6_29.sql',
-  'supabase/migrations/supabase_migration_v6_29_1.sql',
-  'supabase/migrations/supabase_migration_v6_29_2.sql',
-  'supabase/migrations/supabase_migration_v6_29_3.sql',
-  'supabase/migrations/supabase_migration_v6_29_4.sql',
-  'supabase/migrations/supabase_migration_v6_29_5.sql',
-  'supabase/migrations/supabase_migration_v6_29_6.sql',
-  'supabase/migrations/supabase_migration_v6_29_7.sql',
-  'supabase/migrations/supabase_migration_v6_29_8.sql',
-  'supabase/migrations/supabase_migration_v6_29_9.sql',
-  'supabase/migrations/supabase_migration_v6_29_10.sql',
-  'supabase/migrations/supabase_migration_v6_29_11.sql',
-  'supabase/migrations/supabase_migration_v6_29_12.sql',
+  ...DEFAULT_CONTRACT.postBaselineMigrations,
 ]);
 
 function timestampForIndex(index) {
   return '2026010100' + String(index).padStart(2, '0') + '00';
 }
 
-function migrationVersion(source) {
-  const name=path.basename(String(source || ''));
-  const match=/^supabase_migration_v(\d+(?:_\d+)*)\.sql$/i.exec(name);
-  if (!match) return null;
-  return match[1].split('_').map(Number);
-}
-
-function compareVersions(a,b) {
-  const length=Math.max(a.length,b.length);
-  for (let i=0;i<length;i+=1) {
-    const left=a[i] || 0;
-    const right=b[i] || 0;
-    if (left !== right) return left-right;
-  }
-  return 0;
-}
-
-export function buildMigrationPlan(mode = 'fresh') {
+export function buildMigrationPlan(mode = 'fresh', repositoryContract = null) {
   if (!['fresh', 'upgrade-base', 'latest-only'].includes(mode)) {
     throw new Error('Unsupported Supabase CI migration mode: ' + mode);
   }
 
-  const latest = POST_BASELINE_MIGRATIONS.at(-1);
+  const baseline = repositoryContract?.baselinePath || FRESH_BASELINE;
+  const postBaseline = repositoryContract?.postBaselineMigrations
+    || POST_BASELINE_MIGRATIONS;
+  const latest = postBaseline.at(-1);
+
+  if (!latest) {
+    throw new Error('Supabase CI migration manifest has no post-baseline migrations.');
+  }
+
   let sources;
   if (mode === 'latest-only') {
     sources = [latest];
   } else {
-    const postBaseline = mode === 'upgrade-base'
-      ? POST_BASELINE_MIGRATIONS.slice(0, -1)
-      : POST_BASELINE_MIGRATIONS;
-    sources = [FRESH_BASELINE, ...postBaseline];
+    const selected = mode === 'upgrade-base'
+      ? postBaseline.slice(0, -1)
+      : postBaseline;
+    sources = [baseline, ...selected];
   }
 
   return sources.map((source, index) => {
     const canonicalIndex = source === latest && mode === 'latest-only'
-      ? POST_BASELINE_MIGRATIONS.length
+      ? postBaseline.length
       : index;
     const version = timestampForIndex(canonicalIndex);
     const baseName = path.basename(source).replace(/\.sql$/i, '');
@@ -92,72 +61,57 @@ export function buildMigrationPlan(mode = 'fresh') {
 }
 
 export function validateMigrationPlan(repoRoot, releaseContract) {
-  if (new Set(POST_BASELINE_MIGRATIONS).size !== POST_BASELINE_MIGRATIONS.length) {
-    throw new Error('POST_BASELINE_MIGRATIONS contains duplicate entries.');
+  const verified = validateSupabaseMigrationContract(repoRoot);
+
+  if (
+    releaseContract.freshInstallBaseline
+    !== verified.releaseContract.freshInstallBaseline
+  ) {
+    throw new Error('Supabase CI release-contract baseline changed during validation.');
   }
-  if (releaseContract.freshInstallBaseline !== FRESH_BASELINE) {
-    throw new Error(
-      'release-contract freshInstallBaseline drift: '
-        + releaseContract.freshInstallBaseline,
-    );
-  }
-  if (releaseContract.latestMigration !== POST_BASELINE_MIGRATIONS.at(-1)) {
-    throw new Error(
-      'release-contract latestMigration drift: ' + releaseContract.latestMigration,
-    );
+  if (releaseContract.latestMigration !== verified.releaseContract.latestMigration) {
+    throw new Error('Supabase CI release-contract latest migration changed during validation.');
   }
 
-  for (const item of buildMigrationPlan('fresh')) {
+  for (const item of buildMigrationPlan('fresh', verified)) {
     const sourcePath = path.join(repoRoot, item.source);
     if (!fs.existsSync(sourcePath)) {
       throw new Error('Missing Supabase CI migration source: ' + item.source);
     }
   }
 
-  const migrationsDir=path.join(repoRoot,'supabase','migrations');
-  const latestVersion=migrationVersion(releaseContract.latestMigration);
-  if (!latestVersion) {
-    throw new Error('release-contract latestMigration has an invalid filename.');
-  }
-  const newerFiles=fs.readdirSync(migrationsDir,{withFileTypes:true})
-    .filter(entry=>entry.isFile() && entry.name.endsWith('.sql'))
-    .map(entry=>({name:entry.name,version:migrationVersion(entry.name)}))
-    .filter(item=>item.version && compareVersions(item.version,latestVersion)>0)
-    .map(item=>item.name)
-    .sort();
-  if (newerFiles.length) {
-    throw new Error(
-      'Supabase migration(s) newer than release-contract latestMigration: '
-        + newerFiles.join(', '),
-    );
-  }
+  return verified;
 }
 
 function nearestExistingAncestor(value) {
-  let current=path.resolve(value);
+  let current = path.resolve(value);
   while (!fs.existsSync(current)) {
-    const parent=path.dirname(current);
-    if (parent===current) break;
-    current=parent;
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
   }
   return current;
 }
 
 function resolvedPathThroughExistingAncestors(value) {
-  const absolute=path.resolve(value);
-  const ancestor=nearestExistingAncestor(absolute);
-  const ancestorReal=fs.realpathSync(ancestor);
-  const remainder=path.relative(ancestor,absolute);
-  return path.resolve(ancestorReal,remainder);
+  const absolute = path.resolve(value);
+  const ancestor = nearestExistingAncestor(absolute);
+  const ancestorReal = fs.realpathSync(ancestor);
+  const remainder = path.relative(ancestor, absolute);
+  return path.resolve(ancestorReal, remainder);
 }
 
-function pathInside(parent,candidate) {
-  const relative=path.relative(parent,candidate);
-  return relative===''
-    || (!relative.startsWith('..'+path.sep) && relative!=='..' && !path.isAbsolute(relative));
+function pathInside(parent, candidate) {
+  const relative = path.relative(parent, candidate);
+  return relative === ''
+    || (
+      !relative.startsWith('..' + path.sep)
+      && relative !== '..'
+      && !path.isAbsolute(relative)
+    );
 }
 
-function validatedStagePaths(repoRoot,targetDir) {
+function validatedStagePaths(repoRoot, targetDir) {
   if (typeof repoRoot !== 'string' || !repoRoot.trim()) {
     throw new TypeError('Supabase CI repoRoot is required.');
   }
@@ -165,28 +119,28 @@ function validatedStagePaths(repoRoot,targetDir) {
     throw new TypeError('Supabase CI targetDir is required.');
   }
 
-  const repo=path.resolve(repoRoot);
-  const target=path.resolve(targetDir);
-  const parsedTarget=path.parse(target);
-  if (target===parsedTarget.root) {
+  const repo = path.resolve(repoRoot);
+  const target = path.resolve(targetDir);
+  const parsedTarget = path.parse(target);
+  if (target === parsedTarget.root) {
     throw new Error('Refusing to stage Supabase migrations into a filesystem root.');
   }
   if (
-    path.basename(target)!=='migrations'
-    || path.basename(path.dirname(target))!=='supabase'
+    path.basename(target) !== 'migrations'
+    || path.basename(path.dirname(target)) !== 'supabase'
   ) {
     throw new Error('Supabase CI targetDir must end with supabase/migrations.');
   }
 
-  const repoReal=fs.realpathSync(repo);
-  const targetResolved=resolvedPathThroughExistingAncestors(target);
-  if (pathInside(repoReal,targetResolved)) {
+  const repoReal = fs.realpathSync(repo);
+  const targetResolved = resolvedPathThroughExistingAncestors(target);
+  if (pathInside(repoReal, targetResolved)) {
     throw new Error(
       'Refusing to stage generated CI migrations inside the source repository, including through symlinked paths.',
     );
   }
 
-  return {repoRoot:repo,targetDir:target};
+  return { repoRoot: repo, targetDir: target };
 }
 
 export function stageMigrationPlan({
@@ -195,18 +149,21 @@ export function stageMigrationPlan({
   mode = 'fresh',
   clear = true,
 }) {
-  const paths=validatedStagePaths(repoRoot,targetDir);
-  const contract = JSON.parse(
+  const paths = validatedStagePaths(repoRoot, targetDir);
+  const releaseContract = JSON.parse(
     fs.readFileSync(path.join(paths.repoRoot, 'release-contract.json'), 'utf8'),
   );
-  validateMigrationPlan(paths.repoRoot, contract);
+  const repositoryContract = validateMigrationPlan(
+    paths.repoRoot,
+    releaseContract,
+  );
 
   if (clear) {
     fs.rmSync(paths.targetDir, { recursive: true, force: true });
   }
   fs.mkdirSync(paths.targetDir, { recursive: true });
 
-  const plan = buildMigrationPlan(mode);
+  const plan = buildMigrationPlan(mode, repositoryContract);
   for (const item of plan) {
     fs.copyFileSync(
       path.join(paths.repoRoot, item.source),
