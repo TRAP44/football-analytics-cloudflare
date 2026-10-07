@@ -350,7 +350,11 @@ export function createProductionMonitorRuntime(deps) {
     );
     const digestReliabilitySlo=assessDailyDigestReliabilitySlo(
       digestReliabilitySource.items,
-      {nowMs:now.getTime(),days:7},
+      {
+        nowMs:now.getTime(),
+        days:7,
+        evidenceComplete:Boolean(digestReliabilitySource.persistent && !digestReliabilitySource.truncated),
+      },
     );
     const digestReliabilitySloEvent=options.record !== false
       ? planDailyDigestReliabilitySloEvent(digestReliabilitySlo,digestSloSource.items)
