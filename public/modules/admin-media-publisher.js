@@ -8,6 +8,19 @@ export function createAdminMediaPublisherModule({
 } = {}) {
   let mediaPublisherPayload = null;
 
+  function safeTelegramUrl(value) {
+    if (typeof value !== 'string' || value.length > 4096) return '';
+    try {
+      const url=new URL(value);
+      if (url.protocol !== 'https:' || url.username || url.password) return '';
+      const host=url.hostname.toLowerCase();
+      if (host !== 't.me' && host !== 'telegram.me') return '';
+      return url.toString();
+    } catch {
+      return '';
+    }
+  }
+
   function mediaPublisherValue(id, fallback = '') {
     return String($(id)?.value || fallback).trim();
   }
@@ -56,10 +69,10 @@ export function createAdminMediaPublisherModule({
       if ($('mediaPublisherCopyBtn')) $('mediaPublisherCopyBtn').disabled = false;
       $('mediaPublisherTelegramBtn')?.addEventListener('click', () => {
         if (!isAdmin()) return;
-        const url = String(mediaPublisherPayload?.telegramShareUrl || '');
-        if (!url) return;
+        const url=safeTelegramUrl(mediaPublisherPayload?.telegramShareUrl);
+        if (!url) return toast('Ссылка Telegram не прошла проверку.');
         if (tg?.openTelegramLink) tg.openTelegramLink(url);
-        else window.open(url, '_blank', 'noopener,noreferrer');
+        else window.open(url,'_blank','noopener,noreferrer');
       });
       toast(mediaPublisherPayload?.mode === 'fixture' ? 'Ссылка на матч готова' : 'Промо-ссылка готова');
     } catch (error) {
