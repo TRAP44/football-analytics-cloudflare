@@ -47,7 +47,7 @@ test('RC71 only requests News Impact recheck through explicit Telegram AI action
   assert.match(telegramUpdate,/source:'news_impact'/);
 
   assert.match(botUi,/newsImpactRecheck:true/);
-  assert.match(botUi,/newsPublishedAt:String\(options\.newsPublishedAt \|\| ''\)\.slice\(0,40\)/);
+  assert.match(botUi,/newsPublishedAt:safeText\(opts\.newsPublishedAt,40\)/);
 });
 
 test('saved AI snapshot must predate the news before attribution is eligible',()=>{
@@ -68,7 +68,25 @@ test('saved AI snapshot must predate the news before attribution is eligible',()
   );
   assert.equal(guarded.reasonCode,'snapshot_not_before_news');
   assert.equal(guarded.compared,false);
+  assert.equal(guarded.stable,false);
   assert.match(guarded.summary,/приписывать ей изменение прогноза нельзя/);
+
+  assert.equal(lifecycle.newsImpactDeltaStatus(snapshot(),snapshot(),null,null),null);
+
+  const coercive=lifecycle.newsImpactDeltaStatus(
+    snapshot(),
+    snapshot(72),
+    null,
+    {
+      requested:true,
+      eligible:'false',
+      performed:'true',
+      publishedAt:'2026-09-23T12:00:00Z',
+    },
+  );
+  assert.equal(coercive.eligible,false);
+  assert.equal(coercive.performed,false);
+  assert.equal(coercive.reasonCode,'fixture_mismatch');
 });
 
 test('news impact reuses lifecycle delta materiality and fixture identity guards',()=>{
@@ -118,7 +136,7 @@ test('news impact reuses lifecycle delta materiality and fixture identity guards
 test('News Impact deterministic drill remains green',()=>{
   const result=lifecycle.newsImpactDeltaDrill();
   assert.equal(result.pass,true);
-  assert.ok(result.cases>=5);
+  assert.ok(result.cases>=8);
 
   assert.match(analysisRuntime,/analysisRecheckDelta\(staleBefore,payload\)/);
   assert.match(analysisRuntime,/safeNewsImpactDeltaStatus\([\s\S]*?staleBefore,[\s\S]*?payload,[\s\S]*?effectiveRecheckDelta/);
