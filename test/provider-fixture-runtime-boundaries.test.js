@@ -8,7 +8,7 @@ function json(body,status=200,headers={}) {
   return {body,status,headers};
 }
 
-function fixture(id,status='NS',elapsed=null) {
+function fixture(id,status='NS',elapsed=null,homeId=1,awayId=2) {
   return {
     fixture:{
       id,
@@ -24,8 +24,8 @@ function fixture(id,status='NS',elapsed=null) {
       logo:'',
     },
     teams:{
-      home:{id:1,name:'Home',logo:''},
-      away:{id:2,name:'Away',logo:''},
+      home:{id:homeId,name:'Home',logo:''},
+      away:{id:awayId,name:'Away',logo:''},
     },
     goals:{home:0,away:0},
   };
@@ -169,7 +169,7 @@ test('team discovery keeps usable half of a two-request fanout and short-caches 
         error.code='UPSTREAM_TIMEOUT';
         throw error;
       }
-      return [fixture(22,'FT'),fixture(22,'FT'),fixture(23,'FT')];
+      return [fixture(22,'FT',null,77,2),fixture(22,'FT',null,77,2),fixture(23,'FT',null,3,77)];
     },
     setCache:async(...args)=>writes.push(args),
   }));
