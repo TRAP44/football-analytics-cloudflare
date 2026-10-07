@@ -119,17 +119,18 @@ test('preferences service surfaces Supabase read failures instead of overwriting
   );
 });
 
-test('worker delegates preferences storage boundary to extracted service', () => {
+test('worker delegates preferences storage boundary through service wiring', () => {
   const worker=fs.readFileSync('src/worker.js','utf8');
+  const wiring=fs.readFileSync('src/service-wiring-runtime.js','utf8');
+  const api=fs.readFileSync('src/user-data-api-runtime.js','utf8');
   assert.match(worker,/import \{ createUserPreferencesService \} from '\.\/user-preferences\.js'/);
-  assert.match(worker,/createUserPreferencesService\(\{/);
-  assert.match(worker,/supaSelectOne,/);
-  assert.match(worker,/supaUpsert,/);
-  assert.doesNotMatch(worker,/function normalizePreferences\(row = \{\}\)/);
-  assert.doesNotMatch(worker,/async function getPreferences\(userId, cfg\)/);
-  assert.doesNotMatch(worker,/async function savePreferences\(userId, input, cfg\)/);
-  assert.match(worker,/getPreferences,/);
-  assert.match(worker,/savePreferences,/);
-  assert.match(worker,/getPreferences\(user\.id, cfg\)/);
-  assert.match(worker,/savePreferences\(user\.id, body, cfg\)/);
+  assert.match(worker,/createUserPreferencesService,/);
+  assert.match(wiring,/\} = createUserPreferencesService\(\{/);
+  assert.match(wiring,/supaSelectOne,/);
+  assert.match(wiring,/supaUpsert,/);
+  for (const name of ['getPreferences','savePreferences']) {
+    assert.match(wiring,new RegExp('\\b'+name+'\\b'));
+    assert.match(api,new RegExp('\\b'+name+'\\b'));
+  }
+  assert.doesNotMatch(worker,/async function (?:getPreferences|savePreferences)\(/);
 });
