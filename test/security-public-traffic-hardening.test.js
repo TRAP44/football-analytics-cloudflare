@@ -402,11 +402,12 @@ test('Telegram webhook shape gate stays POST JSON-compatible and strict', async 
 
 test('worker exposes security guard telemetry and keeps server-side admin authorization', () => {
   const worker=fs.readFileSync('src/worker.js','utf8');
+  const bootstrap=fs.readFileSync('src/worker-bootstrap-runtime.js','utf8');
   const router=fs.readFileSync('src/router.js','utf8');
   assert.match(worker,/preAuthRequestShapeDecision/);
   assert.match(worker,/createPreAuthAbuseGuard/);
   assert.match(worker,/enforceDistributedPreAuthRateLimit/);
-  assert.match(worker,/fingerprintSecret:cfg\.botToken/);
+  assert.match(bootstrap,/fingerprintSecret:cfg\.botToken/);
   assert.match(worker,/securityInvalidAuthBlocks/);
   assert.match(worker,/securityPreAuthBlocks/);
   assert.match(worker,/preAuthAbuseGuard: 'enabled'/);
