@@ -385,13 +385,13 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     const matureAt='2026-09-23T10:00:00Z';
     const actionsAt='2026-09-23T10:10:00Z';
     const decisions=[
-      ...Array.from({length:10},(_,i)=>({telegram_id:i+1,created_at:matureAt,metadata:{decision:'material'}})),
-      ...Array.from({length:30},(_,i)=>({telegram_id:i+11,created_at:matureAt,metadata:{decision:'stable'}})),
+      ...Array.from({length:10},(_,i)=>({telegram_id:i+1,fixture_id:1000+i,created_at:matureAt,metadata:{decision:'material'}})),
+      ...Array.from({length:30},(_,i)=>({telegram_id:i+11,fixture_id:2000+i,created_at:matureAt,metadata:{decision:'stable'}})),
     ];
     const actions=[
-      ...Array.from({length:5},(_,i)=>({telegram_id:i+1,created_at:actionsAt,metadata:{decision:'material',action:'market'}})),
-      ...Array.from({length:30},(_,i)=>({telegram_id:i+11,created_at:actionsAt,metadata:{decision:'stable',action:'full_ai'}})),
-      {telegram_id:999,created_at:actionsAt,metadata:{decision:'material',action:'share'}},
+      ...Array.from({length:5},(_,i)=>({telegram_id:i+1,fixture_id:1000+i,created_at:actionsAt,metadata:{decision:'material',action:'market'}})),
+      ...Array.from({length:30},(_,i)=>({telegram_id:i+11,fixture_id:2000+i,created_at:actionsAt,metadata:{decision:'stable',action:'full_ai'}})),
+      {telegram_id:999,fixture_id:9999,created_at:actionsAt,metadata:{decision:'material',action:'share'}},
     ];
     const rows=buildNewsImpactActionFunnel(decisions,actions,{asOfMs});
     const material=rows.find(x=>x.code==='material');
