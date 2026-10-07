@@ -19,6 +19,7 @@ const RELEASE_TESTS = Object.freeze([
   'test/one-tap-ai-handoff-rc58.test.js',
   'test/openligadb-events-rc132.test.js',
   'test/operational-orchestration-runtime.test.js',
+  'test/ops-release-identity-persistence.test.js',
   'test/post-deploy-smoke.test.js',
   'test/production-deploy-noop-smoke-rc144.test.js',
   'test/production-deploy-provenance-rc111.test.js',
