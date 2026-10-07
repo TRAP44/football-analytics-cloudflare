@@ -1264,37 +1264,44 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   }
   
   
-  function buildNewsImpactRecoveryIncidentEvents(failureRows = [], {limit = 100} = {}) {
-    const normalized=(failureRows || []).map(row=>{
-      const meta=row?.metadata && typeof row.metadata==='object' ? row.metadata : {};
-      const guardReason=NEWS_IMPACT_RECOVERY_STRATEGY_GUARD_CODES.has(String(meta.strategy_guard || ''))
-        ? String(meta.strategy_guard)
-        : '';
+  function buildNewsImpactRecoveryIncidentEvents(failureRows = [], options = {}) {
+    const safeRows=Array.isArray(failureRows) ? failureRows : [];
+    const safeOptions=options && typeof options==='object' && !Array.isArray(options) ? options : {};
+    const configuredLimit=newsImpactFiniteNumber(safeOptions.limit);
+    const safeLimit=configuredLimit!==null && Number.isSafeInteger(configuredLimit)
+      ? Math.max(1,Math.min(250,configuredLimit))
+      : 100;
+    const normalized=safeRows.map(row=>{
+      if (!row || typeof row!=='object' || Array.isArray(row)) return null;
+      const meta=row.metadata && typeof row.metadata==='object' && !Array.isArray(row.metadata) ? row.metadata : {};
+      const guardReason=newsImpactKnownCode(meta.strategy_guard,NEWS_IMPACT_RECOVERY_STRATEGY_GUARD_CODES,'');
       const at=newsImpactEventTime(row);
-      const reason=NEWS_IMPACT_FAILURE_CODES.has(String(meta.reason || '')) ? String(meta.reason) : 'server_error';
+      const reason=newsImpactKnownCode(meta.reason,NEWS_IMPACT_FAILURE_CODES,'server_error');
       const action=cleanNewsImpactActionCode(meta.action);
       if (!Number.isFinite(at) || !action) return null;
-      const recovery=NEWS_IMPACT_RECOVERY_CODES.has(String(meta.recovery || ''))
-        ? String(meta.recovery)
-        : newsImpactRecoveryForFailure(reason,action).code;
+      const recovery=newsImpactKnownCode(
+        meta.recovery,
+        NEWS_IMPACT_RECOVERY_CODES,
+        newsImpactRecoveryForFailure(reason,action).code,
+      );
       return {
         at,
         reason,
-        reasonLabel:NEWS_IMPACT_FAILURE_LABELS[reason] || reason,
+        reasonLabel:NEWS_IMPACT_FAILURE_LABELS?.[reason] || reason,
         action,
-        actionLabel:NEWS_IMPACT_ACTION_LABELS[action] || action,
-        strategy:String(meta.strategy || '')==='adaptive' ? 'adaptive' : 'fixed',
+        actionLabel:NEWS_IMPACT_ACTION_LABELS?.[action] || action,
+        strategy:meta.strategy==='adaptive' ? 'adaptive' : 'fixed',
         recovery,
-        recoveryLabel:NEWS_IMPACT_RECOVERY_LABELS[recovery] || recovery,
+        recoveryLabel:NEWS_IMPACT_RECOVERY_LABELS?.[recovery] || recovery,
         guardReason,
       };
     }).filter(Boolean).sort((a,b)=>a.at-b.at);
-  
+
     const openByPair=new Map();
     const incidentEvents=[];
     for (const event of normalized) {
-      const pairKey=`${event.reason}|${event.action}`;
-      const adverse=NEWS_IMPACT_RECOVERY_INCIDENT_CODES.has(event.guardReason);
+      const pairKey=event.reason+'|'+event.action;
+      const adverse=NEWS_IMPACT_RECOVERY_INCIDENT_CODES?.has?.(event.guardReason)===true;
       let open=openByPair.get(pairKey) || null;
       if (!adverse) {
         if (open) {
@@ -1319,7 +1326,7 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       open.episode.occurrences+=1;
       incidentEvents.push({...event,episode:open.episode});
     }
-  
+
     return incidentEvents.map(event=>({
       at:new Date(event.at).toISOString(),
       reason:event.reason,
@@ -1336,13 +1343,13 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       episodeRecoveredAt:event.episode.recoveredAt,
       episodeOccurrences:event.episode.occurrences,
     })).sort((a,b)=>Date.parse(b.at)-Date.parse(a.at))
-      .slice(0,Math.max(1,Math.min(250,Number(limit || 100))));
+      .slice(0,safeLimit);
   }
-  
+
   function newsImpactRecoveryIncidentKey(reason = '', action = '', code = '') {
-    return `${String(reason || '')}|${String(action || '')}|${String(code || '')}`;
+    return newsImpactText(reason)+'|'+newsImpactText(action)+'|'+newsImpactText(code);
   }
-  
+
   function newsImpactRecoveryIncidentRunbook(code = '') {
     if (code==='performance_drift') return {
       title:'Performance drift',
@@ -1376,14 +1383,17 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   
   function buildNewsImpactRecoveryIncidentAcknowledgements(rows = []) {
     const latest=new Map();
-    for (const row of rows || []) {
-      const meta=row?.metadata && typeof row.metadata==='object' ? row.metadata : {};
-      const reason=NEWS_IMPACT_FAILURE_CODES.has(String(meta.reason || '')) ? String(meta.reason) : '';
+    const safeRows=Array.isArray(rows) ? rows : [];
+    for (const row of safeRows) {
+      if (!row || typeof row!=='object' || Array.isArray(row)) continue;
+      const meta=row.metadata && typeof row.metadata==='object' && !Array.isArray(row.metadata) ? row.metadata : {};
+      const reason=newsImpactKnownCode(meta.reason,NEWS_IMPACT_FAILURE_CODES,'');
       const action=cleanNewsImpactActionCode(meta.action);
-      const code=NEWS_IMPACT_RECOVERY_INCIDENT_CODES.has(String(meta.incident_guard || '')) ? String(meta.incident_guard) : '';
+      const code=newsImpactKnownCode(meta.incident_guard,NEWS_IMPACT_RECOVERY_INCIDENT_CODES,'');
       const acknowledgedAt=newsImpactEventTime(row);
-      const seenAt=Date.parse(String(meta.incident_seen_at || ''));
-      if (!reason || !action || !code || !Number.isFinite(acknowledgedAt) || !Number.isFinite(seenAt)) continue;
+      const seenRaw=newsImpactText(meta.incident_seen_at);
+      const seenAt=seenRaw ? Date.parse(seenRaw) : NaN;
+      if (!reason || !action || !code || !Number.isFinite(acknowledgedAt) || !Number.isFinite(seenAt) || acknowledgedAt<seenAt) continue;
       const key=newsImpactRecoveryIncidentKey(reason,action,code);
       const value={
         reason,
@@ -1397,17 +1407,19 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     }
     return [...latest.values()];
   }
-  
-  
+
   function buildNewsImpactRecoveryIncidentAcknowledgementHistory(rows = []) {
-    return (rows || []).map(row=>{
-      const meta=row?.metadata && typeof row.metadata==='object' ? row.metadata : {};
-      const reason=NEWS_IMPACT_FAILURE_CODES.has(String(meta.reason || '')) ? String(meta.reason) : '';
+    const safeRows=Array.isArray(rows) ? rows : [];
+    return safeRows.map(row=>{
+      if (!row || typeof row!=='object' || Array.isArray(row)) return null;
+      const meta=row.metadata && typeof row.metadata==='object' && !Array.isArray(row.metadata) ? row.metadata : {};
+      const reason=newsImpactKnownCode(meta.reason,NEWS_IMPACT_FAILURE_CODES,'');
       const action=cleanNewsImpactActionCode(meta.action);
-      const code=NEWS_IMPACT_RECOVERY_INCIDENT_CODES.has(String(meta.incident_guard || '')) ? String(meta.incident_guard) : '';
+      const code=newsImpactKnownCode(meta.incident_guard,NEWS_IMPACT_RECOVERY_INCIDENT_CODES,'');
       const acknowledgedAt=newsImpactEventTime(row);
-      const seenAt=Date.parse(String(meta.incident_seen_at || ''));
-      if (!reason || !action || !code || !Number.isFinite(acknowledgedAt) || !Number.isFinite(seenAt)) return null;
+      const seenRaw=newsImpactText(meta.incident_seen_at);
+      const seenAt=seenRaw ? Date.parse(seenRaw) : NaN;
+      if (!reason || !action || !code || !Number.isFinite(acknowledgedAt) || !Number.isFinite(seenAt) || acknowledgedAt<seenAt) return null;
       return {
         reason,
         action,
@@ -1417,32 +1429,32 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       };
     }).filter(Boolean).sort((a,b)=>Date.parse(a.acknowledgedAt)-Date.parse(b.acknowledgedAt));
   }
-  
+
   function buildNewsImpactRecoveryIncidentEpisodeHistory(failureRows = [], acknowledgementRows = []) {
-    const normalized=(failureRows || []).map(row=>{
-      const meta=row?.metadata && typeof row.metadata==='object' ? row.metadata : {};
+    const safeFailures=Array.isArray(failureRows) ? failureRows : [];
+    const normalized=safeFailures.map(row=>{
+      if (!row || typeof row!=='object' || Array.isArray(row)) return null;
+      const meta=row.metadata && typeof row.metadata==='object' && !Array.isArray(row.metadata) ? row.metadata : {};
       const at=newsImpactEventTime(row);
-      const reason=NEWS_IMPACT_FAILURE_CODES.has(String(meta.reason || '')) ? String(meta.reason) : 'server_error';
+      const reason=newsImpactKnownCode(meta.reason,NEWS_IMPACT_FAILURE_CODES,'server_error');
       const action=cleanNewsImpactActionCode(meta.action);
-      const guardReason=NEWS_IMPACT_RECOVERY_STRATEGY_GUARD_CODES.has(String(meta.strategy_guard || ''))
-        ? String(meta.strategy_guard)
-        : '';
+      const guardReason=newsImpactKnownCode(meta.strategy_guard,NEWS_IMPACT_RECOVERY_STRATEGY_GUARD_CODES,'');
       if (!Number.isFinite(at) || !action) return null;
       return {
         at,
         reason,
-        reasonLabel:NEWS_IMPACT_FAILURE_LABELS[reason] || reason,
+        reasonLabel:NEWS_IMPACT_FAILURE_LABELS?.[reason] || reason,
         action,
-        actionLabel:NEWS_IMPACT_ACTION_LABELS[action] || action,
+        actionLabel:NEWS_IMPACT_ACTION_LABELS?.[action] || action,
         guardReason,
       };
     }).filter(Boolean).sort((a,b)=>a.at-b.at);
-  
+
     const openByPair=new Map();
     const episodes=[];
     for (const event of normalized) {
-      const key=`${event.reason}|${event.action}`;
-      const adverse=NEWS_IMPACT_RECOVERY_INCIDENT_CODES.has(event.guardReason);
+      const key=event.reason+'|'+event.action;
+      const adverse=NEWS_IMPACT_RECOVERY_INCIDENT_CODES?.has?.(event.guardReason)===true;
       let episode=openByPair.get(key) || null;
       if (!adverse) {
         if (episode) {
@@ -1472,12 +1484,12 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       episode.occurrences+=1;
       if (!episode.guardCodes.includes(event.guardReason)) episode.guardCodes.push(event.guardReason);
     }
-  
+
     const ackHistory=buildNewsImpactRecoveryIncidentAcknowledgementHistory(acknowledgementRows);
     return episodes.map(episode=>{
       const startMs=Date.parse(episode.startedAt);
       const lastSeenMs=Date.parse(episode.lastSeenAt);
-      const recoveredMs=Date.parse(String(episode.recoveredAt || ''));
+      const recoveredMs=episode.recoveredAt ? Date.parse(episode.recoveredAt) : NaN;
       const ack=ackHistory.find(item=>{
         if (item.reason!==episode.reason || item.action!==episode.action) return false;
         if (!episode.guardCodes.includes(item.code)) return false;
@@ -1498,22 +1510,39 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       };
     }).sort((a,b)=>Date.parse(b.startedAt)-Date.parse(a.startedAt));
   }
-  
+
   function newsImpactRecoveryEpisodeSloState(episode = null, asOfMs = Date.now()) {
-    if (!episode) return null;
-    const startMs=Date.parse(String(episode.startedAt || ''));
-    if (!Number.isFinite(startMs)) return null;
-    const recoveredMs=Date.parse(String(episode.recoveredAt || ''));
-    const ackMs=Date.parse(String(episode.firstAcknowledgedAt || ''));
-    const terminalMs=Number.isFinite(recoveredMs) ? recoveredMs : asOfMs;
+    if (!episode || typeof episode!=='object' || Array.isArray(episode)) return null;
+    const startRaw=newsImpactText(episode.startedAt);
+    const startMs=startRaw ? Date.parse(startRaw) : NaN;
+    const parsedAsOf=newsImpactFiniteNumber(asOfMs);
+    const safeAsOfMs=parsedAsOf ?? Date.now();
+    if (!Number.isFinite(startMs) || startMs>safeAsOfMs) return null;
+
+    const recoveredRaw=newsImpactText(episode.recoveredAt);
+    const recoveredCandidate=recoveredRaw ? Date.parse(recoveredRaw) : NaN;
+    if (Number.isFinite(recoveredCandidate) && recoveredCandidate<startMs) return null;
+    const recoveredMs=Number.isFinite(recoveredCandidate) && recoveredCandidate<=safeAsOfMs
+      ? recoveredCandidate
+      : NaN;
+
+    const terminalMs=Number.isFinite(recoveredMs) ? recoveredMs : safeAsOfMs;
+    const ackRaw=newsImpactText(episode.firstAcknowledgedAt);
+    const ackCandidate=ackRaw ? Date.parse(ackRaw) : NaN;
+    const ackMs=Number.isFinite(ackCandidate) && ackCandidate>=startMs && ackCandidate<=terminalMs
+      ? ackCandidate
+      : NaN;
+
+    const ackTarget=newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,30);
+    const recoveryTarget=newsImpactNonNegativeNumber(NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,360);
     const elapsedMinutes=Math.max(0,Math.round((terminalMs-startMs)/60000));
     const ackLatencyMinutes=Number.isFinite(ackMs) ? Math.max(0,Math.round((ackMs-startMs)/60000)) : null;
     const recoveryLatencyMinutes=Number.isFinite(recoveredMs) ? elapsedMinutes : null;
-    const ackEligible=Number.isFinite(ackMs) || elapsedMinutes>=NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES;
-    const ackMet=ackEligible && Number.isFinite(ackLatencyMinutes) && ackLatencyMinutes<=NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES;
+    const ackEligible=Number.isFinite(ackMs) || elapsedMinutes>=ackTarget;
+    const ackMet=ackEligible && Number.isFinite(ackLatencyMinutes) && ackLatencyMinutes<=ackTarget;
     const ackBreached=ackEligible && !ackMet;
-    const recoveryEligible=Number.isFinite(recoveredMs) || elapsedMinutes>=NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES;
-    const recoveryMet=recoveryEligible && Number.isFinite(recoveryLatencyMinutes) && recoveryLatencyMinutes<=NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES;
+    const recoveryEligible=Number.isFinite(recoveredMs) || elapsedMinutes>=recoveryTarget;
+    const recoveryMet=recoveryEligible && Number.isFinite(recoveryLatencyMinutes) && recoveryLatencyMinutes<=recoveryTarget;
     const recoveryBreached=recoveryEligible && !recoveryMet;
     return {
       elapsedMinutes,
@@ -1529,11 +1558,14 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       recoveryStatus:recoveryMet ? 'met' : recoveryBreached ? 'breached' : 'pending',
     };
   }
-  
+
   function newsImpactRecoverySloPct(met = 0, eligible = 0) {
-    return eligible>0 ? Math.round((Number(met || 0)/Number(eligible))*1000)/10 : null;
+    const safeEligible=newsImpactCount(eligible);
+    if (!safeEligible) return null;
+    const safeMet=Math.min(safeEligible,newsImpactCount(met));
+    return Math.round((safeMet/safeEligible)*1000)/10;
   }
-  
+
   function buildNewsImpactRecoveryIncidentSloDashboard(episodeRows = [], {asOfMs = Date.now(), weeks = 4} = {}) {
     const safeWeeks=Math.max(2,Math.min(4,Number(weeks || 4)));
     const weekMs=7*86400_000;
