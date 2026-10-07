@@ -89,6 +89,7 @@ test('Issue #438 CI contract proves complete v2 drift detection and rollout comp
   assert.match(sql, /legacy backend schema fingerprint drifted/);
   assert.match(sql, /expected_legacy_fingerprint/);
   assert.match(sql, /expected_v2_fingerprint/);
+  assert.doesNotMatch(sql, /^\s*as \$\s*$/m);
   assert.doesNotMatch(sql, /6a7f0fe444f49a2a52c4603e952ee9ea/);
   assert.doesNotMatch(sql, /8b3e6ec749079296e6746d3db8ae3d2e/);
 

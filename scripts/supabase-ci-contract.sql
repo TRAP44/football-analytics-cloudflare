@@ -570,9 +570,9 @@ create function public.issue438_search_path_probe()
 returns integer
 language sql
 security invoker
-as $
+as $issue438_search_path_probe$
   select 1;
-$;
+$issue438_search_path_probe$;
 
 revoke all on function public.issue438_search_path_probe()
   from public, anon, authenticated, service_role;
