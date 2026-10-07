@@ -244,15 +244,15 @@ test('P0 competition relevance itself is independent from LIVE status',()=>{
 
 test('P0 All and For You do not inherit unconditional LIVE-first sorting',()=>{
   const filtered=sourceBlock(app,'function filteredMatches','function categoryLabel');
-  const liveBranch=filtered.indexOf("state.filter === 'live' && Boolean(a.live) !== Boolean(b.live)");
-  const featuredBranch=filtered.indexOf('Boolean(a.featured) !== Boolean(b.featured)');
-  const priorityBranch=filtered.indexOf('const ap = Number(a.competition?.priority || 0)');
+  const liveBranch=filtered.indexOf("if (state.filter === 'live' && aLive !== bLive)");
+  const featuredBranch=filtered.indexOf('if (aFeatured !== bFeatured)');
+  const priorityBranch=filtered.indexOf('const ap = typeof a?.competition?.priority');
 
   assert.ok(liveBranch>=0);
   assert.ok(featuredBranch>liveBranch);
   assert.ok(priorityBranch>featuredBranch);
   assert.doesNotMatch(filtered,/^\s*if \(Boolean\(a\.live\) !== Boolean\(b\.live\)\)/m);
-  assert.match(filtered,/state\.filter === 'live'\) byFilter = Boolean\(m\.live\)/);
+  assert.match(filtered,/state\.filter === 'live'\) byFilter = m\?\.live === true/);
 });
 
 test('P0 FREE provider policy reserves the Match Center events request for AI analysis',()=>{
