@@ -109,3 +109,155 @@ test('worker tracks only side-effecting Telegram API methods for retry suppressi
   assert.match(worker, /!\/\^get\[A-Z\]\//);
   assert.match(worker, /markTelegramWebhookEffect\(cfg, method\)/);
 });
+
+
+test('nested webhook attempt initialization never erases already recorded effects', () => {
+  const cfg={};
+  beginTelegramWebhookAttempt(cfg);
+  assert.equal(markTelegramWebhookEffect(cfg,'sendMessage'),true);
+  beginTelegramWebhookAttempt(cfg);
+
+  const result=classifyTelegramWebhookFailure(
+    Object.assign(new Error('timeout'),{code:'TELEGRAM_TIMEOUT'}),
+    cfg,
+  );
+  assert.equal(result.retry,false);
+  assert.equal(result.successfulEffects,1);
+  assert.equal(result.lastEffect,'sendMessage');
+});
+
+test('public retry state tampering cannot erase the internal side-effect ledger', () => {
+  const cfg={};
+  beginTelegramWebhookAttempt(cfg);
+  markTelegramWebhookEffect(cfg,'sendMessage');
+
+  cfg.telegramWebhookAttempt={
+    active:true,
+    successfulEffects:0,
+    unsafeMutations:0,
+    lastEffect:'',
+    lastMutation:'',
+  };
+
+  const result=classifyTelegramWebhookFailure(
+    Object.assign(new Error('network'),{code:'TELEGRAM_NETWORK'}),
+    cfg,
+  );
+  assert.equal(result.retry,false);
+  assert.equal(result.successfulEffects,1);
+  assert.equal(result.lastEffect,'sendMessage');
+});
+
+test('frozen public retry state does not prevent mutation tracking', () => {
+  const cfg={};
+  beginTelegramWebhookAttempt(cfg);
+  Object.freeze(cfg.telegramWebhookAttempt);
+
+  assert.equal(markTelegramWebhookMutation(cfg,'favorite_toggle'),true);
+  const result=classifyTelegramWebhookFailure(
+    Object.assign(new Error('upstream'),{code:'TELEGRAM_UPSTREAM'}),
+    cfg,
+  );
+  assert.equal(result.retry,false);
+  assert.equal(result.unsafeMutations,1);
+  assert.equal(result.lastMutation,'favorite_toggle');
+});
+
+test('frozen config still tracks side effects through the internal WeakMap ledger', () => {
+  const cfg=Object.freeze({});
+  assert.ok(beginTelegramWebhookAttempt(cfg));
+  assert.equal(markTelegramWebhookEffect(cfg,'sendMessage'),true);
+
+  const result=classifyTelegramWebhookFailure(
+    Object.assign(new Error('timeout'),{code:'TELEGRAM_TIMEOUT'}),
+    cfg,
+  );
+  assert.equal(result.retry,false);
+  assert.equal(result.successfulEffects,1);
+});
+
+test('malformed externally supplied attempt state fails closed', () => {
+  const result=classifyTelegramWebhookFailure(
+    Object.assign(new Error('network'),{code:'TELEGRAM_NETWORK'}),
+    {telegramWebhookAttempt:'corrupted'},
+  );
+  assert.equal(result.retry,false);
+  assert.ok(result.successfulEffects>0);
+  assert.ok(result.unsafeMutations>0);
+});
+
+test('retry-safe flag cannot override corrupted attempt counters', () => {
+  const cfg={
+    telegramWebhookAttempt:{
+      active:true,
+      successfulEffects:'broken',
+      unsafeMutations:0,
+      lastEffect:'',
+      lastMutation:'',
+    },
+  };
+  const result=classifyTelegramWebhookFailure(
+    Object.assign(new Error('reconcile'),{
+      code:'BILLING_REFUND_RECONCILIATION',
+      telegramWebhookRetrySafe:true,
+    }),
+    cfg,
+  );
+  assert.equal(result.retrySafe,true);
+  assert.equal(result.retry,false);
+});
+
+test('retry classifier tolerates hostile error property getters', () => {
+  const error={};
+  Object.defineProperty(error,'code',{get(){throw new Error('code getter');}});
+  Object.defineProperty(error,'retryAfter',{get(){throw new Error('retry getter');}});
+  Object.defineProperty(error,'telegramWebhookRetrySafe',{get(){throw new Error('safe getter');}});
+
+  const result=classifyTelegramWebhookFailure(error,{});
+  assert.equal(result.retry,false);
+  assert.equal(result.transient,false);
+  assert.equal(result.retrySafe,false);
+  assert.equal(result.code,'TELEGRAM_WEBHOOK_FAILURE');
+  assert.equal(result.retryAfter,0);
+});
+
+test('labels and retry-after values are bounded before observability output', () => {
+  const cfg={};
+  beginTelegramWebhookAttempt(cfg);
+  markTelegramWebhookEffect(cfg,'sendMessage\nspoofed');
+
+  const capped=classifyTelegramWebhookFailure(
+    Object.assign(new Error('rate limit'),{
+      code:'TELEGRAM_RATE_LIMIT',
+      retryAfter:999999,
+    }),
+    cfg,
+  );
+  assert.equal(capped.retry,false);
+  assert.equal(capped.lastEffect,'');
+  assert.equal(capped.retryAfter,86400);
+
+  const clean={};
+  beginTelegramWebhookAttempt(clean);
+  const oversized=classifyTelegramWebhookFailure(
+    Object.assign(new Error('rate limit'),{
+      code:'TELEGRAM_RATE_LIMIT',
+      retryAfter:'9'.repeat(1000),
+    }),
+    clean,
+  );
+  assert.equal(oversized.retry,true);
+  assert.equal(oversized.retryAfter,0);
+});
+
+test('ending a webhook attempt is idempotent and blocks later markers', () => {
+  const cfg={};
+  beginTelegramWebhookAttempt(cfg);
+  const first=endTelegramWebhookAttempt(cfg);
+  const second=endTelegramWebhookAttempt(cfg);
+
+  assert.equal(first.active,false);
+  assert.equal(second.active,false);
+  assert.equal(markTelegramWebhookEffect(cfg,'sendMessage'),false);
+  assert.equal(markTelegramWebhookMutation(cfg,'favorite_toggle'),false);
+});
