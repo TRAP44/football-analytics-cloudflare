@@ -410,8 +410,8 @@ test('worker exposes security guard telemetry and keeps server-side admin author
   assert.match(bootstrap,/fingerprintSecret:cfg\.botToken/);
   assert.match(worker,/securityInvalidAuthBlocks/);
   assert.match(worker,/securityPreAuthBlocks/);
-  assert.match(worker,/preAuthAbuseGuard: 'enabled'/);
-  assert.match(worker,/distributedPreAuthRateLimit: 'enabled'/);
+  assert.match(worker,/createWorkerBootstrapRuntime\(\{[\s\S]*createPreAuthAbuseGuard/);
+  assert.match(worker,/createWorkerBootstrapRuntime\(\{[\s\S]*enforceDistributedPreAuthRateLimit/);
   assert.match(router,/isAdminUser\(user\s*,\s*cfg\)\s*===\s*true/);
   assert.match(router,/adminForbidden\(\)/);
 });
