@@ -2,9 +2,38 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
+import { createRouteSecurityRuntime } from '../src/route-security-runtime.js';
+
 const sql = fs.readFileSync(new URL('../supabase/migrations/supabase_migration_v6_11.sql', import.meta.url), 'utf8').toLowerCase();
 const defaultsSql = fs.readFileSync(new URL('../supabase/migrations/supabase_migration_v6_11_1.sql', import.meta.url), 'utf8').toLowerCase();
 const worker = fs.readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
+const routeSecurity = fs.readFileSync(new URL('../src/route-security-runtime.js', import.meta.url), 'utf8');
+
+function securityRuntime(results={}) {
+  return createRouteSecurityRuntime({
+    TELEGRAM_BURST_POLICIES:{},
+    accountRatePolicies:[],
+    bumpTelemetry(){},
+    cloudflareEdgePolicies:[],
+    distributedAnalysisLockPolicy(){ return {}; },
+    distributedPreAuthPolicies:[],
+    hasSupabase(){ return true; },
+    json(value){ return value; },
+    memory:{
+      routeBurst:new Map(),
+      inflight:new Map(),
+      userSyncAt:new Map(),
+      cache:new Map(),
+      telemetry:{},
+    },
+    privilegedLocalRatePolicy(){ return null; },
+    pruneMemoryState(){},
+    redactOpsString(value,limit=160){ return String(value ?? '').slice(0,limit); },
+    async supaRpc(_cfg,name){
+      return results[name] ?? {ok:true,checked_at:'2026-10-07T00:00:00Z'};
+    },
+  });
+}
 
 test('RC19 removes direct browser-role access to backend objects', () => {
   assert.match(sql, /revoke all privileges on all tables in schema public from public, anon, authenticated/);
@@ -33,9 +62,21 @@ test('RC19 security contract is invoker-only and service-role-only', () => {
   assert.match(defaultsSql, /grant execute on function public\.backend_default_acl_contract\(\) to service_role/);
 });
 
-test('Worker blocks both release gates when the security contract fails', () => {
-  assert.match(worker, /async function readBackendSecurityContract/);
-  assert.match(worker, /supaRpc\(cfg, 'backend_default_acl_contract'\)/);
-  assert.equal((worker.match(/'backend_security_contract'/g) || []).length >= 3, true);
-  assert.match(worker, /backendSecurity\.ok \? 'pass' : 'fail'/);
+test('backend security runtime requires both database contracts to pass', async () => {
+  const healthy=await securityRuntime().readBackendSecurityContract({});
+  assert.equal(healthy.ok,true);
+  assert.equal(healthy.status,'ok');
+
+  const violation=await securityRuntime({
+    backend_security_contract:{ok:true},
+    backend_default_acl_contract:{ok:false,default_acl_violations:['unsafe default']},
+  }).readBackendSecurityContract({});
+  assert.equal(violation.ok,false);
+  assert.equal(violation.status,'violations');
+  assert.deepEqual(violation.defaultAclViolations,['unsafe default']);
+
+  assert.match(routeSecurity,/supaRpc\(cfg, 'backend_security_contract'\)/);
+  assert.match(routeSecurity,/supaRpc\(cfg, 'backend_default_acl_contract'\)/);
+  assert.match(worker,/function readBackendSecurityContract\(\.\.\.args\).*getRouteSecurityRuntime\(\)\.readBackendSecurityContract/s);
+  assert.match(worker,/createRouteSecurityRuntime/);
 });
