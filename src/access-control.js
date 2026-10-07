@@ -1,18 +1,30 @@
 export const DEVELOPMENT_TELEGRAM_ID = 999001;
 
+function telegramIdCandidate(value) {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+  if (typeof value !== 'string' || value.length > 24) return null;
+  const raw=value.trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const number=Number(raw);
+  return Number.isSafeInteger(number) && number > 0 ? number : null;
+}
+
 export function telegramIdList(value) {
-  return String(value || '')
+  if (typeof value !== 'string' && typeof value !== 'number') return [];
+  return String(value)
     .split(/[\s,;]+/)
-    .map(item => Number(item))
-    .filter(item => Number.isSafeInteger(item) && item > 0);
+    .map(telegramIdCandidate)
+    .filter(item => item !== null);
 }
 
 export function isAdminUser(user, cfg = {}) {
-  const userId = Number(user?.id || 0);
-  if (!Number.isSafeInteger(userId) || userId <= 0) return false;
+  const userId=telegramIdCandidate(user?.id);
+  if (userId === null) return false;
 
   const adminTelegramIds = Array.isArray(cfg.adminTelegramIds) ? cfg.adminTelegramIds : [];
-  const allowlisted = adminTelegramIds.some(id => Number(id) === userId);
+  const allowlisted = adminTelegramIds.some(id => telegramIdCandidate(id) === userId);
   if (allowlisted) return true;
 
   // DEV_MODE may create one synthetic identity when Telegram initData is absent.
@@ -26,17 +38,17 @@ export function isAdminUser(user, cfg = {}) {
 
 
 export function isTelegramValidatedUser(user) {
-  const userId = Number(user?.id || 0);
-  return Number.isSafeInteger(userId) && userId > 0 && user?.__telegramValidated === true;
+  const userId=telegramIdCandidate(user?.id);
+  return userId !== null && user?.__telegramValidated === true;
 }
 
 export function isClosedBetaUser(user, cfg = {}) {
-  const userId = Number(user?.id || 0);
-  if (!Number.isSafeInteger(userId) || userId <= 0) return false;
+  const userId=telegramIdCandidate(user?.id);
+  if (userId === null) return false;
   if (isAdminUser(user, cfg)) return false;
   if (!isTelegramValidatedUser(user)) return false;
   const betaTelegramIds = Array.isArray(cfg.betaTelegramIds) ? cfg.betaTelegramIds : [];
-  return betaTelegramIds.some(id => Number(id) === userId);
+  return betaTelegramIds.some(id => telegramIdCandidate(id) === userId);
 }
 
 export function closedBetaAccessDecision(user, cfg = {}) {
