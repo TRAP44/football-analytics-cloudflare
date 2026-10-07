@@ -89,6 +89,7 @@ test('a malformed supplied sourceUpdatedAt fails closed instead of falling back 
     {},
     [],
     true,
+    {toString(){throw new Error('must not coerce');}},
   ]) {
     const meta=assessFeatureFreshness(availableMeta({
       feature:'liveOdds',
@@ -134,6 +135,13 @@ test('evaluation clock, mode and fallback age reject ambiguous coercion',()=>{
     assert.equal(meta.freshnessReason,'invalid_mode',String(mode));
     assert.equal(meta.confidenceBearing,false,String(mode));
   }
+  assert.equal(
+    featureFreshnessLimitSeconds(
+      {feature:'statistics'},
+      {feature:'statistics',mode:'unknown'},
+    ),
+    150,
+  );
 
   for(const ageSeconds of [false,true,null,'0','30','   ',{}]) {
     const meta=assessFeatureFreshness(availableMeta({
