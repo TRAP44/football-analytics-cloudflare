@@ -67,16 +67,25 @@ export function createProviderFixtureRuntime(deps) {
     if (typeof fn !== 'function') throw new TypeError(`${name} is required`);
   }
 
+  function integerCandidate(value) {
+    if (typeof value==='number') {
+      return Number.isSafeInteger(value) ? value : null;
+    }
+    if (typeof value!=='string') return null;
+    const raw=value.trim();
+    if (!/^\d+$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isSafeInteger(number) ? number : null;
+  }
+
   function positiveSafeInteger(value) {
-    if (value === null || value === undefined || value === '') return null;
-    const number=Number(value);
-    return Number.isSafeInteger(number) && number > 0 ? number : null;
+    const number=integerCandidate(value);
+    return number!==null && number>0 ? number : null;
   }
 
   function nonNegativeSafeInteger(value) {
-    if (value === null || value === undefined || value === '') return null;
-    const number=Number(value);
-    return Number.isSafeInteger(number) && number >= 0 ? number : null;
+    const number=integerCandidate(value);
+    return number!==null && number>=0 ? number : null;
   }
 
   function strictUtcDate(value) {
@@ -133,7 +142,7 @@ export function createProviderFixtureRuntime(deps) {
 
   function teamDiscoveryCachePayload(value, teamId) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-    if (value.teamId !== undefined && value.teamId !== null && positiveSafeInteger(value.teamId) !== teamId) return null;
+    if (positiveSafeInteger(value.teamId)!==teamId) return null;
     if (!Array.isArray(value.fixtures)) return null;
     return value;
   }
@@ -220,7 +229,13 @@ export function createProviderFixtureRuntime(deps) {
     const seenFixtures=new Set();
     const fixtures=[...upcomingRows,...recentRows].filter(fixture=>{
       const fixtureId=positiveSafeInteger(fixture?.fixture?.id);
-      if (!fixtureId || seenFixtures.has(fixtureId)) return false;
+      const homeId=positiveSafeInteger(fixture?.teams?.home?.id);
+      const awayId=positiveSafeInteger(fixture?.teams?.away?.id);
+      if (
+        !fixtureId
+        || (homeId!==id && awayId!==id)
+        || seenFixtures.has(fixtureId)
+      ) return false;
       seenFixtures.add(fixtureId);
       return true;
     });
