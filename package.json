@@ -12,7 +12,8 @@
     "verify:release": "node scripts/verify-release.js",
     "verify:worker": "wrangler deploy --dry-run --outdir .wrangler-dist",
     "lint": "node scripts/source-hygiene.js",
-    "security:privileged": "node scripts/privileged-access-audit.js"
+    "security:privileged": "node scripts/privileged-access-audit.js",
+    "security:dependencies": "node scripts/dependency-security-audit.js"
   },
   "devDependencies": {
     "wrangler": "4.141.0"
