@@ -2,14 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const worker=fs.readFileSync('src/worker.js','utf8');
+const releaseApi=fs.readFileSync('src/release-monitor-api-runtime.js','utf8');
 const releaseMonitor=fs.readFileSync('public/modules/admin-release-monitor.js','utf8');
 
 test('release monitor exposes regression SLO dashboard derived from ops history',()=>{
-  const start=worker.indexOf('async function apiReleaseMonitor');
-  const end=worker.indexOf('async function apiDiagnostics',start);
+  const start=releaseApi.indexOf('async function apiReleaseMonitor');
+  const end=releaseApi.indexOf('  return Object.freeze({',start);
   assert.ok(start>=0 && end>start);
-  const block=worker.slice(start,end);
+  const block=releaseApi.slice(start,end);
   assert.match(block,/buildPostDeployRegressionSloDashboard/);
   assert.match(block,/activeDeploySha/);
   assert.match(block,/postDeployRegressionSlo/);
