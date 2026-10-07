@@ -681,7 +681,10 @@ export function createWorkerBootstrapRuntime(deps = {}) {
           await safePhase5Summary(cfg);
         }
       } catch (error) {
-        console.error('api route',safeRedact(error?.message || error,240));
+        console.error(
+          'api route',
+          safeRedact(safeRead(error,'message') || error,240),
+        );
         let rateLimited=false;
         try { rateLimited=isFootballRateLimitError(error) === true; } catch {}
         let mapped;
@@ -694,13 +697,21 @@ export function createWorkerBootstrapRuntime(deps = {}) {
             severity:'error',
             source:'api',
             eventType:'route_error',
-            code:String(error?.code || 'SERVER_ERROR').slice(0,80),
-            message:safeRedact(error?.message || 'Ошибка сервера.',240),
+            code:
+              safeText(
+                safeRead(error,'code'),
+                80,
+                'SERVER_ERROR',
+              ) || 'SERVER_ERROR',
+            message:safeRedact(
+              safeRead(error,'message') || 'Ошибка сервера.',
+              240,
+            ),
             endpoint:url.pathname,
             status,
           });
         }
-        const retryAfter=boundedRetryAfter(body.retryAfter,null);
+        const retryAfter=boundedRetryAfter(safeRead(body,'retryAfter'),null);
         const recovery=normalizedNewsImpactRecovery(safeRead(error,'newsImpactRecovery'));
         return json({
           ...body,
