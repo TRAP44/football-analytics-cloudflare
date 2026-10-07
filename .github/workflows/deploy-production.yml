@@ -73,14 +73,20 @@ jobs:
             done
 
             if (( ${#UNSAFE_MAIN_DRIFT[@]} > 0 )); then
-              echo "### Stale production deploy blocked" >> "$GITHUB_STEP_SUMMARY"
-              echo "Verified revision $DEPLOY_SHA is behind current main ($CURRENT_MAIN_SHA) with production-relevant changes." >> "$GITHUB_STEP_SUMMARY"
-              printf 'Unsafe drift: %s\n' "${UNSAFE_MAIN_DRIFT[*]}" >> "$GITHUB_STEP_SUMMARY"
-              exit 1
-            fi
+              if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+                echo "### Stale production deploy blocked" >> "$GITHUB_STEP_SUMMARY"
+                echo "Manual deploy requires current main when production-relevant drift exists." >> "$GITHUB_STEP_SUMMARY"
+                printf 'Unsafe drift: %s\n' "${UNSAFE_MAIN_DRIFT[*]}" >> "$GITHUB_STEP_SUMMARY"
+                exit 1
+              fi
 
-            echo "### Test-only main drift accepted" >> "$GITHUB_STEP_SUMMARY"
-            echo "Verified merged-PR revision $DEPLOY_SHA remains production-equivalent to current main $CURRENT_MAIN_SHA." >> "$GITHUB_STEP_SUMMARY"
+              echo "### Verified release snapshot accepted" >> "$GITHUB_STEP_SUMMARY"
+              echo "Deploying merged-PR revision $DEPLOY_SHA while newer unverified production-relevant main changes remain pending." >> "$GITHUB_STEP_SUMMARY"
+              printf 'Pending main drift: %s\n' "${UNSAFE_MAIN_DRIFT[*]}" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "### Test-only main drift accepted" >> "$GITHUB_STEP_SUMMARY"
+              echo "Verified merged-PR revision $DEPLOY_SHA remains production-equivalent to current main $CURRENT_MAIN_SHA." >> "$GITHUB_STEP_SUMMARY"
+            fi
           else
             echo "Deploy SHA matches current main: $DEPLOY_SHA" >> "$GITHUB_STEP_SUMMARY"
             echo "Checked-out SHA and current main both match deploy SHA: $DEPLOY_SHA" >> "$GITHUB_STEP_SUMMARY"
