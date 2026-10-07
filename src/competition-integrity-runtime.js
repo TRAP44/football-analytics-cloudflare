@@ -40,16 +40,21 @@ export function createCompetitionIntegrityRuntime(deps) {
     return Array.isArray(value) ? value : [];
   }
 
-  function positiveSafeInteger(value) {
-    if (value === null || value === undefined || value === '') return null;
+  function finiteNumberCandidate(value) {
+    if (value === null || value === undefined || typeof value === 'boolean') return null;
+    if (typeof value === 'string' && !value.trim()) return null;
     const number=Number(value);
-    return Number.isSafeInteger(number) && number > 0 ? number : null;
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function positiveSafeInteger(value) {
+    const number=finiteNumberCandidate(value);
+    return number !== null && Number.isSafeInteger(number) && number > 0 ? number : null;
   }
 
   function nonNegativeSafeInteger(value, max = Number.MAX_SAFE_INTEGER) {
-    if (value === null || value === undefined || value === '') return null;
-    const number=Number(value);
-    return Number.isSafeInteger(number) && number >= 0 && number <= max ? number : null;
+    const number=finiteNumberCandidate(value);
+    return number !== null && Number.isSafeInteger(number) && number >= 0 && number <= max ? number : null;
   }
 
   function safeText(value, max = 160) {
@@ -67,6 +72,20 @@ export function createCompetitionIntegrityRuntime(deps) {
     } catch {
       return '';
     }
+  }
+
+  function strictTimestampMs(value) {
+    const raw=safeText(value,80);
+    const calendar=/^(\d{4})-(\d{2})-(\d{2})T/.exec(raw);
+    if (!calendar) return null;
+    const year=Number(calendar[1]);
+    const month=Number(calendar[2]);
+    const day=Number(calendar[3]);
+    if (!Number.isSafeInteger(year) || month < 1 || month > 12 || day < 1) return null;
+    const maxDay=new Date(Date.UTC(year,month,0)).getUTCDate();
+    if (day > maxDay) return null;
+    const timestamp=Date.parse(raw);
+    return Number.isFinite(timestamp) ? timestamp : null;
   }
 
   function scoreInteger(value) {
@@ -101,8 +120,8 @@ export function createCompetitionIntegrityRuntime(deps) {
   }
 
   function boundedQuality(value, fallback = 0) {
-    const number=Number(value);
-    return Number.isFinite(number) ? Math.max(0,Math.min(100,number)) : fallback;
+    const number=finiteNumberCandidate(value);
+    return number !== null ? Math.max(0,Math.min(100,number)) : fallback;
   }
 
   function ensureIntegrityMemory() {
@@ -287,8 +306,8 @@ export function createCompetitionIntegrityRuntime(deps) {
     const comp=competition && typeof competition === 'object' && !Array.isArray(competition)
       ? {...normalized,...competition}
       : normalized;
-    const rawPriority=Number(comp.priority);
-    let score=Math.max(8,Math.min(72,Number.isFinite(rawPriority) ? rawPriority : 45));
+    const rawPriority=finiteNumberCandidate(comp.priority);
+    let score=Math.max(8,Math.min(72,rawPriority !== null ? rawPriority : 45));
     const home=safeText(homeName,160);
     const away=safeText(awayName,160);
     if (BIG_TEAM_RE.test(home)) score+=12;
@@ -331,9 +350,8 @@ export function createCompetitionIntegrityRuntime(deps) {
   const INTEGRITY_SEVERITY_WEIGHT = Object.freeze({ info: 4, warning: 13, error: 38 });
   
   function finiteNonNegative(value) {
-    if (value === null || value === undefined || value === '') return null;
-    const number=Number(value);
-    return Number.isFinite(number) && number >= 0 ? number : null;
+    const number=finiteNumberCandidate(value);
+    return number !== null && number >= 0 ? number : null;
   }
   
   function fixtureScorePair(fixture) {
@@ -362,7 +380,7 @@ export function createCompetitionIntegrityRuntime(deps) {
     });
     const fixtureId=positiveSafeInteger(fixture?.fixture?.id);
     const date=safeText(fixture?.fixture?.date,80);
-    const kickoffMs=Date.parse(date);
+    const kickoffMs=strictTimestampMs(date);
     const status=safeText(fixture?.fixture?.status?.short,16).toUpperCase();
     const elapsedRaw=fixture?.fixture?.status?.elapsed;
     const elapsed=nonNegativeSafeInteger(elapsedRaw,180);
@@ -472,7 +490,7 @@ export function createCompetitionIntegrityRuntime(deps) {
     const leagueId=positiveSafeInteger(fixture?.league?.id);
     const homeId=positiveSafeInteger(fixture?.teams?.home?.id);
     const awayId=positiveSafeInteger(fixture?.teams?.away?.id);
-    const ms=Date.parse(safeText(fixture?.fixture?.date,80));
+    const ms=strictTimestampMs(fixture?.fixture?.date);
     if (!homeId || !awayId || !Number.isFinite(ms)) return '';
     const minute=Math.floor(ms/60000);
     return `${leagueId || 0}:${homeId}:${awayId}:${minute}`;
