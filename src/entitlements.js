@@ -149,7 +149,7 @@ export function normalizeEntitlementRow(row = {}) {
     usageLimit: usageLimitRaw == null ? null : positiveInt(usageLimitRaw, Number.NaN),
     usageCount: nonNegativeInt(row.usage_count ?? row.usageCount ?? 0),
     paymentChargeId: String(row.payment_charge_id ?? row.paymentChargeId ?? ''),
-    status: String(row.status || 'active').trim().toLowerCase(),
+    status: typeof row.status === 'string' ? row.status.trim().toLowerCase() : '',
   };
 }
 
@@ -296,10 +296,16 @@ export function createEntitlementService({
     const uid=positiveInt(userId,null);
     if (uid === null) return [];
     if (!hasSupabase(cfg)) return passMemoryRows(memory, uid);
-    return await supaSelectMany(cfg, 'user_entitlements', { telegram_id: `eq.${uid}` }, {
+    const rows=await supaSelectMany(cfg, 'user_entitlements', { telegram_id: `eq.${uid}` }, {
       limit: 100,
       order: 'expires_at.desc',
     });
+    if (!Array.isArray(rows)) {
+      const error=new Error('Entitlement store returned an invalid collection.');
+      error.code='ENTITLEMENT_STORE_INVALID_RESPONSE';
+      throw error;
+    }
+    return rows;
   }
 
   async function activatePassPurchase({
@@ -471,7 +477,10 @@ export function createEntitlementService({
   async function reserveEntitlementUsage(userId, activeEntitlements, fixtureId, cfg, usageOptions = {}) {
     const uid=positiveInt(userId,null);
     if (uid === null) return {allowed:false,reserved:false,reason:'invalid_input'};
-    const candidates = (activeEntitlements || []).map(normalizeEntitlementRow);
+    if (!Array.isArray(activeEntitlements)) {
+      return {allowed:false,reserved:false,reason:'invalid_entitlements'};
+    }
+    const candidates = activeEntitlements.map(normalizeEntitlementRow);
     const unlimited = candidates.find(item => item.usageLimit == null);
     if (unlimited) {
       return {
