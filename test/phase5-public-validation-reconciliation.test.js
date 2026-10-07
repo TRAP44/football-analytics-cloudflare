@@ -43,8 +43,9 @@ test('Phase 5 dashboard is admin-only and legacy strict-beta dashboard remains a
   assert.match(router,/pathname === '\/api\/beta-dashboard'/);
   assert.match(router,/return await apiBetaDashboard/);
   assert.match(betaDashboard,/\/api\/phase5-dashboard\?days=/);
-  assert.match(adminIndex,/Phase 5 Dashboard/);
-  assert.match(adminIndex,/Public Validation/);
+  assert.match(adminIndex,/Проверка публичного сценария/);
+  assert.match(adminIndex,/Production Dashboard/);
+  assert.match(betaDashboard,/PUBLIC VALIDATION HEALTHY/);
 });
 
 test('Phase 5 evidence excludes legacy rows and has exact initial thresholds',()=>{
