@@ -57,6 +57,14 @@ export function timeOf(iso) {
   try { return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d); } catch { return '—'; }
 }
 
+export function favoriteStarSvg(active = false) {
+  const filled=active === true;
+  return `<svg class="fav-star-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path d="M12 3.7l2.55 5.17 5.71.83-4.13 4.03.98 5.69L12 16.73l-5.11 2.69.98-5.69-4.13-4.03 5.71-.83L12 3.7z"
+      ${filled ? 'fill="currentColor"' : 'fill="none"'} stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+  </svg>`;
+}
+
 export function dateTime(iso) {
   const d = safeDate(iso);
   if (!d) return '';
