@@ -297,3 +297,85 @@ test('real Request bodies are bounded before Telegram update parsing', async () 
   assert.deepEqual(result.body,{ok:false,error:'update_too_large'});
   assert.equal(claimed,0);
 });
+
+
+test('invalid processor response after an unsafe mutation suppresses replay', async () => {
+  const events=[];
+  const handler=createTelegramWebhookHandler(deps({
+    processTelegramUpdate:async(_request,activeCfg)=>{
+      markTelegramWebhookMutation(activeCfg,'favorite_toggle');
+      return undefined;
+    },
+    completeTelegramUpdate:key=>events.push(['memory-complete',key]),
+    completeTelegramUpdatePersistent:async(_cfg,key)=>{
+      events.push(['persistent-complete',key]);
+      return true;
+    },
+    releaseTelegramUpdate:key=>events.push(['memory-release',key]),
+    releaseTelegramUpdatePersistent:async(_cfg,key)=>{
+      events.push(['persistent-release',key]);
+      return true;
+    },
+  }));
+
+  await assert.rejects(
+    handler(requestFor('secret',{update_id:1}),{webhookSecret:'secret'}),
+    error=>error?.code==='TELEGRAM_UPSTREAM'
+      && error?.telegramWebhookRetry===false
+      && error?.telegramWebhookDisposition?.unsafeMutations===1,
+  );
+  assert.deepEqual(events,[
+    ['memory-complete','u:1'],
+    ['persistent-complete','u:1'],
+  ]);
+});
+
+test('burst guard failures retry before processing and release owned claims', async () => {
+  const events=[];
+  let processed=0;
+  const handler=createTelegramWebhookHandler(deps({
+    enforceTelegramBurst:()=>{ throw new Error('burst storage failed'); },
+    processTelegramUpdate:async()=>{
+      processed+=1;
+      return responseJson({ok:true});
+    },
+    releaseTelegramUpdate:key=>events.push(['memory-release',key]),
+    releaseTelegramUpdatePersistent:async(_cfg,key)=>{
+      events.push(['persistent-release',key]);
+      return true;
+    },
+  }));
+
+  await assert.rejects(
+    handler(requestFor('secret',{update_id:1}),{webhookSecret:'secret'}),
+    error=>error?.code==='TELEGRAM_UPSTREAM'
+      && error?.telegramWebhookRetry===true,
+  );
+  assert.equal(processed,0);
+  assert.deepEqual(events,[
+    ['memory-release','u:1'],
+    ['persistent-release','u:1'],
+  ]);
+});
+
+test('throttled updates fail closed when their durable completion marker cannot be written', async () => {
+  let callbackAnswers=0;
+  const handler=createTelegramWebhookHandler(deps({
+    enforceTelegramBurst:()=>({blocked:true,retryAfter:4}),
+    completeTelegramUpdatePersistent:async()=>false,
+    telegramApi:async()=>{
+      callbackAnswers+=1;
+      return {};
+    },
+  }));
+
+  await assert.rejects(
+    handler(
+      requestFor('secret',{update_id:1,callback_query:{id:'cb-1'}}),
+      {webhookSecret:'secret'},
+    ),
+    error=>error?.code==='TELEGRAM_DEDUPE_UNAVAILABLE'
+      && error?.telegramWebhookRetry===true,
+  );
+  assert.equal(callbackAnswers,0);
+});
