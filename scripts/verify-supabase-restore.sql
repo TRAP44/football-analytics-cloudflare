@@ -1,5 +1,7 @@
 \set ON_ERROR_STOP on
 
+begin transaction read only;
+
 -- MatchRadar isolated Supabase restore acceptance.
 -- Runs only against the disposable local Supabase database created by CI.
 
@@ -216,3 +218,4 @@ select public.backend_schema_fingerprint();
 select public.backend_schema_contract_v2();
 select public.backend_security_contract();
 select public.backend_default_acl_contract();
+rollback;
