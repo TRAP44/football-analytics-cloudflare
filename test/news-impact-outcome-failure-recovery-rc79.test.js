@@ -1,3 +1,4 @@
+import { createNewsImpactRecoveryRuntime } from '../src/news-impact-recovery-runtime.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -64,6 +65,72 @@ test('RC79 deterministic failure drill remains wired through the recovery runtim
   assert.match(recovery,/provider\?\.events===2/);
   assert.match(recovery,/recovery\?\.code==='retry_soon'/);
   assert.match(worker,/function newsImpactFailureDiagnosticsDrill\(\.\.\.args\).*getNewsImpactRecoveryRuntime\(\)\.newsImpactFailureDiagnosticsDrill/s);
+});
+
+
+test('RC79 failure runtime rejects coercive identities and keeps Telegram 429 separate from AI quota',async()=>{
+  const recorded=[];
+  const failureCodes=new Set([
+    'provider_rate_limit','provider_unavailable','quota_exhausted','analysis_warming',
+    'match_missing','invalid_fixture','data_invalid','telegram_delivery','timeout','server_error',
+  ]);
+  const recoveryCodes=new Set(['retry','retry_soon','retry_later','wait_quota_reset','open_search','open_full_ai']);
+  const runtime=createNewsImpactRecoveryRuntime({
+    NEWS_IMPACT_ACTION_CODES:new Set(['full_ai','share']),
+    NEWS_IMPACT_ACTION_LABELS:{full_ai:'Полный AI',share:'Поделиться'},
+    NEWS_IMPACT_DECISION_CODES:new Set(['material','stable']),
+    NEWS_IMPACT_FAILURE_CODES:failureCodes,
+    NEWS_IMPACT_FAILURE_LABELS:Object.fromEntries([...failureCodes].map(code=>[code,code])),
+    NEWS_IMPACT_RECOVERY_CODES:recoveryCodes,
+    NEWS_IMPACT_RECOVERY_LABELS:Object.fromEntries([...recoveryCodes].map(code=>[code,code])),
+    NEWS_IMPACT_RECOVERY_STRATEGY_GUARD_CODES:new Set(['performance_drift']),
+    isFootballRateLimitError:()=>false,
+    recordGrowthEvent:async(_cfg,event)=>{ recorded.push(event); return true; },
+  });
+
+  assert.equal(runtime.newsImpactFailureCode({status:429},'telegram_delivery'),'telegram_delivery');
+  assert.equal(runtime.newsImpactFailureCode({status:429},'server_error'),'quota_exhausted');
+  assert.equal(runtime.newsImpactFailureCode({status:true},'server_error'),'server_error');
+  assert.doesNotThrow(()=>runtime.newsImpactFailureCode({
+    status:{toString(){throw new Error('must not coerce');}},
+    code:{toString(){throw new Error('must not coerce');}},
+    message:{toString(){throw new Error('must not coerce');}},
+  },'server_error'));
+
+  assert.deepEqual(runtime.buildNewsImpactFailureDiagnostics({broken:true}),[]);
+  const diagnostics=runtime.buildNewsImpactFailureDiagnostics([
+    {telegram_id:true,metadata:{reason:'telegram_delivery',action:'share',recovery:'retry'}},
+    {telegram_id:'7',metadata:{reason:'telegram_delivery',action:'share',recovery:'retry'}},
+    {telegram_id:'8',metadata:{reason:{toString(){throw new Error('must not coerce');}},action:'share',recovery:'retry'}},
+  ]);
+  const telegram=diagnostics.find(row=>row.reason==='telegram_delivery');
+  assert.equal(telegram?.events,2);
+  assert.equal(telegram?.users,1);
+  assert.equal(diagnostics.find(row=>row.reason==='server_error')?.events,1);
+
+  assert.equal(await runtime.recordNewsImpactFailure({},{
+    userId:true,
+    fixtureId:100,
+    decision:'material',
+    action:'full_ai',
+    reason:'server_error',
+  }),false);
+  assert.equal(recorded.length,0);
+
+  assert.equal(await runtime.recordNewsImpactFailure({},{
+    userId:'7',
+    fixtureId:'100',
+    decision:'material',
+    action:'full_ai',
+    channel:{toString(){throw new Error('must not coerce');}},
+    reason:'server_error',
+    status:true,
+  }),true);
+  assert.equal(recorded.length,1);
+  assert.equal(recorded[0].userId,7);
+  assert.equal(recorded[0].fixtureId,100);
+  assert.equal(recorded[0].channel,'telegram');
+  assert.equal('status' in recorded[0].metadata,false);
 });
 
 test('RC79 needs no new Supabase migration',()=>{
