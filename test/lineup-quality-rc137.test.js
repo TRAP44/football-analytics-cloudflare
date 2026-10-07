@@ -73,6 +73,63 @@ test('RC137 does not treat same-name players with different explicit IDs as cros
   assert.equal(quality.bothConfirmed,true);
 });
 
+test('RC137 rejects cross-team starter overlap resolved through a unique name alias', () => {
+  const home={startXI:[
+    player(1,'José Álvarez'),
+    ...Array.from({length:10},(_,i)=>player(i+2,`H ${i+2}`)),
+  ]};
+  const away={startXI:[
+    {name:'Jose Alvarez'},
+    ...Array.from({length:10},(_,i)=>player(101+i,`A ${i+2}`)),
+  ]};
+
+  const quality=assessMatchLineups({home,away});
+
+  assert.equal(quality.home.confirmed,true);
+  assert.equal(quality.away.confirmed,true);
+  assert.equal(quality.crossTeamStarterOverlapCount,1);
+  assert.equal(quality.integrityConfirmed,false);
+  assert.equal(quality.bothConfirmed,false);
+});
+
+test('RC137 fails closed when both teams contain the same unresolved name-only starter', () => {
+  const home={startXI:[
+    {name:'Alex Silva'},
+    ...Array.from({length:10},(_,i)=>player(i+1,`H ${i+1}`)),
+  ]};
+  const away={startXI:[
+    {name:'Álex Silva'},
+    ...Array.from({length:10},(_,i)=>player(101+i,`A ${i+1}`)),
+  ]};
+
+  const quality=assessMatchLineups({home,away});
+
+  assert.equal(quality.home.confirmed,true);
+  assert.equal(quality.away.confirmed,true);
+  assert.equal(quality.crossTeamStarterOverlapCount,1);
+  assert.equal(quality.bothConfirmed,false);
+});
+
+test('RC137 rejects malformed non-string grid evidence and does not award metadata score for coercive values', () => {
+  const lineup={
+    formation:{toString(){return '4-3-3';}},
+    coach:123,
+    startXI:Array.from({length:11},(_,i)=>({
+      ...player(i+1,`Player ${i+1}`),
+      grid:i===0 ? {row:1,col:1} : '',
+    })),
+  };
+
+  const quality=assessLineupQuality(lineup);
+
+  assert.equal(quality.confirmed,false);
+  assert.equal(quality.invalidGridCount,1);
+  assert.equal(quality.formationKnown,false);
+  assert.equal(quality.coachKnown,false);
+  assert.equal(quality.score,75);
+});
+
+
 const worker = fs.readFileSync('src/worker.js', 'utf8')
   + '\n' + fs.readFileSync('src/analysis-runtime.js', 'utf8')
   + '\n' + fs.readFileSync('src/analysis-quality-runtime.js', 'utf8')
