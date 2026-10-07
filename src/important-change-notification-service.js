@@ -443,11 +443,15 @@ export function createImportantChangeNotificationService({
       );
     }
 
-    const sourceUserIds=new Set(
-      rows
-        .map(row=>reminderIdentity(row)?.telegramId || 0)
-        .filter(Boolean),
-    );
+    const sourceKeys=new Set();
+    for (const row of rows) {
+      const identity=reminderIdentity(row);
+      if (!identity) continue;
+      sourceKeys.add(
+        `${identity.telegramId}:${identity.fixtureId}`,
+      );
+    }
+
     const allowedUserIds=new Set();
     const audienceRows=safeRead(audience,'rows');
     if (!Array.isArray(audienceRows)) {
@@ -457,10 +461,9 @@ export function createImportantChangeNotificationService({
     }
     for (const row of audienceRows.slice(0,2000)) {
       const identity=reminderIdentity(row);
-      if (
-        identity
-        && sourceUserIds.has(identity.telegramId)
-      ) {
+      if (!identity) continue;
+      const key=`${identity.telegramId}:${identity.fixtureId}`;
+      if (sourceKeys.has(key)) {
         allowedUserIds.add(identity.telegramId);
       }
     }
