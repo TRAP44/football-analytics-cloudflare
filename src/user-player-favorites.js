@@ -47,7 +47,15 @@ export function createFavoritePlayersService({
   }
 
   function favoritePlayerList(value) {
-    return Array.isArray(value) ? value.filter(item=>plainObject(item)) : [];
+    if (value === null || value === undefined) return [];
+    if (!Array.isArray(value)) throw new Error('Favorite players: invalid collection state.');
+    const rows=[];
+    for (const item of value) {
+      const row=plainObject(item);
+      if (!row) throw new Error('Favorite players: invalid row state.');
+      rows.push(row);
+    }
+    return rows;
   }
 
   function supabaseEnabled(cfg) {
@@ -88,7 +96,7 @@ export function createFavoritePlayersService({
         {limit:PERSONAL_WRITE_LIMITS.favoritePlayers,order:'created_at.desc'},
       );
       if (!Array.isArray(rows)) throw new Error('Supabase favorite players: invalid response payload.');
-      return rows;
+      return favoritePlayerList(rows);
     }
     return favoritePlayerList(runtimeMemory.favoritePlayers.get(telegramId));
   }
