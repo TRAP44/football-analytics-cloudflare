@@ -6,12 +6,19 @@ import { normalizeReferralCode } from './referral-attribution.js';
 
 // Phase 2 Telegram boundary: Mini App handoff and primary-bot deep-link construction only.
 // Messaging, webhook orchestration, growth events and route handlers stay in the composition root.
-export function createTelegramLinksRuntime({
-  cleanLaunchPart,
-  getCache,
-  setCache,
-  telegramApi,
-} = {}) {
+export function createTelegramLinksRuntime(deps = {}) {
+  if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
+    throw new TypeError('Telegram links runtime dependencies are required.');
+  }
+  const {
+    cleanLaunchPart,
+    getCache,
+    setCache,
+    telegramApi,
+  } = deps;
+  if (typeof cleanLaunchPart !== 'function') {
+    throw new TypeError('Telegram links runtime requires cleanLaunchPart.');
+  }
   function plainObject(value) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
   }
@@ -32,9 +39,6 @@ export function createTelegramLinksRuntime({
   }
 
   function safeLaunchPart(value, maxLength, fallback) {
-    if (typeof cleanLaunchPart !== 'function') {
-      throw new TypeError('Telegram links runtime requires cleanLaunchPart.');
-    }
     const input=textValue(value, fallback);
     const cleaned=textValue(cleanLaunchPart(input,maxLength))
       .toLowerCase()
@@ -46,8 +50,11 @@ export function createTelegramLinksRuntime({
 
   function safeParamValue(value, key = '') {
     if (typeof value === 'string') {
-      const text=value.trim();
-      if (/[\u0000-\u001f\u007f]/u.test(text)) {
+      const text=value.normalize('NFKC').trim();
+      if (
+        text.length > 512
+        || /[\u0000-\u001f\u007f]/u.test(text)
+      ) {
         throw new TypeError(`Некорректный параметр Telegram-ссылки: ${key || 'value'}.`);
       }
       return text;
@@ -59,9 +66,11 @@ export function createTelegramLinksRuntime({
 
   function requestUrl(request) {
     const raw=typeof request?.url === 'string' ? request.url.trim() : '';
-    if (!raw) throw new TypeError('Некорректный URL Mini App.');
-    const url=new URL(raw);
-    if (!['http:','https:'].includes(url.protocol) || url.username || url.password) {
+    if (!raw || raw.length > 2048) throw new TypeError('Некорректный URL Mini App.');
+    let url;
+    try { url=new URL(raw); }
+    catch { throw new TypeError('Некорректный URL Mini App.'); }
+    if (url.protocol !== 'https:' || url.username || url.password) {
       throw new TypeError('Некорректный URL Mini App.');
     }
     return url;
@@ -75,12 +84,14 @@ export function createTelegramLinksRuntime({
 
   function telegramWebAppUrl(request, params = {}) {
     const url=requestUrl(request);
+    const source=plainObject(params);
+    if (!source) throw new TypeError('Некорректные параметры Telegram-ссылки.');
     url.pathname = '/';
     url.search = '';
     url.hash = '';
-    for (const [rawKey, value] of Object.entries(plainObject(params) || {})) {
+    for (const [rawKey, value] of Object.entries(source)) {
       const key=textValue(rawKey);
-      if (!key || key.length>64 || /[\u0000-\u001f\u007f]/u.test(key)) {
+      if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(key)) {
         throw new TypeError('Некорректное имя параметра Telegram-ссылки.');
       }
       if (value === undefined || value === null || value === '') continue;
@@ -99,7 +110,7 @@ export function createTelegramLinksRuntime({
     const id=canonicalFixtureId(fixtureId);
     if (id === null) throw invalidFixtureIdError();
     const normalizedTab=textValue(tab,'brief') || 'brief';
-    if (normalizedTab.length>32 || /[\u0000-\u001f\u007f]/u.test(normalizedTab)) {
+    if (!/^[A-Za-z0-9_-]{1,32}$/.test(normalizedTab)) {
       throw new TypeError('Некорректная вкладка Telegram Mini App.');
     }
     return {
@@ -122,12 +133,14 @@ export function createTelegramLinksRuntime({
     };
   }
 
-  function fixtureShareStartParam(fixtureId, {
-    source='social',
-    campaign='match_share',
-    content='analysis',
-    referralCode='',
-  } = {}) {
+  function fixtureShareStartParam(fixtureId, options = {}) {
+    const sourceOptions=plainObject(options) || {};
+    const {
+      source='social',
+      campaign='match_share',
+      content='analysis',
+      referralCode='',
+    } = sourceOptions;
     const id=canonicalFixtureId(fixtureId);
     if (id === null) return '';
     const src=safeLaunchPart(source,14,'social');
@@ -157,11 +170,13 @@ export function createTelegramLinksRuntime({
     return `${prefix}__${values.join('__')}${suffix}`;
   }
 
-  function campaignStartParam({
-    source='social',
-    campaign='launch',
-    content='promo',
-  } = {}) {
+  function campaignStartParam(options = {}) {
+    const sourceOptions=plainObject(options) || {};
+    const {
+      source='social',
+      campaign='launch',
+      content='promo',
+    } = sourceOptions;
     const src=safeLaunchPart(source,24,'social');
     const cmp=safeLaunchPart(campaign,28,'launch');
     const cnt=safeLaunchPart(content,20,'promo');
@@ -216,18 +231,31 @@ export function createTelegramLinksRuntime({
   }
 
   function telegramShareComposerUrl(url, text = '') {
-    const target=typeof url === 'string'
+    const rawTarget=typeof url === 'string'
       ? url.trim()
       : url instanceof URL
         ? url.toString()
         : '';
-    if (!target || /[\u0000-\u001f\u007f]/u.test(target)) {
+    if (!rawTarget || rawTarget.length > 2048 || /[\u0000-\u001f\u007f]/u.test(rawTarget)) {
       throw new TypeError('Некорректный URL для Telegram Share.');
     }
-    const shareText=textValue(text);
+    let targetUrl;
+    try { targetUrl=new URL(rawTarget); }
+    catch { throw new TypeError('Некорректный URL для Telegram Share.'); }
+    if (targetUrl.protocol !== 'https:' || targetUrl.username || targetUrl.password) {
+      throw new TypeError('Некорректный URL для Telegram Share.');
+    }
+    const target=targetUrl.toString();
+    const shareText=typeof text === 'string'
+      ? text
+          .normalize('NFKC')
+          .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g,' ')
+          .trim()
+          .slice(0,700)
+      : '';
     const q=new URLSearchParams();
     q.set('url',target);
-    if (shareText) q.set('text',shareText.slice(0,700));
+    if (shareText) q.set('text',shareText);
     return `https://t.me/share/url?${q.toString()}`;
   }
 
