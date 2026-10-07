@@ -112,7 +112,7 @@ test('Match Pass opens from Match Center context and quota paywall preserves fix
   assert.match(app, /id="centerMatchPassBtn"/);
   assert.match(app, /openPassStoreForFixture\(Number\(m\.fixtureId\)\)/);
   assert.match(app, /showQuotaPaywallForFixture,/);
-  assert.match(analysisController, /showPaywall\(fixtureId\)/);
+  assert.match(analysisController, /if \(quotaExhausted\) safeCall\(showPaywall,id\)/);
   assert.match(billing, /passFixtureId = id/);
   assert.match(billing, /function clearPassContext/);
   assert.match(billing, /await openProfile\(\)/);
