@@ -55,16 +55,37 @@ export function createSettlementRuntime(deps) {
     todayUtc,
   } = deps;
 
+  function integerCandidate(value) {
+    if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+    if (typeof value !== 'string' || value.length > 24) return null;
+    const raw=value.trim();
+    if (!/^\d+$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isSafeInteger(number) ? number : null;
+  }
+
   function positiveSafeInteger(value) {
-    if (value === null || value === undefined || value === '') return null;
-    const number = Number(value);
-    return Number.isSafeInteger(number) && number > 0 ? number : null;
+    const number=integerCandidate(value);
+    return number !== null && number > 0 ? number : null;
   }
 
   function nonNegativeSafeInteger(value) {
-    if (value === null || value === undefined || value === '') return null;
-    const number = Number(value);
-    return Number.isSafeInteger(number) && number >= 0 ? number : null;
+    const number=integerCandidate(value);
+    return number !== null && number >= 0 ? number : null;
+  }
+
+  function finiteNumericCandidate(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value !== 'string' || value.length > 48) return null;
+    const raw=value.trim();
+    if (!/^-?(?:\d+|\d+\.\d+|\.\d+)$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function boundedCount(value,max=1_000_000) {
+    const number=nonNegativeSafeInteger(value);
+    return number===null ? 0 : Math.min(number,max);
   }
 
   function plainObject(value) {
@@ -83,12 +104,8 @@ export function createSettlementRuntime(deps) {
   }
 
   function finiteModelNumber(value,min=-Infinity,max=Infinity) {
-    return typeof value==='number'
-      && Number.isFinite(value)
-      && value>=min
-      && value<=max
-      ? value
-      : null;
+    const number=finiteNumericCandidate(value);
+    return number!==null && number>=min && number<=max ? number : null;
   }
 
   async function captureModelPrediction(payload, cfg) {
@@ -147,9 +164,9 @@ export function createSettlementRuntime(deps) {
       away_id:positiveSafeInteger(plainObject(match.away)?.id),
       home_name:safeText(plainObject(match.home)?.name,180),
       away_name:safeText(plainObject(match.away)?.name,180),
-      home_prob:Number(probabilities.home),
-      draw_prob:Number(probabilities.draw),
-      away_prob:Number(probabilities.away),
+      home_prob:probabilityCheck.values[0],
+      draw_prob:probabilityCheck.values[1],
+      away_prob:probabilityCheck.values[2],
       predicted_outcome:predictedOutcome,
       confidence_score:finiteModelNumber(confidence.score,0,100),
       signal_names:signals
@@ -157,9 +174,9 @@ export function createSettlementRuntime(deps) {
         .filter(Boolean),
       signal_weights:signalWeights,
       signal_probabilities:signalProbabilities,
-      raw_home_prob:finiteModelNumber(rawProbabilities.home,0,100) ?? Number(probabilities.home),
-      raw_draw_prob:finiteModelNumber(rawProbabilities.draw,0,100) ?? Number(probabilities.draw),
-      raw_away_prob:finiteModelNumber(rawProbabilities.away,0,100) ?? Number(probabilities.away),
+      raw_home_prob:finiteModelNumber(rawProbabilities.home,0,100) ?? probabilityCheck.values[0],
+      raw_draw_prob:finiteModelNumber(rawProbabilities.draw,0,100) ?? probabilityCheck.values[1],
+      raw_away_prob:finiteModelNumber(rawProbabilities.away,0,100) ?? probabilityCheck.values[2],
       calibration_mode:safeText(calibration.mode,80) || 'baseline',
       calibration_profile_fingerprint:safeText(calibration.fingerprint,160),
       calibration_temperature:finiteModelNumber(calibration.temperature,0.01,100) ?? 1,
@@ -242,10 +259,16 @@ export function createSettlementRuntime(deps) {
         actual_outcome: actualOutcome,
         correct: String(row.predicted_outcome || '') === actualOutcome,
         brier_score: scoreBrier(row, actualOutcome),
-        over25_actual: over25Actual,
-        over25_correct: row.over25_prob === null || row.over25_prob === undefined ? null : (Number(row.over25_prob) >= 50) === over25Actual,
-        btts_actual: bttsActual,
-        btts_correct: row.btts_prob === null || row.btts_prob === undefined ? null : (Number(row.btts_prob) >= 50) === bttsActual,
+        over25_actual:over25Actual,
+        over25_correct:(()=>{
+          const probability=finiteModelNumber(row?.over25_prob,0,100);
+          return probability===null ? null : (probability>=50)===over25Actual;
+        })(),
+        btts_actual:bttsActual,
+        btts_correct:(()=>{
+          const probability=finiteModelNumber(row?.btts_prob,0,100);
+          return probability===null ? null : (probability>=50)===bttsActual;
+        })(),
         settlement_verification_state: 'unverified',
         settlement_verified_at: null,
         settlement_verified_status: fixtureStatusShort(fixture),
@@ -266,14 +289,14 @@ export function createSettlementRuntime(deps) {
   }
 
   function predictionProbabilityIntegrity(row) {
-    const raw = ['home_prob','draw_prob','away_prob'].map(key => row?.[key]);
-    const present = raw.every(value => value !== null && value !== undefined && value !== '');
-    const values = raw.map(Number);
-    const finite = present && values.every(Number.isFinite);
-    const bounded = finite && values.every(value => value >= 0 && value <= 100);
-    const sum = finite ? values.reduce((a, b) => a + b, 0) : null;
-    const sumOk = Number.isFinite(sum) && Math.abs(sum - 100) <= 1.5;
-    return { present, finite, bounded, sum, sumOk, valid: present && finite && bounded && sumOk };
+    const raw=['home_prob','draw_prob','away_prob'].map(key=>row?.[key]);
+    const values=raw.map(finiteNumericCandidate);
+    const present=raw.every(value=>value!==null && value!==undefined && value!=='');
+    const finite=present && values.every(value=>value!==null);
+    const bounded=finite && values.every(value=>value>=0 && value<=100);
+    const sum=finite ? values.reduce((a,b)=>a+b,0) : null;
+    const sumOk=Number.isFinite(sum) && Math.abs(sum-100)<=1.5;
+    return {present,finite,bounded,sum,sumOk,values,valid:present && finite && bounded && sumOk};
   }
 
   function predictionSnapshotTiming(row) {
@@ -288,21 +311,17 @@ export function createSettlementRuntime(deps) {
   }
 
   function settledOutcomeIntegrity(row) {
-    const outcome = String(row?.actual_outcome || '');
-    const homeRaw = row?.actual_home_goals;
-    const awayRaw = row?.actual_away_goals;
-    const home = Number(homeRaw);
-    const away = Number(awayRaw);
-    const scoreValid = homeRaw !== null && homeRaw !== undefined && homeRaw !== '' &&
-      awayRaw !== null && awayRaw !== undefined && awayRaw !== '' &&
-      Number.isInteger(home) && Number.isInteger(away) && home >= 0 && away >= 0;
-    const outcomeValid = ['home','draw','away'].includes(outcome);
-    const expectedOutcome = scoreValid ? actualOutcomeFromGoals(home, away) : '';
+    const outcome=safeText(row?.actual_outcome,16).toLowerCase();
+    const home=nonNegativeSafeInteger(row?.actual_home_goals);
+    const away=nonNegativeSafeInteger(row?.actual_away_goals);
+    const scoreValid=home!==null && away!==null;
+    const outcomeValid=['home','draw','away'].includes(outcome);
+    const expectedOutcome=scoreValid ? actualOutcomeFromGoals(home,away) : '';
     return {
       scoreValid,
       outcomeValid,
       expectedOutcome,
-      valid: scoreValid && outcomeValid && expectedOutcome === outcome,
+      valid:scoreValid && outcomeValid && expectedOutcome===outcome,
     };
   }
 
@@ -311,10 +330,10 @@ export function createSettlementRuntime(deps) {
     if (!probabilityCheck.valid) return { testable: false, valid: false, predictedValid: false, topMatches: false, correctMatches: false };
     const predicted = String(row?.predicted_outcome || '');
     const predictedValid = ['home','draw','away'].includes(predicted);
-    const expectedPredicted = predictionOutcomeKey({
-      home: Number(row.home_prob),
-      draw: Number(row.draw_prob),
-      away: Number(row.away_prob),
+    const expectedPredicted=predictionOutcomeKey({
+      home:probabilityCheck.values[0],
+      draw:probabilityCheck.values[1],
+      away:probabilityCheck.values[2],
     });
     const topMatches = predictedValid && predicted === expectedPredicted;
     let correctMatches = true;
@@ -365,22 +384,23 @@ export function createSettlementRuntime(deps) {
     const all = [...settled, ...(Array.isArray(pendingRows) ? pendingRows : [])];
     const fixtureCounts = new Map();
     for (const row of all) {
-      const id = Number(row?.fixture_id || 0);
-      if (Number.isInteger(id) && id > 0) fixtureCounts.set(id, Number(fixtureCounts.get(id) || 0) + 1);
+      const id=positiveSafeInteger(row?.fixture_id);
+      if (id!==null) fixtureCounts.set(id,(fixtureCounts.get(id) || 0)+1);
     }
-    return settled.filter(row => {
-      const id = Number(row?.fixture_id || 0);
-      return Number.isInteger(id) && id > 0 && fixtureCounts.get(id) === 1 && modelQualityEligibleRow(row);
+    return settled.filter(row=>{
+      const id=positiveSafeInteger(row?.fixture_id);
+      return id!==null && fixtureCounts.get(id)===1 && modelQualityEligibleRow(row);
     });
   }
 
   function verifiedBrierScore(row) {
-    if (!predictionProbabilityIntegrity(row).valid || !settledOutcomeIntegrity(row).valid) return null;
+    const probabilityCheck=predictionProbabilityIntegrity(row);
+    if (!probabilityCheck.valid || !settledOutcomeIntegrity(row).valid) return null;
     return brierFromProbabilities({
-      home: Number(row.home_prob),
-      draw: Number(row.draw_prob),
-      away: Number(row.away_prob),
-    }, String(row.actual_outcome));
+      home:probabilityCheck.values[0],
+      draw:probabilityCheck.values[1],
+      away:probabilityCheck.values[2],
+    },safeText(row?.actual_outcome,16).toLowerCase());
   }
 
   function buildPredictionIntegrity(settledRows, pendingRows) {
@@ -411,16 +431,13 @@ export function createSettlementRuntime(deps) {
       if (!predictionProbabilityIntegrity(row).valid || !settledOutcomeIntegrity(row).valid) return false;
       return !predictionConsistency(row, { settled: true }).correctMatches;
     });
-    const invalidFixtureIds = all.filter(row => {
-      const id = Number(row?.fixture_id || 0);
-      return !Number.isInteger(id) || id <= 0;
-    });
+    const invalidFixtureIds=all.filter(row=>positiveSafeInteger(row?.fixture_id)===null);
   
-    const fixtureCounts = new Map();
+    const fixtureCounts=new Map();
     for (const row of all) {
-      const id = Number(row?.fixture_id || 0);
-      if (!id) continue;
-      fixtureCounts.set(id, Number(fixtureCounts.get(id) || 0) + 1);
+      const id=positiveSafeInteger(row?.fixture_id);
+      if (id===null) continue;
+      fixtureCounts.set(id,(fixtureCounts.get(id) || 0)+1);
     }
     const duplicateFixtures = [...fixtureCounts.entries()]
       .filter(([, count]) => count > 1)
@@ -817,7 +834,7 @@ export function createSettlementRuntime(deps) {
       awayGoals: nonNegativeSafeInteger(row.actual_away_goals),
       outcome: String(row.actual_outcome || ''),
       correct: typeof row.correct === 'boolean' ? row.correct : null,
-      brierScore: Number.isFinite(Number(row.brier_score)) ? Number(row.brier_score) : null,
+      brierScore:finiteModelNumber(row.brier_score,0,2),
       over25Actual: typeof row.over25_actual === 'boolean' ? row.over25_actual : null,
       over25Correct: typeof row.over25_correct === 'boolean' ? row.over25_correct : null,
       bttsActual: typeof row.btts_actual === 'boolean' ? row.btts_actual : null,
@@ -1048,7 +1065,7 @@ export function createSettlementRuntime(deps) {
       fixture_id: fixtureId,
       action,
       reason,
-      admin_telegram_id: Number(user?.id || 0) || null,
+      admin_telegram_id: positiveSafeInteger(user?.id),
       before_snapshot: resolution.before,
       provider_snapshot: resolution.provider,
       after_snapshot: resolution.after,
@@ -1600,7 +1617,7 @@ export function createSettlementRuntime(deps) {
       finished_at: actionStatus === 'started' ? null : now,
       attempt_no: Math.max(1, Math.min(SETTLEMENT_RUN_MAX_ATTEMPTS, Number(action.attemptNo || 1))),
       retry_of_action_id: action.retryOfActionId ? String(action.retryOfActionId) : null,
-      admin_telegram_id: Number(user?.id || 0) || null,
+      admin_telegram_id: positiveSafeInteger(user?.id),
       candidate_count: Number(action.candidateCount || 0),
       inspected_count: Number(action.inspectedCount || 0),
       settled_count: Number(action.settledCount || 0),
@@ -1766,9 +1783,9 @@ export function createSettlementRuntime(deps) {
   }
 
   function settlementWatchdogDecision(report, runtime, { providerReady = true, quotaHealthy = true, schemaReady = true, runtimeVerified = true, circuitOpen = false } = {}) {
-    const stalePending = Number(report?.recovery?.stalePending || 0);
-    const selectedCount = Number(report?.recovery?.selectedCount || 0);
-    const providerCalls = Number(report?.recovery?.estimatedProviderCalls || 0);
+    const stalePending=boundedCount(report?.recovery?.stalePending);
+    const selectedCount=boundedCount(report?.recovery?.selectedCount);
+    const providerCalls=boundedCount(report?.recovery?.estimatedProviderCalls);
     if (!report?.available) return { state: 'unavailable', recover: false, stalePending, selectedCount, providerCalls };
     if (!schemaReady || !report?.schemaReady) return { state: 'schema_missing', recover: false, stalePending, selectedCount, providerCalls };
     if (!stalePending) return { state: 'clean', recover: false, stalePending, selectedCount, providerCalls };
@@ -1808,8 +1825,8 @@ export function createSettlementRuntime(deps) {
     const p = memory.provider || {};
     const paid = ['PRO', 'ULTRA', 'MEGA'].includes(String(p.plan || '').toUpperCase());
     if (paid) return !providerSnapshot().cooldownActive;
-    const dailyKnown = Number.isFinite(Number(p.dailyRemaining));
-    const minuteKnown = Number.isFinite(Number(p.minuteRemaining));
+    const dailyKnown=finiteNumericCandidate(p.dailyRemaining)!==null;
+    const minuteKnown=finiteNumericCandidate(p.minuteRemaining)!==null;
     if (!dailyKnown || !minuteKnown) return false;
     return freeQuotaHealthy(15, 4);
   }
@@ -1897,8 +1914,16 @@ export function createSettlementRuntime(deps) {
       return { ok: true, ...baseMeta };
     }
   
-    const currentIds = [...new Set((report.recovery?.fixtureIds || []).map(Number).filter(x => Number.isInteger(x) && x > 0))];
-    const candidateMap = new Map((report.recovery?.candidates || []).map(row => [Number(row.fixtureId), row]));
+    const currentIds=[...new Set(
+      (Array.isArray(report.recovery?.fixtureIds) ? report.recovery.fixtureIds : [])
+        .map(positiveSafeInteger)
+        .filter(id=>id!==null),
+    )];
+    const candidateMap=new Map(
+      (Array.isArray(report.recovery?.candidates) ? report.recovery.candidates : [])
+        .map(row=>[positiveSafeInteger(row?.fixtureId),row])
+        .filter(([id])=>id!==null),
+    );
     const dates = [...new Set(currentIds.map(id => String(candidateMap.get(id)?.kickoffAt || '').slice(0, 10)).filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date)))];
     const fixtureSet = new Set(currentIds);
     const fixtures = [];
