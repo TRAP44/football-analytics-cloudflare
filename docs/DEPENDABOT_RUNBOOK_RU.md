@@ -15,13 +15,15 @@ Dependabot автоматически проверяет версии завис
 - npm dependencies — 06:20 Europe/Riga;
 - GitHub Actions — 06:40 Europe/Riga.
 
-Minor и patch обновления группируются, чтобы не создавать десятки отдельных PR.
+Minor и patch version updates группируются, чтобы не создавать десятки отдельных PR.
 
-Major обновления не группируются. Они должны рассматриваться отдельно, потому что могут содержать breaking changes.
+Major version updates не группируются. Они должны рассматриваться отдельно, потому что могут содержать breaking changes.
+
+Группы в `.github/dependabot.yml` явно применяются только к `version-updates`: security update PR не смешиваются с обычными еженедельными обновлениями.
 
 ## Защита от шума
 
-Для каждого ecosystem установлен лимит максимум 5 открытых Dependabot PR.
+Для каждого ecosystem установлен лимит максимум 5 открытых Dependabot **version-update PR**. Security update PR этим параметром не ограничиваются и в этот лимит не входят.
 
 Автоматического merge нет.
 
