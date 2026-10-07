@@ -201,9 +201,21 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     return Number.isFinite(parsed) ? parsed : null;
   }
   
+  function newsImpactCount(value) {
+    const parsed=newsImpactFiniteNumber(value);
+    return parsed!==null && Number.isSafeInteger(parsed) && parsed>=0 ? parsed : 0;
+  }
+
+  function newsImpactSampleThreshold(value, fallback) {
+    const parsed=newsImpactFiniteNumber(value);
+    return parsed!==null && Number.isSafeInteger(parsed) && parsed>0 ? parsed : fallback;
+  }
+
   function newsImpactConversionConfidence(actedUsers = 0, users = 0) {
-    const n=Math.max(0,Math.trunc(Number(users || 0)));
-    const k=Math.min(n,Math.max(0,Math.trunc(Number(actedUsers || 0))));
+    const n=newsImpactCount(users);
+    const k=Math.min(n,newsImpactCount(actedUsers));
+    const minUsers=newsImpactSampleThreshold(NEWS_IMPACT_FUNNEL_MIN_USERS,10);
+    const stableUsers=Math.max(minUsers,newsImpactSampleThreshold(NEWS_IMPACT_FUNNEL_STABLE_USERS,30));
     if (!n) return {
       status:'empty',label:'нет данных',users:0,actedUsers:0,
       lowerPct:0,upperPct:0,eligibleForBottleneck:false,stable:false,
@@ -215,16 +227,16 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     const margin=(z*Math.sqrt((p*(1-p)+(z*z/(4*n)))/n))/denominator;
     const lowerPct=Math.round(Math.max(0,center-margin)*1000)/10;
     const upperPct=Math.round(Math.min(1,center+margin)*1000)/10;
-    const status=n>=NEWS_IMPACT_FUNNEL_STABLE_USERS ? 'stable'
-      : n>=NEWS_IMPACT_FUNNEL_MIN_USERS ? 'early'
+    const status=n>=stableUsers ? 'stable'
+      : n>=minUsers ? 'early'
         : 'insufficient';
     const label=status==='stable' ? 'устойчивая выборка'
       : status==='early' ? 'ранний сигнал'
         : 'мало данных';
     return {
       status,label,users:n,actedUsers:k,lowerPct,upperPct,
-      eligibleForBottleneck:n>=NEWS_IMPACT_FUNNEL_MIN_USERS,
-      stable:n>=NEWS_IMPACT_FUNNEL_STABLE_USERS,
+      eligibleForBottleneck:n>=minUsers,
+      stable:n>=stableUsers,
     };
   }
   
@@ -304,16 +316,22 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   }
   
   function newsImpactActionFunnelBottleneck(rows = []) {
-    const eligible=(Array.isArray(rows) ? rows : []).filter(x=>
-      x
-      && typeof x==='object'
-      && !Array.isArray(x)
-      && x?.confidence?.eligibleForBottleneck===true
-      && newsImpactFiniteNumber(x.conversionPct)!==null
-      && newsImpactFiniteNumber(x.users)!==null
-    );
+    const minUsers=newsImpactSampleThreshold(NEWS_IMPACT_FUNNEL_MIN_USERS,10);
+    const eligible=(Array.isArray(rows) ? rows : []).filter(x=>{
+      if (!x || typeof x!=='object' || Array.isArray(x) || x?.confidence?.eligibleForBottleneck!==true) return false;
+      const users=newsImpactCount(x.users);
+      const conversionPct=newsImpactFiniteNumber(x.conversionPct);
+      return users>=minUsers
+        && conversionPct!==null
+        && conversionPct>=0
+        && conversionPct<=100;
+    });
     if (!eligible.length) return null;
-    return [...eligible].sort((a,b)=>Number(a.conversionPct || 0)-Number(b.conversionPct || 0) || Number(b.users || 0)-Number(a.users || 0))[0] || null;
+    return [...eligible].sort((a,b)=>{
+      const aPct=newsImpactFiniteNumber(a.conversionPct) ?? 100;
+      const bPct=newsImpactFiniteNumber(b.conversionPct) ?? 100;
+      return aPct-bPct || newsImpactCount(b.users)-newsImpactCount(a.users);
+    })[0] || null;
   }
   
   function newsImpactActionFunnelDrill() {
@@ -3363,6 +3381,10 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     const insufficient=newsImpactConversionConfidence(1,3);
     const early=newsImpactConversionConfidence(5,10);
     const stable=newsImpactConversionConfidence(24,30);
+    const booleanSample=newsImpactConversionConfidence(true,true);
+    const forgedBottleneck=newsImpactActionFunnelBottleneck([
+      {code:'forged',users:1,conversionPct:0,confidence:{eligibleForBottleneck:true}},
+    ]);
     return {
       pass:insufficient.status==='insufficient'
         && insufficient.eligibleForBottleneck===false
@@ -3371,8 +3393,10 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
         && early.lowerPct<50
         && early.upperPct>50
         && stable.status==='stable'
-        && stable.stable===true,
-      cases:8,
+        && stable.stable===true
+        && booleanSample.status==='empty'
+        && forgedBottleneck===null,
+      cases:10,
     };
   }
   
