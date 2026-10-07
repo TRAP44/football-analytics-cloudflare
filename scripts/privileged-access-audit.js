@@ -130,23 +130,79 @@ export function auditWorkflow(pathName, text='') {
   return findings;
 }
 
+function matchingJsoncBrace(source,open) {
+  let depth=0;
+  let string=false;
+  let escaped=false;
+  let lineComment=false;
+  let blockComment=false;
+  for (let i=open;i<source.length;i+=1) {
+    const char=source[i];
+    const next=source[i+1] || '';
+
+    if (lineComment) {
+      if (char==='\n') lineComment=false;
+      continue;
+    }
+    if (blockComment) {
+      if (char==='*' && next==='/') {
+        blockComment=false;
+        i+=1;
+      }
+      continue;
+    }
+    if (string) {
+      if (escaped) {
+        escaped=false;
+        continue;
+      }
+      if (char==='\\') {
+        escaped=true;
+        continue;
+      }
+      if (char==='"') string=false;
+      continue;
+    }
+    if (char==='/' && next==='/') {
+      lineComment=true;
+      i+=1;
+      continue;
+    }
+    if (char==='/' && next==='*') {
+      blockComment=true;
+      i+=1;
+      continue;
+    }
+    if (char==='"') {
+      string=true;
+      continue;
+    }
+    if (char==='{') depth+=1;
+    else if (char==='}') {
+      depth-=1;
+      if (depth===0) return i;
+      if (depth<0) return -1;
+    }
+  }
+  return -1;
+}
+
 export function auditWranglerVars(text='') {
   const findings=[];
   const source=String(text);
-  const start=source.indexOf('"vars"');
+  const start=source.search(/^\s*"vars"\s*:/m);
   if (start<0) return findings;
   const open=source.indexOf('{',start);
-  if (open<0) return findings;
-  let depth=0;
-  let end=-1;
-  for (let i=open;i<source.length;i+=1) {
-    if (source[i]==='{') depth+=1;
-    else if (source[i]==='}') {
-      depth-=1;
-      if (depth===0) { end=i; break; }
-    }
+  if (open<0) {
+    findings.push({path:'wrangler.jsonc',type:'vars_block_invalid'});
+    return findings;
   }
-  const block=end>open ? source.slice(open+1,end) : '';
+  const end=matchingJsoncBrace(source,open);
+  if (end<=open) {
+    findings.push({path:'wrangler.jsonc',type:'vars_block_invalid'});
+    return findings;
+  }
+  const block=source.slice(open+1,end);
   for (const match of block.matchAll(/"([A-Z0-9_]+)"\s*:/g)) {
     const name=match[1];
     if (SECRET_NAME_PATTERN.test(name)) findings.push({path:'wrangler.jsonc',type:'secret_like_worker_var',name});
