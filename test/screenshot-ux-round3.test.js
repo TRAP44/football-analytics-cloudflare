@@ -46,13 +46,14 @@ test('Profile no longer renders the duplicate active reminders panel', () => {
 test('public date feed uses the shared exact-date provider loader and per-date cache', () => {
   assert.doesNotMatch(worker, /function publicFeedDateWindow\(date\)/);
   assert.doesNotMatch(worker, /\{from:feedWindow\.from,to:feedWindow\.to\}/);
-  const start = worker.indexOf('async function apiMatches');
-  const end = worker.indexOf('function normalizeStandingRow', start);
-  const block = worker.slice(start, end);
+  const provider = fs.readFileSync('src/provider-fixture-runtime.js', 'utf8');
+  const start = provider.indexOf('async function apiMatches');
+  const end = provider.indexOf('return Object.freeze', start);
+  const block = provider.slice(start, end);
   assert.equal((block.match(/apiFootball\(/g) || []).length, 0);
   assert.match(block, /loadProviderFixturesForDate\(date,cfg,\{forceRefresh:true\}\)/);
   assert.match(block, /providerFixtureDateCacheKey\(date\)/);
-  assert.match(worker, /apiFootball\('\/fixtures',\{date:normalized\},cfg\)/);
+  assert.match(provider, /apiFootball\('\/fixtures',\{date:normalized\},cfg\)/);
 });
 
 test('match rate-limit UI no longer exposes a long countdown', () => {
