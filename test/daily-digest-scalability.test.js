@@ -1,15 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import {
   DAILY_DIGEST_POLICY,
   assessDailyDigestRun,
   classifyDigestTransportError,
+  createDigestRateGate,
   estimateDigestOrchestration,
   isDailyDigestExecutionWindow,
   planDailyDigestRecipients,
   runBoundedDailyDigest,
 } from '../src/daily-digest-delivery.js';
+import { createTelegramDigestRuntime } from '../src/telegram-digest-runtime.js';
 
 const DATE = '2026-09-29';
 
@@ -99,6 +100,71 @@ function options(plan, delivery, overrides = {}) {
     ...overrides,
     clock: undefined,
   };
+}
+
+function telegramDigestHarness(overrides = {}) {
+  const ops=[];
+  const telegram=[];
+  const memory={botDigestSubscriptions:new Map()};
+  memory.botDigestSubscriptions.set(1,{
+    telegram_id:1,
+    chat_id:10001,
+    enabled:true,
+    hour_utc:7,
+    last_sent_date:null,
+    delivery_claim_date:null,
+  });
+
+  const deps={
+    DAILY_DIGEST_POLICY,
+    SMART_NOTIFICATION_POLICY:{},
+    apiFootball:async()=>[],
+    assessDailyDigestRun,
+    botMatchButtonText:()=>'', 
+    bumpTelemetry:()=>{},
+    currentMorningFootballNews:async()=>({items:[],degraded:false}),
+    filterSmartNotificationRecipients:async()=>({rows:[]}),
+    footballBotKeyboard:()=>({}),
+    freeQuotaHealthy:()=>true,
+    getAnalysisTimelineSnapshots:async()=>[],
+    getCache:async()=>null,
+    getFavorites:async()=>[],
+    getStaleCache:async()=>null,
+    hasSupabase:()=>false,
+    isFootballRateLimitError:error=>error?.code==='FOOTBALL_RATE_LIMIT',
+    isLiveStatus:()=>false,
+    isYouthReserveMatch:()=>false,
+    loadProviderFixturesForDate:async()=>[],
+    markTelegramWebhookMutation:()=>{},
+    matchInterestScore:()=>50,
+    memory,
+    morningNewsText:()=>'', 
+    newsConversionKeyboard:()=>null,
+    normalizeBotFixtureCard:value=>value,
+    normalizeCompetition:()=>({priority:45}),
+    planDailyDigestRecipients,
+    radarStrongSignalState:()=>null,
+    recordOpsEvent:async(_cfg,event)=>{ops.push(event); return event;},
+    rememberBotFixtureCards:async()=>{},
+    runBoundedDailyDigest,
+    setCache:async()=>{},
+    sleepMs:async()=>{},
+    supaPatch:async()=>{},
+    supaRpc:async()=>false,
+    supaSelectOne:async()=>null,
+    supaSelectPaged:async()=>({rows:[],truncated:false}),
+    supaUpsert:async()=>{},
+    telegramApi:async(_method,_cfg,payload)=>{
+      telegram.push(payload);
+      return {ok:true,status:200};
+    },
+    telegramHtmlEscape:value=>String(value ?? ''),
+    todayUtc:()=>DATE,
+    ...overrides,
+  };
+
+  const runtime=createTelegramDigestRuntime(deps);
+  return {runtime,ops,telegram,memory:deps.memory};
 }
 
 test('A. small run processes every subscriber and keeps one main delivery per subscriber/date', async () => {
@@ -194,6 +260,54 @@ test('G. one recipient failure does not block the rest and its persistent claim 
   const next = planDailyDigestRecipients(delivery.snapshot(), { date: DATE, maxRecipients: 10, now: Date.parse(`${DATE}T07:10:00.000Z`) });
   assert.equal(next.pending.length, 0);
   assert.equal(next.duplicate, 1);
+});
+
+test('G1. malformed or missing claim leases stay sealed instead of becoming replayable', () => {
+  const now=Date.parse(`${DATE}T07:20:00.000Z`);
+  const source=rows(3);
+  for (const row of source) row.delivery_claim_date=DATE;
+  source[0].delivery_locked_until='not-a-date';
+  source[1].delivery_locked_until=null;
+  source[2].delivery_locked_until='2026-02-30T07:30:00.000Z';
+
+  const plan=planDailyDigestRecipients(source,{date:DATE,maxRecipients:10,now});
+
+  assert.equal(plan.activeClaims,3);
+  assert.equal(plan.sealedClaims,3);
+  assert.equal(plan.expiredClaims,0);
+  assert.equal(plan.pending.length,0);
+  assert.equal(plan.duplicate,3);
+});
+
+test('G1b. malformed delivery date/hour cannot authorize recipients', () => {
+  const source=rows(2);
+
+  const badDate=planDailyDigestRecipients(source,{
+    date:'2026-02-30',
+    hourUtc:7,
+    now:Date.parse(`${DATE}T07:00:00.000Z`),
+    truncated:'false',
+  });
+  assert.equal(badDate.invalidDate,true);
+  assert.equal(badDate.eligible,0);
+  assert.equal(badDate.pending.length,0);
+  assert.equal(badDate.truncated,false);
+
+  const badHour=planDailyDigestRecipients(source,{
+    date:DATE,
+    hourUtc:true,
+    now:Date.parse(`${DATE}T07:00:00.000Z`),
+  });
+  assert.equal(badHour.invalidHour,true);
+  assert.equal(badHour.eligible,0);
+
+  source[0].hour_utc=true;
+  const rowHour=planDailyDigestRecipients(source,{
+    date:DATE,
+    hourUtc:7,
+    now:Date.parse(`${DATE}T07:00:00.000Z`),
+  });
+  assert.deepEqual(rowHour.pending.map(row=>row.telegram_id),[2]);
 });
 
 test('G2. active claim lease blocks replay while an expired lease becomes recoverable', () => {
@@ -329,6 +443,71 @@ test('G6. ambiguous Telegram outcome remains sealed and is not replayed after th
   });
   assert.equal(next.pending.length, 0);
   assert.equal(next.activeClaims, 1);
+});
+
+test('G7. rate gate re-checks a concurrent 429 cooldown after an in-flight wait', async () => {
+  let now=0;
+  const sleepers=[];
+  const gate=createDigestRateGate({
+    now:()=>now,
+    minIntervalMs:50,
+    sleep:ms=>new Promise(resolve=>sleepers.push({ms,resolve})),
+  });
+
+  assert.equal(await gate.acquire(),true);
+  const second=gate.acquire();
+  await new Promise(resolve=>setTimeout(resolve,0));
+  assert.equal(sleepers.length,1);
+  assert.equal(sleepers[0].ms,50);
+
+  gate.defer(2);
+  now=50;
+  sleepers.shift().resolve();
+  await new Promise(resolve=>setTimeout(resolve,0));
+
+  assert.equal(sleepers.length,1);
+  assert.equal(sleepers[0].ms,1950);
+
+  now=2000;
+  sleepers.shift().resolve();
+  assert.equal(await second,true);
+});
+
+test('G8. execution deadline defers armed rows without sending beyond the budget', async () => {
+  const source=rows(4);
+  const delivery=statefulDelivery(source);
+  const plan=planDailyDigestRecipients(source,{date:DATE,maxRecipients:4});
+  const clock=virtualClock();
+  const sendTimes=[];
+
+  const result=await runBoundedDailyDigest(options(plan,delivery,{
+    clock,
+    now:clock.now,
+    sleep:clock.sleep,
+    maxRecipients:4,
+    concurrency:4,
+    minSendIntervalMs:50,
+    executionBudgetMs:100,
+    sendNews:null,
+    sendDigest:async row=>{
+      sendTimes.push({id:row.telegram_id,at:clock.value()});
+      delivery.sent.push(row.telegram_id);
+    },
+  }));
+
+  assert.deepEqual(sendTimes.map(item=>item.at),[0,50]);
+  assert.ok(sendTimes.every(item=>item.at<100));
+  assert.equal(result.sent,2);
+  assert.equal(result.failed,0);
+  assert.equal(result.budgetExhausted,true);
+  assert.equal(result.retryableDeferred,2);
+  assert.equal(result.remaining,2);
+  assert.equal(result.deferred,2);
+  assert.equal(result.durationMs,50);
+
+  const snapshot=delivery.snapshot();
+  assert.equal(snapshot.filter(row=>row.last_sent_date===DATE).length,2);
+  assert.equal(snapshot.filter(row=>row.last_sent_date!==DATE && row.delivery_claim_date===null).length,2);
 });
 
 test('H0. malformed Telegram retry_after is bounded to a safe retry delay', () => {
@@ -520,39 +699,130 @@ test('P. provider payload degradation is a warning even before Telegram delivery
   assert.equal(health.reason, 'degraded');
 });
 
-test('Q. worker keeps provider payload failures retryable and optional morning news fail-soft', () => {
-  const worker = fs.readFileSync('src/worker.js','utf8');
-  const start = worker.indexOf('async function processDailyDigests');
-  const end = worker.indexOf('function telegramHtmlEscape',start);
-  assert.ok(start >= 0 && end > start);
-  const block = worker.slice(start,end);
+test('Q. provider payload failure remains retryable without claiming or sending recipients', async () => {
+  const providerError=Object.assign(new Error('provider limit'),{code:'FOOTBALL_RATE_LIMIT'});
+  const {runtime,ops,telegram,memory}=telegramDigestHarness({
+    loadProviderFixturesForDate:async()=>{throw providerError;},
+    getCache:async()=>null,
+    getStaleCache:async()=>null,
+  });
 
-  assert.match(block,/payload unavailable because API-Football is rate limited/);
-  assert.match(block,/remaining:plan\.pending\.length/);
-  assert.match(block,/retryable:true/);
-  assert.match(block,/currentMorningFootballNews\(cfg\)\.catch/);
-  assert.match(block,/providerDegraded:Boolean\(digest\.providerDegraded\)/);
+  const summary=await runtime.processDailyDigests(
+    {botToken:'123456:TEST'},
+    new Date(`${DATE}T07:05:00.000Z`),
+  );
+
+  assert.equal(summary.sent,0);
+  assert.equal(summary.claimed,0);
+  assert.equal(summary.remaining,1);
+  assert.equal(summary.backlog,1);
+  assert.equal(summary.providerDegraded,true);
+  assert.equal(summary.payloadUnavailable,true);
+  assert.equal(summary.rateLimited,1);
+  assert.equal(telegram.length,0);
+  assert.equal(memory.botDigestSubscriptions.get(1).delivery_claim_date,null);
+
+  const degraded=ops.find(item=>item.code==='DAILY_DIGEST_RUN_DEGRADED');
+  assert.ok(degraded);
+  assert.equal(degraded.meta.retryable,true);
+  assert.equal(degraded.meta.payloadSource,'unavailable');
 });
 
-test('R. current digest can fall back to cached current-day matches after provider failure', () => {
-  const worker = fs.readFileSync('src/worker.js','utf8');
-  const start = worker.indexOf('function digestRowsFromMatchCache');
-  const end = worker.indexOf('async function loadBotDayMatches',start);
-  assert.ok(start >= 0 && end > start);
-  const block = worker.slice(start,end);
+test('Q2. optional morning news failure does not block the primary digest delivery', async () => {
+  const cachedDigest={
+    date:DATE,
+    source:'provider',
+    providerDegraded:false,
+    rows:[{
+      fixtureId:11,
+      homeName:'Home',
+      awayName:'Away',
+      league:'League',
+      date:`${DATE}T18:00:00.000Z`,
+      live:false,
+    }],
+  };
+  const {runtime,telegram}=telegramDigestHarness({
+    getCache:async key=>key===`bot:digest:${DATE}:v1` ? cachedDigest : null,
+    currentMorningFootballNews:async()=>{throw new Error('news unavailable');},
+  });
 
-  assert.match(block,/matches:\$\{date\}:v6-integrity/);
-  assert.match(block,/getStaleCache\(matchCacheKey,cfg\)/);
-  assert.match(block,/source:'matches_cache'/);
-  assert.match(block,/providerDegraded:true/);
-  assert.doesNotMatch(block,/chat_id|telegram_id|botToken|Authorization/);
+  const summary=await runtime.processDailyDigests(
+    {botToken:'123456:TEST'},
+    new Date(`${DATE}T07:05:00.000Z`),
+  );
+
+  assert.equal(summary.sent,1);
+  assert.equal(summary.news,0);
+  assert.equal(summary.newsDegraded,true);
+  assert.equal(summary.providerDegraded,false);
+  assert.equal(telegram.length,1);
+  assert.match(String(telegram[0].text),/Home — Away/);
 });
 
-test('controlled performance model covers 100 / 1k / 5k / 10k recipients', () => {
-  const samples = [100, 1000, 5000, 10000].map(count => estimateDigestOrchestration(count));
-  assert.deepEqual(samples.map(x => x.recipients), [100, 1000, 5000, 10000]);
-  assert.deepEqual(samples.map(x => x.oldMinimumMs), [4000, 49000, 249000, 499000]);
-  assert.deepEqual(samples.map(x => x.runs), [1, 1, 5, 10]);
-  assert.deepEqual(samples.map(x => x.activeMsPerRun), [10000, 100000, 100000, 100000]);
-  assert.deepEqual(samples.map(x => x.completionWindowMs), [10000, 100000, 1300000, 2800000]);
+test('R. current digest falls back to stale current-day match cache without identity leakage', async () => {
+  const providerError=Object.assign(new Error('provider limit'),{code:'FOOTBALL_RATE_LIMIT'});
+  const cachedMatch={
+    fixtureId:77,
+    date:`${DATE}T18:00:00.000Z`,
+    status:'NS',
+    live:false,
+    home:{id:1,name:'Home',logo:''},
+    away:{id:2,name:'Away',logo:''},
+    homeName:'Home',
+    awayName:'Away',
+    league:'League',
+    interestScore:75,
+    competition:{priority:60},
+    featured:true,
+  };
+  const {runtime}=telegramDigestHarness({
+    loadProviderFixturesForDate:async()=>{throw providerError;},
+    getCache:async()=>null,
+    getStaleCache:async key=>key===`matches:${DATE}:v6-integrity`
+      ? {matches:[cachedMatch]}
+      : null,
+  });
+
+  const digest=await runtime.currentDailyDigest({botToken:'private-bot-token'});
+
+  assert.equal(digest.source,'matches_cache');
+  assert.equal(digest.providerDegraded,true);
+  assert.equal(digest.providerRateLimited,true);
+  assert.equal(digest.rows.length,1);
+  assert.equal(digest.rows[0].fixtureId,77);
+  assert.doesNotMatch(
+    JSON.stringify(digest),
+    /chat_id|telegram_id|private-bot-token|Authorization/i,
+  );
+});
+
+test('controlled performance model covers 100 / 1k / 5k / 10k recipients and rejects ambiguous inputs', () => {
+  const samples=[100,1000,5000,10000].map(count=>estimateDigestOrchestration(count));
+  assert.deepEqual(samples.map(x=>x.recipients),[100,1000,5000,10000]);
+  assert.deepEqual(samples.map(x=>x.oldMinimumMs),[4000,49000,249000,499000]);
+  assert.deepEqual(samples.map(x=>x.runs),[1,1,5,10]);
+  assert.deepEqual(samples.map(x=>x.activeMsPerRun),[10000,100000,100000,100000]);
+  assert.deepEqual(samples.map(x=>x.completionWindowMs),[10000,100000,1300000,2800000]);
+
+  assert.deepEqual(estimateDigestOrchestration(true),{
+    recipients:0,
+    oldBatches:0,
+    oldMinimumMs:0,
+    runs:0,
+    activeMsPerRun:0,
+    completionWindowMs:0,
+  });
+  const bounded=estimateDigestOrchestration(100,{
+    oldBatchSize:true,
+    oldBatchDelayMs:false,
+    messagesPerRecipient:true,
+    maxRecipientsPerRun:true,
+    minSendIntervalMs:true,
+    cronIntervalMs:true,
+  });
+  assert.equal(bounded.recipients,100);
+  assert.equal(bounded.oldBatches,5);
+  assert.equal(bounded.runs,1);
+  assert.equal(bounded.activeMsPerRun,10000);
 });
