@@ -299,7 +299,7 @@ export function createTeamTournamentRuntime(deps) {
       return { available:false, reason:'competition_not_supported', events:[], meta:null };
     }
 
-    const cacheKey=`secondary-events:${fixtureId}:openligadb:v1`;
+    const cacheKey=`secondary-events:${fixtureId}:openligadb:v2`;
     const fresh=await getCacheEntry(cacheKey, cfg, false).catch(() => null);
     if (rows(fresh?.payload?.events).length) {
       return {
