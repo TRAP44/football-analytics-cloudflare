@@ -409,7 +409,7 @@ test('error and resolved-query copy are escaped before entering status HTML',()=
   h.renderer.renderGlobalSearch();
   const resolved=h.els.map.get('searchStatus').innerHTML;
   assert.match(resolved,/&lt;script&gt;/);
-  assert.doesNotMatch(resolved,/<script>/);
+  assert.equal(resolved.toLowerCase().includes('<script>'),false);
 });
 
 test('malformed state and hostile getters fail soft instead of crashing renderer',()=>{

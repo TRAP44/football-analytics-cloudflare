@@ -100,7 +100,7 @@ test('Telegram match rendering escapes provider text and tolerates broken format
   assert.match(line,/&lt;League&gt;/);
   assert.match(line,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.match(line,/&lt;best&gt;/);
-  assert.doesNotMatch(line,/<script>|<Home & Co>|<League>/);
+  for (const unsafe of ['<script>','<Home & Co>','<League>']) assert.equal(line.includes(unsafe),false);
   assert.equal(api.botMatchLine({fixtureId:0},0),'');
 
   const bounded=api.botMatchLine({
