@@ -18,3 +18,13 @@ test('RC111 retains the current-main race guard before deploy',()=>{
   assert.match(workflow,/Stale production deploy blocked/);
   assert.match(workflow,/Checked-out SHA and current main both match deploy SHA/);
 });
+
+
+test('RC111 allows a verified merged-PR revision to survive test-only main drift',()=>{
+  assert.match(workflow,/git merge-base --is-ancestor "\$DEPLOY_SHA" "\$CURRENT_MAIN_SHA"/);
+  assert.match(workflow,/git diff --name-only "\$DEPLOY_SHA" "\$CURRENT_MAIN_SHA"/);
+  assert.match(workflow,/test\/\*\|docs\/\*\|\*\.md/);
+  assert.match(workflow,/Test-only main drift accepted/);
+  assert.match(workflow,/production-relevant changes/);
+  assert.match(workflow,/UNSAFE_MAIN_DRIFT/);
+});
