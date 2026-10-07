@@ -22,7 +22,8 @@ for(const file of roots.flatMap(walk).sort()){
   const lines=fs.readFileSync(file,'utf8').split(/\r?\n/);
   lines.forEach((line,index)=>{
     if(/\bdebugger\b/.test(line)) findings.push({file,line:index+1,type:'debugger'});
-    if(conflictMarkers.some(marker=>line.startsWith(marker))) findings.push({file,line:index+1,type:'merge_conflict'});
+    const leftTrimmed=line.trimStart();
+    if(conflictMarkers.some(marker=>leftTrimmed.startsWith(marker))) findings.push({file,line:index+1,type:'merge_conflict'});
     for(const marker of workMarkers){
       if(new RegExp('\\b'+marker+'\\b','i').test(line)) findings.push({file,line:index+1,type:'unfinished_marker'});
     }
