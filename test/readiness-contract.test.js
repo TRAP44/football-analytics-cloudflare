@@ -7,7 +7,7 @@ import {
 
 const FP = '4e7b6afc69b45ab3e5eecc4685d75c73';
 const CONTRACT_VERSION = 2;
-const FRESH_FP = '8b3e6ec749079296e6746d3db8ae3d2e';
+const FRESH_FP = '289d4be4a3546443d48ff5f0b8bd6dcb';
 
 function healthyRaw(overrides = {}) {
   return {
