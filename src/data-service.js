@@ -166,7 +166,7 @@ export async function resolveProviderChain({
         provider:id,
         state:'error',
         reason:`enable_${compact.code}`.slice(0,120),
-        ...(compact.status!==null ? {status:compact.status} : {}),
+        status:compact.status,
       });
       continue;
     }
@@ -195,7 +195,7 @@ export async function resolveProviderChain({
         provider:id,
         state:'error',
         reason:compact.code,
-        ...(compact.status!==null ? {status:compact.status} : {}),
+        status:compact.status,
       });
       continue;
     }
@@ -218,7 +218,7 @@ export async function resolveProviderChain({
         provider:id,
         state:'unavailable',
         reason:`accept_${compact.code}`.slice(0,120),
-        ...(compact.status!==null ? {status:compact.status} : {}),
+        status:compact.status,
       });
       continue;
     }
@@ -243,7 +243,7 @@ export async function resolveProviderChain({
           provider:id,
           state:'unavailable',
           reason:`result_${compact.code}`.slice(0,120),
-          ...(compact.status!==null ? {status:compact.status} : {}),
+          status:compact.status,
         });
         continue;
       }
