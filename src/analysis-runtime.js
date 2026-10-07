@@ -20,6 +20,7 @@ export function createAnalysisRuntime(deps) {
     assessFixtureAvailabilityQuality,
     assessMatchLineups,
     assessOddsMarketQuality,
+    synchronizeLineupQuality,
     baselineCalibrationProfile,
     blendProbabilitySignals,
     buildAiInstructor,
@@ -1151,6 +1152,24 @@ export function createAnalysisRuntime(deps) {
       h2h:h2hResult.meta,
       lineups:lineupMeta,
     };
+
+    try {
+      analysisFeatureMeta.lineups=objectValue(annotateLineupReliability(
+        objectValue(analysisFeatureMeta.lineups) || {
+          feature:'lineups',
+          provider:'api-football',
+          source:'network',
+          available:false,
+          usable:false,
+          observed:false,
+        },
+        lineupQuality,
+      )) || objectValue(analysisFeatureMeta.lineups);
+    } catch {}
+    try {
+      lineups=objectValue(synchronizeLineupQuality(lineups,lineupQuality))
+        || lineups;
+    } catch {}
 
     let oddsQuality={marketValid:false,confidenceBearing:false};
     try {
