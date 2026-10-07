@@ -26,6 +26,7 @@ import { createGlobalSearchRenderer } from './modules/global-search-renderer.js'
 import { createGlobalSearchController } from './modules/global-search-controller.js';
 import { buildPlayerComparisonCandidates, playerComparisonHtml, samePlayer } from './modules/player-comparison.js';
 import { homeMatchScoreLabel, homeMatchSections as buildHomeMatchSections, selectHomePersonalMatch } from './modules/home-match-priority.js';
+import { deriveMatchCockpit } from './modules/match-cockpit.js';
 import { createPlayerFollowModule } from './modules/player-follow.js';
 import {
   CLIENT_VERSION,
@@ -6096,61 +6097,51 @@ function cockpitProviderLabel(provider = '') {
 }
 
 function matchCockpitHtml(d = {}) {
-  const m=d.match || {};
-  const recent=d.recentForm || {};
-  const comparison=d.comparison || {};
-  const metrics=Array.isArray(comparison.metrics) ? comparison.metrics : [];
-  const metric=key=>metrics.find(x=>x?.key===key) || null;
-  const formMetric=metric('form_ppg');
-  const venueMetric=metric('venue_ppg');
-  const tableMetric=metric('table_rank');
-  const injuriesMeta=d.providerReliability?.features?.injuries || d.dataPolicy?.reliability?.features?.injuries || {};
-  const lineupMeta=d.providerReliability?.features?.lineups || d.dataPolicy?.reliability?.features?.lineups || {};
-  const injuryConfirmed=Boolean(injuriesMeta.available);
-  const homeAbs=Array.isArray(d.absences?.home) ? d.absences.home.length : 0;
-  const awayAbs=Array.isArray(d.absences?.away) ? d.absences.away.length : 0;
-  const homeConfirmed=Boolean(d.lineupImpact?.homeConfirmed || d.lineups?.home?.quality?.confirmed === true);
-  const awayConfirmed=Boolean(d.lineupImpact?.awayConfirmed || d.lineups?.away?.quality?.confirmed === true);
-  const confirmedCount=Number(homeConfirmed)+Number(awayConfirmed);
-  const h2h=d.h2h || {};
-  const h2hSample=Number(h2h.homeWins || 0)+Number(h2h.draws || 0)+Number(h2h.awayWins || 0);
-  const market=d.market || null;
-  const oddsProvider=d.dataProvenance?.features?.odds?.provider || market?.provider || '';
-  const confidence=Number.isFinite(Number(d.confidence?.score)) ? Math.round(Number(d.confidence.score)) : null;
-  const completeness=Number.isFinite(Number(d.completeness?.score)) ? Number(d.completeness.score) : null;
-  const completenessMax=Number.isFinite(Number(d.completeness?.max)) ? Number(d.completeness.max) : null;
-  const homeName=m.home?.name || 'Хозяева';
-  const awayName=m.away?.name || 'Гости';
-  const fmt=value=>Number.isFinite(Number(value)) ? Number(value).toFixed(1) : '—';
-  const rank=value=>Number.isFinite(Number(value)) ? `${Math.round(Number(value))} место` : '—';
-  const formAvailable=Boolean(recent.home?.overall?.sample && recent.away?.overall?.sample);
-  const venueAvailable=Boolean(recent.home?.venue?.sample && recent.away?.venue?.sample);
-  const marketAvailable=Boolean(market?.odds && Number(market.odds.home)>1 && Number(market.odds.draw)>1 && Number(market.odds.away)>1);
-  const tableAvailable=Boolean(tableMetric && Number.isFinite(Number(tableMetric.homeValue)) && Number.isFinite(Number(tableMetric.awayValue)));
-  const movement=d.marketMovement || {};
-  const movementDelta=movement?.probabilityChange || {};
-  const movementSample=Number(movement?.sample || 0);
-  const movementRows=[['П1',Number(movementDelta.home || 0)],['Н',Number(movementDelta.draw || 0)],['П2',Number(movementDelta.away || 0)]]
-    .sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
-  const strongestMove=movementRows[0];
-  const movementText=movementSample>=2 && Math.abs(strongestMove?.[1] || 0)>=1
-    ? `Рынок: ${strongestMove[0]} ${strongestMove[1]>0?'+':''}${strongestMove[1].toFixed(1)} п.п.`
+  const cockpit=deriveMatchCockpit(d);
+  const {
+    homeName,
+    awayName,
+    form,
+    venue,
+    table,
+    injuries,
+    lineups,
+    h2h,
+    market,
+    quality,
+  }=cockpit;
+
+  const fmt=value=>typeof value==='number' && Number.isFinite(value)
+    ? value.toFixed(1)
+    : '—';
+  const rank=value=>Number.isSafeInteger(value)
+    ? `${value} место`
+    : '—';
+
+  const movement=market?.strongestMove;
+  const movementText=movement
+    ? `Рынок: ${movement[0]} ${movement[1]>0?'+':''}${movement[1].toFixed(1)} п.п.`
     : '';
-  const lineupText=confirmedCount===2
+
+  const lineupText=lineups.confirmedCount===2
     ? 'Оба стартовых состава подтверждены'
-    : confirmedCount===1
+    : lineups.confirmedCount===1
       ? 'Подтверждён состав одной команды'
-      : lineupMeta.state==='empty_response'
+      : lineups.state==='empty_response'
         ? 'Составы ещё не опубликованы источником'
         : 'Стартовые составы пока не подтверждены';
-  const injuryText=injuryConfirmed
-    ? `${homeName}: ${homeAbs} · ${awayName}: ${awayAbs}`
-    : injuriesMeta.state==='empty_response'
+
+  const injuryText=injuries.confirmed
+    ? `${homeName}: ${injuries.homeAbs} · ${awayName}: ${injuries.awayAbs}`
+    : injuries.state==='empty_response'
       ? 'Источник вернул пустой ответ — это не означает «потерь нет»'
       : 'Данные о потерях сейчас не подтверждены';
-  const qualityText=confidence===null
+
+  const qualityText=quality.confidence===null
     ? 'Оценивается'
-    : `${confidence}/100${completeness!==null&&completenessMax!==null ? ` · данные ${completeness}/${completenessMax}` : ''}`;
+    : `${quality.confidence}/100${quality.completeness
+        ? ` · данные ${quality.completeness.score}/${quality.completeness.max}`
+        : ''}`;
 
   const card=(tab,icon,title,value,note,available=true)=>`<button class="match-cockpit-card ${available?'':'is-missing'}" type="button" data-cockpit-tab="${escapeHtml(tab)}">
     <span class="match-cockpit-icon">${icon}</span>
@@ -6161,43 +6152,43 @@ function matchCockpitHtml(d = {}) {
   return `<section class="panel match-cockpit-panel">
     <div class="match-cockpit-head">
       <div><span>⚡ МАТЧ ЗА 15 СЕКУНД</span><h2>Ключевые факторы перед стартом</h2></div>
-      <small>${escapeHtml(publicText(comparison.balanceLabel || 'Сводка строится только по доступным подтверждённым данным'))}</small>
+      <small>${escapeHtml(publicText(cockpit.balanceLabel || 'Сводка строится только по доступным подтверждённым данным'))}</small>
     </div>
     <div class="match-cockpit-grid">
       ${card('form','📈','Текущая форма',
-        formAvailable ? `${fmt(formMetric?.homeValue ?? recent.home?.overall?.ppg)} — ${fmt(formMetric?.awayValue ?? recent.away?.overall?.ppg)} очка/матч` : 'Недостаточно данных',
-        formAvailable ? `${homeName} / ${awayName}, последние матчи` : 'Форма не включается в вывод без достаточной выборки',
-        formAvailable)}
+        form.available ? `${fmt(form.pair.home)} — ${fmt(form.pair.away)} очка/матч` : 'Недостаточно данных',
+        form.available ? `${homeName} / ${awayName}, последние матчи` : 'Форма не включается в вывод без достаточной выборки',
+        form.available)}
       ${card('form','🏟️','Дома / в гостях',
-        venueAvailable ? `${fmt(venueMetric?.homeValue ?? recent.home?.venue?.ppg)} — ${fmt(venueMetric?.awayValue ?? recent.away?.venue?.ppg)} очка/матч` : 'Недостаточно данных',
-        venueAvailable ? 'Хозяева дома против гостей на выезде' : 'Профиль площадки пока неполный',
-        venueAvailable)}
+        venue.available ? `${fmt(venue.pair.home)} — ${fmt(venue.pair.away)} очка/матч` : 'Недостаточно данных',
+        venue.available ? 'Хозяева дома против гостей на выезде' : 'Профиль площадки пока неполный',
+        venue.available)}
       ${card('comparison','🏆','Положение в таблице',
-        tableAvailable ? `${rank(tableMetric.homeValue)} — ${rank(tableMetric.awayValue)}` : 'Нет в сохранённых данных',
-        tableAvailable ? `${homeName} / ${awayName}` : 'Таблица не запрашивается дополнительно только ради этой карточки',
-        tableAvailable)}
+        table.available ? `${rank(table.pair.home)} — ${rank(table.pair.away)}` : 'Нет в сохранённых данных',
+        table.available ? `${homeName} / ${awayName}` : 'Таблица не запрашивается дополнительно только ради этой карточки',
+        table.available)}
       ${card('squads','🚑','Потери состава',
-        injuryConfirmed ? `${homeAbs} — ${awayAbs}` : 'Не подтверждены',
+        injuries.confirmed ? `${injuries.homeAbs} — ${injuries.awayAbs}` : 'Не подтверждены',
         injuryText,
-        injuryConfirmed)}
+        injuries.confirmed)}
       ${card('squads','👥','Стартовые составы',
-        confirmedCount===2 ? '2 / 2 подтверждены' : confirmedCount===1 ? '1 / 2 подтверждён' : 'Ожидаются',
+        lineups.confirmedCount===2 ? '2 / 2 подтверждены' : lineups.confirmedCount===1 ? '1 / 2 подтверждён' : 'Ожидаются',
         lineupText,
-        confirmedCount>0)}
+        lineups.confirmedCount>0)}
       ${card('form','🤝','Очные встречи',
-        h2hSample ? `${Number(h2h.homeWins||0)} — ${Number(h2h.draws||0)} — ${Number(h2h.awayWins||0)}` : 'Нет выборки',
-        h2hSample ? `${homeName} · ничьи · ${awayName}, выборка ${h2hSample}` : 'H2H не используется, если источник не вернул выборку',
-        h2hSample>0)}
+        h2h ? `${h2h.homeWins} — ${h2h.draws} — ${h2h.awayWins}` : 'Нет выборки',
+        h2h ? `${homeName} · ничьи · ${awayName}, выборка ${h2h.sample}` : 'H2H не используется, если источник не вернул выборку',
+        Boolean(h2h))}
       ${card('market','💹','Коэффициенты П1 / Н / П2',
-        marketAvailable ? `${market.odds.home} · ${market.odds.draw} · ${market.odds.away}` : 'Недоступен',
-        marketAvailable ? `${cockpitProviderLabel(oddsProvider)}${movementText ? ` · ${movementText}` : ''}` : 'Рыночный сигнал исключён из модели',
-        marketAvailable)}
+        market ? `${market.odds.home} · ${market.odds.draw} · ${market.odds.away}` : 'Недоступен',
+        market ? `${cockpitProviderLabel(market.provider)}${movementText ? ` · ${movementText}` : ''}` : 'Рыночный сигнал исключён из модели',
+        Boolean(market))}
       ${card('overview','🧠','Качество оценки',
         qualityText,
-        d.confidence?.label || 'Уверенность модели и полнота входных данных считаются отдельно',
-        confidence!==null)}
+        quality.label || 'Уверенность модели и полнота входных данных считаются отдельно',
+        quality.confidence!==null)}
     </div>
-    ${d.lineupImpact?.note ? `<div class="match-cockpit-note"><span>👥</span><p>${escapeHtml(publicText(d.lineupImpact.note))}</p></div>` : ''}
+    ${cockpit.lineupNote ? `<div class="match-cockpit-note"><span>👥</span><p>${escapeHtml(publicText(cockpit.lineupNote))}</p></div>` : ''}
   </section>`;
 }
 
