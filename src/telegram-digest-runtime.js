@@ -328,13 +328,23 @@ export function createTelegramDigestRuntime(deps = {}) {
   async function loadBotDigestSubscriptions(cfg) {
     if (hasSupabase(cfg)) {
       const page=await supaSelectPaged(cfg,'bot_digest_subscriptions',{enabled:'eq.true'},{
-        pageSize:500,
-        maxRows:10000,
+        pageSize:DAILY_DIGEST_POLICY.pageSize,
+        maxRows:DAILY_DIGEST_POLICY.scanCap,
         order:'telegram_id.asc',
       });
+      if (
+        !page
+        || typeof page!=='object'
+        || Array.isArray(page)
+        || !Array.isArray(page.rows)
+        || typeof page.truncated!=='boolean'
+        || page.rows.length>DAILY_DIGEST_POLICY.scanCap
+      ) {
+        throw new Error('Daily digest subscription pagination returned an invalid result.');
+      }
       return {
-        rows:rowsOf(page?.rows).filter(row=>positiveSafeInteger(row?.telegram_id) && telegramChatId(row?.chat_id)),
-        truncated:page?.truncated===true,
+        rows:page.rows.filter(row=>positiveSafeInteger(row?.telegram_id) && telegramChatId(row?.chat_id)),
+        truncated:page.truncated,
       };
     }
     return {
