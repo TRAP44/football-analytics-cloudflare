@@ -20,7 +20,8 @@ function readSourceTree(root, extension='.js') {
 }
 const worker = readSourceTree('src');
 const providerSloIncidents = fs.readFileSync('src/provider-slo-incidents.js','utf8');
-const app = readSourceTree('public');
+const app = fs.readFileSync('public/app.js','utf8');
+const publicSource = readSourceTree('public');
 const viewChrome = fs.readFileSync('public/modules/view-chrome.js', 'utf8');
 const navigationShell = fs.readFileSync('public/modules/navigation-shell.js', 'utf8');
 const adminDiagnostics = fs.readFileSync('public/modules/admin-diagnostics.js', 'utf8');
