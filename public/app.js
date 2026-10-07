@@ -2172,8 +2172,19 @@ async function ensureAdminProviderModule() {
   if (!adminProviderModulePromise) {
     adminProviderModulePromise = import('./modules/admin-provider.js').then(({ createAdminProviderModule }) => {
       adminProviderModule = createAdminProviderModule({
-        state, $, isAdmin, humanizeTechnicalText, escapeHtml, planLabel, dateTime,
-        technicalStateLabel, freshnessSourceLabel, toast, api, renderAdminOverview,
+        document,
+        state,
+        $,
+        isAdmin,
+        humanizeTechnicalText,
+        escapeHtml,
+        planLabel,
+        dateTime,
+        technicalStateLabel,
+        freshnessSourceLabel,
+        toast,
+        api,
+        renderAdminOverview,
       });
       return adminProviderModule;
     });
