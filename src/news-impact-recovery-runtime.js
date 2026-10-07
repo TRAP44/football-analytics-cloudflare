@@ -3400,36 +3400,71 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     };
   }
   
+  function newsImpactTrendConfidence(value) {
+    if (!value || typeof value!=='object' || Array.isArray(value)) return null;
+    if (value.eligibleForBottleneck!==true) return null;
+    const lowerPct=newsImpactFiniteNumber(value.lowerPct);
+    const upperPct=newsImpactFiniteNumber(value.upperPct);
+    if (
+      lowerPct===null
+      || upperPct===null
+      || lowerPct<0
+      || upperPct>100
+      || lowerPct>upperPct
+    ) return null;
+    return {lowerPct,upperPct};
+  }
+
   function newsImpactTrendSignal(current = {}, previous = {}) {
-    const currentConfidence=current?.confidence || {};
-    const previousConfidence=previous?.confidence || {};
-    if (!currentConfidence.eligibleForBottleneck || !previousConfidence.eligibleForBottleneck) return 'insufficient';
-    if (Number(currentConfidence.lowerPct || 0)>Number(previousConfidence.upperPct || 0)) return 'improved';
-    if (Number(currentConfidence.upperPct || 0)<Number(previousConfidence.lowerPct || 0)) return 'weakened';
+    const currentRow=current && typeof current==='object' && !Array.isArray(current) ? current : {};
+    const previousRow=previous && typeof previous==='object' && !Array.isArray(previous) ? previous : {};
+    const currentConfidence=newsImpactTrendConfidence(currentRow.confidence);
+    const previousConfidence=newsImpactTrendConfidence(previousRow.confidence);
+    if (!currentConfidence || !previousConfidence) return 'insufficient';
+    if (currentConfidence.lowerPct>previousConfidence.upperPct) return 'improved';
+    if (currentConfidence.upperPct<previousConfidence.lowerPct) return 'weakened';
     return 'uncertain';
   }
   
   function buildNewsImpactActionTrend(currentRows = [], previousRows = []) {
-    const previousByCode=new Map((previousRows || []).map(row=>[String(row.code || ''),row]));
-    return (currentRows || []).map(current=>{
-      const previous=previousByCode.get(String(current.code || '')) || {
-        code:String(current.code || ''),label:String(current.label || ''),
+    const safeCurrent=Array.isArray(currentRows) ? currentRows : [];
+    const safePrevious=Array.isArray(previousRows) ? previousRows : [];
+    const previousByCode=new Map(
+      safePrevious
+        .filter(row=>row && typeof row==='object' && !Array.isArray(row) && typeof row.code==='string' && row.code)
+        .map(row=>[row.code,row]),
+    );
+    return safeCurrent
+      .filter(current=>current && typeof current==='object' && !Array.isArray(current) && typeof current.code==='string' && current.code)
+      .map(current=>{
+      const code=current.code;
+      const label=typeof current.label==='string' ? current.label : code;
+      const previous=previousByCode.get(code) || {
+        code,label,
         users:0,actedUsers:0,conversionPct:0,
         confidence:newsImpactConversionConfidence(0,0),
       };
       const signal=newsImpactTrendSignal(current,previous);
-      const deltaPctPoints=Math.round((Number(current.conversionPct || 0)-Number(previous.conversionPct || 0))*10)/10;
+      const currentPctRaw=newsImpactFiniteNumber(current.conversionPct);
+      const previousPctRaw=newsImpactFiniteNumber(previous.conversionPct);
+      const currentPct=currentPctRaw!==null && currentPctRaw>=0 && currentPctRaw<=100 ? currentPctRaw : 0;
+      const previousPct=previousPctRaw!==null && previousPctRaw>=0 && previousPctRaw<=100 ? previousPctRaw : 0;
+      const deltaPctPoints=Math.round((currentPct-previousPct)*10)/10;
       return {
-        code:String(current.code || ''),
-        label:String(current.label || ''),
+        code,
+        label,
         signal,
         deltaPctPoints,
-        currentUsers:Number(current.users || 0),
-        previousUsers:Number(previous.users || 0),
-        currentPct:Number(current.conversionPct || 0),
-        previousPct:Number(previous.conversionPct || 0),
-        currentConfidence:current.confidence || newsImpactConversionConfidence(0,0),
-        previousConfidence:previous.confidence || newsImpactConversionConfidence(0,0),
+        currentUsers:newsImpactCount(current.users),
+        previousUsers:newsImpactCount(previous.users),
+        currentPct,
+        previousPct,
+        currentConfidence:current.confidence && typeof current.confidence==='object' && !Array.isArray(current.confidence)
+          ? current.confidence
+          : newsImpactConversionConfidence(0,0),
+        previousConfidence:previous.confidence && typeof previous.confidence==='object' && !Array.isArray(previous.confidence)
+          ? previous.confidence
+          : newsImpactConversionConfidence(0,0),
       };
     });
   }
@@ -3446,12 +3481,19 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       {code:'detail',label:'detail',users:5,conversionPct:20,confidence:newsImpactConversionConfidence(1,5)},
     ];
     const trend=buildNewsImpactActionTrend(current,previous);
+    const forged=newsImpactTrendSignal(
+      {confidence:{eligibleForBottleneck:'true',lowerPct:90,upperPct:100}},
+      {confidence:{eligibleForBottleneck:true,lowerPct:0,upperPct:10}},
+    );
+    const malformed=buildNewsImpactActionTrend({broken:true},null);
     return {
       pass:trend.find(x=>x.code==='material')?.signal==='improved'
         && trend.find(x=>x.code==='stable')?.signal==='uncertain'
         && trend.find(x=>x.code==='detail')?.signal==='insufficient'
-        && trend.find(x=>x.code==='material')?.deltaPctPoints===50,
-      cases:4,
+        && trend.find(x=>x.code==='material')?.deltaPctPoints===50
+        && forged==='insufficient'
+        && malformed.length===0,
+      cases:6,
     };
   }
   
