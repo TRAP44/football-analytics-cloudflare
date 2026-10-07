@@ -14,6 +14,7 @@ import { createJourneyStateModule } from './modules/journey-state.js';
 import {
   collectionItems,
   isCurrentEntityRequest,
+  positiveEntityId,
   teamCompetitionEntityKey,
   teamEntityKey,
   tournamentEntityKey,
@@ -3483,10 +3484,10 @@ async function loadTournamentStandings(force = false) {
     const cached = state.tournamentStandings.get(key);
     if (cached) {
       renderTournamentStandings(cached);
-      el.insertAdjacentHTML('afterbegin', `<div class="data-notice stale">⚠️ ${escapeHtml(e.message)} Показана последняя сохранённая таблица.</div>`);
+      el.insertAdjacentHTML('afterbegin', `<div class="data-notice stale">⚠️ ${escapeHtml(uiErrorMessage(e,'Не удалось обновить таблицу.'))} Показана последняя сохранённая таблица.</div>`);
       return;
     }
-    el.innerHTML = recoveryCardHtml({ title: 'Таблица временно недоступна', message: e.message, retryId: 'tournamentStandingsRetry', compact: true });
+    el.innerHTML = recoveryCardHtml({ title: 'Таблица временно недоступна', message: uiErrorMessage(e,'Не удалось загрузить таблицу турнира.'), retryId: 'tournamentStandingsRetry', compact: true });
     $('tournamentStandingsRetry')?.addEventListener('click', () => loadTournamentStandings(true));
   }
 }
@@ -3650,7 +3651,7 @@ async function loadTeamIntelligence(force=false) {
   if(!key) return;
   const seq=++state.teamIntelligenceRequestSeq;
   if(!force && state.teamIntelligenceCache.has(key)){
-    if(Number(state.currentTeam?.id)===Number(team.id)) renderTeamIntelligence(state.teamIntelligenceCache.get(key));
+    if(teamCompetitionEntityKey(state.currentTeam)===key) renderTeamIntelligence(state.teamIntelligenceCache.get(key));
     return;
   }
   el.innerHTML='<div class="loader">Загружаю сезонную статистику…</div>';
@@ -3674,8 +3675,9 @@ async function loadTeamIntelligence(force=false) {
       currentKey:teamCompetitionEntityKey(state.currentTeam),
     })) return;
     const cached=state.teamIntelligenceCache.get(key);
-    if(cached){renderTeamIntelligence(cached);el.insertAdjacentHTML('afterbegin',`<div class="data-notice stale">⚠️ ${escapeHtml(e.message)} Показаны сохранённые показатели.</div>`);}
-    else{el.innerHTML=recoveryCardHtml({title:'Статистика команды временно недоступна',message:e.message,retryId:'teamIntelligenceRetry',compact:true});$('teamIntelligenceRetry')?.addEventListener('click',()=>loadTeamIntelligence(true));}
+    const message=uiErrorMessage(e,'Не удалось загрузить статистику команды.');
+    if(cached){renderTeamIntelligence(cached);el.insertAdjacentHTML('afterbegin',`<div class="data-notice stale">⚠️ ${escapeHtml(message)} Показаны сохранённые показатели.</div>`);}
+    else{el.innerHTML=recoveryCardHtml({title:'Статистика команды временно недоступна',message,retryId:'teamIntelligenceRetry',compact:true});$('teamIntelligenceRetry')?.addEventListener('click',()=>loadTeamIntelligence(true));}
   }
 }
 function playerCard(p) {
@@ -3694,7 +3696,7 @@ async function loadTeamSquad(force=false) {
   if(!key) return;
   const seq=++state.teamSquadRequestSeq;
   if(!force&&state.teamSquadCache.has(key)){
-    if(Number(state.currentTeam?.id)===Number(team.id)) renderTeamSquad(state.teamSquadCache.get(key));
+    if(teamEntityKey(state.currentTeam)===key) renderTeamSquad(state.teamSquadCache.get(key));
     return;
   }
   el.innerHTML='<div class="loader">Загружаю состав…</div>';
@@ -3717,8 +3719,9 @@ async function loadTeamSquad(force=false) {
       currentKey:teamEntityKey(state.currentTeam),
     })) return;
     const cached=state.teamSquadCache.get(key);
-    if(cached){renderTeamSquad(cached);el.insertAdjacentHTML('afterbegin',`<div class="data-notice stale">⚠️ ${escapeHtml(e.message)} Показан сохранённый состав.</div>`);}
-    else{el.innerHTML=recoveryCardHtml({title:'Состав временно недоступен',message:e.message,retryId:'teamSquadRetry',compact:true});$('teamSquadRetry')?.addEventListener('click',()=>loadTeamSquad(true));}
+    const message=uiErrorMessage(e,'Не удалось загрузить состав команды.');
+    if(cached){renderTeamSquad(cached);el.insertAdjacentHTML('afterbegin',`<div class="data-notice stale">⚠️ ${escapeHtml(message)} Показан сохранённый состав.</div>`);}
+    else{el.innerHTML=recoveryCardHtml({title:'Состав временно недоступен',message,retryId:'teamSquadRetry',compact:true});$('teamSquadRetry')?.addEventListener('click',()=>loadTeamSquad(true));}
   }
 }
 
@@ -3744,10 +3747,10 @@ async function loadTeamHub(team, force=false) {
   const seq=++state.teamHubRequestSeq;
   const cached=state.teamCache.get(key);
   if (cached && !force) {
-    if(String(Number(state.currentTeam?.id||0))===key) renderTeamHub(cached);
+    if(teamEntityKey(state.currentTeam)===key) renderTeamHub(cached);
     return;
   }
-  if (!cached && String(Number(state.currentTeam?.id||0))===key) {
+  if (!cached && teamEntityKey(state.currentTeam)===key) {
     $('teamHero').innerHTML='<div class="loader">Загружаю страницу команды…</div>'; $('teamOverview').innerHTML=''; $('teamIntelligence').innerHTML='<div class="empty compact-empty">Откройте вкладку «Статистика», чтобы загрузить сезонные данные.</div>'; $('teamSquad').innerHTML='<div class="empty compact-empty">Откройте вкладку «Состав», чтобы загрузить игроков.</div>'; $('teamResults').innerHTML=''; $('teamSchedule').innerHTML='';
   }
   try {
@@ -3771,16 +3774,29 @@ async function loadTeamHub(team, force=false) {
     })) return;
     if (cached) {
       renderTeamHub(cached);
-      $('teamHero')?.insertAdjacentHTML('afterbegin', `<div class="data-notice stale">⚠️ ${escapeHtml(e.message)} Показана последняя открытая версия команды.</div>`);
+      $('teamHero')?.insertAdjacentHTML('afterbegin', `<div class="data-notice stale">⚠️ ${escapeHtml(uiErrorMessage(e,'Не удалось обновить страницу команды.'))} Показана последняя открытая версия команды.</div>`);
       return;
     }
-    $('teamHero').innerHTML=recoveryCardHtml({ title:'Страница команды временно недоступна', message:e.message, retryId:'teamHubRetry' });
+    $('teamHero').innerHTML=recoveryCardHtml({ title:'Страница команды временно недоступна', message:uiErrorMessage(e,'Не удалось загрузить страницу команды.'), retryId:'teamHubRetry' });
     $('teamHubRetry')?.addEventListener('click', () => loadTeamHub(team, true));
   }
 }
 function openTeam(team) {
-  if(!team?.id) return; rememberTeam(team); renderDiscoveryHome(); const current=activeViewId(); if(current!=='teamView') state.teamBackView=current;
-  state.currentTeam={id:Number(team.id),name:team.name||'',logo:team.logo||'',data:null}; setTeamTab('overview'); showView('teamView'); loadTeamHub(state.currentTeam,false);
+  const teamId=positiveEntityId(team?.id);
+  if(!teamId) return;
+  const safeTeam={
+    id:teamId,
+    name:typeof team?.name==='string' ? team.name : '',
+    logo:typeof team?.logo==='string' ? team.logo : '',
+  };
+  rememberTeam(safeTeam);
+  renderDiscoveryHome();
+  const current=activeViewId();
+  if(current!=='teamView') state.teamBackView=current;
+  state.currentTeam={...safeTeam,data:null};
+  setTeamTab('overview');
+  showView('teamView');
+  loadTeamHub(state.currentTeam,false);
 }
 function setTeamTab(tab) {
   const buttons = [...document.querySelectorAll('.team-tab')];
