@@ -3,8 +3,42 @@ const MAX_EXTRA_MINUTE = 30;
 const LIVE_FUTURE_TOLERANCE = 8;
 const ANALYTICAL_TYPES = new Set(['goal', 'card', 'var', 'subst']);
 
+function plainObject(value) {
+  try {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeRead(value,key) {
+  try {
+    return value?.[key];
+  } catch {
+    return undefined;
+  }
+}
+
+function safeKeys(value) {
+  try {
+    return Object.keys(value);
+  } catch {
+    return [];
+  }
+}
+
 function compactText(value = '') {
-  return String(value ?? '').trim().replace(/\s+/g, ' ');
+  if (!['string','number','bigint'].includes(typeof value)) return '';
+  try {
+    return String(value)
+      .replace(/[\u0000-\u001f\u007f]+/g,' ')
+      .trim()
+      .replace(/\s+/g, ' ');
+  } catch {
+    return '';
+  }
 }
 
 function compactState(value = '') {
@@ -12,22 +46,64 @@ function compactState(value = '') {
 }
 
 function normalizedText(value = '') {
-  return compactText(value)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
+  const text=compactText(value);
+  if (!text) return '';
+  try {
+    return text
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+  } catch {
+    return text.toLowerCase();
+  }
+}
+
+function strictInstantMs(value) {
+  if (value instanceof Date) {
+    const ms=value.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (typeof value!=='string' || !value.trim()) return null;
+  const raw=value.trim();
+  const match=/^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/i.exec(raw);
+  if (!match) return null;
+  const year=Number(match[1]);
+  const month=Number(match[2]);
+  const day=Number(match[3]);
+  if (!Number.isSafeInteger(year) || month<1 || month>12 || day<1) return null;
+  const maxDay=new Date(Date.UTC(year,month,0)).getUTCDate();
+  if (day>maxDay) return null;
+  const parsed=Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function measurableFreshness(meta) {
+  const value=plainObject(meta);
+  if (!value) return false;
+  const ageSeconds=safeRead(value,'ageSeconds');
+  if (typeof ageSeconds==='number' && Number.isFinite(ageSeconds) && ageSeconds>=0) {
+    return true;
+  }
+  for (const key of ['fetchedAt','sourceTimestamp','observedAt','generatedAt']) {
+    if (strictInstantMs(safeRead(value,key))!==null) return true;
+  }
+  return false;
 }
 
 function sourceIsTrusted(meta = {}) {
+  const value=plainObject(meta);
+  if (!value) return false;
   if (
-    meta?.confidenceBearing !== true
-    || meta?.available !== true
-    || meta?.usable !== true
-    || meta?.stale === true
+    safeRead(value,'confidenceBearing') !== true
+    || safeRead(value,'available') !== true
+    || safeRead(value,'usable') !== true
+    || safeRead(value,'stale') === true
   ) return false;
-  const freshnessState = compactState(meta?.freshnessState);
-  const provenanceState = compactState(meta?.provenanceState);
-  return ['fresh', 'cached'].includes(freshnessState) && provenanceState === 'verified';
+  const freshnessState = compactState(safeRead(value,'freshnessState'));
+  const provenanceState = compactState(safeRead(value,'provenanceState'));
+  return ['fresh', 'cached'].includes(freshnessState)
+    && provenanceState === 'verified'
+    && measurableFreshness(value);
 }
 
 function integerCandidate(value) {
@@ -60,34 +136,49 @@ function nonNegativeCount(value) {
   return n !== null && n >= 0 ? n : 0;
 }
 
+function safeShallowCopy(value) {
+  const source=plainObject(value);
+  if (!source) return {};
+  const out={};
+  for (const key of safeKeys(source).slice(0,100)) {
+    const item=safeRead(source,key);
+    if (item!==undefined) out[key]=item;
+  }
+  return out;
+}
+
 function eventFingerprint(event = {}) {
+  const value=plainObject(event) || {};
   return [
-    integerInRange(event?.minute, 0, MAX_EVENT_MINUTE) ?? '',
-    integerInRange(event?.extra ?? 0, 0, MAX_EXTRA_MINUTE) ?? '',
-    compactState(event?.side),
-    positiveIdentifier(event?.teamId ?? event?.team_id),
-    normalizedText(event?.type),
-    normalizedText(event?.detail),
-    positiveIdentifier(event?.playerId ?? event?.player_id),
-    normalizedText(event?.playerName || event?.player),
-    positiveIdentifier(event?.assistPlayerId ?? event?.assist_player_id),
-    normalizedText(event?.assistPlayerName || event?.assist),
-    normalizedText(event?.comments),
+    integerInRange(safeRead(value,'minute'), 0, MAX_EVENT_MINUTE) ?? '',
+    integerInRange(safeRead(value,'extra') ?? 0, 0, MAX_EXTRA_MINUTE) ?? '',
+    compactState(safeRead(value,'side')),
+    positiveIdentifier(safeRead(value,'teamId') ?? safeRead(value,'team_id')),
+    normalizedText(safeRead(value,'type')),
+    normalizedText(safeRead(value,'detail')),
+    positiveIdentifier(safeRead(value,'playerId') ?? safeRead(value,'player_id')),
+    normalizedText(safeRead(value,'playerName') || safeRead(value,'player')),
+    positiveIdentifier(
+      safeRead(value,'assistPlayerId') ?? safeRead(value,'assist_player_id'),
+    ),
+    normalizedText(safeRead(value,'assistPlayerName') || safeRead(value,'assist')),
+    normalizedText(safeRead(value,'comments')),
   ].join('|');
 }
 
 export function inspectMatchEvent(event = {}, { mode = 'live', elapsed = null } = {}) {
-  const minute = integerInRange(event?.minute, 0, MAX_EVENT_MINUTE);
-  const extra = integerInRange(event?.extra ?? 0, 0, MAX_EXTRA_MINUTE);
-  const side = compactState(event?.side);
-  const type = normalizedText(event?.type);
-  const normalizedMode = compactState(mode || 'live') || 'live';
+  const value=plainObject(event) || {};
+  const minute = integerInRange(safeRead(value,'minute'), 0, MAX_EVENT_MINUTE);
+  const extra = integerInRange(safeRead(value,'extra') ?? 0, 0, MAX_EXTRA_MINUTE);
+  const side = compactState(safeRead(value,'side'));
+  const type = normalizedText(safeRead(value,'type'));
+  const normalizedMode = compactState(mode) || 'live';
   const liveElapsed = integerInRange(elapsed, 0, MAX_EVENT_MINUTE);
+  const effectiveMinute=minute!==null && extra!==null ? minute+extra : null;
   const future = normalizedMode === 'live'
     && liveElapsed !== null
-    && liveElapsed > 0
-    && minute !== null
-    && minute > liveElapsed + LIVE_FUTURE_TOLERANCE;
+    && effectiveMinute !== null
+    && effectiveMinute > liveElapsed + LIVE_FUTURE_TOLERANCE;
 
   const reasons = [];
   if (minute === null) reasons.push('minute_invalid');
@@ -102,7 +193,7 @@ export function inspectMatchEvent(event = {}, { mode = 'live', elapsed = null } 
   if (displayValid && analyticalType && !sideValid) reasons.push('side_unknown');
 
   return {
-    id:compactEventId(event?.id),
+    id:compactEventId(safeRead(value,'id')),
     minute,
     extra,
     side,
@@ -113,13 +204,13 @@ export function inspectMatchEvent(event = {}, { mode = 'live', elapsed = null } 
     sideValid,
     future,
     reasons,
-    fingerprint:eventFingerprint(event),
+    fingerprint:eventFingerprint(value),
   };
 }
 
 export function assessMatchEventQuality(events = [], { eventsMeta = {}, mode = 'live', elapsed = null } = {}) {
   const rows = Array.isArray(events) ? events : [];
-  const normalizedMode = compactState(mode || 'live') || 'live';
+  const normalizedMode = compactState(mode) || 'live';
   const sourceTrusted = sourceIsTrusted(eventsMeta);
   const seen = new Set();
   const displayEventIds = [];
@@ -136,8 +227,10 @@ export function assessMatchEventQuality(events = [], { eventsMeta = {}, mode = '
   let invalidTimeCount = 0;
 
   for (let index = 0; index < rows.length; index += 1) {
-    const event = rows[index] || {};
-    const inspected = inspectMatchEvent(event, { mode:normalizedMode, elapsed });
+    const inspected = inspectMatchEvent(rows[index], {
+      mode:normalizedMode,
+      elapsed,
+    });
     const eventId = inspected.id || `index:${index}`;
 
     if (!inspected.displayValid) {
@@ -198,6 +291,8 @@ export function assessMatchEventQuality(events = [], { eventsMeta = {}, mode = '
   if (unknownSideCount) warnings.push(`События без подтверждённой стороны исключены из аналитики: ${unknownSideCount}.`);
   if (observed && !sourceTrusted) warnings.push('Источник событий не прошёл freshness/provenance guard.');
 
+  const analyticalConfidenceBearing=sourceTrusted && analyticalCount > 0;
+
   return {
     state,
     label,
@@ -213,8 +308,8 @@ export function assessMatchEventQuality(events = [], { eventsMeta = {}, mode = '
     unknownSideCount,
     futureEventCount,
     invalidTimeCount,
-    confidenceBearing:sourceTrusted && displayCount > 0,
-    analyticalConfidenceBearing:sourceTrusted && analyticalCount > 0,
+    confidenceBearing:analyticalConfidenceBearing,
+    analyticalConfidenceBearing,
     displayEventIds,
     analyticalEventIds,
     duplicateEventIds,
@@ -224,11 +319,11 @@ export function assessMatchEventQuality(events = [], { eventsMeta = {}, mode = '
     duplicateEventIndices,
     rejectedEventIndices,
     warnings,
-    provider:String(eventsMeta?.provider || ''),
-    source:String(eventsMeta?.source || ''),
-    freshnessState:String(eventsMeta?.freshnessState || 'unknown'),
-    provenanceState:String(eventsMeta?.provenanceState || 'unknown'),
-    methodology:'Live-события допускаются downstream только после проверки времени и дедупликации. Аналитика дополнительно требует подтверждённую сторону команды. Sanitized collections выбираются по индексам исходного массива, поэтому rejected/duplicate rows не могут вернуться из-за совпадающего provider event ID.',
+    provider:compactText(safeRead(eventsMeta,'provider')),
+    source:compactText(safeRead(eventsMeta,'source')),
+    freshnessState:compactState(safeRead(eventsMeta,'freshnessState')) || 'unknown',
+    provenanceState:compactState(safeRead(eventsMeta,'provenanceState')) || 'unknown',
+    methodology:'Live-события допускаются downstream только после проверки времени, измеримой свежести и дедупликации. Аналитика дополнительно требует подтверждённую сторону команды. Sanitized collections выбираются по индексам исходного массива, поэтому rejected/duplicate rows не могут вернуться из-за совпадающего provider event ID.',
   };
 }
 
@@ -250,7 +345,8 @@ function selectEventIdsLegacy(events = [], ids = []) {
   );
   const emitted = new Set();
   return (Array.isArray(events) ? events : []).filter((event, index) => {
-    const id = compactEventId(event?.id) || `index:${index}`;
+    const value=plainObject(event) || {};
+    const id = compactEventId(safeRead(value,'id')) || `index:${index}`;
     if (!allowed.has(id) || emitted.has(id)) return false;
     emitted.add(id);
     return true;
@@ -258,36 +354,45 @@ function selectEventIdsLegacy(events = [], ids = []) {
 }
 
 export function sanitizeEventsForDisplay(events = [], quality = {}) {
-  if (!quality?.sourceTrusted) return [];
-  if (Array.isArray(quality?.displayEventIndices)) {
-    return selectEventIndices(events, quality.displayEventIndices);
+  const value=plainObject(quality);
+  if (!value || safeRead(value,'sourceTrusted')!==true) return [];
+  const indices=safeRead(value,'displayEventIndices');
+  if (Array.isArray(indices)) {
+    return selectEventIndices(events, indices);
   }
-  return selectEventIdsLegacy(events, quality?.displayEventIds || []);
+  return selectEventIdsLegacy(events, safeRead(value,'displayEventIds') || []);
 }
 
 export function eventsForTrustedAnalytics(events = [], quality = {}) {
-  if (!quality?.analyticalConfidenceBearing) return [];
-  if (Array.isArray(quality?.analyticalEventIndices)) {
-    return selectEventIndices(events, quality.analyticalEventIndices);
+  const value=plainObject(quality);
+  if (!value || safeRead(value,'analyticalConfidenceBearing')!==true) return [];
+  const indices=safeRead(value,'analyticalEventIndices');
+  if (Array.isArray(indices)) {
+    return selectEventIndices(events, indices);
   }
-  return selectEventIdsLegacy(events, quality?.analyticalEventIds || []);
+  return selectEventIdsLegacy(events, safeRead(value,'analyticalEventIds') || []);
 }
 
 export function annotateEventReliability(meta = {}, quality = {}) {
-  const originalState = String(meta?.state || (quality?.observed ? 'available' : 'empty_response'));
+  const metaValue=plainObject(meta) || {};
+  const qualityValue=plainObject(quality) || {};
+  const originalState = compactText(
+    safeRead(metaValue,'state')
+      || (safeRead(qualityValue,'observed')===true ? 'available' : 'empty_response'),
+  ) || 'empty_response';
   const base = {
-    ...meta,
-    semanticState:String(quality?.state || 'unavailable'),
-    eventQuality:quality,
-    rawCount:nonNegativeCount(quality?.rawCount),
-    count:nonNegativeCount(quality?.displayCount),
-    partial:Boolean(quality?.state === 'sanitized'),
+    ...safeShallowCopy(metaValue),
+    semanticState:compactState(safeRead(qualityValue,'state')) || 'unavailable',
+    eventQuality:qualityValue,
+    rawCount:nonNegativeCount(safeRead(qualityValue,'rawCount')),
+    count:nonNegativeCount(safeRead(qualityValue,'displayCount')),
+    partial:safeRead(qualityValue,'state') === 'sanitized',
   };
 
-  if (!quality?.observed) {
+  if (safeRead(qualityValue,'observed')!==true) {
     return { ...base, available:false, usable:false, confidenceBearing:false };
   }
-  if (!quality?.sourceTrusted) {
+  if (safeRead(qualityValue,'sourceTrusted')!==true) {
     return {
       ...base,
       transportState:originalState,
@@ -299,7 +404,7 @@ export function annotateEventReliability(meta = {}, quality = {}) {
       reason:'events_source_untrusted',
     };
   }
-  if (!quality?.displayCount) {
+  if (!nonNegativeCount(safeRead(qualityValue,'displayCount'))) {
     return {
       ...base,
       transportState:originalState,
@@ -312,14 +417,17 @@ export function annotateEventReliability(meta = {}, quality = {}) {
       reason:'no_valid_events',
     };
   }
+  const analyticsTrusted=safeRead(qualityValue,'analyticalConfidenceBearing')===true;
   return {
     ...base,
     state:'available',
     available:true,
     usable:true,
     observed:true,
-    degraded:quality?.state === 'sanitized',
-    confidenceBearing:Boolean(quality?.analyticalConfidenceBearing),
-    reason:quality?.analyticalConfidenceBearing ? (quality?.state === 'sanitized' ? 'events_sanitized' : '') : 'no_analytical_events',
+    degraded:safeRead(qualityValue,'state') === 'sanitized',
+    confidenceBearing:analyticsTrusted,
+    reason:analyticsTrusted
+      ? (safeRead(qualityValue,'state') === 'sanitized' ? 'events_sanitized' : '')
+      : 'no_analytical_events',
   };
 }
