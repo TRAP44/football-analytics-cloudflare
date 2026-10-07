@@ -163,25 +163,21 @@ test('reminders service preserves Supabase delete request shape', async () => {
   assert.equal(call.source,'Supabase reminders');
 });
 
-test('worker delegates reminder CRUD storage boundary to extracted service', () => {
+test('worker delegates reminder CRUD and delivery through service wiring', () => {
   const worker=fs.readFileSync('src/worker.js','utf8');
+  const wiring=fs.readFileSync('src/service-wiring-runtime.js','utf8');
   assert.match(worker,/import \{ createUserRemindersService \} from '\.\/user-reminders\.js'/);
-  assert.match(worker,/createUserRemindersService\(\{/);
-  assert.match(worker,/getPreferences,/);
-  assert.doesNotMatch(worker,/async function getReminders\(userId, cfg\)/);
-  assert.doesNotMatch(worker,/async function addReminder\(userId, input, cfg\)/);
-  assert.doesNotMatch(worker,/async function removeReminder\(userId, fixtureId, cfg\)/);
-  assert.match(worker,/await getReminders\(user\.id, cfg\)/);
-  assert.match(worker,/await addReminder\(user\.id/);
-  assert.match(worker,/await removeReminder\(user\.id/);
-
-  // Reminder delivery orchestration is delegated to its service while the
-  // shared Telegram transport remains injected from the composition root.
+  assert.match(worker,/createUserRemindersService,/);
+  assert.match(wiring,/\} = createUserRemindersService\(\{/);
+  assert.match(wiring,/getPreferences,/);
+  for (const name of ['getReminders','addReminder','removeReminder']) {
+    assert.match(wiring,new RegExp('\\b'+name+'\\b'));
+  }
   assert.match(worker,/import \{ createReminderDeliveryService \} from '\.\/reminder-delivery-service\.js'/);
-  assert.match(worker,/createReminderDeliveryService\(\{/);
-  assert.match(worker,/sendTelegramMessage,/);
-  assert.doesNotMatch(worker,/async function processDueReminders\(cfg\)/);
   assert.match(worker,/import \{ createReminderDeliveryStore \} from '\.\/reminder-delivery-store\.js'/);
-  assert.match(worker,/createReminderDeliveryStore\(\{/);
-  assert.doesNotMatch(worker,/async function claimReminderDelivery\(row, kind, cfg\)/);
+  assert.match(worker,/createReminderDeliveryService,/);
+  assert.match(worker,/createReminderDeliveryStore,/);
+  assert.match(wiring,/createReminderDeliveryService\(\{/);
+  assert.match(wiring,/createReminderDeliveryStore\(\{/);
+  assert.doesNotMatch(worker,/async function (?:getReminders|addReminder|removeReminder|processDueReminders|claimReminderDelivery)\(/);
 });
