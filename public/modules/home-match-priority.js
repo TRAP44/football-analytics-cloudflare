@@ -79,6 +79,36 @@ function matchEvidence(value) {
   };
 }
 
+function scorePart(value) {
+  if (typeof value==='number') {
+    return Number.isSafeInteger(value) && value>=0 && value<=30
+      ? String(value)
+      : null;
+  }
+  if (typeof value!=='string') return null;
+  const raw=value.trim();
+  if (!/^\d{1,2}$/.test(raw)) return null;
+  const parsed=Number(raw);
+  return Number.isSafeInteger(parsed) && parsed>=0 && parsed<=30
+    ? String(parsed)
+    : null;
+}
+
+export function homeMatchScoreLabel(value) {
+  const match=plainObject(value);
+  if (!match) return 'VS';
+  const live=safeRead(match,'live')===true;
+  const finished=safeRead(match,'finished')===true;
+  const score=plainObject(safeRead(match,'score'));
+  const home=score ? scorePart(safeRead(score,'home')) : null;
+  const away=score ? scorePart(safeRead(score,'away')) : null;
+
+  if ((live || finished) && home!==null && away!==null) {
+    return `${home} : ${away}`;
+  }
+  return live ? '— : —' : 'VS';
+}
+
 function sectionDefinitions() {
   return [
     {key:'live',label:'Сейчас идут',tone:'live',matches:[]},
@@ -113,9 +143,9 @@ export function homeMatchSections(list,nowMs=Date.now()) {
     const startsInMs=kickoffMs-now;
 
     if (startsInMs<=SOON_WINDOW_MS) {
-      sections[1].matches.push(match);
+      sections[1].matches.push(evidence.match);
     } else {
-      sections[2].matches.push(match);
+      sections[2].matches.push(evidence.match);
     }
   }
 
