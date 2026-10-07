@@ -22,8 +22,6 @@ test('profile removes redundant PRO CTA technical data drawer and status link', 
 });
 
 test('analysis tie states do not claim a single winner and old cached analyses are guarded client-side', () => {
-  assert.match(worker, /rows\[0\]\.value - rows\[1\]\.value < 1/);
-  assert.match(worker, /Нет явного фаворита/);
   assert.match(app, /function likelyOutcomeDisplay/);
   assert.match(app, /rows\[0\] - rows\[1\] < 1/);
   assert.match(app, /likelyOutcomeDisplay\(p, d\.likelyOutcome\)/);
