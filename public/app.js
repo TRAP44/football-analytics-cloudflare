@@ -4877,10 +4877,11 @@ function smartInsightsHeroHtml(si, match) {
     </section>`;
   }
   const first = si.insights?.[0];
+  const dataScore=Math.round(clampPercent(si.dataScore));
   return `<section class="panel smart-story-panel">
     <div class="smart-story-top">
       <div><span class="smart-story-label">🧠 КАРТИНА МАТЧА</span><h2>${escapeHtml(publicText(si.headline || ''))}</h2></div>
-      <div class="smart-data-score"><strong>${Number(si.dataScore || 0)}%</strong><span>${escapeHtml(publicText(si.dataLabel || 'Покрытие'))}</span></div>
+      <div class="smart-data-score"><strong>${dataScore}%</strong><span>${escapeHtml(publicText(si.dataLabel || 'Покрытие'))}</span></div>
     </div>
     <p class="smart-story-summary">${escapeHtml(publicText(si.summary || ''))}</p>
     ${first ? `<div class="smart-story-focus"><span>${escapeHtml(first.icon || '💡')}</span><b>${escapeHtml(insightSideLabel(first.side, match))}</b><small>${escapeHtml(first.importance === 'high' ? 'Сильный сигнал' : first.importance === 'medium' ? 'Заметный сигнал' : 'Наблюдение')}</small></div>` : ''}
@@ -4892,11 +4893,12 @@ function smartInsightsFullHtml(si, match) {
   if (!si?.available) {
     return `<div class="empty"><strong>Недостаточно данных</strong><p>Когда появятся статистика и события, здесь будут автоматические выводы по ходу матча.</p></div>`;
   }
+  const dataScore=Math.round(clampPercent(si.dataScore));
   return `<div class="smart-insights-full">
     <section class="panel smart-insight-summary-panel">
       <div class="smart-story-top">
         <div><span class="smart-story-label">ТЕКУЩАЯ КАРТИНА</span><h2>${escapeHtml(si.headline || '')}</h2></div>
-        <div class="smart-data-score"><strong>${Number(si.dataScore || 0)}%</strong><span>${escapeHtml(publicText(si.dataLabel || ''))}</span></div>
+        <div class="smart-data-score"><strong>${dataScore}%</strong><span>${escapeHtml(publicText(si.dataLabel || ''))}</span></div>
       </div>
       <p>${escapeHtml(si.summary || '')}</p>
     </section>
@@ -4914,6 +4916,7 @@ function liveAiCoachHtml(ai, match) {
   const xgText = Number.isFinite(Number(xg.home)) && Number.isFinite(Number(xg.away)) ? `${Number(xg.home).toFixed(2)}:${Number(xg.away).toFixed(2)}` : '—';
   const xgQualityLabel = publicText(ai.current?.xgQuality?.label || '');
   const watch = Array.isArray(ai.watchNext) ? ai.watchNext.slice(0,3) : [];
+  const confidence=Math.round(clampPercent(ai.confidence));
   const currentMinute = typeof ai.current?.minute === 'number' && Number.isFinite(ai.current.minute)
     ? Math.max(0,Math.min(180,Math.round(ai.current.minute)))
     : null;
@@ -4926,7 +4929,7 @@ function liveAiCoachHtml(ai, match) {
     ? `${match.score.home}:${match.score.away}`
     : '—:—';
   return `<section class="panel live-ai-coach ${tone}">
-    <div class="live-ai-head"><div><span>AI В ЭФИРЕ · ${currentMinute !== null ? `${currentMinute}′` : 'сейчас'}</span><h2>${escapeHtml(publicText(ai.headline || 'Читаю матч в реальном времени'))}</h2></div><b>${Math.round(Number(ai.confidence || 0))}%</b></div>
+    <div class="live-ai-head"><div><span>AI В ЭФИРЕ · ${currentMinute !== null ? `${currentMinute}′` : 'сейчас'}</span><h2>${escapeHtml(publicText(ai.headline || 'Читаю матч в реальном времени'))}</h2></div><b>${confidence}%</b></div>
     <p class="live-ai-summary">${escapeHtml(publicText(ai.summary || ''))}</p>
     <div class="live-ai-decision"><span>Решение AI сейчас</span><strong>${escapeHtml(publicText(ai.action?.label || 'Наблюдать'))}</strong><small>${escapeHtml(publicText(ai.action?.reason || 'Дождитесь более устойчивой картины.'))}</small></div>
     <div class="live-ai-grid">
@@ -4989,7 +4992,9 @@ function renderMatchCenter(d) {
   const finished = d.mode === 'finished';
   const upcoming = d.mode === 'upcoming';
   const score = m.score || {};
-  const scoreText = upcoming ? timeOf(m.date) : `${score.home ?? 0} : ${score.away ?? 0}`;
+  const scoreText = upcoming
+    ? timeOf(m.date)
+    : homeMatchScoreLabel({...m,live,finished});
   const statusText = live ? '● ИДЁТ' : finished ? '✓ ЗАВЕРШЁН' : 'ПРЕДСТОИТ';
   const latestEvents = (d.events || []).slice(-3).reverse();
 
