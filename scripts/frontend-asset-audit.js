@@ -57,8 +57,9 @@ function parseAttributes(tag) {
 
 function tags(html,name) {
   if (typeof html!=='string') return [];
+  const source=html.replace(/<!--[\s\S]*?-->/g,'');
   const re=new RegExp('<'+name+'\\b[^>]*>','gi');
-  return html.match(re) || [];
+  return source.match(re) || [];
 }
 
 export function surfaceRevisionValues(html) {
@@ -268,7 +269,7 @@ export function auditFrontendAssetFiles({
   headersPath='public/_headers',
 } = {}) {
   const pkg=JSON.parse(fs.readFileSync(packagePath,'utf8'));
-  return auditFrontendAssetContract({
+  const findings=auditFrontendAssetContract({
     packageVersion:pkg.version,
     runtimeRevision:FRONTEND_ASSET_REVISION,
     surfaces:{
@@ -278,6 +279,14 @@ export function auditFrontendAssetFiles({
     },
     headers:fs.readFileSync(headersPath,'utf8'),
   });
+
+  for (const assetPath of [...IMMUTABLE_FRONTEND_ASSETS,'/status.js']) {
+    const diskPath='public'+assetPath;
+    if (!fs.existsSync(diskPath) || !fs.statSync(diskPath).isFile()) {
+      findings.push('missing frontend asset file: '+diskPath);
+    }
+  }
+  return [...new Set(findings)].sort();
 }
 
 const invokedPath=process.argv[1] ? pathToFileURL(process.argv[1]).href : '';
