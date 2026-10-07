@@ -225,6 +225,8 @@ export function createAppCapabilitiesRuntime({
         recentMatchFallback:true,
         matchSelectionIntelligence:true,
         primaryMatchRecommendation:true,
+        officialMatchPriority:true,
+        selectionReasonUx:true,
         oneTapAiHandoff:true,
         focusedMatchHome:true,
         contextualLeagueFilter:true,
