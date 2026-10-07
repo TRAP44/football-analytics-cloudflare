@@ -281,8 +281,12 @@ export function createLiveMatchIntelligenceRuntime(deps) {
   }
   
   function buildLiveAiCoach({ statistics, events, pressure, score, elapsed, homeName, awayName, smartInsights, prematch, oddsMovement, xgQuality = null } = {}) {
-    const eventRows=rows(events);
     const minuteValue=eventMinute(elapsed);
+    const eventRows=rows(events).filter(event=>{
+      const eventAt=eventMinute(event?.minute);
+      return eventAt !== null
+        && (minuteValue === null || eventAt <= minuteValue);
+    });
     const minute=minuteValue ?? 0;
     const homeGoals=scoreValue(score?.home);
     const awayGoals=scoreValue(score?.away);
