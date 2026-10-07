@@ -16,7 +16,7 @@ test('rendered mobile regression sweep includes all critical public surfaces', (
   for (const surface of ['search','match-center','analysis','profile','billing','notifications','digest']) {
     assert.ok(smoke.includes(`data-qa-surface=\\\"${surface}\\\"`), surface);
   }
-  for (const existingSurface of ['home-personal-match','my-team-card','history-item','compact-match-card','radar-feed-item']) {
+  for (const existingSurface of ['home-personal-match','my-team-card','history-item','compact-match-card','radar-feed-item','match-watch-btn']) {
     assert.ok(smoke.includes(existingSurface), existingSurface);
   }
 });
@@ -24,7 +24,8 @@ test('rendered mobile regression sweep includes all critical public surfaces', (
 test('rendered mobile regression sweep rejects overflow and undersized controls', () => {
   assert.match(smoke, /surface\.scrollWidth > surface\.clientWidth \+ 1/);
   assert.match(smoke, /surface\.rect\.left < -1 \|\| surface\.rect\.right > width \+ 1/);
-  assert.match(smoke, /control\.height < 39\.5/);
+  assert.doesNotMatch(smoke, /control\.height < 39\.5/);
+  assert.match(smoke, /control\.height < 43\.5/);
   assert.match(smoke, /document has horizontal overflow/);
   assert.match(smoke, /navigation wrapped to more than one row/);
 });
