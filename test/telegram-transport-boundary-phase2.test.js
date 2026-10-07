@@ -45,19 +45,22 @@ test('duplicate Telegram update returns compatibility response without processin
   assert.equal(processed,false);
 });
 
-test('persistent duplicate keeps persistent compatibility marker', async () => {
+test('persistent duplicate keeps persistent compatibility marker without completing another isolate claim', async () => {
+  let persistentCompletes=0;
   const handler=createTelegramWebhookHandler(deps({
-    claimTelegramUpdatePersistent:async()=>({claimed:false,duplicate:true}),
+    claimTelegramUpdatePersistent:async()=>({claimed:false,duplicate:true,persistent:true}),
+    completeTelegramUpdatePersistent:async()=>{ persistentCompletes+=1; return true; },
   }));
   const result=await handler(requestFor('secret',{update_id:1}),{webhookSecret:'secret'});
   assert.deepEqual(result.body,{ok:true,deduped:true,persistent:true});
+  assert.equal(persistentCompletes,0);
 });
 
 test('successful processing completes both memory and persistent claims', async () => {
   const events=[];
   const handler=createTelegramWebhookHandler(deps({
     completeTelegramUpdate:key=>events.push(['memory',key]),
-    completeTelegramUpdatePersistent:async(_cfg,key)=>events.push(['persistent',key]),
+    completeTelegramUpdatePersistent:async(_cfg,key)=>{ events.push(['persistent',key]); return true; },
   }));
   const result=await handler(requestFor('secret',{update_id:1}),{webhookSecret:'secret'});
   assert.equal(result.status,200);
@@ -136,4 +139,161 @@ test('transient failure after a mutation completes claims and suppresses retry',
       && error?.telegramWebhookDisposition?.unsafeMutations === 1,
   );
   assert.deepEqual(events,[['memory-complete','u:1'],['persistent-complete','u:1']]);
+});
+
+
+test('Telegram transport rejects malformed dependency bags at construction time', () => {
+  assert.throws(
+    () => createTelegramWebhookHandler(null),
+    /dependencies are required/,
+  );
+  assert.throws(
+    () => createTelegramWebhookHandler([]),
+    /dependencies are required/,
+  );
+});
+
+test('persistent claim exceptions release only the local claim because durable ownership is unknown', async () => {
+  const events=[];
+  const handler=createTelegramWebhookHandler(deps({
+    claimTelegramUpdatePersistent:async()=>{ throw new Error('rpc timeout'); },
+    releaseTelegramUpdate:key=>events.push(['memory-release',key]),
+    releaseTelegramUpdatePersistent:async(_cfg,key)=>{
+      events.push(['persistent-release',key]);
+      return true;
+    },
+  }));
+
+  await assert.rejects(
+    handler(requestFor('secret',{update_id:1}),{
+      webhookSecret:'secret',
+      telegramWebhookAttempt:{
+        active:true,
+        successfulEffects:5,
+        unsafeMutations:3,
+      },
+    }),
+    error=>error?.telegramWebhookRetry===true
+      && error?.telegramWebhookDisposition?.successfulEffects===0
+      && error?.telegramWebhookDisposition?.unsafeMutations===0,
+  );
+  assert.deepEqual(events,[['memory-release','u:1']]);
+});
+
+test('malformed persistent claim fails closed before update processing', async () => {
+  let processed=0;
+  let localReleased=0;
+  const handler=createTelegramWebhookHandler(deps({
+    claimTelegramUpdatePersistent:async()=>({claimed:'yes',duplicate:false}),
+    processTelegramUpdate:async()=>{ processed+=1; return responseJson({ok:true}); },
+    releaseTelegramUpdate:()=>{ localReleased+=1; },
+  }));
+
+  await assert.rejects(
+    handler(requestFor('secret',{update_id:1}),{webhookSecret:'secret'}),
+    error=>error?.code==='TELEGRAM_DEDUPE_UNAVAILABLE'
+      && error?.telegramWebhookRetry===true,
+  );
+  assert.equal(processed,0);
+  assert.equal(localReleased,1);
+});
+
+test('invalid processor response is retryable before side effects and releases owned claims', async () => {
+  const events=[];
+  const handler=createTelegramWebhookHandler(deps({
+    processTelegramUpdate:async()=>undefined,
+    releaseTelegramUpdate:key=>events.push(['memory-release',key]),
+    releaseTelegramUpdatePersistent:async(_cfg,key)=>{
+      events.push(['persistent-release',key]);
+      return true;
+    },
+  }));
+
+  await assert.rejects(
+    handler(requestFor('secret',{update_id:1}),{webhookSecret:'secret'}),
+    error=>error?.code==='TELEGRAM_UPSTREAM'
+      && error?.telegramWebhookRetry===true,
+  );
+  assert.deepEqual(events,[['memory-release','u:1'],['persistent-release','u:1']]);
+});
+
+test('failed durable completion after successful processing keeps dedupe claims in place for retry absorption', async () => {
+  const events=[];
+  const handler=createTelegramWebhookHandler(deps({
+    completeTelegramUpdate:key=>events.push(['memory-complete',key]),
+    completeTelegramUpdatePersistent:async(_cfg,key)=>{
+      events.push(['persistent-complete',key]);
+      return false;
+    },
+    releaseTelegramUpdate:key=>events.push(['memory-release',key]),
+    releaseTelegramUpdatePersistent:async(_cfg,key)=>{
+      events.push(['persistent-release',key]);
+      return true;
+    },
+  }));
+
+  await assert.rejects(
+    handler(requestFor('secret',{update_id:1}),{webhookSecret:'secret'}),
+    error=>error?.code==='TELEGRAM_DEDUPE_UNAVAILABLE'
+      && error?.telegramWebhookRetry===true,
+  );
+  assert.deepEqual(events,[
+    ['memory-complete','u:1'],
+    ['persistent-complete','u:1'],
+  ]);
+});
+
+test('failed durable completion after a Telegram effect suppresses retry and still keeps claims', async () => {
+  const events=[];
+  const handler=createTelegramWebhookHandler(deps({
+    processTelegramUpdate:async(_request,activeCfg)=>{
+      markTelegramWebhookEffect(activeCfg,'sendMessage');
+      return responseJson({ok:true});
+    },
+    completeTelegramUpdate:key=>events.push(['memory-complete',key]),
+    completeTelegramUpdatePersistent:async(_cfg,key)=>{
+      events.push(['persistent-complete',key]);
+      return false;
+    },
+    releaseTelegramUpdate:key=>events.push(['memory-release',key]),
+    releaseTelegramUpdatePersistent:async(_cfg,key)=>{
+      events.push(['persistent-release',key]);
+      return true;
+    },
+  }));
+
+  await assert.rejects(
+    handler(requestFor('secret',{update_id:1}),{webhookSecret:'secret'}),
+    error=>error?.code==='TELEGRAM_DEDUPE_UNAVAILABLE'
+      && error?.telegramWebhookRetry===false
+      && error?.telegramWebhookDisposition?.successfulEffects===1,
+  );
+  assert.deepEqual(events,[
+    ['memory-complete','u:1'],
+    ['persistent-complete','u:1'],
+  ]);
+});
+
+test('real Request bodies are bounded before Telegram update parsing', async () => {
+  let claimed=0;
+  const handler=createTelegramWebhookHandler(deps({
+    claimTelegramUpdate:()=>{
+      claimed+=1;
+      return {key:'u:1',duplicate:false};
+    },
+  }));
+  const request=new Request('https://example.test/telegram/webhook',{
+    method:'POST',
+    headers:{
+      'content-type':'application/json',
+      'x-telegram-bot-api-secret-token':'secret',
+      'content-length':'1048577',
+    },
+    body:'{}',
+  });
+
+  const result=await handler(request,{webhookSecret:'secret'});
+  assert.equal(result.status,413);
+  assert.deepEqual(result.body,{ok:false,error:'update_too_large'});
+  assert.equal(claimed,0);
 });
