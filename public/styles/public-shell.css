@@ -3134,6 +3134,7 @@ html {
 .miniapp-public-shell .compact-actions .analyze-btn,
 .miniapp-public-shell .fav-star.compact,
 .miniapp-public-shell .quick-reminder-btn.compact,
+.miniapp-public-shell .match-watch-btn.compact,
 .miniapp-public-shell .history-open,
 .miniapp-public-shell .favorite-remove,
 .miniapp-public-shell .reminder-remove{
@@ -3145,7 +3146,8 @@ html {
   width:44px;
   height:44px;
 }
-.miniapp-public-shell .quick-reminder-btn.compact{
+.miniapp-public-shell .quick-reminder-btn.compact,
+.miniapp-public-shell .match-watch-btn.compact{
   min-width:44px;
 }
 .miniapp-public-shell .favorite-remove,

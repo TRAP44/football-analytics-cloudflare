@@ -28,6 +28,7 @@ test('MatchRadar home visual polish keeps the existing interaction contract',()=
     '.compact-score',
     '.match-secondary-actions',
     '.quick-reminder-btn.compact',
+    '.match-watch-btn.compact',
   ]) assert.ok(css.includes(selector),selector);
 
   const card=sourceSection(app,'function matchCardHtml','function bindMatchActions');
@@ -58,8 +59,10 @@ test('home match cards separate status from score and keep one clear primary act
 });
 
 test('visual polish preserves accessible touch targets and mobile widths',()=>{
-  assert.match(css,/\.compact-actions \.analyze-btn\{[\s\S]*?min-height:44px/);
-  assert.match(css,/\.quick-reminder-btn\.compact\{[\s\S]*?min-height:36px/);
+  const a11y=sourceSection(css,'/* MatchRadar UX QA — Edge Cases & Accessibility */','/* Public Launch UX — actionable first run */');
+  assert.match(a11y,/\.compact-actions \.analyze-btn,[\s\S]*?min-height:44px/);
+  assert.match(a11y,/\.quick-reminder-btn\.compact,[\s\S]*?\.match-watch-btn\.compact,[\s\S]*?min-height:44px/);
+  assert.match(a11y,/\.quick-reminder-btn\.compact,[\s\S]*?\.match-watch-btn\.compact\{[\s\S]*?min-width:44px/);
   for(const width of [360,390,430]) assert.match(css,new RegExp('max-width:'+width+'px'));
   assert.match(css,/prefers-reduced-motion:reduce/);
 });
@@ -75,6 +78,7 @@ test('frontend asset revision busts the public shell cache without changing rele
   for(const asset of [
     '/styles.css?v=',
     '/styles/public-shell.css?v=',
+    '/styles/premium-ui.css?v=',
     '/app.js?v=',
   ]) {
     assert.ok(html.includes(`${asset}${frontendRevision}`),`${asset} must use ${frontendRevision}`);
