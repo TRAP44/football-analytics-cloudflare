@@ -27,7 +27,9 @@ test('first run actions reuse existing search surfaces and dismiss the guide',()
   assert.match(searchBlock,/focusMatchSearch\(\)/);
   assert.match(favoriteBlock,/dismissFirstRunGuide\(\)/);
   assert.match(favoriteBlock,/safeCall\(showView,'searchView'\)/);
-  assert.match(favoriteBlock,/globalSearchInput/);
+  assert.match(favoriteBlock,/resetGlobalSearchQuery\(\)/);
+  assert.match(favoriteBlock,/focusGlobalSearch/);
+  assert.match(firstRun,/safeElement\(elementById,'globalSearchInput'\)/);
   assert.doesNotMatch(searchBlock+favoriteBlock,/api\(/);
 });
 
