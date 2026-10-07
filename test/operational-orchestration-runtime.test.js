@@ -6,6 +6,14 @@ import { createOperationalOrchestrationRuntime } from '../src/operational-orches
 
 const noop=()=>{};
 
+function runtimeMemory(provider={}) {
+  return {
+    provider,
+    modelPredictions:new Map(),
+    modelRemediation:{lastRun:null,actions:[]},
+  };
+}
+
 function baseDeps(overrides={}) {
   const target={
     APP_VERSION:'test',
@@ -15,9 +23,9 @@ function baseDeps(overrides={}) {
     EXPECTED_SCHEMA_FINGERPRINT:'0123456789abcdef0123456789abcdef',
     DEFAULT_RUNTIME_CONTROLS:{},
     PROVIDER_FEATURE_TTLS:{},
-    SETTLEMENT_DRIFT_ACTIONS:{},
-    SETTLEMENT_FINALITY_DRIFT_STATUSES:[],
-    memory:{provider:{}},
+    SETTLEMENT_DRIFT_ACTIONS:new Set(),
+    SETTLEMENT_FINALITY_DRIFT_STATUSES:new Set(),
+    memory:runtimeMemory(),
     enc:{encode:()=>new Uint8Array()},
     loadRuntimeControls:async()=>({
       value:{
@@ -78,7 +86,7 @@ test('operational orchestration fails fast on invalid composition dependencies',
 
 test('expired ISO provider cooldown does not leave public status degraded forever', async () => {
   const runtime=createOperationalOrchestrationRuntime(baseDeps({
-    memory:{provider:{cooldownUntil:'2020-01-01T00:00:00.000Z'}},
+    memory:runtimeMemory({cooldownUntil:'2020-01-01T00:00:00.000Z'}),
   }));
 
   const status=await runtime.publicStatusRouter.handle(
@@ -92,7 +100,7 @@ test('expired ISO provider cooldown does not leave public status degraded foreve
 
 test('malformed provider cooldown remains fail-closed in public status', async () => {
   const runtime=createOperationalOrchestrationRuntime(baseDeps({
-    memory:{provider:{cooldownUntil:'not-a-timestamp'}},
+    memory:runtimeMemory({cooldownUntil:'not-a-timestamp'}),
   }));
 
   const status=await runtime.publicStatusRouter.handle(
@@ -102,6 +110,53 @@ test('malformed provider cooldown remains fail-closed in public status', async (
   );
 
   assert.equal(status.status,'degraded');
+});
+
+test('impossible ISO provider cooldown stays invalid instead of being normalized by Date.parse', async () => {
+  const runtime=createOperationalOrchestrationRuntime(baseDeps({
+    memory:runtimeMemory({cooldownUntil:'2026-02-31T00:00:00.000Z'}),
+  }));
+
+  const status=await runtime.publicStatusRouter.handle(
+    {method:'GET'},
+    new URL('https://example.test/api/public-status'),
+    {apiFootballKey:'configured'},
+  );
+
+  assert.equal(status.status,'degraded');
+});
+
+test('corrupt provider state and throwing cooldown getters fail closed in public status', async () => {
+  const corrupt=createOperationalOrchestrationRuntime(baseDeps({
+    memory:runtimeMemory([]),
+  }));
+  assert.equal(
+    (await corrupt.publicStatusRouter.handle(
+      {method:'GET'},
+      new URL('https://example.test/api/public-status'),
+      {apiFootballKey:'configured'},
+    )).status,
+    'degraded',
+  );
+
+  const provider={};
+  Object.defineProperty(provider,'cooldownUntil',{
+    enumerable:true,
+    get() {
+      throw new Error('corrupt provider state');
+    },
+  });
+  const throwing=createOperationalOrchestrationRuntime(baseDeps({
+    memory:runtimeMemory(provider),
+  }));
+  assert.equal(
+    (await throwing.publicStatusRouter.handle(
+      {method:'GET'},
+      new URL('https://example.test/api/public-status'),
+      {apiFootballKey:'configured'},
+    )).status,
+    'degraded',
+  );
 });
 
 test('scheduled orchestration renews a persistent lease through explicit wiring', async () => {
