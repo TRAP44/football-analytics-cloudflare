@@ -12,8 +12,9 @@ function rollbackBaseUrl(value) {
 }
 
 function expectedReleaseCandidate(version) {
-  const match = /-rc(\d+)$/i.exec(String(version || ''));
-  if (!match) throw new Error('Expected rollback version must end with -rc<number>.');
+  const raw=typeof version === 'string' ? version.trim() : '';
+  const match=/^\d+\.\d+\.\d+-rc(\d+)$/i.exec(raw);
+  if (!match) throw new Error('Expected rollback version must use <semver>-rc<number>.');
   return `RC${match[1]}`;
 }
 
