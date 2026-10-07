@@ -6,6 +6,7 @@ const worker=(fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/
 const app=fs.readFileSync('public/app.js','utf8');
 const html=fs.readFileSync('public/index.html','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
+const appCapabilities=fs.readFileSync('src/app-capabilities.js','utf8');
 
 test('global search recognizes major clubs across countries and Russian aliases',()=> {
   assert.match(worker,/TOP_TEAM_SEARCH_CATALOG/);
@@ -58,8 +59,8 @@ test('normal mini app startup prepares the public home-first match feed',()=> {
   assert.match(app,/showView\('matchesView', \{ restore: true \}\)/);
 });
 
-test('RC49 health exposes public-product contracts',()=> {
-  assert.match(worker,/globalTopClubSearch:\s*'enabled'/);
-  assert.match(worker,/miniAppPublicShell:\s*'enabled'/);
-  assert.match(worker,/botContentFirstNavigation:\s*'enabled'/);
+test('current manifest preserves the public-product contracts introduced by RC49',()=> {
+  assert.match(appCapabilities,/unifiedSearch:true/);
+  assert.match(appCapabilities,/focusedMatchHome:true/);
+  assert.match(appCapabilities,/telegramMiniAppE2E:true/);
 });
