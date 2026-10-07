@@ -286,44 +286,62 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     const maturityCutoff=asOfMs-actionWindowMs;
     const safeDecisionRows=Array.isArray(decisionRows) ? decisionRows : [];
     const safeActionRows=Array.isArray(actionRows) ? actionRows : [];
+    const actionCodes=NEWS_IMPACT_ACTION_CODES instanceof Set
+      ? [...NEWS_IMPACT_ACTION_CODES]
+      : Array.isArray(NEWS_IMPACT_ACTION_CODES)
+        ? NEWS_IMPACT_ACTION_CODES.filter(code=>typeof code==='string' && code)
+        : [];
     const funnelDecisions=Array.isArray(NEWS_IMPACT_FUNNEL_DECISIONS) ? NEWS_IMPACT_FUNNEL_DECISIONS : [];
     return funnelDecisions
       .filter(row=>Array.isArray(row) && typeof row[0]==='string' && typeof row[1]==='string')
       .map(([code,label])=>{
       const observedDecisionUsers=new Set();
-      const decisionTimesByUser=new Map();
+      const decisionContextsByUser=new Map();
       for (const row of safeDecisionRows) {
         if (newsImpactRowDecision(row)!==code) continue;
         const uid=newsImpactPositiveId(row?.telegram_id);
+        const fixtureId=newsImpactPositiveId(row?.fixture_id);
         const decisionAt=newsImpactEventTime(row);
-        if (!uid) continue;
+        if (!uid || !fixtureId || !Number.isFinite(decisionAt) || decisionAt>asOfMs) continue;
         observedDecisionUsers.add(uid);
-        if (!Number.isFinite(decisionAt) || decisionAt>maturityCutoff) continue;
-        const times=decisionTimesByUser.get(uid) || [];
-        times.push(decisionAt);
-        decisionTimesByUser.set(uid,times);
+        if (decisionAt>maturityCutoff) continue;
+        const contexts=decisionContextsByUser.get(uid) || [];
+        contexts.push({fixtureId,decisionAt});
+        decisionContextsByUser.set(uid,contexts);
       }
-      const decisionUsers=new Set(decisionTimesByUser.keys());
+      const decisionUsers=new Set(decisionContextsByUser.keys());
       const immatureUsers=[...observedDecisionUsers].filter(uid=>!decisionUsers.has(uid)).length;
-      const actionUsersByCode={};
-      for (const action of NEWS_IMPACT_ACTION_CODES) actionUsersByCode[action]=new Set();
+      const actionUsersByCode=Object.fromEntries(actionCodes.map(action=>[action,new Set()]));
       for (const row of safeActionRows) {
         if (newsImpactRowDecision(row)!==code) continue;
         const uid=newsImpactPositiveId(row?.telegram_id);
+        const fixtureId=newsImpactPositiveId(row?.fixture_id);
         const action=newsImpactRowAction(row);
         const actionAt=newsImpactEventTime(row);
-        if (!uid || !action || !decisionUsers.has(uid) || !Number.isFinite(actionAt)) continue;
-        const decisionTimes=decisionTimesByUser.get(uid) || [];
-        const attributed=decisionTimes.some(decisionAt=>actionAt>=decisionAt && actionAt<=decisionAt+actionWindowMs);
+        if (
+          !uid
+          || !fixtureId
+          || !action
+          || !Object.prototype.hasOwnProperty.call(actionUsersByCode,action)
+          || !decisionUsers.has(uid)
+          || !Number.isFinite(actionAt)
+          || actionAt>asOfMs
+        ) continue;
+        const contexts=decisionContextsByUser.get(uid) || [];
+        const attributed=contexts.some(context=>
+          context.fixtureId===fixtureId
+          && actionAt>=context.decisionAt
+          && actionAt<=context.decisionAt+actionWindowMs
+        );
         if (!attributed) continue;
         actionUsersByCode[action].add(uid);
       }
       const actedUsers=new Set();
       for (const set of Object.values(actionUsersByCode)) for (const uid of set) actedUsers.add(uid);
       const actionBreakdown=Object.entries(actionUsersByCode)
-        .map(([action,set])=>({action,label:NEWS_IMPACT_ACTION_LABELS[action] || action,users:set.size}))
-        .filter(x=>x.users>0)
-        .sort((a,b)=>b.users-a.users || a.action.localeCompare(b.action));
+        .map(([action,set])=>({action,label:NEWS_IMPACT_ACTION_LABELS?.[action] || action,users:set.size}))
+        .filter(item=>item.users>0)
+        .sort((left,right)=>right.users-left.users || left.action.localeCompare(right.action));
       const users=decisionUsers.size;
       const conversionPct=users ? Math.round((actedUsers.size/users)*1000)/10 : 0;
       const confidence=newsImpactConversionConfidence(actedUsers.size,users);
@@ -395,15 +413,17 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
   function newsImpactTemporalAttributionDrill() {
     const asOfMs=Date.parse('2026-09-23T12:00:00Z');
     const decisions=[
-      {telegram_id:1,created_at:'2026-09-23T10:00:00Z',metadata:{decision:'material'}},
-      {telegram_id:2,created_at:'2026-09-23T10:00:00Z',metadata:{decision:'material'}},
-      {telegram_id:3,created_at:'2026-09-23T11:50:00Z',metadata:{decision:'material'}},
+      {telegram_id:1,fixture_id:101,created_at:'2026-09-23T10:00:00Z',metadata:{decision:'material'}},
+      {telegram_id:2,fixture_id:202,created_at:'2026-09-23T10:00:00Z',metadata:{decision:'material'}},
+      {telegram_id:3,fixture_id:303,created_at:'2026-09-23T11:50:00Z',metadata:{decision:'material'}},
     ];
     const actions=[
-      {telegram_id:1,created_at:'2026-09-23T09:59:00Z',metadata:{decision:'material',action:'market'}},
-      {telegram_id:1,created_at:'2026-09-23T10:10:00Z',metadata:{decision:'material',action:'market'}},
-      {telegram_id:2,created_at:'2026-09-23T10:45:00Z',metadata:{decision:'material',action:'full_ai'}},
-      {telegram_id:3,created_at:'2026-09-23T11:55:00Z',metadata:{decision:'material',action:'share'}},
+      {telegram_id:1,fixture_id:101,created_at:'2026-09-23T09:59:00Z',metadata:{decision:'material',action:'market'}},
+      {telegram_id:1,fixture_id:999,created_at:'2026-09-23T10:05:00Z',metadata:{decision:'material',action:'share'}},
+      {telegram_id:1,fixture_id:101,created_at:'2026-09-23T10:10:00Z',metadata:{decision:'material',action:'market'}},
+      {telegram_id:2,fixture_id:202,created_at:'2026-09-23T10:45:00Z',metadata:{decision:'material',action:'full_ai'}},
+      {telegram_id:3,fixture_id:303,created_at:'2026-09-23T11:55:00Z',metadata:{decision:'material',action:'share'}},
+      {telegram_id:1,fixture_id:101,created_at:'2026-09-23T12:01:00Z',metadata:{decision:'material',action:'share'}},
     ];
     const row=buildNewsImpactActionFunnel(decisions,actions,{asOfMs}).find(x=>x.code==='material');
     return {
@@ -411,8 +431,8 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
         && row?.users===2
         && row?.immatureUsers===1
         && row?.actedUsers===1
-        && row?.market===undefined
         && row?.topAction?.action==='market'
+        && row?.actions?.some(item=>item.action==='share')===false
         && row?.actionWindowMinutes===30,
       cases:7,
     };
