@@ -20,8 +20,13 @@ export function createLiveMatchIntelligenceRuntime(deps) {
 
   function finiteNumber(value) {
     if (value === null || value === undefined || value === '') return null;
-    if (typeof value !== 'number' && typeof value !== 'string') return null;
-    const number=numericValue(value);
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : null;
+    }
+    if (typeof value !== 'string') return null;
+    const raw=value.trim();
+    if (!/^[+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)%?$/.test(raw)) return null;
+    const number=numericValue(raw);
     return Number.isFinite(number) ? number : null;
   }
 
@@ -60,9 +65,11 @@ export function createLiveMatchIntelligenceRuntime(deps) {
     const home=boundedNumber(value.home,0,100);
     const away=boundedNumber(value.away,0,100);
     if (home === null || away === null || Math.abs((home+away)-100) > 2) return null;
-    const leader=value.leader === 'home' || value.leader === 'away' || value.leader === 'balanced'
-      ? value.leader
-      : Math.abs(home-away)<10 ? 'balanced' : home>away ? 'home' : 'away';
+    const leader=Math.abs(home-away)<10
+      ? 'balanced'
+      : home>away
+        ? 'home'
+        : 'away';
     return {home,away,leader};
   }
 
@@ -274,9 +281,14 @@ export function createLiveMatchIntelligenceRuntime(deps) {
     if (Object.values(values).some(value=>value === null)) return null;
     const net=values.home+values.draw+values.away;
     if (!Number.isFinite(net) || Math.abs(net)>1) return null;
-    const candidates=Object.entries(values).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
+
+    // "Market moved toward X" must identify the outcome whose implied
+    // probability increased, not simply the largest absolute movement.
+    const candidates=Object.entries(values)
+      .filter(([,delta])=>delta>0)
+      .sort((a,b)=>b[1]-a[1]);
     const [side,delta]=candidates[0] || [];
-    if (!side || Math.abs(delta)<3) return null;
+    if (!side || delta<3) return null;
     return {side,delta:Math.round(delta*10)/10};
   }
   
@@ -450,9 +462,13 @@ export function createLiveMatchIntelligenceRuntime(deps) {
     homeName, awayName, playerLeaders, absences,
   } = {}) {
     const insights=[];
-    const eventRows=rows(events);
-    const pressureValue=normalizedPressure(pressure);
     const minute=eventMinute(elapsed);
+    const eventRows=rows(events).filter(event=>{
+      const eventAt=eventMinute(event?.minute);
+      return eventAt !== null
+        && (minute === null || eventAt <= minute);
+    });
+    const pressureValue=normalizedPressure(pressure);
     const homeGoalValue=scoreValue(score?.home);
     const awayGoalValue=scoreValue(score?.away);
     const scoreKnown=homeGoalValue !== null && awayGoalValue !== null;
