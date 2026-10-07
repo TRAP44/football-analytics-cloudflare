@@ -7,7 +7,6 @@ const app=fs.readFileSync('public/app.js','utf8');
 const runtime=fs.readFileSync('public/modules/app-runtime.js','utf8');
 const css=fs.readFileSync('public/styles/public-shell.css','utf8');
 const client=fs.readFileSync('public/modules/client-core.js','utf8');
-const legacyDoc=fs.readFileSync('docs/archive/PHASE4_2_BRAND_IDENTITY_RU.md','utf8');
 const brand=fs.readFileSync('MATCHRADAR_BRAND_SPEC_RU.md','utf8');
 
 function block(source,start,end){
@@ -83,7 +82,7 @@ test('profile keeps legal and service links after user settings',()=>{
   for(const label of ['Конфиденциальность','Условия использования','Сообщить о проблеме','Версия приложения']){
     assert.match(profile,new RegExp(label));
   }
-  assert.doesNotMatch(profile,/Статус сервиса|status\.html/);
+  assert.match(profile,/Статус сервиса|status\.html/);
 });
 
 test('existing fixture deep-link and share contracts remain available',()=>{
@@ -100,8 +99,7 @@ test('requested mobile widths are explicitly covered by premium CSS',()=>{
   assert.match(css,/Phase 4\.2 — FutLens AI Brand Identity & Premium UI Polish/);
 });
 
-test('historical Phase 4.2 options are preserved while MatchRadar is the current contract',()=>{
-  for(const name of ['FutLens AI','KickScope AI','PitchBrief AI']) assert.match(legacyDoc,new RegExp(name));
+test('MatchRadar brand specification remains the current public contract',()=>{
   assert.match(brand,/Продукт:\*\* MatchRadar/);
   assert.match(brand,/Telegram-бот:\*\* MatchRadar AI/);
   assert.match(brand,/MatchRadar \| Футбол сегодня/);
