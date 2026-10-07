@@ -19,10 +19,36 @@ export function localDate(offset = 0) {
   return `${y}-${m}-${day}`;
 }
 
-export function safeDate(iso) {
-  if (!iso) return null;
-  const d = new Date(iso);
-  return Number.isFinite(d.getTime()) ? d : null;
+export function safeDate(value) {
+  if (value === null || value === undefined || typeof value === 'boolean') return null;
+
+  if (value instanceof Date) {
+    const timestamp=value.getTime();
+    return Number.isFinite(timestamp) ? new Date(timestamp) : null;
+  }
+
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return null;
+    const date=new Date(value);
+    return Number.isFinite(date.getTime()) ? date : null;
+  }
+
+  if (typeof value !== 'string') return null;
+  const raw=value.trim();
+  if (!raw) return null;
+
+  const calendar=/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(raw);
+  if (calendar) {
+    const year=Number(calendar[1]);
+    const month=Number(calendar[2]);
+    const day=Number(calendar[3]);
+    if (!Number.isSafeInteger(year) || month < 1 || month > 12 || day < 1) return null;
+    const maxDay=new Date(Date.UTC(year,month,0)).getUTCDate();
+    if (day > maxDay) return null;
+  }
+
+  const date=new Date(raw);
+  return Number.isFinite(date.getTime()) ? date : null;
 }
 
 export function timeOf(iso) {
