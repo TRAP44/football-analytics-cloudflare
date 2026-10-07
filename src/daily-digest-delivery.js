@@ -236,29 +236,54 @@ export function createDigestRateGate({
   now = () => Date.now(),
   minIntervalMs = DAILY_DIGEST_POLICY.minSendIntervalMs,
 } = {}) {
-  const gap = positiveFinite(minIntervalMs, DAILY_DIGEST_POLICY.minSendIntervalMs, 60_000);
-  let nextAt = 0;
-  let cooldownUntil = 0;
-  let tail = Promise.resolve();
+  if (typeof sleep!=='function' || typeof now!=='function') {
+    throw new TypeError('Digest rate gate requires sleep and now functions.');
+  }
+  const gap=positiveFinite(minIntervalMs,DAILY_DIGEST_POLICY.minSendIntervalMs,60_000);
+  let nextAt=0;
+  let cooldownUntil=0;
+  let tail=Promise.resolve();
 
-  const reserve = async () => {
-    const before = Number(now());
-    const wait = Math.max(0, nextAt - before, cooldownUntil - before);
-    if (wait > 0) await sleep(wait);
-    const current = Number(now());
-    nextAt = Math.max(nextAt, current) + gap;
+  const readNow=()=>{
+    const current=finiteNumberCandidate(now());
+    return current !== null && current>=0 ? current : Date.now();
+  };
+
+  const reserve=async deadlineMs=>{
+    const deadline=finiteNumberCandidate(deadlineMs);
+    while (true) {
+      const before=readNow();
+      const wait=Math.max(0,nextAt-before,cooldownUntil-before);
+      if (deadline !== null && before+wait>=deadline) return false;
+      if (wait<=0) {
+        const current=readNow();
+        if (deadline !== null && current>=deadline) return false;
+        nextAt=Math.max(nextAt,current)+gap;
+        return true;
+      }
+      await sleep(wait);
+      // Another concurrent sender can publish a longer 429 cooldown while this
+      // reservation is sleeping. Re-evaluate instead of sending on stale timing.
+    }
   };
 
   return Object.freeze({
     acquire() {
-      const current = tail.then(reserve);
-      tail = current.catch(() => undefined);
+      const current=tail.then(()=>reserve(null));
+      tail=current.catch(()=>undefined);
+      return current;
+    },
+    acquireBefore(deadlineMs) {
+      const current=tail.then(()=>reserve(deadlineMs));
+      tail=current.catch(()=>undefined);
       return current;
     },
     defer(seconds) {
-      const current = Number(now());
-      const nowMs = Number.isFinite(current) ? current : Date.now();
-      cooldownUntil = Math.max(cooldownUntil, nowMs + positiveInteger(seconds, 1, 3600) * 1000);
+      const current=readNow();
+      cooldownUntil=Math.max(
+        cooldownUntil,
+        current+positiveInteger(seconds,1,3600)*1000,
+      );
     },
   });
 }
@@ -283,9 +308,13 @@ export async function runBoundedDailyDigest({
     throw new TypeError('runBoundedDailyDigest requires plan, claim, arm, complete and sendDigest');
   }
 
-  const startedAtRaw = Number(now());
-  const startedAt = Number.isFinite(startedAtRaw) ? startedAtRaw : Date.now();
-  const budget = positiveInteger(executionBudgetMs, DAILY_DIGEST_POLICY.executionBudgetMs, 15 * 60 * 1000);
+  if (typeof now!=='function' || typeof sleep!=='function') {
+    throw new TypeError('runBoundedDailyDigest requires now and sleep functions.');
+  }
+  const startedAtCandidate=finiteNumberCandidate(now());
+  const startedAt=startedAtCandidate !== null && startedAtCandidate>=0 ? startedAtCandidate : Date.now();
+  const budget=positiveInteger(executionBudgetMs,DAILY_DIGEST_POLICY.executionBudgetMs,15*60*1000);
+  const deadline=startedAt+budget;
   const boundedMaxRecipients = positiveInteger(
     maxRecipients,
     DAILY_DIGEST_POLICY.maxRecipientsPerRun,
@@ -324,6 +353,7 @@ export async function runBoundedDailyDigest({
     retries: 0,
     newsSent: 0,
     newsFailed: 0,
+    newsDeferred: 0,
     claimFailed: 0,
     armFailed: 0,
     releaseFailed: 0,
@@ -339,45 +369,53 @@ export async function runBoundedDailyDigest({
   };
 
   let index = 0;
-  const elapsed = () => {
-    const current = Number(now());
-    return Number.isFinite(current) ? Math.max(0, current - startedAt) : budget;
+  const elapsed=()=>{
+    const current=finiteNumberCandidate(now());
+    return current !== null && current>=0 ? Math.max(0,current-startedAt) : budget;
   };
-  const withinBudget = (extraMs = 0) => {
-    const extra = Number(extraMs);
-    const boundedExtra = Number.isFinite(extra) ? Math.max(0, extra) : budget;
-    return elapsed() + boundedExtra < budget;
+  const withinBudget=(extraMs=0)=>{
+    const extra=finiteNumberCandidate(extraMs);
+    const boundedExtra=extra !== null ? Math.max(0,extra) : budget;
+    return elapsed()+boundedExtra<budget;
   };
 
   async function sendWithRateLimit(send) {
-    await gate.acquire();
+    const acquired=await gate.acquireBefore(deadline);
+    if (acquired!==true || !withinBudget()) {
+      stats.budgetExhausted=true;
+      return {ok:false,budgetExhausted:true,disposition:{rateLimited:false,ambiguous:false,permanent:false}};
+    }
     try {
       await send();
-      return { ok: true };
+      return {ok:true};
     } catch (error) {
-      const disposition = classifyDigestTransportError(error);
+      const disposition=classifyDigestTransportError(error);
       if (disposition.rateLimited) {
-        stats.rateLimited += 1;
-        const waitMs = disposition.retryAfter * 1000;
-        if (withinBudget(waitMs + stats.minSendIntervalMs)) {
-          stats.retries += 1;
+        stats.rateLimited+=1;
+        const waitMs=disposition.retryAfter*1000;
+        if (withinBudget(waitMs+stats.minSendIntervalMs)) {
+          stats.retries+=1;
           gate.defer(disposition.retryAfter);
-          await gate.acquire();
+          const retryAcquired=await gate.acquireBefore(deadline);
+          if (retryAcquired!==true || !withinBudget()) {
+            stats.budgetExhausted=true;
+            return {ok:false,budgetExhausted:true,disposition};
+          }
           try {
             await send();
-            return { ok: true, retried: true };
+            return {ok:true,retried:true};
           } catch (retryError) {
-            const retryDisposition = classifyDigestTransportError(retryError);
-            if (retryDisposition.rateLimited) stats.rateLimited += 1;
-            if (retryDisposition.ambiguous) stats.ambiguous += 1;
-            if (retryDisposition.permanent) stats.permanentFailed += 1;
-            return { ok: false, error: retryError, disposition: retryDisposition };
+            const retryDisposition=classifyDigestTransportError(retryError);
+            if (retryDisposition.rateLimited) stats.rateLimited+=1;
+            if (retryDisposition.ambiguous) stats.ambiguous+=1;
+            if (retryDisposition.permanent) stats.permanentFailed+=1;
+            return {ok:false,error:retryError,disposition:retryDisposition};
           }
         }
       }
-      if (disposition.ambiguous) stats.ambiguous += 1;
-      if (disposition.permanent) stats.permanentFailed += 1;
-      return { ok: false, error, disposition };
+      if (disposition.ambiguous) stats.ambiguous+=1;
+      if (disposition.permanent) stats.permanentFailed+=1;
+      return {ok:false,error,disposition};
     }
   }
 
@@ -430,17 +468,17 @@ export async function runBoundedDailyDigest({
 
       const main = await sendWithRateLimit(() => sendDigest(row));
       if (!main.ok) {
-        stats.failed += 1;
-        // A final 429 is an explicit non-delivery signal, so it is safe to
-        // release the armed claim and let a later cron slot retry. Ambiguous
-        // and permanent outcomes remain sealed for the date to prevent replay.
-        if (main.disposition?.rateLimited && typeof release === 'function') {
-          stats.retryableDeferred += 1;
+        stats.failed+=1;
+        // Explicit rate-limit non-delivery and budget exhaustion occur before
+        // a confirmed Telegram send, so both are safe to release for a later slot.
+        const retryableWithoutSend=main.disposition?.rateLimited===true || main.budgetExhausted===true;
+        if (retryableWithoutSend && typeof release==='function') {
+          stats.retryableDeferred+=1;
           try {
-            const released = await release(row, date);
-            if (released !== true) stats.releaseFailed += 1;
+            const released=await release(row,date);
+            if (released!==true) stats.releaseFailed+=1;
           } catch {
-            stats.releaseFailed += 1;
+            stats.releaseFailed+=1;
           }
         }
         continue;
@@ -456,10 +494,11 @@ export async function runBoundedDailyDigest({
         stats.stateFailed += 1;
       }
 
-      if (typeof sendNews === 'function') {
-        const news = await sendWithRateLimit(() => sendNews(row));
-        if (news.ok) stats.newsSent += 1;
-        else stats.newsFailed += 1;
+      if (typeof sendNews==='function') {
+        const news=await sendWithRateLimit(()=>sendNews(row));
+        if (news.ok) stats.newsSent+=1;
+        else if (news.budgetExhausted) stats.newsDeferred+=1;
+        else stats.newsFailed+=1;
       }
     }
   }
