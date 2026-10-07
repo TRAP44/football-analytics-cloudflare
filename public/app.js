@@ -11,6 +11,15 @@ import { createFavoriteTeamsRenderer } from './modules/favorite-teams-renderer.j
 import { createReminderListModule } from './modules/reminder-list.js';
 import { createMyTeamsRenderer } from './modules/my-teams-renderer.js';
 import { createJourneyStateModule } from './modules/journey-state.js';
+import {
+  collectionItems,
+  isCurrentEntityRequest,
+  teamCompetitionEntityKey,
+  teamEntityKey,
+  tournamentEntityKey,
+  tournamentTabForTeamShortcut,
+  uiErrorMessage,
+} from './modules/entity-state-safety.js';
 import { analysisAccessUsageHtml, buildAnalysisAccessUsage } from './modules/analysis-access.js';
 import { createGlobalSearchRenderer } from './modules/global-search-renderer.js';
 import { createGlobalSearchController } from './modules/global-search-controller.js';
@@ -2187,7 +2196,7 @@ async function loadFavorites() {
   try {
     const data = await api('/api/favorites');
     if (revisionAtStart !== state.favoritesRevision) return;
-    state.favorites = data.items || [];
+    state.favorites = collectionItems(data);
     state.favoritesLoaded = true;
     state.favoritesLoadError = '';
     if (state.matches.length) renderMatches();
@@ -2195,7 +2204,7 @@ async function loadFavorites() {
     renderMyTeams();
   } catch (e) {
     if (revisionAtStart !== state.favoritesRevision) return;
-    state.favoritesLoadError = e.message || 'Не удалось загрузить избранное.';
+    state.favoritesLoadError = uiErrorMessage(e,'Не удалось загрузить избранное.');
     if (state.favoritesLoaded) toast('Избранное временно не обновилось — показаны последние данные.');
   } finally {
     state.favoritesLoading = false;
@@ -2212,12 +2221,12 @@ async function loadReminders() {
   try {
     const data = await api('/api/reminders');
     if (revisionAtStart !== state.remindersRevision) return;
-    state.reminders = data.items || [];
+    state.reminders = collectionItems(data);
     state.remindersLoaded = true;
     state.remindersLoadError = '';
   } catch (e) {
     if (revisionAtStart !== state.remindersRevision) return;
-    state.remindersLoadError = e.message || 'Не удалось загрузить напоминания.';
+    state.remindersLoadError = uiErrorMessage(e,'Не удалось загрузить напоминания.');
     if (state.remindersLoaded) toast('Напоминания временно не обновились — показаны последние данные.');
   } finally {
     state.remindersLoading = false;
@@ -3350,7 +3359,7 @@ function currentTournamentMatches(leagueId = state.currentTournament?.leagueId) 
 }
 
 function tournamentKey(t) {
-  return `${Number(t?.leagueId || 0)}:${Number(t?.season || 0)}`;
+  return tournamentEntityKey(t);
 }
 
 function openTournament(leagueId) {
@@ -3456,11 +3465,21 @@ async function loadTournamentStandings(force = false) {
   try {
     const data = await api(`/api/tournament?leagueId=${Number(t.leagueId)}&season=${Number(t.season)}`);
     state.tournamentStandings.set(key, data);
-    if (seq !== state.tournamentStandingsRequestSeq || key !== tournamentKey(state.currentTournament)) return;
+    if (!isCurrentEntityRequest({
+      sequence:seq,
+      currentSequence:state.tournamentStandingsRequestSeq,
+      expectedKey:key,
+      currentKey:tournamentKey(state.currentTournament),
+    })) return;
     if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
     renderTournamentStandings(data);
   } catch (e) {
-    if (seq !== state.tournamentStandingsRequestSeq || key !== tournamentKey(state.currentTournament)) return;
+    if (!isCurrentEntityRequest({
+      sequence:seq,
+      currentSequence:state.tournamentStandingsRequestSeq,
+      expectedKey:key,
+      currentKey:tournamentKey(state.currentTournament),
+    })) return;
     const cached = state.tournamentStandings.get(key);
     if (cached) {
       renderTournamentStandings(cached);
@@ -3627,7 +3646,8 @@ async function loadTeamIntelligence(force=false) {
   const team=state.currentTeam, comp=team?.data?.primaryCompetition, el=$('teamIntelligence');
   if(!team?.id || !el) return;
   if(!comp?.leagueId || !comp?.season){ el.innerHTML='<div class="empty compact-empty">Сначала нужно определить основной турнир команды.</div>'; return; }
-  const key=`${Number(team.id)}:${Number(comp.leagueId)}:${Number(comp.season)}`;
+  const key=teamCompetitionEntityKey(team);
+  if(!key) return;
   const seq=++state.teamIntelligenceRequestSeq;
   if(!force && state.teamIntelligenceCache.has(key)){
     if(Number(state.currentTeam?.id)===Number(team.id)) renderTeamIntelligence(state.teamIntelligenceCache.get(key));
@@ -3638,11 +3658,21 @@ async function loadTeamIntelligence(force=false) {
   try{
     const data=await api(`/api/team/intelligence?${q.toString()}`);
     state.teamIntelligenceCache.set(key,data);
-    if(seq!==state.teamIntelligenceRequestSeq || Number(state.currentTeam?.id)!==Number(team.id)) return;
+    if(!isCurrentEntityRequest({
+      sequence:seq,
+      currentSequence:state.teamIntelligenceRequestSeq,
+      expectedKey:key,
+      currentKey:teamCompetitionEntityKey(state.currentTeam),
+    })) return;
     if(isAdmin() && data.provider?.visibility==='admin'){state.provider=data.provider;renderProvider();}
     renderTeamIntelligence(data);
   }catch(e){
-    if(seq!==state.teamIntelligenceRequestSeq || Number(state.currentTeam?.id)!==Number(team.id)) return;
+    if(!isCurrentEntityRequest({
+      sequence:seq,
+      currentSequence:state.teamIntelligenceRequestSeq,
+      expectedKey:key,
+      currentKey:teamCompetitionEntityKey(state.currentTeam),
+    })) return;
     const cached=state.teamIntelligenceCache.get(key);
     if(cached){renderTeamIntelligence(cached);el.insertAdjacentHTML('afterbegin',`<div class="data-notice stale">⚠️ ${escapeHtml(e.message)} Показаны сохранённые показатели.</div>`);}
     else{el.innerHTML=recoveryCardHtml({title:'Статистика команды временно недоступна',message:e.message,retryId:'teamIntelligenceRetry',compact:true});$('teamIntelligenceRetry')?.addEventListener('click',()=>loadTeamIntelligence(true));}
@@ -3660,7 +3690,8 @@ function renderTeamSquad(data) {
 }
 async function loadTeamSquad(force=false) {
   const team=state.currentTeam, el=$('teamSquad'); if(!team?.id||!el) return;
-  const key=String(Number(team.id));
+  const key=teamEntityKey(team);
+  if(!key) return;
   const seq=++state.teamSquadRequestSeq;
   if(!force&&state.teamSquadCache.has(key)){
     if(Number(state.currentTeam?.id)===Number(team.id)) renderTeamSquad(state.teamSquadCache.get(key));
@@ -3670,11 +3701,21 @@ async function loadTeamSquad(force=false) {
   try{
     const data=await api(`/api/team/squad?teamId=${Number(team.id)}`);
     state.teamSquadCache.set(key,data);
-    if(seq!==state.teamSquadRequestSeq || Number(state.currentTeam?.id)!==Number(team.id)) return;
+    if(!isCurrentEntityRequest({
+      sequence:seq,
+      currentSequence:state.teamSquadRequestSeq,
+      expectedKey:key,
+      currentKey:teamEntityKey(state.currentTeam),
+    })) return;
     if(isAdmin() && data.provider?.visibility==='admin'){state.provider=data.provider;renderProvider();}
     renderTeamSquad(data);
   }catch(e){
-    if(seq!==state.teamSquadRequestSeq || Number(state.currentTeam?.id)!==Number(team.id)) return;
+    if(!isCurrentEntityRequest({
+      sequence:seq,
+      currentSequence:state.teamSquadRequestSeq,
+      expectedKey:key,
+      currentKey:teamEntityKey(state.currentTeam),
+    })) return;
     const cached=state.teamSquadCache.get(key);
     if(cached){renderTeamSquad(cached);el.insertAdjacentHTML('afterbegin',`<div class="data-notice stale">⚠️ ${escapeHtml(e.message)} Показан сохранённый состав.</div>`);}
     else{el.innerHTML=recoveryCardHtml({title:'Состав временно недоступен',message:e.message,retryId:'teamSquadRetry',compact:true});$('teamSquadRetry')?.addEventListener('click',()=>loadTeamSquad(true));}
@@ -3699,7 +3740,7 @@ function renderTeamHub(data) {
   bindTeamFixtureActions($('teamResults')); bindTeamFixtureActions($('teamSchedule'));
 }
 async function loadTeamHub(team, force=false) {
-  const key=String(Number(team?.id||0)); if (!key || key==='0') return;
+  const key=teamEntityKey(team); if (!key) return;
   const seq=++state.teamHubRequestSeq;
   const cached=state.teamCache.get(key);
   if (cached && !force) {
@@ -3713,11 +3754,21 @@ async function loadTeamHub(team, force=false) {
     const q=new URLSearchParams({teamId:String(Number(team.id)),name:team.name||'',logo:team.logo||''});
     const data=await api(`/api/team?${q.toString()}`);
     state.teamCache.set(key,data);
-    if(seq!==state.teamHubRequestSeq || String(Number(state.currentTeam?.id||0))!==key) return;
+    if(!isCurrentEntityRequest({
+      sequence:seq,
+      currentSequence:state.teamHubRequestSeq,
+      expectedKey:key,
+      currentKey:teamEntityKey(state.currentTeam),
+    })) return;
     if(isAdmin() && data.provider?.visibility==='admin'){state.provider=data.provider;renderProvider();}
     renderTeamHub(data);
   } catch(e) {
-    if(seq!==state.teamHubRequestSeq || String(Number(state.currentTeam?.id||0))!==key) return;
+    if(!isCurrentEntityRequest({
+      sequence:seq,
+      currentSequence:state.teamHubRequestSeq,
+      expectedKey:key,
+      currentKey:teamEntityKey(state.currentTeam),
+    })) return;
     if (cached) {
       renderTeamHub(cached);
       $('teamHero')?.insertAdjacentHTML('afterbegin', `<div class="data-notice stale">⚠️ ${escapeHtml(e.message)} Показана последняя открытая версия команды.</div>`);
@@ -3778,7 +3829,8 @@ function openTournamentFromTeam(openTable = false) {
   state.currentTournament={leagueId:Number(comp.leagueId),season:Number(comp.season||new Date().getFullYear()),name:comp.name||'Турнир',shortName:comp.shortName||comp.name||'Турнир',country:comp.country||'',logo:comp.logo||'',category:comp.category||'',tier:comp.tier||'standard'};
   renderTournamentHero();
   renderTournamentMatches();
-  setTournamentTab('table', true);
+  const targetTab=tournamentTabForTeamShortcut(openTable);
+  setTournamentTab(targetTab,targetTab==='table');
   showView('tournamentView');
 }
 
