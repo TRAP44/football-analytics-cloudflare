@@ -5134,24 +5134,32 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
 
 function historyItemFromAnalysis(data = {}) {
   const match = data?.match || {};
-  const fixtureId = Number(match.fixtureId);
-  if (!Number.isSafeInteger(fixtureId) || fixtureId <= 0) return null;
+  const fixtureId = positiveEntityId(match.fixtureId);
+  if (!fixtureId) return null;
+  const rawConfidence=data?.aiInstructor?.confidenceScore;
+  const aiConfidence=
+    typeof rawConfidence==='number'
+    && Number.isFinite(rawConfidence)
+    && rawConfidence>=0
+    && rawConfidence<=100
+      ? rawConfidence
+      : null;
   return {
     fixtureId,
-    homeName: match.home?.name || '',
-    awayName: match.away?.name || '',
-    leagueName: match.league || '',
-    fixtureDate: match.date || '',
-    homeLogo: match.home?.logo || '',
-    awayLogo: match.away?.logo || '',
-    aiSignalCode: data?.aiInstructor?.betSignal?.code || '',
-    aiSignalLabel: data?.aiInstructor?.betSignal?.label || '',
-    aiConfidence: Number(data?.aiInstructor?.confidenceScore ?? 0) || null,
-    aiRisk: data?.aiInstructor?.riskLabel || '',
-    aiOutcome: data?.aiInstructor?.verdict?.outcome || '',
-    aiTotal: data?.aiInstructor?.verdict?.total || '',
-    aiBtts: data?.aiInstructor?.verdict?.btts || '',
-    analysisVersion: data?.analysisVersion || '',
+    homeName: typeof match.home?.name==='string' ? match.home.name : '',
+    awayName: typeof match.away?.name==='string' ? match.away.name : '',
+    leagueName: typeof match.league==='string' ? match.league : '',
+    fixtureDate: typeof match.date==='string' ? match.date : '',
+    homeLogo: typeof match.home?.logo==='string' ? match.home.logo : '',
+    awayLogo: typeof match.away?.logo==='string' ? match.away.logo : '',
+    aiSignalCode: typeof data?.aiInstructor?.betSignal?.code==='string' ? data.aiInstructor.betSignal.code : '',
+    aiSignalLabel: typeof data?.aiInstructor?.betSignal?.label==='string' ? data.aiInstructor.betSignal.label : '',
+    aiConfidence,
+    aiRisk: typeof data?.aiInstructor?.riskLabel==='string' ? data.aiInstructor.riskLabel : '',
+    aiOutcome: typeof data?.aiInstructor?.verdict?.outcome==='string' ? data.aiInstructor.verdict.outcome : '',
+    aiTotal: typeof data?.aiInstructor?.verdict?.total==='string' ? data.aiInstructor.verdict.total : '',
+    aiBtts: typeof data?.aiInstructor?.verdict?.btts==='string' ? data.aiInstructor.verdict.btts : '',
+    analysisVersion: typeof data?.analysisVersion==='string' ? data.analysisVersion : '',
     viewedAt: new Date().toISOString(),
   };
 }
@@ -5159,7 +5167,11 @@ function historyItemFromAnalysis(data = {}) {
 function rememberHistoryAnalysis(data) {
   const item = historyItemFromAnalysis(data);
   if (!item) return;
-  state.history = [item, ...state.history.filter(x => Number(x.fixtureId) !== item.fixtureId)].slice(0, 50);
+  const existing=Array.isArray(state.history) ? state.history : [];
+  state.history = [
+    item,
+    ...existing.filter(x=>positiveEntityId(x?.fixtureId)!==item.fixtureId),
+  ].slice(0,50);
   state.historyLoaded = true;
   state.historyLoadError = '';
   state.historyRevision += 1;
@@ -5218,13 +5230,16 @@ async function loadHistory(showLoader = true) {
   try {
     const data = await api('/api/history');
     if (revisionAtStart !== state.historyRevision) return;
-    state.history = data.items || [];
+    state.history = collectionItems(data);
     state.historyLoaded = true;
     state.historyLoadError = '';
-    if (state.matches.length) renderMatches();
+    if (Array.isArray(state.matches) && state.matches.length) renderMatches();
   } catch (e) {
     if (revisionAtStart !== state.historyRevision) return;
-    state.historyLoadError = e.message || 'Не удалось загрузить историю.';
+    state.historyLoadError = uiErrorMessage(
+      e,
+      'Не удалось загрузить историю.',
+    );
     sendActionError('history', e, 'historyView');
   } finally {
     state.historyLoading = false;
@@ -5233,8 +5248,8 @@ async function loadHistory(showLoader = true) {
 }
 
 async function openHistoryAnalysis(fixtureId, btn) {
-  const id = Number(fixtureId);
-  if (!Number.isSafeInteger(id) || id <= 0) {
+  const id = positiveEntityId(fixtureId);
+  if (!id) {
     toast('Не удалось определить матч из истории.');
     return;
   }
