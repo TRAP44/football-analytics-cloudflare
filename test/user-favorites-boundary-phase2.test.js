@@ -104,14 +104,17 @@ test('favorites service preserves Supabase delete request shape', async () => {
   assert.equal(call.source,'Supabase favorites');
 });
 
-test('worker delegates favorites storage boundary to extracted service', () => {
+test('worker delegates favorites storage boundary through service wiring', () => {
   const worker=fs.readFileSync('src/worker.js','utf8');
+  const wiring=fs.readFileSync('src/service-wiring-runtime.js','utf8');
+  const api=fs.readFileSync('src/user-data-api-runtime.js','utf8');
   assert.match(worker,/import \{ createUserFavoritesService \} from '\.\/user-favorites\.js'/);
-  assert.match(worker,/createUserFavoritesService\(\{/);
-  assert.doesNotMatch(worker,/async function getFavorites\(userId, cfg\)/);
-  assert.doesNotMatch(worker,/async function addFavorite\(userId, team, cfg\)/);
-  assert.doesNotMatch(worker,/async function removeFavorite\(userId, teamId, cfg\)/);
-  assert.match(worker,/await getFavorites\(user\.id, cfg\)/);
-  assert.match(worker,/await addFavorite\(user\.id/);
-  assert.match(worker,/await removeFavorite\(user\.id/);
+  assert.match(worker,/createServiceWiringRuntime\(\{/);
+  assert.match(worker,/createUserFavoritesService,/);
+  assert.match(wiring,/\} = createUserFavoritesService\(\{/);
+  for (const name of ['getFavorites','addFavorite','removeFavorite']) {
+    assert.match(wiring,new RegExp('\\b'+name+'\\b'));
+    assert.match(api,new RegExp('\\b'+name+'\\b'));
+  }
+  assert.doesNotMatch(worker,/async function (?:getFavorites|addFavorite|removeFavorite)\(/);
 });
