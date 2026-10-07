@@ -4,10 +4,12 @@ import fs from 'node:fs';
 import { passProductConfig } from '../src/entitlements.js';
 import {
   buildPassPurchaseBody,
+  createBillingModule,
   passUiState,
 } from '../public/modules/billing.js';
 
-const worker = fs.readFileSync('src/worker.js', 'utf8');
+const billingApiRuntime = fs.readFileSync('src/billing-api-runtime.js', 'utf8');
+const analysisRuntime = fs.readFileSync('src/analysis-runtime.js', 'utf8');
 const router = fs.readFileSync('src/router.js', 'utf8');
 const billing = fs.readFileSync('public/modules/billing.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
@@ -44,21 +46,21 @@ test('Match Pass purchase body requires the concrete fixture and Day Weekend ign
 });
 
 test('backend remains authoritative for Pass fixture scope and invoice creation', () => {
-  assert.match(worker, /const fixtureId = passType === PASS_TYPES\.MATCH \? Number\(body\?\.fixtureId \|\| 0\) : 0/);
-  assert.match(worker, /BILLING_FIXTURE_REQUIRED/);
-  assert.match(worker, /BILLING_FIXTURE_NOT_ALLOWED/);
-  assert.match(worker, /createPassInvoicePayload\(user\.id, passType, fixtureId, cfg\.botToken\)/);
-  assert.match(worker, /prices: \[\{ label: product\.title, amount: product\.stars \}\]/);
-  assert.match(worker, /BILLING_PASS_USAGE_LIMIT_REQUIRED/);
-  assert.match(router, /url\.pathname === '\/api\/billing\/invoice'/);
-  assert.match(router, /if \(!cfg\.monetizationEnabled\) return json/);
+  assert.match(billingApiRuntime, /const fixtureId=passType === PASS_TYPES\.MATCH \? positiveId\(rawFixtureId\) : 0/);
+  assert.match(billingApiRuntime, /BILLING_FIXTURE_REQUIRED/);
+  assert.match(billingApiRuntime, /BILLING_FIXTURE_NOT_ALLOWED/);
+  assert.match(billingApiRuntime, /createPassInvoicePayload\(user\.id, passType, fixtureId, cfg\.botToken\)/);
+  assert.match(billingApiRuntime, /prices: \[\{ label: product\.title, amount: product\.stars \}\]/);
+  assert.match(billingApiRuntime, /BILLING_PASS_USAGE_LIMIT_REQUIRED/);
+  assert.match(router, /pathname === '\/api\/billing\/invoice'/);
+  assert.match(router, /cfg\?\.monetizationEnabled !== true/);
 });
 
 test('entitlements endpoint exposes server product config without creating a second payment endpoint', () => {
-  const start = worker.indexOf('async function apiEntitlements');
-  const end = worker.indexOf('async function apiBillingInvoice', start);
-  const source = worker.slice(start, end);
-  assert.match(source, /paymentsEnabled: Boolean\(cfg\.monetizationEnabled\)/);
+  const start = billingApiRuntime.indexOf('async function apiEntitlements');
+  const end = billingApiRuntime.indexOf('async function apiBillingInvoice', start);
+  const source = billingApiRuntime.slice(start, end);
+  assert.match(source, /paymentsEnabled: cfg\.monetizationEnabled === true/);
   assert.match(source, /MATCH_PASS: passProductConfig\(PASS_TYPES\.MATCH, cfg\)/);
   assert.match(source, /DAY_PASS: passProductConfig\(PASS_TYPES\.DAY, cfg\)/);
   assert.match(source, /WEEKEND_PASS: passProductConfig\(PASS_TYPES\.WEEKEND, cfg\)/);
@@ -77,6 +79,35 @@ test('active expired unavailable and included Pass states render from server dec
   assert.equal(passUiState({ product, entitlement:{decisions:[]}, passType:'DAY_PASS', paymentsEnabled:true, subscriptionActive:true }).state, 'included');
 });
 
+test('Pass state prioritizes the requested active Match Pass and subscription access over product sale state', () => {
+  const product = { saleReady:true, stars:39, durationHours:72, usageLimit:null };
+  const entitlement = {
+    decisions:[
+      { type:'MATCH_PASS', fixtureId:111, active:false, reason:'fixture_mismatch', expiresAt:'2026-10-05T12:00:00Z' },
+      { type:'MATCH_PASS', fixtureId:222, active:true, reason:'active', expiresAt:'2026-10-03T12:00:00Z' },
+    ],
+  };
+  const requested = passUiState({
+    product,
+    entitlement,
+    passType:'MATCH_PASS',
+    fixtureId:222,
+    paymentsEnabled:true,
+    now:Date.parse('2026-10-01T12:00:00Z'),
+  });
+  assert.equal(requested.state, 'active');
+  assert.equal(requested.decision.fixtureId, 222);
+
+  const included = passUiState({
+    product:{...product,saleReady:false},
+    entitlement:{decisions:[]},
+    passType:'WEEKEND_PASS',
+    paymentsEnabled:true,
+    subscriptionActive:true,
+  });
+  assert.equal(included.state, 'included');
+});
+
 test('Match Pass opens from Match Center context and quota paywall preserves fixture context', () => {
   assert.match(app, /id="centerMatchPassBtn"/);
   assert.match(app, /openPassStoreForFixture\(Number\(m\.fixtureId\)\)/);
@@ -88,6 +119,54 @@ test('Match Pass opens from Match Center context and quota paywall preserves fix
   assert.match(app, /billingModule\?\.clearPassContext\(\)/);
   assert.match(billing, /fixtureId:id, force:true/);
   assert.match(billing, /Number\(invoice\.fixtureId \|\| 0\) !== fixtureId/);
+});
+
+test('Pass access loading is fixture-keyed and ignores a stale response after context switches', async () => {
+  const pending = new Map();
+  const calls = [];
+  const module = createBillingModule({
+    state:{
+      profile:{features:{monetizationEnabled:true}},
+      billing:{enabled:true,ready:true,current:{plan:'FREE'}},
+    },
+    elementById:() => null,
+    api:(url) => {
+      calls.push(url);
+      return new Promise(resolve => pending.set(url, resolve));
+    },
+    telegram:{openInvoice(){}},
+    dateTime:value => String(value || ''),
+  });
+
+  const first = module.loadPassAccess({fixtureId:101,force:true});
+  await Promise.resolve();
+  const second = module.loadPassAccess({fixtureId:202,force:true});
+  await Promise.resolve();
+
+  assert.deepEqual(calls, [
+    '/api/entitlements?fixtureId=101',
+    '/api/entitlements?fixtureId=202',
+  ]);
+
+  pending.get('/api/entitlements?fixtureId=202')({
+    paymentsEnabled:true,
+    products:{},
+    entitlement:{marker:'new',decisions:[],passes:{active:[]},subscriptionActive:false},
+  });
+  const fresh = await second;
+  assert.equal(fresh.entitlement.marker, 'new');
+
+  pending.get('/api/entitlements?fixtureId=101')({
+    paymentsEnabled:true,
+    products:{},
+    entitlement:{marker:'stale',decisions:[],passes:{active:[]},subscriptionActive:false},
+  });
+  await first;
+
+  const cached = await module.loadPassAccess({fixtureId:202});
+  assert.equal(cached.entitlement.marker, 'new');
+  assert.equal(module.snapshot().passFixtureId, 202);
+  assert.equal(module.snapshot().passLoadedFixtureId, 202);
 });
 
 test('Pass purchase reuses Telegram openInvoice sync and duplicate-action guard', () => {
@@ -149,7 +228,8 @@ test('Pass UI does not enable monetization and keeps subscriptions and Pass enti
   assert.doesNotMatch(env, /MONETIZATION_ENABLED=true/);
   assert.match(billing, /paidPlans = new Set\(\['PRO', 'PREMIUM'\]\)/);
   assert.match(billing, /passData\.entitlement\?\.subscriptionActive/);
-  assert.match(worker, /resolveUserEntitlements\(user\.id, fixtureId, cfg\)/);
-  assert.match(worker, /reserveEntitlementUsage\(user\.id,entitlementBefore\.passes\.active,fixtureId,cfg,\{/);
-  assert.match(worker, /releaseDistributedAnalysisLock\(analysisLock,cfg\)/);
+  assert.match(billingApiRuntime, /resolveUserEntitlements\(user\.id, fixtureId, cfg\)/);
+  assert.match(analysisRuntime, /const activePasses=Array\.isArray\(objectValue\(entitlementBefore\.passes\)\?\.active\)/);
+  assert.match(analysisRuntime, /reserveEntitlementUsage\([\s\S]*userId,[\s\S]*activePasses,[\s\S]*fixtureId,[\s\S]*cfg/);
+  assert.match(analysisRuntime, /releaseDistributedAnalysisLock\(analysisLock,cfg\)/);
 });
