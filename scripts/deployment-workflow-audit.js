@@ -9,7 +9,7 @@ const REQUIRED_RELEASE_GATES=Object.freeze([
   'npm run security:privileged',
   'npm run lint',
   'npm run check',
-  'npm test',
+  'npm run test:release',
   'node scripts/bottom-nav-render-smoke.js',
   'npm run verify:release',
   'npm run verify:worker',
