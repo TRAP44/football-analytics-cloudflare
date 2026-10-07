@@ -31,7 +31,7 @@ export function createTelegramLinksRuntime(deps = {}) {
     if (typeof value === 'number') {
       return Number.isSafeInteger(value) && value > 0 ? value : null;
     }
-    if (typeof value !== 'string') return null;
+    if (typeof value !== 'string' || value.length > 32) return null;
     const raw=value.trim();
     if (!/^\d+$/.test(raw)) return null;
     const id=Number(raw);
@@ -39,7 +39,8 @@ export function createTelegramLinksRuntime(deps = {}) {
   }
 
   function safeLaunchPart(value, maxLength, fallback) {
-    const input=textValue(value, fallback);
+    const raw=typeof value === 'string' ? value : fallback;
+    const input=raw.length <= 512 ? (raw.trim() || fallback) : fallback;
     const cleaned=textValue(cleanLaunchPart(input,maxLength))
       .toLowerCase()
       .replace(/[^a-z0-9_-]+/g,'_')
@@ -50,10 +51,12 @@ export function createTelegramLinksRuntime(deps = {}) {
 
   function safeParamValue(value, key = '') {
     if (typeof value === 'string') {
+      if (value.length > 512) {
+        throw new TypeError(`Некорректный параметр Telegram-ссылки: ${key || 'value'}.`);
+      }
       const text=value.normalize('NFKC').trim();
       if (
-        text.length > 512
-        || /[\u0000-\u001f\u007f]/u.test(text)
+        /[\u0000-\u001f\u007f]/u.test(text)
       ) {
         throw new TypeError(`Некорректный параметр Telegram-ссылки: ${key || 'value'}.`);
       }
@@ -65,8 +68,10 @@ export function createTelegramLinksRuntime(deps = {}) {
   }
 
   function requestUrl(request) {
-    const raw=typeof request?.url === 'string' ? request.url.trim() : '';
-    if (!raw || raw.length > 2048) throw new TypeError('Некорректный URL Mini App.');
+    const requestUrlValue=typeof request?.url === 'string' ? request.url : '';
+    if (!requestUrlValue || requestUrlValue.length > 2048) throw new TypeError('Некорректный URL Mini App.');
+    const raw=requestUrlValue.trim();
+    if (!raw) throw new TypeError('Некорректный URL Mini App.');
     let url;
     try { url=new URL(raw); }
     catch { throw new TypeError('Некорректный URL Mini App.'); }
@@ -89,7 +94,9 @@ export function createTelegramLinksRuntime(deps = {}) {
     url.pathname = '/';
     url.search = '';
     url.hash = '';
-    for (const [rawKey, value] of Object.entries(source)) {
+    const entries=Object.entries(source);
+    if (entries.length > 24) throw new TypeError('Слишком много параметров Telegram-ссылки.');
+    for (const [rawKey, value] of entries) {
       const key=textValue(rawKey);
       if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(key)) {
         throw new TypeError('Некорректное имя параметра Telegram-ссылки.');
@@ -103,12 +110,17 @@ export function createTelegramLinksRuntime(deps = {}) {
       }
       url.searchParams.set(key,safeParamValue(value,key));
     }
-    return url.toString();
+    const result=url.toString();
+    if (result.length > 4096) throw new TypeError('Telegram-ссылка слишком длинная.');
+    return result;
   }
 
   function telegramAnalysisHandoffParams(fixtureId, tab = 'brief') {
     const id=canonicalFixtureId(fixtureId);
     if (id === null) throw invalidFixtureIdError();
+    if (typeof tab === 'string' && tab.length > 64) {
+      throw new TypeError('Некорректная вкладка Telegram Mini App.');
+    }
     const normalizedTab=textValue(tab,'brief') || 'brief';
     if (!/^[A-Za-z0-9_-]{1,32}$/.test(normalizedTab)) {
       throw new TypeError('Некорректная вкладка Telegram Mini App.');
@@ -146,6 +158,7 @@ export function createTelegramLinksRuntime(deps = {}) {
     const src=safeLaunchPart(source,14,'social');
     const cmp=safeLaunchPart(campaign,22,'match_share');
     const cnt=safeLaunchPart(content,16,'analysis');
+    if (referralCode !== undefined && referralCode !== null && typeof referralCode !== 'string') return '';
     const rawReferral=textValue(referralCode);
     const referral=normalizeReferralCode(rawReferral);
     if (rawReferral && !referral) return '';
@@ -198,7 +211,8 @@ export function createTelegramLinksRuntime(deps = {}) {
 
   async function telegramBotUsername(cfg) {
     const source=plainObject(cfg) || {};
-    const botToken=textValue(source.botToken);
+    const rawBotToken=typeof source.botToken === 'string' ? source.botToken : '';
+    const botToken=rawBotToken.length <= 512 ? rawBotToken.trim() : '';
     return resolvePrimaryTelegramBotUsername({
       botToken,
       getCached:typeof getCache === 'function'
@@ -231,12 +245,16 @@ export function createTelegramLinksRuntime(deps = {}) {
   }
 
   function telegramShareComposerUrl(url, text = '') {
-    const rawTarget=typeof url === 'string'
-      ? url.trim()
+    const targetValue=typeof url === 'string'
+      ? url
       : url instanceof URL
         ? url.toString()
         : '';
-    if (!rawTarget || rawTarget.length > 2048 || /[\u0000-\u001f\u007f]/u.test(rawTarget)) {
+    if (!targetValue || targetValue.length > 2048) {
+      throw new TypeError('Некорректный URL для Telegram Share.');
+    }
+    const rawTarget=targetValue.trim();
+    if (!rawTarget || /[\u0000-\u001f\u007f]/u.test(rawTarget)) {
       throw new TypeError('Некорректный URL для Telegram Share.');
     }
     let targetUrl;
@@ -248,10 +266,10 @@ export function createTelegramLinksRuntime(deps = {}) {
     const target=targetUrl.toString();
     const shareText=typeof text === 'string'
       ? text
+          .slice(0,700)
           .normalize('NFKC')
           .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g,' ')
           .trim()
-          .slice(0,700)
       : '';
     const q=new URLSearchParams();
     q.set('url',target);
