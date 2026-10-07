@@ -64,6 +64,11 @@ const runtimeMatch = /^(\d+\.\d+\.\d+)-rc(\d+)$/i.exec(expected);
 const expectedRc = runtimeMatch ? `RC${runtimeMatch[2]}` : '';
 const expectedChannel = runtimeMatch ? `rc${runtimeMatch[2]}` : '';
 const baselinePath = String(releaseContract.freshInstallBaseline || '');
+const latestMigrationPath = String(releaseContract.latestMigration || '');
+const latestMigrationMatch = /supabase_migration_v(\d+(?:_\d+)*)\.sql$/i.exec(latestMigrationPath);
+const latestMigrationVersion = latestMigrationMatch
+  ? latestMigrationMatch[1].replaceAll('_','.')
+  : '';
 const baseline = baselinePath && fs.existsSync(baselinePath) ? fs.readFileSync(baselinePath, 'utf8') : '';
 function regressionContract(path, marker) {
   if (!fs.existsSync(path)) return false;
