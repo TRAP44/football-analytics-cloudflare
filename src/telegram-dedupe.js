@@ -271,9 +271,12 @@ export function createTelegramDedupeRuntime(deps = {}) {
   function telegramDedupeHealthState(health = {}) {
     const source=plainObject(health) || {};
     if (source.available !== true) return { state:'watch', label:'Persistent dedupe observability недоступна' };
-    const stale=nonNegativeInteger(source.staleProcessing);
-    const failedRecent=nonNegativeInteger(source.failedRecent);
-    const failedCurrent=nonNegativeInteger(source.failedCurrent);
+    const stale=nonNegativeIntegerCandidate(source.staleProcessing);
+    const failedRecent=nonNegativeIntegerCandidate(source.failedRecent);
+    const failedCurrent=nonNegativeIntegerCandidate(source.failedCurrent);
+    if ([stale,failedRecent,failedCurrent].some(value => value === null)) {
+      return { state:'watch', label:'Persistent dedupe observability содержит неполные данные' };
+    }
     if (stale >= 5 || failedRecent >= 5) {
       return { state:'incident', label:'Telegram webhook dedupe требует немедленной проверки' };
     }
