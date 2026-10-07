@@ -1248,7 +1248,6 @@ function getTelegramSearchRuntime() {
       footballSearchHandoffKeyboard: (...args) => footballSearchHandoffKeyboard(...args),
       freeQuotaHealthy: (...args) => freeQuotaHealthy(...args),
       getCache: (...args) => getCache(...args),
-      getFavorites: (...args) => getFavorites(...args),
       getHistory: (...args) => getHistory(...args),
       loadPublicAiTrackRecord: (...args) => loadPublicAiTrackRecord(...args),
       loadSearchTeamMatches: (...args) => loadSearchTeamMatches(...args),
