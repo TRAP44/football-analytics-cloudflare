@@ -81,12 +81,12 @@ test('daily reserve is treated as a provider rate-limit condition for fail-soft 
 });
 
 test('admin provider budget exposes broad-launch readiness and limited-beta recommendation', () => {
-  const worker = fs.readFileSync('src/worker.js','utf8');
-  const start = worker.indexOf('function providerBudgetProfile');
-  const end = worker.indexOf('function providerPublicBudgetMode', start);
+  const source = fs.readFileSync('src/provider-budget-runtime.js','utf8');
+  const start = source.indexOf('function providerBudgetProfile');
+  const end = source.indexOf('function providerPublicBudgetMode', start);
   assert.notEqual(start,-1);
   assert.notEqual(end,-1);
-  const block = worker.slice(start,end);
+  const block = source.slice(start,end);
   assert.match(block,/broadTrafficReady/);
   assert.match(block,/recommendedMode:\s*broadTrafficReady \? 'public' : 'limited_beta'/);
   assert.match(block,/provider_free_plan/);
