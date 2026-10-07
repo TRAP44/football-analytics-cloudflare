@@ -15,7 +15,8 @@
     "lint": "node scripts/source-hygiene.js",
     "security:privileged": "node scripts/privileged-access-audit.js",
     "security:dependencies": "node scripts/dependency-security-audit.js",
-    "test:release": "node scripts/run-release-tests.js"
+    "test:release": "node scripts/run-release-tests.js",
+    "test:review-tail": "node scripts/run-review-tail-tests.js"
   },
   "devDependencies": {
     "wrangler": "4.141.0"
