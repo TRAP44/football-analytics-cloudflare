@@ -102,6 +102,16 @@ test('Telegram match rendering escapes provider text and tolerates broken format
   assert.match(line,/&lt;best&gt;/);
   assert.doesNotMatch(line,/<script>|<Home & Co>|<League>/);
   assert.equal(api.botMatchLine({fixtureId:0},0),'');
+
+  const bounded=api.botMatchLine({
+    fixtureId:78,
+    home:{name:'H'.repeat(5000)},
+    away:{name:'A'.repeat(5000)},
+    league:'L'.repeat(5000),
+    date:'2026-10-07T20:00:00Z',
+    selection:{primary:true,reason:'R'.repeat(5000)},
+  },0);
+  assert.ok(bounded.length < 900);
 });
 
 test('Telegram cached search ignores malformed cache payloads and invalid fixture cards', async () => {
