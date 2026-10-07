@@ -14,7 +14,7 @@ const TELEGRAM_DEDUPE_RISK = Object.freeze({
 });
 
 const LOCAL_DEDUPE_TTL_MS = 10 * 60 * 1000;
-const MAX_DEDUPE_KEY_LENGTH = 240;
+const MAX_DEDUPE_KEY_LENGTH = 180;
 
 function plainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
