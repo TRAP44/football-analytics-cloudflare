@@ -147,7 +147,7 @@ export function createTelemetryOpsRuntime(deps = {}) {
   function redactOpsString(value, max = 500) {
     const safeMax=boundedInteger(max,500,1,2000);
     const raw=primitiveText(value);
-    if (!raw) return '';
+    if (!raw || raw.length > safeMax * 8) return '';
 
     let text;
     try { text=raw.normalize('NFKC'); }
