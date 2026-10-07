@@ -51,6 +51,10 @@ test('RC90 watchlist requires literal active=true and strips unknown sensitive f
         reason:'provider_unavailable',action:'market',active:true,severity:'high',
         ageMinutes:70,breachTypes:['ack','bad'],
       },
+      {
+        reason:'data_invalid',action:'recheck',active:true,severity:'critical',
+        ageMinutes:999,breachTypes:['bad'],
+      },
     ],
     repeated:[
       {reason:'server_error',action:'full_ai',breachEpisodes:3,activeBreaches:1},
@@ -61,6 +65,7 @@ test('RC90 watchlist requires literal active=true and strips unknown sensitive f
   assert.equal(watchlist.items.length,2);
   assert.equal(watchlist.items[0].reason,'server_error');
   assert.equal(watchlist.items.some(row=>row.reason==='timeout'),false);
+  assert.equal(watchlist.items.some(row=>row.reason==='data_invalid'),false);
   assert.equal(Object.prototype.hasOwnProperty.call(watchlist.items[0],'telegram_id'),false);
   assert.equal(Object.prototype.hasOwnProperty.call(watchlist.items[0],'rawError'),false);
   assert.deepEqual(watchlist.items.find(row=>row.reason==='provider_unavailable')?.breachTypes,['ack']);
@@ -74,16 +79,20 @@ test('RC91 triage uses safe RC87 thresholds and does not trust truthy active or 
   const r=runtime();
   const triage=r.buildNewsImpactRecoveryIncidentSloBreachTriage({
     available:true,
-    thresholds:{ackMinutes:true,criticalAckMinutes:true,recoveryMinutes:true},
+    thresholds:{ackMinutes:1,criticalAckMinutes:1,recoveryMinutes:1},
     items:[
       {reason:'server_error',action:'full_ai',active:true,ageMinutes:610,breachTypes:['ack','recovery']},
       {reason:'provider_unavailable',action:'full_ai',active:true,ageMinutes:180,breachTypes:['ack']},
       {reason:'timeout',action:'share',active:true,ageMinutes:70,breachTypes:['ack']},
+      {reason:'data_invalid',action:'recheck',active:true,ageMinutes:70,breachTypes:['ack'],ackLatencyMinutes:45},
       {reason:'match_missing',action:'news',active:'true',ageMinutes:999,breachTypes:['recovery']},
+      {reason:'quota_exhausted',action:'news',active:true,ageMinutes:999,breachTypes:['bad']},
     ],
   },{limit:true});
 
   assert.equal(triage.summary.total,3);
+  assert.equal(triage.items.some(row=>row.reason==='data_invalid'),false);
+  assert.equal(triage.items.some(row=>row.reason==='quota_exhausted'),false);
   assert.equal(triage.summary.recoveryOverdue,1);
   assert.equal(triage.summary.ackCritical,1);
   assert.equal(triage.summary.ackOverdue,1);
@@ -112,6 +121,12 @@ test('RC92 stage reconstruction rejects malformed chronology and unsafe labels',
     startedAt:'2026-09-23T10:00:00Z',
     firstAcknowledgedAt:'2026-09-23T09:59:00Z',
   },asOfMs),'ack_overdue');
+
+  assert.equal(r.newsImpactRecoveryIncidentTriageStageAt({
+    startedAt:'2026-09-23T10:00:00Z',
+    firstAcknowledgedAt:'2026-09-23T10:45:00Z',
+  },asOfMs),null);
+
 
   const trend=r.buildNewsImpactRecoveryIncidentSloBreachTriageTrend([
     {
@@ -224,6 +239,9 @@ test('RC90-RC94 preserve factual UI, privacy, routing and methodology contracts'
   ]) assert.ok(app.includes(textValue),textValue);
 
   assert.match(recoverySource,/source:'rc87_existing_slo'/);
+  assert.match(recoverySource,/function newsImpactPositiveNumber\(/);
+  assert.match(recoverySource,/if \(!breachTypes\.length\) return null/);
+  assert.match(recoverySource,/if \(Number\.isFinite\(ackMs\)\) return null/);
   assert.match(recoverySource,/methodology:'sum_minutes_above_existing_ack_and_recovery_slo'/);
   assert.match(recoverySource,/methodology:'weekly_overlap_minutes_above_existing_ack_and_recovery_slo'/);
   assert.match(recoverySource,/privacy:\{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false\}/);
