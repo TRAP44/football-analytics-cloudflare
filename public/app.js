@@ -6066,7 +6066,9 @@ function applyLaunchIntent() {
     showView('historyView');
     void Promise.allSettled([loadHistory(false),loadAiTrackRecord()]);
   } else if (fixtureId > 0 && ['analysis','center'].includes(action)) {
-    showView('searchView');
+    // A direct fixture link has no in-app parent. Keep Home as the stable
+    // BackButton destination instead of manufacturing Search as a parent.
+    showView(CANONICAL_HOME_VIEW);
     void openLaunchFixture(fixtureId, action, tab, handoff, newsImpactDecision, newsImpactAction, newsImpactRecoveryCode, newsImpactRecoveryFrom);
   } else {
     renderGlobalSearch();
