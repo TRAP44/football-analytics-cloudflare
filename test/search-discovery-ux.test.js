@@ -55,7 +55,7 @@ test('Search competition summary styling stays explicit',()=>{
 
 test('Search ranking normalizes Cyrillic ё and rejects empty or nontext values',()=>{
   assert.equal(discoveryMatchRank('Ёлка','елка'),0);
-  assert.equal(discoveryMatchRank('Ежевика','ёж'),99);
+  assert.equal(discoveryMatchRank('Ежевика','ёж'),1);
   assert.equal(discoveryMatchRank('Arsenal',''),99);
   assert.equal(discoveryMatchRank('', 'arsenal'),99);
   assert.equal(discoveryMatchRank({toString:()=> 'Arsenal'},'arsenal'),99);
