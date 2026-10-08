@@ -308,6 +308,24 @@ async function waitForReady(cdp) {
   throw new Error(`Rendered Mini App did not reach a complete document with .bottom-nav: ${JSON.stringify(lastValue)}`);
 }
 
+async function assertMobileFilterDrawer(cdp,width) {
+  const result=await cdp.call('Runtime.evaluate',{
+    returnByValue:true,
+    expression:"(() => {\n  const drawer=document.querySelector('#matchesView .league-filter-drawer');\n  const controls=document.querySelector('#matchesView .home-filter-controls');\n  const body=drawer?.querySelector('.home-filter-body');\n  const grid=drawer?.querySelector('.league-filter-grid');\n  const summary=drawer?.querySelector('summary');\n  const wrap=document.getElementById('popularCompetitionsWrap');\n  const rail=document.getElementById('popularCompetitions');\n  if (!drawer||!controls||!body||!grid||!summary||!wrap||!rail) return {error:'Missing filters'};\n  const wasOpen=drawer.open,wasHidden=wrap.hidden,original=rail.innerHTML;\n  const rect=el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width};};\n  drawer.open=true;\n  wrap.hidden=false;\n  rail.replaceChildren();\n  for(const label of ['Copa de la División Profesional','Liga Pro Serie B','Ligue 1 Mobilis','Brasileirão']) {\n    const btn=document.createElement('button');btn.type='button';btn.className='competition-shortcut';btn.textContent=label;rail.append(btn);\n  }\n  const report={\n    controls:rect(controls),drawer:rect(drawer),summary:rect(summary),\n    body:rect(body),grid:rect(grid),wrap:rect(wrap),rail:rect(rail),\n    buttons:[...grid.querySelectorAll('button')].map(rect),\n    railOverflow:rail.scrollWidth>rail.clientWidth+2,\n    pageWidth:Math.max(document.body.scrollWidth,document.documentElement.scrollWidth),\n  };\n  drawer.open=wasOpen;wrap.hidden=wasHidden;rail.innerHTML=original;\n  return report;\n})()",
+  });
+  if(result?.exceptionDetails)throw Error(width+'px filters: '+result.exceptionDetails.text);
+  const value=result?.result?.value;
+  if(!value||value.error)throw Error(width+'px filters: '+(value?.error||'measurement failed'));
+  const inScreen=(rect,label)=>{
+    if(rect.left<-1||rect.right>width+1)
+      throw Error(width+'px filters: '+label+' outside viewport: '+JSON.stringify(rect));
+  };
+  for(const label of ['controls','drawer','summary','body','grid','wrap','rail'])inScreen(value[label],label);
+  value.buttons.forEach((r,i)=>inScreen(r,'choice '+i));
+  if(value.pageWidth>width+1)throw Error(width+'px filters cause page horizontal overflow: '+value.pageWidth);
+  if(width<=430&&!value.railOverflow)throw Error(width+'px tournament rail should scroll internally');
+}
+
 function assertLayout(width, snapshot) {
   if (snapshot.innerWidth !== width) throw new Error(`${width}px: innerWidth=${snapshot.innerWidth}`);
   if (!snapshot.nav) throw new Error(`${width}px: .bottom-nav missing`);
@@ -844,7 +862,8 @@ async function main() {
       });
       const snapshot = evaluated?.result?.value;
       assertLayout(width, snapshot);
-      console.log(`Bottom nav rendered correctly at ${width}px: 4 visible buttons, one row, no horizontal clipping.`);
+      await assertMobileFilterDrawer(cdp,width);
+      console.log(`Bottom nav and expanded filters fit ${width}px: 4 nav buttons, scrollable tournament rail, no page overflow.`);
       for (const theme of ['dark','light','ocean']) {
         const qaSnapshot = await inspectEdgeCaseFixture(cdp, width, theme);
         assertEdgeCaseFixture(width, theme, qaSnapshot);
