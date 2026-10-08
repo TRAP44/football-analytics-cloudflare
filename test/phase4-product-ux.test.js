@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createMyTeamsRenderer } from '../public/modules/my-teams-renderer.js';
 
 const app=fs.readFileSync('public/app.js','utf8');
 const myTeamsRenderer=fs.readFileSync('public/modules/my-teams-renderer.js','utf8');
@@ -70,4 +71,112 @@ test('admin navigation remains outside the public bottom navigation',()=>{
   const nav=html.slice(html.indexOf('<nav class="bottom-nav"'),html.indexOf('</nav>',html.indexOf('<nav class="bottom-nav"')));
   assert.doesNotMatch(nav,/admin|provider|runtime|diagnostic|release/i);
   assert.doesNotMatch(html,/data-admin-only/);
+});
+
+
+
+function myTeamsHarness(initialState = {}) {
+  const root={innerHTML:'',querySelectorAll:()=>[]};
+  const onboarding={hidden:true};
+  const state={favorites:[],matches:[],...initialState};
+  const escaping=value=>String(value??'').replace(/[&<>"']/g,c=>({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;',
+  }[c]));
+  const callbacks={teams:[],matches:[]};
+  const renderer=createMyTeamsRenderer({
+    state,
+    elementById:id=>({myTeamsList:root,myTeamsOnboarding:onboarding})[id]||null,
+    escapeHtml:escaping,
+    safeUrl:url=>typeof url==='string' && url.startsWith('https://') ? url : '',
+    timeOf:()=> '15:00',
+    onOpenTeam:team=>callbacks.teams.push(team),
+    onOpenMatch:id=>callbacks.matches.push(id),
+    now:()=>Date.parse('2026-10-08T10:00:00.000Z'),
+  });
+  return {state,root,onboarding,callbacks,renderer};
+}
+
+test('My Teams onboarding and loading are mutually exclusive and recover correctly',()=>{
+  const h=myTeamsHarness({favoritesLoading:true,favoritesLoaded:false});
+  h.renderer.renderMyTeams();
+  assert.match(h.root.innerHTML,/Загружаю ваши команды/);
+  assert.equal(h.onboarding.hidden,true);
+  h.state.favoritesLoading=false;
+  h.state.favoritesLoaded=true;
+  h.renderer.renderMyTeams();
+  assert.equal(h.root.innerHTML,'');
+  assert.equal(h.onboarding.hidden,false);
+  h.state.favorites=[{teamId:7,teamName:'Команда',teamLogo:''}];
+  h.renderer.renderMyTeams();
+  assert.equal(h.onboarding.hidden,true);
+  assert.match(h.root.innerHTML,/class="panel my-team-card"/);
+  assert.match(h.root.innerHTML,/Матчи пока не найдены/);
+});
+
+test('My Teams prioritizes LIVE then nearest upcoming then latest finished fixture',()=>{
+  const h=myTeamsHarness({
+    favorites:[{teamId:7,teamName:'Arsenal'}],
+    matches:[
+      {fixtureId:1,finished:true,date:'2026-10-07T18:00:00Z',home:{id:7,name:'Arsenal'},away:{id:8,name:'A'}},
+      {fixtureId:2,date:'2026-10-09T15:00:00Z',home:{id:7,name:'Arsenal'},away:{id:9,name:'B'}},
+      {fixtureId:3,live:true,date:'2026-10-08T09:00:00Z',home:{id:7,name:'Arsenal'},away:{id:10,name:'C'},score:{home:1,away:0}},
+      {fixtureId:99,live:true,date:'2026-10-08T09:00:00Z',home:{id:30,name:'Other'},away:{id:31,name:'Else'}},
+    ],
+  });
+  h.renderer.renderMyTeams();
+  assert.match(h.root.innerHTML,/data-team-fixture="3"/);
+  assert.match(h.root.innerHTML,/Матч идёт/);
+  h.state.matches=h.state.matches.filter(m=>m.fixtureId!==3);
+  h.renderer.renderMyTeams();
+  assert.match(h.root.innerHTML,/data-team-fixture="2"/);
+  assert.match(h.root.innerHTML,/Ближайший матч/);
+  h.state.matches=h.state.matches.filter(m=>m.fixtureId!==2);
+  h.renderer.renderMyTeams();
+  assert.match(h.root.innerHTML,/data-team-fixture="1"/);
+  assert.match(h.root.innerHTML,/Последний матч/);
+});
+
+test('My Teams escapes untrusted fixture and club labels and rejects invalid favorites',()=>{
+  const h=myTeamsHarness({
+    favorites:[
+      {teamId:'invalid',teamName:'Ignored'},
+      {teamId:7,teamName:'<img src=x onerror=alert(1)>',teamLogo:'javascript:alert(1)'},
+    ],
+    matches:[
+      {fixtureId:42,date:'2026-10-09T12:00:00Z',home:{id:7,name:'<b>Unsafe</b>'},away:{id:8,name:'Away'}},
+    ],
+  });
+  h.renderer.renderMyTeams();
+  assert.equal((h.root.innerHTML.match(/class="panel my-team-card"/g)||[]).length,1);
+  assert.match(h.root.innerHTML,/&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.match(h.root.innerHTML,/&lt;b&gt;Unsafe&lt;\/b&gt;/);
+  assert.doesNotMatch(h.root.innerHTML,/<img src=x|<b>Unsafe<\/b>|javascript:/);
+});
+
+test('My Teams binds match and team controls to explicit ID-validated callbacks',()=>{
+  const controls={};
+  const root={
+    innerHTML:'',
+    querySelectorAll:selector=>[{
+      dataset:selector==='[data-open-team]'
+        ? {openTeam:'7',teamName:'Arsenal',teamLogo:''}
+        : {teamFixture:'42'},
+      addEventListener:(event,cb)=>{controls[selector]=cb;},
+    }],
+  };
+  const state={
+    favorites:[{teamId:7,teamName:'Arsenal'}],
+    matches:[{fixtureId:42,live:true,home:{id:7,name:'Arsenal'},away:{id:8,name:'Away'}}],
+  };
+  const calls=[];
+  const renderer=createMyTeamsRenderer({
+    state,elementById:id=>id==='myTeamsList'?root:null,
+    escapeHtml:String,safeUrl:String,timeOf:String,
+    onOpenTeam:team=>calls.push(['team',team.id]),
+    onOpenMatch:id=>calls.push(['match',id]),
+  });
+  renderer.renderMyTeams();
+  controls['[data-open-team]']();
+  controls['[data-team-fixture]']();
+  assert.deepEqual(calls,[['team',7],['match',42]]);
 });
