@@ -2714,6 +2714,7 @@ function writeMatchSnapshot(date, data) {
 function applyMatchPayload(data, { snapshot = false, refreshing = false } = {}) {
   state.matches = collectionItems(data,'matches');
   state.matchesMeta = {
+    restrictedDate: data.restrictedDate === true,
     refreshedAt: data.refreshedAt || null,
     stale: Boolean(data.stale || snapshot),
     warning: data.warning || '',
@@ -2766,7 +2767,9 @@ async function loadMatches(options = {}) {
     });
     if (seq !== state.matchesLoadSeq) return;
     data.refreshedAt ||= new Date().toISOString();
-    writeMatchSnapshot(date, data);
+    if (data.restrictedDate !== true && collectionItems(data,'matches').length) {
+      writeMatchSnapshot(date, data);
+    }
     applyMatchPayload(data, { snapshot: false, refreshing: false });
     state.matchesMeta.date = date;
   } catch (e) {
@@ -3419,14 +3422,23 @@ function renderMatches() {
   }
 
   if (!list.length) {
-    const filtered = state.filter !== 'all';
+    const restrictedDate = state.matchesMeta?.restrictedDate === true;
+    const filtered = !restrictedDate && state.filter !== 'all';
     const extra = filtered ? '<button id="showAllBtn" class="secondary-btn" type="button">Показать все матчи</button>' : '';
     $('matches').innerHTML = `<div class="empty match-empty-state">
-      <strong>${filtered ? 'По этому фильтру матчей нет' : 'Матчей на эту дату пока нет'}</strong>
-      <p>${filtered ? 'Снимите фильтр или найдите нужную команду через поиск.' : 'Попробуйте поиск по команде или выберите соседнюю дату.'}</p>
-      <div class="empty-actions">${extra}<button id="matchesEmptySearch" class="primary-setting-btn" type="button">Найти матч</button></div>
+      <strong>${restrictedDate ? 'Дата недоступна для текущего API' : filtered ? 'По этому фильтру матчей нет' : 'Матчей на эту дату пока нет'}</strong>
+      <p>${restrictedDate
+        ? 'API-Football FREE не предоставляет эту дату. Она не загружалась повторно и не тратила лимит запросов.'
+        : filtered ? 'Снимите фильтр или найдите нужную команду через поиск.'
+          : 'Попробуйте поиск по команде или выберите соседнюю дату.'}</p>
+      <div class="empty-actions">${extra}${restrictedDate
+        ? '<button id="matchesBackToday" class="secondary-btn" type="button">Перейти к сегодня</button>'
+        : ''}<button id="matchesEmptySearch" class="primary-setting-btn" type="button">Найти матч</button></div>
     </div>`;
     $('showAllBtn')?.addEventListener('click', () => { state.filter = 'all'; syncFilterButtons(); renderMatches(); });
+    $('matchesBackToday')?.addEventListener('click', () => {
+      document.querySelector('.date-btn[data-offset="0"]')?.click();
+    });
     $('matchesEmptySearch')?.addEventListener('click', () => {
       renderDiscoveryHome();
       renderGlobalSearch();
@@ -6665,8 +6677,8 @@ function updateConnectionBanner() {
       retry.disabled = retryRemaining > 0;
       retry.textContent = retryRemaining > 0 ? `Повторить через ${retryRemaining} с` : 'Повторить';
       text.textContent = retryRemaining > 0
-        ? `Пока действует лимит футбольного источника, используйте сохранённые матчи и фильтры. Повтор через ${retryRemaining} с.`
-        : 'Ограничение обновления истекло. Можно повторить запрос.';
+        ? `Источник API-Football временно ограничил запросы. Через ${retryRemaining} с можно нажать «Повторить»; загрузка не запускается автоматически.`
+        : 'Пауза закончилась. Нажмите «Повторить», чтобы запросить обновление.';
       if (retryRemaining > 0) {
         updateConnectionBanner.retryTimer = setTimeout(updateConnectionBanner, Math.min(1000, retryRemaining * 1000));
       }
