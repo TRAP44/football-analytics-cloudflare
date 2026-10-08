@@ -131,22 +131,31 @@ export function createProductionMonitorRuntime(deps) {
   
   
   function productionMonitorState(input = {}) {
-    const supabaseOk = Boolean(input.supabaseOk);
-    const schemaOk = Boolean(input.schemaOk);
-    const schemaStatus = String(input.schemaStatus || (schemaOk ? 'ok' : 'drift'));
-    const releaseState = String(input.releaseState || 'healthy');
-    const providerHealth = String(input.providerHealth || 'waiting');
-    const providerSloState = String(input.providerSloState || 'collecting');
-    const dailyDigestSloState = String(input.dailyDigestSloState || 'collecting');
-    const telegramDedupeState = String(input.telegramDedupeState || 'healthy');
-    const persistent = input.persistent !== false;
-    const supabaseAuthFailures = Number(input.supabaseAuthFailures || 0);
+    const source=input && typeof input==='object' && !Array.isArray(input) ? input : {};
+    const supabaseOk = source.supabaseOk === true;
+    const schemaOk = source.schemaOk === true;
+    const schemaStatus = typeof source.schemaStatus === 'string' && source.schemaStatus
+      ? source.schemaStatus
+      : (schemaOk ? 'ok' : 'drift');
+    const releaseState = String(source.releaseState || 'healthy');
+    const providerHealth = String(source.providerHealth || 'waiting');
+    const providerSloState = String(source.providerSloState || 'collecting');
+    const dailyDigestSloState = String(source.dailyDigestSloState || 'collecting');
+    const telegramDedupeState = String(source.telegramDedupeState || 'healthy');
+    const persistent = source.persistent === undefined || source.persistent === true;
+    const authFailureCount=source.supabaseAuthFailures ?? 0;
+    const supabaseAuthFailures=typeof authFailureCount==='number'
+      && Number.isSafeInteger(authFailureCount) && authFailureCount>=0
+      ? authFailureCount : null;
   
     if (!supabaseOk || ['drift','mixed'].includes(schemaStatus) || supabaseAuthFailures > 0 || releaseState === 'incident' || telegramDedupeState === 'incident') {
       return { state: 'incident', label: 'Production требует немедленной проверки' };
     }
     if (
       schemaStatus === 'unavailable'
+      || !['ok','drift','mixed','unavailable'].includes(schemaStatus)
+      || (!schemaOk && schemaStatus === 'ok')
+      || supabaseAuthFailures === null
       || releaseState === 'watch'
       || telegramDedupeState === 'watch'
       || !persistent
