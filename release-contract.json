@@ -21,15 +21,16 @@
     "version": 2,
     "rpc": "backend_readiness_contract_v2",
     "fingerprint": "f3d899ff05789e6cfb257abe011872d2",
-    "freshInstallFingerprint": "289d4be4a3546443d48ff5f0b8bd6dcb",
+    "freshInstallFingerprint": "d0ecfedbd63abc305ad7f57aa298cabd",
     "compatibleFingerprints": [
+      "f3d899ff05789e6cfb257abe011872d2",
+      "d0ecfedbd63abc305ad7f57aa298cabd",
       "4e7b6afc69b45ab3e5eecc4685d75c73",
-      "289d4be4a3546443d48ff5f0b8bd6dcb",
-      "f3d899ff05789e6cfb257abe011872d2"
+      "289d4be4a3546443d48ff5f0b8bd6dcb"
     ],
     "scope": "all-public-relations-columns-constraints-indexes-functions-policies-triggers-and-app-role-grants",
     "legacyFingerprint": "2557059895624917aebf24eec0e97cab",
-    "freshInstallLegacyFingerprint": "e025ecf4559a4d7518250b4124ff26c8",
+    "freshInstallLegacyFingerprint": "c3180032babe6e091a2843a84de746e8",
     "privateContracts": {
       "analysisUsage": {
         "version": 1,
@@ -93,6 +94,7 @@
       "source": "verified",
       "minIntervalSeconds": 120,
       "sourceMigration": "supabase/migrations/supabase_migration_v6_29_14.sql"
-    }
+    },
+    "preLatestLegacyFingerprint": "e025ecf4559a4d7518250b4124ff26c8"
   }
 }
