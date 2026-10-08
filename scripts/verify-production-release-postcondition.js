@@ -1,10 +1,9 @@
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { validateReleaseIdentity } from '../src/release-identity.js';
+import { cloudflareVersionIdValid, validateReleaseIdentity } from '../src/release-identity.js';
 
 const RELEASE_RE = /^[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$/;
 const SHA_RE = /^[0-9a-f]{40}$/i;
-const EPSILON = 1e-9;
 
 export function activeProductionVersion(deployment) {
   if (!deployment || typeof deployment !== 'object' || Array.isArray(deployment)) {
@@ -15,21 +14,28 @@ export function activeProductionVersion(deployment) {
   }
 
   const versions = deployment.versions.map((entry, index) => {
-    const versionId = String(entry?.version_id || '');
+    const versionId = entry?.version_id;
     const percentage=entry?.percentage;
     if (!versionId) throw new Error(`Deployment traffic entry ${index + 1} is missing version_id.`);
+    if (!cloudflareVersionIdValid(versionId)) throw new Error(`Deployment traffic entry ${index + 1} has an invalid version_id (RELEASE_IDENTITY_CLOUDFLARE_VERSION_ID_INVALID).`);
     if (typeof percentage !== 'number' || !Number.isFinite(percentage) || percentage < 0 || percentage > 100) {
       throw new Error(`Deployment traffic entry ${index + 1} has an invalid percentage.`);
     }
     return { versionId, percentage };
   });
 
+  const seen=new Set();
+  for (const version of versions) {
+    const id=version.versionId.toLowerCase();
+    if (seen.has(id)) throw new Error('Cloudflare deployment traffic contains duplicate version IDs.');
+    seen.add(id);
+  }
   const total = versions.reduce((sum, entry) => sum + entry.percentage, 0);
-  const active = versions.filter(entry => entry.percentage > EPSILON);
-  if (Math.abs(total - 100) > EPSILON) {
+  const active = versions.filter(entry => entry.percentage > 0);
+  if (total !== 100) {
     throw new Error(`Cloudflare production traffic must total 100%; got ${total}%.`);
   }
-  if (active.length !== 1 || Math.abs(active[0].percentage - 100) > EPSILON) {
+  if (active.length !== 1 || active[0].percentage !== 100) {
     const allocation = active.map(entry => `${entry.versionId}@${entry.percentage}%`).join(', ');
     throw new Error(`Production deployment must have one version at 100% traffic; current allocation: ${allocation || 'none'}.`);
   }
@@ -53,8 +59,10 @@ export function resolveActiveProductionReleaseIdentity(deployment, versions) {
   }
   const [activeVersion] = activeVersions;
 
-  const actualMessage = String(activeVersion.annotations?.['workers/message'] || '').trim();
-  const actualTag = String(activeVersion.annotations?.['workers/tag'] || '').trim();
+  const actualMessage = typeof activeVersion.annotations?.['workers/message'] === 'string'
+    ? activeVersion.annotations['workers/message'].trim() : '';
+  const actualTag = typeof activeVersion.annotations?.['workers/tag'] === 'string'
+    ? activeVersion.annotations['workers/tag'].trim() : '';
   const match = /^release=([^\s]+) sha=([0-9a-f]{40})$/i.exec(actualMessage);
   if (!match || !RELEASE_RE.test(match[1]) || !SHA_RE.test(match[2])) {
     throw new Error(`Active production version ${activeVersionId} release identity mismatch.`);
@@ -88,16 +96,16 @@ export function resolveActiveProductionReleaseIdentity(deployment, versions) {
 }
 
 export function verifyProductionReleasePostcondition(deployment, versions, expectedRelease, expectedSha) {
-  if (!RELEASE_RE.test(String(expectedRelease || ''))) {
+  if (typeof expectedRelease !== 'string' || !RELEASE_RE.test(expectedRelease)) {
     throw new Error('Expected production release has an invalid format.');
   }
-  if (!SHA_RE.test(String(expectedSha || ''))) {
+  if (typeof expectedSha !== 'string' || !SHA_RE.test(expectedSha)) {
     throw new Error('Expected deploy SHA must be a 40-character Git commit SHA.');
   }
   const active = resolveActiveProductionReleaseIdentity(deployment, versions);
   if (
-    active.release.toLowerCase() !== String(expectedRelease).toLowerCase()
-    || active.sha !== String(expectedSha).toLowerCase()
+    active.release.toLowerCase() !== expectedRelease.toLowerCase()
+    || active.sha !== expectedSha.toLowerCase()
   ) {
     throw new Error(`Active production version ${active.versionId} release identity mismatch.`);
   }
