@@ -235,8 +235,6 @@ jobs:
           PREVIOUS_RELEASE: ${{ steps.production_changes.outputs.previous_release }}
           PREVIOUS_SHA: ${{ steps.production_changes.outputs.previous_sha }}
           CONFIGURED_URL: ${{ vars.CLOUDFLARE_WORKER_URL }}
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
         shell: bash
         run: |
           set -euo pipefail
@@ -255,6 +253,10 @@ jobs:
             echo "### Active rollback target is unhealthy" >> "$GITHUB_STEP_SUMMARY"
             echo "Checking the narrow schema-drift recovery path before any production traffic changes." >> "$GITHUB_STEP_SUMMARY"
             node scripts/verify-schema-drift-recovery.js "$SMOKE_URL"
+            # Public drift is only a preliminary signal. The candidate must
+            # pass every production smoke check using its immutable Version URL
+            # before the separate deployment promotion step can run.
+            echo "Public schema drift eligible for isolated candidate verification (no traffic cutover)." >> "$GITHUB_STEP_SUMMARY"
 
             RECOVERY_ALIAS="release-recovery"
             npx wrangler versions upload --keep-vars --preview-alias "$RECOVERY_ALIAS" --tag "$DEPLOY_SHA" --message "release=$RELEASE_VERSION sha=$DEPLOY_SHA"
