@@ -97,3 +97,56 @@ test('RC127 backend-only RPCs are explicitly least-privilege',()=>{
   assert.match(migration,/grant execute on function public\.consume_analysis_quota\(bigint,date,integer\) to service_role/);
   assert.match(migration,/revoke truncate, references, trigger on table/);
 });
+
+
+
+test('RC127 quota reservations require durable RPC confirmation and preserve uncertain outcomes',()=>{
+  const quota=fs.readFileSync('src/quota-usage-runtime.js','utf8');
+  const start=quota.indexOf('async function reserveAnalysisQuota');
+  const end=quota.indexOf('async function refundAnalysisQuota',start);
+  assert.ok(start>=0&&end>start);
+  const reserve=quota.slice(start,end);
+  assert.match(reserve,/crypto\.randomUUID\(\)/);
+  assert.match(reserve,/supaRpc\(cfg, 'consume_analysis_quota'/);
+  assert.match(reserve,/ANALYSIS_QUOTA_RESERVATION_OUTCOME_UNKNOWN/);
+  assert.match(reserve,/throw error/);
+  assert.match(reserve,/const allowed=result\?\.allowed === true/);
+  assert.match(reserve,/const durable=allowed && result\?\.durable === true && Boolean\(operationId\)/);
+});
+
+test('RC127 quota refunds reject unconfirmed persistence and cannot exceed current local usage',()=>{
+  const quota=fs.readFileSync('src/quota-usage-runtime.js','utf8');
+  const start=quota.indexOf('async function refundAnalysisQuota');
+  const end=quota.indexOf('async function getQuota',start);
+  assert.ok(start>=0 && end>start);
+  const refund=quota.slice(start,end);
+  assert.match(refund,/if \(reservation\?\.reserved !== true\) return/);
+  assert.match(refund,/supaRpc\(cfg, 'refund_analysis_quota'/);
+  assert.match(refund,/if \(result\?\.refunded !== true\)/);
+  assert.match(refund,/LEGACY_QUOTA_REFUND_NOT_CONFIRMED/);
+  assert.match(refund,/Math\.max\(0,/);
+});
+
+test('RC127 local development identity cannot bypass real Telegram validation in production',()=>{
+  const auth=fs.readFileSync('src/auth-user.js','utf8');
+  assert.match(auth,/adminSensitive \? 15 \* 60 : mutation \? 2 \* 60 \* 60 : 24 \* 60 \* 60/);
+  assert.match(auth,/validateTelegramInitData\(initData, cfg\?\.botToken, initDataMaxAgeSeconds\)/);
+  assert.match(auth,/cfg\?\.devMode === true/);
+  assert.match(auth,/&& isLocalDevelopmentRequest\(requestUrl\)/);
+  assert.match(auth,/user\.__telegramValidated = telegramValidated/);
+  assert.doesNotMatch(auth,/cfg\?\.devMode \|\|/);
+});
+
+test('RC127 public health hides internal probes while lock coordination errors fail closed',()=>{
+  const publicHealth=fs.readFileSync('src/public-health.js','utf8');
+  const lock=fs.readFileSync('src/distributed-analysis-lock-runtime.js','utf8');
+  assert.match(publicHealth,/const safe=sanitizePublicReadiness\(value\)/);
+  assert.match(publicHealth,/status:readiness\.ok === true \? 'ready' : 'not_ready'/);
+  const start=publicHealth.indexOf('async function healthSnapshot');
+  const end=publicHealth.indexOf('function invalidate',start);
+  assert.ok(start>=0 && end>start);
+  assert.doesNotMatch(publicHealth.slice(start,end),/botToken|supabaseUrl|supabaseKey|adminTelegramIds/);
+  assert.match(lock,/code:'ANALYSIS_LOCK_FAIL_CLOSED'/);
+  assert.match(lock,/unavailable:true,\s*reason:'coordination_probe_failed'/);
+  assert.match(lock,/unavailable:true,\s*reason:'invalid_existing_lock'/);
+});
