@@ -179,3 +179,55 @@ test('dashboard aggregates SLO compliance across deployment generations',()=>{
   assert.equal(dashboard.summary.recoveryBreached,1);
   assert.equal(dashboard.summary.recoverySloPct,50);
 });
+
+
+
+test('ACK SLO uses exact milliseconds at the thirty-minute boundary',()=>{
+  const early=[
+    lifecycle('incident','2026-09-29T10:00:00Z'),
+    response('acknowledged','2026-09-29T10:30:00Z'),
+  ];
+  const late=[
+    lifecycle('incident','2026-09-29T10:00:00Z'),
+    response('acknowledged','2026-09-29T10:30:01Z'),
+  ];
+  assert.equal(buildPostDeployRegressionIncidentEpisode(early,sha).ackStatus,'met');
+  assert.equal(buildPostDeployRegressionIncidentEpisode(late,sha).ackStatus,'breached');
+});
+
+test('recovery SLO is exact to the second even when displayed latency is rounded',()=>{
+  const atLimit=[
+    lifecycle('incident','2026-09-29T10:00:00Z'),
+    lifecycle('recovered','2026-09-29T16:00:00Z'),
+  ];
+  const overLimit=[
+    lifecycle('incident','2026-09-29T10:00:00Z'),
+    lifecycle('recovered','2026-09-29T16:00:01Z'),
+  ];
+  assert.equal(buildPostDeployRegressionIncidentEpisode(atLimit,sha).recoveryStatus,'met');
+  assert.equal(buildPostDeployRegressionIncidentEpisode(overLimit,sha).recoveryStatus,'breached');
+});
+
+test('pending ACK remains pending until the exact deadline and critical overdue starts at two hours',()=>{
+  const history=[lifecycle('incident','2026-09-29T10:00:00Z')];
+  const before=buildPostDeployRegressionIncidentEpisode(history,sha,Date.parse('2026-09-29T10:29:59Z'));
+  assert.equal(before.ackStatus,'pending');
+  const due=buildPostDeployRegressionIncidentEpisode(history,sha,Date.parse('2026-09-29T10:30:00Z'));
+  assert.equal(due.ackStatus,'breached');
+  const notCritical=buildPostDeployRegressionIncidentEpisode(history,sha,Date.parse('2026-09-29T11:59:59Z'));
+  assert.equal(notCritical.ackCriticalOverdue,false);
+  const critical=buildPostDeployRegressionIncidentEpisode(history,sha,Date.parse('2026-09-29T12:00:00Z'));
+  assert.equal(critical.ackCriticalOverdue,true);
+});
+
+test('recovery deadline does not breach before the complete 360 minutes have elapsed',()=>{
+  const history=[lifecycle('incident','2026-09-29T10:00:00Z')];
+  assert.equal(
+    buildPostDeployRegressionIncidentEpisode(history,sha,Date.parse('2026-09-29T15:59:59Z')).recoveryStatus,
+    'pending',
+  );
+  assert.equal(
+    buildPostDeployRegressionIncidentEpisode(history,sha,Date.parse('2026-09-29T16:00:00Z')).recoveryStatus,
+    'breached',
+  );
+});

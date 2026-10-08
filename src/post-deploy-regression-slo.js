@@ -188,20 +188,20 @@ function buildEpisode(episode,responses,sha,asOfMs,nextIncidentAt=null){
   const resolutionLatencyMinutes=minutesBetween(incidentAt,resolvedAt);
   const postRecoveryResolutionMinutes=minutesBetween(recoveredAt,resolvedAt);
 
-  const ackElapsedMinutes=minutesBetween(incidentAt,terminalForAck);
-  const ackEligible=Number.isFinite(acknowledgedAt)
-    || Number(ackElapsedMinutes||0)>=POST_DEPLOY_REGRESSION_ACK_SLO_MINUTES;
+  const ackElapsedMs=Math.max(0,terminalForAck-incidentAt);
+  const ackLimitMs=POST_DEPLOY_REGRESSION_ACK_SLO_MINUTES*60000;
+  const recoveryLimitMs=POST_DEPLOY_REGRESSION_RECOVERY_SLO_MINUTES*60000;
+  const ackEligible=Number.isFinite(acknowledgedAt) || ackElapsedMs>=ackLimitMs;
   const ackMet=ackEligible
-    && Number.isFinite(ackLatencyMinutes)
-    && ackLatencyMinutes<=POST_DEPLOY_REGRESSION_ACK_SLO_MINUTES;
+    && Number.isFinite(acknowledgedAt)
+    && acknowledgedAt-incidentAt<=ackLimitMs;
   const ackBreached=ackEligible&&!ackMet;
 
-  const recoveryElapsedMinutes=minutesBetween(incidentAt,Number.isFinite(recoveredAt)?recoveredAt:nowMs);
-  const recoveryEligible=Number.isFinite(recoveredAt)
-    || Number(recoveryElapsedMinutes||0)>=POST_DEPLOY_REGRESSION_RECOVERY_SLO_MINUTES;
+  const recoveryElapsedMs=Math.max(0,(Number.isFinite(recoveredAt)?recoveredAt:nowMs)-incidentAt);
+  const recoveryEligible=Number.isFinite(recoveredAt) || recoveryElapsedMs>=recoveryLimitMs;
   const recoveryMet=recoveryEligible
-    && Number.isFinite(recoveryLatencyMinutes)
-    && recoveryLatencyMinutes<=POST_DEPLOY_REGRESSION_RECOVERY_SLO_MINUTES;
+    && Number.isFinite(recoveredAt)
+    && recoveredAt-incidentAt<=recoveryLimitMs;
   const recoveryBreached=recoveryEligible&&!recoveryMet;
 
   return {
@@ -230,7 +230,7 @@ function buildEpisode(episode,responses,sha,asOfMs,nextIncidentAt=null){
     recoveryBreached,
     ackCriticalOverdue:!Number.isFinite(acknowledgedAt)
       && !Number.isFinite(recoveredAt)
-      && Number(ackElapsedMinutes||0)>=POST_DEPLOY_REGRESSION_ACK_CRITICAL_MINUTES,
+      && ackElapsedMs>=POST_DEPLOY_REGRESSION_ACK_CRITICAL_MINUTES*60000,
   };
 }
 
