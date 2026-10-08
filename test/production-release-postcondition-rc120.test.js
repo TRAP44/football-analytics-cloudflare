@@ -275,3 +275,47 @@ test('RC120 rejects malformed or ambiguous active version detail collections',()
     assert.throws(()=>resolveActiveProductionReleaseIdentity(traffic,bad));
   }
 });
+
+
+
+test('RC120 rejects arbitrarily small production traffic on a second active version',()=>{
+  const tiny=1e-10;
+  assert.throws(()=>activeProductionVersion(deployment([
+    {version_id:activeId,percentage:100-tiny},
+    {version_id:otherId,percentage:tiny},
+  ])),/one version at 100% traffic|total 100%/);
+  assert.throws(()=>activeProductionVersion(deployment([{version_id:activeId,percentage:100-1e-10}])),/total 100%/);
+});
+
+test('RC120 rejects duplicate and invalid Cloudflare version IDs even on zero-traffic rows',()=>{
+  for(const versions of [
+    [{version_id:activeId,percentage:100},{version_id:activeId,percentage:0}],
+    [{version_id:activeId,percentage:100},{version_id:activeId.toUpperCase(),percentage:0}],
+    [{version_id:activeId,percentage:100},{version_id:'not-a-uuid',percentage:0}],
+    [{version_id:{toString:()=>activeId},percentage:100}],
+  ]) assert.throws(()=>activeProductionVersion(deployment(versions)),/duplicate version IDs|invalid version_id/);
+  assert.equal(activeProductionVersion(deployment([{version_id:activeId,percentage:100}])),activeId);
+});
+
+test('RC120 rejects annotation objects that impersonate a valid release message or SHA tag',()=>{
+  const message='release='+release+' sha='+sha;
+  const traffic=deployment([{version_id:activeId,percentage:100}]);
+  for(const annotations of [
+    {'workers/message':{toString:()=>message},'workers/tag':sha},
+    {'workers/message':message,'workers/tag':{toString:()=>sha}},
+  ]) assert.throws(()=>resolveActiveProductionReleaseIdentity(traffic,[{
+    ...version(activeId,message),annotations,
+  }]),/release identity mismatch|version tag does not match deploy SHA/);
+});
+
+test('RC120 refuses coerced expected release and SHA inputs before validating active production',()=>{
+  const traffic=deployment([{version_id:activeId,percentage:100}]);
+  const versions=[version(activeId,'release='+release+' sha='+sha)];
+  for(const expected of [
+    {release:{toString:()=>release},sha},
+    {release,sha:{toString:()=>sha}},
+    {release:[release],sha},
+    {release,sha:[sha]},
+  ]) assert.throws(()=>verifyProductionReleasePostcondition(traffic,versions,expected.release,expected.sha),
+    /invalid format|40-character Git commit SHA/);
+});
