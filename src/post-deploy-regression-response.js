@@ -114,6 +114,7 @@ function currentIncidentEpisode(lifecycle=[]){
   return {
     incident,
     incidentAt:incident.time,
+    recoveredAt:recovered?.time??null,
     lifecycleState:terminal.state,
     episodeKey,
   };
@@ -139,6 +140,7 @@ function canonicalResponseHistory(rows=[],episode={}){
     const candidate=responseState(row);
     if(candidate===state) continue;
     if(candidate!==next) continue;
+    if(candidate==='resolved' && (episode.recoveredAt===null || time<episode.recoveredAt)) continue;
 
     state=candidate;
     accepted.push(row);

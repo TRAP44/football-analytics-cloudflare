@@ -149,3 +149,60 @@ test('response transitions are idempotent and deployment scoped',()=>{
   assert.equal(status.available,false);
   assert.equal(status.reason,'no_incident');
 });
+
+
+
+test('a forged RESOLVED event before recovery cannot silently close an active incident',()=>{
+  const history=[
+    lifecycle('incident','2026-09-29T15:00:00Z'),
+    response('acknowledged','2026-09-29T15:05:00Z'),
+    response('investigating','2026-09-29T15:10:00Z'),
+    response('resolved','2026-09-29T15:15:00Z'),
+  ];
+  const status=summarizePostDeployRegressionResponse(history,sha);
+  assert.equal(status.state,'investigating');
+  assert.equal(status.reason,'awaiting_recovery');
+  assert.equal(status.nextState,null);
+  assert.equal(status.resolvedAt,null);
+  assert.deepEqual(status.history.map(item=>item.state),['acknowledged','investigating']);
+});
+
+test('recovery must precede RESOLVED in persisted event chronology',()=>{
+  const history=[
+    lifecycle('incident','2026-09-29T15:00:00Z'),
+    response('acknowledged','2026-09-29T15:05:00Z'),
+    response('investigating','2026-09-29T15:10:00Z'),
+    response('resolved','2026-09-29T15:20:00Z'),
+    lifecycle('recovered','2026-09-29T15:30:00Z'),
+  ];
+  const prior=summarizePostDeployRegressionResponse(history,sha);
+  assert.equal(prior.state,'investigating');
+  assert.equal(prior.nextState,'resolved');
+  const planned=planPostDeployRegressionResponseTransition(history,sha,'resolved');
+  assert.equal(planned.action,'record');
+  history.push(response('resolved','2026-09-29T15:35:00Z'));
+  const after=summarizePostDeployRegressionResponse(history,sha);
+  assert.equal(after.state,'resolved');
+  assert.equal(after.resolvedAt,'2026-09-29T15:35:00.000Z');
+});
+
+test('manual incident response only accepts the next known state',()=>{
+  const history=[lifecycle('incident','2026-09-29T15:00:00Z')];
+  for(const target of ['resolved','investigating','other',{},false]){
+    const decision=planPostDeployRegressionResponseTransition(history,sha,target);
+    assert.equal(decision.action,'none');
+  }
+  assert.equal(planPostDeployRegressionResponseTransition(history,sha,'ACKNOWLEDGED').action,'record');
+});
+
+test('historical response from another deployment or incident episode is excluded',()=>{
+  const history=[
+    lifecycle('incident','2026-09-29T15:00:00Z',301),
+    {...response('acknowledged','2026-09-29T15:05:00Z'),metadata:{deploySha:'b'.repeat(40),responseState:'acknowledged'}},
+    {...response('acknowledged','2026-09-29T15:06:00Z'),metadata:{deploySha:sha,responseState:'acknowledged',incidentEpisodeKey:'event-999'}},
+  ];
+  const status=summarizePostDeployRegressionResponse(history,sha);
+  assert.equal(status.state,'new');
+  assert.equal(status.nextState,'acknowledged');
+  assert.equal(status.incidentEpisodeKey,'event-301');
+});
