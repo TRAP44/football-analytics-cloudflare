@@ -146,7 +146,12 @@ export function createAdminReleaseMonitorModule(deps) {
     const regressionCurrentSlo = regressionSlo.current || null;
     const regressionSloSummary = regressionSlo.summary || {};
     const regressionThresholds = regressionSlo.thresholds || {};
-    const sloValue = value => Number.isFinite(Number(value)) ? `${Number(value)} мин` : '—';
+    const sloValue = value => {
+      const number=typeof value==='number'
+        ? value
+        : typeof value==='string' && value.trim() ? Number(value) : NaN;
+      return Number.isFinite(number) && number>=0 ? `${number} мин` : '—';
+    };
     const sloStatusLabel = status => status === 'met' ? 'SLO выполнен' : status === 'breached' ? 'SLO нарушен' : 'ожидание';
     const lifecycleRows = regressionRows.filter(x => x?.source === 'release_regression');
     const alertRows = regressionRows.filter(x => x?.source === 'release_regression_alert');
