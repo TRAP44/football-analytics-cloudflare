@@ -118,3 +118,57 @@ test('aliasIds returns an isolated set that cannot mutate resolver state', () =>
   first.add(999);
   assert.deepEqual([...resolver.aliasIds('Player Nine')],[9]);
 });
+
+
+
+test('player identity rejects out-of-range integers, coercion and conflicting aliases',()=>{
+  for(const id of [-1,1.5,Number.POSITIVE_INFINITY,'1.5','1e3','+123','9007199254740992',{},[7]]) {
+    const item=describePlayerIdentity({id,name:'Player'});
+    assert.equal(item.id,0);
+    assert.equal(item.invalidKnownIdValue,true,String(id));
+  }
+  const maximum=describePlayerIdentity({id:String(Number.MAX_SAFE_INTEGER),name:'Player'});
+  assert.equal(maximum.id,Number.MAX_SAFE_INTEGER);
+  const conflicting=describePlayerIdentity({id:123,playerId:'456',player_id:123,name:'Player'});
+  assert.equal(conflicting.knownIdConflict,true);
+  assert.deepEqual(conflicting.ids,[123,456]);
+});
+
+test('player aliases fold accents and whitespace but never accept non-string names',()=>{
+  assert.equal(normalizePlayerName('  JOSÉ   Álvarez  '),'jose alvarez');
+  assert.equal(normalizePlayerName('Ёжиков — Сергей'),'ежиков сергеи');
+  assert.equal(normalizePlayerName('A.B-C'),'a b c');
+  for(const value of [null,undefined,0,true,[],{name:'Alex'}]){
+    assert.equal(normalizePlayerName(value),'');
+  }
+});
+
+test('duplicate verified aliases remain uniquely resolvable and defensive copies stay independent',()=>{
+  const resolver=createPlayerIdentityResolver([
+    {id:77,name:'José Álvarez'},
+    {id:'77',name:'Jose Alvarez'},
+    {id:77,name:' JOSE ALVAREZ '},
+  ]);
+  const resolved=resolver.resolve({name:'José Alvarez'});
+  assert.equal(resolved.valid,true);
+  assert.equal(resolved.id,77);
+  assert.equal(resolved.via,'name_alias');
+  assert.deepEqual([...resolver.aliasIds('Jose Alvarez')],[77]);
+  const set=resolver.aliasIds('Jose Alvarez');
+  set.clear();
+  assert.deepEqual([...resolver.aliasIds('Jose Alvarez')],[77]);
+});
+
+test('player resolver distinguishes missing identity, mismatched IDs and unregistered name-only aliases',()=>{
+  const resolver=createPlayerIdentityResolver([{id:77,name:'Player A'}]);
+  const missing=resolver.resolve({name:' '});
+  assert.equal(missing.valid,false);
+  assert.equal(missing.reason,'identity_missing');
+  assert.equal(resolver.matches({id:77,name:'Player A'},{id:88,name:'Player A'}),false);
+  assert.equal(resolver.matches({id:77},{name:'Different Player'}),false);
+  const unregistered=resolver.resolve({name:'Unregistered Player'});
+  assert.equal(unregistered.valid,true);
+  assert.equal(unregistered.via,'name');
+  assert.equal(unregistered.key,'name:unregistered player');
+  assert.equal(Object.isFrozen(resolver),true);
+});
