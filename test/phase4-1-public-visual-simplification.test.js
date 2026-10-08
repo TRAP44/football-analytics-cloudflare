@@ -107,3 +107,55 @@ test('Phase 5 resumes only with the current session cohort contract',()=>{
   assert.match(client,/phase5-session:v2/);
   assert.doesNotMatch(client,/phase5-session:v1/);
 });
+
+
+
+test('startup provides accessible loading feedback with recovery buttons hidden by default',()=>{
+  const boot=block(html,'<div id="bootGate"','<div class="app-shell">');
+  assert.match(boot,/<div id="bootGate"[^>]*role="status"[^>]*aria-live="polite"/);
+  assert.match(boot,/<h1 id="bootTitle">MatchRadar<\/h1>/);
+  assert.match(boot,/<p id="bootText">Загружаем матчи…<\/p>/);
+  assert.match(boot,/class="boot-progress" aria-hidden="true"/);
+  for(const id of ['bootRetryBtn','bootContinueBtn','bootReloadBtn']){
+    assert.match(boot,new RegExp('<button id="'+id+'"[^>]*type="button"[^>]*hidden'));
+  }
+});
+
+test('Home has labeled search, accessible quick filters, and chronological date defaults',()=>{
+  const home=block(html,'<section id="matchesView"','<section id="searchView"');
+  assert.match(home,/<input id="matchSearch"[^>]*type="search"[^>]*aria-label="Поиск команды или матча"/);
+  assert.match(home,/<button id="homeSearchBtn"[^>]*type="button">Найти<\/button>/);
+  assert.match(home,/id="filterStrip"[^>]*role="group"[^>]*aria-label="Быстрые фильтры матчей"/);
+  for(const filter of ['top','live','all']){
+    assert.match(home,new RegExp('data-filter="'+filter+'"'));
+  }
+  const offsets=[...home.matchAll(/class="date-btn[^"]*" type="button" data-offset="(-?\d+)"/g)]
+    .map(match=>Number(match[1]));
+  assert.deepEqual(offsets.slice(0,3),[-1,0,1]);
+  assert.match(home,/class="date-btn active" type="button" data-offset="0"/);
+});
+
+test('personal match and Radar feed never render before personalized data exists',()=>{
+  const home=block(html,'<section id="matchesView"','<section id="searchView"');
+  assert.match(home,/<section id="dailyOverview"[^>]*hidden>/);
+  assert.match(home,/<button id="homePersonalMatchBtn"[^>]*hidden>/);
+  assert.match(home,/<section id="radarFeedWrap"[^>]*hidden>/);
+  const overview=block(app,'function renderDailyOverview','function filteredMatches');
+  assert.match(overview,/personalCard\.hidden = !personalItem/);
+  assert.match(overview,/root\.hidden = !personalItem/);
+  for(const name of ['kicker','text','meta']){
+    assert.match(overview,new RegExp('if \\('+name+'\\) '+name+'\\.textContent ='));
+  }
+  assert.doesNotMatch(overview,/\.innerHTML\s*=/);
+});
+
+test('compact match cards escape untrusted team labels and use safe logo URLs',()=>{
+  const card=block(app,'function matchCardHtml','function bindMatchActions');
+  assert.match(card,/class="competition-name">\$\{escapeHtml\(m\.league \|\| 'Турнир'\)\}/);
+  assert.match(card,/data-team-name="\$\{escapeHtml\(m\.home\?\.name \|\| ''\)\}"/);
+  assert.match(card,/data-team-name="\$\{escapeHtml\(m\.away\?\.name \|\| ''\)\}"/);
+  assert.match(card,/src="\$\{safeUrl\(m\.home\.logo\)\}"/);
+  assert.match(card,/src="\$\{safeUrl\(m\.away\.logo\)\}"/);
+  assert.match(card,/<strong>\$\{escapeHtml\(m\.home\?\.name \|\| ''\)\}<\/strong>/);
+  assert.match(card,/<strong>\$\{escapeHtml\(m\.away\?\.name \|\| ''\)\}<\/strong>/);
+});
