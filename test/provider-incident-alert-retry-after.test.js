@@ -163,3 +163,54 @@ test('Telegram Retry-After remains bounded and malformed values cannot overflow 
   },now);
   assert.equal(capped.retryAt,'2026-10-05T10:30:00.000Z');
 });
+
+
+
+test('provider Retry-After preserves a valid exact deadline without early replay',()=>{
+  const now=Date.parse('2026-10-08T10:00:00Z');
+  for(const [retryAfter,expected] of [[1,'2026-10-08T10:00:01.000Z'],[75,'2026-10-08T10:01:15.000Z'],[604800,'2026-10-15T10:00:00.000Z']]){
+    const r=classifyProviderIncidentTelegramResult({ok:false,status:429,retryAfter},now);
+    assert.equal(r.state,'retry_pending');
+    assert.equal(r.retryable,true);
+    assert.equal(r.retryAt,expected);
+  }
+});
+
+test('provider Retry-After turns unrepresentable extreme dates into unknown instead of throwing',()=>{
+  for(const date of [8.64e15,8.64e15-1000]){
+    const r=classifyProviderIncidentTelegramResult({ok:false,status:429,retryAfter:604800},date);
+    assert.equal(r.state,'unknown');
+    assert.equal(r.retryAt,null);
+    assert.equal(r.retryable,false);
+    assert.equal(r.reason,'retry_time_unrepresentable');
+  }
+});
+
+test('provider retry cooldown is safe even if host clock is close to the Date limit',()=>{
+  for(const status of [408,425,500,503,599]){
+    const r=classifyProviderIncidentTelegramResult({ok:false,status},8.64e15);
+    assert.equal(r.state,'unknown');
+    assert.equal(r.retryable,false);
+    assert.equal(r.retryAt,null);
+  }
+  const normal=classifyProviderIncidentTelegramResult({ok:false,status:503},Date.parse('2026-10-08T10:00:00Z'));
+  assert.equal(normal.state,'retry_pending');
+  assert.equal(normal.retryAt,'2026-10-08T10:30:00.000Z');
+});
+
+test('provider incident alert delivery persists unknown rather than retrying at an invalid date',async()=>{
+  let finalized,sendCount=0;
+  const result=await deliverProviderIncidentAlert({
+    plan:plan('retry-overflow'),
+    adminTelegramIds:[123],
+    claimDelivery:async()=>({acquired:true,status:'sending',attempts:1}),
+    finalizeDelivery:async row=>{finalized=row;return {ok:true,status:row.status};},
+    sendMessage:async()=>{sendCount++;return {ok:false,status:429,retryAfter:604800};},
+    nowMs:8.64e15,
+  });
+  assert.equal(result.ok,false);
+  assert.equal(sendCount,1);
+  assert.equal(result.outcomes[0].state,'unknown');
+  assert.equal(finalized.status,'unknown');
+  assert.equal(finalized.retryAt,null);
+});
