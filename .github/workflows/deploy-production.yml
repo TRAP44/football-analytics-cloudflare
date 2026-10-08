@@ -235,6 +235,8 @@ jobs:
           PREVIOUS_RELEASE: ${{ steps.production_changes.outputs.previous_release }}
           PREVIOUS_SHA: ${{ steps.production_changes.outputs.previous_sha }}
           CONFIGURED_URL: ${{ vars.CLOUDFLARE_WORKER_URL }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
         shell: bash
         run: |
           set -euo pipefail
