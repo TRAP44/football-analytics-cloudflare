@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createProviderSloRuntime } from '../src/provider-slo-runtime.js';
 
 const worker = fs.readFileSync('src/worker.js','utf8');
 const providerSlo = fs.readFileSync('src/provider-slo-runtime.js','utf8');
@@ -94,4 +95,84 @@ test('provider SLO reader keeps a statement-stable implicit upper bound and read
   assert.match(stableReadiness,/statement_timestamp\(\)/);
   assert.match(stableReadiness,/clock_timestamp\(\)/);
   assert.match(stableReadiness,/pg_get_functiondef/);
+});
+
+
+
+function providerSloReadHarness({rpcValue,restValue,restOk=true,memoryEvents=[]}={}){
+  const calls={rpc:0,rest:0};
+  const runtime=createProviderSloRuntime({
+    memory:{opsEvents:memoryEvents},
+    hasSupabase:()=>true,
+    supaRpc:async()=>{calls.rpc++;return rpcValue;},
+    fetchWithTimeout:async()=>{calls.rest++;return {
+      ok:restOk,
+      json:async()=>restValue,
+    };},
+    supaHeaders:()=>({}),
+    providerSloWindowsFromBuckets:rows=>rows.map(row=>({
+      metadata:{windowId:'provider-slo:verified',row},
+    })),
+  });
+  return {runtime,calls};
+}
+
+test('malformed distributed bucket RPC never masquerades as confirmed empty provider traffic',async()=>{
+  for(const raw of [null,{bad:true},true,'[]',42]){
+    const h=providerSloReadHarness({rpcValue:raw,restValue:[],restOk:false});
+    const result=await h.runtime.readProviderSloWindows({supabaseUrl:'https://db.test'},24,{
+      nowMs:Date.parse('2026-10-08T12:00:00Z'),includeOpen:false,
+    });
+    assert.equal(result.persistent,false);
+    assert.equal(result.migrationReady,false);
+    assert.equal(result.distributed,false);
+    assert.equal(h.calls.rpc,1);
+    assert.equal(h.calls.rest,1);
+  }
+});
+
+test('valid distributed bucket arrays preserve confirmed SLO and do not trigger REST fallback',async()=>{
+  const h=providerSloReadHarness({
+    rpcValue:[{bucket_started_at:'2026-10-08T11:45:00Z',requests:12}],
+    restValue:[],
+  });
+  const result=await h.runtime.readProviderSloWindows({supabaseUrl:'https://db.test'},24,{
+    nowMs:Date.parse('2026-10-08T12:00:00Z'),
+  });
+  assert.equal(result.persistent,true);
+  assert.equal(result.migrationReady,true);
+  assert.equal(result.distributed,true);
+  assert.equal(result.bucketRows,1);
+  assert.equal(result.items.length,1);
+  assert.equal(h.calls.rest,0);
+});
+
+test('malformed REST fallback JSON cannot be reported as persisted SLO or alert events',async()=>{
+  const h=providerSloReadHarness({rpcValue:null,restValue:{message:'error'}});
+  const slo=await h.runtime.readProviderSloWindows({supabaseUrl:'https://db.test'},24);
+  assert.equal(slo.persistent,false);
+  assert.equal(slo.distributed,false);
+  const alerts=await h.runtime.readProviderIncidentAlertEvents({supabaseUrl:'https://db.test'},24);
+  assert.equal(alerts.persistent,false);
+  assert.equal(alerts.migrationReady,false);
+  assert.deepEqual(alerts.items,[]);
+});
+
+test('provider SLO reads keep a bounded finite lookback when callers supply malformed options',async()=>{
+  const h=providerSloReadHarness({rpcValue:[],restValue:[]});
+  for(const hours of [true,'24',{},NaN,Infinity,0,-1]){
+    const result=await h.runtime.readProviderSloWindows({supabaseUrl:'https://db.test'},hours,{
+      nowMs:Date.parse('2026-10-08T12:00:00Z'),
+    });
+    assert.equal(result.hours,24);
+    assert.equal(result.distributed,true);
+  }
+  const bounded=await h.runtime.readProviderSloWindows({supabaseUrl:'https://db.test'},999,{
+    nowMs:Date.parse('2026-10-08T12:00:00Z'),
+  });
+  assert.equal(bounded.hours,168);
+  const invalidClock=await h.runtime.readProviderSloWindows({supabaseUrl:'https://db.test'},5,{
+    nowMs:8.64e15,
+  });
+  assert.equal(invalidClock.persistent,true);
 });
