@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { resolveActiveProductionReleaseIdentity, verifyProductionReleasePostcondition } from '../scripts/verify-production-release-postcondition.js';
+import { activeProductionVersion, resolveActiveProductionReleaseIdentity, verifyProductionReleasePostcondition } from '../scripts/verify-production-release-postcondition.js';
 
 const workflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const activeId = '11111111-2222-3333-4444-555555555555';
@@ -178,4 +178,36 @@ test('RC120 exposes the active production release identity for cumulative runtim
     ),
     /release identity mismatch/,
   );
+});
+
+
+test('Active production resolves from a pinned Cloudflare version view outside the recent ten', () => {
+  const traffic = deployment([{ version_id: activeId, percentage: 100 }]);
+  const exact = version(activeId, `release=${release} sha=${sha}`);
+  assert.equal(activeProductionVersion(traffic), activeId);
+  const result = verifyProductionReleasePostcondition(traffic, exact, release, sha);
+  assert.equal(result.versionId, activeId);
+  assert.equal(result.sha, sha);
+  assert.throws(
+    () => verifyProductionReleasePostcondition(traffic, version(otherId, `release=${release} sha=${sha}`), release, sha),
+    /missing from the recent Cloudflare versions list/,
+  );
+  assert.throws(
+    () => activeProductionVersion(deployment([
+      { version_id: activeId, percentage: 80 },
+      { version_id: otherId, percentage: 20 },
+    ])),
+    /one version at 100% traffic/,
+  );
+});
+
+test('Production gate pins the active version and keeps rollback preflight mandatory', () => {
+  const start = workflow.indexOf('- name: Detect pending production artifact changes');
+  const end = workflow.indexOf('- name: Preflight previous-known-good rollback target');
+  const detection = workflow.slice(start, end);
+  assert.match(detection, /--print-active-version-id/);
+  assert.match(detection, /wrangler versions view "\$ACTIVE_VERSION_ID" --json/);
+  assert.doesNotMatch(detection, /wrangler versions list --json/);
+  assert.match(detection, /--print-active-rollback-target/);
+  assert.match(detection, /Safe production deployment blocked/);
 });
