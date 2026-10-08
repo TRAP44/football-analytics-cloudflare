@@ -134,3 +134,19 @@ test('worker delegates preferences storage boundary through service wiring', () 
   }
   assert.doesNotMatch(worker,/async function (?:getPreferences|savePreferences)\(/);
 });
+
+test('preferences reject non-boolean toggles without converting string false to true',()=>{
+  const {service}=runtime();
+  const normalized=service.normalizePreferences({
+    defaultFilter:'__proto__',
+    reminderMinutes:'1e3',
+    kickoffNotification:'false',
+    hideYouth:0,
+    favoriteFirst:null,
+  });
+  assert.equal(normalized.defaultFilter,DEFAULT_PREFERENCES.defaultFilter);
+  assert.equal(normalized.reminderMinutes,DEFAULT_PREFERENCES.reminderMinutes);
+  assert.equal(normalized.kickoffNotification,DEFAULT_PREFERENCES.kickoffNotification);
+  assert.equal(normalized.hideYouth,DEFAULT_PREFERENCES.hideYouth);
+  assert.equal(normalized.favoriteFirst,DEFAULT_PREFERENCES.favoriteFirst);
+});

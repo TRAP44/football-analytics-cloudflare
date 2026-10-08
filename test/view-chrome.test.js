@@ -96,3 +96,20 @@ test('view chrome remains separate from extracted Match Center live refresh life
   assert.match(matchCenterController, /function scheduleLiveRefresh\(fixtureId\)/);
   assert.doesNotMatch(navigationShell, /stopLiveRefresh|liveRefreshTimer/);
 });
+
+test('view chrome has frozen public labels and safe fallbacks for unknown back targets',()=>{
+  assert.equal(Object.isFrozen(VIEW_CHROME),true);
+  assert.equal(Object.isFrozen(VIEW_CHROME.matchesView),true);
+  assert.equal(Object.isFrozen(BACK_VIEW_LABELS),true);
+  const elements={backBtn:element(),topbarTitle:element(),topbarSubtitle:element()};
+  const controller=createViewChromeController({
+    elementById:id=>elements[id]||null,
+    telegramWebApp:null,
+    resolveBackTarget:()=> 'unknownView',
+    isTelegramBackVisible:()=>false,
+  });
+  controller.syncTopbar('does-not-exist');
+  controller.syncBackButtons();
+  assert.equal(elements.topbarTitle.textContent,'Главная');
+  assert.equal(elements.backBtn.textContent,'← Назад');
+});

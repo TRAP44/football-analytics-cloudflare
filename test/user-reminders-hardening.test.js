@@ -205,3 +205,24 @@ test('HTTP contract exposes cache-unavailable reminder validation as recoverable
   assert.match(http,/category: 'fixture_validation'/);
   assert.match(http,/recoverable: true/);
 });
+
+test('guarded reminder RPC must return the exact user and fixture identity',async()=>{
+  const {service,rpcCalls}=runtime({
+    hasSupabase:()=>true,
+    supaRpc:async(_cfg,name,args)=>{
+      rpcCalls.push({name,args});
+      return {
+        allowed:true,
+        item:{
+          telegram_id:args.p_telegram_id+1,
+          fixture_id:args.p_fixture_id,
+        },
+      };
+    },
+  });
+  await assert.rejects(
+    ()=>service.addReminder(7,{fixtureId:101},{supabaseUrl:'https://db.test'}),
+    /Supabase reminders: invalid guarded RPC response/,
+  );
+  assert.deepEqual(rpcCalls.map(call=>call.name),['save_match_reminder_guarded_v2']);
+});

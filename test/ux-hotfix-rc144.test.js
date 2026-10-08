@@ -146,3 +146,11 @@ test('ordinary profile copy avoids implementation vocabulary', () => {
   assert.match(profileDataCapabilities, /Если каких-то данных нет, MatchRadar не подставляет их искусственно/);
   assert.match(app, /createProfileDataCapabilitiesModule\(\{ state, elementById: \$ \}\)/);
 });
+
+test('public profile does not display implementation metadata or expose admin-only panels',()=>{
+  assert.doesNotMatch(html,/id="adminRoleBadge"|class="panel admin-console"|data-admin-only/);
+  assert.match(adminHtml,/class="panel admin-console" data-admin-only hidden/);
+  assert.match(profileSummary,/profileButtonLabel\.textContent = 'Профиль'/);
+  assert.match(profileSummary,/profileUsername'\)\.textContent = username/);
+  assert.doesNotMatch(profileSummary,/\binnerHTML\s*=/);
+});

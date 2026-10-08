@@ -181,3 +181,15 @@ test('worker delegates reminder CRUD and delivery through service wiring', () =>
   assert.match(wiring,/createReminderDeliveryStore\(\{/);
   assert.doesNotMatch(worker,/async function (?:getReminders|addReminder|removeReminder|processDueReminders|claimReminderDelivery)\(/);
 });
+
+test('invalid kickoff notification type is rejected before any database mutation',async()=>{
+  const {service,rpcCalls}=runtime({hasSupabase:()=>true});
+  await assert.rejects(
+    ()=>service.addReminder(7,{
+      fixtureId:101,homeName:'Home',awayName:'Away',
+      kickoffNotify:'false',
+    },{supabaseUrl:'https://db.test'}),
+    error=>error?.code==='PERSONAL_DATA_INVALID',
+  );
+  assert.equal(rpcCalls.length,0);
+});

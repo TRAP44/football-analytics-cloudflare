@@ -64,3 +64,15 @@ test('server manifest advertises unified search capabilities', () => {
   assert.match(worker, /searchMatchHistory:\s*true/);
   assert.match(worker, /searchLeagueFixtures:\s*true/);
 });
+
+test('unified search discards out-of-order provider responses and errors',()=>{
+  const controller=fs.readFileSync('public/modules/global-search-controller.js','utf8');
+  const start=controller.indexOf('async function runGlobalSearch');
+  const end=controller.indexOf('function ',start+20);
+  assert.ok(start>=0);
+  const flow=controller.slice(start,start+6000);
+  assert.match(flow,/const seq=nextRequestSeq\(\)/);
+  assert.match(flow,/seq!==currentRequestSeq\(\)/);
+  assert.match(flow,/query!==currentQuery\(\)/);
+  assert.match(flow,/catch \(error\) \{\s*if \(seq!==currentRequestSeq\(\)\) return/);
+});

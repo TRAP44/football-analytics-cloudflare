@@ -50,3 +50,12 @@ test('small-screen controls retain usable touch targets and search input avoids 
   assert.match(css, /\.back-btn, \.icon-btn, \.global-search-btn, \.history-open\s*\{\s*min-height:\s*44px/);
   assert.match(css, /min-height:\s*100dvh/);
 });
+
+test('navigation keeps inactive panels inaccessible and clears stale active navigation flags',()=>{
+  assert.match(navigationShell,/view\.hidden = !active/);
+  assert.match(navigationShell,/view\.toggleAttribute\('inert', !active\)/);
+  assert.match(navigationShell,/view\.setAttribute\('aria-hidden', active \? 'false' : 'true'\)/);
+  assert.match(navigationShell,/item\.removeAttribute\('aria-current'\)/);
+  assert.match(navigationShell,/item\.setAttribute\('aria-current', 'page'\)/);
+  assert.match(html,/id="navMatches"[^>]*aria-current="page"/);
+});

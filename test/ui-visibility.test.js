@@ -23,3 +23,10 @@ test('admin-only blocks fail closed in the DOM', () => {
   assert.match(css, /\[data-admin-only\]\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i);
   assert.match(css, /\[data-admin-only\]\[aria-hidden="true"\]/i);
 });
+
+test('public shell never embeds the admin console while admin shell defaults hidden',()=>{
+  assert.doesNotMatch(html,/data-admin-only|id="adminRoleBadge"|class="panel admin-console"/);
+  assert.match(adminHtml,/<section class="panel admin-console" data-admin-only hidden>/);
+  assert.match(adminHtml,/id="adminRoleBadge"[^>]*data-admin-only hidden aria-hidden="true"/);
+  assert.match(app,/el\.setAttribute\('aria-hidden',admin \? 'false' : 'true'\)/);
+});

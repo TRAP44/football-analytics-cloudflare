@@ -118,3 +118,21 @@ test('worker delegates favorites storage boundary through service wiring', () =>
   }
   assert.doesNotMatch(worker,/async function (?:getFavorites|addFavorite|removeFavorite)\(/);
 });
+
+test('favorites reject unsafe identifiers without dispatching a guarded database write',async()=>{
+  const {service,rpcCalls,fetchCalls}=runtime({hasSupabase:()=>true});
+  for(const userId of [0,-1,1.5,true,'1e3']){
+    await assert.rejects(
+      ()=>service.addFavorite(userId,{id:10,name:'Team'},{}),
+      error=>error?.code==='PERSONAL_DATA_INVALID',
+    );
+  }
+  for(const teamId of [0,-1,1.5,true,Number.MAX_SAFE_INTEGER+1]){
+    await assert.rejects(
+      ()=>service.removeFavorite(7,teamId,{supabaseUrl:'https://db.test'}),
+      error=>error?.code==='PERSONAL_DATA_INVALID',
+    );
+  }
+  assert.equal(rpcCalls.length,0);
+  assert.equal(fetchCalls.length,0);
+});

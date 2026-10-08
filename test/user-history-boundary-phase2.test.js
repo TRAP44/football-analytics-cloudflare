@@ -194,3 +194,16 @@ test('worker delegates history storage boundary through service wiring', () => {
   assert.match(wiring,/\bgetHistory\b/);
   assert.doesNotMatch(worker,/async function (?:recordHistory|getHistory)\(/);
 });
+
+test('history rejects misleading AI confidence types without abandoning the saved match',async()=>{
+  const {service}=runtime();
+  const p=payload(333);
+  p.aiInstructor.confidenceScore=true;
+  p.aiInstructor.betSignal.code={toString:()=> 'FORGED'};
+  const saved=await service.recordHistory(7,p,{});
+  const rows=await service.getHistory(7,{});
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].fixture_id,333);
+  assert.equal(rows[0].ai_confidence,null);
+  assert.equal(rows[0].ai_signal_code,'');
+});
