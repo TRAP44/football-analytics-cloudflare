@@ -250,17 +250,22 @@ export function createProviderSloRuntime(deps) {
     if (!hasSupabase(cfg)) return { ok:false, status:'not_configured', version:'' };
     try {
       const raw = await supaRpc(cfg,'provider_incident_alert_delivery_contract',{},3000);
-      const ok = Boolean(raw?.ok);
+      const fields={
+        table:raw?.table === true,
+        claimRpc:raw?.claimRpc === true,
+        claimV2Rpc:raw?.claimV2Rpc === true,
+        beginRpc:raw?.beginRpc === true,
+        finalizeRpc:raw?.finalizeRpc === true,
+        uniqueIdentity:raw?.uniqueIdentity === true,
+        rls:raw?.rls === true,
+      };
+      const version=typeof raw?.version === 'string' ? raw.version : '';
+      const ok=raw?.ok === true && version==='v2' && Object.values(fields).every(Boolean);
       return {
         ok,
         status:ok ? 'ok' : 'contract_mismatch',
-        version:String(raw?.version || ''),
-        table:Boolean(raw?.table),
-        claimRpc:Boolean(raw?.claimRpc),
-        claimV2Rpc:Boolean(raw?.claimV2Rpc),
-        beginRpc:Boolean(raw?.beginRpc),
-        finalizeRpc:Boolean(raw?.finalizeRpc),
-        uniqueIdentity:Boolean(raw?.uniqueIdentity),
+        version,
+        ...fields,
       };
     } catch (error) {
       return {
@@ -295,7 +300,7 @@ export function createProviderSloRuntime(deps) {
       p_alert_key:String(input.alertKey || ''),
       p_destination_key:String(input.destinationKey || ''),
     },4000);
-    if (!raw?.ok || String(raw?.status || '').toLowerCase()!=='sending') {
+    if (raw?.ok !== true || raw?.status !== 'sending') {
       throw new Error('Persistent incident alert begin-send transition was not confirmed: ' + String(raw?.reason || 'unknown'));
     }
     return raw;
@@ -312,7 +317,7 @@ export function createProviderSloRuntime(deps) {
       p_error_code:input.errorCode ? String(input.errorCode).slice(0,80) : null,
       p_error_message:input.errorMessage ? redactOpsString(input.errorMessage,160) : null,
     },4000);
-    if (!raw?.ok) {
+    if (raw?.ok !== true) {
       throw new Error('Persistent incident alert finalization was not confirmed: ' + String(raw?.reason || 'unknown'));
     }
     return raw;

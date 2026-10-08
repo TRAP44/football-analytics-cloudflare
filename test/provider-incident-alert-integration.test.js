@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createProviderSloRuntime } from '../src/provider-slo-runtime.js';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
 const adminOperationalApi=fs.readFileSync('src/admin-operational-api.js','utf8');
@@ -138,4 +139,96 @@ test('v6.26.2 keeps the v1 claim RPC for rollback compatibility and hardens tabl
   assert.match(migration405,/revoke all privileges on table public\.provider_incident_alert_deliveries[\s\S]*service_role/);
   assert.match(migration405,/grant select, insert, update, delete on table public\.provider_incident_alert_deliveries[\s\S]*to service_role/);
   assert.match(migration405,/revoke execute on function public\.claim_provider_incident_alert_delivery_v2[\s\S]*from public, anon, authenticated/);
+});
+
+
+
+function providerLedgerHarness(response,enabled=true){
+  const calls=[];
+  const runtime=createProviderSloRuntime({
+    hasSupabase:()=>enabled,
+    supaRpc:async(_cfg,name,args,timeout)=>{
+      calls.push({name,args,timeout});
+      return typeof response==='function' ? response(name,args) : response;
+    },
+    redactOpsString:value=>String(value??'').slice(0,160),
+  });
+  return {runtime,calls};
+}
+
+function providerLedgerContract(fields={}){
+  return {
+    ok:true,version:'v2',table:true,claimRpc:true,claimV2Rpc:true,
+    beginRpc:true,finalizeRpc:true,uniqueIdentity:true,rls:true,
+    ...fields,
+  };
+}
+
+test('incident delivery contract requires real booleans for every PostgreSQL gate',async()=>{
+  const valid=providerLedgerHarness(providerLedgerContract());
+  const healthy=await valid.runtime.readProviderIncidentAlertDeliveryContract({});
+  assert.equal(healthy.ok,true);
+  assert.equal(healthy.status,'ok');
+  assert.equal(healthy.rls,true);
+  for(const broken of [
+    {ok:'true'},
+    {ok:false},
+    {table:'false'},
+    {claimRpc:'true'},
+    {claimV2Rpc:'true'},
+    {beginRpc:'true'},
+    {finalizeRpc:'true'},
+    {uniqueIdentity:'true'},
+    {rls:'true'},
+    {version:'v1'},
+  ]){
+    const bad=providerLedgerHarness(providerLedgerContract(broken));
+    const state=await bad.runtime.readProviderIncidentAlertDeliveryContract({});
+    assert.equal(state.ok,false,JSON.stringify(broken));
+    assert.equal(state.status,'contract_mismatch');
+  }
+});
+
+test('incident begin-send requires an explicit confirmed sending state',async()=>{
+  const input={alertKey:'pslo-test:incident',destinationKey:'dest-key-1'};
+  for(const response of [
+    {ok:'true',status:'sending'},
+    {ok:1,status:'sending'},
+    {ok:true,status:'claimed'},
+    {ok:true,status:{toString:()=> 'sending'}},
+    null,
+  ]){
+    const {runtime,calls}=providerLedgerHarness(response);
+    await assert.rejects(
+      ()=>runtime.beginProviderIncidentAlertDeliverySend({},input),
+      /not confirmed/,
+    );
+    assert.equal(calls.length,1);
+    assert.equal(calls[0].name,'begin_provider_incident_alert_delivery_send');
+  }
+  const success=providerLedgerHarness({ok:true,status:'sending',attempts:1});
+  assert.equal((await success.runtime.beginProviderIncidentAlertDeliverySend({},input)).status,'sending');
+});
+
+test('incident finalization refuses truthy but unconfirmed Supabase results',async()=>{
+  const input={alertKey:'pslo-test:incident',destinationKey:'dest-key-1',status:'sent'};
+  for(const result of [{ok:'true'},{ok:1},{ok:'false'},null]){
+    const {runtime,calls}=providerLedgerHarness(result);
+    await assert.rejects(()=>runtime.finalizeProviderIncidentAlertDelivery({},input),/not confirmed/);
+    assert.equal(calls.length,1);
+    assert.equal(calls[0].name,'finalize_provider_incident_alert_delivery');
+  }
+  const success=providerLedgerHarness({ok:true,status:'sent'});
+  assert.equal((await success.runtime.finalizeProviderIncidentAlertDelivery({},input)).ok,true);
+});
+
+test('incident delivery fails closed before persistence if the database is absent',async()=>{
+  const {runtime,calls}=providerLedgerHarness({ok:true},false);
+  const contract=await runtime.readProviderIncidentAlertDeliveryContract({});
+  assert.equal(contract.ok,false);
+  assert.equal(contract.status,'not_configured');
+  await assert.rejects(()=>runtime.claimProviderIncidentAlertDelivery({},{}),/unavailable/);
+  await assert.rejects(()=>runtime.beginProviderIncidentAlertDeliverySend({},{}),/unavailable/);
+  await assert.rejects(()=>runtime.finalizeProviderIncidentAlertDelivery({},{}),/unavailable/);
+  assert.equal(calls.length,0);
 });
