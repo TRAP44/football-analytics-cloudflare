@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createSupabaseSchemaRuntime } from '../src/supabase-schema-runtime.js';
 
 const schemaRuntime = fs.readFileSync('src/supabase-schema-runtime.js', 'utf8');
 const monitorRuntime = fs.readFileSync('src/production-monitor-runtime.js', 'utf8');
@@ -20,10 +21,6 @@ test('production monitor waits for reminder reads before deep Supabase schema pr
   assert.match(scheduled, /const monitorAfterReminders = remindersTask[\s\S]*?\.then\(\(\) => run\('production_monitor', \(\) => runProductionMonitor\(cfg, scheduledAt\)\)\);/);
   assert.match(scheduled, /tasks\.push\(\['production_monitor', monitorAfterReminders\]\);/);
 });
-
-
-
-import { createSupabaseSchemaRuntime } from '../src/supabase-schema-runtime.js';
 
 function schemaProbeHarness(overrides={}) {
   return createSupabaseSchemaRuntime({
