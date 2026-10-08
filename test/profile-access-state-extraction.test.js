@@ -156,3 +156,49 @@ test('unknown profile access states fail closed instead of silently exposing pro
   assert.match(elements.get('profileRecovery').innerHTML,/Профиль временно недоступен/);
   assert.match(elements.get('profileRecovery').innerHTML,/нет соединения/);
 });
+
+
+
+test('non-string profile recovery messages use safe localized defaults without coercion',()=>{
+  const {module,elements}=createModule();
+  for(const message of [{toString:()=>{throw new Error('must not coerce')}},[],true,42,null,'   ']){
+    assert.doesNotThrow(()=>module.renderProfileAccessState('error',message));
+    assert.match(elements.get('profileRecovery').innerHTML,/Не удалось обновить профиль/);
+    assert.doesNotMatch(elements.get('profileRecovery').innerHTML,/must not coerce/);
+  }
+  module.renderProfileAccessState('loading',{toString:()=>{throw new Error('not text')}});
+  assert.match(elements.get('profileRecovery').innerHTML,/Получаем ваши настройки и избранное/);
+});
+
+test('profile recovery sanitizes untrusted error markup before insertion',()=>{
+  const {module,elements}=createModule();
+  const input='<img src=x onerror=alert(1)>';
+  module.renderProfileAccessState('error',input);
+  const html=elements.get('profileRecovery').innerHTML;
+  assert.match(html,/&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.doesNotMatch(html,/<img src=x/);
+  assert.match(html,/role="status"/);
+});
+
+test('profile state transitions restore ready UI after errors and subsequent reloads',()=>{
+  const {module,elements}=createModule();
+  module.renderProfileAccessState('error','offline');
+  assert.equal(elements.get('profileView').classList.contains('profile-unavailable'),true);
+  module.renderProfileAccessState('loading','still loading');
+  assert.match(elements.get('profileRecovery').innerHTML,/still loading/);
+  assert.doesNotMatch(elements.get('profileRecovery').innerHTML,/<button/);
+  module.renderProfileAccessState();
+  assert.equal(elements.get('profileRecovery').hidden,true);
+  assert.equal(elements.get('profileRecovery').innerHTML,'');
+  assert.equal(elements.get('profileView').classList.contains('profile-unavailable'),false);
+});
+
+test('missing retry button remains nonfatal and cannot invoke an injected retry action',()=>{
+  let retries=0;
+  const elements=createElements();
+  elements.delete('profileRecoveryRetry');
+  const {module}=createModule({elements,onRetry:()=>{retries++;}});
+  assert.doesNotThrow(()=>module.renderProfileAccessState('error','offline'));
+  assert.match(elements.get('profileRecovery').innerHTML,/Профиль временно недоступен/);
+  assert.equal(retries,0);
+});

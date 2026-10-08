@@ -22,9 +22,11 @@ export function createProfileAccessStateModule({
     }
 
     const loading = kind === 'loading';
+    const fallbackMessage = loading ? 'Получаем ваши настройки и избранное.' : 'Не удалось обновить профиль.';
+    const safeMessage = typeof message === 'string' && message.trim() ? message : fallbackMessage;
     root.innerHTML = `<section class="panel journey-state ${loading ? 'is-loading' : 'is-error'}" role="status" aria-live="polite">
       <span class="journey-state-icon">${loading ? '⏳' : '↻'}</span>
-      <div><strong>${loading ? 'Загружаем профиль' : 'Профиль временно недоступен'}</strong><p>${escapeHtml(message || (loading ? 'Получаем ваши настройки и избранное.' : 'Не удалось обновить профиль.'))}</p></div>
+      <div><strong>${loading ? 'Загружаем профиль' : 'Профиль временно недоступен'}</strong><p>${escapeHtml(safeMessage)}</p></div>
       ${loading ? '' : '<button id="profileRecoveryRetry" class="primary-setting-btn" type="button">Повторить</button>'}
     </section>`;
 
