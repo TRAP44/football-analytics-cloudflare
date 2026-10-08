@@ -57,7 +57,7 @@ test('all team names are HTML escaped and layout wired after analysis hero',()=>
   const data=payload();
   data.match.home.name='<script>alert(1)</script>';
   const html=renderFormIntelligence(data);
-  assert.doesNotMatch(html,/<script>/);
+  assert.equal(html.includes('<script>'),false);
   assert.match(html,/&lt;script&gt;/);
   const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
   const css=readFileSync(new URL('../public/styles/public-shell.css',import.meta.url),'utf8');
