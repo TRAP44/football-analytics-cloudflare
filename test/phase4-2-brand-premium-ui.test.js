@@ -108,3 +108,56 @@ test('MatchRadar brand specification remains the current public contract',()=>{
   assert.match(brand,/source of truth/);
   assert.doesNotMatch(brand,/FutLens|FM AI/);
 });
+
+
+
+test('brand SVG assets have accessible titles and do not embed active or remote content',()=>{
+  for(const path of [
+    'public/assets/brand/matchradar-mark.svg',
+    'public/assets/brand/matchradar-avatar.svg',
+    'public/assets/brand/matchradar-wordmark.svg',
+  ]){
+    const svg=fs.readFileSync(path,'utf8');
+    assert.match(svg,/<svg\b[^>]*xmlns="http:\/\/www\.w3\.org\/2000\/svg"[^>]*viewBox="/);
+    assert.match(svg,/<svg\b[^>]*role="img"[^>]*aria-labelledby="title"/);
+    assert.match(svg,/<title id="title">[^<]+<\/title>/);
+    assert.doesNotMatch(svg,/<(?:script|foreignObject|iframe|image)\b/i);
+    assert.doesNotMatch(svg,/\bon[a-z]+\s*=|javascript:|(?:xlink:)?href\s*=/i);
+  }
+});
+
+test('brand icon and copy stay consistent between loading and app navigation',()=>{
+  const boot=block(html,'<div id="bootGate"','<div class="app-shell">');
+  const header=block(html,'<header class="topbar"','</header>');
+  assert.match(boot,/<img src="\/assets\/brand\/matchradar-mark\.svg" alt=""/);
+  assert.match(header,/<img src="\/assets\/brand\/matchradar-mark\.svg" alt=""/);
+  assert.match(header,/<div class="eyebrow">MatchRadar<\/div>/);
+  assert.match(header,/<p id="topbarSubtitle">Видим, что меняет матч\.<\/p>/);
+  assert.match(html,/<link rel="icon" type="image\/svg\+xml" href="\/assets\/brand\/matchradar-mark\.svg\?/);
+});
+
+test('premium bottom navigation has four semantic buttons and one active page',()=>{
+  const nav=block(html,'<nav class="bottom-nav"','</nav>');
+  assert.match(nav,/aria-label="Основная навигация"/);
+  for(const id of ['navMatches','navMyTeams','navHistory','navProfile']){
+    assert.match(nav,new RegExp('<button id="'+id+'"[^>]*type="button"'));
+  }
+  assert.equal((nav.match(/<button\b/g)||[]).length,4);
+  assert.equal((nav.match(/aria-current="page"/g)||[]).length,1);
+  assert.match(nav,/id="navMatches"[^>]*aria-current="page"/);
+});
+
+test('legal and support links remain user-facing, local and outside the match-search view',()=>{
+  const profile=block(html,'<section id="profileView"','<nav class="bottom-nav"');
+  for(const [route,label] of [
+    ['/privacy.html','Конфиденциальность'],
+    ['/terms.html','Условия использования'],
+    ['/status.html','Статус сервиса'],
+  ]){
+    assert.ok(profile.includes('<a href="'+route+'">'+label+'</a>'),'Missing '+route);
+  }
+  assert.match(profile,/<button id="betaFeedbackOpenBtn"[^>]*type="button"[^>]*aria-expanded="false"/);
+  assert.match(profile,/<div id="betaFeedbackForm"[^>]*hidden>/);
+  const search=block(html,'<section id="searchView"','<section id="tournamentView"');
+  assert.doesNotMatch(search,/href="\/(?:privacy|terms|status)\.html"/);
+});
