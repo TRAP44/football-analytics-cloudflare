@@ -1764,3 +1764,21 @@ html[data-theme="light"] .miniapp-public-shell {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
+
+/* Provider cooldown keeps the retry and cached-LIVE escape actions accessible. */
+.miniapp-public-shell .matches-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+  min-width: 0;
+}
+.miniapp-public-shell .matches-error-actions > button {
+  flex: 1 1 128px;
+  min-height: 42px;
+  width: auto;
+  max-width: 100%;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
