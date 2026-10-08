@@ -217,3 +217,37 @@ test('Retry-After supports HTTP-date form', () => {
   const headers = new Headers({ 'Retry-After':'Thu, 01 Jan 1970 00:00:20 GMT' });
   assert.equal(retryAfterSeconds(headers, 60, 10_000), 10);
 });
+
+test('Retry-After clamps numeric values and falls back on malformed headers',()=>{
+  assert.equal(retryAfterSeconds(new Headers(),60,10_000),60);
+  assert.equal(retryAfterSeconds(new Headers({'Retry-After':'0'}),60,10_000),1);
+  assert.equal(retryAfterSeconds(new Headers({'Retry-After':'4.2'}),60,10_000),5);
+  assert.equal(retryAfterSeconds(new Headers({'Retry-After':'not-a-date'}),12,10_000),12);
+  assert.equal(retryAfterSeconds(new Headers({'Retry-After':'Thu, 01 Jan 1970 00:00:05 GMT'}),60,10_000),1);
+});
+test('secondary provider retries are capped at two even with excessive configuration',async()=>{
+  let calls=0;
+  const {api,sleeps}=runtime({
+    fetchWithTimeout:async()=>{calls+=1;throw new Error('unavailable');},
+  });
+  await assert.rejects(
+    ()=>api.providerRequestJson('https://example.com/data',{},{
+      provider:'OpenLigaDB',operation:'events',retries:999,
+    }),
+    error=>error?.code==='PROVIDER_NETWORK_ERROR',
+  );
+  assert.equal(calls,3);
+  assert.deepEqual(sleeps,[180,360]);
+});
+test('secondary provider single-flight keys remove all sensitive query values',async()=>{
+  const {api,keys}=runtime();
+  await api.providerRequestJson(
+    'https://example.com/data?apikey=secret-one&token=secret-two&authorization=secret-three&league=39',
+    {},{provider:'OpenLigaDB',operation:'standings'},
+  );
+  assert.equal(keys.length,1);
+  for(const value of ['secret-one','secret-two','secret-three']){
+    assert.equal(keys[0].includes(value),false,value);
+  }
+  assert.match(keys[0],/league=39/);
+});

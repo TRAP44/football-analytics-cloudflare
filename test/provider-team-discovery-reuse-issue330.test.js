@@ -56,3 +56,19 @@ test('Issue #330 leaves distributed guard and LIVE provider feature policy intac
   assert.match(policy,/\['events','statistics'\]/);
   assert.match(policy,/ttlSeconds = Math\.max\(ttlSeconds, 180\)/);
 });
+
+test('Issue #330 caches only deduplicated team fixtures and preserves no-network mode',()=>{
+  const helper=block(
+    'async function loadProviderTeamDiscoveryFixtures',
+    'function providerFixtureDirectCacheKey',
+    providerFixtureRuntime,
+  );
+  assert.match(helper,/if \(!id\) return \[\]/);
+  assert.match(helper,/if \(!allowNetwork\) return \[\]/);
+  assert.match(helper,/Promise\.allSettled\(\[/);
+  assert.match(helper,/seenFixtures\.has\(fixtureId\)/);
+  assert.match(helper,/seenFixtures\.add\(fixtureId\)/);
+  assert.match(helper,/homeId!==id && awayId!==id/);
+  assert.match(helper,/if \(errors\.length===2\) throw errors\[0\]/);
+  assert.match(helper,/const ttlMinutes=partial \? 5 : hasLive \? liveTtl : 120/);
+});

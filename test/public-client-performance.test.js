@@ -170,3 +170,41 @@ test('identical initial GET requests are coalesced into one network round-trip',
     globalThis.fetch=originalFetch;
   }
 });
+
+test('client coalesces only identical GETs, not distinct URLs or POST writes',async()=>{
+  const originalFetch=globalThis.fetch;
+  const requests=[];
+  globalThis.fetch=async(path,options)=>{
+    requests.push([path,options.method]);
+    return new Response(JSON.stringify({ok:true}),{
+      status:200,headers:{'content-type':'application/json'},
+    });
+  };
+  const state={
+    compatibilityBlocked:false,
+    runtimeStatus:null,
+    clientPerf:{requests:0,deduped:0,retries:0,rateLimited:0,completed:0,lastMs:0,totalMs:0,failed:0,timeouts:0},
+  };
+  const inflightGetRequests=new Map();
+  try{
+    const api=createApiClient({
+      state,tg:null,inflightGetRequests,
+      observeServerVersion(){},showBootRecovery(){},applyRuntimeUi(){},
+      normalizeApiError:error=>error,noteRequestSuccess(){},noteRequestFailure(){},
+    });
+    await Promise.all([
+      api('/api/matches?date=2026-10-01',{retry:false}),
+      api('/api/matches?date=2026-10-02',{retry:false}),
+    ]);
+    await Promise.all([
+      api('/api/analyze',{method:'POST',body:'{}',retry:false}),
+      api('/api/analyze',{method:'POST',body:'{}',retry:false}),
+    ]);
+    assert.equal(requests.length,4);
+    assert.deepEqual(requests.map(item=>item[1]),['GET','GET','POST','POST']);
+    assert.equal(state.clientPerf.deduped,0);
+    assert.equal(inflightGetRequests.size,0);
+  }finally{
+    globalThis.fetch=originalFetch;
+  }
+});

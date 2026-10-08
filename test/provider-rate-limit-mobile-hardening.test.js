@@ -158,7 +158,6 @@ test('public shell owns final shared layout declarations without duplicate base 
 
 test('360-400px mobile layout keeps score status teams and title stable',()=>{
   assert.match(css,/\.center-score-core > strong,[\s\S]*white-space:\s*nowrap/);
-  assert.match(css,/\.center-score-core > strong,[\s\S]*white-space:\s*nowrap/);
   assert.match(css,/\.center-team-card strong[\s\S]*-webkit-line-clamp: 2/);
   assert.match(css,/#topbarTitle[\s\S]*overflow-wrap: anywhere/);
   assert.match(css,/@media \(max-width: 430px\)/);
@@ -198,4 +197,15 @@ test('Match Center preserves the originating view across degraded provider failu
   assert.match(request,/if \(existing\)/);
   assert.match(request,/inFlight\.set\(key, task\)/);
   assert.match(request,/inFlight\.delete\(key\)/);
+});
+
+test('FREE provider protection remains coupled to shared caches and bounded cooldown UI',()=>{
+  const fixtureLoader=block(providerFixtureRuntime,'async function loadProviderFixturesForDate','function providerFixtureDirectCacheKey');
+  const gatewayBudget=block(gateway,'async function apiFootballNetwork','function providerRequestKey');
+  const cooldown=block(app,'function updateConnectionBanner','function noteClientError');
+  assert.match(fixtureLoader,/getCache\(/);
+  assert.match(fixtureLoader,/providerFixtureDateReuses/);
+  assert.match(gatewayBudget,/providerQuotaEvidence\(cfg\)/);
+  assert.match(cooldown,/retryRemaining > 0/);
+  assert.doesNotMatch(cooldown,/setInterval\(/);
 });

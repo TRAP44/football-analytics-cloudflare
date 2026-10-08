@@ -54,3 +54,12 @@ test('public and admin surfaces stay on one centralized frontend revision', () =
   assert.ok(publicHtml.includes(`/app.js?v=${FRONTEND_ASSET_REVISION}`));
   assert.ok(adminHtml.includes(`/app.js?v=${FRONTEND_ASSET_REVISION}`));
 });
+
+test('public HTML declares public surface and never loads admin-only assets',()=>{
+  assert.match(publicHtml,/<meta name="matchradar-surface" content="public"/);
+  assert.doesNotMatch(publicHtml,/matchradar-surface" content="admin"/);
+  assert.doesNotMatch(publicHtml,/<script\b[^>]*\bsrc=["'][^"']*admin(?:\.|\/|-)/i);
+  assert.match(adminHtml,/<meta name="matchradar-surface" content="admin"/);
+  assert.match(publicHtml,/<script type="module" src="\/app\.js\?v=/);
+  assert.match(adminHtml,/<script type="module" src="\/app\.js\?v=/);
+});

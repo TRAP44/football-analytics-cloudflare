@@ -183,3 +183,25 @@ test('Issue #411 router has no duplicated direct provider-backed route dispatch 
     assert.doesNotMatch(source,direct,route.method+' '+route.path+' must remain registry-dispatched');
   }
 });
+
+test('provider registry rejects duplicate routes and missing lockdown policies',()=>{
+  const routes=providerBackedRouteInventory();
+  assert.throws(
+    ()=>validateProviderBackedRouteDefinitions([...routes,routes[0]]),
+    /duplicated/,
+  );
+  assert.throws(
+    ()=>validateProviderBackedRouteDefinitions([
+      {...routes[0],lockdownPolicy:'none'},...routes.slice(1),
+    ]),
+    /missing explicit runtime lockdown policy/,
+  );
+});
+test('provider fanout route resolution keeps methods and path boundaries distinct',()=>{
+  assert.equal(providerBackedRouteDefinition('/api/search','POST'),null);
+  assert.equal(providerBackedRouteDefinition('/api/analyze','GET'),null);
+  assert.equal(providerBackedRouteDefinition('/api/search?name=team','GET'),null);
+  assert.equal(isProviderFanoutPath('/api/search-more'),false);
+  assert.equal(isProviderFanoutPath('/api/search?name=team'),false);
+  assert.equal(providerBackedRouteDefinition('/api/search','get')?.handler,'apiSearch');
+});

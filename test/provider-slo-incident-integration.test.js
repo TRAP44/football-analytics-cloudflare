@@ -58,3 +58,11 @@ test('provider SLO incident integration remains part of current production monit
   assert.match(productionMonitor,/buildProviderSloIncidentTimeline\(providerSloWindows/);
   assert.match(productionMonitor,/providerSloIncidentOpsEvent/);
 });
+
+test('read-only production monitoring never records SLO transitions',()=>{
+  assert.match(productionMonitor,/const providerSloFlush = options\.record !== false/);
+  assert.match(productionMonitor,/options\.record !== false && providerSloFlush\?\.ok && providerSloIncident\.transition/);
+  assert.match(productionMonitor,/providerSloIncidentUpdateOpsEvent\(providerSloIncident\.activeIncident,'severity_changed'\)/);
+  assert.match(productionMonitor,/delivery\.outcomes \|\| \[\]/);
+  assert.match(productionMonitor,/item\?\.claimAcquired/);
+});

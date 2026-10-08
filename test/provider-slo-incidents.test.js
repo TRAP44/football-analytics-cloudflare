@@ -374,3 +374,31 @@ test('incident history is bounded to the ten most recent episodes', () => {
   assert.equal(report.history.length,10);
   assert.equal(report.history.every(item=>item.active===false),true);
 });
+
+test('conflicting duplicate SLO snapshots fail closed instead of confirming an incident',()=>{
+  const first=window('2026-09-28T10:00:00Z','incident');
+  const second=window('2026-09-28T10:15:00Z','incident');
+  const conflicting=window('2026-09-28T10:15:00Z','healthy');
+  conflicting.metadata.windowId='same-period-different-data';
+  const report=buildProviderSloIncidentTimeline(
+    [first,second,conflicting],
+    {nowMs:Date.parse('2026-09-28T10:20:00Z')},
+  );
+  assert.equal(report.windowIntegrity.duplicates,1);
+  assert.equal(report.windowIntegrity.duplicateConflicts,1);
+  assert.equal(report.activeIncident,null);
+  assert.equal(report.transition,null);
+});
+test('SLO update events never trigger automatic rollback and require active incidents',()=>{
+  assert.equal(providerSloIncidentUpdateOpsEvent({
+    active:false,highestState:'incident',incidentId:'pslo-example',
+  }),null);
+  const event=providerSloIncidentUpdateOpsEvent({
+    active:true,highestState:'incident',incidentId:'pslo-example',
+    severity:'critical',state:'incident',
+  },'severity_changed');
+  assert.equal(event?.code,'PROVIDER_SLO_INCIDENT_UPDATED');
+  assert.equal(event?.severity,'critical');
+  assert.equal(event?.meta?.automaticRollback,false);
+  assert.equal(event?.meta?.automaticFeatureDisable,false);
+});

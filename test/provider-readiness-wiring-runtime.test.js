@@ -131,3 +131,21 @@ test('worker no longer imports child provider-readiness factories directly', () 
   }
   assert.match(worker, /createProviderReadinessWiringRuntime/);
 });
+
+test('provider readiness rejects every non-callable required dependency',()=>{
+  for(const name of [
+    'bumpTelemetry','clamp','fetchWithTimeout','getCache','getCacheEntry',
+    'hasSupabase','isFinishedStatus','isLiveStatus','observeProviderRequest',
+    'phase5ProviderUsage','providerSloReport','readIntegrityDiagnostics',
+    'readTelegramDedupeHealth','recordOpsEvent','redactOpsString',
+    'runtimeControlsSnapshot','setCache','sleepMs','supaHeaders',
+    'supaRpc','telemetrySnapshot','withSingleFlight',
+  ]){
+    const input=deps();
+    input[name]=true;
+    assert.throws(()=>createProviderReadinessWiringRuntime(input),new RegExp(name+' is required'),name);
+  }
+  for(const memory of [null,[],true,'invalid']){
+    assert.throws(()=>createProviderReadinessWiringRuntime(deps({memory})),/memory is required/);
+  }
+});
