@@ -748,6 +748,16 @@ html[data-theme="light"] .miniapp-public-shell {
   border-color: rgba(34,197,94,.28);
   background: var(--mr-good-soft);
 }
+/* All purchasable Pass actions share exactly the same accent and opacity. */
+.miniapp-public-shell .pass-store .pass-card { opacity: 1; }
+.miniapp-public-shell .pass-store .pass-card button:not(:disabled) {
+  opacity: 1;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: 0;
+  border-radius: 13px;
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 16%, transparent);
+}
 .miniapp-public-shell .pass-meta span {
   background: color-mix(in srgb, var(--text) 6%, transparent);
 }
