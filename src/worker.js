@@ -309,6 +309,10 @@ const DEFAULT_RUNTIME_CONTROLS = Object.freeze({
 });
 const RUNTIME_CONTROLS_CACHE_MS = 30_000;
 
+// Bounded Telegram Stars reconciliation: at most 500 transactions per sync.
+// These constants are required by createBillingRuntime at first catalog request.
+const STAR_SYNC_MAX_PAGES = 5;
+const STAR_SYNC_PAGE_SIZE = 100;
 const SUBSCRIPTION_PERIOD_SECONDS = 2592000;
 
 const BILLING_PLANS = Object.freeze({
