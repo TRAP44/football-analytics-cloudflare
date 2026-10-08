@@ -217,3 +217,28 @@ test('audience constructor requires database boundary dependencies',()=>{
   assert.throws(()=>createSmartNotificationAudience({}),/hasSupabase is required/);
   assert.throws(()=>createSmartNotificationAudience({hasSupabase:()=>false}),/supaSelectMany is required/);
 });
+
+test('persistent audience fails closed when preference query is unavailable',async()=>{
+  const {api}=runtime({
+    supaSelectMany:async(_cfg,table)=>{
+      if(table==='users') return [{telegram_id:12,plan:'PRO'}];
+      if(table==='user_preferences') throw new Error('preference query unavailable');
+      return [];
+    },
+  });
+  await assert.rejects(
+    ()=>api.filterRecipients([{telegram_id:12}],'player.goal',{}),
+    /preference query unavailable/,
+  );
+});
+test('local master notification preference suppresses otherwise eligible users',async()=>{
+  const {api}=runtime({
+    hasSupabase:()=>false,
+    getUserRecord:async id=>({telegram_id:id,plan:'PRO'}),
+    getPreferences:async()=>({notificationPreferences:{enabled:false,match:true,players:true}}),
+  });
+  const result=await api.filterRecipients([{telegram_id:12}],'player.goal',{});
+  assert.deepEqual(result.rows,[]);
+  assert.equal(result.blockedByPreference,1);
+  assert.equal(result.blockedByEntitlement,0);
+});

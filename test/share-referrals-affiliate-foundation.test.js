@@ -132,3 +132,24 @@ test('affiliate foundation is documentation-only and does not add bookmaker inte
   assert.match(doc,/1win/i);
   assert.match(doc,/не подключаются/i);
 });
+
+test('referral tokens separate users and signing secrets without disclosing account IDs',async()=>{
+  const base=await opaqueReferralCode(123456789,'test-bot-secret');
+  const differentUser=await opaqueReferralCode(123456790,'test-bot-secret');
+  const differentSecret=await opaqueReferralCode(123456789,'different-test-secret');
+  assert.match(base,/^[0-9a-f]{16}$/);
+  assert.match(differentUser,/^[0-9a-f]{16}$/);
+  assert.match(differentSecret,/^[0-9a-f]{16}$/);
+  assert.notEqual(base,differentUser);
+  assert.notEqual(base,differentSecret);
+  assert.equal(await opaqueReferralCode(0,'test-bot-secret'),'');
+});
+test('launch parser only extracts a canonical referral from the final component',()=>{
+  const code='a1b2c3d4e5f60708';
+  const early=splitLaunchReferralParts(['r'+code,'fx12345']);
+  assert.equal(early.referralCode,'');
+  assert.deepEqual(early.parts,['r'+code,'fx12345']);
+  const final=splitLaunchReferralParts(['fx12345','social','r'+code.toUpperCase()]);
+  assert.equal(final.referralCode,code);
+  assert.deepEqual(final.parts,['fx12345','social']);
+});

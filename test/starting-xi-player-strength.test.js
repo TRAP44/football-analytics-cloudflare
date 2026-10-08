@@ -208,3 +208,19 @@ test('balanced confirmed XIs do not create a synthetic probability edge',()=>{
   assert.ok(Math.abs(adjusted.draw-base.draw)<0.0001);
   assert.ok(Math.abs(adjusted.away-base.away)<0.0001);
 });
+
+test('lineup probability adjustment ignores forged trust and out-of-range shifts',()=>{
+  const model=runtime();
+  const original={home:45,draw:28,away:27};
+  for(const bad of [
+    {trusted:'true',probabilityShift:2.8},
+    {trusted:true,probabilityShift:50},
+    {trusted:true,probabilityShift:NaN},
+    {trusted:true,probabilityShift:{valueOf:()=>2.8}},
+  ]){
+    assert.deepEqual(model.applyLineupStrengthAdjustment(original,bad),original);
+  }
+  assert.equal(model.applyLineupStrengthAdjustment({home:NaN,draw:30,away:30},{
+    trusted:true,probabilityShift:2,
+  }),null);
+});

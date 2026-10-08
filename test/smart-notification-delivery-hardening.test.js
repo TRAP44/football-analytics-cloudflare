@@ -375,3 +375,24 @@ test('v6.25.1 migration adds pre-send CAS, permanent ambiguous-send suppression 
   assert.match(sql,/status in \('claimed','sending'\)/);
   assert.match(sql,/begin_smart_notification_delivery_send'[\s\S]*activate_pass_entitlement/);
 });
+
+test('smart delivery never sends after a persistent claim RPC outage',async()=>{
+  let sends=0;
+  let attemptedClaims=0;
+  const service=createSmartNotificationDeliveryService({
+    memory:{},hasSupabase:()=>true,
+    supaRpc:async(_cfg,name)=>{
+      if(name==='claim_smart_notification_delivery'){
+        attemptedClaims++;
+        throw new Error('database unavailable');
+      }
+      throw new Error('unexpected downstream RPC');
+    },
+    sendTelegramMessage:async()=>{sends++;return {ok:true,status:200,outcome:'sent'};},
+    recordOpsEvent:async()=>{},
+  });
+  const result=await service.deliverSmartNotification(input(),{});
+  assert.equal(result.state,'persistence_ambiguous');
+  assert.equal(attemptedClaims,1);
+  assert.equal(sends,0);
+});

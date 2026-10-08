@@ -469,3 +469,20 @@ test('Issue #406 smart notifications drop mixed invalid live events before deliv
     Date.now=originalNow;
   }
 });
+
+test('capability snapshots are frozen and enforce FREE versus paid categories',()=>{
+  const free=publicSmartNotificationCapabilities('FREE');
+  const pro=publicSmartNotificationCapabilities('PRO');
+  assert.equal(Object.isFrozen(free),true);
+  assert.equal(Object.isFrozen(free.categories),true);
+  assert.equal(Object.isFrozen(free.categories.players),true);
+  assert.equal(free.categories.match.available,true);
+  assert.equal(free.categories.players.available,false);
+  assert.equal(free.categories.aiRadar.available,false);
+  assert.equal(pro.categories.players.available,true);
+  assert.equal(pro.categories.aiRadar.available,true);
+  assert.equal(notificationDecision({
+    eventType:'player.goal',plan:'PRO',
+    preferences:{enabled:false,players:true},
+  }).reason,'preference_master_disabled');
+});

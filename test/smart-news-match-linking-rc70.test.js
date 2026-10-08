@@ -1,55 +1,77 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createFootballNewsRuntime } from '../src/football-news-runtime.js';
 
-const worker=(fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
+const newsSource=fs.readFileSync('src/football-news-runtime.js','utf8');
+const worker=fs.readFileSync('src/worker.js','utf8');
+const orchestration=fs.readFileSync('src/telegram-update-orchestration.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
 
-test('RC70 scores fixtures against the news publication time',()=>{
-  assert.match(worker,/function newsPublishedMs\(/);
-  assert.match(worker,/function newsFixtureRelevance\(/);
-  assert.match(worker,/function newsRelevantFixture\(/);
-  assert.match(worker,/hoursFromNews/);
-  assert.match(worker,/timing='pre_match'/);
-  assert.match(worker,/timing='near_match'/);
+function runtime(){
+  return createFootballNewsRuntime({
+    NEWS_BLOCKED_HOST_RE:/^not-trusted\.invalid$/i,
+    NEWS_MAJOR_SOURCE_RE:/^bbc\.com$/i,
+    NEWS_OFFICIAL_SOURCE_RE:/^fifa\.com$/i,
+    TOP_TEAM_SEARCH_CATALOG:[],
+    botTeamIdMatches:()=>false,
+    fetchWithTimeout:async()=>({ok:false}),
+    getCache:async()=>null,
+    getFavorites:async()=>[],
+    normalizeBotFixtureCard:fixture=>fixture,
+    recordGrowthEvent:async()=>{},
+    searchText:value=>String(value||'').toLowerCase(),
+    setCache:async()=>{},
+    telegramApi:async()=>({ok:true}),
+    telegramHtmlEscape:value=>String(value),
+    todayUtc:()=> '2026-10-08',
+  });
+}
+
+test('RC70 news fixture linking remains owned by the extracted news runtime',()=>{
+  assert.match(worker,/import \{ createFootballNewsRuntime \} from '\.\/football-news-runtime\.js'/);
+  assert.match(newsSource,/function newsPublishedMs\(/);
+  assert.match(newsSource,/function newsFixtureRelevance\(/);
+  assert.match(newsSource,/function newsRelevantFixture\(/);
+  assert.match(newsSource,/function newsConversionKeyboard\(/);
+  assert.match(orchestration,/newsRelevantFixture|sendFavoriteTeamNews|sendGeneralFootballNews/);
 });
 
-test('each favorite-team news item can receive its own fixture CTA',()=>{
-  assert.match(worker,/const smartLink=\(fixtures \|\| \[\]\)\.length \? newsRelevantFixture\(item,fixtures\) : null/);
-  assert.match(worker,/linkedFixtureId=Number\(smartLink\?\.fixture\?\.fixtureId \|\| fixtureId \|\| 0\)/);
-  assert.match(worker,/newsFeedText\(news\.items,\{title:'MatchRadar AI · Новости',teamName:team\.team_name \|\| '',fixture,fixtures:matches \|\| \[\]\}\)/);
-  assert.match(worker,/newsConversionKeyboard\(news\.items,extra,\{fixtureId:Number\(fixture\?\.fixtureId \|\| 0\),fixtures:matches \|\| \[\]\}\)/);
+test('RC70 links a published injury story to the closest relevant future fixture',()=>{
+  const result=runtime().smartNewsMatchLinkDrill();
+  assert.equal(result.pass,true);
+  assert.equal(result.cases,7);
 });
 
-test('general-news CTA carries only a safe publication-day token',()=>{
-  assert.match(worker,/function newsPublishedDayToken\(/);
-  assert.match(worker,/function newsPublishedAtFromDayToken\(/);
-  assert.match(worker,/news:ai_team:\$\{hint\.token\}\$\{dayToken \?/);
-  assert.match(worker,/datedNewsAiTeamAction=data\.match/);
-  assert.match(worker,/legacyNewsAiTeamAction=data\.match/);
-});
-
-test('dated team intent can resolve a smart fixture and falls back to search',()=>{
-  assert.match(worker,/mode:'team_smart_link'/);
-  assert.match(worker,/origin:'news_ai_smart_link'/);
-  assert.match(worker,/sendBotFixtureMenu\(request,cfg,callbackUserId,callbackChatId,fixtureId\)/);
-  assert.match(worker,/sendBotFootballSearch\(request,cfg,callbackUserId,callbackChatId,teamName\)/);
-});
-
-test('news text explains the linked match and which AI inputs should be rechecked',()=>{
-  assert.match(worker,/function newsFixtureTimingLabel\(/);
-  assert.match(worker,/function newsFixtureChangeGuide\(/);
-  assert.match(worker,/🎯 Матч:/);
-  assert.match(worker,/Перепроверить:/);
-  assert.match(worker,/состав · глубина скамейки · баланс сил · рынок/);
-});
-
-test('RC70 health and launch analytics expose smart fixture usage',()=>{
-  assert.match(worker,/smartFixtureIntent:smartNewsAiUsers\.size/);
-  assert.match(app,/smart fixture/);
-  assert.match(worker,/function smartNewsMatchLinkDrill\(/);
-  assert.match(worker,/smartNewsLinkSelfTest: smartNewsMatchLinkDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  for (const flag of ['smartNewsFixtureLinking','newsTimeRelevanceGuard','perNewsFixtureCta','newsImpactDeltaGuide']) {
-    assert.ok(worker.includes(flag + ": 'enabled'"));
+test('RC70 publication-day tokens are strict and resolve at UTC midday',()=>{
+  const api=runtime();
+  assert.equal(api.newsPublishedDayToken({publishedAt:'2026-09-20T12:00:00Z'}),'20260920');
+  assert.equal(api.newsPublishedAtFromDayToken('20260920'),'2026-09-20T12:00:00Z');
+  for(const bad of ['20261301','20260230','2026101',true,{}]){
+    assert.equal(api.newsPublishedAtFromDayToken(bad),'');
   }
+});
+
+test('RC70 only presents a fixture CTA when a match is actually linked',()=>{
+  const api=runtime();
+  const none=api.newsRelevantFixture({publishedAt:'2026-09-20T12:00:00Z'},[]);
+  assert.equal(none,null);
+  assert.equal(api.newsFixtureChangeGuide({category:{code:'injury'}},null),'');
+});
+
+test('RC70 injury and referee stories explain distinct factors to recheck',()=>{
+  const api=runtime();
+  const link={fixture:{fixtureId:20},timing:'near_match',hoursFromNews:12};
+  assert.match(api.newsFixtureChangeGuide({category:{code:'injury'}},link),/состав/);
+  assert.match(api.newsFixtureChangeGuide({category:{code:'referee'}},link),/карточки/);
+  assert.match(api.newsFixtureTimingLabel(link),/после новости/);
+});
+
+test('RC70 news conversion keeps safe dated and legacy callback branches',()=>{
+  const sources=worker+'\n'+orchestration+newsSource;
+  assert.match(sources,/datedNewsAiTeamAction=data\.match/);
+  assert.match(sources,/legacyNewsAiTeamAction=data\.match/);
+  assert.match(sources,/mode:'team_smart_link'/);
+  assert.match(sources,/origin:'news_ai_smart_link'/);
+  assert.match(app,/smart fixture/);
 });

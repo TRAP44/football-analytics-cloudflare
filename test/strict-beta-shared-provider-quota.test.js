@@ -120,3 +120,25 @@ test('configured distributed provider guard degradation fails closed while no-Su
   assert.doesNotMatch(gateway,/return claimEmergencyLocalProviderBudget\('guard_unavailable'\)/);
   assert.match(gateway,/FOOTBALL_GUARD_DEGRADED/);
 });
+
+test('distributed provider quota uses one server-side atomic guard and fails closed on errors',()=>{
+  const gateway=readFileSync(new URL('../src/api-football-gateway.js',import.meta.url),'utf8');
+  const section=block(gateway,'async function claimDistributedProviderBudget','async function apiFootballNetwork');
+  assert.match(section,/supaRpc\(cfg,'claim_provider_request'/);
+  assert.match(section,/p_bucket_key:'api-football:minute'/);
+  assert.match(section,/p_window_seconds:60/);
+  assert.match(section,/result\?\.allowed !== true && result\?\.allowed !== false/);
+  assert.match(section,/reason:'guard_unavailable'/);
+  assert.match(section,/allowed:false,[\s\S]*degraded:true,[\s\S]*local:false/);
+  assert.doesNotMatch(section,/claimEmergencyLocalProviderBudget\('guard_unavailable'\)/);
+});
+test('concurrency CI verifies exact distributed provider quota rather than only final counts',()=>{
+  const gate=readFileSync(new URL('../scripts/supabase-concurrency-gate.js',import.meta.url),'utf8');
+  const section=block(gate,'async function testProviderBudget','async function testTelegramDedupe');
+  assert.match(section,/const limit = 4/);
+  assert.match(section,/Array\.from\(\{ length: 12 \}/);
+  assert.match(section,/Promise\.all\(/);
+  assert.match(section,/claim_provider_request/);
+  assert.match(section,/decoded\.filter\(\(item\) => item\.allowed === true\)\.length/);
+  assert.match(section,/assert\.equal\(count, limit/);
+});

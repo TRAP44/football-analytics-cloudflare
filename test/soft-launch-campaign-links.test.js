@@ -84,3 +84,19 @@ test('launch funnel keeps source campaign content performance dimensions', () =>
   assert.match(block,/content/);
   assert.match(block,/fullAiConversionPct/);
 });
+
+test('campaign token truncation preserves a valid Telegram start parameter',()=>{
+  const api=runtime();
+  const token=api.campaignStartParam({
+    source:'very_long_telegram_channel_source_label',
+    campaign:'extended_promotion_campaign_name_that_would_not_fit',
+    content:'message_copy_variant_with_long_identifier',
+  });
+  assert.ok(token.length>0 && token.length<=64);
+  assert.match(token,/^media__[a-z0-9_-]+__[a-z0-9_-]+__[a-z0-9_-]+$/);
+  assert.equal(token,api.campaignStartParam({
+    source:'very_long_telegram_channel_source_label',
+    campaign:'extended_promotion_campaign_name_that_would_not_fit',
+    content:'message_copy_variant_with_long_identifier',
+  }));
+});

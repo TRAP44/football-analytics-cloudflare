@@ -136,3 +136,22 @@ test('RC142 exposes statistics quality in Match Center and release health contra
   assert.match(app,/statisticsQualityHintHtml\(d\.statisticsQuality\)/);
   assert.match(smoke,/'statisticsSemanticQualityGuard'/);
 });
+
+test('RC142 rejects duplicate guarded rows before comparative analytics',()=>{
+  const input=stats([
+    {key:'Total Shots',home:10,away:8},
+    {key:'Total Shots',home:11,away:7},
+  ]);
+  const quality=assessMatchStatisticsQuality(input,{statisticsMeta:trustedMeta});
+  assert.equal(quality.duplicateMetricCount,1);
+  assert.ok(quality.issues.some(item=>item.code==='duplicate_metric'));
+  const sanitized=sanitizeStatisticsForDisplay(input,quality);
+  assert.equal(statisticsForTrustedAnalytics(sanitized,quality).items.length,0);
+});
+test('RC142 never coerces hostile boolean or object count values',()=>{
+  for(const value of [true,false,[],[5],{valueOf:()=>5}]){
+    const cell=inspectStatisticValue('Total Shots',value);
+    assert.equal(cell.valid,false);
+    assert.equal(cell.reason,'invalid_type');
+  }
+});
