@@ -173,3 +173,54 @@ test('launch capacity does not promote depleted or FREE quotas to broad public r
     assert.equal(profile.launchCapacity.recommendedMode,'limited_beta');
   }
 });
+
+
+
+test('public launch remains blocked when PRO capacity has entered conservation mode',()=>{
+  for(const quota of [
+    {dailyRemaining:600,minuteRemaining:275},
+    {dailyRemaining:7000,minuteRemaining:30},
+    {dailyRemaining:750,minuteRemaining:275},
+  ]){
+    const profile=createLaunchBudget(quota);
+    assert.equal(profile.mode,'conserve');
+    assert.equal(profile.launchCapacity.broadTrafficReady,false);
+    assert.equal(profile.launchCapacity.recommendedMode,'limited_beta');
+    assert.equal(profile.launchCapacity.blocker,'provider_capacity_guard');
+  }
+});
+
+test('public launch remains blocked in ULTRA plan conservation mode',()=>{
+  const profile=createLaunchBudget({
+    plan:'ULTRA',dailyLimit:75000,dailyRemaining:6000,
+    minuteLimit:450,minuteRemaining:410,
+  });
+  assert.equal(profile.mode,'conserve');
+  assert.equal(profile.launchCapacity.broadTrafficReady,false);
+  assert.equal(profile.launchCapacity.recommendedMode,'limited_beta');
+});
+
+test('paid launch gate keeps healthy quota in public mode when outside conserve thresholds',()=>{
+  const healthy=createLaunchBudget({dailyRemaining:7300,minuteRemaining:280});
+  assert.equal(healthy.mode,'expanded');
+  assert.equal(healthy.launchCapacity.broadTrafficReady,true);
+  assert.equal(healthy.launchCapacity.recommendedMode,'public');
+  const ultra=createLaunchBudget({
+    plan:'ULTRA',dailyLimit:75000,dailyRemaining:70000,
+    minuteLimit:450,minuteRemaining:440,
+  });
+  assert.equal(ultra.mode,'expanded');
+  assert.equal(ultra.launchCapacity.broadTrafficReady,true);
+});
+
+test('production launch approval must require normal budget mode alongside verified quota',()=>{
+  const source=fs.readFileSync('src/provider-budget-runtime.js','utf8');
+  const begin=source.indexOf('const broadTrafficReady = Boolean(');
+  const end=source.indexOf('const launchCapacity = {',begin);
+  assert.ok(begin>=0 && end>begin);
+  const block=source.slice(begin,end);
+  assert.match(block,/completeProviderQuotaSnapshot\(p\)/);
+  assert.match(block,/recentQuotaEvidence/);
+  assert.match(block,/mode === 'expanded'/);
+  assert.doesNotMatch(block,/mode !== 'emergency'/);
+});
