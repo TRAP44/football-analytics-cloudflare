@@ -488,3 +488,28 @@ test('v6.27 migration provides backend-only atomic distributed mutation idempote
 
   assert.doesNotMatch(sql,/request_body|raw_body|init_data|telegram_init|authorization\s+text|bot_token\s+text|api_token\s+text/);
 });
+
+test('sensitive replay identity changes for distinct bodies without a client key',async()=>{
+  const first=request('/api/runtime-controls',{body:'{"enabled":false}'});
+  const second=request('/api/runtime-controls',{body:'{"enabled":true}'});
+  const a=await sensitiveMutationReplayIdentity(first,new URL(first.url),{id:7});
+  const b=await sensitiveMutationReplayIdentity(second,new URL(second.url),{id:7});
+  assert.ok(a&&b);
+  assert.notEqual(a.requestDigest,b.requestDigest);
+  assert.notEqual(a.operationKey,b.operationKey);
+  assert.equal(a.idempotencyKeyHash,'');
+  assert.equal(Object.isFrozen(a),true);
+});
+test('retry policy never retries external side effects on server errors',()=>{
+  for(const path of [
+    '/api/admin/channel-publisher/test',
+    '/api/admin/billing/refund',
+    '/api/billing/invoice',
+  ]){
+    assert.equal(sensitiveMutationRetryPolicy(path,503),false,path);
+    assert.equal(sensitiveMutationRetryPolicy(path,429),false,path);
+  }
+  assert.equal(sensitiveMutationRetryPolicy('/api/runtime-controls/rollback',503),true);
+  assert.equal(sensitiveMutationRetryPolicy('/api/runtime-controls/rollback',400),false);
+  assert.equal(sensitiveMutationRetryPolicy('/api/runtime-controls/rollback',408),true);
+});

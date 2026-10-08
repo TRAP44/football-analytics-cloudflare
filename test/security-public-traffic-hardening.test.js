@@ -421,3 +421,30 @@ test('API security headers include transport and legacy cross-domain hardening',
   assert.match(headers,/strict-transport-security/);
   assert.match(headers,/x-permitted-cross-domain-policies/);
 });
+
+test('oversized declared API body is refused even when request body is short',async()=>{
+  const req=request('https://example.com/api/analyze',{
+    method:'POST',
+    headers:{
+      origin:'https://example.com',
+      'sec-fetch-site':'same-origin',
+      'content-type':'application/json',
+      'content-length':String(MAX_API_BODY_BYTES+1),
+    },
+    body:'{}',
+  });
+  const result=await preAuthRequestShapeDecision(req,{api:true});
+  assert.equal(result.allowed,false);
+  assert.equal(result.status,413);
+  assert.equal(result.code,'REQUEST_TOO_LARGE');
+});
+test('cross-site DELETE requests cannot bypass origin checks by omitting JSON body',async()=>{
+  const req=request('https://example.com/api/favorites',{
+    method:'DELETE',
+    headers:{origin:'https://attacker.invalid','sec-fetch-site':'cross-site'},
+  });
+  const result=await preAuthRequestShapeDecision(req,{api:true});
+  assert.equal(result.allowed,false);
+  assert.equal(result.status,403);
+  assert.equal(result.code,'CROSS_ORIGIN_MUTATION_BLOCKED');
+});

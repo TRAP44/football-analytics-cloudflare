@@ -374,3 +374,15 @@ test('worker wires search catalog and retryable classifier without eager TDZ', (
   assert.match(runtimeSource,/if \(!providerDegraded\) await setCache/);
   assert.match(runtimeSource,/return Object\.freeze\(\{/);
 });
+
+test('competition search caps broad results and maintains priority ordering',()=>{
+  const competitions=new Map(Array.from({length:20},(_,index)=>[
+    1000+index,
+    {name:'Турнир '+index,short:'T'+index,group:'other',priority:index+1},
+  ]));
+  const runtime=createSearchDiscoveryRuntime(deps({COMPETITIONS:competitions}));
+  const results=runtime.searchKnownCompetitions('');
+  assert.equal(results.length,10);
+  assert.deepEqual(results.map(row=>row.priority),[20,19,18,17,16,15,14,13,12,11]);
+  assert.deepEqual(runtime.searchKnownCompetitions('does-not-exist-abc'),[]);
+});

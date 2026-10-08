@@ -6,6 +6,8 @@ import {
   isAdminSensitivePath,
   privilegedDistributedRatePolicy,
   privilegedLocalRatePolicy,
+  privilegedRatePolicyInventory,
+  usesStrictTelegramFreshness,
   requiresAdminAuthorizationPath,
 } from '../src/security-route-registry.js';
 
@@ -110,4 +112,23 @@ test('registry prefix matching is boundary-safe',()=>{
   assert.equal(isAdminSensitivePath('/api/providerish'),false);
   assert.equal(isAdminSensitivePath('/api/runtime-controls-extra'),false);
   assert.equal(isAdminSensitivePath('/api/adminish/test'),false);
+});
+
+test('strict Telegram freshness applies to every sensitive registry route',()=>{
+  for(const row of adminSensitivePathInventory()){
+    assert.equal(usesStrictTelegramFreshness(row.path),true,row.path);
+    const local=privilegedLocalRatePolicy(row.path);
+    const distributed=privilegedDistributedRatePolicy(row.path,'POST');
+    assert.ok(local.limit>=1 && local.windowMs>=1000,row.path);
+    assert.ok(distributed.limit>=1 && distributed.windowSeconds>=1,row.path);
+  }
+  assert.equal(usesStrictTelegramFreshness('/api/not-sensitive'),false);
+});
+test('privileged policy inventories cannot be mutated through nested entries',()=>{
+  const policies=privilegedRatePolicyInventory();
+  assert.equal(Object.isFrozen(policies),true);
+  assert.ok(policies.length>0);
+  assert.equal(Object.isFrozen(policies[0]),true);
+  assert.throws(()=>{policies[0].distributedLimit=9999;},TypeError);
+  assert.equal(privilegedRatePolicyInventory()[0].distributedLimit,policies[0].distributedLimit);
 });

@@ -68,3 +68,19 @@ test('security scan fails with an actionable message when git metadata is unavai
 test('security scan parses NUL-delimited tracked filenames without shell interpolation',()=>{
   assert.deepEqual(trackedFiles(()=>'a.js\0b/c.md\0'),['a.js','b/c.md']);
 });
+
+test('RC102 detects GitHub and Tavily credentials without leaking originals',()=>{
+  const github='ghp_'+'A'.repeat(36);
+  const tavily='tvly-'+'b'.repeat(25);
+  const findings=scanTrackedFiles(['settings.cfg'],()=> 'GITHUB_TOKEN='+github+'\nTAVILY_KEY='+tavily);
+  assert.deepEqual(findings,[
+    {path:'settings.cfg',type:'github_token'},
+    {path:'settings.cfg',type:'tavily_key'},
+  ]);
+  assert.equal(JSON.stringify(findings).includes(github),false);
+  assert.equal(JSON.stringify(findings).includes(tavily),false);
+});
+test('RC102 refuses to quietly skip unreadable tracked config files',()=>{
+  const findings=scanTrackedFiles(['settings.cfg'],()=>{throw new Error('permission denied');});
+  assert.deepEqual(findings,[{path:'settings.cfg',type:'unreadable_tracked_file'}]);
+});

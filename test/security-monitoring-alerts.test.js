@@ -481,3 +481,18 @@ test('Issue #407 persistence uses an atomic occurrence RPC with backward-compati
   assert.match(migration,/security invoker/i);
   assert.match(migration,/grant execute on function public\.record_ops_event_occurrence/i);
 });
+
+test('security assessment excludes future and expired signals at the window boundary',()=>{
+  const nowMs=Date.parse('2026-10-02T21:00:00Z');
+  const future=event(-1,'CROSS_SITE_MUTATION_BLOCKED',{nowMs});
+  const expired=event(16,'CROSS_SITE_MUTATION_BLOCKED',{nowMs});
+  const result=assessSecuritySignals([future,expired],{nowMs,windowMinutes:15});
+  assert.equal(result.state,'healthy');
+  assert.equal(result.signalCount,0);
+  assert.equal(result.recordCount,0);
+  const boundary=assessSecuritySignals([
+    event(15,'CROSS_SITE_MUTATION_BLOCKED',{nowMs}),
+  ],{nowMs,windowMinutes:15});
+  assert.equal(boundary.state,'watch');
+  assert.equal(boundary.signalCount,1);
+});

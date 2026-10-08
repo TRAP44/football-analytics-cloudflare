@@ -47,3 +47,16 @@ test('Worker JSON responses include API security headers without permissive CORS
   );
   assert.equal(response.headers.get('access-control-allow-origin'), null);
 });
+
+test('API header factory isolates changes without weakening immutable defaults',()=>{
+  assert.equal(Object.isFrozen(API_SECURITY_HEADERS),true);
+  const first=apiSecurityHeaders();
+  const second=apiSecurityHeaders();
+  assert.notEqual(first,second);
+  first['x-frame-options']='ALLOWALL';
+  first['content-security-policy']="default-src *";
+  assert.equal(second['x-frame-options'],'DENY');
+  assert.match(second['content-security-policy'],/frame-ancestors 'none'/);
+  assert.equal(API_SECURITY_HEADERS['x-frame-options'],'DENY');
+  assert.equal(API_SECURITY_HEADERS['permissions-policy'],'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+});

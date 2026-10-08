@@ -63,3 +63,14 @@ test('match rate-limit UI no longer exposes a long countdown', () => {
   assert.match(block, /Источник матчей временно занят/);
   assert.doesNotMatch(block, /Повторите примерно через \$\{retry\} сек/);
 });
+
+test('public navigation and styles share one cache-busting revision',()=>{
+  assert.match(html,/<html lang="ru">/);
+  assert.match(html,/<meta name="matchradar-surface" content="public"/);
+  for(const asset of ['styles.css','styles/public-shell.css','styles/premium-ui.css','app.js']){
+    assert.ok(html.includes('/'+asset+'?v='+FRONTEND_ASSET_REVISION),asset);
+  }
+  for(const id of ['navMatches','navMyTeams','navHistory','navProfile']){
+    assert.equal((html.match(new RegExp('id="'+id+'"','g'))||[]).length,1,id);
+  }
+});

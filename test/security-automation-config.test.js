@@ -73,3 +73,15 @@ test('workflow cleanup and production mutation guards are fail-closed', () => {
   assert.match(deploy, /ref: \$\{\{ env\.DEPLOY_SHA \}\}[\s\S]*persist-credentials: false/);
   assert.match(rollback, /ref: \$\{\{ env\.ROLLBACK_WORKFLOW_SHA \}\}[\s\S]*persist-credentials: false/);
 });
+
+test('security workflows never elevate PR events to privileged mutation triggers',()=>{
+  for(const [label,workflow] of [['codeql',codeql],['quality',quality],['privileged',privileged]]){
+    assert.doesNotMatch(workflow,/^\s*pull_request_target:/m,label);
+    assert.doesNotMatch(workflow,/^\s*security-events:\s*write/m,label);
+  }
+  assert.match(quality,/^\s*permissions:\s*\n\s*contents: read/m);
+  assert.match(rollback,/^\s*environment:\s*production/m);
+  assert.match(deploy,/^\s*environment:\s*production/m);
+  assert.match(deploy,/cancel-in-progress:\s*false/);
+  assert.match(rollback,/cancel-in-progress:\s*false/);
+});
