@@ -52,3 +52,37 @@ test('Player Hub 4C renders season metrics and responsive layout', () => {
   assert.match(styles, /\.player-hub-season-grid\s*\{/);
   assert.match(FRONTEND_ASSET_REVISION, /^6\.120\.0-launch\d+$/);
 });
+
+
+
+test('Player Hub season stats never resolve a known ID from a different same-name player',()=>{
+  const code=sourceBetween('function playerSeasonStatProfile','function playerSeasonStatsHtml');
+  assert.match(code,/const sameId = targetId > 0 && Number\(item\?\.id \|\| 0\) === targetId/);
+  assert.match(code,/const sameName = !targetId && targetName &&/);
+  assert.match(code,/return sameId \|\| sameName/);
+});
+
+test('Player Hub season stats preserve missing data as unavailable rather than zero',()=>{
+  const code=sourceBetween('function playerSeasonStatProfile','function playerSeasonStatsHtml');
+  assert.match(code,/if \(value === null \|\| value === undefined \|\| value === ''\) return null/);
+  assert.match(code,/return Number\.isFinite\(parsed\) \? parsed : null/);
+  for(const field of ['appearances','lineups','minutes','rating','goals','assists','keyPasses','passAccuracy','yellow']){
+    assert.match(code,new RegExp(field+': optionalMetric\\('));
+  }
+  assert.doesNotMatch(code,/Number\.isFinite\(Number\(found\./);
+});
+
+test('Player Hub counts additional yellow-red cards only when red card value is present',()=>{
+  const code=sourceBetween('function playerSeasonStatProfile','function playerSeasonStatsHtml');
+  assert.match(code,/const redCards = optionalMetric\(found\.cards\?\.red\)/);
+  assert.match(code,/const yellowRedCards = optionalMetric\(found\.cards\?\.yellowRed\) \?\? 0/);
+  assert.match(code,/red: redCards === null \? null : redCards \+ yellowRedCards/);
+});
+
+test('Player Hub ignores late season responses after the user navigates to another player',()=>{
+  const code=sourceBetween('async function loadPlayerSeasonStats','function renderPlayerHub');
+  assert.match(code,/state\.teamIntelligenceCache\.get\(key\)/);
+  assert.match(code,/state\.teamIntelligenceCache\.set\(key, data\)/);
+  assert.equal((code.match(/if \(state\.currentPlayer !== player\) return;/g)||[]).length,2);
+  assert.match(code,/competition_context_missing/);
+});

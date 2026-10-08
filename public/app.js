@@ -4312,7 +4312,7 @@ function playerSeasonStatProfile(data = {}, player = {}) {
   const rows = Array.isArray(stats.players) ? stats.players : [];
   const found = rows.find(item => {
     const sameId = targetId > 0 && Number(item?.id || 0) === targetId;
-    const sameName = targetName && String(item?.name || '').trim().toLowerCase() === targetName;
+    const sameName = !targetId && targetName && String(item?.name || '').trim().toLowerCase() === targetName;
     return sameId || sameName;
   });
   if (!found) {
@@ -4324,21 +4324,28 @@ function playerSeasonStatProfile(data = {}, player = {}) {
       reason: String(stats.reason || ''),
     };
   }
+  const optionalMetric = value => {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const redCards = optionalMetric(found.cards?.red);
+  const yellowRedCards = optionalMetric(found.cards?.yellowRed) ?? 0;
   return {
     found: true,
     partial: Boolean(stats.partial || !stats.complete),
     sourceLabel: String(stats.sourceMeta?.label || stats.sourceMeta?.provider || ''),
     scope: String(stats.scope || ''),
-    appearances: Number.isFinite(Number(found.games?.appearances)) ? Number(found.games.appearances) : null,
-    lineups: Number.isFinite(Number(found.games?.lineups)) ? Number(found.games.lineups) : null,
-    minutes: Number.isFinite(Number(found.games?.minutes)) ? Number(found.games.minutes) : null,
-    rating: Number.isFinite(Number(found.games?.rating)) ? Number(found.games.rating) : null,
-    goals: Number.isFinite(Number(found.goals?.total)) ? Number(found.goals.total) : null,
-    assists: Number.isFinite(Number(found.goals?.assists)) ? Number(found.goals.assists) : null,
-    keyPasses: Number.isFinite(Number(found.passes?.key)) ? Number(found.passes.key) : null,
-    passAccuracy: Number.isFinite(Number(found.passes?.accuracy)) ? Number(found.passes.accuracy) : null,
-    yellow: Number.isFinite(Number(found.cards?.yellow)) ? Number(found.cards.yellow) : null,
-    red: Number.isFinite(Number(found.cards?.red)) ? Number(found.cards.red) + Number(found.cards?.yellowRed || 0) : null,
+    appearances: optionalMetric(found.games?.appearances),
+    lineups: optionalMetric(found.games?.lineups),
+    minutes: optionalMetric(found.games?.minutes),
+    rating: optionalMetric(found.games?.rating),
+    goals: optionalMetric(found.goals?.total),
+    assists: optionalMetric(found.goals?.assists),
+    keyPasses: optionalMetric(found.passes?.key),
+    passAccuracy: optionalMetric(found.passes?.accuracy),
+    yellow: optionalMetric(found.cards?.yellow),
+    red: redCards === null ? null : redCards + yellowRedCards,
     injured: found.injured === true,
   };
 }
