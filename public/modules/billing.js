@@ -82,8 +82,9 @@ export function passUiState({
   else if (type === 'MATCH_PASS' && !safeFixtureId(fixtureId)) state = 'needs-fixture';
   else if (decision?.active && exactFixture) state = 'active';
   else if (type === 'MATCH_PASS' && decision?.reason === 'fixture_mismatch' && future) state = 'active-other';
-  else if (decision?.reason === 'usage_exhausted') state = 'exhausted';
-  else if (decision && (!future || decision.reason === 'expired')) state = 'expired';
+  // Historical Pass rows describe past usage, not a currently expired shop item.
+  // A new Pass can still be purchased when previous access ended or was used up.
+  // Keep old decisions in the entitlement response for history/auditing only.
   else if (!paymentsEnabled) state = 'paused';
 
   return { state, decision, expiresAt:decision?.expiresAt || null };
@@ -295,12 +296,12 @@ export function createBillingModule({
     const context = $('passContext');
     if (context) context.textContent = fixtureId
       ? 'Match Pass будет привязан к выбранному матчу №' + fixtureId + '.'
-      : 'Чтобы купить Match Pass, откройте нужный матч. Day Pass и Weekend Pass можно купить здесь.';
+      : 'Match Pass — для выбранного матча. Day Pass — на 24 часа, Weekend Pass — на 7 дней.';
 
     if ($('passStoreStatus')) {
       $('passStoreStatus').textContent = passError
         ? passError
-        : (passLoading ? 'Обновляем Pass-доступ…' : 'Разовые Pass не меняют ваш FREE / PRO / PREMIUM тариф.');
+        : (passLoading ? 'Обновляем Pass-доступ…' : 'Pass покупается отдельно: без автопродления и смены вашего тарифа.');
     }
 
     for (const type of PASS_TYPES) {
@@ -328,7 +329,7 @@ export function createBillingModule({
         const useActivePass = view.state === 'active'
           && (type === 'DAY_PASS' || type === 'WEEKEND_PASS')
           && typeof openPassMatches === 'function';
-        const enabledState = ['available','expired','exhausted','active-other'].includes(view.state) || useActivePass;
+        const enabledState = ['available','active-other'].includes(view.state) || useActivePass;
         button.dataset.passAction = useActivePass ? 'use' : 'buy';
         button.disabled = Boolean(
           busyAction || syncing || passLoading
