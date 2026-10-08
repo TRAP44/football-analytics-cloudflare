@@ -168,7 +168,10 @@ jobs:
           DEPLOYMENT_STATUS_JSON="$RUNNER_TEMP/current-production-deployment.json"
           VERSIONS_JSON="$RUNNER_TEMP/current-production-versions.json"
           npx wrangler deployments status --json > "$DEPLOYMENT_STATUS_JSON"
-          npx wrangler versions list --json > "$VERSIONS_JSON"
+          # The recent-version list may omit the deployed production version.
+          # Fetch immutable details for the exact active 100%-traffic version.
+          ACTIVE_VERSION_ID="$(node scripts/verify-production-release-postcondition.js "$DEPLOYMENT_STATUS_JSON" --print-active-version-id)"
+          npx wrangler versions view "$ACTIVE_VERSION_ID" --json > "$VERSIONS_JSON"
           IDENTITY_ERROR="$RUNNER_TEMP/active-production-identity.err"
           if ACTIVE_IDENTITY="$(node scripts/verify-production-release-postcondition.js "$DEPLOYMENT_STATUS_JSON" "$VERSIONS_JSON" --print-active-rollback-target 2>"$IDENTITY_ERROR")"; then
             read -r ACTIVE_VERSION_ID ACTIVE_RELEASE ACTIVE_SHA <<< "$ACTIVE_IDENTITY"
