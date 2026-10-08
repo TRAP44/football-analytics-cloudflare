@@ -873,3 +873,36 @@ test('a blocked invalid retry cannot send, claim, or mutate delivery ledger',asy
   assert.equal(finalizes,0);
   assert.equal(sends,0);
 });
+
+
+
+test('false-like begin acknowledgement never triggers a Telegram send',async()=>{
+  for(const begun of [{ok:'true',status:'sending'},{ok:true,status:{toString:()=> 'sending'}},{ok:false,status:'sending'}]){
+    let sends=0;
+    const result=await deliverProviderIncidentAlert({
+      plan:deliveryPlan('pslo-begin-ack'),
+      adminTelegramIds:[101],
+      claimDelivery:async()=>({acquired:true,status:'claimed',attempts:1}),
+      beginDelivery:async()=>begun,
+      finalizeDelivery:async()=>({ok:true}),
+      sendMessage:async()=>{sends++;return {ok:true,status:200};},
+    });
+    assert.equal(result.ok,false);
+    assert.equal(result.outcomes[0].state,'persistence_failure');
+    assert.equal(sends,0);
+  }
+});
+
+test('confirmed begin acknowledgement enables one durable delivery',async()=>{
+  let sends=0;
+  const result=await deliverProviderIncidentAlert({
+    plan:deliveryPlan('pslo-begin-confirm'),
+    adminTelegramIds:[101],
+    claimDelivery:async()=>({acquired:true,status:'claimed',attempts:1}),
+    beginDelivery:async()=>({ok:true,status:'sending'}),
+    finalizeDelivery:async()=>({ok:true,status:'sent'}),
+    sendMessage:async()=>{sends++;return {ok:true,status:200,outcome:'sent'};},
+  });
+  assert.equal(result.ok,true);
+  assert.equal(sends,1);
+});
