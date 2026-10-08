@@ -1570,3 +1570,104 @@ html[data-theme="light"] .miniapp-public-shell {
     padding: 11px 12px;
   }
 }
+
+/* Match Pass: profile-first selection without redirecting to Match Center. */
+.miniapp-public-shell .match-pass-picker[hidden] { display:none!important; }
+.miniapp-public-shell .match-pass-picker {
+  display:grid;
+  gap:11px;
+  min-width:0;
+  width:100%;
+  padding:12px;
+  margin-top:3px;
+  border:1px solid var(--mr-line-soft);
+  border-radius:12px;
+  background:var(--surface);
+}
+.miniapp-public-shell .match-pass-picker-head {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+.miniapp-public-shell .match-pass-picker-head strong { font-size:12px; }
+.miniapp-public-shell .match-pass-picker-controls { display:grid; grid-template-columns:minmax(0,1fr); gap:9px; }
+.miniapp-public-shell .match-pass-picker label {
+  min-width:0;
+  display:grid;
+  gap:5px;
+  color:var(--hint);
+  font-size:10px;
+  font-weight:700;
+}
+.miniapp-public-shell .match-pass-picker input,
+.miniapp-public-shell .match-pass-picker select {
+  min-width:0;
+  width:100%;
+  max-width:100%;
+  min-height:39px;
+  padding:9px 10px;
+  font-size:12px;
+  color:var(--text);
+  background:var(--surface-2);
+  border:1px solid var(--mr-line-soft);
+  border-radius:9px;
+}
+.miniapp-public-shell .match-pass-picker #matchPassPickerStatus {
+  margin:0;
+  color:var(--hint);
+  font-size:10px;
+  line-height:1.45;
+}
+.miniapp-public-shell .match-pass-picker-matches {
+  display:grid;
+  gap:7px;
+  max-height:260px;
+  min-height:0;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+}
+.miniapp-public-shell .pass-card button.match-pass-picker-close:not(:disabled) {
+  flex:0 0 auto;
+  width:auto;
+  min-height:30px;
+  margin:0;
+  padding:6px 8px;
+  border:1px solid var(--mr-line-soft);
+  border-radius:9px;
+  background:var(--surface-2);
+  color:var(--text);
+  font-size:10px;
+  box-shadow:none;
+}
+.miniapp-public-shell .pass-card button.match-pass-picker-option:not(:disabled) {
+  display:grid;
+  gap:5px;
+  width:100%;
+  min-height:51px;
+  margin:0;
+  padding:10px;
+  text-align:left;
+  white-space:normal;
+  background:var(--surface-2);
+  color:var(--text);
+  border:1px solid var(--mr-line-soft);
+  border-radius:10px;
+  box-shadow:none;
+}
+.miniapp-public-shell .match-pass-picker-option strong {
+  color:var(--text);
+  font-size:11px;
+  line-height:1.35;
+  overflow-wrap:anywhere;
+}
+.miniapp-public-shell .match-pass-picker-option small {
+  color:var(--hint);
+  font-size:9px;
+  line-height:1.4;
+  overflow-wrap:anywhere;
+}
+.miniapp-public-shell .pass-card button.match-pass-picker-option:not(:disabled):focus-visible,
+.miniapp-public-shell .pass-card button.match-pass-picker-option:not(:disabled):hover {
+  border-color:var(--accent);
+}
