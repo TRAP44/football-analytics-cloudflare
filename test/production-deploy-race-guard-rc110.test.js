@@ -64,3 +64,51 @@ test('RC110 serializes production changes without cancelling already queued depl
   assert.match(workflow,/id: production_changes/);
   assert.match(workflow,/if: steps\.production_changes\.outputs\.changed == 'true'/);
 });
+
+
+
+function raceGuardBlock(){
+  const start=workflow.indexOf('- name: RC110 guard against stale production deploy');
+  const end=workflow.indexOf('- name: Use Node.js 22',start);
+  assert.ok(start>=0 && end>start);
+  return workflow.slice(start,end);
+}
+
+test('RC110 compares fetched main SHA to the exact checked-out DEPLOY_SHA before tool installation',()=>{
+  const block=raceGuardBlock();
+  const fetch=block.indexOf('git fetch --no-tags origin main');
+  const head=block.indexOf('VERIFIED_SHA="$(git rev-parse HEAD)"');
+  const compare=block.indexOf('[[ "$DEPLOY_SHA" != "$VERIFIED_SHA" ]]');
+  assert.ok(fetch>=0 && head>fetch && compare>head);
+  assert.match(block,/exit 1/);
+});
+
+test('RC110 rejects divergent histories before classifying safe main drift',()=>{
+  const block=raceGuardBlock();
+  const ancestor=block.indexOf('git merge-base --is-ancestor "$DEPLOY_SHA" "$CURRENT_MAIN_SHA"');
+  const drift=block.indexOf('git diff --name-only "$DEPLOY_SHA" "$CURRENT_MAIN_SHA"');
+  assert.ok(ancestor>=0 && drift>ancestor);
+  assert.match(block,/Verified revision \$DEPLOY_SHA is not an ancestor of current main/);
+  assert.match(block,/Stale production deploy blocked/);
+});
+
+test('RC110 manual production deploy refuses any pending production-relevant change',()=>{
+  const block=raceGuardBlock();
+  assert.match(block,/UNSAFE_MAIN_DRIFT=\(\)/);
+  assert.match(block,/UNSAFE_MAIN_DRIFT\+=\("\$path"\)/);
+  assert.match(block,/if \(\( \$\{#UNSAFE_MAIN_DRIFT\[@\]\} > 0 \)\); then/);
+  assert.match(block,/if \[\[ "\$\{GITHUB_EVENT_NAME\}" == "workflow_dispatch" \]\]; then[\s\S]*Manual deploy requires current main when production-relevant drift exists/);
+  assert.match(block,/printf 'Unsafe drift: %s\\n'/);
+});
+
+test('RC110 permits only explicit test, documentation and maintenance workflow drift',()=>{
+  const block=raceGuardBlock();
+  const branch=block.slice(block.indexOf('case "$path" in'),block.indexOf('esac',block.indexOf('case "$path" in')));
+  for(const allowed of ['test/*','docs/*','*.md','.github/workflows/cleanup-merged-branches.yml','.github/workflows/repository-maintenance.yml']){
+    assert.ok(branch.includes(allowed),'Missing permitted category '+allowed);
+  }
+  for(const forbidden of ['src/*','public/*','package.json','wrangler.jsonc','.github/workflows/deploy-production.yml']){
+    assert.equal(branch.includes(forbidden),false,'Unsafe path accidentally allowlisted: '+forbidden);
+  }
+  assert.match(block,/newer unverified production-relevant main changes remain pending/);
+});
