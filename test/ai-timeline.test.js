@@ -12,6 +12,7 @@ import {
   normalizeAiTimeline,
   renderAiTimelineCompact,
   renderAiTimelineDetails,
+  renderAiProbabilityChart,
 } from '../public/modules/ai-timeline.js';
 
 function readRepoFile(relativePath) {
@@ -72,6 +73,56 @@ const workerSource=readRepoFile('src/worker.js');
 const appSource=readRepoFile('public/app.js');
 const migration=readRepoFile('supabase/migrations/supabase_migration_v6_22.sql').toLowerCase();
 const shellCss=readRepoFile('public/styles/public-shell.css');
+
+
+test('Intelligence 2.0 chart draws only genuine chronological 1X2 snapshots',()=>{
+  const html=renderAiProbabilityChart({points:[
+    {capturedAt:'2026-10-01T17:00:00Z',probabilities:{home:61,draw:23,away:16}},
+    {capturedAt:'2026-10-01T12:00:00Z',probabilities:{home:52,draw:27,away:21}},
+    {capturedAt:'2026-10-01T15:00:00Z',probabilities:{home:57,draw:25,away:18}},
+  ]},match);
+  assert.match(html,/class="ai-prob-chart"/);
+  assert.match(html,/3 сохранённых снимков/);
+  assert.match(html,/Хозяева/);
+  assert.match(html,/61\.0%/);
+  assert.match(html,/23\.0%/);
+  assert.match(html,/16\.0%/);
+  assert.match(html,/class="ai-prob-line home"/);
+  assert.match(html,/class="ai-prob-line draw"/);
+  assert.match(html,/class="ai-prob-line away"/);
+  assert.match(html,/M38\.00 [\d.]+ L[\d.]+ [\d.]+ L625\.00/);
+  assert.match(html,/между ними измерений нет/);
+});
+
+test('Intelligence 2.0 does not invent chart points for missing, invalid or stale history',()=>{
+  const t=(points)=>renderAiProbabilityChart({points},match);
+  const valid={capturedAt:'2026-10-01T12:00:00Z',
+    probabilities:{home:52,draw:27,away:21}};
+  const later={capturedAt:'2026-10-01T17:00:00Z',
+    probabilities:{home:57,draw:25,away:18}};
+  assert.match(t([]),/нужны минимум два/);
+  assert.match(t([valid]),/нужны минимум два/);
+  assert.match(t([valid,{...later,stale:true}]),/нужны минимум два/);
+  assert.match(t([valid,{...later,probabilities:{home:110,draw:-20,away:10}}]),/нужны минимум два/);
+  assert.match(t([valid,{...later,probabilities:{home:57,draw:25,away:70}}]),/нужны минимум два/);
+  assert.doesNotMatch(t([valid,{...later,stale:true}]),/class="ai-prob-line home"/);
+});
+
+test('Intelligence 2.0 escapes team labels and explains non-causal market timing',()=>{
+  const poisoned={...match,home:{name:'<img src=x onerror=alert(1)>'}};
+  const timeline={points:[
+    {capturedAt:'2026-10-01T12:00:00Z',probabilities:{home:52,draw:27,away:21}},
+    {capturedAt:'2026-10-01T17:00:00Z',probabilities:{home:57,draw:25,away:18},
+      trigger:{relation:'correlated',label:'Гол соперника',
+        explanation:'Совпадение по времени, причинность не доказана'}},
+  ]};
+  const html=renderAiTimelineCompact(timeline,poisoned);
+  assert.doesNotMatch(html,/<img src=x/);
+  assert.match(html,/&lt;img src=x/);
+  assert.match(html,/Совпало по времени/);
+  assert.match(html,/причинность не доказана/);
+  assert.match(html,/class="ai-prob-chart"/);
+});
 
 test('AI Timeline: no snapshots produces no invented UI', () => {
   const timeline=buildAiTimeline({match});
@@ -420,7 +471,7 @@ test('AI Timeline wiring captures fresh analyses and loads timeline into Match C
 });
 
 test('AI Timeline UI remains lazy-loaded after Match Pulse and supports narrow mobile widths', () => {
-  assert.match(appSource,/import\('\.\/modules\/ai-timeline\.js'\)/);
+  assert.match(appSource,/import\('\.\/modules\/ai-timeline\.js\?v=6\.120\.0-launch63'\)/);
   const pulse=appSource.indexOf('matchCenterExtras?.renderMatchPulse?.(d)');
   const timeline=appSource.indexOf('matchCenterExtras?.renderAiTimelineCompact?.(d.aiTimeline || {}, m)');
   assert.ok(pulse>=0 && timeline>pulse,'AI Timeline must be rendered after existing Match Pulse');

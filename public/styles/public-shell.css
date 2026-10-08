@@ -4248,3 +4248,64 @@ html {
   .ai-timeline-point-top{display:grid}
   .ai-timeline-point-top small{text-align:left}
 }
+
+
+/* Intelligence 2.0: observed historical model probabilities, never synthetic LIVE interpolation. */
+.ai-prob-chart{
+  margin:12px 0 9px;
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:color-mix(in srgb,var(--surface-2) 65%,var(--surface));
+  min-width:0;
+  overflow:hidden;
+}
+.ai-prob-chart-heading{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:9px;
+  flex-wrap:wrap;
+}
+.ai-prob-chart-heading strong{font-size:12px;line-height:1.35;color:var(--text)}
+.ai-prob-chart-heading small{font-size:9px;color:var(--hint)}
+.ai-prob-chart-svg{width:100%;height:auto;max-height:192px;margin:7px 0 4px;display:block;overflow:visible}
+.ai-prob-grid{stroke:var(--line);stroke-width:1;stroke-dasharray:4 5;opacity:.8}
+.ai-prob-axis{font-size:12px;fill:var(--hint)}
+.ai-prob-line{fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.ai-prob-line.home{stroke:var(--accent)}
+.ai-prob-line.draw{stroke:#a7b0bf}
+.ai-prob-line.away{stroke:#60a5fa}
+.ai-prob-dot{stroke:var(--surface);stroke-width:1.5;vector-effect:non-scaling-stroke}
+.ai-prob-dot.home{fill:var(--accent)}
+.ai-prob-dot.draw{fill:#a7b0bf}
+.ai-prob-dot.away{fill:#60a5fa}
+.ai-prob-legend{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.ai-prob-legend-item{
+  display:flex;
+  min-width:0;
+  flex-wrap:wrap;
+  gap:4px 5px;
+  align-items:center;
+  border-radius:9px;
+  border:1px solid var(--line);
+  background:color-mix(in srgb,var(--surface) 84%,transparent);
+  padding:6px;
+}
+.ai-prob-legend-item i{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--accent)}
+.ai-prob-legend-item.draw i{background:#a7b0bf}
+.ai-prob-legend-item.away i{background:#60a5fa}
+.ai-prob-legend-item span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hint);font-size:9px}
+.ai-prob-legend-item strong{width:100%;color:var(--text);font-size:12px;font-variant-numeric:tabular-nums}
+.ai-prob-chart figcaption{margin-top:9px;color:var(--hint);font-size:9px;line-height:1.5}
+.ai-prob-chart-unavailable{margin:11px 0;color:var(--hint);font-size:10px;line-height:1.45}
+@media(max-width:430px){
+  .ai-prob-chart{padding:9px;margin:10px 0 8px;border-radius:11px}
+  .ai-prob-legend-item{padding:5px}
+}
+@media(max-width:360px){
+  .ai-prob-chart-heading{display:block}
+  .ai-prob-chart-heading small{display:block;margin-top:4px}
+  .ai-prob-legend-item span{font-size:8px}
+  .ai-prob-legend-item strong{font-size:11px}
+}

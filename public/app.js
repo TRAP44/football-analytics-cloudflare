@@ -1100,7 +1100,7 @@ async function ensureMatchCenterExtras() {
   if (!matchCenterExtrasPromise) {
     matchCenterExtrasPromise = Promise.all([
       import('./modules/match-pulse.js?v=6.120.0-launch54'),
-      import('./modules/ai-timeline.js'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch63'),
     ]).then(([pulse, timeline]) => {
       matchCenterExtras = Object.freeze({
         renderMatchPulse: pulse.renderMatchPulse,
