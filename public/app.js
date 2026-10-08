@@ -2715,6 +2715,7 @@ function applyMatchPayload(data, { snapshot = false, refreshing = false } = {}) 
   state.matches = collectionItems(data,'matches');
   state.matchesMeta = {
     restrictedDate: data.restrictedDate === true,
+    cached: data.cached === true || snapshot === true,
     refreshedAt: data.refreshedAt || null,
     stale: Boolean(data.stale || snapshot),
     warning: data.warning || '',
@@ -3417,6 +3418,14 @@ function renderMatches() {
   if ($('dataNotice')) {
     const notices = [];
     if (state.matchesMeta?.stale && !state.matchesMeta?.refreshing) notices.push(`<div class="data-notice stale">⚠️ ${escapeHtml(state.matchesMeta.warning || 'Показаны последние сохранённые данные.')}</div>`);
+    if (state.matchesMeta?.cached && state.matches.some(item => item?.live)) {
+      const sourceTime=Date.parse(state.matchesMeta.refreshedAt || '');
+      const oldEnough=Number.isFinite(sourceTime) && Date.now()-sourceTime>=2*60*1000;
+      if (oldEnough) {
+        const hhmm=new Date(sourceTime).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+        notices.push(`<div class="data-notice stale">LIVE-счёт из кеша по состоянию на ${escapeHtml(hhmm)}. События могли измениться.</div>`);
+      }
+    }
     if (Number(integrity.quarantined || 0) > 0) notices.push('<div class="data-notice integrity-notice">Некоторые матчи временно скрыты, пока мы проверяем данные.</div>');
     $('dataNotice').innerHTML = notices.join('');
   }
