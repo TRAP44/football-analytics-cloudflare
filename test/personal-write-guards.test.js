@@ -398,7 +398,7 @@ test('current personal-write v2 schema contract stays service-role-only and comp
     ['explicitrearm','true'],
     ['reminderretentiondays','90'],
   ]) {
-    assert.match(current,new RegExp("'"+field+"'\\s*,\\s*"+value+"\\b"));
+    assert.match(current,new RegExp("'"+field+"'\\s*,\\s*"+value+"\\s*[,)]"));
   }
   assert.match(current,/revoke all on function public\.personal_write_guard_contract\(\)\s+from public, anon, authenticated;/);
   assert.match(current,/grant execute on function public\.personal_write_guard_contract\(\)\s+to service_role;/);
