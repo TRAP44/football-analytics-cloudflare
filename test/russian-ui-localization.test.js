@@ -96,13 +96,15 @@ test('admin panels have a display-only technical vocabulary translator', () => {
   assert.match(app, /фиксация результата/);
 });
 
-test('release regression checks are current instead of pinned to old RC22 metadata', () => {
+test('release identity keeps canonical RC metadata without stale RC22 labels', () => {
   assert.equal(app.includes('6.14.0-rc22'), false);
   assert.equal(worker.includes('6.14.0-rc22'), false);
   assert.equal(worker.includes('ожидается 6.14.0-rc22'), false);
   assert.match(app, /const assetVersion = CLIENT_VERSION\.split\('-'\)\[0\]/);
   assert.match(app, /CLIENT_VERSION\.endsWith\(\x60-\$\{CLIENT_RELEASE_CHANNEL\}\x60\)/);
-  assert.match(worker, /const releaseMetadataOk = APP_VERSION\.endsWith/);
+  const identity=fs.readFileSync('src/release-identity.js','utf8');
+  assert.match(identity, /const APP_VERSION_RE/);
+  assert.match(identity, /RELEASE_CANDIDATE_MISMATCH/);
 });
 
 test('obsolete release/admin copy is not exposed by the current worker', () => {
@@ -132,13 +134,12 @@ test('obsolete release/admin copy is not exposed by the current worker', () => {
   ]) assert.equal(worker.includes(phrase), false, phrase);
 });
 
-test('RC34 health publishes all localization contracts', () => {
-  assert.match(worker, /russianUiLocalization:\s*'enabled'/);
-  assert.match(worker, /adminRussianLocalization:\s*'enabled'/);
-  assert.match(worker, /prematchRussianLocalization:\s*'enabled'/);
-  assert.match(worker, /dynamicRussianLocalization:\s*'enabled'/);
-  assert.match(worker, /adminTextHumanization:\s*'enabled'/);
-  assert.match(worker, /matchCenterRussianLocalization:\s*'enabled'/);
+test('Russian copy contracts live in client renderers after worker extraction',()=>{
+  assert.match(app,/function humanizeTechnicalText\(value\)/);
+  assert.match(app,/function publicText\(value\)/);
+  assert.match(app,/function russianCountLabel\(value, one, few, many\)/);
+  assert.match(html,/<html lang="ru">/);
+  assert.match(adminHtml,/<html lang="ru">/);
 });
 
 test('Russian counters use grammatical forms for user-facing quantities', () => {
@@ -146,4 +147,21 @@ test('Russian counters use grammatical forms for user-facing quantities', () => 
   assert.match(app, /'матч', 'матча', 'матчей'/);
   assert.match(app, /'команда', 'команды', 'команд'/);
   assert.match(app, /'лига', 'лиги', 'лиг'/);
+});
+
+test('public and admin surfaces keep Russian document language and separated scope',()=>{
+  for(const [surface,marker] of [[html,'public'],[adminHtml,'admin']]){
+    assert.match(surface,/<html lang="ru">/);
+    assert.ok(surface.includes('<meta name="matchradar-surface" content="'+marker+'" />'));
+    assert.match(surface,/aria-label="Основная навигация"/);
+  }
+  assert.doesNotMatch(html,/data-admin-only|class="panel admin-console"/);
+  assert.match(adminHtml,/class="panel admin-console" data-admin-only hidden/);
+});
+
+test('Russian pluralization preserves 11–14 exceptions and positive endings',()=>{
+  const source=app.slice(app.indexOf('function russianCountLabel'),app.indexOf('function searchMatchCard'));
+  assert.match(source,/mod10 === 1 && mod100 !== 11/);
+  assert.match(source,/mod10 >= 2 && mod10 <= 4 && \(mod100 < 12 \|\| mod100 > 14\)/);
+  assert.match(source,/Math\.max\(0, Math\.trunc\(Number\(value\) \|\| 0\)\)/);
 });

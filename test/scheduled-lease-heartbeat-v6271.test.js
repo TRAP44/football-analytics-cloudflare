@@ -282,3 +282,17 @@ test('v6.29.5 preserves renewable ownership beyond the original retention horizo
   assert.ok(sql.includes('and locked_until>v_now'));
 });
 
+test('scheduled lease renewal refuses malformed ownership tokens without calling RPC',async()=>{
+  let calls=0;
+  const api=leaseRuntime({supaRpc:async()=>{calls++;return {};}});
+  for(const leaseToken of ['',true,'short','token with spaces']){
+    const renewal=await api.renewScheduledJob({},{
+      claimed:true,persistent:true,
+      jobKey:'cron:test',groupKey:'cron-global',
+      leaseToken,
+    });
+    assert.equal(renewal.renewed,false);
+    assert.equal(renewal.reason,'invalid_claim');
+  }
+  assert.equal(calls,0);
+});

@@ -548,3 +548,19 @@ test('worker delegates scheduled orchestration through operational and service w
   }
   assert.match(worker,/handleScheduled,/);
 });
+
+test('scheduled task normalization bounds public reason text and freezes the result',()=>{
+  const failure=normalizeScheduledTaskResult('BACKTEST',{
+    status:'failed',ok:false,error:'X'.repeat(900),
+  });
+  assert.equal(failure.task,'backtest');
+  assert.equal(failure.status,'failed');
+  assert.equal(failure.ok,false);
+  assert.equal(failure.reason.length,500);
+  assert.equal(Object.isFrozen(failure),true);
+  const malformed=normalizeScheduledTaskResult('cron',{
+    status:'ok',ok:'true',failed:false,
+  });
+  assert.equal(malformed.status,'degraded');
+  assert.equal(malformed.ok,false);
+});

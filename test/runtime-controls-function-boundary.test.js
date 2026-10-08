@@ -52,3 +52,16 @@ test('Issue #484 API mutation and rollback routes call the restored functions', 
   assert.match(api, /const result\s*=\s*await saveRuntimeControls\(cfg\s*,\s*user\s*,\s*body\)/);
   assert.match(api, /const result\s*=\s*await rollbackRuntimeControls\(cfg\s*,\s*user\s*,\s*body\)/);
 });
+
+test('rollback validates immutable history identity before trusted save',()=>{
+  const rollback=section('async function rollbackRuntimeControls','async function saveRuntimeControls');
+  const probe=rollback.indexOf('await probeRuntimeHistorySchema(cfg)');
+  const identity=rollback.indexOf('positiveId(row.id) !== historyId');
+  const inspection=rollback.indexOf('inspectRuntimeControls(row.snapshot,defaults,{requireComplete:true})');
+  const save=rollback.indexOf('return await saveRuntimeControls(cfg,user,');
+  assert.ok(probe>=0 && identity>probe && inspection>identity && save>inspection);
+  assert.match(rollback,/targetInspection\.value\.revision !== rowRevision/);
+  assert.match(rollback,/sourceRevision:rowRevision/);
+  assert.match(rollback,/\},\{trustedRollback:true\}\)/);
+  assert.doesNotMatch(rollback,/method:\s*'PATCH'/);
+});

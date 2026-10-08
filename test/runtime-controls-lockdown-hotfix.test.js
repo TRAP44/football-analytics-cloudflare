@@ -95,3 +95,14 @@ test('Issue #478 preserves the atomic database-rule commit point', () => {
   assert.match(hotfix, /new\.revision/i);
   assert.doesNotMatch(hotfix, /on conflict/i);
 });
+
+test('lockdown compatibility rule persists bounded reason and audit revision atomically',()=>{
+  assert.match(hotfix,/on update to public\.runtime_controls/i);
+  assert.match(hotfix,/where old\.revision is distinct from new\.revision/i);
+  assert.match(hotfix,/insert into public\.runtime_control_history/i);
+  assert.match(hotfix,/new\.updated_by/);
+  assert.match(hotfix,/left\([\s\S]*?x-runtime-app-version/i);
+  assert.match(hotfix,/x-runtime-source-revision/i);
+  assert.match(hotfix,/x-runtime-reason-hex/i);
+  assert.doesNotMatch(hotfix,/on conflict/i);
+});

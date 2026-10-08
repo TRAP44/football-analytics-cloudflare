@@ -500,3 +500,18 @@ test('worker composition root wires the extracted runtime-controls domain instea
   assert.doesNotMatch(worker, /^async function apiRuntimeControls\(/m);
   assert.ok(lines < 25500, `expected worker.js below 25,500 lines after extraction, got ${lines}`);
 });
+
+test('public runtime-control snapshot exposes fail-closed state without private diagnostics',()=>{
+  const {api}=runtime();
+  const publicState=api.publicRuntimeControls({
+    ...DEFAULT_RUNTIME_CONTROLS,
+    controlPlaneFailClosed:true,
+    controlPlaneReason:'internal_database_failure',
+    secret:'do-not-expose',
+  });
+  assert.equal(publicState.controlPlaneFailClosed,true);
+  assert.equal('controlPlaneReason' in publicState,false);
+  assert.equal('secret' in publicState,false);
+  assert.equal(publicState.analysisEnabled,true);
+  assert.equal(publicState.securityLockdown,false);
+});

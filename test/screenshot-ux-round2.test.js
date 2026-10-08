@@ -34,3 +34,14 @@ test('analysis favorite buttons use explicit compact favorite state and no retur
   assert.doesNotMatch(app, /returnToTelegramBtn/);
   assert.match(premium, /\.analysis-favorite-btn\.secondary-btn/);
 });
+
+test('analysis tie and missing-probability fallback cannot present a fabricated winner',()=>{
+  const start=app.indexOf('function likelyOutcomeDisplay');
+  const end=app.indexOf('function formCard',start);
+  assert.ok(start>=0&&end>start);
+  const body=app.slice(start,end);
+  assert.match(body,/\.filter\(Number\.isFinite\)/);
+  assert.match(body,/rows\.length === 3 && rows\[0\] - rows\[1\] < 1/);
+  assert.match(body,/return 'Нет явного фаворита'/);
+  assert.match(body,/return String\(fallback \|\| 'Недостаточно данных'\)/);
+});

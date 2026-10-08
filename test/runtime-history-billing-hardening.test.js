@@ -52,3 +52,16 @@ test('billing subscription mutation rejects malformed or missing actions instead
   assert.match(billing, /is_canceled: action === 'cancel'/);
   assert.match(worker,/createBillingApiRuntime\(\{/);
 });
+
+test('billing rejects invalid actions before looking up charges or mutating Telegram',()=>{
+  const subscription=section(billingApi,'async function apiBillingSubscription','async function apiBillingRefundLookup');
+  const decode=subscription.indexOf('await request.json()');
+  const invalidJson=subscription.indexOf('BILLING_INVALID_JSON');
+  const invalidAction=subscription.indexOf('BILLING_INVALID_ACTION');
+  const lookup=subscription.indexOf('await getUserRecord(user.id, cfg)');
+  const telegram=subscription.indexOf("telegramApi('editUserStarSubscription'");
+  assert.ok(decode>=0 && invalidJson>decode && invalidAction>invalidJson);
+  assert.ok(lookup>invalidAction && telegram>lookup);
+  assert.match(subscription,/userId === null/);
+  assert.match(subscription,/is_canceled: action === 'cancel'/);
+});

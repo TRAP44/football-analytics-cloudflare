@@ -374,3 +374,20 @@ test('v6.29.5 keeps scheduled retention at or beyond the active lease horizon',(
     'heartbeat renewal must extend retention through the renewed lease',
   );
 });
+
+test('scheduled lease rejects overlong and control-character keys before database RPC',async()=>{
+  let calls=0;
+  const api=runtime({supaRpc:async()=>{calls++;return {};}});
+  const at=new Date('2026-09-28T12:05:00Z');
+  for(const [jobKey,groupKey] of [
+    ['x'.repeat(181),'cron-global'],
+    ['cron:test','y'.repeat(121)],
+    ['cron:bad\nkey','cron-global'],
+    ['cron:test','cron bad group'],
+  ]){
+    const claim=await api.claimScheduledJob({}, {jobKey,groupKey,scheduledAt:at});
+    assert.equal(claim.claimed,false);
+    assert.equal(claim.reason,'invalid_input');
+  }
+  assert.equal(calls,0);
+});
