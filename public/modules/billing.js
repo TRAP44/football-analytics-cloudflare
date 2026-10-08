@@ -14,6 +14,22 @@ function safeFixtureId(value) {
   return Number.isSafeInteger(id) && id > 0 ? id : 0;
 }
 
+export function matchPassPickerRows(rows = [], { query = '', status = 'all' } = {}) {
+  const needle = String(query || '').trim().toLocaleLowerCase('ru-RU');
+  const wanted = ['all', 'upcoming', 'live'].includes(status) ? status : 'all';
+  return (Array.isArray(rows) ? rows : []).filter(match => {
+    if (!safeFixtureId(match?.fixtureId)) return false;
+    if (wanted === 'upcoming' && (match.live || match.finished)) return false;
+    if (wanted === 'live' && !match.live) return false;
+    const title = [match?.home?.name, match?.away?.name, match?.leagueShort, match?.league].join(' ');
+    return !needle || title.toLocaleLowerCase('ru-RU').includes(needle);
+  }).slice(0, 50);
+}
+
+function localMatchPickerDate(date = new Date()) {
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2,'0'), String(date.getDate()).padStart(2,'0')].join('-');
+}
+
 export function buildPassPurchaseBody(passType, fixtureId = 0) {
   const type = String(passType || '').trim().toUpperCase();
   if (!PASS_TYPES.includes(type)) return null;
@@ -162,6 +178,15 @@ export function createBillingModule({
   let passLoadedFixtureId = 0;
   let passRequestSequence = 0;
   let passError = '';
+  let matchPickerOpen = false;
+  let matchPickerDate = '';
+  let matchPickerSearch = '';
+  let matchPickerStatus = 'all';
+  let matchPickerRows = [];
+  let matchPickerLoading = false;
+  let matchPickerError = '';
+  let matchPickerRequest = 0;
+  let selectedMatch = null;
   let passData = {
     paymentsEnabled:false,
     products:{},
@@ -182,6 +207,9 @@ export function createBillingModule({
   }
 
   function clearPassContext() {
+    matchPickerOpen = false;
+    matchPickerRequest += 1;
+    selectedMatch = null;
     passFixtureId = 0;
     passLoaded = false;
     passLoadedFixtureId = 0;
@@ -269,7 +297,7 @@ export function createBillingModule({
     if (view.state === 'exhausted') return 'Пакет использован';
     if (view.state === 'included') return 'Расширенный доступ уже входит в подписку';
     if (view.state === 'unavailable') return type === 'WEEKEND_PASS' ? 'Пока недоступен: серверный лимит не настроен' : 'Пока недоступен';
-    if (view.state === 'needs-fixture') return 'Чтобы купить Match Pass, откройте нужный матч';
+    if (view.state === 'needs-fixture') return 'Выберите матч ниже. Покупка будет действовать только для него.';
     if (view.state === 'paused') return 'Покупка пока на паузе';
     return 'Доступен к покупке';
   }
@@ -280,7 +308,7 @@ export function createBillingModule({
     if (view.state === 'active') return 'Уже активен';
     if (view.state === 'included') return 'Входит в подписку';
     if (view.state === 'unavailable') return 'Недоступен';
-    if (view.state === 'needs-fixture') return 'Откройте матч';
+    if (view.state === 'needs-fixture') return 'Выбрать матч · ' + String(product?.stars || '—') + ' ⭐';
     if (view.state === 'paused') return 'Оплата пока на паузе';
     if (!telegram?.openInvoice) return 'Откройте в Telegram';
     return 'Купить · ' + String(product?.stars || '—') + ' ⭐';
@@ -295,7 +323,8 @@ export function createBillingModule({
 
     const context = $('passContext');
     if (context) context.textContent = fixtureId
-      ? 'Match Pass будет привязан к выбранному матчу №' + fixtureId + '.'
+      ? 'Match Pass для ' + (selectedMatch?.fixtureId === fixtureId
+        ? selectedMatch.title : 'матча №' + fixtureId) + '. После выбора подтвердите покупку.'
       : 'Match Pass — для выбранного матча. Day Pass — на 24 часа, Weekend Pass — на 7 дней.';
 
     if ($('passStoreStatus')) {
@@ -320,7 +349,10 @@ export function createBillingModule({
       setText(key + 'Price', product ? String(product.stars) + ' ⭐' : '— ⭐');
       setText(key + 'Duration', product ? passDurationLabel(type, product) : '—');
       setText(key + 'Usage', product ? passUsageLabel(type, product) : 'Проверяем сервер…');
-      setText(key + 'State', passStateCopy(type, view));
+      setText(key + 'State', type === 'MATCH_PASS' && selectedMatch?.fixtureId === fixtureId
+        && view.state === 'available'
+        ? 'Выбрано: ' + selectedMatch.title + '. Нажмите «Купить», чтобы открыть Telegram Stars.'
+        : passStateCopy(type, view));
       const card = $(key + 'Card');
       if (card) card.dataset.state = view.state;
       const button = $(key + 'Btn');
@@ -329,18 +361,21 @@ export function createBillingModule({
         const useActivePass = view.state === 'active'
           && (type === 'DAY_PASS' || type === 'WEEKEND_PASS')
           && typeof openPassMatches === 'function';
-        const enabledState = ['available','active-other'].includes(view.state) || useActivePass;
+        const chooseFixture = type === 'MATCH_PASS' && view.state === 'needs-fixture';
+        const enabledState = ['available','active-other'].includes(view.state) || useActivePass || chooseFixture;
         button.dataset.passAction = useActivePass ? 'use' : 'buy';
         button.disabled = Boolean(
           busyAction || syncing || passLoading
           || !product || product.saleReady === false
-          || (!useActivePass && (!passData.paymentsEnabled || !telegram?.openInvoice || !request))
+          || (!chooseFixture && !useActivePass && (!passData.paymentsEnabled || !telegram?.openInvoice || !request))
           || !enabledState
         );
         button.textContent = passButtonCopy(type, product, view);
         button.setAttribute('aria-busy', busyAction === 'pass:' + type ? 'true' : 'false');
       }
     }
+
+    renderMatchPicker();
 
     const active = $('activePasses');
     if (active) {
@@ -471,6 +506,113 @@ export function createBillingModule({
     renderPlan('PRO', snapshot);
     renderPlan('PREMIUM', snapshot);
     renderPasses(snapshot);
+  }
+
+
+  function renderMatchPicker() {
+    const root = $('matchPassPicker');
+    if (!root) return;
+    root.hidden = !matchPickerOpen;
+    if (!matchPickerOpen) return;
+    if ($('matchPassPickerDate')) $('matchPassPickerDate').value = matchPickerDate;
+    if ($('matchPassPickerSearch')) $('matchPassPickerSearch').value = matchPickerSearch;
+    if ($('matchPassPickerFilter')) $('matchPassPickerFilter').value = matchPickerStatus;
+    renderMatchPickerResults();
+  }
+
+  function renderMatchPickerResults() {
+    const list = $('matchPassPickerMatches');
+    const notice = $('matchPassPickerStatus');
+    if (!list || !notice || !matchPickerOpen) return;
+    list.replaceChildren();
+    if (matchPickerLoading) {
+      notice.textContent = 'Загружаем матчи выбранной даты…';
+      return;
+    }
+    if (matchPickerError) {
+      notice.textContent = matchPickerError;
+      return;
+    }
+    const matches = matchPassPickerRows(matchPickerRows, {
+      query:matchPickerSearch,
+      status:matchPickerStatus,
+    });
+    notice.textContent = matches.length
+      ? 'Выберите матч: оплата начнётся только после подтверждения.'
+      : 'Матчей по этому запросу нет. Попробуйте другую дату или снимите фильтр.';
+    for (const match of matches) {
+      const id = safeFixtureId(match.fixtureId);
+      const title = [match?.home?.name || 'Команда', match?.away?.name || 'Команда'].join(' — ');
+      const choice = document.createElement('button');
+      choice.type = 'button';
+      choice.className = 'match-pass-picker-option';
+      const name = document.createElement('strong');
+      name.textContent = title;
+      const detail = document.createElement('small');
+      const progress = match.live ? 'LIVE' : match.finished ? 'Завершён' : 'Предстоящий';
+      detail.textContent = [match?.leagueShort || match?.league || 'Турнир',
+        match?.date && typeof dateTime === 'function' ? dateTime(match.date) : '',
+        progress].filter(Boolean).join(' · ');
+      choice.append(name,detail);
+      choice.addEventListener('click', () => {
+        if (!matchPickerOpen || matchPickerLoading) return;
+        selectedMatch = {fixtureId:id,title,date:match.date || ''};
+        matchPickerOpen = false;
+        matchPickerRequest += 1;
+        passFixtureId = id;
+        render();
+        void loadPassAccess({fixtureId:id,force:true});
+      });
+      list.append(choice);
+    }
+  }
+
+  async function loadMatchPickerDate(date) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ||
+        Number.isNaN(Date.parse(date+'T12:00:00'))) {
+      matchPickerError = 'Выберите корректную дату.';
+      renderMatchPickerResults();
+      return;
+    }
+    const requestId = ++matchPickerRequest;
+    matchPickerDate = date;
+    matchPickerLoading = true;
+    matchPickerError = '';
+    renderMatchPicker();
+    try {
+      if (state.matchesMeta?.date === date && Array.isArray(state.matches) && state.matches.length) {
+        matchPickerRows = state.matches;
+      } else {
+        const data = await api('/api/matches?date=' + encodeURIComponent(date), {retry:false});
+        if (requestId !== matchPickerRequest || !matchPickerOpen) return;
+        matchPickerRows = Array.isArray(data?.matches) ? data.matches
+          : Array.isArray(data?.items) ? data.items : [];
+      }
+    } catch (error) {
+      if (requestId !== matchPickerRequest || !matchPickerOpen) return;
+      matchPickerRows = [];
+      matchPickerError = error?.message || 'Не удалось загрузить матчи. Попробуйте другую дату.';
+    } finally {
+      if (requestId === matchPickerRequest) {
+        matchPickerLoading = false;
+        renderMatchPicker();
+      }
+    }
+  }
+
+  async function openMatchPicker() {
+    if (matchPickerOpen) {
+      $('matchPassPicker')?.scrollIntoView?.({block:'nearest',behavior:'smooth'});
+      return;
+    }
+    matchPickerOpen = true;
+    matchPickerDate = /^\d{4}-\d{2}-\d{2}$/.test(state.matchesMeta?.date || '')
+      ? state.matchesMeta.date : localMatchPickerDate();
+    matchPickerSearch = '';
+    matchPickerStatus = 'all';
+    renderMatchPicker();
+    $('matchPassPicker')?.scrollIntoView?.({block:'nearest',behavior:'smooth'});
+    await loadMatchPickerDate(matchPickerDate);
   }
 
   async function loadPassAccess({ fixtureId = contextFixtureId(), force = false } = {}) {
@@ -702,7 +844,8 @@ export function createBillingModule({
     });
 
     if (!body) {
-      toast?.('Match Pass нужно открывать из конкретного матча.');
+      if (type === 'MATCH_PASS') await openMatchPicker();
+      else toast?.('Выберите матч для покупки.');
       return;
     }
     if (!product?.saleReady) {
@@ -822,6 +965,9 @@ export function createBillingModule({
       toast?.('Покупки пока не включены. Бесплатные функции продолжают работать.');
       return { opened:false, reason:'monetization_paused' };
     }
+    selectedMatch = null;
+    matchPickerOpen = false;
+    matchPickerRequest += 1;
     passFixtureId = id;
     if (typeof openProfile === 'function') await openProfile();
     await loadPassAccess({ fixtureId:id, force:true });
@@ -856,6 +1002,10 @@ export function createBillingModule({
     const normalized = String(type || '').toUpperCase();
     const key = normalized === 'MATCH_PASS' ? 'matchPass' : normalized === 'DAY_PASS' ? 'dayPass' : 'weekendPass';
     const button = $(key + 'Btn');
+    if (normalized === 'MATCH_PASS' && !contextFixtureId()) {
+      void openMatchPicker();
+      return;
+    }
     if (button?.dataset.passAction === 'use' && typeof openPassMatches === 'function') {
       openPassMatches(normalized);
       return;
@@ -872,6 +1022,22 @@ export function createBillingModule({
     $('subscriptionManageBtn')?.addEventListener('click', () => manageSubscription($('subscriptionManageBtn')?.dataset.action || 'cancel'));
     $('quotaUpgradeBtn')?.addEventListener('click', () => { void openPlansFromQuota(); });
     $('matchPassBtn')?.addEventListener('click', () => handlePassButton('MATCH_PASS'));
+    $('matchPassPickerClose')?.addEventListener('click', () => {
+      matchPickerOpen = false;
+      matchPickerRequest += 1;
+      renderMatchPicker();
+    });
+    $('matchPassPickerDate')?.addEventListener('change', event => {
+      void loadMatchPickerDate(event.target.value);
+    });
+    $('matchPassPickerSearch')?.addEventListener('input', event => {
+      matchPickerSearch = String(event.target.value || '').slice(0,100);
+      renderMatchPickerResults();
+    });
+    $('matchPassPickerFilter')?.addEventListener('change', event => {
+      matchPickerStatus = event.target.value;
+      renderMatchPickerResults();
+    });
     $('dayPassBtn')?.addEventListener('click', () => handlePassButton('DAY_PASS'));
     $('weekendPassBtn')?.addEventListener('click', () => handlePassButton('WEEKEND_PASS'));
     $('passRefreshBtn')?.addEventListener('click', () => { void loadPassAccess({ force:true }); });
@@ -892,7 +1058,7 @@ export function createBillingModule({
     showQuotaPaywall,
     snapshot: () => ({
       loaded, loading, busyAction, syncing, paymentState, lastError,
-      passLoaded, passLoading, passError, passFixtureId:contextFixtureId(),
+      passLoaded, passLoading, passError, matchPickerOpen, matchPickerDate, passFixtureId:contextFixtureId(),
       passLoadedFixtureId, passLoadingFixtureId,
     }),
     syncBilling,

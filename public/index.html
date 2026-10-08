@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#07111f" />
   <meta name="description" content="MatchRadar — AI-футбольный ассистент в Telegram: матчи, команды, LIVE и понятный разбор ключевых факторов." />
   <meta name="matchradar-surface" content="public" />
-  <meta name="frontend-asset-revision" content="6.120.0-launch61" />
+  <meta name="frontend-asset-revision" content="6.120.0-launch62" />
   <title>MatchRadar · AI-футбольный ассистент</title>
   <link rel="icon" type="image/svg+xml" href="/assets/brand/matchradar-mark.svg?v=6.120.0-p42" />
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=6.120.0-launch61" />
-  <link rel="stylesheet" href="/styles/public-shell.css?v=6.120.0-launch61" />
-  <link rel="stylesheet" href="/styles/premium-ui.css?v=6.120.0-launch61" />
+  <link rel="stylesheet" href="/styles.css?v=6.120.0-launch62" />
+  <link rel="stylesheet" href="/styles/public-shell.css?v=6.120.0-launch62" />
+  <link rel="stylesheet" href="/styles/premium-ui.css?v=6.120.0-launch62" />
 </head>
 <body class="miniapp-public-shell">
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
@@ -409,7 +409,30 @@
                 <p>Один выбранный матч: полный AI-разбор и расширенные данные только для этого матча.</p>
                 <div class="pass-meta"><span id="matchPassDuration">—</span><span id="matchPassUsage">Проверяем доступ…</span></div>
                 <small id="matchPassState">Откройте Pass из конкретного матча</small>
-                <button id="matchPassBtn" type="button" disabled>Откройте матч</button>
+                <button id="matchPassBtn" type="button" disabled>Выбрать матч</button>
+                <div id="matchPassPicker" class="match-pass-picker" hidden aria-label="Выбор матча для Match Pass">
+                  <div class="match-pass-picker-head">
+                    <strong>Выберите матч</strong>
+                    <button id="matchPassPickerClose" type="button" class="match-pass-picker-close">Закрыть</button>
+                  </div>
+                  <div class="match-pass-picker-controls">
+                    <label for="matchPassPickerDate">Дата
+                      <input id="matchPassPickerDate" type="date" aria-label="Дата матчей" />
+                    </label>
+                    <label for="matchPassPickerFilter">Матчи
+                      <select id="matchPassPickerFilter" aria-label="Статус матча">
+                        <option value="all">Все</option>
+                        <option value="upcoming">Предстоящие</option>
+                        <option value="live">LIVE</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label class="match-pass-picker-search" for="matchPassPickerSearch">Поиск команды или турнира
+                    <input id="matchPassPickerSearch" type="search" maxlength="100" autocomplete="off" placeholder="Название команды или турнира" />
+                  </label>
+                  <p id="matchPassPickerStatus" role="status" aria-live="polite">Загружаем матчи…</p>
+                  <div id="matchPassPickerMatches" class="match-pass-picker-matches" role="group" aria-label="Доступные матчи"></div>
+                </div>
               </article>
               <article id="dayPassCard" class="pass-card" data-pass-type="DAY_PASS">
                 <div class="pass-card-top"><strong id="dayPassTitle">Day Pass</strong><b id="dayPassPrice">— ⭐</b></div>
@@ -602,6 +625,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=6.120.0-launch61"></script>
+  <script type="module" src="/app.js?v=6.120.0-launch62"></script>
 </body>
 </html>
