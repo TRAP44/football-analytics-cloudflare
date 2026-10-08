@@ -6341,7 +6341,6 @@ function renderAnalysis(d) {
         <div><span>П2</span><strong>${pct(p.away)}</strong></div>
       </div>
       ${probabilityStrip(p)}
-      ${renderFormIntelligence(d)}
 
       <div class="experience-health-row">
         <span class="quality-pill ${quality.cls}">● ${escapeHtml(publicText(confidence.label || quality.label || 'Оценивается'))}</span>
@@ -6358,7 +6357,7 @@ function renderAnalysis(d) {
       </div>
     </section>
 
-
+    ${renderFormIntelligence(d)}
     ${analysisGlanceHtml(d)}
 
     ${kickoffHandoffHtml(d.kickoffHandoff || {}, m)}
