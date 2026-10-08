@@ -11,7 +11,7 @@ const deploy = fs.readFileSync('.github/workflows/deploy-production.yml','utf8')
 const rollback = fs.readFileSync('.github/workflows/rollback-production.yml','utf8');
 
 test('CodeQL scans JavaScript on PR, main and schedule with pinned actions', () => {
-  assert.match(codeql,/pull_request:\s*\n\s*branches:\s*\[main\]/);
+  assert.match(codeql,/pull_request:\s*\n\s*types:\s*\[[^\n]+\]\s*\n\s*branches:\s*\[main\]/);
   assert.match(codeql,/push:\s*\n\s*branches:\s*\[main\]/);
   assert.match(codeql,/schedule:/);
   assert.match(codeql,/languages:\s*javascript-typescript/);
@@ -59,7 +59,7 @@ test('public PR automation stays on ephemeral runners and fork database work sta
 
   assert.match(
     quality,
-    /database-integration:[\s\S]*if:\s*\$\{\{ github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository \}\}/,
+    /database-integration:[\s\S]*if:\s*\$\{\{ github\.event_name != 'pull_request' \|\| \(github\.event\.action != 'closed' && github\.event\.pull_request\.head\.repo\.full_name == github\.repository\) \}\}/,
   );
 });
 
