@@ -39,7 +39,7 @@ test('Scenarios update all three probability bars and stay marked illustrative',
 
 test('Signature preview obeys production CSP and mobile touch limits',()=>{
   assert.match(headers,/script-src 'self' https:\/\/telegram\.org/);
-  assert.match(html,/<script src="\/modules\/preview-matchradar\.js" defer><\/script>/);
+  assert.match(html,/<script src="\.\/modules\/preview-matchradar\.js" defer><\/script>/);
   assert.doesNotMatch(html,/<script>/);
   assert.match(html,/viewport-fit=cover/);
   assert.match(html,/safe-area-inset-bottom/);
