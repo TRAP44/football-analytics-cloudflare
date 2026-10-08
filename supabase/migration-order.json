@@ -199,6 +199,10 @@
     {
       "path": "migrations/supabase_migration_v6_29_13.sql",
       "gitBlobSha": "d0484a98493cbc7ebf472bc87ab2fc6c7d76847a"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_29_14.sql",
+      "gitBlobSha": "feb23d187edc1f8a487defd36784dee205397824"
     }
   ],
   "notes": [
