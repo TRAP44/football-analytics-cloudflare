@@ -32,6 +32,7 @@ import {
   normalizePersonalSignalText,
 } from './modules/personal-feed.js';
 import { deriveMatchCockpit } from './modules/match-cockpit.js';
+import { renderFormIntelligence } from './modules/form-intelligence.js';
 import { createPlayerFollowModule } from './modules/player-follow.js';
 import {
   CLIENT_VERSION,
@@ -6340,6 +6341,7 @@ function renderAnalysis(d) {
         <div><span>П2</span><strong>${pct(p.away)}</strong></div>
       </div>
       ${probabilityStrip(p)}
+      ${renderFormIntelligence(d)}
 
       <div class="experience-health-row">
         <span class="quality-pill ${quality.cls}">● ${escapeHtml(publicText(confidence.label || quality.label || 'Оценивается'))}</span>
