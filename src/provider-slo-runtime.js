@@ -97,8 +97,10 @@ export function createProviderSloRuntime(deps) {
   }
   
   async function readProviderSloWindows(cfg, hours = 24, { nowMs = Date.now(), includeOpen = true } = {}) {
-    const safeHours=Math.max(1,Math.min(168,Number(hours || 24)));
-    const safeNow=Number(nowMs || Date.now());
+    const safeHours=typeof hours==='number' && Number.isFinite(hours) && hours>0
+      ? Math.max(1,Math.min(168,Math.floor(hours))) : 24;
+    const safeNow=typeof nowMs==='number' && Number.isFinite(nowMs)
+      && nowMs>=0 && nowMs<=8.64e15-15*60_000 ? nowMs : Date.now();
     const since=new Date(safeNow-safeHours*60*60_000).toISOString();
     const fallbackItems=memory.opsEvents.filter(item =>
       item?.source==='provider'
@@ -122,9 +124,10 @@ export function createProviderSloRuntime(deps) {
       },5000);
       const rows=Array.isArray(raw)
         ? raw
-        : raw && typeof raw==='object' && raw.bucket_started_at
+        : raw && typeof raw==='object' && !Array.isArray(raw) && raw.bucket_started_at
           ? [raw]
-          : [];
+          : null;
+      if (!rows) throw new Error('Invalid provider SLO bucket response.');
       const items=providerSloWindowsFromBuckets(rows,{
         hours:safeHours,
         nowMs:safeNow,
@@ -153,12 +156,13 @@ export function createProviderSloRuntime(deps) {
       url.searchParams.set('limit','800');
       const response=await fetchWithTimeout(url,{headers:supaHeaders(cfg)},7000,'Supabase provider SLO fallback');
       if (!response.ok) return fallback();
-      const items=await response.json().catch(()=>[]);
+      const items=await response.json();
+      if (!Array.isArray(items)) return fallback();
       return {
         persistent:true,
         migrationReady:false,
         distributed:false,
-        items:Array.isArray(items)?items:[],
+        items,
         hours:safeHours,
       };
     } catch {
@@ -205,8 +209,9 @@ export function createProviderSloRuntime(deps) {
       url.searchParams.set('limit','300');
       const response = await fetchWithTimeout(url,{headers:supaHeaders(cfg)},7000,'Supabase provider incident alerts');
       if (!response.ok) return fallback();
-      const items = await response.json().catch(()=>[]);
-      return { persistent:true, migrationReady:true, items:Array.isArray(items)?items:[], hours:safeHours };
+      const items = await response.json();
+      if (!Array.isArray(items)) return fallback();
+      return { persistent:true, migrationReady:true, items, hours:safeHours };
     } catch {
       return fallback();
     }
