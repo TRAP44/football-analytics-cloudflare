@@ -168,6 +168,7 @@ test('retry-safe internal mutation can reclaim a failed distributed claim', asyn
     handler:async()=>{calls+=1;return {status:503};},
   });
   assert.equal(failed.blocked,false);
+  assert.equal(sensitiveMutationRetryPolicy('/api/admin/billing/refund',503),true);
   assert.equal(sensitiveMutationRetryPolicy('/api/runtime-controls/rollback',503),true);
 
   const retried=await runSensitiveMutationWithReplay({
@@ -500,11 +501,11 @@ test('sensitive replay identity changes for distinct bodies without a client key
   assert.equal(a.idempotencyKeyHash,'');
   assert.equal(Object.isFrozen(a),true);
 });
-test('retry policy never retries external side effects on server errors',()=>{
+test('retry policy restricts automatic retries to explicitly retryable routes',()=>{
   for(const path of [
     '/api/admin/channel-publisher/test',
-    '/api/admin/billing/refund',
     '/api/billing/invoice',
+    '/api/billing/subscription',
   ]){
     assert.equal(sensitiveMutationRetryPolicy(path,503),false,path);
     assert.equal(sensitiveMutationRetryPolicy(path,429),false,path);
