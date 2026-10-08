@@ -187,3 +187,67 @@ test('reviewed synthetic fixture allowlist reports stale entries when expected e
     seen:0,
   }]);
 });
+
+
+
+test('production secrets are not protected by an environment assigned to an unrelated job',()=>{
+  const source=[
+    'permissions:',
+    '  contents: read',
+    'jobs:',
+    '  audit:',
+    '    runs-on: ubuntu-latest',
+    '    environment: production',
+    '  deploy:',
+    '    runs-on: ubuntu-latest',
+    '    env:',
+    '      CLOUDFLARE_API_TOKEN: ' + '$' + '{{ secrets.CLOUDFLARE_API_TOKEN }}',
+  ].join('\n');
+  const findings=auditWorkflow('.github/workflows/deploy-production.yml',source);
+  assert.ok(findings.some(item=>item.type==='production_environment_missing'));
+});
+
+test('production workflows protect every separate job consuming approved secrets',()=>{
+  const source=[
+    'permissions:',
+    '  contents: read',
+    'jobs:',
+    '  deploy:',
+    '    environment: production',
+    '    env:',
+    '      CLOUDFLARE_API_TOKEN: ' + '$' + '{{ secrets.CLOUDFLARE_API_TOKEN }}',
+    '  verify:',
+    '    environment: production',
+    '    env:',
+    '      CLOUDFLARE_ACCOUNT_ID: ' + '$' + '{{ secrets.CLOUDFLARE_ACCOUNT_ID }}',
+  ].join('\n');
+  assert.deepEqual(auditWorkflow('.github/workflows/deploy-production.yml',source),[]);
+  const partial=source.replace('  verify:\n    environment: production','  verify:');
+  assert.ok(auditWorkflow('.github/workflows/deploy-production.yml',partial)
+    .some(item=>item.type==='production_environment_missing'));
+});
+
+test('dynamic secret names are rejected even when an environment is protected',()=>{
+  const source=[
+    'permissions:',
+    '  contents: read',
+    'jobs:',
+    '  deploy:',
+    '    environment: production',
+    '    steps:',
+    '      - run: echo ' + '$' + '{{ secrets[env.SECRET_NAME] }}',
+  ].join('\n');
+  const findings=auditWorkflow('.github/workflows/deploy-production.yml',source);
+  assert.ok(findings.some(item=>item.type==='dynamic_secret_reference'));
+});
+
+test('public text assets reveal only forbidden secret names, never their actual values',()=>{
+  const paths=['public/config.json','public/logo.svg','public/image.png'];
+  const findings=auditPublicFiles(paths,path=>{
+    if(path.endsWith('.json'))return 'SUPABASE_SECRET_KEY=private-value';
+    return 'TELEGRAM_WEBHOOK_SECRET=private-value';
+  });
+  assert.equal(findings.length,2);
+  assert.equal(findings.some(item=>JSON.stringify(item).includes('private-value')),false);
+  assert.equal(findings.some(item=>item.path==='public/image.png'),false);
+});

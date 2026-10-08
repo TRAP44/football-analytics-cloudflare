@@ -89,6 +89,41 @@ export function workflowPaths(dir='.github/workflows') {
     .sort();
 }
 
+function workflowJobs(text='') {
+  const jobs=[];
+  let insideJobs=false;
+  let current=null;
+  for(const line of stripYamlComments(text).split(/\r?\n/)) {
+    if (!insideJobs) {
+      if (/^jobs:\s*$/.test(line)) insideJobs=true;
+      continue;
+    }
+    if (/^\S/.test(line)) break;
+    const match=/^  ([A-Za-z_][A-Za-z0-9_-]*):\s*$/.exec(line);
+    if (match) {
+      current={name:match[1],lines:[]};
+      jobs.push(current);
+      continue;
+    }
+    if (current) current.lines.push(line);
+  }
+  return jobs;
+}
+
+function productionEnvironmentProtected(text='') {
+  const jobs=workflowJobs(text);
+  if (!jobs.length) return false;
+  const productionJobNames=new Set(['deploy','rollback','backup','restore_drill']);
+  const sensitive=jobs.filter(job=>{
+    const body=job.lines.join('\n');
+    return productionJobNames.has(job.name)
+      || workflowSecretRefs(body).length>0
+      || /\$\{\{[^}]*\bsecrets\s*\[/.test(body);
+  });
+  if (!sensitive.length) return false;
+  return sensitive.every(job=>/^    environment:\s*production\s*$/m.test(job.lines.join('\n')));
+}
+
 export function auditWorkflow(pathName, text='') {
   const findings=[];
   const source=String(text);
@@ -123,7 +158,7 @@ export function auditWorkflow(pathName, text='') {
   }
 
   if (['.github/workflows/backup-supabase.yml','.github/workflows/deploy-production.yml','.github/workflows/rollback-production.yml'].includes(pathName)
-      && !/^\s*environment:\s*production\s*$/mi.test(source)) {
+      && !productionEnvironmentProtected(source)) {
     findings.push({path:pathName,type:'production_environment_missing'});
   }
 
