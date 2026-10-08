@@ -24,7 +24,7 @@ export function verifyRollbackTarget(version, expectedVersion, expectedId, allow
   if (!cloudflareVersionIdValid(expectedId) || !cloudflareVersionIdValid(version.id)) {
     throw new Error(`Rollback target release identity validation failed: ${RELEASE_IDENTITY_CODES.CLOUDFLARE_VERSION_ID_INVALID}.`);
   }
-  if (version.id !== expectedId) {
+  if (version.id.toLowerCase() !== expectedId.toLowerCase()) {
     throw new Error(`Cloudflare resolved version ID ${version.id || 'unknown'} instead of requested ${expectedId}.`);
   }
 

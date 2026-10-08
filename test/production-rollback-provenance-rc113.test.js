@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { verifyRollbackTarget } from '../scripts/verify-rollback-target.js';
 
 const workflow = fs.readFileSync('.github/workflows/rollback-production.yml', 'utf8');
 
@@ -79,4 +80,57 @@ test('RC113 destructive rollback remains serialized and requires exact-target op
   assert.match(workflow,/if: \$\{\{ inputs\.confirm == format\('ROLLBACK:\{0\}:\{1\}', inputs\.expected_version, inputs\.version_id\) \}\}/);
   assert.match(workflow,/npx wrangler rollback "\$VERSION_ID" --yes --message/);
   assert.doesNotMatch(workflow,/pull_request:\s*/);
+});
+
+
+
+test('RC113 rollback target validates version UUIDs independently of letter case',()=>{
+  const candidate={
+    id:'AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE',
+    annotations:{
+      'workers/message':'release=6.120.0-rc144 sha='+'a'.repeat(40),
+      'workers/tag':'a'.repeat(40),
+    },
+    metadata:{created_on:'2026-10-07T18:00:00Z'},
+  };
+  const result=verifyRollbackTarget(
+    candidate,'6.120.0-rc144',candidate.id.toLowerCase(),false,'','a'.repeat(40));
+  assert.equal(result.mode,'stamped');
+  assert.equal(result.deploySha,'a'.repeat(40));
+});
+
+test('RC113 rollback metadata refuses same-shape but different Cloudflare target identity',()=>{
+  const candidate={
+    id:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    annotations:{
+      'workers/message':'release=6.120.0-rc144 sha='+'a'.repeat(40),
+      'workers/tag':'a'.repeat(40),
+    },
+    metadata:{created_on:'2026-10-07T18:00:00Z'},
+  };
+  assert.throws(()=>verifyRollbackTarget(
+    candidate,'6.120.0-rc144','bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+  ),/instead of requested/);
+});
+
+test('RC113 rollback protects against forged annotations even with exact target ID',()=>{
+  const id='aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const stamp='release=6.120.0-rc144 sha='+'a'.repeat(40);
+  for(const annotations of [
+    {'workers/message':{toString:()=>stamp},'workers/tag':'a'.repeat(40)},
+    {'workers/message':stamp,'workers/tag':{toString:()=> 'a'.repeat(40)}},
+  ]){
+    assert.throws(()=>verifyRollbackTarget({
+      id,annotations,metadata:{created_on:'2026-10-07T18:00:00Z'},
+    },'6.120.0-rc144',id),/no RC116 release identity metadata|validation failed/);
+  }
+});
+
+test('RC113 ensures rollback must be checked on current main before mutation',()=>{
+  const checkout=workflow.indexOf('- name: Checkout verified rollback workflow revision');
+  const provenance=workflow.indexOf('- name: RC113 verify rollback workflow provenance');
+  const preflight=workflow.indexOf('- name: Rollback preflight');
+  const cutover=workflow.indexOf('- name: Roll back Worker');
+  assert.ok(checkout>=0 && provenance>checkout && preflight>provenance && cutover>preflight);
+  assert.match(workflow.slice(provenance,preflight),/\$ROLLBACK_WORKFLOW_SHA" != "\$CURRENT_MAIN_SHA"/);
 });
