@@ -170,3 +170,12 @@ test('Telegram bot start URL bounds and validates both username and start payloa
     );
   }
 });
+
+test('Telegram stable dedupe key remains consistent across token rotation',()=>{
+  const before='111111111:original-key';
+  const after='111111111:rotated-key';
+  const update={update_id:98765};
+  assert.equal(primaryTelegramUpdateDedupeKey(before,update),primaryTelegramUpdateDedupeKey(after,update));
+  assert.equal(primaryTelegramUpdateDedupeKey(before,update),'b:id-111111111:u:98765');
+  assert.doesNotMatch(primaryTelegramUpdateDedupeKey(before,update),/original-key/);
+});

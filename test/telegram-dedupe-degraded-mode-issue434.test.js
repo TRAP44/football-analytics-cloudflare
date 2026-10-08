@@ -154,3 +154,15 @@ test('Issue #434 dedupe retry stays suppressed if a side effect has already happ
   assert.equal(result.retry,false);
   assert.equal(result.successfulEffects,1);
 });
+
+test('Issue #434 explicitly fails closed for digest changes when persistence is unavailable',async()=>{
+  const {api,telemetry}=runtime({hasSupabase:false});
+  const result=await api.claimTelegramUpdatePersistent({},'b:id-111111111:u:43404',{
+    callback_query:{id:'change-digest',data:'digest:off'},
+  });
+  assert.equal(result.status,'fail_closed');
+  assert.equal(result.claimed,false);
+  assert.equal(result.retry,true);
+  assert.equal(result.risk,'idempotent_mutation');
+  assert.ok(telemetry.includes('telegramDedupeFailClosedHighRisk'));
+});

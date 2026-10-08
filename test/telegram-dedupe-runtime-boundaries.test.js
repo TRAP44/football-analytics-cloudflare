@@ -178,3 +178,20 @@ test('Telegram dedupe pruning failures cannot break an accepted local claim', ()
   assert.equal(result.duplicate, false);
   assert.ok(result.key);
 });
+
+test('Telegram dedupe requires literal RPC true before accepting a persistent claim',async()=>{
+  const values=['true',{claimed:true},1,null,false,true];
+  let calls=0;
+  const {api}=buildRuntime({
+    hasSupabase:()=>true,
+    supaRpc:async()=>values[calls++],
+  });
+  for(const expected of [false,false,false,false,false,true]){
+    const result=await api.claimTelegramUpdatePersistent(
+      {},'b:id-111111111:u:55',{update_id:55,message:{text:'/today'}},
+    );
+    assert.equal(result.claimed,expected);
+    assert.equal(result.persistent,true);
+  }
+  assert.equal(calls,6);
+});

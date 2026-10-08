@@ -294,3 +294,18 @@ test('digest cron rejects invalid schedule before subscription storage access',a
   );
   assert.equal(scans,0);
 });
+
+test('digest public settings cap favorite teams and deduplicate provider identities',()=>{
+  const {api}=runtime();
+  const rows=[
+    {team_id:10,team_name:'Arsenal'},
+    {team_id:'10',team_name:'Duplicate'},
+    ...Array.from({length:12},(_,i)=>({team_id:20+i,team_name:'Team '+i})),
+  ];
+  const settings=api.publicDigestSettings({telegram_id:7,enabled:true},'FREE',rows);
+  assert.equal(settings.favoriteTeams.length,6);
+  assert.equal(settings.favoriteTeams[0].teamName,'Arsenal');
+  assert.equal(new Set(settings.favoriteTeams.map(x=>x.teamId)).size,6);
+  assert.equal(settings.capabilities.smartRadarContext,false);
+  assert.equal(settings.capabilities.customDeliveryTime,false);
+});

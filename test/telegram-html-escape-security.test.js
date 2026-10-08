@@ -31,3 +31,15 @@ test('Telegram legal links keep URL output behind the complete HTML sanitizer', 
   assert.match(telegram,/generatedHttpUrl\(publicSiteUrl,request,path\)/);
   assert.match(telegram,/href="\$\{escapeHtml\(url,2000\)\}"/);
 });
+
+test('Telegram HTML escaping is idempotent for input syntax and protects apostrophes',()=>{
+  const source=searchRuntime.slice(
+    searchRuntime.indexOf('function telegramHtmlEscape'),
+    searchRuntime.indexOf('function botSearchParts'),
+  );
+  assert.ok(source.includes("replace(/&/g,'&amp;')"));
+  assert.ok(source.includes("replace(/'/g,'&#39;')"));
+  assert.ok(source.indexOf("replace(/&/g,'&amp;')")<source.indexOf("replace(/</g,'&lt;')"));
+  assert.match(botUiRuntime,/telegramHtmlEscape/);
+  assert.match(botOrchestrationRuntime,/telegramHtmlEscape/);
+});

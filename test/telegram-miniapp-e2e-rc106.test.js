@@ -72,3 +72,14 @@ test('RC106 exposes blocking E2E release and health contracts',()=>{
   assert.match(worker,/telegramMiniAppE2ESelfTest: telegramMiniAppE2EDrill\(\)\.pass \? 'enabled' : 'failed'/);
   assert.match(worker,/telegramMiniAppE2E: true/);
 });
+
+test('RC106 handoff cannot bypass the protected quota reservation on an uncached analysis',()=>{
+  const analyzeStart=worker.indexOf('async function apiAnalyze');
+  const reserve=worker.indexOf('usageReservation=await reserveAnalysisQuota(user.id,cfg);',analyzeStart);
+  const analyzeEnd=worker.indexOf('async function apiHistoryAnalysis',analyzeStart);
+  assert.ok(analyzeStart>=0 && reserve>analyzeStart && analyzeEnd>reserve);
+  const block=worker.slice(analyzeStart,analyzeEnd);
+  assert.match(block,/if \(cached && !needsFreshnessRecheck\)/);
+  assert.match(block,/reserveAnalysisQuota\(user\.id,cfg\)/);
+  assert.match(block,/analysisResponsePayload/);
+});

@@ -303,3 +303,19 @@ test('worker composes Telegram links boundary through lazy delegation wrappers',
     ));
   }
 });
+
+test('Telegram share URLs reject credentials, non-HTTPS schemes and embedded controls',()=>{
+  const {api}=runtime();
+  for(const value of [
+    'http://example.com/',
+    'https://user:pass@example.com/',
+    'javascript:alert(1)',
+    'https://example.com/\nunsafe',
+  ]){
+    assert.throws(
+      ()=>api.telegramShareComposerUrl(value,'share'),
+      /Некорректный URL для Telegram Share/,
+      value,
+    );
+  }
+});

@@ -47,3 +47,12 @@ test('RC48 release contract preserves inline AI boundaries',()=> {
   assert.match(worker,/match:menu:\$\{fixtureId\}/);
   assert.match(worker,/return Object\.freeze\(\{/);
 });
+
+test('RC48 inline AI actions preserve callback-only server processing instead of a web-app dependency',()=>{
+  for(const section of ['verdict','referee','squads','market']){
+    assert.match(worker,new RegExp('callback_data:\\x60match:'+section+':'));
+  }
+  assert.match(worker,/sendBotFixtureSection/);
+  assert.match(worker,/match:menu:\$\{fixtureId\}/);
+  assert.match(worker,/function botAiVerdictText/);
+});

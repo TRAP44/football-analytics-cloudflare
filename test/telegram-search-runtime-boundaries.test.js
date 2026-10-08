@@ -294,3 +294,17 @@ test('Telegram last verdict ignores invalid confidence and malformed history', a
   assert.equal(sent[0].chat_id,-100123);
   assert.match(sent[0].text,/Последний AI-разбор/);
 });
+
+test('Telegram search recognizes Russian analysis and referee intents without inventing a fixture',()=>{
+  const api=runtime();
+  const referee=api.botSearchParts('кто судья на Арсенал — Челси');
+  assert.equal(referee.intent,'referee');
+  assert.ok(referee.query.includes('Арсенал'));
+  const analysis=api.botSearchParts('разбери матч Арсенал — Челси');
+  assert.equal(analysis.intent,'analysis');
+  assert.equal(analysis.first,'Арсенал');
+  assert.equal(analysis.second,'Челси');
+  const empty=api.botSearchParts('');
+  assert.equal(empty.query,'');
+  assert.equal(empty.intent,'search');
+});

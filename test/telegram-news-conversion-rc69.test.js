@@ -53,3 +53,16 @@ test('launch analytics exposes news AI intent and RC69 deterministic health',()=
     assert.ok(worker.includes(flag + ": 'enabled'"));
   }
 });
+
+test('RC69 news CTA requires safe provider story URLs and bounds per-message link count',()=>{
+  const source=fs.readFileSync('src/football-news-runtime.js','utf8');
+  const start=source.indexOf('function newsConversionKeyboard');
+  const end=source.indexOf('function newsConversionDrill',start);
+  assert.ok(start>=0 && end>start);
+  const block=source.slice(start,end);
+  assert.match(block,/safeArray\(items\)\.slice\(0,4\)/);
+  assert.match(block,/externalNewsUrl\(/);
+  assert.match(block,/if \(!url\) continue/);
+  assert.match(block,/callback_data:\`news:ai_match:/);
+  assert.match(block,/callback_data:\`news:ai_team:/);
+});
