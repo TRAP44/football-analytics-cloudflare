@@ -137,6 +137,14 @@ export function createBillingApiRuntime(deps = {}) {
   }
   
   async function apiBillingInvoice(request, cfg, user) {
+    // Defense in depth: routing checks monetization too, but never depend
+    // on a single caller to prevent invoices while the rollout is paused.
+    if (cfg?.monetizationEnabled !== true) {
+      return json({
+        error:'Платежи MatchRadar пока не включены.',
+        code:'BILLING_MONETIZATION_DISABLED',
+      }, 503);
+    }
     const webhook = await billingWebhookStatus(request, cfg);
     if (!webhook.ready) return json({ error: 'Оплата ещё не активирована: Telegram webhook не настроен.', webhook }, 503);
   

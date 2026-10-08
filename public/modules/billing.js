@@ -392,6 +392,8 @@ export function createBillingModule({
     root.classList.toggle('is-paused', !snapshot.monetizationEnabled);
 
     const purchaseUi=billingPurchaseVisibility(snapshot);
+    const preview=$('billingPreview');
+    if (preview) preview.hidden=purchaseUi.enabled;
     for (const id of ['billingPricingGrid','passStore','billingActions','billingFootnote']) {
       const node=$(id);
       if (node) node.hidden=!purchaseUi.enabled;

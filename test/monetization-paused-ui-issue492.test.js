@@ -24,7 +24,7 @@ function element() {
 
 function harness({ monetizationEnabled=false } = {}) {
   const ids=[
-    'billingPanel','billingPricingGrid','passStore','billingActions','billingFootnote',
+    'billingPanel','billingPricingGrid','billingPreview','passStore','billingActions','billingFootnote',
     'quotaUpgradeBtn','billingKicker','billingTitle','billingIntro','billingPlanBadge',
     'billingQuotaUsed','billingQuotaLimit','billingQuotaLeft','freeLimit',
     'billingQuotaProgress','billingExpiry','billingStatus','subscriptionDetails',
@@ -103,6 +103,7 @@ test('paused monetization renders free quota but performs zero billing/product r
 
     assert.equal(getApiCalls(),0);
     assert.equal(nodes.billingPricingGrid.hidden,true);
+    assert.equal(nodes.billingPreview.hidden,false);
     assert.equal(nodes.passStore.hidden,true);
     assert.equal(nodes.billingActions.hidden,true);
     assert.equal(nodes.billingFootnote.hidden,true);
@@ -136,6 +137,7 @@ test('enabled monetization reveals the existing purchase surfaces without changi
     const {module,nodes}=harness({monetizationEnabled:true});
     module.render();
     assert.equal(nodes.billingPricingGrid.hidden,false);
+    assert.equal(nodes.billingPreview.hidden,true);
     assert.equal(nodes.passStore.hidden,false);
     assert.equal(nodes.billingActions.hidden,false);
     assert.equal(nodes.billingFootnote.hidden,false);
@@ -145,4 +147,17 @@ test('enabled monetization reveals the existing purchase surfaces without changi
   } finally {
     globalThis.document=originalDocument;
   }
+});
+
+test('paused monetization preview is informational and never offers a payment action',async()=>{
+  const fs = await import('node:fs');
+  const html=fs.readFileSync('public/index.html','utf8');
+  const css=fs.readFileSync('public/styles/premium-ui.css','utf8');
+  const preview=html.slice(html.indexOf('id="billingPreview"'),html.indexOf('id="subscriptionDetails"'));
+  assert.match(preview,/PRO/);
+  assert.match(preview,/PREMIUM/);
+  assert.match(preview,/Match Pass/);
+  assert.match(preview,/никаких списаний/);
+  assert.doesNotMatch(preview,/<button|openInvoice|createInvoiceLink|data-plan=/i);
+  assert.match(css,/billing-preview\[hidden\]\s*\{\s*display:\s*none/);
 });

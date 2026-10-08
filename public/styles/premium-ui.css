@@ -1462,3 +1462,69 @@ html[data-theme="light"] .miniapp-public-shell {
     grid-template-columns: 1fr;
   }
 }
+
+/* Informational monetization preview — no interactive purchase controls. */
+.miniapp-public-shell .billing-preview {
+  margin: 14px 0 4px;
+  padding: 14px;
+  border: 1px solid var(--mr-accent-line);
+  border-radius: var(--mr-radius-sm);
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface-2));
+}
+.miniapp-public-shell .billing-preview[hidden] { display: none; }
+.miniapp-public-shell .billing-preview-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+}
+.miniapp-public-shell .billing-preview-tag {
+  border: 1px solid var(--mr-accent-line);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--hint);
+  font-size: 10px;
+  font-weight: 800;
+}
+.miniapp-public-shell .billing-preview-description,
+.miniapp-public-shell .billing-preview-note {
+  margin: 9px 0 0;
+  color: var(--hint);
+  font-size: 11px;
+  line-height: 1.55;
+}
+.miniapp-public-shell .billing-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.miniapp-public-shell .billing-preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 10px;
+  border: 1px solid var(--mr-line-soft);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.miniapp-public-shell .billing-preview-icon { font-size: 18px; }
+.miniapp-public-shell .billing-preview-card strong { font-size: 12px; }
+.miniapp-public-shell .billing-preview-card > span:last-child {
+  color: var(--hint);
+  font-size: 10px;
+  line-height: 1.5;
+}
+@media(max-width:430px) {
+  .miniapp-public-shell .billing-preview-grid { grid-template-columns: 1fr; }
+  .miniapp-public-shell .billing-preview-card {
+    display: grid;
+    grid-template-columns: 24px minmax(0,1fr);
+    align-items: start;
+    column-gap: 8px;
+  }
+  .miniapp-public-shell .billing-preview-card > span:last-child { grid-column: 2; }
+}

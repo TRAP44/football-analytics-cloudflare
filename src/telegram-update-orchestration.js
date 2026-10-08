@@ -329,7 +329,7 @@ export function createTelegramUpdateProcessor(deps) {
             && samePositiveInteger(planCfg.stars,checkoutAmount))
           || (pass
             && samePositiveInteger(pass.userId,checkoutUserId)
-            && passCfg
+            && passCfg?.saleReady === true
             && samePositiveInteger(passCfg.stars,checkoutAmount))
         )
       );
