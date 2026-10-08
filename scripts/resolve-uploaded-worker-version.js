@@ -7,23 +7,25 @@ const SHA_RE=/^[0-9a-f]{40}$/i;
 const VERSION_ID_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function resolveUploadedWorkerVersion(versions, expectedRelease, expectedSha) {
-  const release=String(expectedRelease || '').trim();
-  const sha=String(expectedSha || '').trim().toLowerCase();
+  const release=typeof expectedRelease === 'string' ? expectedRelease.trim() : '';
+  const sha=typeof expectedSha === 'string' ? expectedSha.trim().toLowerCase() : '';
   if (!Array.isArray(versions)) throw new Error('Cloudflare versions list must be a JSON array.');
   if (!RELEASE_RE.test(release)) throw new Error('Expected release has an invalid format.');
   if (!SHA_RE.test(sha)) throw new Error('Expected deploy SHA must be a 40-character Git commit SHA.');
 
   const expectedMessage=`release=${release} sha=${sha}`;
   const matches=versions.filter(version=>
-    String(version?.annotations?.['workers/tag'] || '').trim().toLowerCase() === sha
-    && String(version?.annotations?.['workers/message'] || '').trim().toLowerCase() === expectedMessage.toLowerCase()
+    typeof version?.annotations?.['workers/tag'] === 'string'
+    && version.annotations['workers/tag'].trim().toLowerCase() === sha
+    && typeof version?.annotations?.['workers/message'] === 'string'
+    && version.annotations['workers/message'].trim().toLowerCase() === expectedMessage.toLowerCase()
   );
   if (matches.length !== 1) {
     throw new Error(`Expected exactly one uploaded Worker version for release ${release} sha=${sha}; found ${matches.length}.`);
   }
 
   const version=matches[0];
-  const versionId=String(version?.id || '').trim().toLowerCase();
+  const versionId=typeof version?.id === 'string' ? version.id.trim().toLowerCase() : '';
   if (!VERSION_ID_RE.test(versionId)) throw new Error('Uploaded Worker version ID is invalid.');
   const rcNumber=/-rc([0-9]+)$/i.exec(release)?.[1] || '';
   const validation=validateReleaseIdentity({
