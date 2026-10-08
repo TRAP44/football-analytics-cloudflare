@@ -352,7 +352,8 @@ test('scheduler rejects coercible reminder rows and kickoff flags',async()=>{
     ];
     const rt=runtime({rows});
     const summary=await rt.service.processDueReminders({botToken:'token'});
-    assert.equal(summary.checked,1);
+    // Invalid stored rows are filtered before the checked count is computed.
+    assert.equal(summary.checked,0);
     assert.equal(summary.candidates,0);
     assert.equal(rt.calls.messages.length,0);
   } finally {
@@ -517,9 +518,11 @@ test('scheduler preserves disabled and read-failure summaries', async () => {
 
 test('worker delegates reminder delivery orchestration while keeping Telegram transport in the composition root', () => {
   const worker=fs.readFileSync('src/worker.js','utf8');
+  const serviceWiring=fs.readFileSync('src/service-wiring-runtime.js','utf8');
   assert.match(worker,/import \{ createReminderDeliveryService \} from '\.\/reminder-delivery-service\.js'/);
-  assert.match(worker,/createReminderDeliveryService\(\{/);
-  assert.match(worker,/sendTelegramMessage,/);
+  assert.match(worker,/createServiceWiringRuntime\(\{/);
+  assert.match(serviceWiring,/createReminderDeliveryService\(\{/);
+  assert.match(serviceWiring,/sendTelegramMessage,/);
   assert.doesNotMatch(worker,/async function recordReminderDelivery\(/);
   assert.doesNotMatch(worker,/async function deliverClaimedReminder\(/);
   assert.doesNotMatch(worker,/async function processDueReminders\(cfg\)/);
