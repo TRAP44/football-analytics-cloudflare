@@ -71,5 +71,5 @@ test('purchase endpoints remain routed behind server-side pause guard',()=>{
   const invoice=router.indexOf("pathname === '/api/billing/invoice'");
   assert.ok(before>0 && invoice>before);
   const wrangler=fs.readFileSync('wrangler.jsonc','utf8');
-  assert.match(wrangler,/"MONETIZATION_ENABLED": "false"/);
+  assert.match(wrangler,/"MONETIZATION_ENABLED": "true"/);
 });
