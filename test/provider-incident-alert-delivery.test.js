@@ -808,3 +808,68 @@ test('legacy destination identity suppresses duplicate delivery during stable bo
   assert.equal(plan.action,'none');
   assert.equal(plan.reason,'incident_alert_deduplicated');
 });
+
+
+
+test('malformed retry_pending timestamps never bypass persisted Telegram cooldown',()=>{
+  const incident=alertIncident('pslo-invalid-retry-time');
+  const destinations=[{slot:0,destinationKey:'destination-key-0001'}];
+  const nowMs=Date.parse('2026-09-28T10:35:00Z');
+  for(const retryAt of [null,undefined,'', 'invalid', true,0,{}, {toString:()=> '2026-09-28T10:30:00Z'}]){
+    const row={...ledgerRow(incident.incidentId,'incident','retry_pending',{attempts:1}),
+      retry_at:retryAt,retryAt:null};
+    const plan=planProviderIncidentAlert(
+      {activeIncident:incident,history:[incident]},[row],{nowMs,destinations},
+    );
+    assert.equal(plan.action,'none');
+    assert.equal(plan.reason,'delivery_waiting');
+  }
+});
+
+test('retry_pending becomes due at exactly its valid persisted retry timestamp',()=>{
+  const incident=alertIncident('pslo-retry-boundary');
+  const destinations=[{slot:0,destinationKey:'destination-key-0001'}];
+  const row={...ledgerRow(incident.incidentId,'incident','retry_pending',{attempts:1}),
+    retry_at:'2026-09-28T10:35:00Z',retryAt:null};
+  const planAt=at=>planProviderIncidentAlert(
+    {activeIncident:incident,history:[incident]},[row],
+    {nowMs:Date.parse(at),destinations},
+  );
+  assert.equal(planAt('2026-09-28T10:34:59Z').reason,'delivery_waiting');
+  assert.equal(planAt('2026-09-28T10:35:00Z').action,'send');
+  assert.equal(planAt('2026-09-28T10:35:00Z').attempt,2);
+});
+
+test('retry attempts remain exhausted even with malformed due timestamp',()=>{
+  const incident=alertIncident('pslo-broken-retry-exhausted');
+  const rows=[{...ledgerRow(incident.incidentId,'incident','retry_pending',{attempts:3}),
+    retry_at:'not-a-time',retryAt:null}];
+  const plan=planProviderIncidentAlert(
+    {activeIncident:incident,history:[incident]},rows,
+    {destinations:[{slot:0,destinationKey:'destination-key-0001'}]},
+  );
+  assert.equal(plan.action,'none');
+  assert.equal(plan.reason,'delivery_exhausted');
+});
+
+test('a blocked invalid retry cannot send, claim, or mutate delivery ledger',async()=>{
+  const incident=alertIncident('pslo-blocked-no-effects');
+  const rows=[{...ledgerRow(incident.incidentId,'incident','retry_pending',{attempts:1}),
+    retry_at:'never',retryAt:null}];
+  const plan=planProviderIncidentAlert(
+    {activeIncident:incident,history:[incident]},rows,
+    {destinations:[{slot:0,destinationKey:'destination-key-0001'}]},
+  );
+  let claims=0,finalizes=0,sends=0;
+  const result=await deliverProviderIncidentAlert({
+    plan,adminTelegramIds:[101],
+    claimDelivery:async()=>{claims++;return {acquired:true,status:'sending',attempts:1};},
+    finalizeDelivery:async()=>{finalizes++;return {ok:true};},
+    sendMessage:async()=>{sends++;return {ok:true,status:200};},
+  });
+  assert.equal(plan.action,'none');
+  assert.equal(result.skipped,true);
+  assert.equal(claims,0);
+  assert.equal(finalizes,0);
+  assert.equal(sends,0);
+});

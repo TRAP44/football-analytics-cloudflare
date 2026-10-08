@@ -187,8 +187,11 @@ function deliveryState(rows = [], alertKey = '', destinations = [], nowMs = Date
       continue;
     }
     if (status === 'retry_pending') {
-      const retryAt = Date.parse(String(row?.retry_at || row?.retryAt || ''));
-      if (attempts < PROVIDER_INCIDENT_ALERT_POLICY.maxDeferredAttempts && (!Number.isFinite(retryAt) || retryAt <= effectiveNow)) {
+      const rawRetryAt=row?.retry_at ?? row?.retryAt;
+      const retryAt=typeof rawRetryAt==='string' && rawRetryAt.trim()
+        ? Date.parse(rawRetryAt.trim()) : NaN;
+      // Missing or malformed retry dates must never authorize an early resend.
+      if (attempts < PROVIDER_INCIDENT_ALERT_POLICY.maxDeferredAttempts && Number.isFinite(retryAt) && retryAt <= effectiveNow) {
         pending.push(pendingDestination);
       } else if (attempts >= PROVIDER_INCIDENT_ALERT_POLICY.maxDeferredAttempts) {
         terminal.push(destination.slot);
