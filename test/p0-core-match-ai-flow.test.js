@@ -304,7 +304,7 @@ test('P0 public feed cache is longer on FREE than on paid provider plans',async(
     return writes.at(-1)?.[4];
   }
 
-  assert.equal(await cacheTtl(false),3);
+  assert.equal(await cacheTtl(false),20);
   assert.equal(await cacheTtl(true),1);
 });
 

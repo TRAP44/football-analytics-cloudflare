@@ -2714,6 +2714,8 @@ function writeMatchSnapshot(date, data) {
 function applyMatchPayload(data, { snapshot = false, refreshing = false } = {}) {
   state.matches = collectionItems(data,'matches');
   state.matchesMeta = {
+    restrictedDate: data.restrictedDate === true,
+    cached: data.cached === true || snapshot === true,
     refreshedAt: data.refreshedAt || null,
     stale: Boolean(data.stale || snapshot),
     warning: data.warning || '',
@@ -2766,7 +2768,9 @@ async function loadMatches(options = {}) {
     });
     if (seq !== state.matchesLoadSeq) return;
     data.refreshedAt ||= new Date().toISOString();
-    writeMatchSnapshot(date, data);
+    if (data.restrictedDate !== true && collectionItems(data,'matches').length) {
+      writeMatchSnapshot(date, data);
+    }
     applyMatchPayload(data, { snapshot: false, refreshing: false });
     state.matchesMeta.date = date;
   } catch (e) {
@@ -2839,7 +2843,9 @@ function syncFilterButtons() {
   });
   const drawer = document.querySelector('.league-filter-drawer');
   if (drawer) {
-    const drawerFilters = ['favorites', 'international', 'cups', 'england', 'spain', 'italy', 'germany', 'france'];
+    const drawerFilters = ['favorites', 'international', 'cups', 'england', 'spain', 'italy', 'germany', 'france',
+      'major', 'upcoming', 'finished', 'leagues', 'national',
+      'brazil', 'argentina', 'portugal', 'netherlands', 'turkey', 'usa', 'saudi'];
     const activeDrawerFilter = drawerFilters.includes(state.filter);
     drawer.classList.toggle('has-active-filter', activeDrawerFilter);
     const summaryValue = drawer.querySelector('[data-filter-summary-value]');
@@ -2852,6 +2858,18 @@ function syncFilterButtons() {
       italy: 'Италия',
       germany: 'Германия',
       france: 'Франция',
+      major: 'Топ-турниры',
+      upcoming: 'Предстоящие',
+      finished: 'Завершённые',
+      leagues: 'Чемпионаты',
+      national: 'Сборные',
+      brazil: 'Бразилия',
+      argentina: 'Аргентина',
+      portugal: 'Португалия',
+      netherlands: 'Нидерланды',
+      turkey: 'Турция',
+      usa: 'США',
+      saudi: 'Саудовская Аравия',
     };
     if (summaryValue) {
       summaryValue.textContent = activeDrawerFilter ? labels[state.filter] : '';
@@ -3095,7 +3113,11 @@ function filteredMatches() {
     const isFavMatch = (homeId>0 && fav.has(homeId)) || (awayId>0 && fav.has(awayId));
     if (prefs.hideYouth !== false && m?.youthReserve === true && state.filter !== 'favorites') return false;
     let byFilter = state.filter === 'all';
-    if (state.filter === 'top') byFilter = personalMatchInsight(m, signals).recommended;
+    if (state.filter === 'top') byFilter =
+      personalMatchInsight(m, signals).recommended
+      || m.featured === true
+      || m.isTop === true
+      || ['elite','major'].includes(m?.competition?.tier);
     if (state.filter === 'live') byFilter = m?.live === true;
     if (state.filter === 'cups') byFilter = typeof m?.category === 'string'
       && ['cup', 'continental', 'national', 'international'].includes(m.category);
@@ -3106,7 +3128,14 @@ function filteredMatches() {
         || m?.group === 'international'
       );
     }
-    if (['england', 'spain', 'italy', 'germany', 'france'].includes(state.filter)) byFilter = m?.group === state.filter;
+    if (['england', 'spain', 'italy', 'germany', 'france', 'brazil', 'argentina', 'portugal',
+      'netherlands', 'turkey', 'usa', 'saudi'].includes(state.filter)) byFilter = m?.group === state.filter;
+    if (state.filter === 'major') byFilter = m?.featured === true
+      || m?.isTop === true || ['elite','major'].includes(m?.competition?.tier);
+    if (state.filter === 'upcoming') byFilter = m?.live !== true && m?.finished !== true;
+    if (state.filter === 'finished') byFilter = m?.finished === true;
+    if (state.filter === 'leagues') byFilter = m?.category === 'league';
+    if (state.filter === 'national') byFilter = m?.category === 'national';
     if (state.filter === 'favorites') byFilter = isFavMatch;
     if (!byFilter) return false;
     if (!q) return true;
@@ -3123,8 +3152,9 @@ function filteredMatches() {
     const bf = ((bHomeId>0 && fav.has(bHomeId)) || (bAwayId>0 && fav.has(bAwayId))) ? 1 : 0;
     if (prefs.favoriteFirst !== false && state.filter !== 'favorites' && af !== bf) return bf - af;
     if (state.filter === 'top') {
-      const personalDelta = personalMatchInsight(b, signals).score - personalMatchInsight(a, signals).score;
-      if (personalDelta) return personalDelta;
+      const aRecommended = personalMatchInsight(a, signals).recommended === true;
+      const bRecommended = personalMatchInsight(b, signals).recommended === true;
+      if (aRecommended !== bRecommended) return bRecommended ? 1 : -1;
     }
     // LIVE is explicit in the LIVE filter; it must not make "Все" and
     // "Для вас" look like the same feed or outrank stronger competitions.
@@ -3388,19 +3418,36 @@ function renderMatches() {
   if ($('dataNotice')) {
     const notices = [];
     if (state.matchesMeta?.stale && !state.matchesMeta?.refreshing) notices.push(`<div class="data-notice stale">⚠️ ${escapeHtml(state.matchesMeta.warning || 'Показаны последние сохранённые данные.')}</div>`);
+    if (state.matchesMeta?.cached && state.matches.some(item => item?.live)) {
+      const sourceTime=Date.parse(state.matchesMeta.refreshedAt || '');
+      const oldEnough=Number.isFinite(sourceTime) && Date.now()-sourceTime>=2*60*1000;
+      if (oldEnough) {
+        const hhmm=new Date(sourceTime).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+        notices.push(`<div class="data-notice stale">LIVE-счёт из кеша по состоянию на ${escapeHtml(hhmm)}. События могли измениться.</div>`);
+      }
+    }
     if (Number(integrity.quarantined || 0) > 0) notices.push('<div class="data-notice integrity-notice">Некоторые матчи временно скрыты, пока мы проверяем данные.</div>');
     $('dataNotice').innerHTML = notices.join('');
   }
 
   if (!list.length) {
-    const filtered = state.filter !== 'all';
+    const restrictedDate = state.matchesMeta?.restrictedDate === true;
+    const filtered = !restrictedDate && state.filter !== 'all';
     const extra = filtered ? '<button id="showAllBtn" class="secondary-btn" type="button">Показать все матчи</button>' : '';
     $('matches').innerHTML = `<div class="empty match-empty-state">
-      <strong>${filtered ? 'По этому фильтру матчей нет' : 'Матчей на эту дату пока нет'}</strong>
-      <p>${filtered ? 'Снимите фильтр или найдите нужную команду через поиск.' : 'Попробуйте поиск по команде или выберите соседнюю дату.'}</p>
-      <div class="empty-actions">${extra}<button id="matchesEmptySearch" class="primary-setting-btn" type="button">Найти матч</button></div>
+      <strong>${restrictedDate ? 'Дата недоступна для текущего API' : filtered ? 'По этому фильтру матчей нет' : 'Матчей на эту дату пока нет'}</strong>
+      <p>${restrictedDate
+        ? 'API-Football FREE не предоставляет эту дату. Она не загружалась повторно и не тратила лимит запросов.'
+        : filtered ? 'Снимите фильтр или найдите нужную команду через поиск.'
+          : 'Попробуйте поиск по команде или выберите соседнюю дату.'}</p>
+      <div class="empty-actions">${extra}${restrictedDate
+        ? '<button id="matchesBackToday" class="secondary-btn" type="button">Перейти к сегодня</button>'
+        : ''}<button id="matchesEmptySearch" class="primary-setting-btn" type="button">Найти матч</button></div>
     </div>`;
     $('showAllBtn')?.addEventListener('click', () => { state.filter = 'all'; syncFilterButtons(); renderMatches(); });
+    $('matchesBackToday')?.addEventListener('click', () => {
+      document.querySelector('.date-btn[data-offset="0"]')?.click();
+    });
     $('matchesEmptySearch')?.addEventListener('click', () => {
       renderDiscoveryHome();
       renderGlobalSearch();
@@ -6639,8 +6686,8 @@ function updateConnectionBanner() {
       retry.disabled = retryRemaining > 0;
       retry.textContent = retryRemaining > 0 ? `Повторить через ${retryRemaining} с` : 'Повторить';
       text.textContent = retryRemaining > 0
-        ? `Пока действует лимит футбольного источника, используйте сохранённые матчи и фильтры. Повтор через ${retryRemaining} с.`
-        : 'Ограничение обновления истекло. Можно повторить запрос.';
+        ? `Источник API-Football временно ограничил запросы. Через ${retryRemaining} с можно нажать «Повторить»; загрузка не запускается автоматически.`
+        : 'Пауза закончилась. Нажмите «Повторить», чтобы запросить обновление.';
       if (retryRemaining > 0) {
         updateConnectionBanner.retryTimer = setTimeout(updateConnectionBanner, Math.min(1000, retryRemaining * 1000));
       }
@@ -6730,6 +6777,16 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
     const drawer = btn.closest('.league-filter-drawer');
     if (drawer) drawer.open = false;
   });
+});
+$('resetMatchFilters')?.addEventListener('click', () => {
+  // Reset only client-side filters: do not use any additional provider quota.
+  state.filter = 'top';
+  state.search = '';
+  if ($('matchSearch')) $('matchSearch').value = '';
+  syncFilterButtons();
+  renderMatches();
+  const drawer = document.querySelector('.league-filter-drawer');
+  if (drawer) drawer.open = false;
 });
 
 $('homePersonalMatchBtn')?.addEventListener('click', event => {

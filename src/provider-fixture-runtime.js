@@ -324,7 +324,11 @@ export function createProviderFixtureRuntime(deps) {
     const normalized=strictUtcDate(date);
     const today=strictUtcDate(todayUtc());
     const yesterday=utcDateShift(today,-1);
-    if (normalized && normalized===today) return 2;
+    if (normalized && (normalized===today || normalized===utcDateShift(today,1))) {
+      // FREE quota is shared (100/day): retain one validated date response
+      // across clients instead of re-fetching on every app opening.
+      return providerBudgetProfile()?.paid === true ? 2 : 20;
+    }
     if (normalized && normalized===yesterday) return 720;
     return cacheMinutes(cfg?.cacheMinutes,10);
   }
@@ -343,6 +347,36 @@ export function createProviderFixtureRuntime(deps) {
     const cached=matchFeedCachePayload(await getCache(cacheKey,cfg).catch(()=>null),date);
     if (cached) return json({ ...cached, sourceMeta: markCachedSourceMeta(cached.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' })), cached: true, stale: false });
     const previousPayload=matchFeedCachePayload(await getStaleCache(cacheKey,cfg).catch(()=>null),date);
+
+    // API-Football FREE exposes a short date window (UTC yesterday/today/tomorrow).
+    // Avoid spending quota on requests known to return a provider date-access error.
+    // Paid plans retain their actual provider date range.
+    const planProfile=providerBudgetProfile();
+    const outsideFreeWindow=date<utcDateShift(today,-1) || date>utcDateShift(today,1);
+    if (outsideFreeWindow && planProfile?.paid !== true) {
+      if (previousPayload) {
+        return json({
+          ...previousPayload,
+          cached:true,
+          stale:true,
+          warning:'Показаны последние сохранённые данные: дата вне доступного диапазона API-Football FREE.',
+          sourceMeta:markCachedSourceMeta(
+            previousPayload.sourceMeta || sourceMeta({provider:'api-football',label:'API-Football'}),
+            {stale:true},
+          ),
+        });
+      }
+      return json({
+        date,
+        matches:[],
+        catalog:{featured:0,live:0,major:0,cups:0,international:0,hiddenLowPriority:0},
+        restrictedDate:true,
+        cached:false,
+        stale:false,
+        warning:'Дата вне доступного диапазона API-Football FREE. Выберите сегодня или ближайший день.',
+        sourceMeta:sourceMeta({provider:'api-football',label:'API-Football'}),
+      });
+    }
   
     let fixtures;
     const providerBatchKey=providerFixtureDateCacheKey(date);
@@ -499,7 +533,8 @@ export function createProviderFixtureRuntime(deps) {
     }
     let paid=false;
     try { paid=providerBudgetProfile()?.paid === true; } catch {}
-    const ttl=isToday ? (paid ? 1 : 3) : isYesterday ? 720 : cacheMinutes(cfg?.cacheMinutes,10);
+    const nearCurrentDate=isToday || date===utcDateShift(today,1);
+    const ttl=nearCurrentDate ? (paid ? 1 : 20) : isYesterday ? 720 : cacheMinutes(cfg?.cacheMinutes,10);
     await setCache(cacheKey,0,payload,cfg,ttl).catch(()=>null);
     return json({ ...payload, cached:false, stale:false });
   }

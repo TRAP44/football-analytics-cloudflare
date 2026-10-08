@@ -1782,3 +1782,45 @@ html[data-theme="light"] .miniapp-public-shell {
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+
+/* Extended filter choices and a clear no-network reset. */
+.miniapp-public-shell .home-filter-controls .match-filter-actions{
+  display:grid;
+  gap:6px;
+  min-width:0;
+  margin-top:10px;
+}
+.miniapp-public-shell .home-filter-controls button.match-filter-reset{
+  display:block;
+  width:100%;
+  min-height:42px;
+  margin:0;
+  padding:9px 12px;
+  text-align:center;
+  color:var(--text);
+  background:color-mix(in srgb,var(--surface-2) 78%,var(--surface));
+  border:1px solid var(--mr-line-soft);
+  border-radius:11px;
+  font-size:11px;
+  font-weight:800;
+  box-shadow:none;
+}
+.miniapp-public-shell .home-filter-controls .match-filter-actions small{
+  color:var(--hint);
+  font-size:9px;
+  line-height:1.5;
+  padding:0 2px;
+}
+.miniapp-public-shell .matches-error-actions{
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:center;
+  gap:8px;
+  margin-top:12px;
+}
+.miniapp-public-shell .matches-error-actions button{
+  flex:1 1 128px;
+  min-width:0;
+  max-width:100%;
+}
