@@ -89,7 +89,8 @@ export function createProviderFixtureRuntime(deps) {
   }
 
   function strictUtcDate(value) {
-    const raw=String(value || '').trim();
+    if (typeof value !== 'string') return '';
+    const raw=value.trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return '';
     const timestamp=Date.parse(`${raw}T00:00:00.000Z`);
     if (!Number.isFinite(timestamp)) return '';
@@ -144,7 +145,16 @@ export function createProviderFixtureRuntime(deps) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     if (positiveSafeInteger(value.teamId)!==teamId) return null;
     if (!Array.isArray(value.fixtures)) return null;
-    return value;
+    const seen=new Set();
+    const fixtures=value.fixtures.filter(row=>{
+      const fixtureId=positiveSafeInteger(row?.fixture?.id);
+      const homeId=positiveSafeInteger(row?.teams?.home?.id);
+      const awayId=positiveSafeInteger(row?.teams?.away?.id);
+      if (!fixtureId || (homeId!==teamId && awayId!==teamId) || seen.has(fixtureId)) return false;
+      seen.add(fixtureId);
+      return true;
+    });
+    return {...value,fixtures};
   }
 
   function directFixtureCachePayload(value, fixtureId) {

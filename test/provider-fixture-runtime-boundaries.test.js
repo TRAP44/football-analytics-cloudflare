@@ -287,3 +287,59 @@ test('worker passes retryable provider classification into the fixture runtime',
   assert.match(runtime,/FOOTBALL_INVALID_RESPONSE/);
   assert.match(runtime,/matches:\$\{date\}:v6-integrity/);
 });
+
+
+
+test('team discovery validates cached team scope and deduplicates cached fixture identities',async()=>{
+  let apiCalls=0;
+  const saved={teamId:77,fixtures:[
+    fixture(22,'FT',null,77,2),
+    fixture(22,'FT',null,77,2),
+    fixture(23,'FT',null,3,77),
+    fixture(24,'FT',null,5,6),
+    fixture(true,'FT',null,77,2),
+    null,
+  ]};
+  const previous=JSON.stringify(saved);
+  const runtime=createProviderFixtureRuntime(deps({
+    getCache:async()=>saved,
+    apiFootball:async()=>{apiCalls++;return [];},
+  }));
+  const rows=await runtime.loadProviderTeamDiscoveryFixtures(77,{});
+  assert.deepEqual(rows.map(row=>row.fixture.id),[22,23]);
+  assert.equal(apiCalls,0);
+  assert.equal(JSON.stringify(saved),previous);
+});
+
+test('empty cached list after validation cannot expose a foreign-team fixture',async()=>{
+  const runtime=createProviderFixtureRuntime(deps({
+    getCache:async()=>({teamId:77,fixtures:[fixture(99,'FT',null,1,2)]}),
+    apiFootball:async()=>{throw new Error('should not query');},
+  }));
+  assert.deepEqual(await runtime.loadProviderTeamDiscoveryFixtures(77,{}),[]);
+});
+
+test('fixture calendar rejects coercive date inputs before any network or cache access',async()=>{
+  let requests=0,reads=0;
+  const runtime=createProviderFixtureRuntime(deps({
+    getCache:async()=>{reads++;return null;},
+    apiFootball:async()=>{requests++;return [];},
+  }));
+  for(const date of [{toString:()=> '2026-10-06'},['2026-10-06'],new Date('2026-10-06T00:00:00Z'),true,123]){
+    assert.equal(runtime.providerFixtureDateCacheKey(date),'');
+    assert.deepEqual(await runtime.loadProviderFixturesForDate(date,{}),[]);
+  }
+  assert.equal(requests,0);
+  assert.equal(reads,0);
+});
+
+test('team discovery never reuses a cache envelope belonging to a different team',async()=>{
+  const calls=[];
+  const runtime=createProviderFixtureRuntime(deps({
+    getCache:async()=>({teamId:99,fixtures:[fixture(5,'FT',null,99,2)]}),
+    apiFootball:async(_path,query)=>{calls.push(query);return [fixture(55,'FT',null,77,3)];},
+  }));
+  const rows=await runtime.loadProviderTeamDiscoveryFixtures(77,{});
+  assert.deepEqual(rows.map(x=>x.fixture.id),[55]);
+  assert.equal(calls.length,2);
+});
