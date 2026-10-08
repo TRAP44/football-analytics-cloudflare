@@ -71,7 +71,13 @@ export function digestLocalDeliveryWindow(
     const format=new Intl.DateTimeFormat('ru-RU',options);
     return `${format.format(start)}–${format.format(end)}`;
   } catch {
-    return `${String(hour).padStart(2,'0')}:00–${String(hour).padStart(2,'0')}:55`;
+    // Invalid optional time zones must not silently change local browser time to UTC.
+    try {
+      const local=new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'});
+      return `${local.format(start)}–${local.format(end)}`;
+    } catch {
+      return `${String(hour).padStart(2,'0')}:00–${String(hour).padStart(2,'0')}:55`;
+    }
   }
 }
 
