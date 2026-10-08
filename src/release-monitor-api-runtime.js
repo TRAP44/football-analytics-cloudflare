@@ -159,9 +159,14 @@ export function createReleaseMonitorApiRuntime(deps) {
     try { body=await request.json(); } catch {}
     const targetState=String(body?.state || '');
     const identity=currentReleaseIdentity(cfg);
-    const deploySha=String(identity?.deploySha || '').toLowerCase();
-    if (!deploySha) return json({error:'Active deployment identity временно недоступен.'},503);
-    if (body?.deploySha && String(body.deploySha).toLowerCase()!==deploySha) {
+    const deploySha=String(identity?.deploySha || '').trim().toLowerCase();
+    if (!/^[0-9a-f]{40}$/.test(deploySha)) {
+      return json({error:'Active deployment identity временно недоступен.'},503);
+    }
+    const requestedSha=typeof body?.deploySha === 'string'
+      ? body.deploySha.trim().toLowerCase()
+      : '';
+    if (!/^[0-9a-f]{40}$/.test(requestedSha) || requestedSha!==deploySha) {
       return json({error:'Deployment уже изменился. Обновите Release Monitor.'},409);
     }
   

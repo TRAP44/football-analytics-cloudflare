@@ -243,6 +243,10 @@ export function createAdminReleaseMonitorModule(deps) {
   async function transitionPostDeployRegressionResponse(targetState='') {
     if (!isAdmin() || state.releaseRegressionResponsePending || !targetState) return;
     const deploySha=String(state.releaseMonitor?.postDeployRegression?.response?.deploySha || '');
+    if (!/^[0-9a-f]{40}$/i.test(deploySha)) {
+      toast('Идентификатор выпуска недоступен. Обновите мониторинг.');
+      return;
+    }
     state.releaseRegressionResponsePending=true;
     renderReleaseMonitor();
     try {
