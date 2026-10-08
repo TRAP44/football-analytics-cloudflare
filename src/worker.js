@@ -148,6 +148,7 @@ import { createTelemetryOpsRuntime } from './telemetry-ops-runtime.js';
 import { createMaintenanceRuntime } from './maintenance-runtime.js';
 import { analysisTimelineSnapshotRow, buildAiTimeline } from './ai-timeline.js';
 import { createAiTimelineRuntime } from './ai-timeline-runtime.js';
+import { createLivePressureTimelineRuntime } from './live-pressure-timeline-runtime.js';
 import { buildProviderSloIncidentTimeline, providerSloIncidentOpsEvent, providerSloIncidentUpdateOpsEvent } from './provider-slo-incidents.js';
 import {
   deliverOperationalIncidentAlert,
@@ -171,6 +172,7 @@ const memory = {
   preferences: new Map(),
   oddsSnapshots: new Map(),
   analysisTimelineSnapshots: new Map(),
+  livePressureSnapshots: new Map(),
   refereeMatchHistory: new Map(),
   botDigestSubscriptions: new Map(),
   billingPayments: new Map(),
@@ -277,14 +279,17 @@ const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
 const RELEASE_CHANNEL = 'rc144';
 const RC_NAME = 'RC144';
-const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19 и примените миграции до v6.29.13; для существующей примените все доступные миграции из supabase/migrations до v6.29.13.';
+const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: примените миграции до v6.29.14, включая проверенные LIVE-снимки давления.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_CONTRACT_VERSION = 2;
-const EXPECTED_SCHEMA_FINGERPRINT = '4e7b6afc69b45ab3e5eecc4685d75c73';
-const FRESH_INSTALL_SCHEMA_FINGERPRINT = '289d4be4a3546443d48ff5f0b8bd6dcb';
+const EXPECTED_SCHEMA_FINGERPRINT = 'f3d899ff05789e6cfb257abe011872d2';
+const FRESH_INSTALL_SCHEMA_FINGERPRINT = 'd0ecfedbd63abc305ad7f57aa298cabd';
+// The prior v2 contract remains accepted briefly for a safe phased rollout.
 const COMPATIBLE_SCHEMA_FINGERPRINTS = Object.freeze([
   EXPECTED_SCHEMA_FINGERPRINT,
   FRESH_INSTALL_SCHEMA_FINGERPRINT,
+  '4e7b6afc69b45ab3e5eecc4685d75c73',
+  '289d4be4a3546443d48ff5f0b8bd6dcb',
 ]);
 
 const { json, adminForbidden, publicRouteError } = createHttpRuntime({
@@ -1468,6 +1473,18 @@ function captureAnalysisTimelineSnapshot(...args) { return getAiTimelineRuntime(
 function getAnalysisTimelineSnapshots(...args) { return getAiTimelineRuntime().getAnalysisTimelineSnapshots(...args); }
 function loadFixtureAiTimeline(...args) { return getAiTimelineRuntime().loadFixtureAiTimeline(...args); }
 
+let livePressureTimelineRuntime = null;
+function getLivePressureTimelineRuntime() {
+  if (!livePressureTimelineRuntime) {
+    livePressureTimelineRuntime = createLivePressureTimelineRuntime({
+      memory, hasSupabase, supaInsertIgnore, supaSelectMany,
+    });
+  }
+  return livePressureTimelineRuntime;
+}
+const captureLivePressureSnapshot = (...args) => getLivePressureTimelineRuntime().capture(...args);
+const loadLivePressureHistory = (...args) => getLivePressureTimelineRuntime().load(...args);
+
 let modelEvaluationRuntime = null;
 function getModelEvaluationRuntime() {
   if (!modelEvaluationRuntime) {
@@ -2621,6 +2638,8 @@ function getMatchCenterRuntime() {
       isYouthReserveMatch,
       json,
       livePressure,
+      captureLivePressureSnapshot,
+      loadLivePressureHistory,
       loadFixtureAiTimeline,
       loadModelPredictionForFixture,
       loadProviderFixture,

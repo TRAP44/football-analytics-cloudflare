@@ -42,6 +42,8 @@ export function createMatchCenterRuntime(deps) {
     isYouthReserveMatch,
     json,
     livePressure,
+    captureLivePressureSnapshot,
+    loadLivePressureHistory,
     loadFixtureAiTimeline,
     loadModelPredictionForFixture,
     loadProviderFixture,
@@ -466,7 +468,7 @@ export function createMatchCenterRuntime(deps) {
         lineups:cachedLineupView.lineups,
         lineupQuality:cachedLineupView.quality,
         ...(liveCache && !statisticsTrusted
-          ? {livePressure:null}
+          ? {livePressure:null,pressureHistory:null}
           : {}),
         ...(liveCache && !liveCoreTrusted
           ? {smartInsights:null,liveAiCoach:null}
@@ -577,6 +579,7 @@ export function createMatchCenterRuntime(deps) {
           },
           ...(suppressLiveSignals ? {
             livePressure:null,
+            pressureHistory:null,
             smartInsights:null,
             liveAiCoach:null,
             liveOdds:null,
@@ -1463,8 +1466,28 @@ export function createMatchCenterRuntime(deps) {
             ? 'Для этого турнира или матча источник данных не отдаёт детальные события/статистику.'
             : '';
 
+    const observedAt=new Date().toISOString();
+    const pressureTrusted=live
+      && trustedFeature(featureMeta.statistics)
+      && statisticsQuality?.confidenceBearing===true
+      && pressure!==null;
+    // Each fresh verified provider fetch can append one genuine observation.
+    // No cached or stale response is ever persisted as a new measurement.
+    let pressureHistory=null;
+    if (pressureTrusted) {
+      await optionalAsync(captureLivePressureSnapshot,{
+        fixtureId,pressure,
+        minute:Number.isSafeInteger(elapsed) ? elapsed : null,
+        mode:centerMode,
+        meta:featureMeta.statistics,
+        capturedAt:observedAt,
+      },cfg);
+      const saved=await optionalAsync(loadLivePressureHistory,fixtureId,cfg,90);
+      pressureHistory=Array.isArray(saved) ? saved.slice(-90) : [];
+    }
+
     const payload={
-      generatedAt:new Date().toISOString(),
+      generatedAt:observedAt,
       mode:centerMode,
       match:{
         fixtureId,
@@ -1506,6 +1529,7 @@ export function createMatchCenterRuntime(deps) {
       statisticsQuality,
       xgQuality,
       livePressure:pressure,
+      pressureHistory,
       smartInsights,
       liveAiCoach,
       aiTimeline,

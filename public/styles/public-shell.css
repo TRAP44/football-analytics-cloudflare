@@ -4343,3 +4343,25 @@ html {
   .form-intel-pair-title{display:grid;gap:4px}
   .match-pulse-pressure-context{padding:8px}
 }
+
+/* Intelligence 2.0: observed-only pressure history, no fabricated per-minute values. */
+.match-pulse-history{margin:11px 0 9px;padding:11px;min-width:0;overflow:hidden;border-radius:12px;border:1px solid var(--line);background:color-mix(in srgb,var(--surface-2) 65%,var(--surface))}
+.pressure-history-heading{display:flex;justify-content:space-between;align-items:baseline;gap:6px;flex-wrap:wrap}
+.pressure-history-heading strong{font-size:12px;color:var(--text)}
+.pressure-history-heading small{font-size:9px;color:var(--hint)}
+.pressure-history-chart{display:block;width:100%;height:auto;max-height:200px;margin-top:7px;overflow:visible}
+.pressure-history-grid{stroke:var(--line);stroke-width:1;stroke-dasharray:4 5;opacity:.7}
+.pressure-history-tick{font-size:12px;fill:var(--hint)}
+.pressure-history-home,.pressure-history-away{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:3;vector-effect:non-scaling-stroke}
+.pressure-history-home{stroke:var(--accent)}
+.pressure-history-away{stroke:#60a5fa}
+.pressure-history-dot{stroke:var(--surface);stroke-width:1.4;vector-effect:non-scaling-stroke}
+.pressure-history-dot.home{fill:var(--accent)}
+.pressure-history-dot.away{fill:#60a5fa}
+.pressure-history-legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin:3px 0 0;color:var(--text);font-size:10px;font-weight:750}
+.pressure-history-legend span{display:inline-flex;align-items:center;gap:5px;min-width:0;overflow-wrap:anywhere}
+.pressure-history-legend span::before{content:'';display:block;width:8px;height:8px;border-radius:50%;background:var(--accent);flex:0 0 8px}
+.pressure-history-legend span.away::before{background:#60a5fa}
+.match-pulse-history figcaption{font-size:9px;line-height:1.5;color:var(--hint);margin-top:8px}
+@media(max-width:430px){.match-pulse-history{padding:9px}.pressure-history-heading strong{font-size:11px}}
+@media(max-width:360px){.match-pulse-history{margin-inline:0}.pressure-history-legend{font-size:9px}}

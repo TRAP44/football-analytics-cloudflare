@@ -440,6 +440,65 @@ export function deriveMatchPulse(payload = {}) {
   };
 }
 
+function normalizedPressureHistory(rows) {
+  if (!Array.isArray(rows)) return [];
+  const exact=new Map();
+  for (const row of rows.slice(-120)) {
+    const at=Date.parse(String(row?.capturedAt || ''));
+    const home=finiteNumber(row?.home,{min:0,max:100});
+    const away=finiteNumber(row?.away,{min:0,max:100});
+    if (!Number.isFinite(at) || home===null || away===null
+      || Math.abs(home+away-100)>2) continue;
+    const capturedAt=new Date(at).toISOString();
+    exact.set(capturedAt,{capturedAt,home,away,at});
+  }
+  return [...exact.values()].sort((a,b)=>a.at-b.at).slice(-90);
+}
+
+export function renderLivePressureHistory(payload={}) {
+  const pulse=deriveMatchPulse(payload);
+  if (payload?.stale===true || !pulse || pulse.mode!=='live' || !pulse.pressure) return '';
+  const points=normalizedPressureHistory(payload.pressureHistory);
+  if (points.length<2 || points.at(-1).at<=points[0].at) return '';
+  const first=points[0].at,last=points.at(-1).at;
+  const x=point=>30+(point.at-first)/(last-first)*580;
+  const y=value=>145-(value/100)*115;
+  const coord=num=>Number(num).toFixed(1);
+  const makePath=key=>points.map((point,index)=>(index===0?'M':'L')
+    +coord(x(point))+' '+coord(y(point[key]))).join(' ');
+  const ticks=[0,50,100].map(value=>
+    '<line class="pressure-history-grid" x1="30" y1="'+coord(y(value))
+    +'" x2="610" y2="'+coord(y(value))+'" />'
+    +'<text class="pressure-history-tick" x="24" y="'+coord(y(value)+4)+'" text-anchor="end">'+value+'</text>'
+  ).join('');
+  const lastPoint=points.at(-1);
+  const time=point=>new Date(point.at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+  const description='LIVE давление, '+points.length+' фактических измерений; '
+    +pulse.homeName+' '+lastPoint.home.toFixed(0)+'; '
+    +pulse.awayName+' '+lastPoint.away.toFixed(0)+'.';
+  return '<figure class="match-pulse-history" aria-label="История подтверждённого LIVE-давления">'
+    +'<div class="pressure-history-heading"><strong>Давление по ходу матча</strong>'
+    +'<small>'+points.length+' измерений</small></div>'
+    +'<svg class="pressure-history-chart" viewBox="0 0 640 174" role="img" aria-label="'
+    +escapeHtml(description)+'">'
+    +ticks
+    +'<path class="pressure-history-home" d="'+makePath('home')+'" />'
+    +'<path class="pressure-history-away" d="'+makePath('away')+'" />'
+    +'<circle class="pressure-history-dot home" cx="'+coord(x(lastPoint))
+    +'" cy="'+coord(y(lastPoint.home))+'" r="3.5"/>'
+    +'<circle class="pressure-history-dot away" cx="'+coord(x(lastPoint))
+    +'" cy="'+coord(y(lastPoint.away))+'" r="3.5"/>'
+    +'<text class="pressure-history-tick" x="30" y="166" text-anchor="start">'
+    +escapeHtml(time(points[0]))+'</text>'
+    +'<text class="pressure-history-tick" x="610" y="166" text-anchor="end">'
+    +escapeHtml(time(lastPoint))+'</text></svg>'
+    +'<div class="pressure-history-legend"><span class="home">'+escapeHtml(pulse.homeName)
+    +'</span><span class="away">'+escapeHtml(pulse.awayName)+'</span></div>'
+    +'<figcaption>Только сохранённые подтверждённые LIVE-измерения. '
+    +'Линии соединяют полученные снимки; между ними данных нет. '
+    +'Недоступные минуты не восстанавливаются.</figcaption></figure>';
+}
+
 export function renderMatchPulse(payload = {}) {
   const pulse = deriveMatchPulse(payload);
   if (!pulse) return '';
@@ -503,6 +562,7 @@ export function renderMatchPulse(payload = {}) {
       <b>${escapeHtml(pulse.modeLabel)}</b>
     </div>
     ${pressureHtml}
+    ${renderLivePressureHistory(payload)}
     ${metricsHtml}
     ${changeHtml}
     ${timelineHtml}

@@ -498,5 +498,5 @@ test('modular billing runtime reuses Telegram Stars transport and keeps monetiza
   assert.match(durableSql, /'durable-v1'/i);
 
   assert.equal(release.productionSchema, '6.29');
-  assert.equal(release.latestMigration, 'supabase/migrations/supabase_migration_v6_29_13.sql');
+  assert.equal(release.latestMigration, 'supabase/migrations/supabase_migration_v6_29_14.sql');
 });
