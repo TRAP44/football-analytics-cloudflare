@@ -55,3 +55,44 @@ test('no-op smoke pins the verified active Cloudflare Version ID alongside SHA',
   assert.match(deploy, /post-deploy-smoke\.js "\$SMOKE_URL" "\$RELEASE_VERSION" "\$EXPECTED_RUNTIME_SHA" "\$EXPECTED_VERSION_ID"/);
   assert.match(deploy, /node scripts\/bottom-nav-render-smoke\.js "\$SMOKE_URL"/);
 });
+
+
+
+test('production deployment is quality-gated and scoped to main unless manually dispatched',()=>{
+  assert.match(deploy,/workflow_run:\s*\n\s*workflows:\s*\[Quality\]/);
+  assert.match(deploy,/branches:\s*\[main\]/);
+  assert.match(deploy,/github\.event\.workflow_run\.conclusion == 'success'/);
+  assert.match(deploy,/github\.event_name == 'workflow_dispatch'/);
+});
+
+test('no-op runtime comparison does not ignore Worker, public assets or dependency lockfiles',()=>{
+  const start=deploy.indexOf('- name: Detect pending production artifact changes');
+  const end=deploy.indexOf('- name: Preflight previous-known-good rollback target',start);
+  assert.ok(start>=0 && end>start);
+  const source=deploy.slice(start,end);
+  assert.match(source,/git merge-base --is-ancestor "\$ACTIVE_SHA" "\$DEPLOY_SHA"/);
+  assert.match(source,/git diff --quiet "\$ACTIVE_SHA" "\$DEPLOY_SHA" -- src public wrangler\.jsonc package\.json package-lock\.json/);
+  assert.match(source,/echo "changed=false" >> "\$GITHUB_OUTPUT"/);
+  assert.match(source,/echo "changed=true" >> "\$GITHUB_OUTPUT"/);
+});
+
+test('no-op smoke verifies the pinned active version ID and never trusts a missing identity',()=>{
+  const start=deploy.indexOf('- name: Verify production deployment');
+  const end=deploy.indexOf('- name: Automatic rollback after failed production verification',start);
+  assert.ok(start>=0 && end>start);
+  const block=deploy.slice(start,end);
+  assert.match(block,/EXPECTED_RUNTIME_SHA="\$ACTIVE_RUNTIME_SHA"/);
+  assert.match(block,/EXPECTED_VERSION_ID="\$ACTIVE_RUNTIME_VERSION_ID"/);
+  assert.match(block,/Unable to resolve the production runtime SHA for smoke verification/);
+  assert.match(block,/Unable to resolve the immutable Cloudflare Version ID for smoke verification/);
+  assert.match(block,/post-deploy-smoke\.js "\$SMOKE_URL" "\$RELEASE_VERSION" "\$EXPECTED_RUNTIME_SHA" "\$EXPECTED_VERSION_ID"/);
+});
+
+test('no-op cannot trigger version promotion or automatic rollback without a successful deploy',()=>{
+  const start=deploy.indexOf('- name: Automatic rollback after failed production verification');
+  const block=deploy.slice(start);
+  assert.match(block,/steps\.production_changes\.outputs\.changed == 'true'/);
+  assert.match(block,/steps\.deploy\.outcome == 'success'/);
+  assert.match(deploy,/name: Deploy Worker\s*\n\s*if: steps\.production_changes\.outputs\.changed == 'true'/);
+  assert.match(deploy,/name: Promote schema-drift recovery candidate\s*\n\s*if: steps\.production_changes\.outputs\.changed == 'true'/);
+});
