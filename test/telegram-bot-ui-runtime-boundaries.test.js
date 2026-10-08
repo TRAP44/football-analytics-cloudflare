@@ -524,3 +524,20 @@ test('worker explicitly wires the request factory into the extracted runtime', (
   assert.match(source,/TELEGRAM_ANALYSIS_FIXTURE_MISMATCH/);
   assert.match(source,/return Object\.freeze\(\{/);
 });
+
+test('Telegram reply keyboards retain essential actions and never embed raw HTML',()=>{
+  const {api}=runtime();
+  const home=api.footballBotKeyboard(request);
+  const more=api.footballBotMoreKeyboard(request);
+  assert.equal(home.is_persistent,true);
+  assert.equal(more.is_persistent,true);
+  const homeLabels=home.keyboard.flat().map(button=>button.text);
+  const moreLabels=more.keyboard.flat().map(button=>button.text);
+  assert.ok(homeLabels.includes('⚽ Матчи'));
+  assert.ok(homeLabels.includes('🔴 LIVE'));
+  assert.ok(homeLabels.includes('••• Ещё'));
+  assert.ok(moreLabels.includes('← Главное меню'));
+  for(const label of [...homeLabels,...moreLabels]){
+    assert.doesNotMatch(label,/<script|<iframe/i);
+  }
+});

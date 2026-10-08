@@ -109,3 +109,20 @@ test('campaign ordering is deterministic for equal performance buckets',()=>{
 test('campaign control drill still passes after boundary hardening',()=>{
   assert.deepEqual(runtime().mediaCampaignControlDrill(),{pass:true,cases:8});
 });
+
+test('campaign conversion counts unique Telegram users despite repeated identical events',()=>{
+  const api=runtime();
+  const rows=[
+    {telegram_id:7,event_name:'bot_start',source:'press',campaign:'launch',content:'post'},
+    {telegram_id:7,event_name:'bot_start',source:'press',campaign:'launch',content:'post'},
+    {telegram_id:7,event_name:'quick_ai',source:'press',campaign:'launch',content:'post'},
+    {telegram_id:7,event_name:'quick_ai',source:'press',campaign:'launch',content:'post'},
+  ];
+  const result=api.buildMediaCampaignPerformance(rows);
+  assert.equal(result.length,1);
+  assert.equal(result[0].users,1);
+  assert.equal(result[0].entries,1);
+  assert.equal(result[0].quickAi,1);
+  assert.equal(result[0].events,4);
+  assert.equal(result[0].quickAiPct,100);
+});

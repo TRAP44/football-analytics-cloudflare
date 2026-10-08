@@ -57,3 +57,12 @@ test('RC47 release contract follows extracted button-first runtimes',()=> {
   assert.match(worker,/createTelegramDigestRuntime\(\{/);
   assert.match(worker,/return Object\.freeze\(\{/);
 });
+
+test('RC47 public bot uses blank Telegram command menu and persistent reply buttons',()=>{
+  assert.match(worker,/commands:\s*\[\]/);
+  assert.match(worker,/is_persistent:\s*true/);
+  assert.match(worker,/function footballBotKeyboard/);
+  assert.match(worker,/function footballBotMoreKeyboard/);
+  assert.match(worker,/callback_data:\s*'digest:on'/);
+  assert.match(worker,/callback_data:\s*'digest:off'/);
+});

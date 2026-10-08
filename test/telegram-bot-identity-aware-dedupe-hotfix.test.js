@@ -152,3 +152,13 @@ test('dedupe implementation does not log or persist the raw primary bot token', 
   assert.match(transport,/claimTelegramUpdate\(update,cfg\)/);
   assert.doesNotMatch(worker,/telegramUpdateDedupeKey\([^)]*cfg\.botToken\.slice/);
 });
+
+test('malformed Telegram identity and negative update IDs cannot enter persistent dedupe',()=>{
+  for(const token of ['', 'not-a-token', '0:secret']){
+    assert.equal(primaryTelegramBotStableIdentity(token),'');
+    assert.equal(primaryTelegramUpdateDedupeKey(token,{update_id:123}),'');
+  }
+  assert.equal(primaryTelegramUpdateDedupeKey(TOKEN_A,{update_id:-1}),'');
+  assert.equal(primaryTelegramUpdateDedupeKey(TOKEN_A,{update_id:true}),'');
+  assert.equal(primaryTelegramUpdateDedupeKey(TOKEN_A,{update_id:[123]}),'');
+});

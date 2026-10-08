@@ -236,3 +236,18 @@ test('home safely escapes personalized name', async () => {
   assert.match(sent[0].text,/&lt;Alex &amp; Co&gt;/);
   assert.doesNotMatch(sent[0].text,/<Alex & Co>/);
 });
+
+test('all unsupported Telegram fixture sections are rejected before provider analysis',async()=>{
+  let analyses=0;
+  const {api,sent}=runtime({
+    botAnalyzeFixture:async()=>{analyses++;return {};},
+  });
+  for(const section of ['unknown','__proto__','market:delete',{},null]){
+    const result=await api.sendBotFixtureSection(request,{},123,456,7,section);
+    assert.equal(result.ok,false);
+    assert.equal(result.status,400);
+    assert.equal(result.code,'TELEGRAM_SECTION_INPUT_INVALID');
+  }
+  assert.equal(analyses,0);
+  assert.equal(sent.length,0);
+});

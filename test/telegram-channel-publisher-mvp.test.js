@@ -162,3 +162,17 @@ test('publisher dedupe uses existing analysis_cache without schema changes and c
   const scheduled=worker.slice(worker.indexOf('async scheduled('));
   assert.doesNotMatch(scheduled,/publishChannelMessage|apiChannelPublisherTest|TELEGRAM_PUBLISHER_BOT_TOKEN/);
 });
+
+test('publisher rejects insecure fixture CTA schemes before constructing Telegram keyboard',()=>{
+  for(const url of ['http://example.com/fixture','javascript:alert(1)','not a URL']){
+    assert.throws(
+      ()=>fixtureChannelCta(url),
+      error=>error?.code==='PUBLISHER_CTA_INVALID',
+      url,
+    );
+  }
+  assert.throws(
+    ()=>fixtureChannelCta(''),
+    error=>error?.code==='PUBLISHER_CTA_REQUIRED',
+  );
+});

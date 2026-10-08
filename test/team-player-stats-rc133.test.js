@@ -147,3 +147,13 @@ test('RC133 comparison reuses the v2 Team Intelligence cache contract', () => {
   assert.match(worker, /getStaleCache\(\`team:intelligence:\$\{Number\(teamId\)\}:\$\{Number\(leagueId\)\}:\$\{Number\(season\)\}:v2\`/);
   assert.doesNotMatch(worker, /team:intelligence:\$\{Number\(teamId\)\}:\$\{Number\(leagueId\)\}:\$\{Number\(season\)\}:v1/);
 });
+
+test('RC133 scorer URL refuses unsupported season boundaries and clamps minimum page size',()=>{
+  for(const year of [1999,2101,2026.5,'bad']){
+    assert.equal(footballDataScorersUrl(39,year),'',String(year));
+  }
+  assert.equal(
+    footballDataScorersUrl(39,2026,{limit:0}),
+    'https://api.football-data.org/v4/competitions/PL/scorers?season=2026&limit=1',
+  );
+});

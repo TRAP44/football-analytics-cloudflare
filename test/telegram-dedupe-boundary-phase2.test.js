@@ -63,3 +63,25 @@ test('Phase 2 Telegram burst guard keeps existing per-user message threshold', (
   assert.equal(blocked.kind,'message');
   assert.deepEqual(telemetry,['telegramBurstBlocks']);
 });
+
+test('persistent dedupe degradation rejects billing and mutation events but permits read-only fallbacks',async()=>{
+  const {api,telemetry}=runtime({hasSupabase:()=>false});
+  const billing=await api.claimTelegramUpdatePersistent({},'b:id-111111111:u:10',{
+    pre_checkout_query:{id:'purchase'},
+  });
+  assert.equal(billing.claimed,false);
+  assert.equal(billing.status,'fail_closed');
+  assert.equal(billing.retry,true);
+  const callback=await api.claimTelegramUpdatePersistent({},'b:id-111111111:u:11',{
+    callback_query:{id:'cb',data:'favorite:toggle:7:8'},
+  });
+  assert.equal(callback.claimed,false);
+  assert.equal(callback.status,'fail_closed');
+  const readOnly=await api.claimTelegramUpdatePersistent({},'b:id-111111111:u:12',{
+    message:{text:'Покажи матчи'},
+  });
+  assert.equal(readOnly.claimed,true);
+  assert.equal(readOnly.status,'fallback');
+  assert.ok(telemetry.includes('telegramDedupeFailClosedHighRisk'));
+  assert.ok(telemetry.includes('telegramDedupeSafeFallbacks'));
+});

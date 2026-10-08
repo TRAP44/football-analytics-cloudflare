@@ -455,3 +455,28 @@ test('live notification snapshot respects runtime live disable before provider a
   assert.equal(snapshot.reason,'live_disabled');
   assert.equal(providerCalls,0);
 });
+
+test('event snapshot cannot claim trusted status for stale provider data',async()=>{
+  const runtime=createTeamIntelligenceRuntime(deps({
+    providerFeatureFetch:async()=>({
+      data:[{
+        time:{elapsed:10},
+        team:{id:10},
+        player:{id:1,name:'Player'},
+        type:'Goal',
+      }],
+      meta:{
+        confidenceBearing:true,
+        available:true,
+        usable:true,
+        source:'stale-cache',
+        stale:true,
+        freshnessState:'stale',
+      },
+    }),
+  }));
+  const snapshot=await runtime.loadSmartNotificationEventSnapshot(100,{});
+  assert.equal(snapshot.trusted,false);
+  assert.equal(snapshot.stale,true);
+  assert.equal(snapshot.events.length,1);
+});

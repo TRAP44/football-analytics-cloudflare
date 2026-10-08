@@ -389,3 +389,13 @@ test('team player fallback records primary errors even when compact error normal
   assert.equal(result.sourceMeta.attempts[0].reason, 'PRIMARY_BROKEN');
   assert.equal(result.sourceMeta.attempts[1].provider, 'football-data');
 });
+
+test('team statistics never divide by zero or trust object-coerced numerics',()=>{
+  const runtime=createTeamTournamentRuntime(deps());
+  assert.equal(runtime.teamStatsRate(10,0),null);
+  assert.equal(runtime.teamStatsRate(10,-1),null);
+  assert.equal(runtime.teamStatsAvg('1,25'),1.25);
+  assert.equal(runtime.teamStatsAvg('not available'),null);
+  assert.equal(runtime.playerStatNullable('83.45%'),83.45);
+  assert.equal(runtime.playerStatNullable('not available'),null);
+});
