@@ -232,3 +232,78 @@ test('incident delivery fails closed before persistence if the database is absen
   await assert.rejects(()=>runtime.finalizeProviderIncidentAlertDelivery({},{}),/unavailable/);
   assert.equal(calls.length,0);
 });
+
+
+
+test('malformed provider incident ledger reads fail closed without asserting persistence',async()=>{
+  for(const bad of [null,{},'[]',true,42,{rows:[]}]){
+    const calls=[];
+    const rt=createProviderSloRuntime({
+      hasSupabase:()=>true,
+      supaSelectMany:async()=>bad,
+      redactOpsString:x=>String(x),
+    });
+    const result=await rt.readProviderIncidentAlertDeliveries({});
+    assert.equal(result.ok,false);
+    assert.equal(result.persistent,false);
+    assert.equal(result.status,'invalid_response');
+    assert.deepEqual(result.items,[]);
+  }
+});
+
+test('provider incident ledger records remain authoritative when Supabase returns an array',async()=>{
+  const rows=[{incident_id:'pslo-one',status:'sent'}];
+  const calls=[];
+  const rt=createProviderSloRuntime({
+    hasSupabase:()=>true,
+    supaSelectMany:async(_cfg,table,filter,options)=>{
+      calls.push({table,filter,options});
+      return rows;
+    },
+  });
+  const result=await rt.readProviderIncidentAlertDeliveries({},24);
+  assert.equal(result.ok,true);
+  assert.equal(result.persistent,true);
+  assert.equal(result.status,'ok');
+  assert.deepEqual(result.items,rows);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].table,'provider_incident_alert_deliveries');
+  assert.equal(calls[0].options.limit,500);
+  assert.equal(calls[0].options.order,'created_at.asc');
+  assert.match(calls[0].filter.created_at,/^gte\./);
+});
+
+test('incident ledger query hours remain finite and bounded when passed malformed values',async()=>{
+  const observed=[];
+  const rt=createProviderSloRuntime({
+    hasSupabase:()=>true,
+    supaSelectMany:async()=>[],
+  });
+  for(const [input,expected] of [
+    ['12',168],[NaN,168],[Infinity,168],[null,168],[-1,168],
+    [0.1,1],[1,1],[8.7,8],[999,336],
+  ]){
+    const result=await rt.readProviderIncidentAlertDeliveries({},input);
+    assert.equal(result.ok,true);
+    assert.equal(result.hours,expected);
+  }
+});
+
+test('incident ledger read failure never claims durable delivery is available',async()=>{
+  const rt=createProviderSloRuntime({
+    hasSupabase:()=>true,
+    supaSelectMany:async()=>{throw new Error('temporarily unavailable');},
+    redactOpsString:value=>String(value).slice(0,80),
+  });
+  const result=await rt.readProviderIncidentAlertDeliveries({},5);
+  assert.equal(result.ok,false);
+  assert.equal(result.persistent,false);
+  assert.equal(result.status,'error');
+  assert.deepEqual(result.items,[]);
+  assert.equal(result.hours,5);
+  const offline=createProviderSloRuntime({hasSupabase:()=>false});
+  const noDb=await offline.readProviderIncidentAlertDeliveries({},12);
+  assert.equal(noDb.ok,false);
+  assert.equal(noDb.status,'not_configured');
+  assert.equal(noDb.persistent,false);
+});
