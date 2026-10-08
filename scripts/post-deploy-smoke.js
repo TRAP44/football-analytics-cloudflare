@@ -67,6 +67,27 @@ async function request(fetchImpl, baseUrl, path, timeoutMs = 8000, init = {}) {
   }
 }
 
+// Cloudflare defaults to a 307 canonical redirect from /page.html to /page.
+// Accept only that exact same-origin redirect, then validate the final HTML.
+// Never follow arbitrary redirects or weaken API/webhook checks.
+async function requestCanonicalPublicHtml(fetchImpl, baseUrl, path) {
+  const first = await request(fetchImpl,baseUrl,path);
+  if (first.status !== 307 && first.status !== 308) return first;
+  const location = first.headers.get('location');
+  if (!location) throw new Error(`${path} redirected without a Location header.`);
+  let destination;
+  try {
+    destination = new URL(location,baseUrl);
+  } catch {
+    throw new Error(`${path} redirected to an invalid URL.`);
+  }
+  const canonicalPath = path.replace(/\\.html$/, '');
+  if (destination.origin !== baseUrl.origin || destination.pathname !== canonicalPath || destination.search || destination.hash) {
+    throw new Error(`${path} redirected outside its expected same-origin canonical HTML path.`);
+  }
+  return request(fetchImpl,baseUrl,canonicalPath);
+}
+
 async function jsonBody(response, label) {
   try {
     return await response.json();
@@ -258,9 +279,11 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
   }
 
   for (const path of ['/privacy.html','/terms.html','/status.html']) {
-    const response=await request(fetchImpl,baseUrl,path);
+    const response=await requestCanonicalPublicHtml(fetchImpl,baseUrl,path);
     const type=String(response.headers.get('content-type') || '').toLowerCase();
-    if (!response.ok || !type.includes('text/html')) throw new Error(`${path} must be a public HTML page.`);
+    if (!response.ok || !type.includes('text/html')) {
+      throw new Error(`${path} must be a public HTML page (HTTP ${response.status}, Content-Type: ${type || 'missing'}).`);
+    }
     const csp=String(response.headers.get('content-security-policy') || '');
     if (!csp.includes("object-src 'none'")) throw new Error(`${path} is missing the static security policy.`);
   }
