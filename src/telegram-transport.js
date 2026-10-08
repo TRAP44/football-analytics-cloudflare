@@ -317,6 +317,7 @@ export function createTelegramWebhookHandler(deps) {
     }
 
     beginTelegramWebhookAttempt(cfg);
+    let durableCompletionFailed=false;
     try {
       const response=await processTelegramUpdate(request,cfg,update);
       if (!validProcessorResponse(response)) throw invalidProcessResponseError();
@@ -325,17 +326,19 @@ export function createTelegramWebhookHandler(deps) {
       if (ownsPersistentClaim) {
         const completed=await completeTelegramUpdatePersistent(cfg,claim.key).catch(()=>false);
         if (completed !== true) {
+          // Processing already succeeded. Never release either dedupe claim
+          // after an unconfirmed durable completion, even if retry is safe.
+          durableCompletionFailed=true;
           throw attachDisposition(dedupeUnavailableError(),cfg);
         }
       }
       return response;
     } catch (caught) {
       const error=normalizeError(caught);
-      const alreadyClassified=plainObject(error.telegramWebhookDisposition);
-      const disposition=alreadyClassified || classifyTelegramWebhookFailure(error,cfg);
+      const disposition=classifyTelegramWebhookFailure(error,cfg);
       error.telegramWebhookRetry=Boolean(disposition.retry);
       error.telegramWebhookDisposition=disposition;
-      if (error.code === 'TELEGRAM_DEDUPE_UNAVAILABLE' && alreadyClassified) {
+      if (durableCompletionFailed) {
         // Processing finished, but the durable completion marker failed.
         // Keep both local and persistent claims in place so the retry is
         // absorbed by dedupe rather than executing side effects twice.
