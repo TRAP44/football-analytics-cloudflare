@@ -31,7 +31,7 @@ test('Weekend Pass stays fail-closed without a usage limit and becomes sale-read
   assert.match(env, /WEEKEND_PASS_USAGE_LIMIT=6/);
   assert.match(wrangler, /"WEEKEND_PASS_DURATION_HOURS":\s*"168"/);
   assert.match(wrangler, /"WEEKEND_PASS_USAGE_LIMIT":\s*"6"/);
-  assert.match(wrangler, /"MONETIZATION_ENABLED":\s*"false"/);
+  assert.match(wrangler, /"MONETIZATION_ENABLED":\s*"true"/);
   assert.match(env, /MONETIZATION_ENABLED=false/);
 });
 
