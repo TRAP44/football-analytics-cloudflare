@@ -253,3 +253,11 @@ test('release verification consumes the semantic frontend asset audit',()=>{
     /runtimeFrontendAssetRevision/,
   );
 });
+
+test('public premium-ui stylesheet and metadata use the same immutable asset revision',()=>{
+  const ref=localAssetReferences(publicHtml).find(item=>item.path==='/styles/premium-ui.css');
+  assert.ok(ref);
+  assert.equal(ref.revision,FRONTEND_ASSET_REVISION);
+  assert.ok(publicHtml.includes('class="billing-preview-card"'));
+  assert.match(FRONTEND_ASSET_REVISION,/-launch(?:[6-9][0-9]|[1-9][0-9]{2,})$/);
+});

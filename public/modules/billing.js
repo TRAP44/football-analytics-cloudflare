@@ -425,9 +425,11 @@ export function createBillingModule({
 
     const expiry = $('billingExpiry');
     if (expiry) {
-      expiry.textContent = snapshot.subscriptionUntil
-        ? (snapshot.expired ? 'Истекла · ' : 'До · ') + dateTime(snapshot.subscriptionUntil)
-        : 'Без подписки';
+      expiry.textContent = snapshot.plan === 'FREE'
+        ? 'Нет активной подписки'
+        : (snapshot.subscriptionUntil && !snapshot.expired
+          ? 'До · ' + dateTime(snapshot.subscriptionUntil)
+          : 'Нет активной подписки');
     }
 
     document.querySelectorAll('.pricing-card[data-plan]').forEach(card => {

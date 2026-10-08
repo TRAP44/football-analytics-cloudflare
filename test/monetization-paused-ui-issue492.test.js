@@ -161,3 +161,34 @@ test('paused monetization preview is informational and never offers a payment ac
   assert.doesNotMatch(preview,/<button|openInvoice|createInvoiceLink|data-plan=/i);
   assert.match(css,/billing-preview\[hidden\]\s*\{\s*display:\s*none/);
 });
+
+test('FREE does not show an old subscription expiration date as current subscription status',()=>{
+  const previous=globalThis.document;
+  globalThis.document={querySelectorAll:()=>[]};
+  try {
+    const {module,nodes,state}=harness({monetizationEnabled:false});
+    state.profile.billing={plan:'FREE',subscriptionUntil:'2026-10-01T13:39:00Z'};
+    module.render();
+    assert.equal(nodes.billingExpiry.textContent,'Нет активной подписки');
+
+    state.profile.billing={plan:'PRO',subscriptionUntil:'2026-10-01T13:39:00Z'};
+    module.render();
+    assert.equal(nodes.billingPlanBadge.textContent,'Бесплатный');
+    assert.equal(nodes.billingExpiry.textContent,'Нет активной подписки');
+  } finally {
+    globalThis.document=previous;
+  }
+});
+
+test('informational payment preview has release-revisioned CSS matching all public assets',async()=>{
+  const fs=await import('node:fs');
+  const {FRONTEND_ASSET_REVISION}=await import('../public/modules/app-runtime.js');
+  const html=fs.readFileSync('public/index.html','utf8');
+  const css=fs.readFileSync('public/styles/premium-ui.css','utf8');
+  assert.match(FRONTEND_ASSET_REVISION,/^6\.120\.0-launch(?:[6-9][0-9]|[1-9][0-9]{2,})$/);
+  assert.ok(html.includes('/styles/premium-ui.css?v='+FRONTEND_ASSET_REVISION));
+  assert.match(css,/\.miniapp-public-shell \.billing-preview-grid\s*\{/);
+  assert.match(css,/\.miniapp-public-shell \.billing-preview-card\s*\{/);
+  assert.match(css,/@media\s*\(max-width:\s*430px\)/);
+  assert.match(css,/\.billing-preview\[hidden\] \{ display: none; \}/);
+});

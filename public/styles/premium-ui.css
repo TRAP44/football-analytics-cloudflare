@@ -1528,3 +1528,35 @@ html[data-theme="light"] .miniapp-public-shell {
   }
   .miniapp-public-shell .billing-preview-card > span:last-child { grid-column: 2; }
 }
+
+/* launch60: keep the payment preview visually distinct from the free-quota panel. */
+.miniapp-public-shell .billing-preview-heading > strong {
+  display: block;
+  max-width: 24rem;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 850;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+.miniapp-public-shell .billing-preview-description {
+  max-width: 56ch;
+}
+.miniapp-public-shell .billing-preview-card {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 3%, transparent);
+}
+.miniapp-public-shell .billing-preview-card > strong {
+  color: var(--text);
+  letter-spacing: .025em;
+}
+@media (max-width: 430px) {
+  .miniapp-public-shell .billing-preview {
+    padding: 12px;
+  }
+  .miniapp-public-shell .billing-preview-grid {
+    gap: 7px;
+  }
+  .miniapp-public-shell .billing-preview-card {
+    padding: 11px 12px;
+  }
+}
