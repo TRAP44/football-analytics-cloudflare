@@ -42,17 +42,31 @@ export function createPostMatchReturnRuntime(deps = {}) {
     return `postmatch:return:delivery:${Number(userId || 0)}:${Number(fixtureId || 0)}:v1`;
   }
   
+  function postMatchPositiveId(value) {
+    if (typeof value === 'number') return Number.isSafeInteger(value) && value>0 ? value : 0;
+    if (typeof value !== 'string' || !/^\d+$/.test(value.trim())) return 0;
+    const id=Number(value.trim());
+    return Number.isSafeInteger(id) && id>0 ? id : 0;
+  }
+
+  function postMatchGoal(value) {
+    if (typeof value === 'number') return Number.isSafeInteger(value) && value>=0 ? value : null;
+    if (typeof value !== 'string' || !/^\d+$/.test(value.trim())) return null;
+    const goals=Number(value.trim());
+    return Number.isSafeInteger(goals) && goals>=0 ? goals : null;
+  }
+
   function postMatchReturnEligibility(history = {}, prediction = {}, now = Date.now()) {
-    const userId=Number(history.telegram_id || 0);
-    const fixtureId=Number(history.fixture_id || 0);
-    const kickoffMs=Date.parse(history.fixture_date || '');
+    const userId=postMatchPositiveId(history?.telegram_id);
+    const fixtureId=postMatchPositiveId(history?.fixture_id);
+    const kickoffMs=Date.parse(history?.fixture_date || '');
     const settled=String(prediction?.status || '')==='settled';
-    const homeGoals=Number(prediction?.actual_home_goals);
-    const awayGoals=Number(prediction?.actual_away_goals);
+    const homeGoals=postMatchGoal(prediction?.actual_home_goals);
+    const awayGoals=postMatchGoal(prediction?.actual_away_goals);
     if (!userId || !fixtureId || !Number.isFinite(kickoffMs)) return {eligible:false,reason:'identity'};
     if (kickoffMs > now-POST_MATCH_RETURN_MIN_DELAY_MINUTES*60_000) return {eligible:false,reason:'too_early'};
     if (kickoffMs < now-POST_MATCH_RETURN_MAX_AGE_HOURS*3600_000) return {eligible:false,reason:'too_old'};
-    if (!settled || !Number.isFinite(homeGoals) || !Number.isFinite(awayGoals)) return {eligible:false,reason:'not_settled'};
+    if (!settled || homeGoals===null || awayGoals===null) return {eligible:false,reason:'not_settled'};
     return {eligible:true,reason:'settled',userId,fixtureId,kickoffMs};
   }
   
@@ -112,16 +126,18 @@ export function createPostMatchReturnRuntime(deps = {}) {
       order:'fixture_date.desc',
     });
     return {
-      rows:(page.rows || []).filter(row=>{
-        const kickoff=Date.parse(row.fixture_date || '');
-        return Number(row.telegram_id || 0)>0 && Number(row.fixture_id || 0)>0 && Number.isFinite(kickoff) && kickoff<=cutoff;
+      rows:(Array.isArray(page?.rows) ? page.rows : []).filter(row=>{
+        const kickoff=Date.parse(row?.fixture_date || '');
+        return postMatchPositiveId(row?.telegram_id)>0
+          && postMatchPositiveId(row?.fixture_id)>0
+          && Number.isFinite(kickoff) && kickoff<=cutoff;
       }),
-      truncated:Boolean(page.truncated),
+      truncated:Boolean(page?.truncated),
     };
   }
   
   async function loadPostMatchReturnPredictions(fixtureIds = [], cfg) {
-    const ids=[...new Set((fixtureIds || []).map(Number).filter(x=>Number.isSafeInteger(x)&&x>0))];
+    const ids=[...new Set((Array.isArray(fixtureIds)?fixtureIds:[]).map(postMatchPositiveId).filter(Boolean))];
     const rows=[];
     for (let i=0;i<ids.length;i+=60) {
       const chunk=ids.slice(i,i+60);
