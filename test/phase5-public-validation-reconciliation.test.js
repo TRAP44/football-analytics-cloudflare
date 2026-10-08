@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { closedBetaAccessDecision } from '../src/access-control.js';
+import { phase5SessionToken } from '../public/modules/client-core.js';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 const clientTelemetryRuntime=readFileSync(new URL('../src/client-telemetry-runtime.js',import.meta.url),'utf8');
@@ -108,4 +109,78 @@ test('closed beta remains a separate legacy dashboard while Phase 5 owns public 
   assert.match(betaPhase5Runtime,/async function apiPhase5Dashboard/);
   assert.match(betaPhase5Runtime,/legacyClosedBetaRowsExcluded:true/);
   assert.match(clientTelemetryRuntime,/PHASE5_VALIDATION_COHORT\s*=\s*'phase5_public_v2'/);
+});
+
+
+
+test('public access never treats an unverified normal user as authenticated',()=>{
+  const config={betaAccessEnabled:false,betaTelegramIds:[123456]};
+  for(const user of [null,{id:123456},{id:123456,__telegramValidated:false},{id:0,__telegramValidated:true},{id:'not-an-id',__telegramValidated:true}]){
+    const decision=closedBetaAccessDecision(user,config);
+    assert.equal(decision.allowed,false);
+    assert.equal(decision.adminBypass,false);
+  }
+  const valid={id:123456,__telegramValidated:true};
+  assert.equal(closedBetaAccessDecision(valid,config).allowed,true);
+  assert.equal(closedBetaAccessDecision(valid,{...config,betaAccessEnabled:true}).allowed,true);
+  assert.equal(closedBetaAccessDecision(valid,{...config,betaAccessEnabled:true,betaTelegramIds:[]}).allowed,false);
+});
+
+test('Phase 5 session token is 128-bit hex, reused in-session and regenerated after corruption',()=>{
+  const cache=new Map();
+  let generated=0;
+  const scope={
+    sessionStorage:{
+      getItem:key=>cache.get(key)??null,
+      setItem:(key,value)=>cache.set(key,value),
+    },
+    crypto:{getRandomValues(bytes){generated++;for(let i=0;i<bytes.length;i++)bytes[i]=i+1;return bytes;}},
+  };
+  const token=phase5SessionToken(scope);
+  assert.match(token,/^[0-9a-f]{32}$/);
+  assert.equal(generated,1);
+  assert.equal(phase5SessionToken(scope),token);
+  assert.equal(generated,1);
+  const [key]=cache.keys();
+  assert.match(key,/phase5-session:v2$/);
+  cache.set(key,'invalid-token');
+  assert.equal(phase5SessionToken(scope),token);
+  assert.equal(generated,2);
+  assert.equal(phase5SessionToken({sessionStorage:scope.sessionStorage}),token);
+});
+
+test('Phase 5 session token fails closed without crypto or when storage throws',()=>{
+  assert.equal(phase5SessionToken({sessionStorage:{getItem:()=>null}}),'');
+  assert.equal(phase5SessionToken({
+    sessionStorage:{getItem(){throw new Error('Storage blocked');}},
+    crypto:{getRandomValues(){}},
+  }),'');
+});
+
+test('Phase 5 dashboard handlers check admin authorization before serving evidence',()=>{
+  for(const [route,handler] of [
+    ['/api/phase5-dashboard','apiPhase5Dashboard'],
+    ['/api/beta-dashboard','apiBetaDashboard'],
+  ]){
+    const start=router.indexOf("if (method === 'GET' && pathname === '"+route+"')");
+    assert.ok(start>=0,'Missing dashboard route '+route);
+    const block=router.slice(start,start+260);
+    assert.match(block,/if \(!adminAllowed\(\)\) return adminForbidden\(\);/);
+    assert.ok(block.indexOf('adminForbidden()')<block.indexOf('return await '+handler+'('));
+  }
+});
+
+test('Phase 5 does not record raw Telegram identity or unhashed session as validation evidence',()=>{
+  const start=clientTelemetryRuntime.indexOf('async function phase5ValidationContext');
+  const end=clientTelemetryRuntime.indexOf('function phase5ProviderUsage',start);
+  assert.ok(start>=0 && end>start);
+  const context=clientTelemetryRuntime.slice(start,end);
+  assert.match(context,/isTelegramValidatedUser\(user\)/);
+  assert.match(context,/isAdminUser\(user,cfg\)/);
+  assert.match(context,/!cfg\.botToken/);
+  assert.match(context,/^\s*if \(!\/\^\[0-9a-f\]\{32\}\$\/\.test\(rawSession\)\) return null;/m);
+  assert.match(context,/hmacSha256/);
+  assert.match(context,/bytesToHex\(subjectDigest\)\.slice\(0,32\)/);
+  assert.match(context,/bytesToHex\(sessionDigest\)\.slice\(0,32\)/);
+  assert.doesNotMatch(context,/rawSession\s*:/);
 });
