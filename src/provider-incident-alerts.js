@@ -526,7 +526,7 @@ async function processTarget({ plan, target, adminTelegramIds, claimDelivery, be
         attempts:Math.max(1,positiveInteger(claim?.attempts,1)),
       };
     }
-    if (!begun?.ok || String(begun?.status || '').toLowerCase()!=='sending') {
+    if (begun?.ok !== true || begun?.status !== 'sending') {
       return {
         slot,
         state:'persistence_failure',
