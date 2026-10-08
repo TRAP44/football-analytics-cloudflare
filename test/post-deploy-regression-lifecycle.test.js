@@ -185,3 +185,59 @@ test('K concurrent planners produce the same atomic transition identity',()=>{
   assert.equal(first.transitionKey,second.transitionKey);
   assert.equal(first.transitionKey,`${sha}:181:incident`);
 });
+
+
+
+test('the newest completed time window wins regardless of out-of-order report entries',()=>{
+  const mixed={
+    deploySha:sha,
+    completedWindows:3,
+    windows:[
+      {minutes:60,phase:'complete',state:'healthy',signals:[]},
+      {minutes:15,phase:'complete',state:'incident',signals:[{code:'stale_signal'}]},
+      {minutes:30,phase:'collecting',state:'incident',signals:[{code:'incomplete_signal'}]},
+    ],
+  };
+  assert.deepEqual(
+    planPostDeployRegressionLifecycle(mixed,[]),
+    {action:'none',reason:'healthy_without_active_regression'},
+  );
+});
+
+test('only same-deployment, correctly typed lifecycle history affects escalation',()=>{
+  const history=[
+    event('watch',15,{deploySha:otherSha,id:201,createdAt:'2026-09-29T15:00:00Z'}),
+    {...event('incident',30,{id:202,createdAt:'2026-09-29T15:05:00Z'}),source:'unrelated'},
+    {...event('incident',30,{id:203,createdAt:'2026-09-29T15:06:00Z'}),event_type:'wrong_type'},
+    event('watch',15,{id:204,createdAt:'2026-09-29T15:07:00Z'}),
+  ];
+  const result=planPostDeployRegressionLifecycle(report('incident',30),history);
+  assert.equal(result.action,'record');
+  assert.equal(result.meta.previousLifecycleState,'watch');
+  assert.equal(result.transitionKey,sha+':204:incident');
+});
+
+test('lifecycle suppresses invalid, duplicated and excessive signal codes without implicit coercion',()=>{
+  const many=report('incident',30);
+  many.windows[1].signals=[
+    ...Array.from({length:55},(_,i)=>({code:'signal_'+i})),
+    {code:' signal_0 '},{code:false},{code:null},{code:4},
+  ];
+  const result=planPostDeployRegressionLifecycle(many,[]);
+  assert.equal(result.action,'record');
+  assert.equal(result.meta.signalCodes.length,50);
+  assert.equal(new Set(result.meta.signalCodes).size,50);
+  assert.equal(result.meta.signalCodes[0],'signal_0');
+  assert.ok(result.meta.signalCodes.every(code=>typeof code==='string'));
+});
+
+test('incident recovers only after the latest completed healthy window and does not reopen on repetition',()=>{
+  const incident=event('incident',30,{id:301});
+  const recovered=planPostDeployRegressionLifecycle(report('healthy',60),[incident]);
+  assert.equal(recovered.code,'POST_DEPLOY_REGRESSION_RECOVERED');
+  assert.equal(recovered.meta.previousLifecycleState,'incident');
+  assert.equal(recovered.severity,'info');
+  const recoveredRow=event('recovered',60,{id:302,createdAt:'2026-09-29T16:00:00Z'});
+  const repeated=planPostDeployRegressionLifecycle(report('healthy',60),[incident,recoveredRow]);
+  assert.deepEqual(repeated,{action:'none',reason:'healthy_without_active_regression'});
+});
