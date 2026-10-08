@@ -220,6 +220,7 @@ test('invalid processor response is retryable before side effects and releases o
 test('failed durable completion after successful processing keeps dedupe claims in place for retry absorption', async () => {
   const events=[];
   const handler=createTelegramWebhookHandler(deps({
+    claimTelegramUpdatePersistent:async()=>({persistent:true,claimed:true,duplicate:false}),
     completeTelegramUpdate:key=>events.push(['memory-complete',key]),
     completeTelegramUpdatePersistent:async(_cfg,key)=>{
       events.push(['persistent-complete',key]);
@@ -246,6 +247,7 @@ test('failed durable completion after successful processing keeps dedupe claims 
 test('failed durable completion after a Telegram effect suppresses retry and still keeps claims', async () => {
   const events=[];
   const handler=createTelegramWebhookHandler(deps({
+    claimTelegramUpdatePersistent:async()=>({persistent:true,claimed:true,duplicate:false}),
     processTelegramUpdate:async(_request,activeCfg)=>{
       markTelegramWebhookEffect(activeCfg,'sendMessage');
       return responseJson({ok:true});
