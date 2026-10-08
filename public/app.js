@@ -2797,9 +2797,21 @@ async function loadMatches(options = {}) {
       return;
     }
     const publicMessage = category === 'rate_limit'
-      ? 'Источник матчей временно занят. Новая попытка станет доступна после короткой паузы.'
+      ? (state.offset !== 0
+        ? 'Источник матчей ограничил обновления этой даты. Пока действует пауза, можно перейти к матчам сегодня и LIVE.'
+        : 'Источник матчей ограничил запросы. После паузы попробуйте обновить данные.')
       : friendlyErrorMessage(e);
-    $('matches').innerHTML = `<div class="empty error-state"><strong>Матчи сейчас не обновились</strong><span>${escapeHtml(publicMessage)}</span><button id="matchesRetryBtn" class="secondary-btn" type="button">Повторить</button></div>`;
+    const todayShortcut = state.offset !== 0
+      ? '<button id="matchesTodayLiveBtn" class="secondary-btn" type="button">Сегодня · LIVE</button>'
+      : '';
+    $('matches').innerHTML = `<div class="empty error-state"><strong>Матчи сейчас не обновились</strong><span>${escapeHtml(publicMessage)}</span><div class="matches-error-actions"><button id="matchesRetryBtn" class="secondary-btn" type="button">Повторить</button>${todayShortcut}</div></div>`;
+    $('matchesTodayLiveBtn')?.addEventListener('click', () => {
+      // Switching to a different date/filter remains possible during provider cooldown.
+      // The date button already knows how to reuse cached feed/snapshots.
+      state.filter = 'live';
+      syncFilterButtons();
+      document.querySelector('.date-btn[data-offset="0"]')?.click();
+    });
     bindCooldownRetry(
       $('matchesRetryBtn'),
       category === 'rate_limit' ? retry : 0,
@@ -6620,15 +6632,15 @@ function updateConnectionBanner() {
     banner.hidden = false;
     icon.textContent = state.network.category === 'rate_limit' ? '⏳' : '⚠️';
     title.textContent = state.network.category === 'rate_limit'
-      ? 'Обновления временно на паузе'
+      ? 'Источник ограничил запросы'
       : 'Часть данных обновляется медленнее';
     if (state.network.category === 'rate_limit') {
       retry.hidden = false;
       retry.disabled = retryRemaining > 0;
       retry.textContent = retryRemaining > 0 ? `Повторить через ${retryRemaining} с` : 'Повторить';
       text.textContent = retryRemaining > 0
-        ? `Показываем сохранённые данные. Новая попытка будет доступна через ${retryRemaining} с.`
-        : 'Показываем сохранённые данные. Можно повторить обновление.';
+        ? `Пока действует лимит футбольного источника, используйте сохранённые матчи и фильтры. Повтор через ${retryRemaining} с.`
+        : 'Ограничение обновления истекло. Можно повторить запрос.';
       if (retryRemaining > 0) {
         updateConnectionBanner.retryTimer = setTimeout(updateConnectionBanner, Math.min(1000, retryRemaining * 1000));
       }

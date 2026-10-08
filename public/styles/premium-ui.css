@@ -1671,3 +1671,114 @@ html[data-theme="light"] .miniapp-public-shell {
 .miniapp-public-shell .pass-card button.match-pass-picker-option:not(:disabled):hover {
   border-color:var(--accent);
 }
+
+
+/* Mobile filter drawer containment: opening filters must never resize the app shell. */
+.miniapp-public-shell #matchesView,
+.miniapp-public-shell .home-filter-controls,
+.miniapp-public-shell .home-filter-controls .league-filter-drawer,
+.miniapp-public-shell .home-filter-controls .home-filter-body,
+.miniapp-public-shell .home-filter-controls .league-filter-grid,
+.miniapp-public-shell .home-filter-controls .popular-competitions {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.miniapp-public-shell .home-filter-controls {
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr);
+}
+.miniapp-public-shell .home-filter-controls .league-filter-drawer {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+}
+.miniapp-public-shell .home-filter-controls .league-filter-drawer > summary {
+  display: flex;
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding-inline: 12px;
+  overflow: hidden;
+}
+.miniapp-public-shell .home-filter-controls .league-filter-drawer > summary > span {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.miniapp-public-shell .home-filter-controls .league-filter-drawer > summary [data-filter-summary-value] {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 44vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.miniapp-public-shell .home-filter-controls .league-filter-drawer .home-filter-body {
+  width: 100%;
+  margin: 8px 0 0;
+  padding: 10px;
+  overflow: hidden;
+}
+.miniapp-public-shell .home-filter-controls .league-filter-grid {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0;
+}
+.miniapp-public-shell .home-filter-controls .league-filter-grid .filter-btn {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 5px;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  line-height: 1.3;
+  text-align: center;
+}
+.miniapp-public-shell .home-filter-controls .popular-competitions {
+  width: 100%;
+  margin: 12px 0 0;
+  overflow: hidden;
+}
+.miniapp-public-shell .home-filter-controls .competition-shortcuts {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+}
+.miniapp-public-shell .home-filter-controls .competition-shortcut {
+  flex: 0 0 auto;
+  max-width: min(230px, 78%);
+}
+@media (min-width: 540px) {
+  .miniapp-public-shell .home-filter-controls .league-filter-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* Provider cooldown keeps the retry and cached-LIVE escape actions accessible. */
+.miniapp-public-shell .matches-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+  min-width: 0;
+}
+.miniapp-public-shell .matches-error-actions > button {
+  flex: 1 1 128px;
+  min-height: 42px;
+  width: auto;
+  max-width: 100%;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
