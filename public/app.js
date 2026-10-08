@@ -5939,7 +5939,8 @@ function prematchBriefHtml(pm, match, probabilities) {
 }
 
 function providerCoverageHtml(reliability = {}) {
-  const features = reliability?.features || {};
+  const data = reliability && typeof reliability === 'object' && !Array.isArray(reliability) ? reliability : {};
+  const features = data.features && typeof data.features === 'object' && !Array.isArray(data.features) ? data.features : {};
   const labels = { injuries:'Травмы', lineups:'Составы', odds:'Коэффициенты', predictions:'Прогноз API', h2h:'Очные встречи' };
   const states = {
     available:['✓','Получено'], empty_response:['○','Источник вернул пустой ответ'], skipped:['○','Запрос отложен'],
@@ -5947,17 +5948,21 @@ function providerCoverageHtml(reliability = {}) {
     timeout:['!','Тайм-аут источника'], network_error:['!','Ошибка сети источника'], provider_error:['!','Ошибка источника'],
     configuration:['!','Источник не настроен'], error:['!','Временно недоступно'],
   };
-  const rows = Object.entries(labels).filter(([key]) => features[key]).map(([key,label]) => {
-    const item = features[key] || {};
-    const state = String(item.state || 'unknown');
+  const rows = Object.entries(labels).filter(([key]) => Object.hasOwn(features, key)).map(([key,label]) => {
+    const candidate = features[key];
+    const item = candidate && typeof candidate === 'object' && !Array.isArray(candidate) ? candidate : {};
+    const state = typeof item.state === 'string' ? item.state : 'unknown';
     const [icon,text] = states[state] || ['○','Статус не определён'];
-    const cls = item.available ? 'available' : item.degraded ? 'degraded' : 'missing';
+    const cls = state === 'available' && item.available === true ? 'available' :
+      item.degraded === true || ['rate_limited','plan_limited','timeout','network_error','provider_error','configuration','error','invalid_response'].includes(state) ? 'degraded' : 'missing';
     return `<div class="provider-coverage-row ${cls}"><span>${icon}</span><strong>${label}</strong><small>${escapeHtml(text)}</small></div>`;
   }).join('');
   if (!rows) return '';
-  const state = String(reliability.state || 'partial');
+  const state = ['healthy','degraded','partial'].includes(data.state) ? data.state : 'partial';
+  const cap = typeof data.trustCap === 'number' && Number.isFinite(data.trustCap) && data.trustCap >= 0 && data.trustCap <= 100
+    ? `${Math.round(data.trustCap)}%` : '—';
   const title = state === 'healthy' ? 'Данные источника получены' : state === 'degraded' ? 'Часть данных ограничена' : 'Часть данных ещё недоступна';
-  return `<section class="provider-coverage-card ${escapeHtml(state)}"><div class="provider-coverage-head"><strong>${escapeHtml(title)}</strong><span>доверие ≤ ${Math.round(Number(reliability.trustCap || 100))}%</span></div><div class="provider-coverage-grid">${rows}</div><p>${escapeHtml(publicText(reliability.note || 'AI использует только подтверждённые сигналы.'))}</p></section>`;
+  return `<section class="provider-coverage-card ${escapeHtml(state)}"><div class="provider-coverage-head"><strong>${escapeHtml(title)}</strong><span>доверие ≤ ${cap}</span></div><div class="provider-coverage-grid">${rows}</div><p>${escapeHtml(publicText(typeof data.note === 'string' && data.note.trim() ? data.note : 'AI использует только подтверждённые сигналы.'))}</p></section>`;
 }
 
 function aiInstructorHtml(ai = {}, match = {}, kickoffHandoff = {}) {
