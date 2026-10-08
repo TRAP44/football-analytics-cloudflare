@@ -180,6 +180,33 @@ test('trusted live mode uses pressure xG shots and time-ordered important events
   assert.match(rendered,/width:64.00%/);
 });
 
+test('Intelligence 2.0 LIVE pressure shows only a verified current index gap',()=>{
+  const data=withTrust(payload({
+    livePressure:{home:64,away:36},
+  }),['statistics']);
+  const html=renderMatchPulse(data);
+  assert.match(html,/data-pressure-strength="strong"/);
+  assert.match(html,/Разница индекса: 28/);
+  assert.match(html,/Один текущий срез подтверждённой статистики/);
+  assert.match(html,/не история давления по минутам/);
+  const balanced=renderMatchPulse(withTrust(payload({
+    livePressure:{home:52,away:48},
+  }),['statistics']));
+  assert.match(balanced,/data-pressure-strength="balanced"/);
+  assert.match(balanced,/Баланс по текущим данным/);
+  const untrusted=renderMatchPulse(payload({
+    livePressure:{home:90,away:10},
+  }));
+  assert.doesNotMatch(untrusted,/Разница индекса:/);
+  const flagged=renderMatchPulse({
+    ...data,dataFreshness:{
+      ...data.dataFreshness,
+      statistics:{...data.dataFreshness.statistics,stale:true},
+    },
+  });
+  assert.doesNotMatch(flagged,/Разница индекса:/);
+});
+
 test('finished mode keeps an honest final snapshot without inventing momentum', () => {
   const data=withTrust(payload({
     mode:'finished',
@@ -340,7 +367,7 @@ test('Match Pulse integration stays below scoreboard without creating a new tab'
 
   assert.match(
     app,
-    /import\('\.\/modules\/match-pulse\.js\?v=6\.120\.0-launch54'\)/,
+    /import\('\.\/modules\/match-pulse\.js\?v=6\.120\.0-launch64'\)/,
   );
   const pulseRender=center.indexOf('${matchPulseHtml}');
   assert.ok(pulseRender>=0);
@@ -394,9 +421,9 @@ test('Match Pulse keeps navigation onboarding and frontend revision contracts in
   const revision=html.match(
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
-  assert.equal(revision,'6.120.0-launch54');
+  assert.equal(revision,'6.120.0-launch64');
   assert.match(
     html,
-    /<script type="module" src="/app.js?v=6.120.0-launch54"></script>/,
+    /<script type="module" src="\/app\.js\?v=6\.120\.0-launch64"><\/script>/,
   );
 });

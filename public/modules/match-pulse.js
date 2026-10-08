@@ -444,8 +444,22 @@ export function renderMatchPulse(payload = {}) {
   const pulse = deriveMatchPulse(payload);
   if (!pulse) return '';
 
+  const gap = pulse.pressure ? Math.abs(pulse.pressure.home - pulse.pressure.away) : null;
+  const pressureStrength = gap === null ? '' : gap < 8 ? 'balanced' : gap < 20 ? 'moderate' : 'strong';
+  // This is a single verified statistics snapshot, not pressure history.
+  const pressureDeltaHtml = pulse.pressure && pulse.mode === 'live'
+    ? '<div class="match-pulse-pressure-context">'
+      + '<strong>Разница индекса: ' + gap + '</strong>'
+      + '<span>' + (pressureStrength === 'balanced'
+        ? 'Баланс по текущим данным'
+        : pressureStrength === 'moderate'
+          ? 'Умеренное преимущество по текущим данным'
+          : 'Заметное преимущество по текущим данным')
+      + '</span><small>Один текущий срез подтверждённой статистики — не история давления по минутам.</small>'
+      + '</div>'
+    : '';
   const pressureHtml = pulse.pressure ? `
-    <div class="match-pulse-pressure">
+    <div class="match-pulse-pressure" data-pressure-strength="${pressureStrength}">
       <div class="match-pulse-teams">
         <strong class="match-pulse-team home" title="${escapeHtml(pulse.homeName)}">${escapeHtml(pulse.homeName)}</strong>
         <span>давление</span>
@@ -460,6 +474,7 @@ export function renderMatchPulse(payload = {}) {
         <span>${escapeHtml(pulse.leaderText)}</span>
         <strong>${pulse.pressure.away}</strong>
       </div>
+      ${pressureDeltaHtml}
     </div>` : `
     <p class="match-pulse-summary">${escapeHtml(pulse.leaderText)}</p>`;
 

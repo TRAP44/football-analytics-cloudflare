@@ -32,6 +32,7 @@ import {
   normalizePersonalSignalText,
 } from './modules/personal-feed.js';
 import { deriveMatchCockpit } from './modules/match-cockpit.js';
+import { renderFormIntelligence } from './modules/form-intelligence.js';
 import { createPlayerFollowModule } from './modules/player-follow.js';
 import {
   CLIENT_VERSION,
@@ -1099,7 +1100,7 @@ async function ensureMatchCenterExtras() {
   if (matchCenterExtras) return matchCenterExtras;
   if (!matchCenterExtrasPromise) {
     matchCenterExtrasPromise = Promise.all([
-      import('./modules/match-pulse.js?v=6.120.0-launch54'),
+      import('./modules/match-pulse.js?v=6.120.0-launch64'),
       import('./modules/ai-timeline.js?v=6.120.0-launch63'),
     ]).then(([pulse, timeline]) => {
       matchCenterExtras = Object.freeze({
@@ -6356,7 +6357,7 @@ function renderAnalysis(d) {
       </div>
     </section>
 
-
+    ${renderFormIntelligence(d)}
     ${analysisGlanceHtml(d)}
 
     ${kickoffHandoffHtml(d.kickoffHandoff || {}, m)}
