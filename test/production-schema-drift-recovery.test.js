@@ -136,3 +136,52 @@ test('schema recovery canonicalizes string fingerprint case and freezes its resu
   assert.equal(Object.isFrozen(result),true);
   assert.equal(JSON.stringify(source),prior);
 });
+
+
+
+test('schema recovery fails closed for truthy non-boolean readiness indicators',()=>{
+  const base=payload().checks;
+  for(const changes of [
+    {supabase:{ok:'true',status:'ok'}},
+    {backendSecurity:{ok:1,status:'ok'}},
+    {telegramConfigured:'true'},
+    {recentSupabaseAuthFailures:'0'},
+    {schema:{...base.schema,ok:'false'}},
+  ]){
+    assert.throws(()=>verifySchemaDriftRecoverySnapshot(503,
+      payload({checks:{...base,...changes}}),actual));
+  }
+});
+
+test('schema recovery refuses missing ambiguous or malformed old schema identities',()=>{
+  const base=payload().checks;
+  for(const change of [
+    {expectedFingerprint:actual},
+    {expectedFingerprint:''},
+    {primaryExpectedFingerprint:'f'.repeat(32)},
+    {primaryExpectedFingerprint:[]},
+  ]){
+    assert.throws(()=>verifySchemaDriftRecoverySnapshot(503,
+      payload({checks:{...base,schema:{...base.schema,...change}}}),actual));
+  }
+});
+
+test('schema recovery rejects HTTP success or malformed readiness even if fingerprint matches',()=>{
+  for(const [status,body] of [
+    [200,payload()],
+    [503,{...payload(),status:'ready'}],
+    [503,{...payload(),ok:'false'}],
+    [503,null],
+    [503,[]],
+  ]) assert.throws(()=>verifySchemaDriftRecoverySnapshot(status,body,actual));
+});
+
+test('schema recovery accepts hexadecimal fingerprints case-insensitively without modifying the source',()=>{
+  const current=payload();
+  const prior=JSON.stringify(current);
+  const result=verifySchemaDriftRecoverySnapshot(503,current,actual.toUpperCase());
+  assert.equal(result.actualFingerprint,actual);
+  assert.equal(result.staleExpectedFingerprint,stale);
+  assert.equal(Object.isFrozen(result),true);
+  assert.equal(JSON.stringify(current),prior);
+});
