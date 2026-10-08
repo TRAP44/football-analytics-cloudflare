@@ -2839,7 +2839,9 @@ function syncFilterButtons() {
   });
   const drawer = document.querySelector('.league-filter-drawer');
   if (drawer) {
-    const drawerFilters = ['favorites', 'international', 'cups', 'england', 'spain', 'italy', 'germany', 'france'];
+    const drawerFilters = ['favorites', 'international', 'cups', 'england', 'spain', 'italy', 'germany', 'france',
+      'major', 'upcoming', 'finished', 'leagues', 'national',
+      'brazil', 'argentina', 'portugal', 'netherlands', 'turkey', 'usa', 'saudi'];
     const activeDrawerFilter = drawerFilters.includes(state.filter);
     drawer.classList.toggle('has-active-filter', activeDrawerFilter);
     const summaryValue = drawer.querySelector('[data-filter-summary-value]');
@@ -2852,6 +2854,18 @@ function syncFilterButtons() {
       italy: 'Италия',
       germany: 'Германия',
       france: 'Франция',
+      major: 'Топ-турниры',
+      upcoming: 'Предстоящие',
+      finished: 'Завершённые',
+      leagues: 'Чемпионаты',
+      national: 'Сборные',
+      brazil: 'Бразилия',
+      argentina: 'Аргентина',
+      portugal: 'Португалия',
+      netherlands: 'Нидерланды',
+      turkey: 'Турция',
+      usa: 'США',
+      saudi: 'Саудовская Аравия',
     };
     if (summaryValue) {
       summaryValue.textContent = activeDrawerFilter ? labels[state.filter] : '';
@@ -3095,7 +3109,11 @@ function filteredMatches() {
     const isFavMatch = (homeId>0 && fav.has(homeId)) || (awayId>0 && fav.has(awayId));
     if (prefs.hideYouth !== false && m?.youthReserve === true && state.filter !== 'favorites') return false;
     let byFilter = state.filter === 'all';
-    if (state.filter === 'top') byFilter = personalMatchInsight(m, signals).recommended;
+    if (state.filter === 'top') byFilter =
+      personalMatchInsight(m, signals).recommended
+      || m.featured === true
+      || m.isTop === true
+      || ['elite','major'].includes(m?.competition?.tier);
     if (state.filter === 'live') byFilter = m?.live === true;
     if (state.filter === 'cups') byFilter = typeof m?.category === 'string'
       && ['cup', 'continental', 'national', 'international'].includes(m.category);
@@ -3106,7 +3124,14 @@ function filteredMatches() {
         || m?.group === 'international'
       );
     }
-    if (['england', 'spain', 'italy', 'germany', 'france'].includes(state.filter)) byFilter = m?.group === state.filter;
+    if (['england', 'spain', 'italy', 'germany', 'france', 'brazil', 'argentina', 'portugal',
+      'netherlands', 'turkey', 'usa', 'saudi'].includes(state.filter)) byFilter = m?.group === state.filter;
+    if (state.filter === 'major') byFilter = m?.featured === true
+      || m?.isTop === true || ['elite','major'].includes(m?.competition?.tier);
+    if (state.filter === 'upcoming') byFilter = m?.live !== true && m?.finished !== true;
+    if (state.filter === 'finished') byFilter = m?.finished === true;
+    if (state.filter === 'leagues') byFilter = m?.category === 'league';
+    if (state.filter === 'national') byFilter = m?.category === 'national';
     if (state.filter === 'favorites') byFilter = isFavMatch;
     if (!byFilter) return false;
     if (!q) return true;
@@ -3123,8 +3148,9 @@ function filteredMatches() {
     const bf = ((bHomeId>0 && fav.has(bHomeId)) || (bAwayId>0 && fav.has(bAwayId))) ? 1 : 0;
     if (prefs.favoriteFirst !== false && state.filter !== 'favorites' && af !== bf) return bf - af;
     if (state.filter === 'top') {
-      const personalDelta = personalMatchInsight(b, signals).score - personalMatchInsight(a, signals).score;
-      if (personalDelta) return personalDelta;
+      const aRecommended = personalMatchInsight(a, signals).recommended === true;
+      const bRecommended = personalMatchInsight(b, signals).recommended === true;
+      if (aRecommended !== bRecommended) return bRecommended ? 1 : -1;
     }
     // LIVE is explicit in the LIVE filter; it must not make "Все" and
     // "Для вас" look like the same feed or outrank stronger competitions.
@@ -6730,6 +6756,16 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
     const drawer = btn.closest('.league-filter-drawer');
     if (drawer) drawer.open = false;
   });
+});
+$('resetMatchFilters')?.addEventListener('click', () => {
+  // Reset only client-side filters: do not use any additional provider quota.
+  state.filter = 'top';
+  state.search = '';
+  if ($('matchSearch')) $('matchSearch').value = '';
+  syncFilterButtons();
+  renderMatches();
+  const drawer = document.querySelector('.league-filter-drawer');
+  if (drawer) drawer.open = false;
 });
 
 $('homePersonalMatchBtn')?.addEventListener('click', event => {
