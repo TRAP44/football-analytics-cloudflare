@@ -6,6 +6,7 @@ import {
   buildPlayerComparisonModel,
   playerComparisonHtml,
   samePlayer,
+  playerPositionGroup,
 } from '../public/modules/player-comparison.js';
 
 const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -88,4 +89,90 @@ test('Player Comparison is mobile-first with no horizontal overflow and long-nam
   assert.match(styles, /@media \(max-width: 430px\)[\s\S]*\.player-comparison-heads/);
   assert.match(styles, /\.player-comparison-row\s*\{[^}]*min-width:\s*0/s);
   assert.doesNotMatch(styles.slice(styles.indexOf('/* Player Comparison */')), /overflow-x:\s*(auto|scroll)/);
+});
+
+
+
+test('Player Comparison identifies fallback names per team and normalizes role labels', () => {
+  assert.equal(samePlayer(
+    { data:{ name:'  Alex Silva ' },team:{id:10}},
+    { data:{ name:'alex silva'},team:{id:10}},
+  ),true);
+  assert.equal(samePlayer(
+    { data:{ name:'Alex Silva'},team:{id:10}},
+    { data:{ name:'Alex Silva'},team:{id:20}},
+  ),false);
+  assert.equal(samePlayer({ data:{name:''} },{data:{name:''}}),false);
+  for(const [position,expected] of [
+    ['Goalkeeper','goalkeeper'],
+    ['Вратарь','goalkeeper'],
+    ['Defender','defender'],
+    ['Midfielder','midfielder'],
+    ['Forward','attacker'],
+    ['','unknown'],
+  ]) assert.equal(playerPositionGroup(position),expected,position);
+});
+
+test('Player Comparison de-duplicates cached squad and match candidates without losing the preferred match source', () => {
+  const candidates=buildPlayerComparisonCandidates(primary,{
+    center:{match:primary.match,playerLeaders:{
+      home:[{id:2,name:'Second'},{id:2,name:'Repeated'}],
+      away:[{id:3,name:'Third'}],
+    }},
+    squads:[{
+      team:{id:10,name:'Alpha FC'},
+      data:{groups:[{label:'Main',players:[
+        {id:2,name:'Second from squad'},
+        {id:4,name:'Fourth'},
+        {id:1,name:'Primary'},
+        {id:4,name:'Repeated Fourth'},
+      ]}]},
+    }],
+  });
+  assert.deepEqual(candidates.map(player=>player.data.id),[2,3,4]);
+  assert.equal(candidates[0].source,'match_center');
+  assert.equal(candidates[2].source,'team_squad_cache');
+  assert.equal(candidates[2].squadProfile.group,'Main');
+});
+
+test('Player Comparison preserves legitimate zero values while leaving unavailable values blank', () => {
+  const a={ data:{id:4,name:'A',shotsOn:0},team:{id:10},seasonStats:{found:true,goals:0,assists:null}};
+  const b={ data:{id:5,name:'B'},team:{id:20},seasonStats:{found:true,goals:null,assists:null}};
+  const model=buildPlayerComparisonModel(a,b);
+  const attack=model.categories.find(category=>category.id==='attack');
+  const goals=attack.rows.find(row=>row.label==='Голы · сезон');
+  const shots=attack.rows.find(row=>row.label==='Удары в створ · матч');
+  assert.deepEqual({left:goals.left,right:goals.right},{left:'0',right:'—'});
+  assert.deepEqual({left:shots.left,right:shots.right},{left:'0',right:'—'});
+  assert.ok(!model.categories.some(category=>category.rows.some(row=>row.label==='Ассисты · сезон')));
+});
+
+test('Player Comparison escapes player names, candidate metadata and provider error messages', () => {
+  const malicious='<img src=x onerror=alert(1)>';
+  const html=playerComparisonHtml({
+    primary:{data:{id:1,name:malicious},team:{id:10,name:'A & B'}},
+    secondary:{data:{id:2,name:'B'},team:{id:20,name:'C'}},
+    error:'<script>alert(1)</script>',
+  });
+  assert.match(html,/&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.match(html,/A &amp; B/);
+  assert.match(html,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(html,/<script>|<img src=x/);
+  const selection=playerComparisonHtml({candidates:[{data:{name:malicious},team:{name:'A & B'}}]});
+  assert.match(selection,/&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.match(selection,/A &amp; B/);
+  assert.doesNotMatch(selection,/<img src=x/);
+});
+
+test('Player Comparison presents the empty candidate and loading states without fabricated metrics', () => {
+  const noCandidates=playerComparisonHtml({});
+  assert.match(noCandidates,/нет второго игрока/);
+  assert.match(noCandidates,/data-player-comparison-close/);
+  assert.doesNotMatch(noCandidates,/player-comparison-row/);
+  const loading=playerComparisonHtml({
+    primary:{data:{id:1,name:'A'}},secondary:{data:{id:2,name:'B'}},loading:true,
+  });
+  assert.match(loading,/Уточняю уже доступные данные/);
+  assert.match(loading,/нет общих доступных показателей/);
+  assert.doesNotMatch(loading,/общий рейтинг победителя/i);
 });
