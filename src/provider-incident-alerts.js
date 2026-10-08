@@ -420,23 +420,27 @@ export function classifyProviderIncidentTelegramResult(result = {}, nowMs = Date
     return { state:'unknown', retryAt:null, retryable:false, reason:description };
   }
 
-  if (status === 429) {
-    const retryAfter = boundedPositiveInteger(result?.retryAfter,1,604800);
+  const pendingRetry=delayMs=>{
+    const retryAtMs=effectiveNow+delayMs;
+    // Fail closed if corrupted clock data would create an unrepresentable retry time.
+    if (!Number.isFinite(retryAtMs) || retryAtMs>8.64e15) {
+      return { state:'unknown', retryAt:null, retryable:false, reason:'retry_time_unrepresentable' };
+    }
     return {
       state:'retry_pending',
-      retryAt:new Date(effectiveNow + retryAfter * 1000).toISOString(),
+      retryAt:new Date(retryAtMs).toISOString(),
       retryable:true,
       reason:description,
     };
+  };
+
+  if (status === 429) {
+    const retryAfter = boundedPositiveInteger(result?.retryAfter,1,604800);
+    return pendingRetry(retryAfter * 1000);
   }
 
   if (status === 408 || status === 425 || status >= 500) {
-    return {
-      state:'retry_pending',
-      retryAt:new Date(effectiveNow + PROVIDER_INCIDENT_ALERT_POLICY.retryCooldownMinutes * 60_000).toISOString(),
-      retryable:true,
-      reason:description,
-    };
+    return pendingRetry(PROVIDER_INCIDENT_ALERT_POLICY.retryCooldownMinutes * 60_000);
   }
 
   return { state:'terminal_failed', retryAt:null, retryable:false, reason:description };
