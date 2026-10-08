@@ -6,7 +6,7 @@ const RELEASE_RE = /^[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$/;
 const SHA_RE = /^[0-9a-f]{40}$/i;
 const EPSILON = 1e-9;
 
-function activeProductionVersion(deployment) {
+export function activeProductionVersion(deployment) {
   if (!deployment || typeof deployment !== 'object' || Array.isArray(deployment)) {
     throw new Error('Cloudflare deployment status must be a JSON object.');
   }
@@ -37,12 +37,14 @@ function activeProductionVersion(deployment) {
 }
 
 export function resolveActiveProductionReleaseIdentity(deployment, versions) {
-  if (!Array.isArray(versions)) {
-    throw new Error('Cloudflare versions list must be a JSON array.');
+  // Wrangler's version view returns one version, while list returns an array.
+  const candidates = Array.isArray(versions) ? versions : [versions];
+  if (candidates.some(version => !version || typeof version !== 'object' || Array.isArray(version))) {
+    throw new Error('Cloudflare version details must be JSON objects.');
   }
 
   const activeVersionId = activeProductionVersion(deployment);
-  const activeVersions = versions.filter(version => version?.id === activeVersionId);
+  const activeVersions = candidates.filter(version => version?.id === activeVersionId);
   if (activeVersions.length === 0) {
     throw new Error(`Active production version ${activeVersionId} is missing from the recent Cloudflare versions list.`);
   }
@@ -112,6 +114,11 @@ function main() {
     throw new Error('Usage: node scripts/verify-production-release-postcondition.js <deployment-json> <versions-json> <release> <sha>');
   }
   const deployment = JSON.parse(fs.readFileSync(deploymentPath, 'utf8'));
+  if (versionsPath === '--print-active-version-id' && !expectedRelease && !expectedSha) {
+    // Fail closed on split traffic before fetching the specific rollback version.
+    console.log(activeProductionVersion(deployment));
+    return;
+  }
   const versions = JSON.parse(fs.readFileSync(versionsPath, 'utf8'));
 
   if (expectedRelease === '--print-active-identity' && !expectedSha) {
