@@ -545,3 +545,52 @@ test('post-deploy smoke uses non-following, uncached requests with explicit webh
   assert.equal(webhook?.body,'{}');
   assert.ok(seen.filter(request=>request.path==='/health/ready').length>=1);
 });
+
+
+test('post-deploy smoke permits only Cloudflare same-origin 307 canonical redirects for public HTML', async () => {
+  const fallback=healthyFetch();
+  const seen=[];
+  const fetchImpl=async (input,options)=>{
+    const path=new URL(input).pathname;
+    seen.push({path,redirect:options.redirect});
+    if(['/privacy.html','/terms.html','/status.html'].includes(path)) {
+      return new Response(null,{status:307,headers:{location:path.slice(0,-5)}});
+    }
+    if(['/privacy','/terms','/status'].includes(path)) {
+      return new Response('<!doctype html>',{status:200,headers:{
+        'content-type':'text/html; charset=utf-8',
+        'content-security-policy':"default-src 'self'; object-src 'none'",
+      }});
+    }
+    return fallback(input,options);
+  };
+  const result=await runDeploymentSmoke('https://football.example.test',VERSION,DEPLOY_SHA,{
+    fetchImpl,retries:1,retryDelayMs:0,
+  });
+  assert.equal(result.ok,true);
+  for(const path of ['/privacy','/terms','/status']) {
+    assert.ok(seen.some(item=>item.path===path));
+  }
+  assert.ok(seen.every(item=>item.redirect==='manual'));
+});
+
+test('post-deploy smoke rejects external, unexpected, and unsafe canonical HTML redirects', async () => {
+  for(const location of ['https://external.example/privacy','/admin','/privacy?secret=true','/privacy#jump']) {
+    await assert.rejects(
+      runDeploymentSmoke('https://football.example.test',VERSION,DEPLOY_SHA,{
+        fetchImpl:withRouteResponse('/privacy.html',()=>new Response(null,{status:307,headers:{location}})),
+        retries:1,retryDelayMs:0,
+      }),
+      /outside its expected same-origin canonical HTML path/,
+      'Unsafe redirect accepted: '+location,
+    );
+  }
+  await assert.rejects(
+    runDeploymentSmoke('https://football.example.test',VERSION,DEPLOY_SHA,{
+      fetchImpl:withRouteResponse('/privacy.html',()=>new Response(null,{status:307,headers:{location:'/privacy'}})),
+      retries:1,retryDelayMs:0,
+    }),
+    /privacy\\.html must be a public HTML page/,
+    'Canonical destination must still be a real HTML asset.',
+  );
+});
