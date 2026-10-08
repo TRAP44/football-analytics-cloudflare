@@ -100,3 +100,52 @@ test('RC115 requires successful version view and validated identity before destr
   const post=workflow.slice(workflow.indexOf('- name: RC119 verify exact rollback deployment target'));
   assert.match(post,/verify-rollback-target\.js "\$ROLLBACK_VERSION_JSON"/);
 });
+
+
+
+test('RC115 rejects no-op target lookup errors before any rollback mutation',()=>{
+  const workflowPart=workflow.slice(
+    workflow.indexOf('- name: RC115 verify rollback target exists'),
+    workflow.indexOf('- name: Roll back Worker'),
+  );
+  assert.match(workflowPart,/set -euo pipefail/);
+  assert.match(workflowPart,/npx wrangler versions view "\$VERSION_ID" --json/);
+  assert.match(workflowPart,/node scripts\/verify-rollback-target\.js/);
+  assert.doesNotMatch(workflowPart,/npx wrangler rollback/);
+});
+
+test('RC115 stamped rollback target denies stale or impossible timestamps',()=>{
+  for(const stamp of [
+    {created_on:'2018-01-01T00:00:00Z'},
+    {created_on:'2099-01-01T00:00:00Z'},
+    {created_on:'invalid'},
+  ]){
+    assert.throws(
+      ()=>verifyRollbackTarget(rc115Stamped({metadata:stamp}),rc115Release,rc115VersionId),
+      /validation failed/,
+    );
+  }
+});
+
+test('RC115 refuses ambiguous metadata even with an explicit legacy override',()=>{
+  const stamp=rc115Stamped();
+  const invalid={...stamp,annotations:{...stamp.annotations,'workers/tag':'b'.repeat(40)}};
+  const confirmation='LEGACY-UNVERIFIED:'+rc115Release+':'+rc115VersionId;
+  assert.throws(
+    ()=>verifyRollbackTarget(invalid,rc115Release,rc115VersionId,true,confirmation),
+    /CLOUDFLARE_VERSION_TAG_MISMATCH/,
+  );
+});
+
+test('RC115 requires exact release and immutable deploy SHA on stamped rollback target',()=>{
+  const stamp=rc115Stamped();
+  assert.equal(verifyRollbackTarget(stamp,rc115Release,rc115VersionId,false,'',rc115Sha).mode,'stamped');
+  assert.throws(
+    ()=>verifyRollbackTarget(stamp,'6.119.0-rc143',rc115VersionId,false,'',rc115Sha),
+    /release identity mismatch/,
+  );
+  assert.throws(
+    ()=>verifyRollbackTarget(stamp,rc115Release,rc115VersionId,false,'','b'.repeat(40)),
+    /deploy SHA mismatch/,
+  );
+});
