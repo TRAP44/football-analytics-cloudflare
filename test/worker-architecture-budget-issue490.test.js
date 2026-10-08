@@ -437,3 +437,14 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.doesNotMatch(worker,/async function sendTelegramMessage\(/);
   assert.doesNotMatch(worker,/async function probeReminderReliabilitySchema\(/);
 });
+
+test('Worker composes unique local ESM modules and forbids runtime code evaluation',()=>{
+  const imports=[...worker.matchAll(/^import\s+(?:\{[\s\S]*?\}|[A-Za-z_$][\w$]*)\s+from\s+['"]([^'"]+)['"];?/gm)]
+    .map(match=>match[1]);
+  assert.ok(imports.length>=100,'Expected extracted-module composition graph');
+  assert.equal(new Set(imports).size,imports.length);
+  assert.ok(imports.every(specifier=>specifier.startsWith('./')));
+  assert.doesNotMatch(worker,/\beval\s*\(|new\s+Function\s*\(/);
+  assert.match(worker,/import \{ createWorkerBootstrapRuntime \} from '\.\/worker-bootstrap-runtime\.js'/);
+  assert.match(worker,/export default createWorkerBootstrapRuntime\(\{/);
+});

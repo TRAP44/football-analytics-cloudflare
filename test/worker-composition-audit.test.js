@@ -423,3 +423,32 @@ test('worker source contains no unfinished or known corrupted extraction seams',
   assert.doesNotMatch(source,/const buildSmartMatchInsights = \(\.\.\.args\) home:/);
   assert.doesNotMatch(source,/\n\s*r \}\);\s*\n/);
 });
+
+test('architecture scanner preserves nested factory arguments and quoted separators',()=>{
+  assert.deepEqual(
+    splitTopLevel('alpha,config: {map:[1,2],label:"a,b"},beta'),
+    ['alpha','config: {map:[1,2],label:"a,b"}','beta'],
+  );
+  const expression='createSynthetic({ alpha, beta: wrap({text:"}"}) })';
+  const call=callObject(expression,'createSynthetic');
+  assert.equal(call.count,1);
+  assert.deepEqual(call.keys,['alpha','beta']);
+  assert.equal(call.entries[1].expr,'wrap({text:"}"})');
+});
+
+test('architecture scanner detects missing and duplicate declared factory dependencies',()=>{
+  const contract=factoryContract(
+    'export function createSynthetic(deps) { const { alpha,beta } = deps; return alpha+beta; }',
+    'createSynthetic',
+  );
+  assert.equal(contract.style,'deps-object');
+  assert.deepEqual(contract.required,['alpha','beta']);
+  const call=callObject('createSynthetic({alpha,alpha})','createSynthetic');
+  assert.equal(call.count,1);
+  assert.deepEqual(call.keys,['alpha','alpha']);
+  assert.deepEqual(contract.required.filter(key=>!call.keys.includes(key)),['beta']);
+  assert.deepEqual(
+    [...new Set(call.keys.filter((key,index,keys)=>keys.indexOf(key)!==index))],
+    ['alpha'],
+  );
+});

@@ -233,3 +233,35 @@ test('worker keeps exact bootstrap wiring and no legacy inline default handler',
   assert.match(bootstrap,/CRON_SCHEDULE_INVALID/);
   assert.match(bootstrap,/ANALYSIS_USAGE_RECONCILIATION_FAILED/);
 });
+
+test('invalid worker configuration and URL are rejected before request dispatch',async()=>{
+  let dispatches=0;
+  const invalidConfig=createWorkerBootstrapRuntime(deps({
+    config:()=>null,
+    dispatchApiRoute:async()=>{dispatches++;return json({ok:true});},
+  }));
+  const configResponse=await invalidConfig.fetch(request(),{},{});
+  assert.equal(configResponse.status,503);
+  assert.equal(configResponse.body.code,'WORKER_CONFIG_UNAVAILABLE');
+
+  const invalidUrl=createWorkerBootstrapRuntime(deps({
+    dispatchApiRoute:async()=>{dispatches++;return json({ok:true});},
+  }));
+  const urlResponse=await invalidUrl.fetch(request('not-a-valid-url'),{},{});
+  assert.equal(urlResponse.status,400);
+  assert.equal(urlResponse.body.code,'REQUEST_URL_INVALID');
+  assert.equal(dispatches,0);
+});
+
+test('scheduled worker rejects control-plane corruption before side effects',async()=>{
+  let reconciles=0,handled=0;
+  const runtime=createWorkerBootstrapRuntime(deps({
+    loadRuntimeControls:async()=>({value:{maintenanceMode:false}}),
+    reconcileAnalysisUsageReservations:async()=>{reconciles++;},
+    handleScheduled:async()=>{handled++;return ['bad'];},
+  }));
+  const result=await runtime.scheduled({scheduledTime:1791302400000},{},{});
+  assert.equal(result,undefined);
+  assert.equal(reconciles,0);
+  assert.equal(handled,0);
+});

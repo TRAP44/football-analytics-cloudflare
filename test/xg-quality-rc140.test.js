@@ -104,3 +104,33 @@ test('RC140 xG quality remains part of the current Match Center contract', () =>
   assert.match(app, /\['xG', d\.availability\?\.xg\]/);
   assert.match(worker,/xgQuality,/);
 });
+
+test('RC140 rejects duplicate xG metrics even when both values are otherwise valid',()=>{
+  const evidence=stats(1.4,0.8);
+  evidence.items.push({key:'expected_goals',label:'xG',home:1.5,away:0.9});
+  const quality=assessExpectedGoalsQuality(evidence,{statisticsMeta:trustedMeta});
+  assert.equal(quality.state,'invalid');
+  assert.equal(quality.reason,'duplicate_metric');
+  assert.equal(quality.confidenceBearing,false);
+  const display=sanitizeExpectedGoalsForDisplay(evidence,quality);
+  assert.equal(display.items.filter(row=>row.key==='expected_goals').length,1);
+  assert.equal(
+    statisticsForTrustedExpectedGoals(display,quality).items.some(row=>row.key==='expected_goals'),
+    false,
+  );
+});
+
+test('RC140 refuses coerced xG values and preserves unrelated trustworthy statistics',()=>{
+  for(const value of [true,false,[],[1.4],{valueOf:()=>1.4},Infinity,NaN]){
+    const checked=inspectExpectedGoalsValue(value);
+    assert.equal(checked.valid,false,String(value));
+  }
+  const source=stats('0.98',0.7);
+  const quality=assessExpectedGoalsQuality(source,{statisticsMeta:{...trustedMeta,provenanceState:'unknown'}});
+  assert.equal(quality.confidenceBearing,false);
+  const display=sanitizeExpectedGoalsForDisplay(source,quality);
+  const analytics=statisticsForTrustedExpectedGoals(display,quality);
+  assert.equal(analytics.items.some(row=>row.key==='expected_goals'),false);
+  assert.equal(analytics.items.find(row=>row.key==='Shots on Goal').home,4);
+  assert.equal(source.items.find(row=>row.key==='expected_goals').home,'0.98');
+});
