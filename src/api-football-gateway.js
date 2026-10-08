@@ -93,7 +93,7 @@ export function createApiFootballGateway({
     const updatedToday = Number.isFinite(updatedAtMs)
       && new Date(updatedAtMs).toISOString().slice(0,10) === new Date().toISOString().slice(0,10);
     const reserve = Math.max(1, Number(providerBudgetFloors.FREE?.dailyReserve || 20));
-    const blocked = updatedToday && Number.isFinite(remaining) && remaining <= reserve;
+    const blocked = updatedToday && (!Number.isFinite(remaining) || remaining <= reserve);
     return {
       blocked,
       plan,

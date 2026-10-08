@@ -333,8 +333,14 @@ export function createProviderBudgetRuntime(deps) {
     ) mode = 'conserve';
   
     const proBaseline = PROVIDER_PLAN_LIMITS.PRO;
+    const evidenceTime=typeof p.updatedAt==='string' ? Date.parse(p.updatedAt) : NaN;
+    const recentQuotaEvidence=Number.isFinite(evidenceTime)
+      && evidenceTime <= Date.now()+60_000
+      && evidenceTime >= Date.now()-10*60_000;
     const broadTrafficReady = Boolean(
       paid
+      && completeProviderQuotaSnapshot(p)
+      && recentQuotaEvidence
       && observedDailyLimit !== null
       && observedMinuteLimit !== null
       && observedDailyLimit >= Number(proBaseline.daily || 0)

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createApiFootballGateway } from '../src/api-football-gateway.js';
+import { createProviderBudgetRuntime } from '../src/provider-budget-runtime.js';
 
 function createGateway(provider = {}) {
   const memory = {
@@ -102,4 +103,73 @@ test('daily reserve guard executes before distributed minute budget', () => {
   const daily = block.indexOf('dailyReserveDecision(options)');
   const minute = block.indexOf('claimDistributedProviderBudget(cfg)');
   assert.ok(daily >= 0 && minute > daily);
+});
+
+
+
+function createLaunchBudget(provider={}){
+  const memory={provider:{
+    plan:'PRO',dailyLimit:7500,dailyRemaining:7000,minuteLimit:300,
+    minuteRemaining:275,updatedAt:new Date().toISOString(),cooldownUntil:null,
+    ...provider,
+  }};
+  return createProviderBudgetRuntime({
+    memory,
+    clamp:(n,min,max)=>Math.max(min,Math.min(max,n)),
+    freeQuotaHealthy:()=>true,
+    hasSupabase:()=>false,
+    runtimeControlsSnapshot:()=>({}),
+  }).providerBudgetProfile();
+}
+
+test('FREE daily reserve denies unknown or malformed remaining counts before network',async()=>{
+  for(const dailyRemaining of [undefined,'unavailable','NaN',Infinity,{},-1]){
+    const {gateway,counts}=createGateway({dailyRemaining});
+    await assert.rejects(
+      ()=>gateway.apiFootballNetwork('/fixtures',{date:'2026-10-02'},{apiFootballKey:'secret'}),
+      err=>err?.code==='FOOTBALL_DAILY_RESERVE',
+    );
+    assert.equal(counts().distributedClaims,0);
+    assert.equal(counts().networkCalls,0);
+  }
+});
+
+test('launch capacity rejects PRO when observed remaining quota is unknown',()=>{
+  for(const incomplete of [
+    {dailyRemaining:undefined},
+    {minuteRemaining:undefined},
+    {dailyRemaining:'invalid'},
+    {minuteRemaining:'invalid'},
+    {dailyRemaining:8000},
+    {minuteRemaining:400},
+  ]){
+    const profile=createLaunchBudget(incomplete);
+    assert.equal(profile.launchCapacity.broadTrafficReady,false,JSON.stringify(incomplete));
+    assert.equal(profile.launchCapacity.recommendedMode,'limited_beta');
+  }
+});
+
+test('launch capacity requires recent provider quota evidence, not only paid-plan limits',()=>{
+  const stale=createLaunchBudget({updatedAt:new Date(Date.now()-60*60_000).toISOString()});
+  assert.equal(stale.launchCapacity.broadTrafficReady,false);
+  const future=createLaunchBudget({updatedAt:new Date(Date.now()+5*60_000).toISOString()});
+  assert.equal(future.launchCapacity.broadTrafficReady,false);
+  const absent=createLaunchBudget({updatedAt:null});
+  assert.equal(absent.launchCapacity.broadTrafficReady,false);
+  const fresh=createLaunchBudget();
+  assert.equal(fresh.launchCapacity.broadTrafficReady,true);
+  assert.equal(fresh.launchCapacity.recommendedMode,'public');
+});
+
+test('launch capacity does not promote depleted or FREE quotas to broad public readiness',()=>{
+  for(const provider of [
+    {plan:'FREE',dailyLimit:100,minuteLimit:10,dailyRemaining:80,minuteRemaining:8},
+    {dailyRemaining:400,minuteRemaining:275},
+    {dailyRemaining:7000,minuteRemaining:18},
+    {cooldownUntil:new Date(Date.now()+60_000).toISOString()},
+  ]){
+    const profile=createLaunchBudget(provider);
+    assert.equal(profile.launchCapacity.broadTrafficReady,false);
+    assert.equal(profile.launchCapacity.recommendedMode,'limited_beta');
+  }
 });
