@@ -435,3 +435,25 @@ test('old and composite readiness decisions match on equivalent fixtures', () =>
     assert.equal(newDecision, oldDecision);
   }
 });
+
+test('composite readiness fails closed on invalid auth-window evidence and forged nested success',()=>{
+  const invalidCount=healthyRaw({
+    recentSupabaseAuthFailures:{available:true,count:-1,windowMinutes:5},
+  });
+  assert.equal(normalizeCompositeReadinessResponse(invalidCount,FP).valid,false);
+  const wrongWindow=healthyRaw({
+    recentSupabaseAuthFailures:{available:true,count:0,windowMinutes:60},
+  });
+  assert.equal(normalizeCompositeReadinessResponse(wrongWindow,FP,CONTRACT_VERSION,5).valid,false);
+  const spoofed=healthyRaw({
+    backendSecurity:{ok:'true',status:'ok'},
+  });
+  assert.equal(normalizeCompositeReadinessResponse(spoofed,FP).valid,false);
+  const degraded=healthyRaw({
+    connectivity:{ok:false,status:'network_error'},
+  });
+  const value=normalizeCompositeReadinessResponse(degraded,FP);
+  assert.equal(value.valid,true);
+  assert.equal(value.ok,false);
+  assert.equal(value.connectivity.ok,false);
+});

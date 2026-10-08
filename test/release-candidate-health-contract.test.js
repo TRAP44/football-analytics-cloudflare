@@ -62,3 +62,25 @@ test('public live and readiness preserve version/release candidate without deplo
   assert.equal('deployment' in ready,false);
   assert.equal('fingerprint' in ready.checks.schema,false);
 });
+
+test('candidate health routes reject mutation methods and never cache public readiness',async()=>{
+  const health=createPublicHealthRuntime({
+    version:'6.120.0-rc144',releaseCandidate:'RC144',
+    computeReadiness:async()=>({ok:false,status:'not_ready',deployment:{deploySha:'private'}}),
+  });
+  const router=createPublicStatusRouter({
+    publicStatusRuntime:{serviceStatus:async()=>({ok:true,status:'operational'})},
+    publicHealthRuntime:health,
+    appManifest:()=>({version:'manifest'}),
+    loadRuntimeControls:async()=>({schemaReady:true,value:{revision:1}}),
+    publicRuntimeControls:value=>value,
+    json:(body,status=200,headers={})=>({body,status,headers}),
+  });
+  for(const path of ['/health/live','/health/ready','/health','/api/health']){
+    assert.equal(await router.handle({method:'POST'},{pathname:path},{}),null,path);
+    const response=await router.handle({method:'HEAD'},{pathname:path},{});
+    assert.equal(response.headers['cache-control'],'no-store',path);
+    assert.equal(response.status,path==='/health/live'?200:503,path);
+    assert.equal('deployment' in response.body,false,path);
+  }
+});

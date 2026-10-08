@@ -51,3 +51,18 @@ test('Radar Feed ships with coherent launch15 cache revision', () => {
   assert.match(styles, /\/\* Radar Feed \*\//);
   assert.match(styles, /\.radar-feed-item\s*\{/);
 });
+
+test('Radar Feed filters irrelevant matches, caps recommendations and escapes rendered text',()=>{
+  const items=block('function radarFeedItems','function renderRadarFeed');
+  const render=block('function renderRadarFeed','function renderDailyOverview');
+  assert.match(items,/if \(!match \|\| match\.youthReserve\) continue/);
+  assert.match(items,/if \(!fixtureId\) continue/);
+  assert.match(items,/if \(match\.live && \(watched \|\| favorite \|\| viewedTeam\)\)/);
+  assert.match(items,/!match\.finished && reminder && hoursToKickoff >= 0 && hoursToKickoff <= 24/);
+  assert.match(items,/\.sort\(\(a, b\) => Number\(b\.priority \|\| 0\) - Number\(a\.priority \|\| 0\)\)/);
+  assert.match(render,/if \(!rows\.length\) \{[\s\S]*?wrap\.hidden = true;[\s\S]*?list\.innerHTML = ''/);
+  for(const field of ['tone','action','kicker','title','meta']){
+    assert.match(render,new RegExp('escapeHtml\\(item\\.'+field),field);
+  }
+  assert.match(render,/if \(!fixtureId\) return/);
+});

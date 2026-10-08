@@ -56,3 +56,15 @@ test('recent Supabase auth failures come from the composite readiness contract',
   assert.match(readinessWiring,/createCompositeReadinessRuntime\(\{/);
   assert.match(readinessWiring,/readinessRpc: 'backend_readiness_contract_v2'/);
 });
+
+test('readiness exposes one composite measurement, not duplicated deep security probes',()=>{
+  const start=publicStatus.indexOf('async function computeReadinessSnapshot');
+  const end=publicStatus.indexOf('return Object.freeze',start);
+  assert.ok(start>=0 && end>start);
+  const block=publicStatus.slice(start,end);
+  assert.match(block,/measureReadiness\(\(\) => readCompositeReadiness\(cfg, 5\)\)/);
+  assert.match(block,/composite\.valid === true && composite\.ok === true && telegramConfigured/);
+  assert.match(block,/const endedAt=clockValue\(now\)/);
+  assert.doesNotMatch(block,/readBackendSecurityContract\(|probeSupabaseSchemaDriftConfirmed\(/);
+  assert.match(readinessWiring,/probeConnectivity: cfg => probeSupabaseReadinessConfirmed\(cfg\)/);
+});

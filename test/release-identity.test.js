@@ -129,3 +129,20 @@ test('valid numeric-string timing options remain compatible',()=>{
   assert.equal(result.code,RELEASE_IDENTITY_CODES.VALID);
   assert.equal(releaseIdentityComplete(identity(),{nowMs:Date.parse('2026-10-06T07:05:00.000Z')}),true);
 });
+
+test('release identity validates malformed SHA and explicit field errors',()=>{
+  const cases=[
+    [{deploySha:'z'.repeat(40)},RELEASE_IDENTITY_CODES.DEPLOY_SHA_INVALID,'deploySha'],
+    [{cloudflareVersionId:'not-uuid'},RELEASE_IDENTITY_CODES.CLOUDFLARE_VERSION_ID_INVALID,'cloudflareVersionId'],
+    [{cloudflareVersionTag:'x'.repeat(40)},RELEASE_IDENTITY_CODES.CLOUDFLARE_VERSION_TAG_INVALID,'cloudflareVersionTag'],
+    [{releaseCandidate:'RC0144'},RELEASE_IDENTITY_CODES.RELEASE_CANDIDATE_MISMATCH,'releaseCandidate'],
+  ];
+  for(const [changes,code,field] of cases){
+    const result=validateReleaseIdentity(identity(changes),{
+      nowMs:Date.parse('2026-10-06T07:05:00.000Z'),
+    });
+    assert.equal(result.ok,false,field);
+    assert.equal(result.code,code,field);
+    assert.equal(result.field,field);
+  }
+});

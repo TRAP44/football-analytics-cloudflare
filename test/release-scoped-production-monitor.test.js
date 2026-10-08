@@ -34,3 +34,24 @@ test('direct provider SLO persistence carries deployment identity',()=>{
   assert.match(block,/currentReleaseIdentity\(cfg\)/);
   assert.doesNotMatch(block,/appVersion:\s*APP_VERSION,\s*releaseCandidate:\s*RC_NAME/);
 });
+
+test('production monitor excludes its own events before release attribution',()=>{
+  const start=monitor.indexOf('async function runProductionMonitor');
+  const end=monitor.indexOf('  const provider = providerSnapshot()',start);
+  assert.ok(start>=0 && end>start);
+  const block=monitor.slice(start,end);
+  assert.match(block,/item\?\.source !== 'monitor'/);
+  assert.match(block,/item\?\.source !== 'release_regression'/);
+  assert.match(block,/item\?\.source !== 'release_regression_alert'/);
+  assert.match(block,/const releaseMetricItems=source\.items\.filter/);
+  assert.match(block,/const releaseScope=scopeOpsEventsToDeployment\(\s*releaseMetricItems/);
+  assert.match(block,/const releaseItems=releaseScope\.actionable/);
+  assert.match(block,/releaseMonitorHealth\(current, source\.persistent\)/);
+});
+
+test('read-only monitor guards release regression lifecycle and alert planning',()=>{
+  assert.match(monitor,/const releaseRegressionLifecycle=options\.record !== false/);
+  assert.match(monitor,/const releaseRegressionAlertCandidate=options\.record !== false/);
+  assert.match(monitor,/reason:'read_only_monitor'/);
+  assert.match(monitor,/deploySha:activeReleaseIdentity\.deploySha/);
+});

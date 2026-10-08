@@ -169,3 +169,28 @@ test('Issue #409 valid production identity remains backward-compatible',()=>{
     nowMs:Date.parse('2026-10-04T12:00:00.000Z'),
   }),true);
 });
+
+test('Cloudflare identity normalizes uppercase SHA while preserving canonical UTC timestamps',()=>{
+  const identity=runtimeReleaseIdentity({
+    id:versionId.toUpperCase(),
+    tag:sha.toUpperCase(),
+    timestamp:'2026-09-29T12:36:17.123456789Z',
+  },{
+    appVersion:'6.120.0-rc144',
+    releaseCandidate:'RC144',
+  });
+  assert.equal(identity.deploySha,sha);
+  assert.equal(identity.cloudflareVersionTag,sha.toUpperCase());
+  assert.equal(identity.cloudflareVersionTimestamp,'2026-09-29T12:36:17.123Z');
+  assert.equal(releaseIdentityComplete(identity,{
+    nowMs:Date.parse('2026-09-29T12:40:00Z'),
+  }),true);
+});
+
+test('release identity rejects timezone-offset timestamps rather than silently converting them',()=>{
+  const malformed=runtimeReleaseIdentity({
+    id:versionId,tag:sha,timestamp:'2026-09-29T15:36:17+03:00',
+  },{appVersion:'6.120.0-rc144',releaseCandidate:'RC144'});
+  assert.equal(malformed.cloudflareVersionTimestamp,null);
+  assert.equal(releaseIdentityComplete(malformed),false);
+});

@@ -338,3 +338,26 @@ test('Issue #490 provider field probe classifies rate limit without throwing',as
   assert.equal(event.meta.retryAfter,19);
   assert.equal(event.severity,'info');
 });
+
+test('release evidence lock rejects unconfirmed claims and never mistakes an HTTP success for ownership',async()=>{
+  for(const payload of [[],[{payload:{claimId:'another-worker'}}],[{payload:{claimId:'beta-claim'}},{payload:{claimId:'beta-claim'}}]]){
+    const rt=runtime({
+      fetchWithTimeout:async()=>({ok:true,json:async()=>payload}),
+    });
+    assert.equal(
+      await rt.api.claimReleaseEvidenceLock({supabaseUrl:'https://db.test'},'beta-access'),
+      false,
+    );
+  }
+});
+
+test('release evidence rejects non-HTTPS Supabase origins before requesting a lease',async()=>{
+  let fetches=0;
+  const rt=runtime({
+    fetchWithTimeout:async()=>{fetches++;return {ok:true,json:async()=>[]};},
+  });
+  for(const url of ['http://db.test','https://user:pass@db.test','not-a-url']){
+    assert.equal(await rt.api.claimReleaseEvidenceLock({supabaseUrl:url},'beta-access'),false,url);
+  }
+  assert.equal(fetches,0);
+});

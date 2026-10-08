@@ -317,3 +317,30 @@ test('worker keeps referee intelligence dependencies explicit', () => {
   assert.match(source,/memory\.refereeMatchHistory instanceof Map/);
   assert.match(source,/return Object\.freeze\(\{/);
 });
+
+test('referee history rejects incomplete cards and fouls without touching persistent storage',async()=>{
+  const writes=[];
+  const memory={refereeMatchHistory:new Map()};
+  const rt=createRefereeIntelligenceRuntime(deps({
+    memory,
+    hasSupabase:()=>true,
+    supaUpsert:async(...args)=>writes.push(args),
+  }));
+  const base={
+    fixtureId:123,
+    referee:'John Doe, England',
+    kickoffAt:'2026-10-01T18:00:00Z',
+    leagueId:39,
+  };
+  assert.equal(await rt.saveRefereeMatchHistory({
+    ...base,events:[],statistics:statistics(),
+  },{}),false);
+  assert.equal(await rt.saveRefereeMatchHistory({
+    ...base,events:[{type:'Card',detail:'Yellow Card'}],statistics:{items:[]},
+  },{}),false);
+  assert.equal(await rt.saveRefereeMatchHistory({
+    ...base,events:[{type:'Card',detail:'Yellow Card'}],statistics:statistics(true,12),
+  },{}),false);
+  assert.equal(writes.length,0);
+  assert.equal(memory.refereeMatchHistory.size,0);
+});

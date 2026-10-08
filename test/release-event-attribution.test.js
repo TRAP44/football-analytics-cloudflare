@@ -120,3 +120,31 @@ test('release attribution falls back to bounded time window when version timesta
   assert.deepEqual(result.actionable.map(item=>item.message),['recent']);
   assert.equal(result.deploymentStartedAt,'2026-09-29T12:00:00.000Z');
 });
+
+test('release attribution discards future events and counts invalid timestamps separately',()=>{
+  const now=Date.parse('2026-09-29T13:05:00Z');
+  const result=scopeOpsEventsToDeployment([
+    row('2026-09-29T13:06:00Z',current,'future'),
+    row('2026-09-29T13:04:00Z',current,'valid'),
+    {created_at:true,message:'malformed',metadata:{deploySha:current}},
+    row('2026-09-29T13:03:00Z',previous,'previous'),
+  ],identity,{nowMs:now});
+  assert.deepEqual(result.actionable.map(item=>item.message),['valid']);
+  assert.equal(result.counts.exact,1);
+  assert.equal(result.counts.priorDeployment,1);
+  assert.equal(result.counts.invalidTime,1);
+  assert.equal(result.counts.unattributed,0);
+  assert.equal(result.attributionComplete,true);
+});
+
+test('release attribution normalizes uppercase event SHAs without conflating previous deploys',()=>{
+  const result=scopeOpsEventsToDeployment([
+    row('2026-09-29T13:01:00Z',current.toUpperCase(),'same-deploy'),
+    row('2026-09-29T13:02:00Z',previous.toUpperCase(),'prior-deploy'),
+  ],{...identity,deploySha:current.toUpperCase()},{
+    nowMs:Date.parse('2026-09-29T13:05:00Z'),
+  });
+  assert.equal(result.deploySha,current);
+  assert.deepEqual(result.actionable.map(x=>x.message),['same-deploy']);
+  assert.deepEqual(result.priorDeployment.map(x=>x.message),['prior-deploy']);
+});
