@@ -526,7 +526,8 @@ test('worker delegates reminder delivery orchestration while keeping Telegram tr
   assert.doesNotMatch(worker,/async function recordReminderDelivery\(/);
   assert.doesNotMatch(worker,/async function deliverClaimedReminder\(/);
   assert.doesNotMatch(worker,/async function processDueReminders\(cfg\)/);
-  assert.match(worker,/async function sendTelegramMessage\(/);
+  const reminderRuntime=fs.readFileSync('src/reminder-delivery-runtime.js','utf8');
+  assert.match(reminderRuntime,/async function sendTelegramMessage\(/);
 });
 
 
