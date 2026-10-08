@@ -69,17 +69,19 @@ export function createLivePressureTimelineRuntime({
       away_pressure:values.away,
       source:'verified',
     };
-    const previous=local.get(id)||[];
-    if (!previous.some(item=>item.snapshot_key===row.snapshot_key)) {
-      local.set(id,[...previous,row].slice(-120));
-    }
-    if (typeof hasSupabase==='function' && hasSupabase(cfg)) {
+    const durable=typeof hasSupabase==='function' && hasSupabase(cfg);
+    if (durable) {
       try {
-        await supaInsertIgnore(cfg,'live_pressure_snapshots',row,'snapshot_key');
+        const ok=await supaInsertIgnore(cfg,'live_pressure_snapshots',row,'snapshot_key');
+        if (ok===false) return false;
       } catch (error) {
         console.warn('LIVE pressure snapshot persistence unavailable',error?.message||error);
         return false;
       }
+    }
+    const previous=local.get(id)||[];
+    if (!previous.some(item=>item.snapshot_key===row.snapshot_key)) {
+      local.set(id,[...previous,row].slice(-120));
     }
     return true;
   }
@@ -96,7 +98,8 @@ export function createLivePressureTimelineRuntime({
         return normalizeRows(rows,id,bounded);
       } catch (error) {
         console.warn('LIVE pressure history read unavailable',error?.message||error);
-        // The local map is best-effort only, never presented as durable storage.
+        // Never present instance-local fallback as persisted production history.
+        return [];
       }
     }
     return normalizeRows(local.get(id)||[],id,bounded);
