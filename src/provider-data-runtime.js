@@ -23,8 +23,11 @@ export function createProviderDataRuntime(deps) {
   const ANALYSIS_PROVIDER_CACHE_VERSION = 'v2';
 
   function positiveSafeInteger(value) {
-    if (value === null || value === undefined || value === '') return null;
-    const number = Number(value);
+    if (typeof value === 'number') {
+      return Number.isSafeInteger(value) && value > 0 ? value : null;
+    }
+    if (typeof value !== 'string' || !/^\d+$/.test(value.trim())) return null;
+    const number = Number(value.trim());
     return Number.isSafeInteger(number) && number > 0 ? number : null;
   }
 
@@ -397,7 +400,7 @@ export function createProviderDataRuntime(deps) {
     const policy = {
       ...rawPolicy,
       feature:safeFeature,
-      allowed:rawPolicy.allowed !== false,
+      allowed:rawPolicy.allowed === true,
       reason:String(rawPolicy.reason || ''),
       ttlSeconds:boundedTtlSeconds(rawPolicy.ttlSeconds, 600),
     };

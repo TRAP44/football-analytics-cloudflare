@@ -173,3 +173,72 @@ test('provider reliability self-test still passes after boundary hardening', () 
   const { runtime } = makeRuntime();
   assert.equal(runtime.providerDataReliabilitySelfTest().pass, true);
 });
+
+
+
+test('provider rejects coerced fixture identifiers before any cache or API work',async()=>{
+  const ids=[true,false,[123],{toString:()=>123},'1e3','+123','12.5',-1,Number.MAX_SAFE_INTEGER+1];
+  for(const fixtureId of ids){
+    let reads=0;
+    const {runtime,calls}=makeRuntime({getCacheEntry:async()=>{reads++;return null;}});
+    const result=await runtime.providerFeatureFetch({
+      feature:'events',fixtureId,path:'/fixtures/events',cfg:{},context:{mode:'live'},
+    });
+    assert.equal(result.meta.reason,'invalid_fixture');
+    assert.equal(reads,0);
+    assert.equal(calls.api,0);
+  }
+});
+
+test('provider policy must explicitly allow network requests with boolean true',async()=>{
+  for(const allowed of ['false','true',1,null,undefined,{}]){
+    const {runtime,calls}=makeRuntime({
+      providerFeaturePolicy:()=>({allowed,reason:'quota_hold',ttlSeconds:30}),
+    });
+    const result=await runtime.providerFeatureFetch({
+      feature:'events',fixtureId:123,path:'/fixtures/events',cfg:{},context:{mode:'live'},
+    });
+    assert.equal(result.meta.source,'skipped');
+    assert.equal(result.meta.reason,'quota_hold');
+    assert.equal(calls.api,0);
+    assert.equal(calls.cacheWrites.length,0);
+  }
+  const {runtime,calls}=makeRuntime();
+  const result=await runtime.providerFeatureFetch({feature:'events',fixtureId:'00123',cfg:{},context:{mode:'live'}});
+  assert.equal(result.meta.source,'network');
+  assert.equal(calls.api,1);
+});
+
+test('provider stale cache remains marked untrusted during quota denial',async()=>{
+  const stale={
+    payload:{fixtureId:123,feature:'events',data:[{id:44}],fetchedAt:'2026-10-01T10:00:00Z'},
+    expiresAt:'2026-10-01T11:00:00Z',
+  };
+  const {runtime,calls}=makeRuntime({
+    providerFeaturePolicy:()=>({allowed:false,reason:'quota_hold',ttlSeconds:60}),
+    getCacheEntry:async(_key,_cfg,expired)=>expired?stale:null,
+  });
+  const value=await runtime.providerFeatureFetch({
+    feature:'events',fixtureId:123,cfg:{},context:{mode:'live'},
+  });
+  assert.deepEqual(value.data,[{id:44}]);
+  assert.equal(value.meta.source,'stale');
+  assert.equal(value.meta.available,false);
+  assert.equal(value.meta.usable,false);
+  assert.equal(value.meta.degraded,true);
+  assert.equal(calls.api,0);
+  assert.equal(calls.cacheWrites.length,0);
+});
+
+test('provider caches only canonical fixture identifiers from validated network results',async()=>{
+  const {runtime,calls}=makeRuntime({
+    apiFootball:async()=>[{event:'goal'}],
+  });
+  const result=await runtime.providerFeatureFetch({
+    feature:'events',fixtureId:'000123',cfg:{},path:'/fixtures/events',context:{mode:'live'},
+  });
+  assert.equal(result.meta.source,'network');
+  assert.equal(calls.cacheWrites.length,1);
+  assert.equal(calls.cacheWrites[0][0],'provider-feature:events:123:v5.0');
+  assert.equal(calls.cacheWrites[0][2].fixtureId,123);
+});
