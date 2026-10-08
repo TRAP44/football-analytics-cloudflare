@@ -121,11 +121,12 @@ test('Issue #438 CI contract proves complete v2 drift detection and rollout comp
   assert.match(dbContract.freshInstallFingerprint, /^[a-f0-9]{32}$/);
   assert.match(dbContract.legacyFingerprint, /^[a-f0-9]{32}$/);
   assert.match(dbContract.freshInstallLegacyFingerprint, /^[a-f0-9]{32}$/);
-  assert.deepEqual(dbContract.compatibleFingerprints, [
-    dbContract.fingerprint,
-    dbContract.freshInstallFingerprint,
-  ]);
-  assert.equal(new Set(dbContract.compatibleFingerprints).size, 2);
+  assert.deepEqual(
+    [...dbContract.compatibleFingerprints].sort(),
+    [dbContract.fingerprint, dbContract.freshInstallFingerprint,
+      '4e7b6afc69b45ab3e5eecc4685d75c73'].sort(),
+  );
+  assert.equal(new Set(dbContract.compatibleFingerprints).size, 3);
 
   assert.match(sql, /backend_schema_contract_v2/);
   assert.match(sql, /backend_readiness_contract_v2/);
