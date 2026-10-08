@@ -204,9 +204,77 @@ export function renderAiTimelineCompact(timeline = {}, match = {}) {
       <span>${escapeHtml(pointTime(point,match))}</span>
       <strong>${probabilityLine(point,previous,match)}</strong>
     </div>
+    ${chartFromModel(model,match)}
     ${triggerHtml(point)}
     ${qualityHtml(point)}
   </section>`;
+}
+
+
+function chartFromModel(model, match = {}) {
+  // Render only real, non-stale snapshots with coherent 1X2 probability totals.
+  // The renderer never interpolates or invents stored model measurements.
+  const snapshots=model.points.filter(point=>{
+    if (point.stale) return false;
+    const values=['home','draw','away'].map(key=>finiteNumber(point.probabilities?.[key]));
+    return values.every(value=>value!==null && value>=0 && value<=100)
+      && Math.abs(values.reduce((sum,value)=>sum+value,0)-100)<=1.2;
+  });
+  if (snapshots.length<2) {
+    return '<p class="ai-prob-chart-unavailable">Для графика нужны минимум два сохранённых прогноза без устаревших данных.</p>';
+  }
+  const from=Date.parse(snapshots[0].capturedAt);
+  const to=Date.parse(snapshots.at(-1).capturedAt);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to<=from) {
+    return '<p class="ai-prob-chart-unavailable">История прогнозов пока недостаточна для графика.</p>';
+  }
+  const keys=[
+    {key:'home',css:'home',label:String(match?.home?.name || 'П1')},
+    {key:'draw',css:'draw',label:'Ничья'},
+    {key:'away',css:'away',label:String(match?.away?.name || 'П2')},
+  ];
+  const x=point=>38+(Date.parse(point.capturedAt)-from)/(to-from)*587;
+  const y=value=>148-value/100*132;
+  const coordinate=value=>Number(value).toFixed(2);
+  const grid=[0,50,100].map(value=>'<line class="ai-prob-grid" x1="38" y1="'
+    +coordinate(y(value))+'" x2="625" y2="'+coordinate(y(value))+'"/>'
+    +'<text class="ai-prob-axis" x="31" y="'+coordinate(y(value)+3)
+    +'" text-anchor="end">'+value+'</text>').join('');
+  const paths=keys.map(item=>{
+    const path=snapshots.map((point,index)=>
+      (index===0?'M':'L')+coordinate(x(point))+' '+coordinate(y(point.probabilities[item.key]))
+    ).join(' ');
+    const last=snapshots.at(-1);
+    return '<path class="ai-prob-line '+item.css+'" d="'+path+'" />'
+      +'<circle class="ai-prob-dot '+item.css+'" cx="'+coordinate(x(last))
+      +'" cy="'+coordinate(y(last.probabilities[item.key]))+'" r="3.5" />';
+  }).join('');
+  const latest=snapshots.at(-1).probabilities;
+  const legend=keys.map(item=>'<div class="ai-prob-legend-item '+item.css+'">'
+    +'<i aria-hidden="true"></i><span>'+escapeHtml(item.label)
+    +'</span><strong>'+Number(latest[item.key]).toFixed(1)+'%</strong></div>').join('');
+  const accessible='Реальная история AI-прогнозов: '+snapshots.length
+    +' сохранённых оценок. Последняя: '
+    +keys.map(item=>item.label+' '+Number(latest[item.key]).toFixed(1)+'%').join(', ')+'.';
+  return '<figure class="ai-prob-chart">'
+    +'<div class="ai-prob-chart-heading"><strong>Вероятности П1 / Н / П2</strong>'
+    +'<small>'+snapshots.length+' сохранённых снимков</small></div>'
+    +'<svg viewBox="0 0 640 176" class="ai-prob-chart-svg" role="img" aria-label="'
+    +escapeHtml(accessible)+'">'
+    +grid+paths
+    +'<text class="ai-prob-axis" x="38" y="170" text-anchor="start">'
+    +escapeHtml(pointTime(snapshots[0],match))+'</text>'
+    +'<text class="ai-prob-axis" x="625" y="170" text-anchor="end">'
+    +escapeHtml(pointTime(snapshots.at(-1),match))+'</text>'
+    +'</svg>'
+    +'<div class="ai-prob-legend" aria-label="Последние сохранённые вероятности">'+legend+'</div>'
+    +'<figcaption>Показаны только фактически сохранённые оценки модели. Линии соединяют снимки; '
+    +'между ними измерений нет. Это не вероятность, рассчитанная для каждой минуты.</figcaption>'
+    +'</figure>';
+}
+
+export function renderAiProbabilityChart(timeline = {}, match = {}) {
+  return chartFromModel(normalizeAiTimeline(timeline,match),match);
 }
 
 function pointHtml(point,index,points,match) {
