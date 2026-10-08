@@ -122,24 +122,34 @@ export function createProviderDataRuntime(deps) {
   }
   
   function providerDataReliabilitySummary(featureMeta = {}, context = {}) {
-    const entries = Object.entries(featureMeta || {}).map(([feature, meta]) => ({
+    const safeMeta=featureMeta && typeof featureMeta==='object' && !Array.isArray(featureMeta) ? featureMeta : {};
+    const failedStates=new Set(['rate_limited','timeout','configuration','plan_limited','network_error','invalid_response','provider_error','error']);
+    const entries=Object.entries(safeMeta).map(([feature, raw])=>{
+      const meta=raw && typeof raw==='object' && !Array.isArray(raw) ? raw : {};
+      const featureState=typeof meta.state==='string' ? meta.state : 'unknown';
+      return {
       feature,
-      state: String(meta?.state || 'unknown'),
-      available: Boolean(meta?.available),
-      observed: Boolean(meta?.observed),
-      degraded: Boolean(meta?.degraded),
+      state: featureState,
+      available: meta.available === true && featureState === 'available',
+      observed: meta.observed === true,
+      degraded: meta.degraded === true || meta.stale === true || failedStates.has(featureState),
       reason: String(meta?.reason || ''),
-      count: Number(meta?.count || 0),
+      count: Number.isSafeInteger(meta.count) && meta.count>=0 ? meta.count : 0,
       semanticState: String(meta?.semanticState || ''),
-      confirmed: Boolean(meta?.confirmed),
-      partial: Boolean(meta?.partial),
+      confirmed: meta.confirmed === true,
+      partial: meta.partial === true,
       freshnessState: String(meta?.freshnessState || ''),
       provenanceState: String(meta?.provenanceState || ''),
-      confidenceBearing: meta?.confidenceBearing === undefined ? Boolean(meta?.available) : Boolean(meta.confidenceBearing),
-      stale: Boolean(meta?.stale),
-      ageSeconds: Number.isFinite(Number(meta?.ageSeconds)) ? Number(meta.ageSeconds) : null,
-      freshnessLimitSeconds: Number.isFinite(Number(meta?.freshnessLimitSeconds)) ? Number(meta.freshnessLimitSeconds) : null,
-    }));
+      confidenceBearing: featureState === 'available' && meta.available === true
+        && (meta.confidenceBearing === undefined || meta.confidenceBearing === true)
+        && (meta.stale === undefined || meta.stale === false)
+        && (meta.degraded === undefined || meta.degraded === false)
+        && meta.freshnessState !== 'unknown' && meta.provenanceState !== 'unknown',
+      stale: meta.stale === true,
+      ageSeconds: typeof meta.ageSeconds==='number' && Number.isFinite(meta.ageSeconds) && meta.ageSeconds>=0 ? meta.ageSeconds : null,
+      freshnessLimitSeconds: typeof meta.freshnessLimitSeconds==='number' && Number.isFinite(meta.freshnessLimitSeconds) && meta.freshnessLimitSeconds>=0 ? meta.freshnessLimitSeconds : null,
+      };
+    });
     const hardFailures = entries.filter(x => x.degraded);
     const missing = entries.filter(x => !x.confidenceBearing);
     const byFeature = Object.fromEntries(entries.map(x => [x.feature, x]));
@@ -147,7 +157,7 @@ export function createProviderDataRuntime(deps) {
     const probabilitySources = ['odds','predictions'].map(key => byFeature[key]).filter(Boolean);
     if (probabilitySources.length === 2 && probabilitySources.every(x => !x.confidenceBearing)) trustCap = 60;
     else if (probabilitySources.some(x => !x.confidenceBearing)) trustCap = Math.min(trustCap, 80);
-    const minutesToKickoff = Number.isFinite(Number(context.minutesToKickoff)) ? Number(context.minutesToKickoff) : null;
+    const minutesToKickoff = typeof context?.minutesToKickoff === 'number' && Number.isFinite(context.minutesToKickoff) ? context.minutesToKickoff : null;
     if (minutesToKickoff !== null && minutesToKickoff <= 90 && !byFeature.lineups?.confidenceBearing) {
       trustCap = Math.min(trustCap, byFeature.lineups?.partial ? 75 : 80);
     }
