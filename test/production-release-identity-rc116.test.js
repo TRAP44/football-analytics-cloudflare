@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import {
+  RELEASE_IDENTITY_CODES,
+  cloudflareVersionIdValid,
+  runtimeReleaseIdentity,
+  validateReleaseIdentity,
+  releaseIdentityComplete,
+} from '../src/release-identity.js';
 
 const workflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const verifier = fs.readFileSync('scripts/verify-release.js', 'utf8');
@@ -64,4 +71,72 @@ test('RC116 release control-plane verification precedes runtime acceptance',()=>
 test('RC116 recovery candidate is immutably bound to the same release identity',()=>{
   assert.match(workflow,/npx wrangler versions upload --keep-vars --preview-alias "\$RECOVERY_ALIAS" --tag "\$DEPLOY_SHA" --message "release=\$RELEASE_VERSION sha=\$DEPLOY_SHA"/);
   assert.match(workflow,/post-deploy-smoke\.js "\$RECOVERY_URL" "\$RELEASE_VERSION" "\$DEPLOY_SHA" "\$RECOVERY_VERSION_ID"/);
+});
+
+
+
+test('RC116 release identity accepts a complete immutable Cloudflare stamp',()=>{
+  const sha='a'.repeat(40);
+  const versionId='11111111-2222-4333-8444-555555555555';
+  const input={
+    appVersion:'6.120.0-rc144',releaseCandidate:'RC144',deploySha:sha,
+    cloudflareVersionId:versionId,cloudflareVersionTag:sha,
+    cloudflareVersionTimestamp:'2026-10-07T18:00:00.000Z',
+  };
+  const actual=validateReleaseIdentity(input,{nowMs:Date.parse('2026-10-08T11:00:00Z')});
+  assert.equal(actual.ok,true);
+  assert.equal(actual.code,RELEASE_IDENTITY_CODES.VALID);
+  assert.equal(cloudflareVersionIdValid(versionId),true);
+  assert.equal(releaseIdentityComplete(input,{nowMs:Date.parse('2026-10-08T11:00:00Z')}),true);
+});
+
+test('RC116 release identity rejects inconsistent release candidate, SHA and Cloudflare ID',()=>{
+  const sha='a'.repeat(40);
+  const base={
+    appVersion:'6.120.0-rc144',releaseCandidate:'RC144',deploySha:sha,
+    cloudflareVersionId:'11111111-2222-4333-8444-555555555555',
+    cloudflareVersionTag:sha,cloudflareVersionTimestamp:'2026-10-07T18:00:00Z',
+  };
+  const code=patch=>validateReleaseIdentity({...base,...patch}).code;
+  assert.equal(code({releaseCandidate:'RC143'}),RELEASE_IDENTITY_CODES.RELEASE_CANDIDATE_MISMATCH);
+  assert.equal(code({deploySha:'bad'}),RELEASE_IDENTITY_CODES.DEPLOY_SHA_INVALID);
+  assert.equal(code({cloudflareVersionTag:'b'.repeat(40)}),RELEASE_IDENTITY_CODES.CLOUDFLARE_VERSION_TAG_MISMATCH);
+  assert.equal(code({cloudflareVersionId:'not-a-uuid'}),RELEASE_IDENTITY_CODES.CLOUDFLARE_VERSION_ID_INVALID);
+});
+
+test('RC116 rejects impossible, too old and future-dated Cloudflare timestamps',()=>{
+  const base={
+    appVersion:'6.120.0-rc144',releaseCandidate:'RC144',deploySha:'a'.repeat(40),
+    cloudflareVersionId:'11111111-2222-4333-8444-555555555555',
+    cloudflareVersionTag:'a'.repeat(40),
+  };
+  const options={nowMs:Date.parse('2026-10-08T11:00:00Z')};
+  const code=timestamp=>validateReleaseIdentity({
+    ...base,cloudflareVersionTimestamp:timestamp,
+  },options).code;
+  for(const invalid of ['2026-02-30T10:00:00Z','not-a-date','2026-10-08T11:00:00+03:00']){
+    assert.equal(code(invalid),RELEASE_IDENTITY_CODES.CLOUDFLARE_VERSION_TIMESTAMP_INVALID_FORMAT);
+  }
+  assert.equal(code('2019-01-01T00:00:00Z'),RELEASE_IDENTITY_CODES.CLOUDFLARE_VERSION_TIMESTAMP_BEFORE_MINIMUM);
+  assert.equal(code('2026-10-09T11:00:00Z'),RELEASE_IDENTITY_CODES.CLOUDFLARE_VERSION_TIMESTAMP_FUTURE_SKEW);
+});
+
+test('RC116 release identity rejects coercive fake metadata objects and builds a canonical runtime identity',()=>{
+  const sha='a'.repeat(40);
+  const stamp={
+    id:'11111111-2222-4333-8444-555555555555',
+    tag:sha,
+    timestamp:'2026-10-07T18:00:00Z',
+  };
+  const base=runtimeReleaseIdentity(stamp,{
+    appVersion:'6.120.0-rc144',releaseCandidate:'RC144',
+  });
+  assert.equal(validateReleaseIdentity(base).ok,true);
+  for(const key of ['id','tag','timestamp']){
+    const forged={...stamp,[key]:{toString:()=>stamp[key]}};
+    const result=runtimeReleaseIdentity(forged,{
+      appVersion:'6.120.0-rc144',releaseCandidate:'RC144',
+    });
+    assert.equal(validateReleaseIdentity(result).ok,false,key);
+  }
 });
