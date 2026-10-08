@@ -113,3 +113,58 @@ test('RC135 updates model-input and health identity', () => {
   assert.match(worker,/const RC_NAME = 'RC144'/);
   assert.match(runtime,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
 });
+
+
+
+test('RC135 unique id-less names can match a cached season player without an external lookup',()=>{
+  const absent=baseAbsence(0,'José Álvarez');
+  const enriched=enrichFixtureAbsencesWithSeasonRole(absent,{
+    homePlayerStats:{
+      available:true,
+      sourceMeta:{provider:'api-football'},
+      players:[{id:123,name:'Jose Alvarez',games:{appearances:12,lineups:10,minutes:920},goals:{total:3,assists:2}}],
+    },
+  });
+  assert.equal(enriched.home[0].seasonRole?.matched,true);
+  assert.equal(enriched.summary.seasonRole.home.matched,1);
+});
+
+test('RC135 role weight stays finite and bounded even for extreme but valid season counts',()=>{
+  const enriched=enrichFixtureAbsencesWithSeasonRole(baseAbsence(),{
+    homePlayerStats:{
+      available:true,
+      players:[{id:10,name:'Key Player',
+        games:{appearances:1000000,lineups:1000000,minutes:90000000},
+        goals:{total:1000000,assists:1000000},
+      }],
+    },
+  });
+  const weight=enriched.home[0].seasonRole?.weight;
+  assert.equal(Number.isFinite(weight),true);
+  assert.ok(weight>=0.85 && weight<=1.60);
+});
+
+test('RC135 enrichment does not change cached source player statistics or original absences',()=>{
+  const absences=baseAbsence();
+  const cached={available:true,players:[
+    {id:10,name:'Key Player',games:{appearances:10,lineups:8,minutes:700},goals:{total:2,assists:1}},
+  ]};
+  const originalAbsences=JSON.stringify(absences);
+  const originalStats=JSON.stringify(cached);
+  const output=enrichFixtureAbsencesWithSeasonRole(absences,{homePlayerStats:cached});
+  assert.equal(JSON.stringify(absences),originalAbsences);
+  assert.equal(JSON.stringify(cached),originalStats);
+  assert.equal(output.home[0].seasonRole?.matched,true);
+  assert.equal(absences.home[0].seasonRole,undefined);
+});
+
+test('RC135 unavailable cached statistics never fabricate a season-role match',()=>{
+  const output=enrichFixtureAbsencesWithSeasonRole(baseAbsence(),{
+    homePlayerStats:{available:false,players:[]},
+  });
+  assert.equal(output.home[0].seasonRole,undefined);
+  assert.equal(output.summary.seasonRole.home.matched,0);
+  assert.equal(output.summary.seasonRole.home.total,1);
+  assert.equal(output.summary.seasonRole.away.total,0);
+  assert.equal(output.summary.seasonRole.home.complete,false);
+});
