@@ -99,24 +99,17 @@ export function createBillingApiRuntime(deps = {}) {
           currentUrl:'', lastError:'Telegram webhook status unavailable',
         }))
       : { ready:false, reason:'monetization_paused', expectedUrl:`${new URL(request.url).origin}/telegram/webhook`, currentUrl:'', lastError:'' };
-    // Catalog visibility must not depend on a healthy user-record store.
-    // Fail closed for purchases if customer billing state cannot be verified.
-    const [quotaResult, recordResult] = await Promise.allSettled([
-      getQuota(user.id, cfg), getUserRecord(user.id, cfg),
-    ]);
-    const accountReady = quotaResult.status === 'fulfilled' && recordResult.status === 'fulfilled';
-    const quota = quotaResult.status === 'fulfilled' ? quotaResult.value : { plan:'FREE' };
-    const record = recordResult.status === 'fulfilled' ? recordResult.value : null;
+    // Pricing is a read-only catalog. Never depend on database reads here:
+    // the authenticated /api/me profile already supplies the user's plan,
+    // quota and subscription dates to billingUiSnapshot().
+    // Invoice creation performs fresh account/store checks separately.
     return json({
       enabled: cfg.monetizationEnabled === true,
-      ready: Boolean(cfg.monetizationEnabled === true && webhook.ready && accountReady),
+      ready: Boolean(cfg.monetizationEnabled === true && webhook.ready),
       reason: webhook.reason || '',
       webhook: { expectedUrl: webhook.expectedUrl, currentUrl: webhook.currentUrl || '', lastError: webhook.lastError || '' },
-      current: {
-        plan: quota.plan,
-        subscriptionUntil: record?.subscription_until || null,
-        canceled: Boolean(record?.subscription_canceled),
-      },
+      // Absent fields let the frontend use the already-loaded /api/me profile.
+      current: {},
       plans: {
         FREE: { stars: 0, dailyLimit: cfg.limits.FREE },
         PRO: { stars: billingPlanConfig('PRO', cfg).stars, dailyLimit: cfg.limits.PRO },
