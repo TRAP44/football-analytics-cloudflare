@@ -152,3 +152,65 @@ test('RC60 capability and Worker contracts expose lifecycle delta support',()=>{
     /analysisDeltaDrill = \(\.\.\.args\) => getAnalysisLifecycleRuntime\(\)\.analysisDeltaDrill\(\.\.\.args\)/,
   );
 });
+
+
+
+test('RC60 rejects a recheck snapshot older than its comparison baseline',()=>{
+  const delta=lifecycle.analysisRecheckDelta(
+    snapshot({generatedAt:'2026-10-08T11:15:00Z'}),
+    snapshot({generatedAt:'2026-10-08T11:14:59Z'}),
+  );
+  assert.equal(delta.available,false);
+  assert.equal(delta.reasonCode,'snapshot_order_invalid');
+  assert.deepEqual(delta.items,[]);
+  assert.equal(delta.stable,false);
+});
+
+test('RC60 detects 3pp football probability and 2.5pp market shifts without threshold inflation',()=>{
+  const first=lifecycle.analysisRecheckDelta(snapshot(),snapshot({
+    probabilities:{home:47,draw:26,away:27},
+    market:{probabilities:{home:45.5,draw:27.5,away:27}},
+  }));
+  assert.equal(first.material,true);
+  assert.ok(first.codes.includes('probability'));
+  assert.ok(first.codes.includes('market'));
+  const below=lifecycle.analysisRecheckDelta(snapshot(),snapshot({
+    probabilities:{home:46.9,draw:26.1,away:27},
+    market:{probabilities:{home:45.4,draw:27.6,away:27}},
+  }));
+  assert.equal(below.codes.includes('probability'),false);
+  assert.equal(below.codes.includes('market'),false);
+  assert.equal(below.stable,true);
+});
+
+test('RC60 incomplete input fields never report a falsely stable comparison',()=>{
+  for(const modified of [
+    {probabilities:{home:NaN,draw:29,away:27}},
+    {aiInstructor:{betSignal:{code:''},confidenceScore:55}},
+    {lineupImpact:null},
+    {absences:{home:[],away:null}},
+  ]){
+    const delta=lifecycle.analysisRecheckDelta(snapshot(),snapshot(modified));
+    assert.equal(delta.available,true);
+    assert.equal(delta.incomplete,true);
+    assert.equal(delta.stable,false);
+  }
+});
+
+test('RC60 recheck delta metadata stays bounded without changing input snapshots',()=>{
+  const before=snapshot();
+  const after=snapshot({
+    match:{fixtureId:7,referee:'New Referee'},
+    probabilities:{home:55,draw:25,away:20},
+    market:{probabilities:{home:52,draw:28,away:20}},
+    lineupImpact:{homeConfirmed:true,awayConfirmed:true},
+    absences:{home:[{name:'A'},{name:'B'}],away:[]},
+    aiInstructor:{betSignal:{code:'home',label:'П1'},confidenceScore:76},
+  });
+  const unchanged=JSON.stringify({before,after});
+  const result=lifecycle.analysisRecheckDelta(before,after);
+  assert.ok(result.codes.length>=6);
+  assert.ok(result.items.length<=6);
+  assert.equal(new Set(result.codes).size,result.codes.length);
+  assert.equal(JSON.stringify({before,after}),unchanged);
+});
