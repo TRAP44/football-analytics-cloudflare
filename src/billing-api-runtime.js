@@ -99,11 +99,17 @@ export function createBillingApiRuntime(deps = {}) {
           currentUrl:'', lastError:'Telegram webhook status unavailable',
         }))
       : { ready:false, reason:'monetization_paused', expectedUrl:`${new URL(request.url).origin}/telegram/webhook`, currentUrl:'', lastError:'' };
-    const quota = await getQuota(user.id, cfg);
-    const record = await getUserRecord(user.id, cfg);
+    // Catalog visibility must not depend on a healthy user-record store.
+    // Fail closed for purchases if customer billing state cannot be verified.
+    const [quotaResult, recordResult] = await Promise.allSettled([
+      getQuota(user.id, cfg), getUserRecord(user.id, cfg),
+    ]);
+    const accountReady = quotaResult.status === 'fulfilled' && recordResult.status === 'fulfilled';
+    const quota = quotaResult.status === 'fulfilled' ? quotaResult.value : { plan:'FREE' };
+    const record = recordResult.status === 'fulfilled' ? recordResult.value : null;
     return json({
       enabled: cfg.monetizationEnabled === true,
-      ready: Boolean(cfg.monetizationEnabled === true && webhook.ready),
+      ready: Boolean(cfg.monetizationEnabled === true && webhook.ready && accountReady),
       reason: webhook.reason || '',
       webhook: { expectedUrl: webhook.expectedUrl, currentUrl: webhook.currentUrl || '', lastError: webhook.lastError || '' },
       current: {
