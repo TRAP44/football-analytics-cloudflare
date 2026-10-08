@@ -42,7 +42,7 @@ test('SIGNAL mock 1X2 scenario distribution remains a valid 100 percent vector',
 
 test('SIGNAL is mobile/Telegram compatible without excessive UI dependencies',()=>{
   assert.match(html,/viewport-fit=cover/);
-  assert.match(html,/safe-area-inset/);
+  assert.match(css,/safe-area-inset/);
   assert.match(html,/telegram-web-app\.js/);
   assert.match(css,/max-width:380px/);
   assert.match(css,/prefers-reduced-motion/);
