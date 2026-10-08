@@ -45,3 +45,60 @@ test('Player Hub has responsive visual hierarchy and launch11 cache revision', (
   assert.match(html, /frontend-asset-revision" content="6\.120\.0-launch\d+"/);
   assert.doesNotMatch(html, /6\.120\.0-launch10/);
 });
+
+
+
+test('Player Hub back navigation rejects unknown, external and self-referential destinations',()=>{
+  for(const target of ['',null,undefined,'https://example.test','playerView','adminView']){
+    assert.equal(backTargetForView('playerView',{playerBackView:target}),'matchesView');
+  }
+  assert.equal(backTargetForView('playerView',{playerBackView:'teamView'}),'teamView');
+  assert.equal(backTargetForView('playerView',{playerBackView:'analysisView'}),'analysisView');
+  assert.equal(backTargetForView('unknownView',{playerBackView:'analysisView'}),'matchesView');
+});
+
+test('Player Hub remains in an immutable public view registry without a new bottom tab',()=>{
+  assert.equal(Object.isFrozen(PUBLIC_VIEW_IDS),true);
+  assert.equal(new Set(PUBLIC_VIEW_IDS).size,PUBLIC_VIEW_IDS.length);
+  assert.equal(PUBLIC_VIEW_IDS.includes('adminView'),false);
+  assert.equal(telegramBackButtonVisible('matchesView'),false);
+  assert.equal(telegramBackButtonVisible('playerView'),true);
+  assert.equal(telegramBackButtonVisible('adminView'),false);
+  const start=html.indexOf('<nav class="bottom-nav"');
+  const end=html.indexOf('</nav>',start);
+  assert.ok(start>=0 && end>start);
+  const nav=html.slice(start,end);
+  assert.doesNotMatch(nav,/playerView|navPlayer|data-open-player/);
+});
+
+test('Player Hub escapes visible match and player fields and sanitizes player image URLs',()=>{
+  const start=app.indexOf('function renderPlayerHub');
+  const end=app.indexOf('function openPlayerFromMatch',start);
+  assert.ok(start>=0 && end>start);
+  const hub=app.slice(start,end);
+  for(const field of [
+    "escapeHtml(p.name || 'Игрок')",
+    "escapeHtml(team.name || 'Команда')",
+    "escapeHtml(match.league || '')",
+    "escapeHtml(match.home?.name || '')",
+    "escapeHtml(match.away?.name || '')",
+    "escapeHtml(match.statusLabel || '')",
+  ]) assert.ok(hub.includes(field),'Missing escape for '+field);
+  assert.match(hub,/safeUrl\(p\.photo\)/);
+  assert.match(hub,/playerFollowModule\.controlHtml\(player\)/);
+  assert.match(hub,/bindPlayerComparisonActions\(player, playerComparisonCandidatesFor\(player\)\)/);
+  assert.doesNotMatch(hub,/\bfetch\(|\bapi\s*\(/);
+});
+
+test('Player Hub opens only cached Match Center players and handles missing player data safely',()=>{
+  const start=app.indexOf("function openPlayerFromMatch");
+  const end=app.indexOf("function freshnessSourceLabel",start);
+  assert.ok(start>=0 && end>start);
+  const open=app.slice(start,end);
+  assert.match(open,/state\.currentCenter \|\| \{\}/);
+  assert.match(open,/center\.playerLeaders\?\.\[key\]/);
+  assert.match(open,/if \(!player\) return toast\(/);
+  assert.match(open,/if \(current !== 'playerView'\) state\.playerBackView = current \|\| 'analysisView'/);
+  assert.match(open,/showView\('playerView'\)/);
+  assert.doesNotMatch(open,/\bapi\s*\(|\bfetch\s*\(/);
+});
