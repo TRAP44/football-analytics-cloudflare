@@ -73,3 +73,52 @@ test('purchase endpoints remain routed behind server-side pause guard',()=>{
   const wrangler=fs.readFileSync('wrangler.jsonc','utf8');
   assert.match(wrangler,/"MONETIZATION_ENABLED": "true"/);
 });
+
+test('Stars pricing catalog remains available without account database reads',async()=>{
+  let quotaCalls=0,recordCalls=0;
+  const {api,getCounts}=makeHarness({
+    getQuota:async()=>{quotaCalls++;throw new Error('database unavailable');},
+    getUserRecord:async()=>{recordCalls++;throw new Error('database unavailable');},
+    billingPlanConfig:plan=>({
+      stars:plan==='PRO'?199:399,
+    }),
+    passProductConfig:()=>({stars:39,saleReady:true}),
+  });
+  const cfg={
+    monetizationEnabled:true,
+    limits:{FREE:3,PRO:20,PREMIUM:100},
+  };
+  const result=await api.apiBillingPlans(
+    new Request('https://example.com/api/billing/plans'),cfg,{id:123},
+  );
+  assert.equal(result.status,200);
+  assert.equal(result.body.enabled,true);
+  assert.equal(result.body.ready,true);
+  assert.deepEqual(result.body.current,{});
+  assert.deepEqual(result.body.plans,{
+    FREE:{stars:0,dailyLimit:3},
+    PRO:{stars:199,dailyLimit:20},
+    PREMIUM:{stars:399,dailyLimit:100},
+  });
+  assert.deepEqual({quotaCalls,recordCalls},{quotaCalls:0,recordCalls:0});
+  assert.deepEqual(getCounts(),{webhookChecks:1,invoiceCalls:0});
+});
+
+test('paused checkout keeps prices visible while invoices remain blocked',async()=>{
+  const {api}=makeHarness({
+    billingPlanConfig:plan=>({stars:plan==='PRO'?199:399}),
+    passProductConfig:()=>({stars:39,saleReady:true}),
+  });
+  const cfg={monetizationEnabled:false,limits:{FREE:3,PRO:20,PREMIUM:100}};
+  const catalog=await api.apiBillingPlans(
+    new Request('https://example.com/api/billing/plans'),cfg,{id:123},
+  );
+  assert.equal(catalog.status,200);
+  assert.equal(catalog.body.ready,false);
+  assert.equal(catalog.body.plans.PRO.stars,199);
+  const invoice=await api.apiBillingInvoice(
+    {json:async()=>({plan:'PRO'})},cfg,{id:123},
+  );
+  assert.equal(invoice.status,503);
+  assert.equal(invoice.body.code,'BILLING_MONETIZATION_DISABLED');
+});
