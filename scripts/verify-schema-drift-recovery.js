@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 const FINGERPRINT_RE=/^[0-9a-f]{32}$/i;
@@ -75,6 +76,94 @@ export function verifySchemaDriftRecoverySnapshot(statusCode, body, expectedFing
   });
 }
 
+
+// The public /health/ready boundary intentionally strips schema fingerprints and
+// recent authorization counters. Read the exact proof through the authenticated
+// Management API instead of weakening that public boundary or the recovery gate.
+export async function readRecoveryDatabaseEvidence({
+  token='',projectRef='',expectedFingerprint='',fetchImpl=fetch,
+}={}) {
+  const expected=typeof expectedFingerprint==='string' ? expectedFingerprint.trim().toLowerCase() : '';
+  if (!FINGERPRINT_RE.test(expected)) throw new Error('Recovery expected fingerprint is invalid.');
+  if (typeof token!=='string' || !token.trim()
+    || typeof projectRef!=='string' || !/^[a-z0-9]{20}$/.test(projectRef)
+    || typeof fetchImpl!=='function') {
+    throw new Error('Authenticated database recovery evidence is required.');
+  }
+  const url='https://api.supabase.com/v1/projects/'+projectRef+'/database/query';
+  const response=await fetchImpl(url,{
+    method:'POST',
+    redirect:'error',
+    headers:{
+      Authorization:'Bearer '+token,
+      Accept:'application/json',
+      'Content-Type':'application/json',
+    },
+    body:JSON.stringify({
+      query:"select public.backend_readiness_contract_v2('"+expected+"', 5) as readiness",
+      read_only:true,
+    }),
+    signal:AbortSignal.timeout(15000),
+  });
+  if (!response || ![200,201].includes(response.status) || response.ok!==true) {
+    throw new Error('Authenticated database recovery verification failed.');
+  }
+  let rows;
+  try { rows=await response.json(); }
+  catch { throw new Error('Authenticated database recovery evidence is malformed.'); }
+  if (!Array.isArray(rows) || rows.length!==1 || !rows[0] || typeof rows[0]!=='object') {
+    throw new Error('Authenticated database recovery evidence is malformed.');
+  }
+  const raw=rows[0].readiness;
+  const schema=raw?.schema;
+  const fingerprint=typeof schema?.fingerprint?.fingerprint==='string'
+    ? schema.fingerprint.fingerprint.trim().toLowerCase() : '';
+  const auth=raw?.recentSupabaseAuthFailures;
+  if (
+    raw?.ok!==true || raw?.connectivity?.ok!==true
+    || raw?.backendSecurity?.ok!==true
+    || schema?.ok!==true || schema?.status!=='ok'
+    || schema?.fingerprint?.ok!==true || fingerprint!==expected
+    || schema?.fingerprint?.expected!==expected
+    || raw?.schemaContractVersion!==2 || schema?.contractVersion!==2
+    || auth?.available!==true || auth?.count!==0 || auth?.windowMinutes!==5
+  ) throw new Error('Authenticated database recovery checks are not healthy.');
+  return Object.freeze({fingerprint,authFailures:0});
+}
+
+export function verifySanitizedSchemaDriftRecovery(statusCode,body,expectedFingerprint,previousWorkerSource,evidence) {
+  const previousExpected=expectedSchemaFingerprintFromWorker(previousWorkerSource);
+  if (!evidence || typeof evidence!=='object' || evidence.authFailures!==0
+    || evidence.fingerprint!==expectedFingerprint) {
+    throw new Error('Authenticated recovery evidence is absent or mismatched.');
+  }
+  // No sensitive values are added to the public response; this object exists
+  // solely in the protected GitHub runner to reuse the strict rollback proof.
+  const privateBody={
+    ...body,
+    checks:{
+      ...body?.checks,
+      schema:{
+        ...body?.checks?.schema,
+        fingerprint:evidence.fingerprint,
+        expectedFingerprint:previousExpected,
+        primaryExpectedFingerprint:previousExpected,
+      },
+      recentSupabaseAuthFailures:evidence.authFailures,
+    },
+  };
+  return verifySchemaDriftRecoverySnapshot(statusCode,privateBody,expectedFingerprint);
+}
+
+function previousWorkerSourceAtSha(sha) {
+  if (typeof sha!=='string' || !/^[a-f0-9]{40}$/.test(sha)) {
+    throw new Error('Verified previous production SHA is required for recovery.');
+  }
+  return execFileSync('git',['show',sha+':src/worker.js'],{
+    encoding:'utf8',timeout:5000,maxBuffer:8*1024*1024,
+  });
+}
+
 export async function verifySchemaDriftRecovery(rawBaseUrl, expectedFingerprint, options={}) {
   const baseUrl=normalizedBaseUrl(rawBaseUrl);
   const fetchImpl=options.fetchImpl || fetch;
@@ -97,7 +186,24 @@ export async function verifySchemaDriftRecovery(rawBaseUrl, expectedFingerprint,
     } catch {
       throw new Error('Recovery readiness endpoint returned invalid JSON.');
     }
-    return verifySchemaDriftRecoverySnapshot(response.status,body,expectedFingerprint);
+    if (typeof body?.checks?.schema?.fingerprint==='string') {
+      return verifySchemaDriftRecoverySnapshot(response.status,body,expectedFingerprint);
+    }
+    // Sanitized public readiness cannot prove private auth counters or schema
+    // fingerprints. The deploy runner obtains them over an authenticated query.
+    if (response.status!==503 || body?.ok!==false || body?.status!=='not_ready') {
+      throw new Error('Recovery requires fail-closed public readiness HTTP 503.');
+    }
+    const source=options.previousWorkerSource ?? previousWorkerSourceAtSha(
+      options.previousSha ?? process.env.PREVIOUS_SHA,
+    );
+    const evidence=await readRecoveryDatabaseEvidence({
+      token:options.token ?? process.env.SUPABASE_ACCESS_TOKEN,
+      projectRef:options.projectRef ?? process.env.SUPABASE_PROJECT_REF,
+      expectedFingerprint,
+      fetchImpl:options.databaseFetchImpl || fetch,
+    });
+    return verifySanitizedSchemaDriftRecovery(response.status,body,expectedFingerprint,source,evidence);
   } finally {
     clearTimeout(timeout);
   }
