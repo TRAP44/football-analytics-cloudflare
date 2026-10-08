@@ -44,7 +44,9 @@ test('public readiness adds a bounded completed-result cache without weakening i
   assert.match(orchestration,/computeReadiness:publicStatusRuntime\.computeReadinessSnapshot/);
   assert.match(health,/PUBLIC_READINESS_CACHE_MS = 15_000/);
   assert.match(health,/if \(inFlight\) return await inFlight/);
-  assert.match(health,/current-Number\(cached\.at \|\| 0\) < Math\.max/);
+  assert.match(health,/current >= cached\.at/);
+  assert.match(health,/current-cached\.at < ttlMs/);
+  assert.match(health,/if \(inFlight\) return await inFlight/);
   assert.match(health,/sanitizePublicReadiness/);
 });
 
