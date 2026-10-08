@@ -343,6 +343,36 @@ export function createProviderFixtureRuntime(deps) {
     const cached=matchFeedCachePayload(await getCache(cacheKey,cfg).catch(()=>null),date);
     if (cached) return json({ ...cached, sourceMeta: markCachedSourceMeta(cached.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' })), cached: true, stale: false });
     const previousPayload=matchFeedCachePayload(await getStaleCache(cacheKey,cfg).catch(()=>null),date);
+
+    // API-Football FREE exposes a short date window (UTC yesterday/today/tomorrow).
+    // Avoid spending quota on requests known to return a provider date-access error.
+    // Paid plans retain their actual provider date range.
+    const planProfile=providerBudgetProfile();
+    const outsideFreeWindow=date<utcDateShift(today,-1) || date>utcDateShift(today,1);
+    if (outsideFreeWindow && planProfile?.paid !== true) {
+      if (previousPayload) {
+        return json({
+          ...previousPayload,
+          cached:true,
+          stale:true,
+          warning:'Показаны последние сохранённые данные: дата вне доступного диапазона API-Football FREE.',
+          sourceMeta:markCachedSourceMeta(
+            previousPayload.sourceMeta || sourceMeta({provider:'api-football',label:'API-Football'}),
+            {stale:true},
+          ),
+        });
+      }
+      return json({
+        date,
+        matches:[],
+        catalog:{featured:0,live:0,major:0,cups:0,international:0,hiddenLowPriority:0},
+        restrictedDate:true,
+        cached:false,
+        stale:false,
+        warning:'Дата вне доступного диапазона API-Football FREE. Выберите сегодня или ближайший день.',
+        sourceMeta:sourceMeta({provider:'api-football',label:'API-Football'}),
+      });
+    }
   
     let fixtures;
     const providerBatchKey=providerFixtureDateCacheKey(date);
