@@ -224,7 +224,8 @@ export function createProviderSloRuntime(deps) {
   }
   
   async function readProviderIncidentAlertDeliveries(cfg, hours = 168) {
-    const safeHours = Math.max(1,Math.min(336,Number(hours || 168)));
+    const safeHours=typeof hours==='number' && Number.isFinite(hours) && hours>0
+      ? Math.max(1,Math.min(336,Math.floor(hours))) : 168;
     if (!hasSupabase(cfg)) {
       return { ok:false, persistent:false, status:'not_configured', items:[], hours:safeHours };
     }
@@ -233,7 +234,10 @@ export function createProviderSloRuntime(deps) {
       const items = await supaSelectMany(cfg,'provider_incident_alert_deliveries',{
         created_at:`gte.${since}`,
       },{limit:500,order:'created_at.asc'});
-      return { ok:true, persistent:true, status:'ok', items:Array.isArray(items) ? items : [], hours:safeHours };
+      if (!Array.isArray(items)) {
+        return { ok:false, persistent:false, status:'invalid_response', items:[], hours:safeHours };
+      }
+      return { ok:true, persistent:true, status:'ok', items, hours:safeHours };
     } catch (error) {
       return {
         ok:false,
