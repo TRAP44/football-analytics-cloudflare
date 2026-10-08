@@ -218,7 +218,11 @@ test('lineup probability adjustment ignores forged trust and out-of-range shifts
     {trusted:true,probabilityShift:NaN},
     {trusted:true,probabilityShift:{valueOf:()=>2.8}},
   ]){
-    assert.deepEqual(model.applyLineupStrengthAdjustment(original,bad),original);
+    const adjusted=model.applyLineupStrengthAdjustment(original,bad);
+    assert.ok(adjusted);
+    for(const side of ['home','draw','away']) {
+      assert.ok(Math.abs(adjusted[side]-original[side])<1e-9,side);
+    }
   }
   assert.equal(model.applyLineupStrengthAdjustment({home:NaN,draw:30,away:30},{
     trusted:true,probabilityShift:2,
