@@ -217,3 +217,68 @@ test('missing profile short-circuits without touching DOM', () => {
   assert.doesNotThrow(() => module.renderProfileSummary());
   assert.equal(domReads, 0);
 });
+
+
+
+test('profile summary handles absent quota and collections without inventing numeric values',()=>{
+  const {module,elements}=createModule({state:{profile:{user:{firstName:'Alex'}},profileStale:false}});
+  assert.doesNotThrow(()=>module.renderProfileSummary());
+  assert.equal(elements.get('profileName').textContent,'Alex');
+  assert.equal(elements.get('profileUsage').textContent,'— / —');
+  assert.equal(elements.get('favoriteCount').textContent,'—');
+  assert.equal(elements.get('reminderCount').textContent,'—');
+  assert.equal(elements.get('quotaText').hidden,true);
+  assert.doesNotMatch(elements.get('quotaText').textContent,/undefined|NaN/);
+});
+
+test('profile summary rejects invalid counters and preserves real zeroes',()=>{
+  const state={profileStale:false,favorites:[],reminders:[],favoritePlayers:[],profile:{
+    user:{firstName:'',username:''},
+    quota:{plan:'FREE',used:0,limit:0,left:null},
+    stats:{favorites:-4,reminders:'20',favoritePlayers:0},
+  }};
+  const {module,elements}=createModule({state});
+  module.renderProfileSummary();
+  assert.equal(elements.get('profileName').textContent,'Пользователь');
+  assert.equal(elements.get('profileUsage').textContent,'0 / 0');
+  assert.equal(elements.get('quotaText').hidden,true);
+  assert.equal(elements.get('favoriteCount').textContent,'0');
+  assert.equal(elements.get('reminderCount').textContent,'0');
+  assert.equal(elements.get('profileUsername').textContent,'');
+});
+
+test('profile summary never stringifies untrusted user attributes as identity text',()=>{
+  const state={profileStale:false,favorites:[],reminders:[],profile:{
+    user:{firstName:{toString:()=>{throw Error('unexpected coercion')}},username:['admin'],createdAt:1,photoUrl:{}},
+    quota:{plan:'FREE',used:0,limit:10,left:10},stats:{},
+  }};
+  const {module,elements}=createModule({state});
+  assert.doesNotThrow(()=>module.renderProfileSummary());
+  assert.equal(elements.get('profileName').textContent,'Пользователь');
+  assert.equal(elements.get('profileUsername').textContent,'');
+  assert.equal(elements.get('memberSince').textContent,'');
+});
+
+test('stale avatar load or error cannot change the latest profile image state',()=>{
+  const state={profileStale:false,favorites:[],reminders:[],profile:{
+    user:{firstName:'First',photoUrl:'https://example.com/first.jpg'},
+    quota:{plan:'FREE',used:0,limit:10,left:10},stats:{},
+  }};
+  const elements=createElements();
+  const images=[];
+  const module=createProfileSummaryModule({
+    state,elementById:id=>elements.get(id)||null,
+    safeUrl:x=>typeof x==='string'&&x.startsWith('https://')?x:'',
+    planLabel:()=> 'Бесплатный',dateOnly:()=> '',
+    createElement:()=>{const img=imageElement();images.push(img);return img;},
+  });
+  module.renderProfileSummary();
+  state.profile.user={firstName:'Second',photoUrl:'https://example.com/second.jpg'};
+  module.renderProfileSummary();
+  images[0].emit('load');
+  assert.equal(elements.get('avatar').classList.contains('has-photo'),false);
+  images[0].emit('error');
+  assert.equal(elements.get('avatar').children[0],images[1]);
+  images[1].emit('load');
+  assert.equal(elements.get('avatar').classList.contains('has-photo'),true);
+});
