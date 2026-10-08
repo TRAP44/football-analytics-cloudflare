@@ -22,3 +22,13 @@ NOT ENFORCED. Это НЕ означает, что база проверена. 
 Проверка подтверждает запись в истории Supabase. Она не заменяет
 проверку схемы через /health/ready и не гарантирует отсутствия ручных изменений БД.
 Документация: https://supabase.com/docs/reference/api/v1-list-migration-history
+
+## Проверка вручную — без развёртывания Worker
+
+Откройте GitHub Actions → Verify Production Supabase Migration → Run workflow → main.
+Этот workflow всегда использует production-секрет и обязательный режим (`true`),
+не меняет Cloudflare Worker и не записывает данные в Supabase.
+Успешное выполнение подтверждает, что токен прочитал нужную миграцию;
+ошибки доступа, отсутствия миграции или сетевые проблемы приводят к FAILED.
+Ручной запуск Deploy Production для этой проверки не нужен: его
+защита provenance может отклонить прямые коммиты в main.

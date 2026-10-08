@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 export const WORKFLOW_SECRET_ALLOWLIST = Object.freeze({
   '.github/workflows/backup-supabase.yml': new Set(['SUPABASE_DB_URL','BACKUP_ENCRYPTION_PASSPHRASE']),
   '.github/workflows/deploy-production.yml': new Set(['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','SUPABASE_ACCESS_TOKEN']),
+  '.github/workflows/verify-production-migration.yml': new Set(['SUPABASE_ACCESS_TOKEN']),
   '.github/workflows/rollback-production.yml': new Set(['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID']),
 });
 
@@ -157,7 +158,7 @@ export function auditWorkflow(pathName, text='') {
     }
   }
 
-  if (['.github/workflows/backup-supabase.yml','.github/workflows/deploy-production.yml','.github/workflows/rollback-production.yml'].includes(pathName)
+  if (['.github/workflows/backup-supabase.yml','.github/workflows/deploy-production.yml','.github/workflows/rollback-production.yml','.github/workflows/verify-production-migration.yml'].includes(pathName)
       && !productionEnvironmentProtected(source)) {
     findings.push({path:pathName,type:'production_environment_missing'});
   }

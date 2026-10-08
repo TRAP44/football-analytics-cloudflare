@@ -81,3 +81,15 @@ test('production deployment performs the migration check before changing Cloudfl
   assert.match(workflow,/SUPABASE_MIGRATION_GATE_REQUIRED: \$\{\{ vars\.SUPABASE_MIGRATION_GATE_REQUIRED \}\}/);
   assert.match(workflow,/run: node scripts\/verify-production-migrations\.js/);
 });
+
+test('manual migration verification workflow uses production-scoped secrets and always enforces the gate',()=>{
+  const workflow=fs.readFileSync('.github/workflows/verify-production-migration.yml','utf8');
+  assert.match(workflow,/workflow_dispatch:/);
+  assert.match(workflow,/environment: production/);
+  assert.match(workflow,/permissions:\s*\n\s*contents: read/);
+  assert.match(workflow,/SUPABASE_ACCESS_TOKEN: \$\{\{ secrets\.SUPABASE_ACCESS_TOKEN \}\}/);
+  assert.match(workflow,/SUPABASE_PROJECT_REF: \$\{\{ vars\.SUPABASE_PROJECT_REF \}\}/);
+  assert.match(workflow,/SUPABASE_MIGRATION_GATE_REQUIRED: 'true'/);
+  assert.match(workflow,/run: node scripts\/verify-production-migrations\.js/);
+  assert.doesNotMatch(workflow,/wrangler deploy|wrangler versions deploy|apply_migration|migration up/);
+});
