@@ -27,7 +27,7 @@ test('post-deploy regression uses historical ops source rather than only current
 
 test('regression lifecycle is persisted without feeding its own events back into release metrics',()=>{
   const start=productionMonitor.indexOf('async function runProductionMonitor');
-  const end=productionMonitor.indexOf('  return Object.freeze({',start);
+  const end=productionMonitor.indexOf('\n  return {\n    releaseTopGroups,',start);
   const block=productionMonitor.slice(start,end);
   assert.match(block,/item\?\.source !== 'release_regression'/);
   assert.match(block,/planPostDeployRegressionLifecycle\(releaseRegression,source\.items\)/);
@@ -48,7 +48,7 @@ test('regression lifecycle persistence uses an atomic transition key and remains
 
 test('production monitor exposes lifecycle persistence failure without failing the monitor',()=>{
   const start=productionMonitor.indexOf('async function runProductionMonitor');
-  const end=productionMonitor.indexOf('  return Object.freeze({',start);
+  const end=productionMonitor.indexOf('\n  return {\n    releaseTopGroups,',start);
   const block=productionMonitor.slice(start,end);
 
   assert.match(block,/postDeployRegressionLifecyclePersistence/);
@@ -60,7 +60,7 @@ test('production monitor exposes lifecycle persistence failure without failing t
 
 test('post-deploy regression alerting reuses persistent operational delivery and cannot feed its own metrics',()=>{
   const start=productionMonitor.indexOf('async function runProductionMonitor');
-  const end=productionMonitor.indexOf('  return Object.freeze({',start);
+  const end=productionMonitor.indexOf('\n  return {\n    releaseTopGroups,',start);
   const block=productionMonitor.slice(start,end);
 
   assert.match(block,/item\?\.source !== 'release_regression_alert'/);
@@ -74,7 +74,7 @@ test('post-deploy regression alerting reuses persistent operational delivery and
 
 test('WATCH is not sent and alert delivery waits for lifecycle persistence in the same monitor run',()=>{
   const start=productionMonitor.indexOf('async function runProductionMonitor');
-  const end=productionMonitor.indexOf('  return Object.freeze({',start);
+  const end=productionMonitor.indexOf('\n  return {\n    releaseTopGroups,',start);
   const block=productionMonitor.slice(start,end);
 
   assert.match(block,/releaseRegressionLifecycleReady/);
@@ -83,4 +83,56 @@ test('WATCH is not sent and alert delivery waits for lifecycle persistence in th
   assert.match(block,/releaseRegressionAlertPlan\.action === 'send'/);
   assert.match(block,/alerting:\{/);
   assert.doesNotMatch(block,/autoRollback:\s*true/);
+});
+
+
+
+function regressionMonitorBlock(){
+  const start=productionMonitor.indexOf('async function runProductionMonitor');
+  const end=productionMonitor.indexOf('\n  return {\n    releaseTopGroups,',start);
+  assert.ok(start>=0 && end>start);
+  return productionMonitor.slice(start,end);
+}
+
+test('read-only monitor never plans lifecycle writes or incident alert delivery',()=>{
+  const source=regressionMonitorBlock();
+  assert.match(source,/options\.record !== false\s*\?\s*planPostDeployRegressionLifecycle/);
+  assert.match(source,/options\.record !== false\s*\?\s*planPostDeployRegressionAlert/);
+  assert.match(source,/reason:'read_only_monitor'/);
+  assert.match(source,/if \(options\.record !== false && releaseRegressionLifecycle\.action === 'record'\)/);
+  assert.match(source,/options\.record !== false\s*&& releaseRegressionAlertPlan\.action === 'send'/);
+});
+
+test('regression alert dispatch fails closed without durable ledger and contract',()=>{
+  const source=regressionMonitorBlock();
+  assert.match(source,/providerAlertLedger\.persistent && providerAlertContract\.ok/);
+  assert.match(source,/releaseRegressionAlertCandidate\.action === 'send' && !incidentAlertPersistenceReady/);
+  assert.match(source,/reason:'persistent_ledger_unavailable'/);
+  assert.match(source,/if \(options\.record !== false && releaseRegressionAlertPlan\.blockedCandidate\)/);
+  assert.match(source,/POST_DEPLOY_REGRESSION_ALERT_PERSISTENCE_FAILED/);
+});
+
+test('monitor excludes its own lifecycle and alert events before computing deployment regressions',()=>{
+  const source=regressionMonitorBlock();
+  const start=source.indexOf('const releaseMetricItems=source.items.filter(');
+  const end=source.indexOf('const releaseScope=scopeOpsEventsToDeployment',start);
+  assert.ok(start>=0 && end>start);
+  const filtering=source.slice(start,end);
+  for(const label of ['monitor','release_regression','release_regression_alert']){
+    assert.ok(filtering.includes("item?.source !== '"+label+"'"),'Missing self-feedback exclusion: '+label);
+  }
+  assert.match(source,/postDeployRegressionReport\(\s*releaseMetricItems,\s*activeReleaseIdentity/);
+  assert.match(source,/scopeOpsEventsToDeployment\(\s*releaseMetricItems,\s*activeReleaseIdentity/);
+});
+
+test('monitor persists regression lifecycle before dispatch and keeps rollback manual',()=>{
+  const source=regressionMonitorBlock();
+  const persisted=source.indexOf('await recordOpsEvent(cfg,releaseRegressionLifecycle)');
+  const sent=source.indexOf('delivery = await deliverOperationalIncidentAlert(');
+  assert.ok(persisted>=0 && sent>persisted);
+  assert.match(source,/releaseRegressionLifecyclePersistence === 'persistent'/);
+  assert.match(source,/lifecycle_persistence_unconfirmed/);
+  assert.match(source,/changesRuntimeControls: false/);
+  assert.match(source,/autoRollback: false/);
+  assert.doesNotMatch(source,/\b(?:rollbackTo|switchProvider|disableFeature)\s*\(/);
 });
