@@ -58,7 +58,12 @@ export function createBetaFeedbackModule({
       setStatus('Кратко опишите, что произошло.');
       return;
     }
+    if (note.length > 600) {
+      setStatus('Сообщение слишком длинное (максимум 600 символов).');
+      return;
+    }
 
+    const submissionRevision = interactionRevision;
     state.betaFeedbackSending = true;
     const sendButton = $('betaFeedbackSendBtn');
     if (sendButton) sendButton.disabled = true;
@@ -73,16 +78,22 @@ export function createBetaFeedbackModule({
         dedupe: false,
       });
 
-      setStatus('Спасибо. Сообщение отправлено и добавлено в журнал обратной связи.');
-      if (noteElement) noteElement.value = '';
-
-      const successRevision = interactionRevision;
-      scheduleTask(() => {
+      if (interactionRevision === submissionRevision) {
+        setStatus('Спасибо. Сообщение отправлено и добавлено в журнал обратной связи.');
+        if (noteElement && String(noteElement.value || '').trim() === note) noteElement.value = '';
         const currentNote = String($('betaFeedbackNote')?.value || '').trim();
-        if (interactionRevision === successRevision && !currentNote) setBetaFeedbackOpen(false);
-      }, 900);
+        if (!currentNote) {
+          const successRevision = interactionRevision;
+          scheduleTask(() => {
+            const draft = String($('betaFeedbackNote')?.value || '').trim();
+            if (interactionRevision === successRevision && !draft) setBetaFeedbackOpen(false);
+          }, 900);
+        }
+      }
     } catch (error) {
-      setStatus(error?.message || 'Не удалось отправить сообщение.');
+      if (interactionRevision === submissionRevision) {
+        setStatus(error?.message || 'Не удалось отправить сообщение.');
+      }
     } finally {
       state.betaFeedbackSending = false;
       if (sendButton) sendButton.disabled = false;

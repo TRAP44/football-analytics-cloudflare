@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { digestLocalDeliveryWindow } from '../public/modules/digest-settings.js';
 import { buildPassPurchaseBody } from '../public/modules/billing.js';
+import { createBetaFeedbackModule } from '../public/modules/beta-feedback.js';
 
 const html = fs.readFileSync('public/index.html', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
@@ -83,4 +84,119 @@ test('Profile and navigation clicks clear old Match Pass fixture context before 
     assert.match(handler,/billingModule\?\.clearPassContext\(\)/);
     assert.ok(handler.indexOf('clearPassContext()')<handler.indexOf('openProfileView()'));
   }
+});
+
+
+
+function createFeedbackHarness({api=async()=>({ok:true})}={}){
+  const state={betaFeedbackSending:false};
+  const elements=new Map();
+  const el=id=>{
+    if(!elements.has(id))elements.set(id,{
+      value:'',textContent:'',disabled:false,hidden:id==='betaFeedbackForm',
+      attrs:{},setAttribute(name,value){this.attrs[name]=value;},
+      focus(){this.focused=true;},
+    });
+    return elements.get(id);
+  };
+  el('betaFeedbackCategory').value='search';
+  el('betaFeedbackSeverity').value='MAJOR';
+  el('betaFeedbackNote').value='Проблема с поиском';
+  const calls=[],scheduled=[];
+  const module=createBetaFeedbackModule({
+    state,elementById:el,
+    api:async(path,options)=>{calls.push({path,options});return api(path,options);},
+    schedule:(fn,ms)=>scheduled.push({fn,ms}),
+  });
+  return {state,module,el,calls,scheduled};
+}
+
+test('feedback submits only explicit category, severity and text with no retry',async()=>{
+  const h=createFeedbackHarness();
+  h.module.setBetaFeedbackOpen(true);
+  await h.module.submitBetaFeedback();
+  assert.equal(h.calls.length,1);
+  assert.equal(h.calls[0].path,'/api/beta-feedback');
+  assert.deepEqual(JSON.parse(h.calls[0].options.body),{
+    category:'search',severity:'MAJOR',note:'Проблема с поиском',
+  });
+  assert.equal(h.calls[0].options.method,'POST');
+  assert.equal(h.calls[0].options.retry,false);
+  assert.equal(h.calls[0].options.dedupe,false);
+  assert.equal(h.calls[0].options.timeoutMs,6500);
+  assert.equal(h.el('betaFeedbackNote').value,'');
+  assert.equal(h.scheduled[0].ms,900);
+  h.scheduled[0].fn();
+  assert.equal(h.el('betaFeedbackForm').hidden,true);
+});
+
+test('feedback rejects invalid fields and oversized text without contacting the API',async()=>{
+  const h=createFeedbackHarness();
+  const category=h.el('betaFeedbackCategory');
+  const severity=h.el('betaFeedbackSeverity');
+  const note=h.el('betaFeedbackNote');
+  category.value='invalid';
+  await h.module.submitBetaFeedback();
+  assert.match(h.el('betaFeedbackStatus').textContent,/Выберите раздел/);
+  category.value='search';severity.value='WRONG';
+  await h.module.submitBetaFeedback();
+  assert.match(h.el('betaFeedbackStatus').textContent,/Выберите важность/);
+  severity.value='MAJOR';note.value=' abc ';
+  await h.module.submitBetaFeedback();
+  assert.match(h.el('betaFeedbackStatus').textContent,/Кратко опишите/);
+  note.value='x'.repeat(601);
+  await h.module.submitBetaFeedback();
+  assert.match(h.el('betaFeedbackStatus').textContent,/600 символов/);
+  assert.equal(h.calls.length,0);
+  note.value='x'.repeat(600);
+  await h.module.submitBetaFeedback();
+  assert.equal(h.calls.length,1);
+});
+
+test('feedback prevents concurrent duplicate writes and re-enables the send control',async()=>{
+  let resolve;
+  const h=createFeedbackHarness({api:()=>new Promise(r=>{resolve=r;})});
+  h.module.setBetaFeedbackOpen(true);
+  const send=h.module.submitBetaFeedback();
+  assert.equal(h.state.betaFeedbackSending,true);
+  assert.equal(h.el('betaFeedbackSendBtn').disabled,true);
+  await h.module.submitBetaFeedback();
+  assert.equal(h.calls.length,1);
+  resolve({ok:true});
+  await send;
+  assert.equal(h.state.betaFeedbackSending,false);
+  assert.equal(h.el('betaFeedbackSendBtn').disabled,false);
+});
+
+test('late feedback responses never erase a new draft after form close and reopen',async()=>{
+  let resolve;
+  const h=createFeedbackHarness({api:()=>new Promise(r=>{resolve=r;})});
+  h.module.setBetaFeedbackOpen(true);
+  const send=h.module.submitBetaFeedback();
+  h.module.setBetaFeedbackOpen(false);
+  h.module.setBetaFeedbackOpen(true);
+  h.el('betaFeedbackNote').value='Новая проблема после переподключения';
+  resolve({ok:true});
+  await send;
+  assert.equal(h.el('betaFeedbackNote').value,'Новая проблема после переподключения');
+  assert.equal(h.el('betaFeedbackForm').hidden,false);
+  assert.equal(h.el('betaFeedbackStatus').textContent,'');
+  assert.equal(h.scheduled.length,0);
+});
+
+test('editing a new draft during submission prevents auto-close and preserves error text safely',async()=>{
+  let resolve;
+  const h=createFeedbackHarness({api:()=>new Promise(r=>{resolve=r;})});
+  h.module.setBetaFeedbackOpen(true);
+  const send=h.module.submitBetaFeedback();
+  h.el('betaFeedbackNote').value='Новая версия обращения';
+  resolve({ok:true});
+  await send;
+  assert.equal(h.el('betaFeedbackNote').value,'Новая версия обращения');
+  assert.equal(h.scheduled.length,0);
+  const fail=createFeedbackHarness({api:async()=>{throw new Error('<img src=x onerror=alert(1)>')}});
+  await fail.module.submitBetaFeedback();
+  assert.equal(fail.el('betaFeedbackStatus').textContent,'<img src=x onerror=alert(1)>');
+  assert.equal(fail.state.betaFeedbackSending,false);
+  assert.equal(fail.el('betaFeedbackSendBtn').disabled,false);
 });
