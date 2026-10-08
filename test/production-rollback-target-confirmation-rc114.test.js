@@ -77,3 +77,42 @@ test('RC114 refuses deployment mutation until version lookup and stamped release
   assert.match(workflow.slice(stamp,mutation),/scripts\/verify-rollback-target\.js/);
   assert.match(workflow.slice(post),/Cloudflare did not confirm 100% production traffic/);
 });
+
+
+
+test('RC114 confirmation is a job-level gate rather than optional inner-step validation',()=>{
+  const jobs=workflow.slice(workflow.indexOf('jobs:'));
+  const job=jobs.indexOf('  rollback:');
+  const gate=jobs.indexOf("    if: \${{ inputs.confirm == format('ROLLBACK:{0}:{1}', inputs.expected_version, inputs.version_id) }}",job);
+  const runner=jobs.indexOf('    runs-on: ubuntu-latest',job);
+  assert.ok(job>=0 && gate>job && runner>gate);
+});
+
+test('RC114 confirmation inputs remain mandatory strings without defaults',()=>{
+  const inputs=workflow.slice(workflow.indexOf('  workflow_dispatch:'),workflow.indexOf('\npermissions:'));
+  for(const name of ['version_id','expected_version','confirm']){
+    const start=inputs.indexOf('      '+name+':');
+    assert.ok(start>=0,'missing required input '+name);
+    const block=inputs.slice(start).split(/\n(?=      [a-z_]+:)/)[0];
+    assert.match(block,/required: true/);
+    assert.match(block,/type: string/);
+    assert.doesNotMatch(block,/default:/);
+  }
+});
+
+test('RC114 destructive rollback stays behind serialized confirmation-bound job',()=>{
+  const jobs=workflow.slice(workflow.indexOf('jobs:'));
+  const gate=jobs.indexOf("    if: \${{ inputs.confirm == format('ROLLBACK:{0}:{1}', inputs.expected_version, inputs.version_id) }}");
+  const mutation=jobs.indexOf('npx wrangler rollback "$VERSION_ID" --yes');
+  assert.ok(gate>=0&&mutation>gate);
+  assert.match(workflow,/group: cloudflare-production\s+cancel-in-progress: false/);
+});
+
+test('RC114 legacy override is disabled by default and requires preflight',()=>{
+  const section=workflow.slice(workflow.indexOf('      allow_legacy_unverified:'),workflow.indexOf('      legacy_confirm:'));
+  assert.match(section,/default: false/);
+  const guard=workflow.indexOf('RC113 verify rollback workflow provenance');
+  const validate=workflow.indexOf('RC117 verify rollback release identity');
+  const execute=workflow.indexOf('- name: Roll back Worker');
+  assert.ok(guard>=0&&validate>guard&&execute>validate);
+});
