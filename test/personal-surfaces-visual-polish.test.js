@@ -117,12 +117,13 @@ test('personal surfaces keep 44px touch targets across desktop and narrow Telegr
 });
 
 test('frontend revision refreshes personal-surface assets without changing release identity',()=>{
+  const revision=runtime.match(/FRONTEND_ASSET_REVISION = '([^']+)'/)?.[1];
+  assert.match(revision || '',/^6\.120\.0-launch\d+$/);
   for(const surface of [html,adminHtml]){
-    assert.match(surface,/frontend-asset-revision" content="6\.120\.0-launch59"/);
-    assert.match(surface,/styles\.css\?v=6\.120\.0-launch59/);
-    assert.match(surface,/styles\/public-shell\.css\?v=6\.120\.0-launch59/);
-    assert.match(surface,/app\.js\?v=6\.120\.0-launch59/);
+    assert.ok(surface.includes('frontend-asset-revision" content="'+revision+'"'));
+    for(const asset of ['styles.css','styles/public-shell.css','app.js']){
+      assert.ok(surface.includes(asset+'?v='+revision),asset);
+    }
   }
-  assert.match(runtime,/FRONTEND_ASSET_REVISION = '6\.120\.0-launch59'/);
   assert.match(runtime,/CLIENT_VERSION = '6\.120\.0-rc144'/);
 });
