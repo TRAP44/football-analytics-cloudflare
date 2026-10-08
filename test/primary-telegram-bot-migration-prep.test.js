@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   primaryTelegramBotIdentityCacheKey,
+  primaryTelegramUpdateDedupeKey,
   resolvePrimaryTelegramBotUsername,
   telegramBotStartUrl,
 } from '../src/telegram-primary-identity.js';
@@ -168,4 +169,68 @@ test('/api/me and admin identity remain keyed by Telegram user id after primary 
 
 test('disabled monetization remains fail-closed during primary bot migration', () => {
   assert.match(router,/if \(cfg\?\.monetizationEnabled !== true\) return json\(\{ error: 'Монетизация отложена до финального этапа проекта\.' \}, 404\)/);
+});
+
+
+
+test('bot update deduplication is scoped to primary bot identity across token rotation',()=>{
+  const first='12345:original_bot_secret';
+  const rotated='12345:rotated_bot_secret';
+  const other='67890:other_bot_secret';
+  const update={update_id:5001};
+  assert.equal(primaryTelegramUpdateDedupeKey(first,update),'b:id-12345:u:5001');
+  assert.equal(primaryTelegramUpdateDedupeKey(rotated,update),primaryTelegramUpdateDedupeKey(first,update));
+  assert.notEqual(primaryTelegramUpdateDedupeKey(other,update),primaryTelegramUpdateDedupeKey(first,update));
+  assert.equal(primaryTelegramUpdateDedupeKey(first,{update_id:true}),'');
+  assert.equal(primaryTelegramUpdateDedupeKey(first,{callback_query:{id:'callback-1'}}),'b:id-12345:c:callback-1');
+});
+
+test('a token-specific cache entry with the wrong bot ID must be refreshed',async()=>{
+  const token='12345:primary_bot_secret';
+  const key=await primaryTelegramBotIdentityCacheKey(token);
+  const cache=new Map([[key,{username:'WrongLegacyBot',botId:67890}]]);
+  let calls=0;
+  const actual=await resolvePrimaryTelegramBotUsername({
+    botToken:token,
+    getCached:async k=>cache.get(k),
+    setCached:async(k,v)=>cache.set(k,v),
+    getMe:async()=>{calls++;return {id:12345,username:'MatchRadarPrimaryBot',is_bot:true};},
+  });
+  assert.equal(actual,'MatchRadarPrimaryBot');
+  assert.equal(calls,1);
+  assert.equal(cache.get(key).botId,12345);
+  assert.equal(JSON.stringify([...cache.values()]).includes(token),false);
+});
+
+test('primary bot migration refuses a mismatched getMe identity without storing it',async()=>{
+  const token='12345:primary_bot_secret';
+  let writes=0;
+  await assert.rejects(
+    resolvePrimaryTelegramBotUsername({
+      botToken:token,
+      getCached:async()=>null,
+      setCached:async()=>{writes++;},
+      getMe:async()=>({id:67890,username:'LegacyPublisherBot',is_bot:true}),
+    }),
+    /does not match TELEGRAM_BOT_TOKEN/,
+  );
+  assert.equal(writes,0);
+  await assert.rejects(
+    resolvePrimaryTelegramBotUsername({
+      botToken:token,
+      getMe:async()=>({id:12345,username:'NotABot',is_bot:false}),
+    }),
+    /is not a bot/,
+  );
+});
+
+test('primary bot deep links reject injection and require a safe Telegram start parameter',()=>{
+  assert.equal(telegramBotStartUrl('MatchRadarPrimaryBot','fx12345__social'),
+    'https://t.me/MatchRadarPrimaryBot?start=fx12345__social');
+  for(const startParam of ['', 'a&evil=1','a?jump=true','bad value','<script>','a'.repeat(65)]){
+    assert.throws(()=>telegramBotStartUrl('MatchRadarPrimaryBot',startParam),/start parameter is invalid/);
+  }
+  for(const username of ['a','bot?x=1','bot/@other',true]){
+    assert.throws(()=>telegramBotStartUrl(username,'fx12345'),/username is invalid/);
+  }
 });
