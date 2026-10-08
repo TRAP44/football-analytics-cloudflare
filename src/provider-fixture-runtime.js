@@ -324,7 +324,11 @@ export function createProviderFixtureRuntime(deps) {
     const normalized=strictUtcDate(date);
     const today=strictUtcDate(todayUtc());
     const yesterday=utcDateShift(today,-1);
-    if (normalized && normalized===today) return 2;
+    if (normalized && (normalized===today || normalized===utcDateShift(today,1))) {
+      // FREE quota is shared (100/day): retain one validated date response
+      // across clients instead of re-fetching on every app opening.
+      return providerBudgetProfile()?.paid === true ? 2 : 20;
+    }
     if (normalized && normalized===yesterday) return 720;
     return cacheMinutes(cfg?.cacheMinutes,10);
   }
@@ -529,7 +533,8 @@ export function createProviderFixtureRuntime(deps) {
     }
     let paid=false;
     try { paid=providerBudgetProfile()?.paid === true; } catch {}
-    const ttl=isToday ? (paid ? 1 : 3) : isYesterday ? 720 : cacheMinutes(cfg?.cacheMinutes,10);
+    const nearCurrentDate=isToday || date===utcDateShift(today,1);
+    const ttl=nearCurrentDate ? (paid ? 1 : 20) : isYesterday ? 720 : cacheMinutes(cfg?.cacheMinutes,10);
     await setCache(cacheKey,0,payload,cfg,ttl).catch(()=>null);
     return json({ ...payload, cached:false, stale:false });
   }
