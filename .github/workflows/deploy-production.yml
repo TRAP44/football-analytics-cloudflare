@@ -164,6 +164,12 @@ jobs:
             exit 1
           fi
 
+      - name: Verify production Supabase migration history
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          SUPABASE_MIGRATION_GATE_REQUIRED: ${{ vars.SUPABASE_MIGRATION_GATE_REQUIRED }}
+        run: node scripts/verify-production-migrations.js
       - name: Detect pending production artifact changes
         id: production_changes
         env:
