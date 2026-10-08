@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runRollbackSmoke } from '../scripts/rollback-smoke.js';
+import { createProductionMonitorRuntime } from '../src/production-monitor-runtime.js';
 
 function response(status, body = {}) {
   return {
@@ -115,4 +116,46 @@ test('RC103 rollback workflow validates target and verifies restored production'
   assert.match(workflow,/npx wrangler rollback "\$VERSION_ID"/);
   assert.match(workflow,/node scripts\/rollback-smoke\.js "\$ROLLBACK_URL" "\$EXPECTED_VERSION"/);
   assert.match(workflow,/CLOUDFLARE_WORKER_URL/);
+});
+
+
+
+test('RC103 monitoring never treats truthy non-boolean Supabase responses as healthy',()=>{
+  const classify=createProductionMonitorRuntime({}).productionMonitorState;
+  const healthy={supabaseOk:true,schemaOk:true,schemaStatus:'ok'};
+  assert.equal(classify(healthy).state,'healthy');
+  for(const supabaseOk of ['false','true',1,{},null]) {
+    assert.equal(classify({...healthy,supabaseOk}).state,'incident');
+  }
+  assert.equal(classify(null).state,'incident');
+});
+
+test('RC103 handles unknown and contradictory schema status without false healthy reports',()=>{
+  const classify=createProductionMonitorRuntime({}).productionMonitorState;
+  assert.equal(classify({supabaseOk:true,schemaOk:false,schemaStatus:'drift'}).state,'incident');
+  assert.equal(classify({supabaseOk:true,schemaOk:false,schemaStatus:'unavailable'}).state,'watch');
+  assert.equal(classify({supabaseOk:true,schemaOk:false,schemaStatus:'ok'}).state,'watch');
+  assert.equal(classify({supabaseOk:true,schemaOk:true,schemaStatus:'invalid'}).state,'watch');
+});
+
+test('RC103 rejects coerced persistent monitoring state and untrusted auth failure counts',()=>{
+  const classify=createProductionMonitorRuntime({}).productionMonitorState;
+  const healthy={supabaseOk:true,schemaOk:true,schemaStatus:'ok'};
+  for(const persistent of ['false',null,0]) {
+    assert.equal(classify({...healthy,persistent}).state,'watch');
+  }
+  for(const supabaseAuthFailures of ['0','1',NaN,-1,{},Infinity]) {
+    assert.equal(classify({...healthy,supabaseAuthFailures}).state,'watch');
+  }
+  assert.equal(classify({...healthy,supabaseAuthFailures:1}).state,'incident');
+});
+
+test('RC103 cron keeps monitoring read-only and explicit rollback only in release workflow',()=>{
+  const monitor=fs.readFileSync('src/production-monitor-runtime.js','utf8');
+  const workflow=fs.readFileSync('.github/workflows/rollback-production.yml','utf8');
+  assert.match(monitor,/consumesFootballApi: false/);
+  assert.match(monitor,/changesRuntimeControls: false/);
+  assert.match(monitor,/autoRollback: false/);
+  assert.match(workflow,/workflow_dispatch:/);
+  assert.match(workflow,/Rollback preflight/);
 });
