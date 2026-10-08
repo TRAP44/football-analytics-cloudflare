@@ -148,6 +148,7 @@ import { createTelemetryOpsRuntime } from './telemetry-ops-runtime.js';
 import { createMaintenanceRuntime } from './maintenance-runtime.js';
 import { analysisTimelineSnapshotRow, buildAiTimeline } from './ai-timeline.js';
 import { createAiTimelineRuntime } from './ai-timeline-runtime.js';
+import { createLivePressureTimelineRuntime } from './live-pressure-timeline-runtime.js';
 import { buildProviderSloIncidentTimeline, providerSloIncidentOpsEvent, providerSloIncidentUpdateOpsEvent } from './provider-slo-incidents.js';
 import {
   deliverOperationalIncidentAlert,
@@ -171,6 +172,7 @@ const memory = {
   preferences: new Map(),
   oddsSnapshots: new Map(),
   analysisTimelineSnapshots: new Map(),
+  livePressureSnapshots: new Map(),
   refereeMatchHistory: new Map(),
   botDigestSubscriptions: new Map(),
   billingPayments: new Map(),
@@ -1468,6 +1470,18 @@ function captureAnalysisTimelineSnapshot(...args) { return getAiTimelineRuntime(
 function getAnalysisTimelineSnapshots(...args) { return getAiTimelineRuntime().getAnalysisTimelineSnapshots(...args); }
 function loadFixtureAiTimeline(...args) { return getAiTimelineRuntime().loadFixtureAiTimeline(...args); }
 
+let livePressureTimelineRuntime = null;
+function getLivePressureTimelineRuntime() {
+  if (!livePressureTimelineRuntime) {
+    livePressureTimelineRuntime = createLivePressureTimelineRuntime({
+      memory, hasSupabase, supaInsertIgnore, supaSelectMany,
+    });
+  }
+  return livePressureTimelineRuntime;
+}
+const captureLivePressureSnapshot = (...args) => getLivePressureTimelineRuntime().capture(...args);
+const loadLivePressureHistory = (...args) => getLivePressureTimelineRuntime().load(...args);
+
 let modelEvaluationRuntime = null;
 function getModelEvaluationRuntime() {
   if (!modelEvaluationRuntime) {
@@ -2621,6 +2635,8 @@ function getMatchCenterRuntime() {
       isYouthReserveMatch,
       json,
       livePressure,
+      captureLivePressureSnapshot,
+      loadLivePressureHistory,
       loadFixtureAiTimeline,
       loadModelPredictionForFixture,
       loadProviderFixture,
