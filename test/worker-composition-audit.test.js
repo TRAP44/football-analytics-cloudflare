@@ -147,7 +147,16 @@ function factoryContract(source,name) {
 
   const tail=source.slice(closeParen+1);
   const destructure=tail.match(/const\s*\{([\s\S]*?)\}\s*=\s*deps\s*;/);
-  if (!destructure) return {all:[],required:[],style:'zero-dependency'};
+  if (!destructure) {
+    // Factories with an optional options bag can read their accepted fields
+    // through safeRead(options, 'key') instead of destructuring dependencies.
+    if (/^options\s*=\s*\{\}$/.test(params)) {
+      const allowed=[...tail.matchAll(/safeRead\(\s*options\s*,\s*['"]([^'"]+)['"]/g)]
+        .map(match=>match[1]);
+      if (allowed.length) return {all:[...new Set(allowed)],required:[],style:'options-bag'};
+    }
+    return {all:[],required:[],style:'zero-dependency'};
+  }
   const all=splitTopLevel(destructure[1])
     .map(entry=>entry.trim())
     .filter(entry=>/^[A-Za-z_$][\w$]*$/.test(entry));
