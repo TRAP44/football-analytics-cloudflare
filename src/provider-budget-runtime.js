@@ -345,7 +345,7 @@ export function createProviderBudgetRuntime(deps) {
       && observedMinuteLimit !== null
       && observedDailyLimit >= Number(proBaseline.daily || 0)
       && observedMinuteLimit >= Number(proBaseline.minute || 0)
-      && mode !== 'emergency'
+      && mode === 'expanded'
     );
     const launchCapacity = {
       broadTrafficReady,
