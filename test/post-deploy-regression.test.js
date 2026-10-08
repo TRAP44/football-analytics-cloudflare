@@ -150,3 +150,52 @@ test('report remains unavailable without a trustworthy deployment timestamp',()=
   assert.equal(report.deploySha,'a'.repeat(40));
   assert.equal(report.completedWindows,0);
 });
+
+
+
+test('regression windows split baseline and new events at the exact deployment timestamp',()=>{
+  const rows=[
+    row('2026-09-29T12:59:59Z',{severity:'error',code:'PREVIOUS'}),
+    row('2026-09-29T13:00:00Z',{severity:'error',code:'NEW'}),
+    row('2026-09-29T13:15:01Z',{severity:'critical',code:'TOO_LATE'}),
+  ];
+  const report=postDeployRegressionReport(rows,identity,{nowMs:Date.parse('2026-09-29T13:15:00Z')});
+  assert.equal(report.windows[0].phase,'complete');
+  assert.equal(report.windows[0].baseline.errors,1);
+  assert.equal(report.windows[0].post.errors,1);
+  assert.equal(report.windows[0].post.severity.critical,0);
+  assert.equal(report.windows[0].state,'healthy');
+});
+
+test('a mature thirty-minute window detects regression missed by an earlier healthy window',()=>{
+  const events=[
+    row('2026-09-29T13:20:00Z',{severity:'error',source:'telegram',code:'TELEGRAM_SEND_FAILED'}),
+    row('2026-09-29T13:22:00Z',{severity:'error',source:'telegram',code:'TELEGRAM_SEND_FAILED'}),
+  ];
+  const report=postDeployRegressionReport(events,identity,{nowMs:Date.parse('2026-09-29T13:31:00Z')});
+  assert.deepEqual(report.windows.map(w=>w.phase),['complete','complete','collecting']);
+  assert.deepEqual(report.windows.map(w=>w.state),['healthy','watch','collecting']);
+  assert.equal(report.state,'watch');
+  assert.equal(report.completedWindows,2);
+});
+
+test('critical events only cause an incident when newly introduced after the release',()=>{
+  const oldCritical=summarizeRegressionEvents([
+    row('2026-09-29T12:50:00Z',{severity:'critical'}),
+  ]);
+  const currentCritical=summarizeRegressionEvents([
+    row('2026-09-29T13:05:00Z',{severity:'critical'}),
+  ]);
+  assert.equal(compareRegressionWindow(currentCritical,summarizeRegressionEvents([])).state,'incident');
+  assert.equal(compareRegressionWindow(currentCritical,oldCritical).state,'healthy');
+});
+
+test('latency p95 never triggers a regression without both sets of five samples',()=>{
+  const prev=summarizeRegressionEvents(Array.from({length:4},(_,i)=>row(
+    '2026-09-29T12:0'+i+':00Z',{duration_ms:100},
+  )));
+  const current=summarizeRegressionEvents(Array.from({length:10},(_,i)=>row(
+    '2026-09-29T13:0'+(i%10)+':00Z',{duration_ms:900},
+  )));
+  assert.equal(compareRegressionWindow(current,prev).signals.some(s=>s.code==='latency_p95_regression'),false);
+});
