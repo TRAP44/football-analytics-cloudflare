@@ -264,8 +264,10 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
   }
   if (method === 'GET' && pathname === '/api/entitlements') return await apiEntitlements(request, cfg, user);
   if (pathname.startsWith('/api/billing/')) {
-    if (cfg?.monetizationEnabled !== true) return json({ error: 'Монетизация отложена до финального этапа проекта.' }, 404);
+    // Plans are readable even while purchases are paused: the response includes
+    // enabled/ready flags and is not itself a payment operation.
     if (method === 'GET' && pathname === '/api/billing/plans') return await apiBillingPlans(request, cfg, user);
+    if (cfg?.monetizationEnabled !== true) return json({ error: 'Монетизация пока отключена.' }, 404);
     if (method === 'POST' && pathname === '/api/billing/invoice') return await sensitiveMutation(()=>apiBillingInvoice(request, cfg, user));
     if (method === 'POST' && pathname === '/api/billing/sync') return await sensitiveMutation(()=>apiBillingSync(request, cfg, user));
     if (method === 'POST' && pathname === '/api/billing/subscription') return await sensitiveMutation(()=>apiBillingSubscription(request, cfg, user));
