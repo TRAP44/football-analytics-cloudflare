@@ -112,3 +112,47 @@ test('missing profile recovery DOM fails soft without invoking retry', () => {
   assert.doesNotThrow(() => module.renderProfileAccessState('error', 'offline'));
   assert.equal(retries, 0);
 });
+
+
+
+test('profile access state validates required dependencies and exposes a frozen interface',()=>{
+  for(const args of [{},null,{elementById:()=>null,escapeHtml:String},{
+    elementById:null,escapeHtml:String,onRetry:()=>{},
+  }]){
+    assert.throws(()=>createProfileAccessStateModule(args),/Profile Access State|Cannot destructure/);
+  }
+  const {module}=createModule();
+  assert.equal(Object.isFrozen(module),true);
+});
+
+test('profile error content is escaped while its retry control remains accessible',()=>{
+  const {module,elements}=createModule();
+  module.renderProfileAccessState('error','Сбой <script>alert(1)</script>');
+  const html=elements.get('profileRecovery').innerHTML;
+  assert.match(html,/Сбой &lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(html,/<script>/);
+  assert.match(html,/aria-live="polite"/);
+  assert.match(html,/role="status"/);
+  assert.match(html,/type="button">Повторить<\/button>/);
+});
+
+test('profile loading and ready transitions do not offer an actionable retry',()=>{
+  const {module,elements}=createModule();
+  module.renderProfileAccessState('error','offline');
+  module.renderProfileAccessState('loading','retry pending');
+  assert.match(elements.get('profileRecovery').innerHTML,/is-loading/);
+  assert.doesNotMatch(elements.get('profileRecovery').innerHTML,/id="profileRecoveryRetry"/);
+  module.renderProfileAccessState('ready');
+  assert.equal(elements.get('profileRecovery').innerHTML,'');
+  assert.equal(elements.get('profileRecovery').hidden,true);
+  assert.equal(elements.get('profileView').classList.contains('profile-unavailable'),false);
+});
+
+test('unknown profile access states fail closed instead of silently exposing profile',()=>{
+  const {module,elements}=createModule();
+  module.renderProfileAccessState('unavailable','нет соединения');
+  assert.equal(elements.get('profileView').classList.contains('profile-unavailable'),true);
+  assert.equal(elements.get('profileRecovery').hidden,false);
+  assert.match(elements.get('profileRecovery').innerHTML,/Профиль временно недоступен/);
+  assert.match(elements.get('profileRecovery').innerHTML,/нет соединения/);
+});
