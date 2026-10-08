@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { digestLocalDeliveryWindow } from '../public/modules/digest-settings.js';
+import { buildPassPurchaseBody } from '../public/modules/billing.js';
 
 const html = fs.readFileSync('public/index.html', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
@@ -45,4 +47,40 @@ test('Match Pass profile context does not inherit an unrelated last viewed fixtu
   assert.match(billing, /Match Pass будет привязан к выбранному матчу №/);
   assert.match(app, /profileBtn[\s\S]*billingModule\?\.clearPassContext/);
   assert.match(app, /navProfile[\s\S]*billingModule\?\.clearPassContext/);
+});
+
+
+
+test('Digest invalid timezone falls back to the browser local window rather than raw UTC',()=>{
+  const when=new Date('2026-06-15T12:00:00.000Z');
+  const local=digestLocalDeliveryWindow(7,when);
+  assert.equal(digestLocalDeliveryWindow(7,when,'Not/ARealZone'),local);
+  assert.match(local,/^\d{2}:\d{2}–\d{2}:\d{2}$/);
+});
+
+test('Digest delivery respects named summer and winter timezone offsets',()=>{
+  assert.equal(digestLocalDeliveryWindow(7,new Date('2026-06-15T12:00:00Z'),'Europe/Riga'),'10:00–10:55');
+  assert.equal(digestLocalDeliveryWindow(7,new Date('2026-12-15T12:00:00Z'),'Europe/Riga'),'09:00–09:55');
+  assert.equal(digestLocalDeliveryWindow(7,new Date('2026-06-15T12:00:00Z'),'UTC'),'07:00–07:55');
+});
+
+test('Match Pass purchase always requires a validated explicitly selected fixture',()=>{
+  assert.deepEqual(buildPassPurchaseBody('MATCH_PASS',12345),{passType:'MATCH_PASS',fixtureId:12345});
+  assert.deepEqual(buildPassPurchaseBody('MATCH_PASS','00012345'),{passType:'MATCH_PASS',fixtureId:12345});
+  for(const invalid of [undefined,null,0,-1,true,[],{},'1e3','123?next=45','9007199254740992']){
+    assert.equal(buildPassPurchaseBody('MATCH_PASS',invalid),null);
+  }
+  assert.deepEqual(buildPassPurchaseBody('DAY_PASS',0),{passType:'DAY_PASS'});
+  assert.equal(buildPassPurchaseBody('UNKNOWN',123),null);
+});
+
+test('Profile and navigation clicks clear old Match Pass fixture context before entering profile',()=>{
+  const handlers=[
+    app.slice(app.indexOf("$('profileBtn').addEventListener"),app.indexOf("$('profileBtn').addEventListener")+350),
+    app.slice(app.indexOf("$('navProfile').addEventListener"),app.indexOf("$('navProfile').addEventListener")+230),
+  ];
+  for(const handler of handlers){
+    assert.match(handler,/billingModule\?\.clearPassContext\(\)/);
+    assert.ok(handler.indexOf('clearPassContext()')<handler.indexOf('openProfileView()'));
+  }
 });
