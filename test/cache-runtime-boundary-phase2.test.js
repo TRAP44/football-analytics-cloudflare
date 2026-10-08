@@ -136,7 +136,7 @@ test('Phase 2 cache boundary bounds malformed TTL and fixture ids safely',async(
   const local=rt.memory.cache.get('bad-ttl');
   const ttlMs=local.expiresAt-Date.now();
   assert.ok(ttlMs>9*60_000 && ttlMs<=10*60_000+1000);
-  assert.equal(writes[0].fixture_id,null);
+  assert.equal(writes[0].fixture_id,0);
 
   for (const ambiguous of [null,false,'']) {
     await rt.api.setCache('ambiguous-'+String(ambiguous),1,{ok:true},{cacheMinutes:12},ambiguous);
@@ -236,4 +236,35 @@ test('Issue #494 keeps useful bounded cache categories for ordinary keys',()=>{
   assert.equal(rt.api.cacheOpsCategory('odds:league:premier:123'),'odds:league:premier');
   assert.equal(rt.api.cacheOpsCategory(''),'unknown');
   assert.ok(rt.api.cacheOpsCategory('x'.repeat(100)).length<=80);
+});
+
+
+test('Global match feed and provider quota survive shared-cache writes with NOT NULL fixture id',async()=>{
+  const dbRows=new Map();
+  const writes=[];
+  const deps={
+    hasSupabase:()=>true,
+    supaUpsert:async(_cfg,table,row)=>{
+      assert.equal(table,'analysis_cache');
+      assert.ok(Number.isSafeInteger(row.fixture_id));
+      assert.ok(row.fixture_id>=0);
+      writes.push(row);
+      dbRows.set(row.cache_key,{payload:row.payload,expires_at:row.expires_at});
+    },
+    supaSelectOne:async(_cfg,_table,params)=>dbRows.get(params.cache_key.slice(3)) || null,
+  };
+  const author=runtime(deps);
+  const feedKey='matches:2026-10-09:v6-integrity';
+  const quotaKey='provider-state:api-football:quota:v1';
+  const feed={date:'2026-10-09',matches:[{fixtureId:1001}]};
+  await author.api.setCache(feedKey,0,feed,{cacheMinutes:20},20);
+  await author.api.setCache(quotaKey,null,{remaining:9},{cacheMinutes:1},1);
+  await author.api.setCache('provider-fixture:1001:v1',1001,{fixtureId:1001},{cacheMinutes:5},5);
+  assert.deepEqual(writes.map(row=>row.fixture_id),[0,0,1001]);
+  assert.equal(author.ops.length,0);
+
+  const reader=runtime(deps);
+  assert.deepEqual(await reader.api.getCache(feedKey,{}),feed);
+  assert.deepEqual(await reader.api.getCache(quotaKey,{}),{remaining:9});
+  assert.equal(reader.ops.length,0);
 });
