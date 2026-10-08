@@ -590,7 +590,7 @@ test('post-deploy smoke rejects external, unexpected, and unsafe canonical HTML 
       fetchImpl:withRouteResponse('/privacy.html',()=>new Response(null,{status:307,headers:{location:'/privacy'}})),
       retries:1,retryDelayMs:0,
     }),
-    /privacy\\.html must be a public HTML page/,
+    /privacy\.html must be a public HTML page/,
     'Canonical destination must still be a real HTML asset.',
   );
 });
