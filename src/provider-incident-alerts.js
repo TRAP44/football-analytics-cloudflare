@@ -402,10 +402,13 @@ export function formatProviderIncidentAlert(plan = {}) {
 }
 
 export function classifyProviderIncidentTelegramResult(result = {}, nowMs = Date.now()) {
-  if (result?.ok === true) return { state:'sent', retryAt:null, retryable:false, reason:'' };
   const statusCandidate=integerCandidate(result?.status);
   const status=statusCandidate !== null && statusCandidate >= 0 && statusCandidate <= 599 ? statusCandidate : 0;
   const outcome = typeof result?.outcome === 'string' ? result.outcome.trim().toLowerCase() : '';
+  const successStatus = result?.status == null || (status >= 200 && status < 300);
+  if (result?.ok === true && successStatus && (!outcome || outcome === 'sent')) {
+    return { state:'sent', retryAt:null, retryable:false, reason:'' };
+  }
   const errorCodeValue=result?.errorCode ?? result?.code;
   const errorCode = typeof errorCodeValue === 'string' ? errorCodeValue.trim().slice(0,80) : '';
   const description = typeof result?.description === 'string' && result.description.trim()

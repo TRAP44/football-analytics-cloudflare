@@ -108,3 +108,58 @@ test('ambiguous status zero is unknown while explicit pre-send config failure is
   assert.equal(notStarted.state,'terminal_failed');
   assert.equal(notStarted.retryable,false);
 });
+
+
+
+test('Telegram 429 always respects rate-limit retry even when a gateway incorrectly returns ok true',()=>{
+  const now=Date.parse('2026-09-28T10:30:00Z');
+  const result=classifyProviderIncidentTelegramResult(
+    {ok:true,status:429,outcome:'sent',retryAfter:75,description:'rate-limited'},now,
+  );
+  assert.equal(result.state,'retry_pending');
+  assert.equal(result.retryable,true);
+  assert.equal(result.retryAt,'2026-09-28T10:31:15.000Z');
+});
+
+test('Telegram success requires consistent outcome and successful HTTP status',()=>{
+  const now=Date.parse('2026-09-28T10:30:00Z');
+  assert.equal(classifyProviderIncidentTelegramResult({ok:true,status:200,outcome:'sent'},now).state,'sent');
+  assert.equal(classifyProviderIncidentTelegramResult({ok:true,status:201},now).state,'sent');
+  assert.equal(classifyProviderIncidentTelegramResult({ok:true},now).state,'sent');
+  assert.equal(classifyProviderIncidentTelegramResult({ok:true,status:0},now).state,'unknown');
+  assert.equal(classifyProviderIncidentTelegramResult({ok:true,status:503},now).state,'retry_pending');
+  assert.equal(classifyProviderIncidentTelegramResult({ok:true,status:400},now).state,'terminal_failed');
+  assert.equal(classifyProviderIncidentTelegramResult({ok:true,status:200,outcome:'unknown'},now).state,'unknown');
+  assert.equal(classifyProviderIncidentTelegramResult({ok:true,status:200,outcome:'not_started'},now).state,'terminal_failed');
+});
+
+test('contradictory 429 is durably deferred rather than marked as a sent incident alert',async()=>{
+  let sent=0,finalized=null;
+  const result=await deliverProviderIncidentAlert({
+    plan:plan('retry-contradictory-success'),
+    adminTelegramIds:[123],
+    claimDelivery:async()=>({acquired:true,status:'sending',attempts:1}),
+    finalizeDelivery:async input=>{finalized=input;return {ok:true,status:input.status};},
+    sendMessage:async()=>{sent++;return {ok:true,status:429,outcome:'sent',retryAfter:30};},
+    nowMs:Date.parse('2026-09-28T10:30:00Z'),
+  });
+  assert.equal(sent,1);
+  assert.equal(result.ok,false);
+  assert.equal(result.outcomes[0].state,'retry_pending');
+  assert.equal(finalized.status,'retry_pending');
+  assert.equal(finalized.retryAt,'2026-09-28T10:30:30.000Z');
+});
+
+test('Telegram Retry-After remains bounded and malformed values cannot overflow persisted timestamps',()=>{
+  const now=Date.parse('2026-09-28T10:30:00Z');
+  for(const value of [true,{},'0',-1,1.5,'NaN',Infinity]){
+    const classified=classifyProviderIncidentTelegramResult({
+      ok:false,status:429,retryAfter:value,
+    },now);
+    assert.equal(classified.retryAt,'2026-09-28T10:30:01.000Z');
+  }
+  const capped=classifyProviderIncidentTelegramResult({
+    ok:false,status:429,retryAfter:999999999999,
+  },now);
+  assert.equal(capped.retryAt,'2026-10-05T10:30:00.000Z');
+});
