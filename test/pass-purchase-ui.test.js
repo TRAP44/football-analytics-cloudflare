@@ -74,9 +74,37 @@ test('active expired unavailable and included Pass states render from server dec
   const expiredEntitlement = { decisions:[{ type:'MATCH_PASS', fixtureId:777, active:false, reason:'expired', expiresAt:'2026-09-30T12:00:00Z' }] };
   assert.equal(passUiState({ product, entitlement:activeEntitlement, passType:'MATCH_PASS', fixtureId:777, paymentsEnabled:true, now:Date.parse('2026-10-01T12:00:00Z') }).state, 'active');
   assert.equal(passUiState({ product, entitlement:activeEntitlement, passType:'MATCH_PASS', fixtureId:0, paymentsEnabled:true, now:Date.parse('2026-10-01T12:00:00Z') }).state, 'needs-fixture');
-  assert.equal(passUiState({ product, entitlement:expiredEntitlement, passType:'MATCH_PASS', fixtureId:777, paymentsEnabled:true, now:Date.parse('2026-10-01T12:00:00Z') }).state, 'expired');
+  assert.equal(passUiState({ product, entitlement:expiredEntitlement, passType:'MATCH_PASS', fixtureId:777, paymentsEnabled:true, now:Date.parse('2026-10-01T12:00:00Z') }).state, 'available');
   assert.equal(passUiState({ product:{...product,saleReady:false}, entitlement:{decisions:[]}, passType:'WEEKEND_PASS', paymentsEnabled:true }).state, 'unavailable');
   assert.equal(passUiState({ product, entitlement:{decisions:[]}, passType:'DAY_PASS', paymentsEnabled:true, subscriptionActive:true }).state, 'included');
+});
+
+test('Day Pass with historical expired or consumed entitlement is available for a new purchase', () => {
+  const product={saleReady:true,stars:89,durationHours:24,usageLimit:null};
+  const now=Date.parse('2026-10-08T18:00:00Z');
+  for(const reason of ['expired','usage_exhausted','inactive']){
+    const decision={type:'DAY_PASS',active:false,reason,expiresAt:'2026-10-03T12:00:00Z'};
+    const view=passUiState({
+      product,entitlement:{decisions:[decision]},passType:'DAY_PASS',
+      paymentsEnabled:true,now,
+    });
+    assert.equal(view.state,'available',reason);
+    assert.equal(view.decision,decision);
+  }
+  const paused=passUiState({
+    product,entitlement:{decisions:[{type:'DAY_PASS',active:false,reason:'expired'}]},
+    passType:'DAY_PASS',paymentsEnabled:false,now,
+  });
+  assert.equal(paused.state,'paused');
+});
+
+test('Pass cards have matching enabled button colors and explicit non-subscription wording', () => {
+  const premium=fs.readFileSync('public/styles/premium-ui.css','utf8');
+  const css=fs.readFileSync('public/styles.css','utf8');
+  assert.match(premium,/\.pass-store \.pass-card button:not\(:disabled\)/);
+  assert.match(premium,/\.pass-store \.pass-card \{ opacity: 1/);
+  assert.doesNotMatch(css,/\.pass-card\[data-state="expired"\], \.pass-card\[data-state="exhausted"\] \{ opacity:/);
+  assert.match(html,/id="passStoreTitle">AI-доступ без подписки/);
 });
 
 test('Pass state prioritizes the requested active Match Pass and subscription access over product sale state', () => {
