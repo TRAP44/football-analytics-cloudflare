@@ -76,3 +76,47 @@ test('RC112 keeps mandatory quality and safety checks for manually dispatched de
   }
   assert.match(workflow,/if \[\[ -z "\$CLOUDFLARE_API_TOKEN" \|\| -z "\$CLOUDFLARE_ACCOUNT_ID" \]\]; then[\s\S]*exit 1/);
 });
+
+
+
+test('RC112 manual dispatch strictly requires the exact current main SHA even for test-only drift',()=>{
+  const start=workflow.indexOf('- name: RC110 guard against stale production deploy');
+  const end=workflow.indexOf('- name: Use Node.js 22',start);
+  assert.ok(start>=0 && end>start);
+  const block=workflow.slice(start,end);
+  assert.match(block,/if \[\[ "\$\{GITHUB_EVENT_NAME\}" == "workflow_dispatch" && "\$DEPLOY_SHA" != "\$CURRENT_MAIN_SHA" \]\]; then/);
+  assert.match(block,/Manual deploy requires the exact current main SHA, including test\/docs drift/);
+  const checkoutGuard=block.indexOf('[[ "$DEPLOY_SHA" != "$VERIFIED_SHA" ]]');
+  const manualGuard=block.indexOf('[[ "\${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "$DEPLOY_SHA" != "$CURRENT_MAIN_SHA" ]]');
+  const diff=block.indexOf('git diff --name-only "$DEPLOY_SHA" "$CURRENT_MAIN_SHA"');
+  assert.ok(checkoutGuard>=0 && manualGuard>checkoutGuard && diff>manualGuard);
+  assert.match(block.slice(manualGuard,diff),/exit 1/);
+});
+
+test('RC112 retains the snapshot-drift allowance only for successful workflow-run provenance',()=>{
+  const start=workflow.indexOf('- name: RC110 guard against stale production deploy');
+  const end=workflow.indexOf('- name: Use Node.js 22',start);
+  const block=workflow.slice(start,end);
+  assert.match(block,/Test-only main drift accepted/);
+  assert.match(block,/Verified release snapshot accepted/);
+  assert.match(block,/if \[\[ "\$\{GITHUB_EVENT_NAME\}" == "workflow_dispatch" \]\]; then[\s\S]*Manual deploy requires current main when production-relevant drift exists/);
+});
+
+test('RC112 manually dispatched build must run all verification before Cloudflare credentials',()=>{
+  const provenance=workflow.indexOf('P1 gate: verify production deploy provenance');
+  const review=workflow.indexOf('- name: Re-verify release artifact');
+  const credentials=workflow.indexOf('- name: Check Cloudflare credentials');
+  const mutation=workflow.indexOf('- name: Deploy Worker');
+  assert.ok(provenance>=0 && review>provenance && credentials>review && mutation>credentials);
+  for(const name of ['npm run security:scan','npm run security:privileged','npm run test:release','npm run verify:release','npm run verify:worker']){
+    assert.ok(workflow.slice(review,credentials).includes(name),name);
+  }
+});
+
+test('RC112 denies stale checkout before generating any release artifacts or rollback targets',()=>{
+  const guard=workflow.indexOf('Manual deploy requires the exact current main SHA, including test/docs drift');
+  const build=workflow.indexOf('npm ci');
+  const rollback=workflow.indexOf('- name: Preflight previous-known-good rollback target');
+  const publish=workflow.indexOf('- name: Deploy Worker');
+  assert.ok(guard>0 && build>guard && rollback>build && publish>rollback);
+});
