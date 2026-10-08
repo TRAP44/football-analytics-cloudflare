@@ -24,9 +24,9 @@ export function expectedSchemaFingerprintFromWorker(source) {
 }
 
 export function verifySchemaDriftRecoverySnapshot(statusCode, body, expectedFingerprint) {
-  const expected=String(expectedFingerprint || '').trim().toLowerCase();
+  const expected=typeof expectedFingerprint === 'string' ? expectedFingerprint.trim().toLowerCase() : '';
   if (!FINGERPRINT_RE.test(expected)) throw new Error('Recovery expected fingerprint is invalid.');
-  if (Number(statusCode) !== 503) throw new Error('Recovery mode requires current production readiness HTTP 503.');
+  if (statusCode !== 503) throw new Error('Recovery mode requires current production readiness HTTP 503.');
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Recovery readiness payload is invalid.');
   if (body.ok !== false || body.status !== 'not_ready') throw new Error('Recovery mode requires a fail-closed not_ready payload.');
 
@@ -49,9 +49,12 @@ export function verifySchemaDriftRecoverySnapshot(statusCode, body, expectedFing
   if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
     throw new Error('Recovery mode rejected: schema readiness details are missing.');
   }
-  const actual=String(schema.fingerprint || '').trim().toLowerCase();
-  const staleExpected=String(schema.expectedFingerprint || '').trim().toLowerCase();
-  const primaryExpected=String(schema.primaryExpectedFingerprint || '').trim().toLowerCase();
+  const actual=typeof schema.fingerprint === 'string' ? schema.fingerprint.trim().toLowerCase() : '';
+  const staleExpected=typeof schema.expectedFingerprint === 'string' ? schema.expectedFingerprint.trim().toLowerCase() : '';
+  if (schema.primaryExpectedFingerprint != null && typeof schema.primaryExpectedFingerprint !== 'string') {
+    throw new Error('Recovery mode rejected: active Worker schema expectations are ambiguous.');
+  }
+  const primaryExpected=typeof schema.primaryExpectedFingerprint === 'string' ? schema.primaryExpectedFingerprint.trim().toLowerCase() : '';
   if (schema.ok !== false || schema.status !== 'drift') {
     throw new Error('Recovery mode rejected: current production failure is not schema drift.');
   }
