@@ -1,53 +1,70 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createSupabaseSchemaRuntime } from '../src/supabase-schema-runtime.js';
 
-const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/admin-operational-api.js', 'utf8');
-const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
+const schemaSource=fs.readFileSync('src/supabase-schema-runtime.js','utf8');
+const worker=fs.readFileSync('src/worker.js','utf8');
+const release=fs.readFileSync('src/admin-operational-api.js','utf8');
+const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 
-test('RC100 probes required Supabase tables and columns without DDL', () => {
-  assert.match(worker, /async function probeTableColumns\(/);
-  assert.match(worker, /async function probeSupabaseSchemaDrift\(/);
-  assert.match(worker, /async function readPersonalWriteGuardContract\(/);
-  assert.match(worker, /personal_write_guard_contract/);
-  assert.match(worker, /personal_write_guards/);
-  assert.match(worker, /favoritePlayersLimit/);
-  assert.match(worker, /canonicalReminders/);
-  assert.match(worker, /explicitRearm/);
-  assert.match(worker, /reminderRetentionDays === 90/);
-  for (const marker of [
-    "id: 'users_acquisition'",
-    "id: 'analysis_history_ai'",
-    "id: 'calibration_transitions'",
-    "id: 'digest_subscriptions'",
-    "id: 'referee_history'",
-    "id: 'growth_events'"
-  ]) assert.ok(worker.includes(marker), marker);
-  assert.doesNotMatch(worker, /probeSupabaseSchemaDrift[\s\S]{0,3500}(insert into|alter table|create table|drop table)/i);
+function runtime({configured=true,fetch=async()=>({ok:true,status:200})}={}){
+  return createSupabaseSchemaRuntime({
+    EXPECTED_SCHEMA_FINGERPRINT:'a'.repeat(32),
+    PERSONAL_WRITE_LIMITS:{},
+    bumpTelemetry:()=>{},
+    fetchWithTimeout:fetch,
+    hasSupabase:()=>configured,
+    readProviderIncidentAlertDeliveryContract:async()=>({ok:true}),
+    redactOpsString:()=> '[redacted]',
+    sleepMs:async()=>{},
+    supaHeaders:()=>({apikey:'opaque'}),
+    supaRpc:async()=>({ok:true}),
+  });
+}
+
+test('RC100 probes required table columns using read-only REST requests',async()=>{
+  const urls=[];
+  const api=runtime({fetch:async url=>{urls.push(new URL(String(url)));return {ok:true,status:200};}});
+  const result=await api.probeTableColumns({supabaseUrl:'https://example.supabase.co'},'users',['telegram_id','acquisition_source']);
+  assert.equal(result.ok,true);
+  assert.equal(urls.length,1);
+  assert.equal(urls[0].pathname,'/rest/v1/users');
+  assert.equal(urls[0].searchParams.get('select'),'telegram_id,acquisition_source');
+  assert.equal(urls[0].searchParams.get('limit'),'1');
 });
-
-test('RC100 drift summary fails closed when a required slice is missing', () => {
-  assert.match(worker, /function summarizeSupabaseSchemaChecks\(/);
-  assert.match(worker, /status: missing\.length === 0 \? 'ok' : 'drift'/);
-  assert.match(worker, /drift\.missing\.length === 1/);
-  assert.match(worker, /drift\.missing\[0\] === 'telegram_update_claims'/);
+test('RC100 a missing mandatory table slice blocks the schema guard',()=>{
+  const api=runtime();
+  const checks=[
+    {id:'users_acquisition',table:'users',ok:true,columns:['telegram_id']},
+    {id:'growth_events',table:'growth_events',ok:false,status:'http_404',columns:['event_name']},
+  ];
+  const summary=api.summarizeSupabaseSchemaChecks(checks);
+  assert.equal(summary.ok,false);
+  assert.equal(summary.status,'drift');
+  assert.deepEqual(summary.missing,['growth_events']);
+  assert.equal(summary.checked,2);
 });
-
-test('RC100 blocks Release Readiness on Supabase schema drift', () => {
-  assert.match(worker, /releaseCheck\('supabase_schema_drift'/);
-  assert.match(worker, /Schema drift: отсутствуют или несовместимы/);
-  assert.match(worker, /releaseCheck\('supabase_schema_drift_selftest'/);
+test('RC100 a configured schema probe HTTP failure never pretends success',async()=>{
+  const api=runtime({fetch:async()=>({ok:false,status:404})});
+  const result=await api.probeTableColumns({supabaseUrl:'https://example.supabase.co'},'growth_events',['event_name']);
+  assert.equal(result.ok,false);
+  assert.equal(result.status,'http_404');
 });
-
-test('RC100 exposes and smoke-tests schema drift health flags', () => {
-  assert.match(worker, /supabaseSchemaDriftGuard: 'enabled'/);
-  assert.match(worker, /supabaseSchemaDriftSelfTest: supabaseSchemaDriftSelfTest\(\)\.pass \? 'enabled' : 'failed'/);
-  assert.ok(smoke.includes("'supabaseSchemaDriftGuard'"));
-  assert.ok(smoke.includes("'supabaseSchemaDriftSelfTest'"));
+test('RC100 an unconfigured schema probe performs no network requests',async()=>{
+  let count=0;
+  const api=runtime({configured:false,fetch:async()=>{count++;return {ok:true};}});
+  const result=await api.probeTableColumns({},'users',['telegram_id']);
+  assert.equal(result.ok,false);
+  assert.equal(result.status,'not_configured');
+  assert.equal(count,0);
 });
-
-test('RC100 does not require a new Supabase migration', () => {
-  const files=fs.readdirSync('supabase/migrations').filter(x=>/^supabase_migration_v6_\d/.test(x));
-  assert.ok(files.includes('supabase_migration_v6_15.sql'));
-  assert.ok(!files.some(x=>/rc100/i.test(x)));
+test('RC100 current schema guard self-test and release gates are mandatory',()=>{
+  const api=runtime();
+  assert.equal(api.supabaseSchemaDriftSelfTest().pass,true);
+  assert.match(worker,/createSupabaseSchemaRuntime/);
+  assert.match(schemaSource,/async function probeSupabaseSchemaDrift/);
+  assert.match(release,/releaseCheck\('supabase_schema_drift'/);
+  assert.match(smoke,/'supabaseSchemaDriftGuard'/);
+  assert.match(smoke,/'supabaseSchemaDriftSelfTest'/);
 });

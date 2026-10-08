@@ -42,3 +42,12 @@ test('Issue #493 duplicate detection compares predicate and expression structure
   assert.match(sql,/pg_get_expr\(a\.indpred/);
   assert.match(sql,/a\.indisunique = b\.indisunique/);
 });
+
+test('index evidence audit is snapshot-only and never clears production statistics',()=>{
+  assert.match(sql,/begin transaction read only/i);
+  assert.match(sql,/pg_stat_database/);
+  assert.match(sql,/stats_reset/);
+  assert.doesNotMatch(sql,/\bselect\s+pg_stat_reset(?:_single_table_counters)?\s*\(/i);
+  assert.doesNotMatch(sql,/\b(?:vacuum|reindex|cluster|analyze)\s+(?:public\.|[a-z_])/i);
+  assert.match(sql,/\brollback\s*;\s*$/i);
+});

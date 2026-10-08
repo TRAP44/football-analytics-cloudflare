@@ -116,3 +116,13 @@ test('Supabase restore drill is isolated, measurable and preserves least privile
   assert.match(runbook, /ACL hardening/i);
   assert.match(runbook, /production backup не восстанавливается автоматически/i);
 });
+
+test('restore job never receives production write credentials or persistent plaintext archives',()=>{
+  const drill=workflow.slice(workflow.indexOf('  restore_drill:'));
+  assert.ok(drill.length>100);
+  assert.doesNotMatch(drill,/SUPABASE_DB_URL:\s*\$\{\{\s*secrets\./);
+  assert.doesNotMatch(drill,/\bSUPABASE_SERVICE_ROLE_KEY\b/);
+  assert.doesNotMatch(drill,/db push|--db-url|supabase db reset/i);
+  assert.match(workflow,/steps\.package\.outputs\.encrypted/);
+  assert.doesNotMatch(workflow,/steps\.package\.outputs\.archive/);
+});

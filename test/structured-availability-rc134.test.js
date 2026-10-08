@@ -161,3 +161,18 @@ test('RC134 feature remains part of the RC136 release health contract', () => {
   assert.match(worker, /const RC_NAME = 'RC144'/);
   assert.match(runtime, /const CLIENT_VERSION = '6\.120\.0-rc144'/);
 });
+
+test('RC134 only reconciles players listed for the matching side',()=>{
+  const out=normalizeFixtureAbsences([
+    {team:{id:1},player:{id:41,name:'Home Absent',type:'Injury',reason:'Knee injury'}},
+    {team:{id:2},player:{id:42,name:'Away Absent',type:'Injury',reason:'Ankle injury'}},
+  ],{
+    homeId:1,awayId:2,
+    lineups:{home:{startXI:[{id:41,name:'Home Absent'}],substitutes:[]}},
+  });
+  assert.equal(out.home.length,0);
+  assert.equal(out.away.length,1);
+  assert.equal(out.away[0].id,42);
+  assert.equal(out.resolvedByLineup.home.length,1);
+  assert.equal(out.resolvedByLineup.away.length,0);
+});

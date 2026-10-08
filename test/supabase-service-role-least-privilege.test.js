@@ -30,3 +30,10 @@ test('v6.29.12 release gates fail closed on forbidden service_role privileges',(
   assert.match(sql,/raise exception 'v6\.29\.12 backend security contract failed:/);
   assert.match(sql,/raise exception 'v6\.29\.12 default acl contract failed:/);
 });
+
+test('least-privilege migration refuses broad future grants to service_role',()=>{
+  assert.doesNotMatch(sql,/\bgrant all privileges on all tables in schema public to service_role/i);
+  assert.doesNotMatch(sql,/\bgrant all privileges on all sequences in schema public to service_role/i);
+  assert.match(sql,/grant select, insert, update, delete on all tables in schema public to service_role/);
+  assert.match(sql,/grant usage, select on all sequences in schema public to service_role/);
+});

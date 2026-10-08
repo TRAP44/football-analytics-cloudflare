@@ -58,3 +58,11 @@ test('RC127 fresh-install baseline keeps a valid fail-closed SQL guard', () => {
   assert.doesNotMatch(baseline, /\bdo \$\s*\n/);
   assert.match(baseline, /\bdo \$\$\s*\nbegin/);
 });
+
+test('fresh-install baseline refuses existing users before any application tables are created',()=>{
+  const guard=baseline.indexOf('rc101 safety guard');
+  const users=baseline.indexOf('create table if not exists public.users');
+  assert.ok(guard>=0 && users>guard);
+  assert.match(baseline,/to_regclass\('public\.users'\)/);
+  assert.match(baseline,/fresh-install baseline refused:/);
+});

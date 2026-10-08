@@ -328,3 +328,34 @@ test('supabase select-many supports a narrow projection without changing default
   assert.equal(calls[0].searchParams.get('select'), 'message,created_at');
   assert.equal(calls[1].searchParams.get('select'), '*');
 });
+
+test('supabase query validation rejects coercible parameters before touching transport',async()=>{
+  let calls=0;
+  const client=createSupabaseClient({fetchWithTimeout:async()=>{
+    calls++;
+    return response({json:[]});
+  }});
+  const cfg={supabaseUrl:'https://example.supabase.co',supabaseKey:'sb_secret_example'};
+  await assert.rejects(
+    client.supaSelectMany(cfg,'users',{telegram_id:[1]}),
+    /invalid query parameter value/,
+  );
+  await assert.rejects(
+    client.supaSelectOne(cfg,'users',{telegram_id:{toString:()=> 'eq.1'}}),
+    /invalid query parameter value/,
+  );
+  assert.equal(calls,0);
+});
+
+test('supabase RPC never retries a non-idempotent transport exception',async()=>{
+  let calls=0;
+  const client=createSupabaseClient({
+    fetchWithTimeout:async()=>{calls++;throw new Error('transport aborted');},
+    sleepMs:async()=>{throw new Error('RPC must not retry');},
+  });
+  await assert.rejects(
+    client.supaRpc({supabaseUrl:'https://example.supabase.co',supabaseKey:'secret'},'consume_analysis_quota',{}),
+    /transport aborted/,
+  );
+  assert.equal(calls,1);
+});

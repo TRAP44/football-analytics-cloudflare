@@ -154,3 +154,17 @@ test('Issue #433 keeps database integration in the same Quality workflow used by
   assert.match(jobs, /\n  test:/);
   assert.match(jobs, /\n  database-integration:/);
 });
+
+test('fresh and upgrade migration plans cannot share duplicate version identifiers',()=>{
+  const fresh=buildMigrationPlan('fresh');
+  const upgrade=buildMigrationPlan('upgrade-base');
+  const latest=buildMigrationPlan('latest-only');
+  for(const [name,plan] of [['fresh',fresh],['upgrade',upgrade]]){
+    assert.ok(plan.length>1,name);
+    assert.equal(new Set(plan.map(row=>row.version)).size,plan.length,name);
+    assert.ok(plan.every(row=>row.source.startsWith('supabase/')),name);
+  }
+  assert.equal(latest.length,1);
+  assert.equal(latest[0].source,releaseContract.latestMigration);
+  assert.equal(upgrade.at(-1).version<latest[0].version,true);
+});

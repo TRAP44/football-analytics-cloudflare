@@ -32,3 +32,18 @@ test('RC101 preserves all numbered production upgrade migrations',()=>{
     assert.equal(fs.existsSync(`supabase/migrations/supabase_migration_${name}.sql`),true,name);
   }
 });
+
+test('migration source manifest never references a migration from the repository root',()=>{
+  const manifest=JSON.parse(fs.readFileSync('supabase/migration-order.json','utf8'));
+  assert.equal(manifest.formatVersion,2);
+  const paths=[
+    ...manifest.historicalMigrations,
+    ...manifest.freshInstallAfterBaseline,
+  ].map(entry=>entry.path);
+  assert.ok(paths.length>0);
+  assert.equal(new Set(paths).size,paths.length);
+  for(const path of paths){
+    assert.match(path,/^migrations\/supabase_migration_v6_[0-9_]+\.sql$/);
+    assert.equal(fs.existsSync('supabase/'+path),true,path);
+  }
+});
