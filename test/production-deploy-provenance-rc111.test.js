@@ -153,3 +153,48 @@ test('direct-main provenance bypass stays limited to exact successful Quality ru
   assert.match(workflow,/"\$DEPLOY_SHA" == "\$CURRENT_MAIN_SHA"/);
   assert.match(workflow,/Production deploy blocked:[\s\S]*neither merged-PR provenance nor an exact successful Quality run/);
 });
+
+
+
+test('deployment provenance rejects forged GitHub inputs without making network calls',async()=>{
+  let calls=0;
+  const fetchImpl=async()=>{calls++;throw new Error('network should not run');};
+  for(const input of [
+    {repository:{toString:()=>REPOSITORY},sha:COMMIT_SHA,token:'test-token'},
+    {repository:'owner/..',sha:COMMIT_SHA,token:'test-token'},
+    {repository:REPOSITORY,sha:{toString:()=>COMMIT_SHA},token:'test-token'},
+    {repository:REPOSITORY,sha:COMMIT_SHA,token:{toString:()=>'test-token'}},
+    {repository:REPOSITORY,sha:COMMIT_SHA,token:'   '},
+    {repository:REPOSITORY,sha:COMMIT_SHA,token:'abc\nsecret'},
+  ]){
+    await assert.rejects(fetchAssociatedPullRequests({...input,fetchImpl}));
+  }
+  assert.equal(calls,0);
+});
+
+test('merged PR evidence requires a strictly positive safe pull request number',()=>{
+  const bad=[0,-1,1.5,true,'42',Number.MAX_SAFE_INTEGER+1];
+  assert.equal(selectMergedPullRequest(bad.map(number=>({...MERGED_PULL,number})),
+    'main',REPOSITORY),null);
+  assert.deepEqual(selectMergedPullRequest([{...MERGED_PULL,number:1}], 'main',REPOSITORY),
+    {...MERGED_PULL,number:1});
+});
+
+test('deploy provenance does not trust PRs against another repository or target branch',async()=>{
+  const rows=[
+    {...MERGED_PULL,base:{ref:'develop',repo:{full_name:REPOSITORY}}},
+    {...MERGED_PULL,base:{ref:'main',repo:{full_name:'other/repository'}}},
+  ];
+  await assert.rejects(verifyMainPrProvenance({
+    repository:REPOSITORY,sha:COMMIT_SHA,token:'test-token',
+    fetchImpl:async()=>({ok:true,json:async()=>rows}),
+  }),/not associated with a merged PR into main/);
+});
+
+test('production checkout and final provenance guard bind to the same verified SHA',()=>{
+  const checkout=workflow.indexOf('ref: '+ '$' + '{{ env.DEPLOY_SHA }}');
+  const verification=workflow.indexOf('VERIFIED_SHA="$(git rev-parse HEAD)"');
+  const compare=workflow.indexOf('[[ "$DEPLOY_SHA" != "$VERIFIED_SHA" ]]');
+  assert.ok(checkout>=0 && verification>checkout && compare>verification);
+  assert.match(workflow,/Production provenance check failed/);
+});

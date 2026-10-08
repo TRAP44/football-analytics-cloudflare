@@ -14,7 +14,8 @@ export function selectMergedPullRequest(pulls, baseBranch = 'main', repository =
       && Number.isFinite(mergedAt)
       && pull.base?.ref === baseBranch
       && (!repository || baseRepository === repository)
-      && Number.isInteger(pull.number)
+      && Number.isSafeInteger(pull.number)
+      && pull.number>0
     );
   }) || null;
 }
@@ -25,13 +26,15 @@ export async function fetchAssociatedPullRequests({
   token,
   fetchImpl = fetch,
 }) {
-  if (!REPO_RE.test(repository || '')) {
+  if (typeof repository !== 'string' || !REPO_RE.test(repository)
+      || repository.split('/').some(part=>part==='.' || part==='..')) {
     throw new Error('repository must use owner/name format');
   }
-  if (!SHA_RE.test(sha || '')) {
+  if (typeof sha !== 'string' || !SHA_RE.test(sha)) {
     throw new Error('sha must be a full 40-character commit SHA');
   }
-  if (!token) {
+  if (typeof token !== 'string' || !token.trim()
+      || token.length>512 || /[\u0000-\u001f\u007f-\u009f]/u.test(token)) {
     throw new Error('GITHUB_TOKEN is required');
   }
 
