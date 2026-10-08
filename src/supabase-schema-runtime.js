@@ -50,7 +50,7 @@ export function createSupabaseSchemaRuntime(deps) {
       id: String(item?.id || ''),
       table: String(item?.table || ''),
       columns: Array.isArray(item?.columns) ? item.columns.map(String) : [],
-      ok: Boolean(item?.ok),
+      ok: item?.ok === true,
       status: String(item?.status || (item?.ok ? 'ok' : 'unknown')),
     }));
     const missing = normalized.filter(item => !item.ok).map(item => item.id);
@@ -69,8 +69,8 @@ export function createSupabaseSchemaRuntime(deps) {
       const raw=await supaRpc(cfg,'backend_schema_fingerprint',{},4000);
       const fingerprint=String(raw?.fingerprint || '');
       return {
-        ok:Boolean(raw?.ok) && fingerprint===EXPECTED_SCHEMA_FINGERPRINT,
-        status:fingerprint===EXPECTED_SCHEMA_FINGERPRINT ? 'ok' : 'fingerprint_mismatch',
+        ok:raw?.ok === true && fingerprint===EXPECTED_SCHEMA_FINGERPRINT,
+        status:fingerprint===EXPECTED_SCHEMA_FINGERPRINT ? (raw?.ok === true ? 'ok' : 'fingerprint_unconfirmed') : 'fingerprint_mismatch',
         fingerprint,
         expected:EXPECTED_SCHEMA_FINGERPRINT,
         parts:Number(raw?.parts || 0),
@@ -151,10 +151,10 @@ export function createSupabaseSchemaRuntime(deps) {
   function classifySupabaseSchemaProbeFailures(checks = [], fingerprint = {}, personalWriteGuards = {}) {
     const failures = [];
     for (const item of checks || []) {
-      if (!item?.ok) failures.push({ id: String(item?.id || 'schema_check'), status: String(item?.status || 'error') });
+      if (item?.ok !== true) failures.push({ id: String(item?.id || 'schema_check'), status: String(item?.status || 'error') });
     }
-    if (!fingerprint?.ok) failures.push({ id: 'schema_fingerprint', status: String(fingerprint?.status || 'error') });
-    if (!personalWriteGuards?.ok) failures.push({ id: 'personal_write_guards', status: String(personalWriteGuards?.status || 'error') });
+    if (fingerprint?.ok !== true) failures.push({ id: 'schema_fingerprint', status: String(fingerprint?.status || 'error') });
+    if (personalWriteGuards?.ok !== true) failures.push({ id: 'personal_write_guards', status: String(personalWriteGuards?.status || 'error') });
   
     const drift = [];
     const unavailable = [];
@@ -210,7 +210,7 @@ export function createSupabaseSchemaRuntime(deps) {
         id:'provider_incident_alert_delivery_contract',
         table:'rpc',
         columns:[],
-        ok:Boolean(providerIncidentAlertDeliveryContract.ok),
+        ok:providerIncidentAlertDeliveryContract?.ok === true,
         status:String(providerIncidentAlertDeliveryContract.status || 'error'),
       },
     ];
@@ -221,7 +221,7 @@ export function createSupabaseSchemaRuntime(deps) {
     if (!fingerprint.ok) missing.push('schema_fingerprint');
     if (!personalWriteGuards.ok) missing.push('personal_write_guards');
     const classification=classifySupabaseSchemaProbeFailures(checks,fingerprint,personalWriteGuards);
-    const ok = Boolean(summary.ok && fingerprint.ok && personalWriteGuards.ok);
+    const ok = summary.ok === true && fingerprint.ok === true && personalWriteGuards.ok === true;
     return {
       ...summary,
       ok,
@@ -238,7 +238,7 @@ export function createSupabaseSchemaRuntime(deps) {
   
   
   function combineSupabaseSchemaProbeAttempts(first = {}, second = null) {
-    const firstOk = Boolean(first?.ok);
+    const firstOk = first?.ok === true;
     const initialMissing = Array.isArray(first?.missing) ? first.missing.map(String) : [];
     const initialUnavailable = Array.isArray(first?.unavailable) ? first.unavailable.map(String) : [];
     const initialFailureMode = String(first?.failureMode || first?.status || (firstOk ? 'ok' : 'unavailable'));
@@ -254,7 +254,7 @@ export function createSupabaseSchemaRuntime(deps) {
       };
     }
   
-    if (second && second.ok) {
+    if (second?.ok === true) {
       return {
         ...second,
         attempts: 2,
@@ -280,7 +280,7 @@ export function createSupabaseSchemaRuntime(deps) {
   
   async function probeSupabaseSchemaDriftConfirmed(cfg, options = {}) {
     const first = await probeSupabaseSchemaDrift(cfg);
-    if (first.ok || !hasSupabase(cfg)) return combineSupabaseSchemaProbeAttempts(first);
+    if (first.ok === true || !hasSupabase(cfg)) return combineSupabaseSchemaProbeAttempts(first);
   
     const retryDelayMs = Math.max(0, Math.min(1500, Number(options.retryDelayMs ?? 250)));
     if (retryDelayMs) await sleepMs(retryDelayMs);
