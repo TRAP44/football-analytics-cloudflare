@@ -130,7 +130,7 @@ test('profile error content is escaped while its retry control remains accessibl
   module.renderProfileAccessState('error','Сбой <script>alert(1)</script>');
   const html=elements.get('profileRecovery').innerHTML;
   assert.match(html,/Сбой &lt;script&gt;alert\(1\)&lt;\/script&gt;/);
-  assert.doesNotMatch(html,/<script>/);
+  assert.doesNotMatch(html,/<script>/i);
   assert.match(html,/aria-live="polite"/);
   assert.match(html,/role="status"/);
   assert.match(html,/type="button">Повторить<\/button>/);

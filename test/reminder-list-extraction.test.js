@@ -258,7 +258,7 @@ test('nonempty stale reminder view escapes the warning without discarding rows',
   const html=elements.get('reminderList').innerHTML;
   assert.match(html,/data-notice stale/);
   assert.match(html,/server &lt;script&gt;offline&lt;\/script&gt;/);
-  assert.doesNotMatch(html,/<script>/);
+  assert.doesNotMatch(html,/<script>/i);
   assert.match(html,/Team &lt;A&gt;/);
   assert.match(html,/data-fixture-id="99"/);
 });

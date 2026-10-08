@@ -59,7 +59,6 @@ export async function main(env=process.env) {
   const status=result.ok?(result.enforced?'PASS':'NOT ENFORCED'):'BLOCKED';
   const line='Production Supabase migration: '+status+' — '+result.expected+'. '+result.reason;
   process.stdout.write(line+'\n');
-  if(env.GITHUB_STEP_SUMMARY) fs.appendFileSync(env.GITHUB_STEP_SUMMARY,'### Supabase migration gate\n'+line+'\n');
   if(!result.ok) process.exitCode=1;
   return result;
 }

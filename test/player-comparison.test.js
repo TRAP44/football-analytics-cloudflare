@@ -157,7 +157,7 @@ test('Player Comparison escapes player names, candidate metadata and provider er
   assert.match(html,/&lt;img src=x onerror=alert\(1\)&gt;/);
   assert.match(html,/A &amp; B/);
   assert.match(html,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
-  assert.doesNotMatch(html,/<script>|<img src=x/);
+  assert.doesNotMatch(html,/<script>|<img src=x/i);
   const selection=playerComparisonHtml({candidates:[{data:{name:malicious},team:{name:'A & B'}}]});
   assert.match(selection,/&lt;img src=x onerror=alert\(1\)&gt;/);
   assert.match(selection,/A &amp; B/);

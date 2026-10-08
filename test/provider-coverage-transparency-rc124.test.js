@@ -90,7 +90,7 @@ test('RC124 malformed provider metadata cannot inject markup, classes or false c
     },
   });
   assert.match(html,/provider-coverage-card partial/);
-  assert.doesNotMatch(html,/onclick=|<script>|<img/);
+  assert.doesNotMatch(html,/onclick=|<script>|<img/i);
   assert.match(html,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.equal((html.match(/provider-coverage-row /g)||[]).length,4);
   assert.match(html,/Статус не определён/);
