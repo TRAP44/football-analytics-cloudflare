@@ -429,7 +429,7 @@ export async function enforceDistributedPreAuthRateLimit({
       source:'security',
       eventType:'preauth_rate_limit',
       code:'PREAUTH_RATE_LIMIT_DEGRADED',
-      message:cleanError(error?.message,'distributed pre-auth limiter unavailable',240),
+      message:'Distributed pre-auth limiter unavailable; no provider error details retained.',
       endpoint,
       status:policy.failClosed ? 503 : null,
       transitionKey:`preauth-rate-degraded:${policy.scope}:${endpoint}:${hourBucket}`,

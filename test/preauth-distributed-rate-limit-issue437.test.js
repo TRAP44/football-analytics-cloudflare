@@ -346,3 +346,72 @@ test('edge first-stage source no longer derives buckets from x-telegram-init-dat
   assert.match(edge,/privacyNetworkFingerprint\(request, secret\)/);
   assert.match(edge,/Attacker-controlled initData must never create a fresh/);
 });
+
+
+
+test('pre-auth rate-limit errors cannot leak raw credentials into persisted operational events',async()=>{
+  const rawIp='198.51.100.41';
+  const rawInit='query_id=private-credential&user=sensitive&hash=private-hash';
+  const events=[];
+  const response=await enforceDistributedPreAuthRateLimit({
+    request:request('/api/analyze',{method:'POST',ip:rawIp,initData:rawInit}),
+    cfg:{devMode:false},
+    fingerprintSecret:'unit-test-secret',
+    hasSupabase:()=>true,
+    supaRpc:async()=>{throw new Error('backend error '+rawIp+' '+rawInit);},
+    recordOpsEvent:async(_cfg,event)=>{events.push(event);},
+    json,
+  });
+  assert.equal(response.status,503);
+  assert.equal(response.body.code,'PREAUTH_RATE_GUARD_UNAVAILABLE');
+  assert.ok(events.some(event=>event.code==='PREAUTH_RATE_LIMIT_DEGRADED'));
+  const serialized=JSON.stringify(events);
+  for(const secret of [rawIp,rawInit,'private-credential','private-hash']){
+    assert.equal(serialized.includes(secret),false,'Leaked '+secret);
+  }
+});
+
+test('the same network has independent expensive and sensitive-admin distributed buckets',async()=>{
+  const backend=sharedBackend();
+  const expensive=await enforce(request('/api/analyze',{method:'POST',ip:'198.51.100.55'}),{backend});
+  const admin=await enforce(request('/api/runtime-controls',{ip:'198.51.100.55'}),{backend,adminSensitive:true});
+  assert.equal(expensive.response,null);
+  assert.equal(admin.response,null);
+  assert.equal(backend.calls.length,2);
+  assert.notEqual(backend.calls[0].p_bucket_key,backend.calls[1].p_bucket_key);
+  assert.match(backend.calls[0].p_bucket_key,/^preauth:expensive:[a-f0-9]{24}$/);
+  assert.match(backend.calls[1].p_bucket_key,/^preauth:admin:[a-f0-9]{24}$/);
+  assert.equal(backend.calls[0].p_limit,60);
+  assert.equal(backend.calls[1].p_limit,24);
+});
+
+test('missing or invalid Cloudflare IP is rejected before backend allocation',async()=>{
+  let calls=0;
+  for(const ip of ['', '999.1.1.1','not-an-ip']){
+    const r=await enforceDistributedPreAuthRateLimit({
+      request:request('/api/analyze',{method:'POST',ip}),
+      cfg:{devMode:false},
+      fingerprintSecret:'unit-test-secret',
+      hasSupabase:()=>true,
+      supaRpc:async()=>{calls++;return {allowed:true};},
+      json,
+    });
+    assert.equal(r.status,503);
+    assert.equal(r.body.code,'PREAUTH_RATE_GUARD_UNAVAILABLE');
+    assert.equal(r.headers['cache-control'],'no-store');
+  }
+  assert.equal(calls,0);
+});
+
+test('distributed 429 blocks preserve strict no-cache and bounded retry headers',async()=>{
+  const backend=sharedBackend();
+  let final;
+  for(let i=0;i<25;i++){
+    final=await enforce(request('/api/runtime-controls',{ip:'198.51.100.92'}),{backend,adminSensitive:true});
+  }
+  assert.equal(final.response.status,429);
+  assert.equal(final.response.body.code,'PREAUTH_RATE_LIMIT');
+  assert.equal(final.response.headers['retry-after'],'60');
+  assert.equal(final.response.headers['cache-control'],'no-store');
+  assert.equal(backend.calls.length,25);
+});
