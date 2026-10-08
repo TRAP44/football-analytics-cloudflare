@@ -58,3 +58,30 @@ test('RC121 fails when a protected route becomes public after rollback', async (
     /must reject missing Telegram auth with HTTP 401/
   );
 });
+
+test('RC121 refuses insecure or credential-bearing rollback URLs before any network call',async()=>{
+  let calls=0;
+  const fetchImpl=async()=>{calls++;return response(200,{ok:true});};
+  for(const url of [
+    'http://example.workers.dev',
+    'https://user:pass@example.workers.dev',
+    'not-a-url',
+  ]){
+    await assert.rejects(
+      runRollbackSmoke(url,expectedVersion,{fetchImpl,retries:1,retryDelayMs:0}),
+    );
+  }
+  assert.equal(calls,0);
+});
+
+test('RC121 health check requires a strict false devMode marker after rollback',async()=>{
+  await assert.rejects(
+    runRollbackSmoke('https://example.workers.dev',expectedVersion,{
+      fetchImpl:healthyFetch({
+        '/health':response(200,{ok:true,version:expectedVersion,releaseCandidate:'RC109',devMode:'false'}),
+      }),
+      retries:1,retryDelayMs:0,
+    }),
+    /DEV_MODE must remain false/,
+  );
+});

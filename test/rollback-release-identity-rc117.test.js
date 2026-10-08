@@ -131,3 +131,20 @@ test('RC117 identity verification runs after Cloudflare lookup and before rollba
     /node scripts\/verify-rollback-target\.js "\$RUNNER_TEMP\/rollback-version\.json" "\$EXPECTED_VERSION" "\$VERSION_ID" "\$ALLOW_LEGACY_UNVERIFIED"/
   );
 });
+
+test('RC117 stamped rollback can be pinned to the expected Git commit SHA',()=>{
+  const id='11111111-2222-3333-4444-555555555555';
+  const sha='297985dc7faf3f222e046844726f2f747b097e6e';
+  assert.equal(
+    verifyRollbackTarget(stampedVersion(),'6.101.0-rc109',id,false,'',sha).deploySha,
+    sha,
+  );
+  assert.throws(
+    ()=>verifyRollbackTarget(stampedVersion(),'6.101.0-rc109',id,false,'','f'.repeat(40)),
+    /deploy SHA mismatch/,
+  );
+  assert.throws(
+    ()=>verifyRollbackTarget(stampedVersion(),'6.101.0-rc109',id,false,'','not-a-sha'),
+    /40-character Git commit SHA/,
+  );
+});

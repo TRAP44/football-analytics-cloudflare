@@ -50,3 +50,32 @@ test('v6.29 preserves the public function contract while enforcing rollback on h
   assert.doesNotMatch(migration, /alter table public\.runtime_controls\s+add/i);
   assert.match(migration, /drop rule if exists runtime_controls_atomic_history/i);
 });
+
+test('atomic history snapshots capture every runtime feature flag and the matching revision',()=>{
+  const expected=[
+    "'maintenanceMode', new.maintenance_mode",
+    "'analysisEnabled', new.analysis_enabled",
+    "'searchEnabled', new.search_enabled",
+    "'liveEnabled', new.live_enabled",
+    "'remindersEnabled', new.reminders_enabled",
+    "'expandedDataEnabled', new.expanded_data_enabled",
+    "'autoSettlementRecoveryEnabled', new.auto_settlement_recovery_enabled",
+    "'revision', new.revision",
+    "'updatedAt', new.updated_at",
+  ];
+  for(const marker of expected)assert.ok(migration.includes(marker),marker);
+  assert.match(migration,/old\.revision is distinct from new\.revision/i);
+  assert.match(migration,/new\.updated_by/);
+  assert.match(migration,/case[\s\S]*when[\s\S]*source-revision/i);
+});
+
+test('runtime controls require history availability before database mutation',()=>{
+  const save=saveSection();
+  const probe=save.indexOf('await probeRuntimeHistorySchema(cfg)');
+  const baseline=save.indexOf('await ensureRuntimeHistoryBaseline(cfg,current,user)');
+  const patch=save.search(/method\s*:\s*'PATCH'/);
+  assert.ok(probe>=0&&baseline>probe&&patch>baseline);
+  assert.match(save,/if \(!historySchema\.ok\)/);
+  assert.match(save,/RUNTIME_HISTORY_REQUIRED/);
+  assert.match(save,/RUNTIME_HISTORY_BASELINE_WRITE_FAILED/);
+});

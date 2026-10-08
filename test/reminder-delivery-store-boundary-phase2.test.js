@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { createReminderDeliveryStore } from '../src/reminder-delivery-store.js';
+import { createReminderDeliveryStore, reminderDeliveryKindConfig } from '../src/reminder-delivery-store.js';
 
 function runtime(overrides = {}) {
   const calls=[];
@@ -440,4 +440,29 @@ test('worker delegates delivery persistence through service wiring', () => {
     'releaseReminderClaim',
   ]) assert.match(wiring,new RegExp('\\b'+name+'\\b'));
   assert.doesNotMatch(worker,/async function (?:clearStaleReminderClaims|claimReminderDelivery|finishReminderDelivery|releaseReminderClaim)\(/);
+});
+
+test('delivery kind definitions reject whitespace, inherited keys and coercible values',()=>{
+  for(const kind of [' prematch','prematch ','__proto__','constructor','unknown',true,{}]){
+    assert.throws(()=>reminderDeliveryKindConfig(kind),/Unsupported reminder delivery kind/);
+  }
+  const prematch=reminderDeliveryKindConfig('prematch');
+  assert.equal(prematch.claimColumn,'prematch_claimed_at');
+  assert.equal(prematch.doneColumn,'notified_at');
+});
+
+test('claim refuses ambiguous multi-row ownership confirmations',async()=>{
+  const rt=runtime({responses:[{
+    ok:true,status:200,json:[
+      {telegram_id:15,fixture_id:77,prematch_claimed_at:'2026-09-27T18:00:05.000Z'},
+      {telegram_id:15,fixture_id:77,prematch_claimed_at:'2026-09-27T18:00:05.000Z'},
+    ],
+  }]});
+  await assert.rejects(
+    rt.store.claimReminderDelivery(
+      {telegram_id:15,fixture_id:77},'prematch',{supabaseUrl:'https://db.test'},
+    ),
+    error=>error?.code==='REMINDER_DELIVERY_CLAIM_LOST'&&error?.claimLost===true,
+  );
+  assert.equal(rt.calls.length,1);
 });

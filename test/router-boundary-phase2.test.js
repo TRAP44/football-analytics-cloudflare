@@ -191,3 +191,26 @@ test('worker authenticates and applies beta/runtime/burst guards before router d
   const dispatch = source.indexOf('dispatchApiRoute(request, url, cfg, user, API_ROUTE_DEPS)', burst);
   assert.ok(auth > -1 && auth < beta && beta < runtime && runtime < burst && burst < dispatch);
 });
+
+test('router treats a throwing admin identity check as forbidden before handler dispatch',async()=>{
+  let executed=false;
+  const deps={
+    ...baseDeps(),
+    isAdminUser:()=>{throw new Error('lookup unavailable');},
+    apiDiagnostics:async()=>{executed=true;return {ok:true};},
+  };
+  const result=await dispatchApiRoute(request('GET'),url('/api/diagnostics'),{}, {id:42},deps);
+  assert.equal(result.status,403);
+  assert.equal(executed,false);
+});
+
+test('provider-backed administrative route cannot be called by a regular user',async()=>{
+  let executed=false;
+  const deps={
+    ...baseDeps(),
+    apiProviderProbe:async()=>{executed=true;return {ok:true};},
+  };
+  const result=await dispatchApiRoute(request('GET'),url('/api/provider/probe'),{}, {id:42},deps);
+  assert.equal(result.status,403);
+  assert.equal(executed,false);
+});

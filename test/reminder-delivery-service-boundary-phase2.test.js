@@ -855,3 +855,34 @@ test('Issue #408 sent persistence ambiguity is counted without blind resend', as
     Date.now=originalNow;
   }
 });
+
+test('pre-send persistence failure releases the claim without sending Telegram',async()=>{
+  const rt=runtime({
+    markReminderDeliverySending:async()=>{throw new Error('pre-send persistence unavailable');},
+  });
+  await assert.rejects(
+    ()=>rt.service.deliverClaimedReminder(
+      {telegram_id:15,fixture_id:77},'prematch','text',{botToken:'token'},
+    ),
+    /pre-send persistence unavailable/,
+  );
+  assert.equal(rt.calls.messages.length,0);
+  assert.equal(rt.calls.finishes.length,0);
+  assert.equal(rt.calls.releases.length,1);
+  assert.equal(rt.calls.releases[0].kind,'prematch');
+  assert.equal(rt.calls.releases[0].claimAt,'2026-09-27T12:00:00.000Z');
+});
+
+test('oversized or whitespace-only Telegram messages never acquire claims',async()=>{
+  const rt=runtime();
+  for(const text of ['  \n ', 'x'.repeat(4097)]){
+    assert.deepEqual(
+      await rt.service.deliverClaimedReminder(
+        {telegram_id:15,fixture_id:77},'prematch',text,{botToken:'token'},
+      ),
+      {state:'invalid',reason:'invalid_reminder_text'},
+    );
+  }
+  assert.equal(rt.calls.claims.length,0);
+  assert.equal(rt.calls.messages.length,0);
+});

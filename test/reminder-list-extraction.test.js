@@ -236,3 +236,29 @@ test('missing reminder list DOM fails soft without invoking callbacks', () => {
   assert.doesNotThrow(() => module.renderReminderList());
   assert.equal(callbacks, 0);
 });
+
+test('list module rejects missing callbacks instead of installing partial handlers',()=>{
+  const state={reminders:[],remindersLoaded:true,reminderMutations:new Set()};
+  assert.throws(()=>createReminderListModule({
+    state,elementById:()=>null,querySelectorAll:()=>[],
+    escapeHtml:value=>String(value),dateTime:value=>String(value),
+    recoveryCardHtml:()=>'',onRetry:()=>{},onOpenMatches:()=>{},
+  }),/Reminder List requires/);
+});
+
+test('nonempty stale reminder view escapes the warning without discarding rows',()=>{
+  const state={
+    reminders:[{fixtureId:99,fixtureDate:'2026-10-03T18:00:00Z',homeName:'Team <A>',awayName:'B'}],
+    remindersLoading:false,remindersLoaded:true,
+    remindersLoadError:'server <script>offline</script>',
+    reminderMutations:new Set(),
+  };
+  const {module,elements}=createHarness({state});
+  module.renderReminderList();
+  const html=elements.get('reminderList').innerHTML;
+  assert.match(html,/data-notice stale/);
+  assert.match(html,/server &lt;script&gt;offline&lt;\/script&gt;/);
+  assert.doesNotMatch(html,/<script>/);
+  assert.match(html,/Team &lt;A&gt;/);
+  assert.match(html,/data-fixture-id="99"/);
+});

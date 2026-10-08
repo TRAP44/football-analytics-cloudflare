@@ -18,3 +18,17 @@ test('RC122 remains fail closed and preserves restored-runtime smoke', () => {
   assert.match(workflow, /100% production traffic on rollback target \$VERSION_ID or its exact release identity/);
   assert.match(workflow, /rollback-smoke\.js \"\$ROLLBACK_URL\" \"\$EXPECTED_VERSION\"/);
 });
+
+test('RC122 combines traffic and identity verification in one fail-closed retry loop',()=>{
+  const start=workflow.indexOf('- name: RC119 verify exact rollback deployment target');
+  const end=workflow.indexOf('- name: Verify restored production',start);
+  assert.ok(start>=0&&end>start);
+  const gate=workflow.slice(start,end);
+  const traffic=gate.indexOf('node scripts/verify-rollback-deployment.js');
+  const identity=gate.indexOf('node scripts/verify-rollback-target.js');
+  const success=gate.indexOf('verified=true');
+  const failure=gate.indexOf('if [[ "$verified" != "true" ]]; then');
+  assert.ok(traffic>=0&&identity>traffic&&success>identity&&failure>success);
+  assert.match(gate,/set -euo pipefail/);
+  assert.match(gate,/exit 1/);
+});

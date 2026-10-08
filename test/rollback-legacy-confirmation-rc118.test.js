@@ -75,3 +75,19 @@ test('RC118 workflow keeps legacy acknowledgement default-off and passes it befo
   assert.ok(identity >= 0);
   assert.ok(rollback > identity);
 });
+
+test('RC118 rejects near-match legacy confirmations and truthy non-boolean overrides',()=>{
+  const exact='LEGACY-UNVERIFIED:'+expectedVersion+':'+legacyId;
+  for(const confirmation of [
+    exact+' ', ' '+exact, exact.toLowerCase(), exact.replace(expectedVersion,'6.101.0-rc108'),
+  ]){
+    assert.throws(
+      ()=>verifyRollbackTarget(legacy,expectedVersion,legacyId,true,confirmation),
+      /requires exact confirmation/,
+    );
+  }
+  assert.throws(
+    ()=>verifyRollbackTarget(legacy,expectedVersion,legacyId,'1',exact),
+    /allow_legacy_unverified=true/,
+  );
+});

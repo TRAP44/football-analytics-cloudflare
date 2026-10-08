@@ -103,3 +103,19 @@ test('RC119 exact deployment verification runs after rollback and before applica
   assert.ok(postcondition > rollback);
   assert.ok(smoke > postcondition);
 });
+
+test('RC119 enforces strict numeric percentages and accepts only zero-traffic extra versions',()=>{
+  for(const value of ['100',true,NaN,Infinity,-1,100.1]){
+    assert.throws(
+      ()=>verifyRollbackDeployment(deployment([{version_id:targetId,percentage:value}]),targetId),
+      /invalid percentage/,
+      String(value),
+    );
+  }
+  const confirmed=verifyRollbackDeployment(deployment([
+    {version_id:targetId,percentage:100},
+    {version_id:otherId,percentage:0},
+  ]),targetId);
+  assert.equal(confirmed.ok,true);
+  assert.equal(confirmed.percentage,100);
+});
