@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createTelegramDedupeRuntime } from '../src/telegram-dedupe.js';
+import fs from 'node:fs';
+import { TELEGRAM_BURST_POLICIES, createTelegramDedupeRuntime } from '../src/telegram-dedupe.js';
 
 function runtime(overrides = {}) {
   const telemetry = [];
@@ -85,3 +86,15 @@ test('persistent dedupe degradation rejects billing and mutation events but perm
   assert.ok(telemetry.includes('telegramDedupeFailClosedHighRisk'));
   assert.ok(telemetry.includes('telegramDedupeSafeFallbacks'));
 });
+
+test('production Worker imports Telegram burst policies before constructing the route-security runtime',()=>{
+  const source=fs.readFileSync('src/worker.js','utf8');
+  assert.match(source,/import \{ TELEGRAM_BURST_POLICIES, createTelegramDedupeRuntime \} from '\.\/telegram-dedupe\.js'/);
+  const wiring=source.slice(source.indexOf('function getRouteSecurityRuntime()'),source.indexOf('function routeBurstPolicy('));
+  assert.match(wiring,/createRouteSecurityRuntime\(\{\s*TELEGRAM_BURST_POLICIES,/);
+  assert.ok(Object.isFrozen(TELEGRAM_BURST_POLICIES));
+  assert.equal(TELEGRAM_BURST_POLICIES.message.limit,10);
+  assert.equal(TELEGRAM_BURST_POLICIES.callback.limit,16);
+  assert.equal(TELEGRAM_BURST_POLICIES.refresh.limit,4);
+});
+

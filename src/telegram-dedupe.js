@@ -1,6 +1,6 @@
 import { primaryTelegramUpdateDedupeKey } from './telegram-primary-identity.js';
 
-const TELEGRAM_BURST_POLICIES = Object.freeze({
+export const TELEGRAM_BURST_POLICIES = Object.freeze({
   message: { limit: 10, windowMs: 10000, label: 'message' },
   callback: { limit: 16, windowMs: 10000, label: 'callback' },
   refresh: { limit: 4, windowMs: 30000, label: 'refresh' },

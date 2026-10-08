@@ -36,7 +36,7 @@ import { createMatchCenterRuntime } from './match-center-runtime.js';
 import { createTelegramBotUiRuntime } from './telegram-bot-ui-runtime.js';
 import { createTelegramBotOrchestrationRuntime } from './telegram-bot-orchestration-runtime.js';
 import { createTelegramSearchRuntime } from './telegram-search-runtime.js';
-import { createTelegramDedupeRuntime } from './telegram-dedupe.js';
+import { TELEGRAM_BURST_POLICIES, createTelegramDedupeRuntime } from './telegram-dedupe.js';
 import { createUserAuthRuntime } from './auth-user.js';
 import { isAdminSensitivePath, privilegedLocalRatePolicy } from './security-route-registry.js';
 import { accountRatePolicies, enforceDistributedAccountRateLimit } from './account-rate-limit.js';
