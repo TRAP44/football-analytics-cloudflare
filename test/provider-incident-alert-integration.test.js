@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
+const adminOperationalApi=fs.readFileSync('src/admin-operational-api.js','utf8');
 const providerSloRuntime=fs.readFileSync('src/provider-slo-runtime.js','utf8');
 const productionMonitor=fs.readFileSync('src/production-monitor-runtime.js','utf8');
 const alerts=fs.readFileSync('src/provider-incident-alerts.js','utf8');
@@ -48,7 +49,7 @@ test('429 and confirmed temporary failures retain the same ledger identity for c
 
 test('one recipient failure cannot discard the other delivery outcomes', () => {
   assert.match(alerts,/Promise\.allSettled/);
-  assert.match(worker,/Promise\.allSettled\(alertEvents\.map/);
+  assert.match(alerts,/const settled = await Promise\.allSettled\(targets\.map/);
   assert.match(alerts,/PROVIDER_SLO_ALERT_DUPLICATE_SUPPRESSED/);
   assert.match(alerts,/PROVIDER_SLO_ALERT_RETRY_PENDING/);
   assert.match(alerts,/PROVIDER_SLO_ALERT_TERMINAL_FAILED/);
@@ -81,7 +82,7 @@ test('destination identity is deterministic without exposing raw Telegram identi
 test('read-only health and admin probes cannot send Telegram incident alerts', () => {
   assert.match(productionMonitor,/incidentAlertCandidate = options\.record !== false[\s\S]*read_only_monitor/);
   assert.match(productionMonitor,/if \(options\.record !== false && incidentAlertPlan\.action === 'send'\)/);
-  assert.match(worker,/runProductionMonitor\(cfg, new Date\(\), \{ record: false \}\)/);
+  assert.match(adminOperationalApi,/runProductionMonitor\(cfg, new Date\(\), \{ record: false \}\)/);
 });
 
 test('admin-only incident UI remains operational and no rollback or provider switching is added', () => {
