@@ -23,7 +23,11 @@ test('Telegram HTML sanitizer is safe for both text and quoted attributes', () =
 test('Telegram legal links keep URL output behind the complete HTML sanitizer', () => {
   const telegram=botUiRuntime+'\n'+botOrchestrationRuntime;
   assert.match(telegram,/function publicSiteUrl\(/);
-  assert.match(telegram,/href="\$\{telegramHtmlEscape\(publicSiteUrl\(request,'\/privacy\.html'\)\)\}"/);
-  assert.match(telegram,/href="\$\{telegramHtmlEscape\(publicSiteUrl\(request,'\/terms\.html'\)\)\}"/);
-  assert.match(telegram,/href="\$\{telegramHtmlEscape\(publicSiteUrl\(request,'\/status\.html'\)\)\}"/);
+  // The current bot renders legal links from a fixed page allow-list.
+  // Verify URLs are generated safely and HTML attributes are escaped.
+  for (const page of ['/privacy.html','/terms.html','/status.html']) {
+    assert.ok(telegram.includes(`'${page}'`),`missing safe page ${page}`);
+  }
+  assert.match(telegram,/generatedHttpUrl\(publicSiteUrl,request,path\)/);
+  assert.match(telegram,/href="\$\{escapeHtml\(url,2000\)\}"/);
 });
