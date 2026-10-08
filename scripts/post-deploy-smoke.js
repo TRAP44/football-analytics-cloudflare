@@ -306,21 +306,35 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
   };
 }
 
+export function monetizationFromWranglerJsonc(contents) {
+  if (typeof contents !== 'string' || !contents.trim()) {
+    throw new Error('Wrangler deployment configuration is empty.');
+  }
+  // Wrangler accepts whole-line comments in JSONC. Strip only those
+  // comments; do not modify quoted JSON values or silently assume "paused".
+  const json=contents.replace(/^[ \t]*\/\/[^\r\n]*(?:\r?\n|$)/gm,'');
+  let config;
+  try { config=JSON.parse(json); }
+  catch { throw new Error('Wrangler deployment configuration contains invalid JSONC.'); }
+  const state=config?.vars?.MONETIZATION_ENABLED;
+  if (state === 'true') return 'enabled';
+  if (state === 'false') return 'paused';
+  throw new Error('Wrangler MONETIZATION_ENABLED must explicitly be "true" or "false".');
+}
+
 async function main() {
   const [, , baseUrl, expectedVersion, expectedSha, expectedVersionId=''] = process.argv;
   if (!baseUrl || !expectedVersion || !expectedSha) {
     throw new Error('Usage: node scripts/post-deploy-smoke.js <deployment-url> <expected-version> <expected-sha> [expected-version-id]');
   }
-  let configuredMonetization = 'paused';
-  try {
-    const wrangler = JSON.parse(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8'));
-    configuredMonetization = String(wrangler?.vars?.MONETIZATION_ENABLED || '').toLowerCase() === 'true' ? 'enabled' : 'paused';
-  } catch {}
-  const requestedMonetization=process.env.EXPECTED_MONETIZATION || configuredMonetization;
-  const expectedMonetization=String(requestedMonetization).trim().toLowerCase();
-  if (!['enabled','paused'].includes(expectedMonetization)) {
-    throw new Error('EXPECTED_MONETIZATION must be enabled or paused.');
+  const configuredMonetization=monetizationFromWranglerJsonc(
+    readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8'),
+  );
+  const requested=String(process.env.EXPECTED_MONETIZATION || '').trim().toLowerCase();
+  if (requested && requested !== configuredMonetization) {
+    throw new Error('EXPECTED_MONETIZATION disagrees with wrangler.jsonc; refusing smoke-test override.');
   }
+  const expectedMonetization=configuredMonetization;
   const result=await runDeploymentSmoke(baseUrl,expectedVersion,expectedSha,{expectedMonetization,expectedVersionId});
   console.log(`Post-deploy smoke passed: ${result.version} sha=${expectedSha} at ${result.origin} (${result.checks} checks).`);
 }

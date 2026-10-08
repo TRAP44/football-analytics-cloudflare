@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runDeploymentSmoke } from '../scripts/post-deploy-smoke.js';
+import fs from 'node:fs';
+import { runDeploymentSmoke, monetizationFromWranglerJsonc } from '../scripts/post-deploy-smoke.js';
 
 const VERSION='6.27.0-rc35';
 const RC='RC35';
@@ -593,4 +594,28 @@ test('post-deploy smoke rejects external, unexpected, and unsafe canonical HTML 
     /privacy\.html must be a public HTML page/,
     'Canonical destination must still be a real HTML asset.',
   );
+});
+
+test('production smoke derives enabled Stars rollout from checked-in Wrangler JSONC comments',()=>{
+  const config=fs.readFileSync('wrangler.jsonc','utf8');
+  assert.equal(monetizationFromWranglerJsonc(config),'enabled');
+  assert.equal(monetizationFromWranglerJsonc(
+    '// Release marker'+'\n'+'{"vars":{"MONETIZATION_ENABLED":"false"}}',
+  ),'paused');
+  assert.equal(monetizationFromWranglerJsonc(
+    '{"vars":{"MONETIZATION_ENABLED":"true"}}',
+  ),'enabled');
+});
+
+test('production smoke refuses invalid or ambiguous monetization configuration',()=>{
+  for(const config of [
+    '{}',
+    '{"vars":{}}',
+    '{"vars":{"MONETIZATION_ENABLED":true}}',
+    '{"vars":{"MONETIZATION_ENABLED":"enabled"}}',
+    '// marker'+'\n'+'{"vars":{"MONETIZATION_ENABLED":"true"',
+    '',
+  ]) {
+    assert.throws(()=>monetizationFromWranglerJsonc(config),/Wrangler/);
+  }
 });
