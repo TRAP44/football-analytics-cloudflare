@@ -454,3 +454,168 @@ test('distributed provider aggregation clamps retention to seven days', () => {
   assert.equal(windows.length,1);
   assert.equal(windows[0].metadata.windowId,'provider-slo:2026-09-28T12:00:00.000Z');
 });
+test('provider SLO threshold boundaries are inclusive and incidents take precedence', () => {
+  const baseline={
+    requests:10,
+    successRatePct:98,
+    timeoutRatePct:2,
+    rateLimitRatePct:2,
+    retryRatePct:10,
+    avgAttemptLatencyMs:2500,
+  };
+  const cases=[
+    ['success threshold', {successRatePct:98}, 'healthy'],
+    ['success watch', {successRatePct:97.9}, 'watch'],
+    ['success incident boundary', {successRatePct:90}, 'watch'],
+    ['success incident', {successRatePct:89.9}, 'incident'],
+    ['timeout threshold', {timeoutRatePct:2}, 'healthy'],
+    ['timeout watch', {timeoutRatePct:2.1}, 'watch'],
+    ['timeout incident boundary', {timeoutRatePct:5}, 'watch'],
+    ['timeout incident', {timeoutRatePct:5.1}, 'incident'],
+    ['rate limit threshold', {rateLimitRatePct:2}, 'healthy'],
+    ['rate limit watch', {rateLimitRatePct:2.1}, 'watch'],
+    ['rate limit incident', {rateLimitRatePct:5.1}, 'incident'],
+    ['retry threshold', {retryRatePct:10}, 'healthy'],
+    ['retry watch', {retryRatePct:10.1}, 'watch'],
+    ['retry incident boundary', {retryRatePct:25}, 'watch'],
+    ['retry incident', {retryRatePct:25.1}, 'incident'],
+    ['latency threshold', {avgAttemptLatencyMs:2500}, 'healthy'],
+    ['latency watch', {avgAttemptLatencyMs:2501}, 'watch'],
+    ['latency incident boundary', {avgAttemptLatencyMs:5000}, 'watch'],
+    ['latency incident', {avgAttemptLatencyMs:5001}, 'incident'],
+    ['incident takes priority', {successRatePct:97, timeoutRatePct:6}, 'incident'],
+  ];
+  for (const [name, changes, expected] of cases) {
+    assert.equal(providerSloState({...baseline,...changes}).state,expected,name);
+  }
+  assert.equal(providerSloState({...baseline,requests:9}).state,'collecting');
+  assert.equal(providerSloState({...baseline,requests:0}).state,'idle');
+  assert.equal(providerSloState(baseline,{
+    ...DEFAULT_PROVIDER_SLO_POLICY,
+    minSample:20,
+  }).state,'collecting');
+});
+
+test('provider SLO attributes each failure category and keeps snapshots isolated', () => {
+  const rt=runtime();
+  const observations=[
+    {outcome:'success',latencyMs:80},
+    {outcome:'retrying',errorType:'UPSTREAM_TIMEOUT',latencyMs:300},
+    {outcome:'failed',errorType:'UPSTREAM_TIMEOUT',latencyMs:1000},
+    {outcome:'failed',errorType:'PROVIDER_NETWORK_ERROR',latencyMs:200},
+    {outcome:'rate_limited',latencyMs:50},
+    {outcome:'failed',errorType:'PROVIDER_HTTP_ERROR',latencyMs:100},
+    {outcome:'failed',errorType:'PROVIDER_INVALID_RESPONSE',latencyMs:120},
+  ];
+  for (const event of observations) {
+    assert.equal(rt.api.observeProviderRequest({
+      provider:'api-football',
+      operation:'/fixtures',
+      ...event,
+    }),true);
+  }
+  const snapshot=rt.api.currentWindow();
+  assert.equal(snapshot.totals.attempts,7);
+  assert.equal(snapshot.totals.requests,6);
+  assert.equal(snapshot.totals.successes,1);
+  assert.equal(snapshot.totals.failures,5);
+  assert.equal(snapshot.totals.retries,1);
+  assert.equal(snapshot.totals.timeouts,1);
+  assert.equal(snapshot.totals.networkErrors,1);
+  assert.equal(snapshot.totals.rateLimits,1);
+  assert.equal(snapshot.totals.httpErrors,1);
+  assert.equal(snapshot.totals.invalidResponses,1);
+  assert.equal(snapshot.totals.latencySamples,7);
+  assert.equal(snapshot.totals.latencySumMs,1850);
+  assert.equal(snapshot.totals.maxLatencyMs,1000);
+
+  snapshot.series[0].requests=999;
+  snapshot.totals.failures=999;
+  assert.equal(rt.api.currentWindow().totals.requests,6);
+  assert.equal(rt.api.currentWindow().totals.failures,5);
+});
+
+test('provider SLO restores valid partial snapshots without accepting impossible counters', () => {
+  const rt=runtime();
+  rt.api.observeProviderRequest({
+    provider:'api-football',operation:'/fixtures',outcome:'success',latencyMs:50,
+  });
+  const rotated=rt.api.rotateWindow();
+  rt.api.observeProviderRequest({
+    provider:'api-football',operation:'/fixtures',
+    outcome:'failed',errorType:'UPSTREAM_TIMEOUT',latencyMs:200,
+  });
+  assert.equal(rt.api.restoreWindow(rotated),true);
+  assert.equal(rt.api.restoreWindow({
+    windowStartedAt:'2026-09-28T11:00:00.000Z',
+    series:[
+      {
+        provider:'api-football',operation:'/fixtures',
+        attempts:2,requests:1,successes:1,failures:0,retries:1,
+        latencySumMs:500,latencySamples:2,maxLatencyMs:300,
+      },
+      {
+        provider:'api-football',operation:'/fixtures',
+        attempts:1,requests:3,successes:3,failures:0,
+      },
+      {
+        provider:'api-football',operation:'/fixtures',
+        attempts:true,requests:1,successes:1,failures:0,
+      },
+    ],
+  }),true);
+  const snapshot=rt.api.currentWindow();
+  assert.equal(snapshot.windowStartedAt,'2026-09-28T11:00:00.000Z');
+  assert.equal(snapshot.series.length,1);
+  assert.equal(snapshot.totals.attempts,4);
+  assert.equal(snapshot.totals.requests,3);
+  assert.equal(snapshot.totals.successes,2);
+  assert.equal(snapshot.totals.failures,1);
+  assert.equal(snapshot.totals.retries,1);
+  assert.equal(snapshot.totals.timeouts,1);
+  assert.equal(snapshot.totals.latencySumMs,750);
+  assert.equal(snapshot.totals.latencySamples,4);
+  assert.equal(snapshot.totals.maxLatencyMs,300);
+  assert.equal(rt.api.restoreWindow({series:'not-an-array'}),true);
+  assert.equal(rt.api.currentWindow().totals.requests,3);
+});
+
+test('distributed SLO deduplicates by latest update and separates closed from open windows', () => {
+  const now=Date.parse('2026-09-28T12:20:00.000Z');
+  const base={
+    bucket_started_at:'2026-09-28T12:00:00.000Z',
+    provider:'api-football',operation:'/fixtures',
+    attempts:1,requests:1,successes:1,failures:0,retries:0,
+    timeouts:0,network_errors:0,rate_limits:0,http_errors:0,
+    invalid_responses:0,latency_sum_ms:100,latency_samples:1,max_latency_ms:100,
+  };
+  const old={...base,updated_at:'2026-09-28T12:01:00.000Z'};
+  const latest={
+    ...base,attempts:3,requests:3,successes:3,
+    latency_sum_ms:300,latency_samples:3,
+    updated_at:'2026-09-28T12:10:00.000Z',
+  };
+  const malformed={
+    ...base,attempts:0,requests:8,successes:8,
+    updated_at:'2026-09-28T12:19:00.000Z',
+  };
+  const rows=[
+    latest,old,malformed,
+    {...base,bucket_started_at:'2026-09-28T11:00:00.000Z'},
+    {...base,bucket_started_at:'2026-09-28T11:15:00.000Z'},
+    {...base,bucket_started_at:'2026-09-28T12:15:00.000Z'},
+    {...base,bucket_started_at:'2026-09-28T12:30:00.000Z'},
+  ];
+  const closed=providerSloWindowsFromBuckets(rows,{hours:1,nowMs:now,includeOpen:false});
+  assert.deepEqual(closed.map(row=>row.metadata.windowStartedAt),[
+    '2026-09-28T11:15:00.000Z',
+    '2026-09-28T12:00:00.000Z',
+  ]);
+  assert.deepEqual(closed.map(row=>row.metadata.totals.requests),[1,3]);
+  assert.ok(closed.every(row=>row.metadata.complete === true));
+  const all=providerSloWindowsFromBuckets(rows,{hours:1,nowMs:now,includeOpen:true});
+  assert.equal(all.length,3);
+  assert.equal(all[2].metadata.windowStartedAt,'2026-09-28T12:15:00.000Z');
+  assert.equal(all[2].metadata.complete,false);
+  assert.equal(all[2].metadata.totals.requests,1);
+});
