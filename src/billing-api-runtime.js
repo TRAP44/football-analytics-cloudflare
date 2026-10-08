@@ -90,8 +90,14 @@ export function createBillingApiRuntime(deps = {}) {
   }
 
   async function apiBillingPlans(request, cfg, user) {
+    // A webhook outage must not prevent users from reading plan prices.
+    // Invoice creation remains protected by the webhook readiness check.
     const webhook = cfg.monetizationEnabled === true
-      ? await billingWebhookStatus(request, cfg)
+      ? await billingWebhookStatus(request, cfg).catch(() => ({
+          ready:false, reason:'webhook_check_failed',
+          expectedUrl:`${new URL(request.url).origin}/telegram/webhook`,
+          currentUrl:'', lastError:'Telegram webhook status unavailable',
+        }))
       : { ready:false, reason:'monetization_paused', expectedUrl:`${new URL(request.url).origin}/telegram/webhook`, currentUrl:'', lastError:'' };
     const quota = await getQuota(user.id, cfg);
     const record = await getUserRecord(user.id, cfg);
