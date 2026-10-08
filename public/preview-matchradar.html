@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#08111d">
+<title>MatchRadar Signature — прототип экрана матча</title>
+<style>
+:root{color-scheme:dark;--bg:#07111d;--panel:#101f30;--panel2:#14283e;--line:#274059;--ink:#f0f7ff;--muted:#91adc5;--blue:#64c5ff;--aqua:#4ae0b7;--gold:#ffce78;--rose:#ff8f9c;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-synthesis:none}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(ellipse at 55% -5%,#184269 0%,#081522 36%,var(--bg) 80%);color:var(--ink);min-width:320px}
+button{font:inherit;cursor:pointer}button:focus-visible,a:focus-visible{outline:2px solid #95e5ff;outline-offset:3px}
+.shell{max-width:520px;min-height:100dvh;margin:auto;padding:calc(12px + env(safe-area-inset-top)) 16px calc(100px + env(safe-area-inset-bottom))}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:6px 0 18px}.brand{display:flex;align-items:center;gap:10px}.logo{width:35px;height:35px;display:grid;place-items:center;color:#8ed7ff;border:1px solid #3b789b;background:linear-gradient(145deg,#1d5570,#112e4b);border-radius:12px;box-shadow:0 0 20px #35adff22}.brand strong{font-size:15px;letter-spacing:.11em}.brand small{display:block;font-size:9px;letter-spacing:.2em;color:var(--muted);margin-top:3px}.header-actions{display:flex;align-items:center;gap:7px}.tag{border:1px solid #31627a;color:var(--aqua);font-weight:700;background:#173848;border-radius:100px;padding:7px 10px;font-size:10px;letter-spacing:.1em}.demo{color:#efc989;border-color:#66583d;background:#312919}
+.meta{text-transform:uppercase;color:var(--muted);font-size:10px;letter-spacing:.17em;font-weight:800}
+.card{background:linear-gradient(160deg,rgba(23,45,67,.98),rgba(13,27,44,.97));border:1px solid var(--line);border-radius:22px;box-shadow:0 16px 42px #02081438}
+.match{padding:18px;position:relative;overflow:hidden}.match:before{content:"";position:absolute;border:1px solid #4486a119;width:240px;height:240px;border-radius:50%;right:-95px;top:-95px;box-shadow:0 0 0 50px #55afe908,0 0 0 100px #55afe906;pointer-events:none}
+.match-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}.match-head span:last-child{color:var(--muted);font-size:12px}
+.teams{display:grid;grid-template-columns:minmax(0,1fr) 98px minmax(0,1fr);align-items:start;gap:4px;text-align:center}.team{display:flex;flex-direction:column;align-items:center;gap:9px;min-width:0}.crest{width:54px;height:54px;display:grid;place-items:center;border-radius:18px;font-size:22px;font-weight:900;letter-spacing:-1px}.crest.a{background:linear-gradient(140deg,#2e8acc,#143e83);box-shadow:0 8px 22px #0c66a855}.crest.b{background:linear-gradient(140deg,#ba9de6,#55388b);box-shadow:0 8px 22px #55388b55}.team strong{font-size:13px}.team small{font-size:11px;color:var(--muted)}.score strong{display:block;font-size:33px;font-weight:800;letter-spacing:-1px;margin-top:5px;white-space:nowrap}.score small{color:var(--muted);font-size:10px;display:block;margin:7px auto}.match-footer{display:flex;justify-content:center;gap:6px;flex-wrap:wrap;margin-top:19px}.chip{color:#bcd2e7;background:#182f46;border:1px solid #29445f;padding:7px 10px;border-radius:50px;font-size:10px}
+.navtabs{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;padding:15px 0 13px}.navtabs::-webkit-scrollbar{display:none}.navtabs button{white-space:nowrap;flex:1;border:1px solid #27445e;color:#a7c1d9;border-radius:12px;background:#102235;padding:11px 13px;font-size:12px;font-weight:700;min-height:44px}.navtabs button[aria-selected=true]{background:linear-gradient(135deg,#1b527a,#19435f);border-color:#3987af;color:#e9f9ff;box-shadow:inset 0 0 0 1px #1a6591}
+.panel[hidden]{display:none!important}.stack{display:grid;gap:12px}.title-row{display:flex;align-items:center;justify-content:space-between;gap:10px}.section-title{font-size:15px;font-weight:800;letter-spacing:-.02em}.mini{font-size:11px;color:var(--muted)}.intel{padding:17px 16px}.intel-top{display:flex;gap:9px;align-items:center;margin-bottom:12px}.diamond{display:grid;place-items:center;width:33px;height:33px;border-radius:10px;color:#b5e7ff;background:#244c66;font-size:17px}
+.intel h1{font-size:21px;line-height:1.28;letter-spacing:-.03em;margin:0 0 10px;max-width:400px}.intel p{color:#b5cbe0;font-size:12px;line-height:1.58;margin:0}.eyebrow{color:#87c9eb;font-size:10px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}
+.prob{padding:16px}.prob h2,.factor-card h2{font-size:14px;margin:0 0 4px}.prob-list{display:grid;gap:13px;margin-top:18px}.prob-line{display:grid;grid-template-columns:28px 1fr 45px;gap:10px;align-items:center;font-size:12px;font-weight:700}.bar{height:7px;background:#274156;border-radius:8px;overflow:hidden}.bar i{display:block;height:100%;border-radius:inherit;transition:width .35s ease}.bar .win{background:linear-gradient(90deg,#3b91bc,#64caff)}.bar .draw{background:var(--gold)}.bar .lose{background:#987ce2}
+.factor-card{padding:17px}.factor-item{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-bottom:1px solid #ffffff13}.factor-item:last-child{border-bottom:0;padding-bottom:0}.dot{display:grid;place-items:center;min-width:23px;height:23px;border-radius:8px;background:#1a534a;color:var(--aqua);font-size:12px}.dot.risk{background:#4b3931;color:var(--gold)}.factor-item strong{display:block;font-size:12px}.factor-item p{margin:4px 0 0;color:var(--muted);font-size:11px;line-height:1.45}
+.section-lead{padding:0 2px;font-size:12px;line-height:1.5;color:var(--muted)}.scenario{padding:16px}.scenario-buttons{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:11px 0}.scenario-buttons button{flex:none;background:#142c43;border:1px solid #33506a;color:#b4d2eb;border-radius:10px;padding:10px;font-size:11px;min-height:44px}.scenario-buttons button[aria-pressed=true]{background:#225475;border-color:#4ba9d5;color:#fff}.scenario-result{background:#0c1b2b;border:1px solid #27445c;border-radius:14px;padding:14px}.scenario-result h3{margin:0 0 5px;font-size:13px}.scenario-result p{margin:0;font-size:11px;color:#a1bbd1;line-height:1.5}
+.evidence{display:flex;align-items:center;gap:7px;border:1px solid #284f4a;background:#11332f;color:#b8eadb;border-radius:11px;padding:10px 12px;font-size:11px}
+.signal-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.signal{border:1px solid #28445e;background:#102237;border-radius:16px;padding:15px;min-width:0}.signal strong{display:block;font-size:22px;margin-top:7px}.signal span{font-size:11px;color:var(--muted)}.signal small{font-size:10px;color:#8edac9}
+.pitch{height:180px;border:1px solid #43786a;border-radius:15px;position:relative;overflow:hidden;background:repeating-linear-gradient(90deg,#143c3f 0px,#143c3f 44px,#174747 44px,#174747 88px)}.pitch:before{content:"";position:absolute;inset:12px;border:1px solid #a0ddca77}.pitch:after{content:"";position:absolute;left:50%;top:12px;bottom:12px;width:1px;background:#a0ddca77}.circle{position:absolute;z-index:1;left:50%;top:50%;width:58px;height:58px;transform:translate(-50%,-50%);border:1px solid #a0ddca77;border-radius:50%}
+.pitch span{position:absolute;z-index:2;width:13px;height:13px;border:2px solid white;border-radius:50%;box-shadow:0 3px 6px #0007;background:#4bb9ff}.pitch span.away{background:#b6a0ff}
+.bottom{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(100%,520px);padding:11px 16px calc(11px + env(safe-area-inset-bottom));background:#081522ef;backdrop-filter:blur(18px);border-top:1px solid #2a455c;display:flex;align-items:center;justify-content:space-between;gap:10px;z-index:5}.bottom small{color:var(--muted);font-size:10px}.bottom strong{font-size:12px}.bottom button{background:linear-gradient(135deg,#58b4ec,#6cd3ec);color:#062339;border:0;border-radius:12px;font-weight:800;padding:13px 14px;min-height:44px;font-size:12px}
+.notice{font-size:10px;color:#7997b0;line-height:1.55;padding:2px 5px 12px}.premium{color:var(--gold);font-size:11px;font-weight:700}.list{margin:8px 0 0;padding-left:19px;color:#afc8dc;font-size:12px;line-height:1.9}
+@media(max-width:359px){.shell{padding-left:10px;padding-right:10px}.teams{grid-template-columns:minmax(0,1fr) 85px minmax(0,1fr)}.score strong{font-size:29px}.navtabs button{padding:10px}.team strong{font-size:12px}.brand strong{font-size:13px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<main class="shell">
+ <header class="top"><div class="brand"><div class="logo" aria-hidden="true">◎</div><div><strong>MATCHRADAR</strong><small>FOOTBALL INTELLIGENCE</small></div></div><div class="header-actions"><span class="tag demo">ДЕМО</span><span class="tag">PRO</span></div></header>
+ <section class="card match" aria-labelledby="matchTitle">
+  <div class="match-head"><span class="meta">Пример · Премьер-лига</span><span>Сегодня · 19:30</span></div>
+  <div class="teams"><div class="team"><div class="crest a" aria-hidden="true">S</div><strong id="matchTitle">Север</strong><small>Хозяева</small></div><div class="score"><strong>— : —</strong><small>До начала матча</small></div><div class="team"><div class="crest b" aria-hidden="true">A</div><strong>Атлант</strong><small>Гости</small></div></div>
+  <div class="match-footer"><span class="chip">◉ Предматчевый режим</span><span class="chip">◆ Данные: пример</span></div>
+ </section>
+ <nav class="navtabs" role="tablist" aria-label="Разделы матча">
+  <button role="tab" id="tab-overview" aria-controls="pane-overview" aria-selected="false" tabindex="-1" data-tab="overview">Обзор</button>
+  <button role="tab" id="tab-ai" aria-controls="pane-ai" aria-selected="true" tabindex="0" data-tab="ai">✦ AI PRO</button>
+  <button role="tab" id="tab-live" aria-controls="pane-live" aria-selected="false" tabindex="-1" data-tab="live">LIVE</button>
+  <button role="tab" id="tab-lineups" aria-controls="pane-lineups" aria-selected="false" tabindex="-1" data-tab="lineups">Составы</button>
+ </nav>
+ <section class="panel stack" id="pane-ai" role="tabpanel" aria-labelledby="tab-ai">
+  <article class="card intel"><div class="intel-top"><div class="diamond">✦</div><div><div class="eyebrow">MATCHRADAR INTELLIGENCE</div><div class="mini">Предматчевый AI · демонстрация</div></div></div><h1>Преимущество хозяев, но ничья остаётся значимым риском</h1><p>Модель учитывает форму, домашние результаты и контекст состава. Прогноз требует обновления после публикации стартовых одиннадцати.</p></article>
+  <article class="card prob"><div class="title-row"><h2>Вероятности исходов</h2><span class="mini">1X2 • пример</span></div><div class="prob-list">
+   <div class="prob-line"><span>П1</span><div class="bar"><i class="win" id="barHome" style="width:54%"></i></div><strong id="pctHome">54%</strong></div>
+   <div class="prob-line"><span>X</span><div class="bar"><i class="draw" id="barDraw" style="width:27%"></i></div><strong id="pctDraw">27%</strong></div>
+   <div class="prob-line"><span>П2</span><div class="bar"><i class="lose" id="barAway" style="width:19%"></i></div><strong id="pctAway">19%</strong></div>
+  </div></article>
+  <article class="card factor-card"><div class="title-row"><h2>Что влияет на прогноз</h2><span class="mini">Факторы и риски</span></div>
+   <div class="factor-item"><span class="dot" aria-hidden="true">✓</span><div><strong>Домашняя форма «Севера»</strong><p>Условное преимущество на своём поле — один из факторов модельного расчёта.</p></div></div>
+   <div class="factor-item"><span class="dot" aria-hidden="true">✓</span><div><strong>Стабильность последних результатов</strong><p>В примере хозяева выглядят устойчивее на коротком отрезке сезона.</p></div></div>
+   <div class="factor-item"><span class="dot risk" aria-hidden="true">!</span><div><strong>Составы не подтверждены</strong><p>В реальном продукте такой фактор должен понижать уверенность, а не скрываться.</p></div></div>
+  </article>
+  <article class="card scenario" id="scenarioSection"><div class="title-row"><div><div class="section-title">AI-сценарии</div><div class="mini">Как меняется прогноз при новых вводных</div></div><span class="premium">PRO ◆</span></div>
+   <div class="scenario-buttons" role="group" aria-label="Демонстрационные сценарии">
+    <button type="button" data-scenario="base" aria-pressed="true">Базовый</button><button type="button" data-scenario="goal" aria-pressed="false">Ранний гол гостей</button><button type="button" data-scenario="absence" aria-pressed="false">Нет лидера хозяев</button>
+   </div>
+   <div class="scenario-result" aria-live="polite"><h3 id="scenarioTitle">Базовый сценарий</h3><p id="scenarioText">Сохраняется исходное распределение вероятностей. Числа приведены только для демонстрации взаимодействия.</p></div>
+  </article>
+  <div class="evidence">✓ В реальном AI всегда показываем источники, время обновления и ограничения данных.</div>
+  <p class="notice">Все команды, события и вероятности на этой странице вымышлены. Это интерактивный прототип интерфейса, не спортивный прогноз и не действующая платная услуга.</p>
+ </section>
+ <section class="panel stack" id="pane-overview" role="tabpanel" aria-labelledby="tab-overview" hidden>
+  <article class="card intel"><div class="eyebrow">КРАТКО О МАТЧЕ</div><h1>Всё главное — за несколько секунд</h1><p>Сначала показываем статус, форму и доступность данных. Детальная аналитика остаётся внутри AI PRO.</p></article>
+  <div class="signal-grid"><div class="signal"><span>Текущая форма · пример</span><strong>7 / 10</strong><small>Хозяева</small></div><div class="signal"><span>Текущая форма · пример</span><strong>5 / 10</strong><small>Гости</small></div></div>
+  <article class="card factor-card"><h2>Что есть в обзоре</h2><ul class="list"><li>Последние результаты</li><li>Таблица турнира</li><li>Ключевые игроки</li><li>Статус данных и обновления</li></ul></article>
+ </section>
+ <section class="panel stack" id="pane-live" role="tabpanel" aria-labelledby="tab-live" hidden>
+  <article class="card intel"><div class="eyebrow">LIVE PULSE</div><h1>Всё, что меняет игру, в одном месте</h1><p>После начала матча здесь появятся реальные события, динамика давления и признаки перемены игрового баланса — только если провайдер прислал достоверные данные.</p></article>
+  <div class="signal-grid"><div class="signal"><span>Давление</span><strong>—</strong><small>Ожидаем события</small></div><div class="signal"><span>xG</span><strong>—</strong><small>Пока недоступно</small></div></div>
+  <article class="card factor-card"><h2>До матча</h2><p class="section-lead">Никаких искусственных LIVE-процентов: при отсутствии данных показываем понятный статус.</p></article>
+ </section>
+ <section class="panel stack" id="pane-lineups" role="tabpanel" aria-labelledby="tab-lineups" hidden>
+  <article class="card intel"><div class="eyebrow">TACTICAL VIEW</div><h1>Расстановка игроков</h1><p>Схема ниже демонстрирует оформление. В реальном приложении позиции и составы появятся только после официального подтверждения.</p></article>
+  <div class="card factor-card"><div class="pitch" aria-label="Схематичное футбольное поле, без реальных позиций игроков"><div class="circle"></div><span style="left:17%;top:32%"></span><span style="left:32%;top:65%"></span><span style="left:43%;top:32%"></span><span class="away" style="left:61%;top:70%"></span><span class="away" style="left:73%;top:34%"></span><span class="away" style="left:85%;top:52%"></span></div><p class="section-lead">Пример композиции. Официальные составы пока не опубликованы.</p></div>
+ </section>
+</main>
+<footer class="bottom"><div><small>MatchRadar Signature</small><br><strong>Демонстрация PRO</strong></div><button id="goAi" type="button">✦ Открыть AI-разбор</button></footer>
+<script>
+(function(){
+"use strict";
+const names=["overview","ai","live","lineups"];
+const tabs=names.map(name=>document.getElementById("tab-"+name));
+function openTab(name){
+  if(!names.includes(name))return;
+  names.forEach(function(key){
+    const active=key===name;
+    document.getElementById("pane-"+key).hidden=!active;
+    const tab=document.getElementById("tab-"+key);
+    tab.setAttribute("aria-selected",String(active));
+    tab.tabIndex=active?0:-1;
+  });
+}
+tabs.forEach(function(tab,index){
+  tab.addEventListener("click",function(){openTab(names[index]);});
+  tab.addEventListener("keydown",function(e){
+    if(e.key!=="ArrowRight"&&e.key!=="ArrowLeft"&&e.key!=="Home"&&e.key!=="End")return;
+    e.preventDefault();
+    const next=e.key==="Home"?0:e.key==="End"?names.length-1:(index+(e.key==="ArrowRight"?1:-1)+names.length)%names.length;
+    openTab(names[next]);tabs[next].focus();
+  });
+});
+const scenarios={
+ base:{values:[54,27,19],title:"Базовый сценарий",text:"Сохраняется исходное распределение вероятностей. Числа приведены только для демонстрации взаимодействия."},
+ goal:{values:[29,31,40],title:"Если гости забьют первыми",text:"Условная вероятность победы гостей увеличивается. В реальном продукте изменение зависит от минуты, xG, составов и хода матча."},
+ absence:{values:[45,30,25],title:"Если лидер хозяев не сыграет",text:"Условная вероятность победы хозяев уменьшается. Реальный пересчёт возможен только при подтверждённых данных об игроке."}
+};
+document.querySelectorAll("[data-scenario]").forEach(function(button){
+ button.addEventListener("click",function(){
+  const name=button.dataset.scenario,scenario=scenarios[name];if(!scenario)return;
+  document.querySelectorAll("[data-scenario]").forEach(function(item){item.setAttribute("aria-pressed",String(item===button));});
+  ["Home","Draw","Away"].forEach(function(key,index){
+   const value=scenario.values[index];
+   document.getElementById("bar"+key).style.width=value+"%";
+   document.getElementById("pct"+key).textContent=value+"%";
+  });
+  document.getElementById("scenarioTitle").textContent=scenario.title;
+  document.getElementById("scenarioText").textContent=scenario.text;
+ });
+});
+document.getElementById("goAi").addEventListener("click",function(){
+ openTab("ai");document.getElementById("tab-ai").focus();window.scrollTo({top:0,behavior:"smooth"});
+});
+})();
+</script>
+</body>
+</html>
