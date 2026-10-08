@@ -81,7 +81,7 @@ async function requestCanonicalPublicHtml(fetchImpl, baseUrl, path) {
   } catch {
     throw new Error(`${path} redirected to an invalid URL.`);
   }
-  const canonicalPath = path.replace(/\\.html$/, '');
+  const canonicalPath = path.replace(/\.html$/, '');
   if (destination.origin !== baseUrl.origin || destination.pathname !== canonicalPath || destination.search || destination.hash) {
     throw new Error(`${path} redirected outside its expected same-origin canonical HTML path.`);
   }
