@@ -211,3 +211,67 @@ test('Production gate pins the active version and keeps rollback preflight manda
   assert.match(detection, /--print-active-rollback-target/);
   assert.match(detection, /Safe production deployment blocked/);
 });
+
+
+
+test('RC120 fails closed for missing or inconsistent Cloudflare traffic allocations',()=>{
+  for(const bad of [
+    null,
+    {},
+    deployment([]),
+    deployment([{version_id:activeId,percentage:'100'}]),
+    deployment([{version_id:activeId,percentage:-1}]),
+    deployment([{version_id:activeId,percentage:101}]),
+    deployment([{version_id:activeId,percentage:99}]),
+    deployment([{version_id:'',percentage:100}]),
+  ]) {
+    assert.throws(()=>activeProductionVersion(bad));
+  }
+  assert.equal(activeProductionVersion(deployment([
+    {version_id:activeId,percentage:100},
+    {version_id:otherId,percentage:0},
+  ])),activeId);
+});
+
+test('RC120 rejects missing Cloudflare annotations and malformed release metadata',()=>{
+  const traffic=deployment([{version_id:activeId,percentage:100}]);
+  const good=version(activeId,'release='+release+' sha='+sha);
+  for(const item of [
+    {...good,annotations:{}},
+    {...good,annotations:{'workers/message':'release='+release+' sha=invalid','workers/tag':sha}},
+    {...good,annotations:{'workers/message':'release='+release+' sha='+sha,'workers/tag':''}},
+    {...good,annotations:{'workers/message':'release='+release+' sha='+sha,'workers/tag':'not-a-sha'}},
+    {...good,metadata:{created_on:'not-a-timestamp'}},
+  ]) {
+    assert.throws(()=>resolveActiveProductionReleaseIdentity(traffic,[item]));
+  }
+});
+
+test('RC120 rejects wrong expected release and SHA before accepting the deployment',()=>{
+  const traffic=deployment([{version_id:activeId,percentage:100}]);
+  const versions=[version(activeId,'release='+release+' sha='+sha)];
+  assert.throws(
+    ()=>verifyProductionReleasePostcondition(traffic,versions,'bad-version',sha),
+    /Expected production release has an invalid format/,
+  );
+  assert.throws(
+    ()=>verifyProductionReleasePostcondition(traffic,versions,release,'bad-sha'),
+    /Expected deploy SHA must be a 40-character/,
+  );
+  assert.throws(
+    ()=>verifyProductionReleasePostcondition(traffic,versions,'6.102.0-rc110',sha),
+    /release identity mismatch/,
+  );
+  assert.throws(
+    ()=>verifyProductionReleasePostcondition(traffic,versions,release,'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+    /release identity mismatch/,
+  );
+});
+
+test('RC120 rejects malformed or ambiguous active version detail collections',()=>{
+  const traffic=deployment([{version_id:activeId,percentage:100}]);
+  const current=version(activeId,'release='+release+' sha='+sha);
+  for(const bad of [null,{},[null],['bad-detail'],[current,current]]) {
+    assert.throws(()=>resolveActiveProductionReleaseIdentity(traffic,bad));
+  }
+});
