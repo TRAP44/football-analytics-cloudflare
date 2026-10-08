@@ -319,3 +319,41 @@ test('RC120 refuses coerced expected release and SHA inputs before validating ac
   ]) assert.throws(()=>verifyProductionReleasePostcondition(traffic,versions,expected.release,expected.sha),
     /invalid format|40-character Git commit SHA/);
 });
+
+
+
+test('RC120 matches case-insensitive Cloudflare version UUIDs without relaxing SHA checks',()=>{
+  const traffic=deployment([{version_id:activeId.toUpperCase(),percentage:100}]);
+  const result=verifyProductionReleasePostcondition(
+    traffic,[version(activeId,'release='+release+' sha='+sha)],release,sha);
+  assert.equal(result.versionId,activeId.toUpperCase());
+  assert.equal(result.sha,sha);
+});
+
+test('RC120 refuses duplicate version identities even when case differs',()=>{
+  const traffic=deployment([{version_id:activeId,percentage:100}]);
+  const stamp=version(activeId,'release='+release+' sha='+sha);
+  assert.throws(
+    ()=>resolveActiveProductionReleaseIdentity(traffic,[stamp,{...stamp,id:activeId.toUpperCase()}]),
+    /appears multiple times/,
+  );
+});
+
+test('RC120 never coerces malformed IDs in pinned Cloudflare version details',()=>{
+  const traffic=deployment([{version_id:activeId,percentage:100}]);
+  const stamp=version(activeId,'release='+release+' sha='+sha);
+  for(const bad of [42,{toString:()=>activeId},[activeId],null]){
+    assert.throws(
+      ()=>resolveActiveProductionReleaseIdentity(traffic,[{...stamp,id:bad}]),
+      /missing from the recent Cloudflare versions list/,
+    );
+  }
+});
+
+test('RC120 release identity checks precede public HTTP smoke and rollback eligibility',()=>{
+  const control=workflow.indexOf('- name: RC120 verify active production release identity');
+  const smoke=workflow.indexOf('- name: Verify production deployment',control);
+  const rollback=workflow.indexOf('- name: Automatic rollback after failed production verification',smoke);
+  assert.ok(control>=0 && smoke>control && rollback>smoke);
+  assert.match(workflow.slice(control,smoke),/verify-production-release-postcondition\.js/);
+});

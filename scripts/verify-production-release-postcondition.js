@@ -50,7 +50,7 @@ export function resolveActiveProductionReleaseIdentity(deployment, versions) {
   }
 
   const activeVersionId = activeProductionVersion(deployment);
-  const activeVersions = candidates.filter(version => version?.id === activeVersionId);
+  const activeVersions = candidates.filter(version => typeof version?.id === 'string' && version.id.toLowerCase() === activeVersionId.toLowerCase());
   if (activeVersions.length === 0) {
     throw new Error(`Active production version ${activeVersionId} is missing from the recent Cloudflare versions list.`);
   }
