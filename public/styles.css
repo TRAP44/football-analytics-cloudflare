@@ -3536,7 +3536,7 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .pass-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:10px; width:100%; max-width:100%; }
 .pass-card { display:flex; flex-direction:column; gap:7px; padding:11px; border:1px solid var(--line); border-radius:13px; background:rgba(148,163,184,.035); overflow:hidden; }
 .pass-card[data-state="active"] { border-color:rgba(34,197,94,.35); background:rgba(34,197,94,.055); }
-.pass-card[data-state="expired"], .pass-card[data-state="exhausted"] { opacity:.82; }
+.pass-card { opacity:1; } /* Historical entitlement state must never dim a purchasable Pass. */
 .pass-card[data-state="unavailable"], .pass-card[data-state="paused"] { background:rgba(148,163,184,.025); }
 .pass-card-top { display:flex; justify-content:space-between; align-items:flex-start; gap:7px; }
 .pass-card-top strong { font-size:12px; }
