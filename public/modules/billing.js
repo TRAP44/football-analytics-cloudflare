@@ -212,10 +212,10 @@ export function createBillingModule({
     const button = $(plan === 'PRO' ? 'proBtn' : 'premiumBtn');
     if (price) price.textContent = cfg
       ? String(cfg.stars) + ' ⭐ / 30 дней'
-      : (snapshot.monetizationEnabled ? 'Цена загружается…' : 'Пока недоступно');
+      : (snapshot.monetizationEnabled ? (loading ? 'Цена загружается…' : 'Не удалось получить цену') : 'Пока недоступно');
     if (limit) limit.textContent = cfg
       ? String(cfg.dailyLimit) + ' AI-разборов / день'
-      : (snapshot.monetizationEnabled ? 'Лимит загружается…' : 'После включения оплаты');
+      : (snapshot.monetizationEnabled ? (loading ? 'Лимит загружается…' : 'Лимит недоступен') : 'После включения оплаты');
     if (!button) return;
 
     const currentPaid = paidPlans.has(snapshot.plan);
