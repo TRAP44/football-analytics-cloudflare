@@ -331,3 +331,84 @@ test('Smart Notifications stay out of scope while a stable future event contract
   });
   assert.doesNotMatch(worker, /createPlayerNotificationService|processPlayerNotifications/);
 });
+
+
+test('Favorite Players memory guard is per-user and updating an existing row does not consume capacity',async()=>{
+  const {service}=backendRuntime();
+  for(let id=1;id<=PERSONAL_WRITE_LIMITS.favoritePlayers;id++) {
+    await service.addFavoritePlayer(42,{id,name:'Player '+id,teamId:55},{});
+  }
+  await assert.rejects(
+    service.addFavoritePlayer(42,{id:51,name:'Extra',teamId:55},{}),
+    error=>error?.code==='FAVORITE_PLAYERS_LIMIT',
+  );
+  await service.addFavoritePlayer(42,{id:50,name:'Renamed',teamId:55},{});
+  assert.equal((await service.getFavoritePlayers(42,{})).length,50);
+  assert.equal((await service.getFavoritePlayers(42,{})).find(row=>row.player_id===50)?.player_name,'Renamed');
+  await service.addFavoritePlayer(99,{id:51,name:'Other user',teamId:55},{});
+  assert.equal((await service.getFavoritePlayers(99,{})).length,1);
+});
+
+test('Favorite Players deny database writes that fail validation or the guarded RPC',async()=>{
+  const {service,rpcCalls}=backendRuntime({hasSupabase:()=>true});
+  for(const [userId,player] of [
+    [0,{id:777,name:'Player',teamId:55}],
+    [42,{id:0,name:'Player',teamId:55}],
+    [42,{id:777,name:' ',teamId:55}],
+    [42,{id:777,name:'Player',teamId:0}],
+    [42,{id:'9007199254740992',name:'Player',teamId:55}],
+  ]) {
+    await assert.rejects(
+      service.addFavoritePlayer(userId,player,{supabaseUrl:'https://db.test'}),
+      error=>error?.code==='PERSONAL_DATA_INVALID',
+    );
+  }
+  assert.equal(rpcCalls.length,0);
+  for(const [response,code] of [
+    [{allowed:false,reason:'limit_reached'},'FAVORITE_PLAYERS_LIMIT'],
+    [{allowed:false,reason:'invalid_input'},'PERSONAL_DATA_INVALID'],
+    [null,'PERSONAL_DATA_INVALID'],
+  ]) {
+    const denied=backendRuntime({hasSupabase:()=>true,supaRpc:async()=>response});
+    await assert.rejects(
+      denied.service.addFavoritePlayer(42,{id:777,name:'Player',teamId:55},{supabaseUrl:'https://db.test'}),
+      error=>error?.code===code,
+    );
+    assert.equal(denied.memory.favoritePlayers.size,0);
+  }
+});
+
+test('Player Follow controls hide mutation actions until identity and follow state are verified',()=>{
+  const state={favoritePlayers:[],favoritePlayersLoaded:false,profile:{stats:{favoritePlayers:0}}};
+  const follow=createPlayerFollowModule({state,api:async()=>({items:[]})});
+  assert.match(follow.controlHtml(followedPlayer({team:{id:0}})),/disabled/);
+  assert.match(follow.controlHtml(followedPlayer({match:{fixtureId:0}})),/disabled/);
+  assert.match(follow.controlHtml(followedPlayer()),/aria-busy="true"/);
+  state.favoritePlayersLoadError='<img src=x onerror=alert(1)>';
+  const errorHtml=follow.controlHtml(followedPlayer());
+  assert.match(errorHtml,/data-player-follow-retry/);
+  assert.match(errorHtml,/&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.doesNotMatch(errorHtml,/<img src=x/);
+});
+
+test('Player Follow prevents simultaneous writes for the same player and clears pending state',async()=>{
+  let respond;
+  let writes=0;
+  const state={favoritePlayers:[],favoritePlayersLoaded:true,favoritePlayersRevision:0,profile:{stats:{favoritePlayers:0}}};
+  const follow=createPlayerFollowModule({state,api:async(_path,init={})=>{
+    if(init.method!=='POST')throw new Error('Unexpected API call');
+    writes++;
+    return new Promise(resolve=>{respond=resolve;});
+  }});
+  const first=follow.togglePlayerFollow(followedPlayer());
+  const second=follow.togglePlayerFollow(followedPlayer());
+  assert.equal(await second,false);
+  assert.equal(writes,1);
+  assert.match(follow.controlHtml(followedPlayer()),/disabled aria-busy="true"/);
+  respond({item:{playerId:777,playerName:'Canonical Player',teamId:55}});
+  assert.equal(await first,true);
+  assert.equal(state.favoritePlayers.length,1);
+  assert.equal(state.favoritePlayers[0].optimistic,undefined);
+  assert.equal(state.profile.stats.favoritePlayers,1);
+  assert.equal(state.favoritePlayerMutations.size,0);
+});
