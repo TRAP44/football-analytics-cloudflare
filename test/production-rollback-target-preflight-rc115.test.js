@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { verifyRollbackTarget } from '../scripts/verify-rollback-target.js';
 
 const workflow = fs.readFileSync('.github/workflows/rollback-production.yml', 'utf8');
 
@@ -24,4 +25,78 @@ test('RC115 preserves target-bound confirmation, provenance and post-rollback sm
   assert.match(workflow, /inputs\.confirm == format\('ROLLBACK:\{0\}:\{1\}', inputs\.expected_version, inputs\.version_id\)/);
   assert.match(workflow, /RC113 verify rollback workflow provenance/);
   assert.match(workflow, /scripts\/rollback-smoke\.js "\$ROLLBACK_URL" "\$EXPECTED_VERSION"/);
+});
+
+
+
+const rc115VersionId='11111111-2222-4333-8444-555555555555';
+const rc115Sha='a'.repeat(40);
+const rc115Release='6.120.0-rc144';
+function rc115Stamped(overrides={}) {
+  return {
+    id:rc115VersionId,
+    annotations:{
+      'workers/message':'release='+rc115Release+' sha='+rc115Sha,
+      'workers/tag':rc115Sha,
+    },
+    metadata:{created_on:'2026-10-07T18:00:00.000Z'},
+    ...overrides,
+  };
+}
+
+test('RC115 rejects release and tag objects impersonating a valid rollback stamp',()=>{
+  assert.throws(
+    ()=>verifyRollbackTarget(rc115Stamped(),{toString:()=>rc115Release},rc115VersionId),
+    /Expected rollback release/,
+  );
+  const stamp=rc115Stamped();
+  stamp.annotations['workers/tag']={toString:()=>rc115Sha};
+  assert.throws(
+    ()=>verifyRollbackTarget(stamp,rc115Release,rc115VersionId),
+    /CLOUDFLARE_VERSION_TAG_REQUIRED/,
+  );
+  assert.throws(
+    ()=>verifyRollbackTarget(rc115Stamped(),rc115Release,rc115VersionId,false,'',{toString:()=>rc115Sha}),
+    /40-character Git commit SHA/,
+  );
+});
+
+test('RC115 legacy override cannot be enabled by object coercion',()=>{
+  const legacy=rc115Stamped({annotations:{}});
+  const confirmation='LEGACY-UNVERIFIED:'+rc115Release+':'+rc115VersionId;
+  assert.throws(
+    ()=>verifyRollbackTarget(legacy,rc115Release,rc115VersionId,{toString:()=>'true'},confirmation),
+    /no RC116 release identity metadata/,
+  );
+  assert.equal(verifyRollbackTarget(legacy,rc115Release,rc115VersionId,'true',confirmation).mode,'legacy-unverified');
+  assert.throws(
+    ()=>verifyRollbackTarget(legacy,rc115Release,rc115VersionId,true,'wrong'),
+    /exact confirmation/,
+  );
+});
+
+test('RC115 verified stamped target enforces exact version, SHA and cloudflare ID',()=>{
+  const good=verifyRollbackTarget(rc115Stamped(),rc115Release,rc115VersionId,false,'',rc115Sha);
+  assert.equal(good.mode,'stamped');
+  assert.equal(good.releaseVersion,rc115Release);
+  assert.equal(good.deploySha,rc115Sha);
+  assert.throws(
+    ()=>verifyRollbackTarget(rc115Stamped(),rc115Release,rc115VersionId,false,'','b'.repeat(40)),
+    /deploy SHA mismatch/,
+  );
+  assert.throws(
+    ()=>verifyRollbackTarget(rc115Stamped(),rc115Release,'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'),
+    /instead of requested/,
+  );
+});
+
+test('RC115 requires successful version view and validated identity before destructive rollback',()=>{
+  const verify=workflow.slice(workflow.indexOf('- name: RC115 verify rollback target exists'),
+    workflow.indexOf('- name: Roll back Worker'));
+  assert.match(verify,/set -euo pipefail/);
+  assert.match(verify,/npx wrangler versions view "\$VERSION_ID" --json > "\$RUNNER_TEMP\/rollback-version\.json"/);
+  assert.match(verify,/node scripts\/verify-rollback-target\.js "\$RUNNER_TEMP\/rollback-version\.json"/);
+  assert.doesNotMatch(verify,/npx wrangler rollback/);
+  const post=workflow.slice(workflow.indexOf('- name: RC119 verify exact rollback deployment target'));
+  assert.match(post,/verify-rollback-target\.js "\$ROLLBACK_VERSION_JSON"/);
 });
