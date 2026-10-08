@@ -231,7 +231,7 @@ if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(adminHtml)) failu
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
 if (!app.includes("badge.textContent = admin ? '🔐 Администратор' : '';")) failures.push('Client must clear the admin badge for non-admin users');
 if (!app.includes("el.toggleAttribute('inert', !admin)")) failures.push('Admin-only elements must be inert for non-admin users');
-if (!profileSummary.includes('const photoUrl = safeUrl(user.photoUrl);')) failures.push('profile photo must use Telegram photoUrl through safeUrl');
+if (!/const photoUrl\s*=\s*safeUrl\(\s*typeof user\.photoUrl\s*===\s*'string'\s*\?\s*user\.photoUrl\s*:\s*''\s*\)/.test(profileSummary)) failures.push('profile photo must use type-checked Telegram photoUrl through safeUrl');
 if (!styles.includes('.avatar img')) failures.push('Profile avatar image styling is missing');
 if (!fs.existsSync('test/user-flow-contract.test.js')) failures.push('Missing user-flow regression test');
 if (!fs.existsSync('test/accessibility-navigation.test.js')) failures.push('Missing accessibility navigation regression test');
