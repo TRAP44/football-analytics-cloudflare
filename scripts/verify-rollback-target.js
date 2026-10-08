@@ -11,11 +11,11 @@ const RELEASE_MESSAGE_RE = /^release=([0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+) sha=([0-9
 const SHA_RE = /^[0-9a-f]{40}$/i;
 
 function legacyAllowed(value) {
-  return value === true || String(value || '').toLowerCase() === 'true';
+  return value === true || (typeof value === 'string' && value.toLowerCase() === 'true');
 }
 
 export function verifyRollbackTarget(version, expectedVersion, expectedId, allowLegacyUnverified = false, legacyConfirmation = '', expectedSha = '') {
-  if (!RELEASE_VERSION_RE.test(String(expectedVersion || ''))) {
+  if (typeof expectedVersion !== 'string' || !RELEASE_VERSION_RE.test(expectedVersion)) {
     throw new Error('Expected rollback release must use <version>-rc<number> format.');
   }
   if (!version || typeof version !== 'object' || Array.isArray(version)) {
@@ -34,7 +34,8 @@ export function verifyRollbackTarget(version, expectedVersion, expectedId, allow
   if (match) {
     const [, releaseVersion, deploySha] = match;
     const rcNumber = /-rc([0-9]+)$/i.exec(releaseVersion)?.[1] || '';
-    const actualTag = String(version.annotations?.['workers/tag'] || '').trim();
+    const actualTag = typeof version.annotations?.['workers/tag'] === 'string'
+      ? version.annotations['workers/tag'].trim() : '';
     const validation = validateReleaseIdentity({
       appVersion: releaseVersion,
       releaseCandidate: `RC${rcNumber}`,
@@ -50,10 +51,10 @@ export function verifyRollbackTarget(version, expectedVersion, expectedId, allow
       throw new Error(`Rollback target release identity mismatch: expected ${expectedVersion}, metadata reports ${releaseVersion}.`);
     }
     if (expectedSha) {
-      if (!SHA_RE.test(String(expectedSha))) {
+      if (typeof expectedSha !== 'string' || !SHA_RE.test(expectedSha)) {
         throw new Error('Expected rollback deploy SHA must be a 40-character Git commit SHA.');
       }
-      if (deploySha.toLowerCase() !== String(expectedSha).toLowerCase()) {
+      if (deploySha.toLowerCase() !== expectedSha.toLowerCase()) {
         throw new Error(`Rollback target deploy SHA mismatch: expected ${expectedSha}, metadata reports ${deploySha}.`);
       }
     }
