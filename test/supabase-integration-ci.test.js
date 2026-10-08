@@ -124,9 +124,10 @@ test('Issue #438 CI contract proves complete v2 drift detection and rollout comp
   assert.deepEqual(
     [...dbContract.compatibleFingerprints].sort(),
     [dbContract.fingerprint, dbContract.freshInstallFingerprint,
-      '4e7b6afc69b45ab3e5eecc4685d75c73'].sort(),
+      '4e7b6afc69b45ab3e5eecc4685d75c73',
+      '289d4be4a3546443d48ff5f0b8bd6dcb'].sort(),
   );
-  assert.equal(new Set(dbContract.compatibleFingerprints).size, 3);
+  assert.equal(new Set(dbContract.compatibleFingerprints).size, 4);
 
   assert.match(sql, /backend_schema_contract_v2/);
   assert.match(sql, /backend_readiness_contract_v2/);
@@ -142,6 +143,8 @@ test('Issue #438 CI contract proves complete v2 drift detection and rollout comp
 
   assert.match(quality, /freshInstallLegacyFingerprint/);
   assert.match(quality, /freshInstallFingerprint/);
+  assert.match(quality, /PREVIOUS_LEGACY_FP/);
+  assert.match(dbContract.preLatestLegacyFingerprint, /^[a-f0-9]{32}$/);
   assert.ok(quality.includes('expected_legacy_fingerprint="$FRESH_LEGACY_FP"'));
   assert.ok(quality.includes('expected_v2_fingerprint="$FRESH_V2_FP"'));
   assert.doesNotMatch(
