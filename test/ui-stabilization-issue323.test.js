@@ -39,3 +39,14 @@ test('frontend cache policy revalidates every mutable public code layer', () => 
   const modules = headers.slice(headers.indexOf('/modules/*'));
   assert.match(modules, /Cache-Control: public, max-age=0, must-revalidate/);
 });
+
+test('public pages disallow admin shell and keep source code on a predictable cache policy',()=>{
+  assert.match(html,/<html lang="ru">/);
+  assert.doesNotMatch(html,/id="adminRoleBadge"|class="panel admin-console"/);
+  for(const path of ['/index.html','/admin.html','/status.html','/privacy.html','/terms.html']){
+    assert.ok(headers.includes(path+'\n'),path);
+  }
+  assert.match(headers,/\/modules\/\*\s*\n\s*Cache-Control: public, max-age=0, must-revalidate/);
+  assert.match(headers,/Referrer-Policy: no-referrer/);
+  assert.match(headers,/X-Content-Type-Options: nosniff/);
+});

@@ -381,3 +381,24 @@ test('throttled updates fail closed when their durable completion marker cannot 
   );
   assert.equal(callbackAnswers,0);
 });
+
+test('malformed JSON request never claims or processes a Telegram update',async()=>{
+  let claimed=0;
+  let processed=0;
+  const handler=createTelegramWebhookHandler(deps({
+    claimTelegramUpdate:()=>{claimed++;return {key:'u:1',duplicate:false};},
+    processTelegramUpdate:async()=>{processed++;return responseJson({ok:true});},
+  }));
+  const request=new Request('https://example.test/telegram/webhook',{
+    method:'POST',
+    headers:{
+      'content-type':'application/json',
+      'x-telegram-bot-api-secret-token':'secret',
+    },
+    body:'{invalid-json',
+  });
+  const result=await handler(request,{webhookSecret:'secret'});
+  assert.equal(result.status,400);
+  assert.equal(claimed,0);
+  assert.equal(processed,0);
+});

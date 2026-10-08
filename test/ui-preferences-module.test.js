@@ -35,3 +35,11 @@ test('frontend revision refreshes the extracted module graph', () => {
   assert.ok(index.includes(`frontend-asset-revision" content="${FRONTEND_ASSET_REVISION}"`));
   assert.ok(index.includes(`/app.js?v=${FRONTEND_ASSET_REVISION}`));
 });
+
+test('UI preferences update accessibility state without inserting freeform HTML',()=>{
+  assert.match(moduleSource,/button\.setAttribute\('aria-pressed', active \? 'true' : 'false'\)/);
+  assert.match(moduleSource,/advancedSummary\.textContent = advancedAppearanceLabel\(prefs\)/);
+  assert.match(moduleSource,/try \{ tg\?\.setHeaderColor\(background\); \} catch \{\}/);
+  assert.match(moduleSource,/try \{ tg\?\.setBackgroundColor\(background\); \} catch \{\}/);
+  assert.doesNotMatch(moduleSource,/innerHTML\s*=/);
+});

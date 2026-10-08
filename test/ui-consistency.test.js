@@ -42,3 +42,11 @@ test('major admin interface labels are localized', () => {
   for (const phrase of forbidden) assert.equal(app.includes(phrase), false, phrase);
   assert.equal(html.includes('atomic CAS + audit'), false);
 });
+
+test('profile rendering uses text nodes and never injects Telegram identity into HTML',()=>{
+  assert.match(profileSummary,/profileName'\)\.textContent = firstName/);
+  assert.match(profileSummary,/profileUsername'\)\.textContent = username/);
+  assert.match(profileSummary,/img\.referrerPolicy = 'no-referrer'/);
+  assert.match(profileSummary,/img\.addEventListener\('error'/);
+  assert.doesNotMatch(profileSummary,/\binnerHTML\s*=/);
+});

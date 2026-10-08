@@ -355,3 +355,16 @@ test('ops status duration and transition values reject coercion and remain bound
   assert.equal(row.source,'worker');
   assert.equal(row.event_type,'runtime');
 });
+
+test('ops redactor never prints secrets inside event text or metadata',async()=>{
+  const {api}=buildRuntime();
+  const token='123456789:'+'AbCdEfGhIjKlMnOpQrStUvWxYz123456';
+  const row=await api.recordOpsEventTask({},{
+    eventType:'telegram_failure',
+    message:'Bearer eyJabcDEFghi12345.abcdEFGHijk12345.abcdefGHIjk12345',
+    meta:{credentials:'TELEGRAM_BOT_TOKEN='+token},
+  });
+  const serialized=JSON.stringify(row);
+  assert.equal(serialized.includes(token),false);
+  assert.doesNotMatch(serialized,/Bearer eyJabcDEFghi12345/);
+});

@@ -344,3 +344,19 @@ test('nonessential news outcome tracking cannot turn a delivered action into rec
   assert.equal(deliveries,1);
   assert.equal(recoveries,0);
 });
+
+test('a malformed runtime-controls response blocks Telegram dispatch before business side effects',async()=>{
+  let calls=0;
+  const processor=createTelegramUpdateProcessor(deps({
+    loadRuntimeControls:async()=>({value:[]}),
+    sendBotFootballSearch:async()=>{calls++;},
+    telegramApi:async()=>{calls++;},
+  }));
+  await assert.rejects(
+    ()=>processor(request,{},{
+      message:{from:{id:7},chat:{id:8},text:'Арсенал'},
+    }),
+    error=>error?.code==='TELEGRAM_UPSTREAM',
+  );
+  assert.equal(calls,0);
+});

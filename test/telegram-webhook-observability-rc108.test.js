@@ -59,3 +59,16 @@ test('RC108 fresh-install baseline contains v6.17 observability',()=>{
   assert.match(baseline,/add column if not exists duplicate_count/);
   assert.match(baseline,/create or replace function public\.telegram_webhook_dedupe_health/);
 });
+
+test('RC108 duplicate metrics remain aggregate and never expose individual Telegram ids',()=>{
+  const start=migration.indexOf('create or replace function public.telegram_webhook_dedupe_health');
+  const segment=migration.slice(start);
+  assert.ok(start>=0);
+  assert.match(segment,/duplicate_attempts_retained/);
+  assert.match(segment,/duplicate_rows_recent/);
+  assert.match(segment,/last_duplicate_at/);
+  assert.match(segment,/count\(\*\)/);
+  assert.match(segment,/returns jsonb/);
+  assert.match(segment,/security invoker/);
+  assert.doesNotMatch(segment,/security definer/i);
+});

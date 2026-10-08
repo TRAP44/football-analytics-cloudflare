@@ -134,3 +134,17 @@ test('worker keeps Telegram webhook transport wiring but no longer owns update d
   assert.doesNotMatch(worker,/async function processTelegramUpdate\s*\(/);
   assert.match(worker,/processTelegramUpdate,\n\s+releaseTelegramUpdate/);
 });
+
+test('security lockdown does not allow an ordinary search to reach downstream handlers',async()=>{
+  let searches=0;
+  const processor=createTelegramUpdateProcessor(deps({
+    telegramLockdownDecision:()=>({blocked:true,rejectCheckout:true}),
+    sendBotFootballSearch:async()=>{searches++;},
+  }));
+  const result=await processor(request,{},{
+    message:{from:{id:7},chat:{id:8},text:'Арсенал'},
+  });
+  assert.equal(result.status,200);
+  assert.equal(result.body.securityLockdown,true);
+  assert.equal(searches,0);
+});

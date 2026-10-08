@@ -71,3 +71,13 @@ test('RC107 fresh-install baseline includes the persistent dedupe schema',()=>{
   assert.match(baseline,/create table if not exists public\.telegram_update_claims/);
   assert.match(baseline,/create or replace function public\.claim_telegram_update/);
 });
+
+test('RC107 persistent release cannot reopen a completed Telegram update',()=>{
+  const releaseStart=migration.indexOf('create or replace function public.release_telegram_update');
+  const releaseBody=migration.slice(releaseStart);
+  assert.ok(releaseStart>=0);
+  assert.match(releaseBody,/set status = 'failed'/);
+  assert.match(releaseBody,/and status <> 'done'/);
+  assert.match(releaseBody,/interval '5 seconds'/);
+  assert.match(releaseBody,/return v_rows = 1/);
+});

@@ -319,3 +319,22 @@ test('forged public attempt state cannot authorize a webhook retry', () => {
   assert.equal(result.retry,false);
   assert.equal(result.transient,true);
 });
+
+test('a retry-safe error cannot override an already completed Telegram side effect',()=>{
+  const cfg={};
+  beginTelegramWebhookAttempt(cfg);
+  markTelegramWebhookEffect(cfg,'sendMessage');
+  const result=classifyTelegramWebhookFailure(
+    Object.assign(new Error('refund reconciliation'),{
+      code:'BILLING_REFUND_RECONCILIATION',
+      telegramWebhookRetrySafe:true,
+      retryAfter:5,
+    }),
+    cfg,
+  );
+  assert.equal(result.retrySafe,true);
+  assert.equal(result.retry,false);
+  assert.equal(result.successfulEffects,1);
+  assert.equal(result.retryAfter,5);
+  endTelegramWebhookAttempt(cfg);
+});
