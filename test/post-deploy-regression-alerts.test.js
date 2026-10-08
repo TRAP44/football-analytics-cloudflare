@@ -320,3 +320,69 @@ test('delivery outcomes become dedicated release regression alert ops events',()
   assert.deepEqual(coerced[0].meta.recipientSlots,[]);
   assert.equal(coerced[0].code,'POST_DEPLOY_REGRESSION_INCIDENT_ALERT_SENT');
 });
+
+
+
+test('alerts stay silent without recipients or a matching release lifecycle',()=>{
+  const noTargets=planPostDeployRegressionAlert(
+    [lifecycle('incident')],[],{deploySha:sha,destinations:[]},
+  );
+  assert.deepEqual(noTargets,{action:'none',reason:'no_admin_recipients'});
+  const foreign=planPostDeployRegressionAlert(
+    [lifecycle('incident','2026-09-29T15:00:00Z',otherSha)],
+    [],
+    {deploySha:sha,destinations},
+  );
+  assert.deepEqual(foreign,{action:'none',reason:'no_lifecycle_transition'});
+});
+
+test('per-recipient retry ceiling prevents endless duplicate incident deliveries',()=>{
+  for(const status of ['retry_pending','claimed','sending']){
+    const exhausted=planPostDeployRegressionAlert(
+      [lifecycle('incident')],
+      [{
+        ...ledger('incident',status,'destination-a',{attempts:3,retryAt:'2026-09-29T15:00:00Z'}),
+        locked_until:'2026-09-29T15:00:00Z',
+      }],
+      {deploySha:sha,destinations:[destinations[0]],nowMs:Date.parse('2026-09-29T15:30:00Z')},
+    );
+    assert.equal(exhausted.action,'none');
+    assert.equal(exhausted.reason,'delivery_exhausted');
+  }
+});
+
+test('incident transition preserves unique, bounded signal codes without accepting untrusted types',()=>{
+  const codes=[
+    ...Array.from({length:54},(_,index)=>'signal_'+index),
+    ' signal_0 ',null,1,true,
+  ];
+  const plan=planPostDeployRegressionAlert(
+    [lifecycle('incident','2026-09-29T15:00:00Z',sha,{signalCodes:codes})],
+    [],
+    {deploySha:sha,destinations:[destinations[0]]},
+  );
+  assert.equal(plan.action,'send');
+  assert.equal(plan.incident.signalCodes.length,50);
+  assert.equal(plan.incident.signalCodes[0],'signal_0');
+  assert.equal(new Set(plan.incident.signalCodes).size,50);
+  assert.ok(plan.incident.signalCodes.every(value=>typeof value==='string'));
+});
+
+test('recovery alerts keep the original incident identifier while targeting undelivered recipients only',()=>{
+  const rows=[
+    lifecycle('incident','2026-09-29T15:00:00Z',sha,{id:1}),
+    lifecycle('recovered','2026-09-29T15:25:00Z',sha,{id:2,signalCodes:[]}),
+  ];
+  const deliveries=[
+    ledger('incident','sent','destination-a'),
+    ledger('incident','sent','destination-b'),
+    ledger('recovery','sent','destination-a'),
+  ];
+  const plan=planPostDeployRegressionAlert(rows,deliveries,{deploySha:sha,destinations});
+  assert.equal(plan.action,'send');
+  assert.equal(plan.kind,'recovery');
+  assert.equal(plan.incidentId,'release-regression:'+sha);
+  assert.deepEqual(plan.targetSlots,[1]);
+  assert.equal(plan.incident.startedAt,'2026-09-29T15:00:00.000Z');
+  assert.equal(plan.incident.recoveredAt,'2026-09-29T15:25:00.000Z');
+});
