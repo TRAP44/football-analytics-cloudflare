@@ -127,3 +127,56 @@ test('missing optional DOM nodes do not break profile capability rendering', () 
 
   assert.doesNotThrow(() => module.renderDataCapabilities());
 });
+
+
+
+test('missing or malformed refresh interval never falsely implies updates are paused or rapid',()=>{
+  for(const value of [undefined,null,'',-5,-1,NaN,Infinity,[],{},'bad']){
+    const {module,elements}=createModule({dataCapabilities:{
+      mode:'standard',refreshSeconds:value,features:{liveRefresh:true},
+    }});
+    module.renderDataCapabilities();
+    assert.equal(elements.get('dataModeRefresh').textContent,'автоматически');
+  }
+});
+
+test('explicit zero and unavailable live-refresh flag disable live updates',()=>{
+  for(const input of [
+    {refreshSeconds:0,liveRefresh:true},
+    {refreshSeconds:'0',liveRefresh:true},
+    {refreshSeconds:30,liveRefresh:'false'},
+    {refreshSeconds:30,liveRefresh:null},
+  ]){
+    const {module,elements}=createModule({dataCapabilities:{
+      refreshSeconds:input.refreshSeconds,features:{liveRefresh:input.liveRefresh},
+    }});
+    module.renderDataCapabilities();
+    assert.equal(elements.get('dataModeRefresh').textContent,'временно приостановлены');
+  }
+  const {module,elements}=createModule({dataCapabilities:{refreshSeconds:'30',features:{liveRefresh:true}}});
+  module.renderDataCapabilities();
+  assert.equal(elements.get('dataModeRefresh').textContent,'часто');
+});
+
+test('only confirmed boolean capability flags may advertise enhanced data coverage',()=>{
+  const {module,elements}=createModule({dataCapabilities:{
+    mode:'expanded',refreshSeconds:20,
+    features:{lineupsFallback:'false',playerStats:1,liveOdds:{enabled:true},liveRefresh:true},
+  }});
+  module.renderDataCapabilities();
+  for(const id of ['dataModeLineups','dataModePlayers','dataModeOdds']){
+    assert.equal(elements.get(id).textContent,'Если доступны');
+  }
+  assert.equal(elements.get('dataModeLabel').textContent,'Расширенный');
+});
+
+test('malformed capabilities and optional feature containers render safely without mutating state',()=>{
+  for(const capabilities of [[],true,'expanded',{mode:'expanded',features:[]},{features:null}]){
+    const state={dataCapabilities:capabilities};
+    const previous=JSON.stringify(state);
+    const {module,elements}=createModule(state);
+    assert.doesNotThrow(()=>module.renderDataCapabilities());
+    assert.equal(elements.get('dataModeLineups').textContent,'Если доступны');
+    assert.equal(JSON.stringify(state),previous);
+  }
+});
