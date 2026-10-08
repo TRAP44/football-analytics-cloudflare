@@ -54,13 +54,27 @@ export function createModelEvaluationRuntime(deps = {}) {
     return Number.isFinite(n) ? n : null;
   }
   
+  function postMatchFiniteValue(value) {
+    if (value===null || value===undefined || value==='') return null;
+    if (typeof value!=='number' && typeof value!=='string') return null;
+    const num=Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  function postMatchResultGoal(value) {
+    const n=postMatchFiniteValue(value);
+    return Number.isSafeInteger(n) && n>=0 ? n : null;
+  }
+
   function buildPostMatchReview({prediction,fixture,statistics,events,homeName='',awayName=''}) {
     if (!prediction?.fixture_id) {
       return {available:false,state:'no_snapshot',headline:'Нет сохранённого предматчевого снимка',summary:'Этот матч можно изучить по фактической статистике, но честно сравнить его с AI-прогнозом нельзя: до старта снимок модели не был сохранён.',evidence:[],markets:[],calibration:{included:false}};
     }
+    const fallbackHome=postMatchResultGoal(prediction.actual_home_goals);
+    const fallbackAway=postMatchResultGoal(prediction.actual_away_goals);
     const score=regulationScore(fixture) || (
-      Number.isFinite(Number(prediction.actual_home_goals)) && Number.isFinite(Number(prediction.actual_away_goals))
-        ? {home:Number(prediction.actual_home_goals),away:Number(prediction.actual_away_goals)}
+      fallbackHome!==null && fallbackAway!==null
+        ? {home:fallbackHome,away:fallbackAway}
         : null
     );
     const actualOutcome=String(prediction.actual_outcome || (score ? actualOutcomeFromGoals(score.home,score.away) : ''));
@@ -77,11 +91,11 @@ export function createModelEvaluationRuntime(deps = {}) {
     const bttsActual=prediction.btts_actual===null || prediction.btts_actual===undefined ? Number(score.home)>0 && Number(score.away)>0 : Boolean(prediction.btts_actual);
     const markets=[];
   
-    if (Number.isFinite(Number(prediction.over25_prob))) {
+    if (postMatchFiniteValue(prediction.over25_prob)!==null) {
       const overPred=Number(prediction.over25_prob)>=50;
       markets.push({code:'over25',label:'Тотал 2.5',predicted:overPred?'ТБ 2.5':'ТМ 2.5',probability:Math.round(Number(prediction.over25_prob)*10)/10,actual:overActual?'ТБ 2.5':'ТМ 2.5',correct:overPred===overActual});
     }
-    if (Number.isFinite(Number(prediction.btts_prob))) {
+    if (postMatchFiniteValue(prediction.btts_prob)!==null) {
       const bttsPred=Number(prediction.btts_prob)>=50;
       markets.push({code:'btts',label:'Обе забьют',predicted:bttsPred?'Да':'Нет',probability:Math.round(Number(prediction.btts_prob)*10)/10,actual:bttsActual?'Да':'Нет',correct:bttsPred===bttsActual});
     }
@@ -125,7 +139,7 @@ export function createModelEvaluationRuntime(deps = {}) {
     const predictedLabel=postMatchOutcomeLabel(predictedOutcome);
     const actualLabel=postMatchOutcomeLabel(actualOutcome);
     const summary=`До матча максимальная вероятность была у ${predictedLabel}${predictedProbability===null?'':` — ${predictedProbability}%`}. Факт: ${actualLabel}, счёт ${score.home}:${score.away}.`;
-    const brier=Number.isFinite(Number(prediction.brier_score)) ? Math.round(Number(prediction.brier_score)*1000)/1000 : null;
+    const brier=postMatchFiniteValue(prediction.brier_score)===null ? null : Math.round(Number(prediction.brier_score)*1000)/1000;
     return {
       available:true,
       state:'reviewed',
@@ -137,7 +151,7 @@ export function createModelEvaluationRuntime(deps = {}) {
       evidence:evidence.slice(0,3),
       quality:{
         brier,
-        confidence:Number.isFinite(Number(prediction.confidence_score))?Math.round(Number(prediction.confidence_score)):null,
+        confidence:postMatchFiniteValue(prediction.confidence_score)===null?null:Math.round(Number(prediction.confidence_score)),
         completeness:Number(prediction.completeness_max || 0)>0?Math.round(Number(prediction.completeness_score || 0)/Number(prediction.completeness_max)*100):null,
         calibrationMode:String(prediction.calibration_mode || 'baseline'),
       },
