@@ -23,3 +23,16 @@ test('public match navigation and user profile stay independent from admin conso
   assert.match(viewChrome,/profileView:\s*Object\.freeze\(\['Профиль', 'Напоминания и настройки'\]\)/);
   assert.match(viewChrome,/matchesView:\s*Object\.freeze\(\['Главная', 'Видим, что меняет матч\.'\]\)/);
 });
+
+test('RC125 fallback does not clear a visible cached feed after provider failures',()=>{
+  const start=app.indexOf('async function loadMatches');
+  const end=app.indexOf('function syncFilterButtons',start);
+  assert.ok(start>=0 && end>start);
+  const load=app.slice(start,end);
+  assert.match(load,/const fallbackSnapshot = readMatchSnapshot\(date\)/);
+  assert.match(load,/const canReuseCurrent = Boolean\(state\.matches\.length/);
+  assert.match(load,/applyMatchPayload\(snapshot, \{ snapshot: true, refreshing: true \}\)/);
+  assert.match(load,/if \(seq !== state\.matchesLoadSeq\) return/);
+  assert.match(load,/writeMatchSnapshot\(date, data\)/);
+  assert.match(load,/const refresh = async \(\) => \{/);
+});

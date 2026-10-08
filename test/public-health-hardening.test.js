@@ -177,3 +177,44 @@ test('public liveness is dependency-free and full public health stays minimal', 
     readiness:{ok:false,status:'not_ready'},
   });
 });
+
+test('public readiness invalidation refreshes a frozen and sanitized snapshot',async()=>{
+  let calls=0;
+  const api=createPublicHealthRuntime({
+    now:()=>1_000,
+    cacheMs:30_000,
+    computeReadiness:async()=>({
+      ok:true,status:'ready',version:'v'+(++calls),
+      checks:{supabase:{ok:true,status:'ok',privateToken:'never expose'}},
+      deployment:{sha:'secret'},
+    }),
+  });
+  const first=await api.readinessSnapshot();
+  assert.equal(first.version,'v1');
+  assert.equal(Object.isFrozen(first),true);
+  assert.equal(Object.isFrozen(first.checks),true);
+  assert.equal(Object.isFrozen(first.checks.supabase),true);
+  assert.equal('deployment' in first,false);
+  assert.equal('privateToken' in first.checks.supabase,false);
+  assert.equal((await api.readinessSnapshot()).version,'v1');
+  api.invalidate();
+  const refreshed=await api.readinessSnapshot();
+  assert.equal(refreshed.version,'v2');
+  assert.equal(calls,2);
+});
+
+test('failed readiness probes are retried instead of poisoning the public cache',async()=>{
+  let calls=0;
+  const api=createPublicHealthRuntime({
+    now:()=>1_000,
+    computeReadiness:async()=>{
+      calls++;
+      if(calls===1) throw new Error('temporary upstream failure');
+      return {ok:true,status:'ready'};
+    },
+  });
+  await assert.rejects(api.readinessSnapshot(),/temporary upstream failure/);
+  assert.equal((await api.readinessSnapshot()).ok,true);
+  assert.equal((await api.readinessSnapshot()).ok,true);
+  assert.equal(calls,2);
+});

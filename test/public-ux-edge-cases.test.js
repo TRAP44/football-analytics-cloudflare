@@ -86,3 +86,15 @@ test('frontend revision refreshes QA styles without changing release identity',(
   assert.match(runtime,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
   assert.doesNotMatch(html,/6\.120\.0-ui3/);
 });
+
+test('mobile QA smoke enforces overflow and tap-target failures rather than only collecting screenshots',()=>{
+  const start=smoke.indexOf('function assertEdgeCaseFixture');
+  const end=smoke.indexOf('function ',start+9);
+  assert.ok(start>=0 && end>start);
+  const checks=smoke.slice(start,end);
+  assert.match(checks,/fixture\.scrollWidth > snapshot\.fixture\.clientWidth/);
+  assert.match(checks,/control\.height < 43\.5/);
+  assert.match(checks,/text\.scrollWidth > text\.clientWidth/);
+  assert.match(checks,/text\.clientHeight > text\.lineHeight \* 2\.35/);
+  assert.match(checks,/throw new Error/);
+});

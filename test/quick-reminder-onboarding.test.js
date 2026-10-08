@@ -32,3 +32,22 @@ test('current public manifest keeps the launch UX capabilities enabled', () => {
   assert.match(capabilities,/matchAtAGlanceCockpit:true/);
   assert.doesNotMatch(worker,/quickMatchReminders:\s*'disabled'|firstRunGuide:\s*'disabled'/);
 });
+
+test('quick reminder reflects pending and active state without duplicate writes',()=>{
+  const start=app.indexOf('function syncQuickReminderButton');
+  const end=app.indexOf('function syncAllQuickReminderButtons',start);
+  const sync=app.slice(start,end);
+  assert.ok(start>=0 && end>start);
+  assert.match(sync,/button\.disabled = pending/);
+  assert.match(sync,/classList\.toggle\('is-pending', pending\)/);
+  assert.match(sync,/classList\.toggle\('active', active\)/);
+  assert.match(sync,/setAttribute\('aria-pressed', active \? 'true' : 'false'\)/);
+  const toggleStart=app.indexOf('async function toggleReminder');
+  const toggleEnd=app.indexOf('\nfunction ',toggleStart+8);
+  const toggle=app.slice(toggleStart,toggleEnd>toggleStart?toggleEnd:undefined);
+  assert.match(toggle,/state\.reminderMutations\.has\(fixtureId\)/);
+  assert.match(toggle,/runtimeAllows\('remindersEnabled'\) === true/);
+  assert.match(toggle,/state\.reminderMutations\.add\(fixtureId\)/);
+  assert.match(toggle,/method: 'DELETE'/);
+  assert.match(toggle,/method: 'POST'/);
+});

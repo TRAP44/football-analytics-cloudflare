@@ -245,3 +245,36 @@ test('Issue #490 public router preserves manifest, runtime-status and retired Su
   assert.equal(retired.body.code,'ADMIN_DIAGNOSTICS_ONLY');
   assert.equal(calls.length,2);
 });
+
+test('public status runtimes reject missing callbacks before serving requests',()=>{
+  assert.throws(()=>createPublicStatusRuntime(),/loadRuntimeControls is required/);
+  assert.throws(()=>createPublicStatusRuntime({
+    loadRuntimeControls:async()=>({}),
+  }),/publicRuntimeControls is required/);
+  assert.throws(()=>createPublicStatusRouter(),/publicStatusRuntime is required/);
+});
+
+test('public status router rejects writes and does not expose private runtime metadata',async()=>{
+  const router=createPublicStatusRouter({
+    publicStatusRuntime:{serviceStatus:async()=>({ok:true,status:'operational'})},
+    publicHealthRuntime:{
+      liveSnapshot:()=>({ok:true,status:'alive'}),
+      readinessSnapshot:async()=>({ok:true,status:'ready'}),
+      healthSnapshot:async()=>({ok:true,status:'ready'}),
+    },
+    appManifest:()=>({version:'public'}),
+    loadRuntimeControls:async()=>({schemaReady:true,value:{revision:7,privateSecret:'internal'},source:'supabase'}),
+    publicRuntimeControls:value=>({revision:value.revision}),
+    runtimeControlsCacheMs:15_000,
+    json:(body,status=200,headers={})=>({body,status,headers}),
+  });
+  for(const pathname of ['/api/public-status','/health/live','/health/ready','/health','/api/health','/api/runtime-status']){
+    assert.equal(await router.handle({method:'POST'},{pathname},{}),null,pathname);
+  }
+  const read=await router.handle({method:'HEAD'},{pathname:'/api/runtime-status'},{});
+  assert.deepEqual(read.body.runtime,{revision:7});
+  assert.equal(read.body.source,'supabase');
+  assert.equal(read.body.cacheSeconds,15);
+  assert.equal('privateSecret' in read.body.runtime,false);
+  assert.equal((await router.handle({method:'HEAD'},{pathname:'/health/ready'},{})).status,200);
+});

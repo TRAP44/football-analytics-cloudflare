@@ -29,3 +29,15 @@ test('home-first launch exposes the user profile while admin panels remain gated
   assert.match(app,/showView\('matchesView', \{ restore: true \}\)/);
   assert.match(app,/if \(\$\('navProfile'\)\) \$\('navProfile'\)\.hidden=false/);
 });
+
+test('RC123 defers public match-feed work until access-control bootstrap completes',()=>{
+  const start=app.indexOf('async function runStartupSequence');
+  const end=app.indexOf('const api = createApiClient',start);
+  assert.ok(start>=0 && end>start);
+  const startup=app.slice(start,end);
+  const profile=startup.indexOf('loadProfile().catch(()=>null)');
+  const access=startup.indexOf('if (state.closedBetaBlocked) return false');
+  const feed=startup.indexOf('const startupTasks = [loadFavorites(), loadMatches({ snapshotFastPath:true })]');
+  assert.ok(profile>=0 && access>profile && feed>access);
+  assert.doesNotMatch(startup.slice(0,access),/loadMatches\(\{/);
+});

@@ -64,3 +64,13 @@ test('current manifest preserves the public-product contracts introduced by RC49
   assert.match(appCapabilities,/focusedMatchHome:true/);
   assert.match(appCapabilities,/telegramMiniAppE2E:true/);
 });
+
+test('RC49 public shell keeps four distinct main navigation targets',()=>{
+  const expected=['navMatches','navMyTeams','navHistory','navProfile'];
+  for(const id of expected){
+    assert.equal((html.match(new RegExp('id="'+id+'"','g'))||[]).length,1,id);
+  }
+  assert.doesNotMatch(html,/id="navSearch"/);
+  assert.match(html,/<meta name="matchradar-surface" content="public"/);
+  assert.doesNotMatch(html,/data-admin-only/);
+});

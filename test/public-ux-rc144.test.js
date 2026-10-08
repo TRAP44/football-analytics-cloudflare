@@ -156,3 +156,14 @@ test('admin journey keeps operational tools gated without hiding the user profil
   assert.match(app, /loadRuntimeControlsAdmin\(false\)/);
   assert.match(app, /function applyAdminVisibility\(\)/);
 });
+
+test('RC144 keeps public navigation semantic and admin controls exclusive to admin HTML',()=>{
+  for(const id of ['navMatches','navMyTeams','navHistory','navProfile']){
+    assert.equal((html.match(new RegExp('id="'+id+'"','g'))||[]).length,1,id);
+  }
+  assert.match(html,/<meta name="matchradar-surface" content="public"/);
+  assert.match(adminHtml,/<meta name="matchradar-surface" content="admin"/);
+  assert.doesNotMatch(html,/id="runtimeControlsPanel"|id="providerStatusPanel"/);
+  assert.match(adminHtml,/id="runtimeControlsPanel"/);
+  assert.match(adminHtml,/id="providerStatusPanel"/);
+});

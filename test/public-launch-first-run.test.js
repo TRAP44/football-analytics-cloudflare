@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createFirstRunGuideController } from '../public/modules/first-run-guide.js';
 
 const html=fs.readFileSync('public/index.html','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
@@ -59,4 +60,43 @@ test('first run guide keeps mobile touch targets and collapses to one column on 
   assert.match(css,/\.first-run-guide-dismiss\{[\s\S]*?min-height:44px/);
   assert.match(css,/\.miniapp-public-shell \.app-shell\{[\s\S]*--tg-content-safe-area-inset-top/);
   assert.match(css,/\.miniapp-public-shell \.topbar\{[\s\S]*padding-top:8px/);
+});
+
+test('first-run controller handles deep links and dismisses guide without network requests',()=>{
+  const guide={hidden:false};
+  const matchSearch={focus(){this.focused=true;},scrollIntoView(){}};
+  const globalSearchInput={value:'old',focus(){this.focused=true;}};
+  const elements={firstRunGuide:guide,matchSearch,globalSearchInput};
+  const persisted=new Map();
+  const actions=[];
+  const state={globalSearch:{query:'old'}};
+  const browser={location:{search:'?view=history'},setTimeout:callback=>callback()};
+  const controller=createFirstRunGuideController({
+    window:browser,tg:null,state,
+    storage:{getItem:key=>persisted.get(key),setItem:(key,value)=>persisted.set(key,value)},
+    elementById:id=>elements[id]||null,
+    sendProductAction:(...args)=>actions.push(args),
+    renderGlobalSearch:()=>actions.push(['renderGlobalSearch']),
+    showView:view=>actions.push(['showView',view]),
+  });
+  assert.equal(controller.hasDirectLaunchIntent(),true);
+  assert.equal(controller.renderFirstRunGuide(),false);
+  assert.equal(guide.hidden,true);
+
+  browser.location.search='?view=matches';
+  assert.equal(controller.hasDirectLaunchIntent(),false);
+  assert.equal(controller.renderFirstRunGuide(),true);
+  assert.equal(controller.startFirstRunFavorite(),true);
+  assert.equal(guide.hidden,true);
+  assert.equal(state.globalSearch.query,'');
+  assert.equal(globalSearchInput.value,'');
+  assert.equal(globalSearchInput.focused,true);
+  assert.deepEqual(actions,[
+    ['first_run_favorite','searchView'],
+    ['renderGlobalSearch'],
+    ['showView','searchView'],
+  ]);
+  assert.equal(controller.renderFirstRunGuide(),false);
+  assert.equal(controller.startFirstRunSearch(),true);
+  assert.equal(matchSearch.focused,true);
 });
