@@ -5,6 +5,7 @@ import { createProviderSloRuntime } from '../src/provider-slo-runtime.js';
 
 const worker = fs.readFileSync('src/worker.js','utf8');
 const providerSlo = fs.readFileSync('src/provider-slo-runtime.js','utf8');
+const telemetryOps = fs.readFileSync('src/telemetry-ops-runtime.js','utf8');
 const providerWiring = fs.readFileSync('src/provider-readiness-wiring-runtime.js','utf8');
 const productionMonitor = fs.readFileSync('src/production-monitor-runtime.js','utf8');
 const router = fs.readFileSync('src/router.js','utf8');
@@ -24,7 +25,8 @@ test('provider observability is wired to both primary and secondary football tra
   assert.match(worker, /createProviderRequestBoundary\(\{[\s\S]*?observeProviderRequest/);
   assert.match(gateway, /await observe\(cfg,\{/);
   assert.match(secondary, /await observe\(cfg,\{/);
-  assert.match(providerSlo, /record_provider_slo_observation/);
+  assert.match(telemetryOps, /supaRpc\(cfg,'record_provider_slo_observation'/);
+  assert.match(worker, /getTelemetryOpsRuntime\(\)\.observeProviderRequest/);
   assert.match(providerSlo, /read_provider_slo_buckets/);
 });
 
