@@ -9,7 +9,9 @@ export function createProfileDataCapabilitiesModule({
   const $ = elementById;
 
   function renderDataCapabilities() {
-    const selected=state.dataCapabilities ?? state.profile?.features?.dataCapabilities;
+    const primary=state.dataCapabilities;
+    const selected=primary && typeof primary==='object' && !Array.isArray(primary)
+      ? primary : state.profile?.features?.dataCapabilities;
     const c=selected && typeof selected==='object' && !Array.isArray(selected) ? selected : {};
     const features=c.features && typeof c.features==='object' && !Array.isArray(c.features) ? c.features : {};
     const rawRefresh=c.refreshSeconds;

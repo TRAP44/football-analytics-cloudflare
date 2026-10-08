@@ -180,3 +180,70 @@ test('malformed capabilities and optional feature containers render safely witho
     assert.equal(JSON.stringify(state),previous);
   }
 });
+
+
+
+test('malformed top-level capabilities defer to the valid profile fallback',()=>{
+  for(const malformed of [false,'expanded',[],42]){
+    const state={
+      dataCapabilities:malformed,
+      profile:{features:{dataCapabilities:{
+        mode:'expanded',refreshSeconds:20,features:{
+          liveRefresh:true,lineupsFallback:true,playerStats:true,liveOdds:true,
+        },
+      }}},
+    };
+    const {module,elements}=createModule(state);
+    module.renderDataCapabilities();
+    assert.equal(elements.get('dataModeLabel').textContent,'Расширенный');
+    assert.equal(elements.get('dataModeRefresh').textContent,'часто');
+    assert.equal(elements.get('dataModeOdds').textContent,'Чаще доступны');
+  }
+});
+
+test('valid top-level restrictions override more permissive cached profile capability flags',()=>{
+  const state={
+    dataCapabilities:{
+      mode:'standard',refreshSeconds:0,
+      features:{liveRefresh:false,lineupsFallback:false,playerStats:false,liveOdds:false},
+    },
+    profile:{features:{dataCapabilities:{
+      mode:'expanded',refreshSeconds:15,
+      features:{liveRefresh:true,lineupsFallback:true,playerStats:true,liveOdds:true},
+    }}},
+  };
+  const {module,elements}=createModule(state);
+  module.renderDataCapabilities();
+  assert.equal(elements.get('dataModeLabel').textContent,'Стандартный');
+  assert.equal(elements.get('dataModeRefresh').textContent,'временно приостановлены');
+  for(const field of ['dataModeLineups','dataModePlayers','dataModeOdds']){
+    assert.equal(elements.get(field).textContent,'Если доступны');
+  }
+});
+
+test('capabilities renderer updates only visible text and never interprets untrusted HTML',()=>{
+  const state={
+    dataCapabilities:{mode:'<img src=x onerror=alert(1)>',refreshSeconds:30,
+      features:{liveOdds:'<script>',lineupsFallback:{enabled:true},playerStats:true}},
+  };
+  const {module,elements}=createModule(state);
+  for(const element of elements.values()){
+    Object.defineProperty(element,'innerHTML',{set(){throw new Error('HTML assignment forbidden')}});
+  }
+  assert.doesNotThrow(()=>module.renderDataCapabilities());
+  assert.equal(elements.get('dataModeLabel').textContent,'Стандартный');
+  assert.equal(elements.get('dataModeOdds').textContent,'Если доступны');
+  assert.equal(elements.get('dataModePlayers').textContent,'Чаще доступны');
+});
+
+test('partial profile capability DOM remains safe on repeated updates',()=>{
+  const state={dataCapabilities:{mode:'expanded',refreshSeconds:20,features:{playerStats:true}}};
+  const elements=new Map([['dataModePlayers',element()],['dataModeRefresh',element()]]);
+  const {module}=createModule(state,elements);
+  assert.doesNotThrow(()=>module.renderDataCapabilities());
+  assert.equal(elements.get('dataModePlayers').textContent,'Чаще доступны');
+  state.dataCapabilities={mode:'standard',refreshSeconds:0,features:{playerStats:false,liveRefresh:false}};
+  assert.doesNotThrow(()=>module.renderDataCapabilities());
+  assert.equal(elements.get('dataModePlayers').textContent,'Если доступны');
+  assert.equal(elements.get('dataModeRefresh').textContent,'временно приостановлены');
+});
