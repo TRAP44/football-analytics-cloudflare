@@ -25,7 +25,14 @@ function run(binary,args,options={}) {
     throw new Error(`Disposable restore check failed at ${binary}: ${detail || 'connection details suppressed'}`);
   }
 }
-function query(url,sql) {return run('psql',[url,'-X','-A','-t','-v','ON_ERROR_STOP=1','-c',sql]);}
+function query(url,sql) {
+  if (container && url===target) return run('docker',['exec',container,'psql','-U','supabase_admin','-d',name,'-X','-A','-t','-v','ON_ERROR_STOP=1','-c',sql]);
+  return run('psql',[url,'-X','-A','-t','-v','ON_ERROR_STOP=1','-c',sql]);
+}
+function applyRestoreSql(path) {
+  if (container) return run('docker',['exec','-i',container,'psql','-U','supabase_admin','-d',name,'-X','-v','ON_ERROR_STOP=1'],{input:readFileSync(path),stdio:['pipe','pipe','pipe']});
+  return run('psql',[target,'-X','-v','ON_ERROR_STOP=1','-f',path]);
+}
 const fixtureUser=900000000437;
 let created=false;
 try {
@@ -45,8 +52,8 @@ try {
   } else {
     run('pg_restore',['--dbname='+target,'--no-owner','--clean','--if-exists','--single-transaction','--exit-on-error',dump]);
   }
-  run('psql',[target,'-X','-v','ON_ERROR_STOP=1','-f','scripts/apply-supabase-restore-hardening.sql']);
-  run('psql',[target,'-X','-v','ON_ERROR_STOP=1','-f','scripts/verify-supabase-restore.sql']);
+  applyRestoreSql('scripts/apply-supabase-restore-hardening.sql');
+  applyRestoreSql('scripts/verify-supabase-restore.sql');
   const {checkedAt:sourceCheckedAt,...expectedContract}=JSON.parse(before);
   const {checkedAt:restoredCheckedAt,...restoredContract}=JSON.parse(query(target,'select public.backend_schema_contract_v2()::text;'));
   assert.ok(Number.isFinite(Date.parse(sourceCheckedAt)));
