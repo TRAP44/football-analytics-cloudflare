@@ -23,7 +23,7 @@ These instructions apply to automated coding and review agents operating on this
 - Codex independently reviews the resulting diff for correctness, security, regression risk, UX, quota and production safety. The reviewer must not treat the author's summary as evidence.
 - Agents may suggest or revise commits on their own task branches when authorized, but **cannot approve their own work or merge into `main`**.
 - When agents disagree, surface the disagreement and evidence in the PR; do not automatically select a winner.
-- Any auto-generated PR must start as **draft**, remain unmerged, and identify its source agent.
+- Any auto-generated PR must start as **draft**, remain unmerged, and identify its source agent. The **owner** controls the Draft → Ready transition after applicable checks; if draft review is unavailable, Ready is the required trigger for Codex review. Any material new commit requires review of the new exact head SHA; never treat an old review as current.
 
 ## Code Review Rules
 
@@ -37,7 +37,7 @@ These instructions apply to automated coding and review agents operating on this
 - Flag any change that weakens Telegram initData verification, server-side admin authorization, paid entitlement checks, isolated Supabase permissions, or deploy provenance/rollback guarantees. Require targeted regression tests and an explicit owner decision for production-affecting changes.
 
 ## Local gates
-Run appropriate checks for the change. The existing CI is authoritative:
+Use **Node.js 22**. For code-impacting changes, run the local checks below and report pass/fail per command. GitHub CI remains authoritative:
 ```sh
 npm ci
 npm audit --audit-level=high
@@ -46,16 +46,21 @@ npm run security:scan
 npm run security:privileged
 npm run lint
 npm run check
+npm run verify:supabase
 npm run test:release
 npm test
 npm run test:review-tail
+node scripts/bottom-nav-render-smoke.js
+node scripts/isolated-load-check.js
 npm run verify:release
 npm run verify:worker
 ```
-For relevant changes, also run database integration, smoke or isolated-load checks according to CI. Do not fake or waive a failing gate.
+For **schema, Supabase contracts, database access or migration** changes, the existing GitHub Quality `database-integration` job is mandatory for trusted same-repository PRs or `main`; it exercises a fresh Supabase stack and migration compatibility. Do not substitute a unit test for this integration gate. For UI/navigation changes, require the bottom-navigation render smoke; for provider/caching/concurrency changes, the isolated-load check is required. Existing Quality CI may run additional tests and controls; inspect the actual run.
+A docs-only PR currently skips Quality/CodeQL due to path filters: **absent checks are not passing checks**. Do not fake, waive or claim success for a skipped gate.
 
 ## Release discipline
-- All runtime code passes through PR -> Quality/CodeQL/security validation -> owner acceptance -> merge.
+- **No enforceable human-only merge gate exists yet.** At the 10 Oct 2026 audit, `main` required a PR but had zero required approvals and no required checks. Neither this policy nor Codex's review is a GitHub authorization control. Until a separate owner-approved, tested gate is installed, autonomous agents must not receive merge-capable repository tokens or permission to perform unattended implementation pushes.
+- All runtime code passes through PR -> Quality/CodeQL/security validation -> owner acceptance -> merge. Verify the current GitHub ruleset and actual check runs; do not assume they have been enforced.
 - A merge into `main` can initiate a Production workflow. Merging is a **release decision**, not merely code organization.
 - Do not enable auto-merge, self-approval, automated production deploy commands, workflow_dispatch, or credential changes in an agent workflow.
 - Workflows using `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, or `OPENAI_API_KEY` must not be enabled before branch protection, scoped credentials, and untrusted-PR boundaries are verified.
