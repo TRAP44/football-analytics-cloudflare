@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/isolated-load-resilience.yml'
       - 'scripts/isolated-*-check.js'
+      - 'scripts/supabase-concurrency-gate.js'
+      - 'test/provider-budget-window-assertions.test.js'
       - 'scripts/*supabase*.sql'
       - 'supabase/migrations/**'
       - 'test/supabase-backup-workflow.test.js'
@@ -13,6 +15,8 @@ on:
     paths:
       - '.github/workflows/isolated-load-resilience.yml'
       - 'scripts/isolated-*-check.js'
+      - 'scripts/supabase-concurrency-gate.js'
+      - 'test/provider-budget-window-assertions.test.js'
       - 'scripts/*supabase*.sql'
       - 'supabase/migrations/**'
       - 'test/supabase-backup-workflow.test.js'
