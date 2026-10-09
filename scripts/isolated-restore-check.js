@@ -18,8 +18,11 @@ function run(binary,args) {
   catch {throw new Error(`Disposable restore check failed at ${binary}; connection details suppressed.`);}
 }
 function query(url,sql) {return run('psql',[url,'-X','-A','-t','-v','ON_ERROR_STOP=1','-c',sql]);}
+const fixtureUser=900000000437;
 let created=false;
 try {
+  query(source,`select public.consume_analysis_quota(${fixtureUser},date '2099-10-09',5);`);
+  assert.equal(query(source,`select analyses from public.usage_daily where telegram_id=${fixtureUser} and usage_date=date '2099-10-09';`),'1');
   const before=query(source,'select public.backend_schema_contract_v2()::text;');
   const count=query(source,'select count(*) from public.users;');
   run('pg_dump',['--dbname='+source,'--format=custom','--no-owner','--no-acl','--file='+dump]);
@@ -29,8 +32,10 @@ try {
   run('psql',[target,'-X','-v','ON_ERROR_STOP=1','-f','scripts/verify-supabase-restore.sql']);
   assert.deepEqual(JSON.parse(query(target,'select public.backend_schema_contract_v2()::text;')),JSON.parse(before));
   assert.equal(query(target,'select count(*) from public.users;'),count);
+  assert.equal(query(target,`select analyses from public.usage_daily where telegram_id=${fixtureUser} and usage_date=date '2099-10-09';`),'1');
   console.log('Disposable backup/restore: schema fingerprint, users count and security acceptance passed. No production database accessed.');
 } finally {
+  query(source,`delete from public.usage_daily where telegram_id=${fixtureUser}; delete from public.users where telegram_id=${fixtureUser};`);
   if (created) run('dropdb',['--maintenance-db='+source,'--if-exists',name]);
   rmSync(directory,{recursive:true,force:true});
 }
