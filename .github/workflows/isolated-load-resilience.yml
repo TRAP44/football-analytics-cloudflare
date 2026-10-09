@@ -160,6 +160,7 @@ jobs:
           set -a
           source "$RUNNER_TEMP/supabase-fresh.env"
           set +a
+          export ISOLATED_PG_CONTAINER="supabase_db_matchradar-supabase-fresh"
           node scripts/isolated-db-load-check.js
           node scripts/isolated-restore-check.js
 
