@@ -2806,7 +2806,7 @@ async function loadMatches(options = {}) {
         : 'Источник матчей ограничил запросы. После паузы попробуйте обновить данные.')
       : friendlyErrorMessage(e);
     const todayShortcut = state.offset !== 0
-      ? '<button id="matchesTodayLiveBtn" class="secondary-btn" type="button">Сегодня · LIVE</button>'
+      ? '<button id="matchesTodayLiveBtn" class="secondary-btn" type="button">Сегодня · В эфире</button>'
       : '';
     $('matches').innerHTML = `<div class="empty error-state"><strong>Матчи сейчас не обновились</strong><span>${escapeHtml(publicMessage)}</span><div class="matches-error-actions"><button id="matchesRetryBtn" class="secondary-btn" type="button">Повторить</button>${todayShortcut}</div></div>`;
     $('matchesTodayLiveBtn')?.addEventListener('click', () => {
@@ -3423,7 +3423,7 @@ function renderMatches() {
       const oldEnough=Number.isFinite(sourceTime) && Date.now()-sourceTime>=2*60*1000;
       if (oldEnough) {
         const hhmm=new Date(sourceTime).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
-        notices.push(`<div class="data-notice stale">LIVE-счёт из кеша по состоянию на ${escapeHtml(hhmm)}. События могли измениться.</div>`);
+        notices.push(`<div class="data-notice stale">Текущий счёт из кеша по состоянию на ${escapeHtml(hhmm)}. События могли измениться.</div>`);
       }
     }
     if (Number(integrity.quarantined || 0) > 0) notices.push('<div class="data-notice integrity-notice">Некоторые матчи временно скрыты, пока мы проверяем данные.</div>');

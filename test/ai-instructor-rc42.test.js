@@ -289,7 +289,7 @@ test('RC42 referee history excludes future, foreign-country and malformed eviden
 test('RC42 match center records referee history only from finished match analytical data', () => {
   assert.match(
     matchCenter,
-    /if \(finished && fixture\.fixture\?\.referee\) await saveRefereeMatchHistory\(\{[\s\S]*?fixtureId,[\s\S]*?referee:fixture\.fixture\.referee,[\s\S]*?events:analyticalEvents,[\s\S]*?statistics:analyticalStatistics[\s\S]*?\}, cfg\)\.catch\(\(\) => false\)/,
+    /if \(finished && referee\) \{\s*await optionalAsync\(saveRefereeMatchHistory,\{[\s\S]*?fixtureId,[\s\S]*?referee,[\s\S]*?events:analyticalEvents,[\s\S]*?statistics:analyticalStatistics[\s\S]*?\},cfg\)/,
   );
 });
 

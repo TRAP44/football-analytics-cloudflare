@@ -22,7 +22,7 @@ test('main match screen keeps secondary discovery inside the league drawer', () 
 });
 
 test('secondary filter summary explains the selected filter and closes after selection', () => {
-  assert.match(app, /const drawerFilters = \['favorites', 'international', 'cups', 'england', 'spain', 'italy', 'germany', 'france'\]/);
+  assert.match(app, /const drawerFilters = \['favorites', 'international', 'cups', 'england', 'spain', 'italy', 'germany', 'france',[\s\S]*?'saudi'\]/);
   assert.match(app, /summaryValue\.textContent = activeDrawerFilter \? labels\[state\.filter\] : ''/);
   assert.match(app, /summaryValue\.hidden = !activeDrawerFilter/);
   assert.match(app, /btn\.closest\('\.league-filter-drawer'\)/);
@@ -96,7 +96,7 @@ test('focused home score label never fabricates nil-nil for an unknown live scor
 
 test('quota is quiet until it is useful', () => {
   assert.match(html, /id="quotaText" hidden/);
-  assert.match(profileSummary, /Number\(quota\.left\) <= 3 \|\| state\.profileStale/);
+  assert.match(profileSummary, /\(quotaLeft!==null && quotaLeft<=3\) \|\| state\.profileStale/);
 });
 
 test('date context stays directly available without a duplicate overview headline', () => {

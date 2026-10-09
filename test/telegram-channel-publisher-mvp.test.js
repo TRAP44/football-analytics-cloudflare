@@ -1,3 +1,4 @@
+import { readFileSync as readContractSource } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -22,8 +23,8 @@ test('publisher token is separate and missing config fails closed', () => {
   );
   assert.equal(channelPublisherState({botToken:'same',publisherBotToken:'same',telegramChannelId:'@MatchRadarFootball'}).reason,'publisher_token_must_be_separate');
   assert.equal(channelPublisherState({botToken:'main',publisherBotToken:'publisher',telegramChannelId:'@MatchRadarFootball'}).enabled,true);
-  assert.match(worker,/publisherBotToken:\s*env\.TELEGRAM_PUBLISHER_BOT_TOKEN/);
-  assert.match(worker,/telegramChannelId:\s*env\.TELEGRAM_CHANNEL_ID/);
+  assert.match(readContractSource(new URL('../src/common-infrastructure-runtime.js', import.meta.url), 'utf8'),/publisherBotToken:\s*env\.TELEGRAM_PUBLISHER_BOT_TOKEN/);
+  assert.match(readContractSource(new URL('../src/common-infrastructure-runtime.js', import.meta.url), 'utf8'),/telegramChannelId:\s*env\.TELEGRAM_CHANNEL_ID/);
   assert.match(envExample,/TELEGRAM_PUBLISHER_BOT_TOKEN=PASTE_TELEGRAM_PUBLISHER_BOT_TOKEN/);
   assert.match(wrangler,/"TELEGRAM_CHANNEL_ID":\s*"@MatchRadarFootball"/);
 });
@@ -37,11 +38,11 @@ test('channel CTA is fixed and sendPhoto is prepared without being routed in MVP
 });
 
 test('manual publisher route is admin-only and uses existing fixture deep-link contract', () => {
-  assert.match(router,/request\.method === 'POST' && url\.pathname === '\/api\/admin\/channel-publisher\/test'/);
-  assert.match(router,/if \(!isAdminUser\(user, cfg\)\) return adminForbidden\(\);[\s\S]{0,180}apiChannelPublisherTest/);
-  assert.match(worker,/fixtureTelegramDeepLink\(cfg,fixtureId,\{source:'channel',campaign:'publisher_mvp',content:'manual'\}\)/);
-  assert.match(worker,/url:\s*link\.url/);
-  assert.match(worker,/dryRun\s*=\s*body\?\.dryRun !== false/);
+  assert.match(router,/method === 'POST' && pathname === '\/api\/admin\/channel-publisher\/test'/);
+  assert.match(router,/if \(!adminAllowed\(\)\) return adminForbidden\(\);[\s\S]{0,180}apiChannelPublisherTest/);
+  assert.match(readContractSource(new URL('../src/publisher-runtime.js', import.meta.url), 'utf8'),/fixtureTelegramDeepLink\(cfg,fixtureId,\{source:'channel',campaign:'publisher_mvp',content:'manual'\}\)/);
+  assert.match(readContractSource(new URL('../src/publisher-runtime.js', import.meta.url), 'utf8'),/url:\s*link\.url/);
+  assert.match(readContractSource(new URL('../src/publisher-runtime.js', import.meta.url), 'utf8'),/dryRun\s*=\s*body\?\.dryRun !== false/);
   assert.equal(isAdminSensitivePath('/api/admin/channel-publisher/test'),true);
   assert.equal(isAdminSensitivePath('/api/adminish/channel-publisher/test'),false);
 });
@@ -156,9 +157,9 @@ test('publisher treats malformed Telegram success payload as delivery-uncertain 
 });
 
 test('publisher dedupe uses existing analysis_cache without schema changes and cron does not publish', () => {
-  assert.match(worker,/async function claimChannelPublishIdempotency/);
-  assert.match(worker,/resolution=ignore-duplicates,return=representation/);
-  assert.match(worker,/analysis_cache/);
+  assert.match(readContractSource(new URL('../src/channel-publish-idempotency-runtime.js', import.meta.url), 'utf8'),/async function claimChannelPublishIdempotency/);
+  assert.match(readContractSource(new URL('../src/channel-publish-idempotency-runtime.js',import.meta.url),'utf8'),/resolution=ignore-duplicates,return=representation/);
+  assert.match(readContractSource(new URL('../src/channel-publish-idempotency-runtime.js',import.meta.url),'utf8'),/analysis_cache/);
   const scheduled=worker.slice(worker.indexOf('async scheduled('));
   assert.doesNotMatch(scheduled,/publishChannelMessage|apiChannelPublisherTest|TELEGRAM_PUBLISHER_BOT_TOKEN/);
 });

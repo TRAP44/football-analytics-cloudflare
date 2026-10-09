@@ -221,7 +221,7 @@ export function createUserDataApiRuntime(deps) {
       return json({ error: 'Этот матч отсутствует в вашей истории анализов.', code: 'HISTORY_ANALYSIS_NOT_FOUND' }, 404);
     }
   
-    const cacheKey = `fixture:${fixtureId}:v15-availability-quality-rc144`;
+    const cacheKey = `fixture:${fixtureId}:v17-starting-xi-rc146`;
     const fresh = await getCache(cacheKey, cfg);
     const payload = fresh || await getStaleCache(cacheKey, cfg);
     if (!payload) {

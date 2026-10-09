@@ -67,7 +67,7 @@ test('fixture deep-link Match Center has Home as its fallback parent', () => {
   assert.equal(backTargetForView('analysisView', { analysisBackView: 'matchesView' }), 'matchesView');
   assert.match(app, /async function openLaunchFixture[\s\S]*?if \(action === 'center'\) return openMatchCenter\(id, null\)/);
   assert.match(app, /analysisBackView:\s*'matchesView'/);
-  const branchStart=app.indexOf("} else if (fixtureId > 0 && ['analysis','center'].includes(action))");
+  const branchStart=app.indexOf("} else if (fixtureId !== null && ['analysis','center'].includes(action))");
   const branchEnd=app.indexOf("} else {",branchStart);
   assert.ok(branchStart >= 0 && branchEnd > branchStart);
   const deepLinkBranch=app.slice(branchStart,branchEnd);

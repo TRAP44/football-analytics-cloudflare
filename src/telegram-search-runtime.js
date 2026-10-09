@@ -245,7 +245,7 @@ export function createTelegramSearchRuntime(deps = {}) {
       .trim()
       .slice(0,60);
     const parts=query
-      .split(/(?:\s*[—–]\s*|\s+-\s+|\s+\bvs\.?\b\s+|\s+\bпротив\b\s+)/i)
+      .split(/(?:\s*[—–]\s*|\s+-\s+|\s+\bvs\.?\b\s+|\s+против\s+)/i)
       .map(value=>safeText(value,60))
       .filter(Boolean)
       .slice(0,2);

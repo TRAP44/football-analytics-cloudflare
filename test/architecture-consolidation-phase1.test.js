@@ -44,7 +44,7 @@ test('fresh-install baseline path is owned by the release contract and remains f
   const guard=sql.indexOf('Fresh-install baseline refused');
   const firstSchemaMutation=Math.min(
     ...['create table','alter table','create or replace function']
-      .map(token=>sql.toLowerCase().indexOf(token))
+      .map(token=>sql.toLowerCase().search(new RegExp('^' + token, 'm')))
       .filter(index=>index>=0),
   );
   assert.ok(guard>=0 && guard<firstSchemaMutation,'fresh-install safety guard must run before schema mutation');
@@ -154,7 +154,7 @@ test('release contract keeps public access and production baseline safety explic
   for(const command of [
     'npm run security:scan',
     'npm run check',
-    'npm test',
+    'npm run test:release',
     'npm run lint',
     'npm run verify:release',
     'npm run verify:worker',

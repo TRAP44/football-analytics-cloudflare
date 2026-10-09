@@ -68,7 +68,7 @@ test('funnel separates Telegram quick AI from a full Mini App analysis',()=> {
 });
 
 test('Telegram search growth analytics stays first party and does not store the search query',()=> {
-  const event=/recordGrowthEvent\(cfg,\{[\s\S]*?eventName:'search',[\s\S]*?metadata:\{([^}]*)\}[\s\S]*?\}\)/.exec(telegramSearch);
+  const event=/backgroundCall\(recordGrowthEvent,cfg,\{[\s\S]*?eventName:'search',[\s\S]*?metadata:\{([^}]*)\}[\s\S]*?\}\)/.exec(telegramSearch);
   assert.ok(event,'search growth event payload is missing');
   assert.match(event[1],/intent:parts\.intent/);
   assert.doesNotMatch(event[1],/query|rawText|parts\.query/);

@@ -190,7 +190,7 @@ test('RC59 recheck delta detects material changes and rejects cross-fixture comp
 test('server only bypasses cached analysis for a real freshness or news-impact recheck', () => {
   assert.match(
     analysisRuntime,
-    /const recheckRequested=strictBoolean\(body\?\.recheck\)/,
+    /const recheckRequested=strictBoolean\(body\.recheck\)/,
   );
   assert.match(
     analysisRuntime,
@@ -202,18 +202,18 @@ test('server only bypasses cached analysis for a real freshness or news-impact r
   );
   assert.match(
     analysisRuntime,
-    /if \(needsFreshnessRecheck\) freeRecheck=await userHasAnalyzedFixture\(userId,fixtureId,cfg\)/,
+    /if \(needsFreshnessRecheck\) \{\s*try \{ freeRecheck=await userHasAnalyzedFixture\(userId,fixtureId,cfg\)/,
   );
   assert.match(
     analysisRuntime,
-    /if \(cached && !needsFreshnessRecheck\)[\s\S]*?if \(!newsImpactEligible\)[\s\S]*?analysisResponsePayload\(cached,/,
+    /if \(cached && !needsFreshnessRecheck\)[\s\S]*?if \(!newsImpactEligible\)[\s\S]*?safeAnalysisResponsePayload\(cached,/,
   );
 });
 
 test('free freshness rechecks bypass quota only after server-side history verification', () => {
   assert.match(
     analysisRuntime,
-    /if \(!freeRecheck && !passCandidate && quotaBefore\.left <= 0\)/,
+    /if \(!freeRecheck && !passCandidate && quotaBefore\.left\s*<=\s*0\)/,
   );
   assert.match(
     analysisRuntime,
@@ -221,7 +221,7 @@ test('free freshness rechecks bypass quota only after server-side history verifi
   );
   assert.match(
     analysisRuntime,
-    /if \(!freeRecheck && !passAccess\) \{\s*usageReservation=await reserveAnalysisQuota\(userId,cfg\)/,
+    /if \(!freeRecheck && !passAccess\) \{\s*usageReservation=objectValue\(await reserveAnalysisQuota\(userId,cfg\)\)/,
   );
   assert.match(
     analysisRuntime,
@@ -242,11 +242,11 @@ test('adaptive analysis cache TTL tightens toward kickoff', () => {
       .replace(/ /g, '\\s*');
     assert.match(
       analysisRuntime,
-      new RegExp(`${escaped}\\) ttl = ${ttl}`),
+      new RegExp(`${escaped}\\) ttl\\s*=\\s*${ttl}`),
       `${condition} -> ${ttl}`,
     );
   }
-  assert.match(analysisRuntime, /if \(isFinishedStatus\(status\)\) ttl = 720/);
+  assert.match(analysisRuntime, /if \(safePredicate\(isFinishedStatus,status\)\) ttl=720/);
 });
 
 test('Mini App exposes recheck state and requests conditional server rechecks by default', () => {
@@ -254,13 +254,13 @@ test('Mini App exposes recheck state and requests conditional server rechecks by
   assert.match(app, /Перепроверить AI сейчас/);
   assert.match(app, /analysisRecheckBtn/);
   assert.match(css, /\.analysis-freshness\.recheck/);
-  assert.match(analysisController, /recheck: options\.recheck !== false/);
+  assert.match(analysisController, /recheck:safeRead\(source,'recheck'\)!==false/);
 });
 
 test('history stays read-only while preserving current freshness metadata', () => {
   assert.match(
     userDataApi,
-    /analysisResponsePayload\(payload,\{cached:true,stale:!fresh,historyReadOnly:true,recheck:\{requested:false,performed:false,free:false,reasonCode:analysisFreshness\(payload\)\.reasonCode\}/,
+    /analysisResponsePayload\(payload,\{cached:true,stale:!fresh,historyReadOnly:true,recheck:\{requested:false,performed:false,free:false,reasonCode:freshnessReason\}/,
   );
   assert.match(analysisRuntime, /eventName:'analysis_recheck'/);
 });

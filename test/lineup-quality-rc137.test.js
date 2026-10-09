@@ -133,7 +133,10 @@ test('RC137 rejects malformed non-string grid evidence and does not award metada
 const worker = fs.readFileSync('src/worker.js', 'utf8')
   + '\n' + fs.readFileSync('src/analysis-runtime.js', 'utf8')
   + '\n' + fs.readFileSync('src/analysis-quality-runtime.js', 'utf8')
-  + '\n' + fs.readFileSync('src/match-formatting-runtime.js', 'utf8');
+  + '\n' + fs.readFileSync('src/match-formatting-runtime.js', 'utf8')
+  + '\n' + fs.readFileSync('src/match-center-runtime.js', 'utf8');
+const userDataApiSource=fs.readFileSync('src/user-data-api-runtime.js','utf8');
+const capabilitiesSource=fs.readFileSync('src/app-capabilities.js','utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
@@ -141,13 +144,13 @@ const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 test('RC137 uses lineup quality in Match Center and AI quality gate', () => {
   assert.match(worker, /const quality=assessLineupQuality\(lineup\)/);
   assert.match(worker, /lineup\.quality=quality/);
-  assert.match(worker, /const lineupQuality=assessMatchLineups\(lineups\)/);
+  assert.match(worker, /lineupQuality=objectValue\(assessMatchLineups\(lineups\)\)/);
   assert.match(worker, /const homeConfirmed=Boolean\(structuralHomeConfirmed && lineupSourceTrusted\)/);
   assert.match(worker, /const awayConfirmed=Boolean\(structuralAwayConfirmed && lineupSourceTrusted\)/);
   assert.match(worker, /lineupQuality,/);
-  assert.match(worker, /lineupQualityGuard: 'enabled'/);
-  assert.match(worker, /analysisVersion: '4\.15\.0-availability-quality'/);
-  assert.match(worker, /fixture:\$\{fixtureId\}:v15-availability-quality-rc144/);
+  assert.match(capabilitiesSource, /providerDataReliability:\s*true/);
+  assert.match(worker, /analysisVersion:\s*'4\.17\.0-starting-xi'/);
+  assert.match(worker, /fixture:\$\{fixtureId\}:v17-starting-xi-rc146/);
 });
 
 test('RC137 frontend and Telegram no longer treat a 10-player XI as confirmed', () => {
@@ -162,7 +165,7 @@ test('RC137 is part of the release health contract', () => {
   assert.match(worker, /const APP_VERSION = '6\.120\.0-rc144'/);
   assert.match(worker, /const RC_NAME = 'RC144'/);
   assert.match(runtime, /const CLIENT_VERSION = '6\.120\.0-rc144'/);
-  assert.match(smoke, /'lineupQualityGuard'/);
+  assert.match(smoke, /'providerDataReliability'/);
 });
 
 test('Issue #406 detects alias overlap across XI and substitutes', () => {

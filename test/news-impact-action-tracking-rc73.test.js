@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createNewsImpactRecoveryRuntime } from '../src/news-impact-recovery-runtime.js';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
 const recovery=fs.readFileSync('src/news-impact-recovery-runtime.js','utf8');
@@ -15,14 +16,14 @@ test('RC73 creates tracked callbacks and a tracked full-AI handoff',()=>{
   assert.match(recovery,/function newsImpactActionCallback\(/);
   assert.match(recovery,/function newsImpactTrackedAnalysisUrl\(/);
   assert.match(recovery,/news:impact:\$\{d\}:\$\{a\}:\$\{id\}/);
-  assert.match(recovery,/newsImpactDecision:d,newsImpactAction:'full_ai'/);
+  assert.match(recovery,/newsImpactDecision:d,\s*newsImpactAction:'full_ai'/);
   for (const action of ['squads','market','recheck','news','share']) {
     assert.ok(recovery.includes(`tracked('${action}'`), action);
   }
 });
 
 test('Telegram action tracking stores categorical decision/action and optional recovery only',()=>{
-  const event=/backgroundGrowthEvent\(cfg,\{userId:callbackUserId,eventName:'news_impact_action',channel:'telegram',fixtureId,metadata:\{([^}]*)\}\}\)/.exec(telegramUpdate);
+  const event=/backgroundGrowthEvent\(cfg,\{userId:callbackUserId,eventName:'news_impact_action',channel:'telegram',fixtureId,metadata:\{([\s\S]*?)\}\}\);/.exec(telegramUpdate);
   assert.ok(event,'Telegram News Impact action event missing');
   assert.match(event[1],/decision,action/);
   assert.match(event[1],/recovery/);

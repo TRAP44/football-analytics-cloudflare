@@ -202,8 +202,8 @@ test('v6.25.2 SQL contract canonicalizes, prunes, preserves idempotent state and
 test('HTTP contract exposes cache-unavailable reminder validation as recoverable',()=>{
   const http=fs.readFileSync('src/http.js','utf8');
   assert.match(http,/REMINDER_FIXTURE_UNAVAILABLE/);
-  assert.match(http,/category: 'fixture_validation'/);
-  assert.match(http,/recoverable: true/);
+  assert.match(http,/category:\s*'fixture_validation'/);
+  assert.match(http,/recoverable:\s*true/);
 });
 
 test('guarded reminder RPC must return the exact user and fixture identity',async()=>{

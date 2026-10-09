@@ -196,7 +196,9 @@ export async function publishChannelMessage(input = {}, deps = {}) {
     };
   }
 
-  const claimId = cleanIdempotencyKey(claim?.claimId);
+  let claimId = '';
+  try { claimId = cleanIdempotencyKey(claim?.claimId); } catch {}
+
   if (!claimId) {
     throw publisherError('Publisher idempotency claim did not return a valid claimId.', 'PUBLISHER_IDEMPOTENCY_INVALID_CLAIM');
   }

@@ -454,11 +454,11 @@ test('AI Timeline persistence is server-only and append-only for the application
 test('AI Timeline wiring captures fresh analyses and loads timeline into Match Center without provider calls', () => {
   assert.match(
     analysisRuntimeSource,
-    /await captureAnalysisTimelineSnapshot\(payload, cfg, \{ delta: effectiveRecheckDelta \}\)/,
+    /captureAnalysisTimelineSnapshot,\s*payload,\s*cfg,\s*\{delta:effectiveRecheckDelta\}/,
   );
   assert.match(
     matchCenterSource,
-    /loadFixtureAiTimeline\(\{[\s\S]*?fixtureId,[\s\S]*?events:[\s\S]*?cfg/,
+    /optionalAsync\(loadFixtureAiTimeline,\{[\s\S]*?fixtureId,[\s\S]*?events:[\s\S]*?cfg/,
   );
   assert.match(
     workerSource,
@@ -472,11 +472,11 @@ test('AI Timeline wiring captures fresh analyses and loads timeline into Match C
 
 test('AI Timeline UI remains lazy-loaded after Match Pulse and supports narrow mobile widths', () => {
   assert.match(appSource,/import\('\.\/modules\/ai-timeline\.js\?v=6\.120\.0-launch63'\)/);
-  const pulse=appSource.indexOf('matchCenterExtras?.renderMatchPulse?.(d)');
-  const timeline=appSource.indexOf('matchCenterExtras?.renderAiTimelineCompact?.(d.aiTimeline || {}, m)');
+  const pulse=appSource.indexOf("matchCenterExtraHtml('renderMatchPulse'");
+  const timeline=appSource.indexOf("'renderAiTimelineCompact',",appSource.indexOf('const matchPulseHtml'));
   assert.ok(pulse>=0 && timeline>pulse,'AI Timeline must be rendered after existing Match Pulse');
 
-  const section=shellCss.slice(shellCss.indexOf('/* AI Timeline — Issue #287 */'));
+  const section=shellCss.slice(shellCss.indexOf('/* AI Timeline */'));
   assert.ok(section.length>0);
   for (const width of [430,390,360,320]) {
     assert.match(section,new RegExp('@media\\(max-width:'+width+'px\\)'));

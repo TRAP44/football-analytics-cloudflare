@@ -9,7 +9,7 @@ const html = fs.readFileSync('public/index.html', 'utf8');
 const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
 
 test('profile uses Telegram photo safely and keeps a fallback avatar', () => {
-  assert.match(profileSummary, /const photoUrl = safeUrl\(user\.photoUrl\)/);
+  assert.match(profileSummary, /const photoUrl = safeUrl\(typeof user\.photoUrl==='string' \? user\.photoUrl : ''\)/);
   assert.match(profileSummary, /avatar\.textContent = '⚽'/);
   assert.match(profileSummary, /avatar\.replaceChildren\(img\)/);
   assert.match(css, /\.avatar img\s*\{/);

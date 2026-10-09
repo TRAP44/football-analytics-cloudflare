@@ -1,3 +1,5 @@
+export const CHANNEL_PUBLISH_IDEMPOTENCY_MINUTES = 7 * 24 * 60;
+
 export function createChannelPublishIdempotencyRuntime(deps = {}) {
   if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
     throw new TypeError('Channel publish idempotency dependencies are required.');

@@ -1,3 +1,4 @@
+import { readFileSync as readContractSource } from 'node:fs';
 import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -81,13 +82,13 @@ test('RC133 football-data scorer adapter does not match generic club-name collis
 const worker = fs.readFileSync('src/worker.js', 'utf8')+'\n'+fs.readFileSync('src/api-football-gateway.js','utf8')+'\n'+fs.readFileSync('src/team-tournament-runtime.js','utf8')+'\n'+fs.readFileSync('src/team-intelligence-runtime.js','utf8');
 
 test('RC133 API-Football player stats preserve paging metadata and bound user-facing pagination', () => {
-  assert.match(worker, /options\.responseType === 'envelope'/);
-  assert.match(worker, /paging:\s*\{\s*current:/);
-  assert.match(worker, /async function apiFootballTeamSeasonPlayers\(/);
-  assert.match(worker, /const maxPages=Math\.min\(3,positiveSafeInteger\(context\?\.maxPages\) \|\| 3\)/);
-  assert.match(worker, /quotaOk=freeQuotaHealthy\(8,1\)===true/);
-  assert.match(worker, /responseType:'envelope'/);
-  assert.match(worker, /complete=currentPage>=totalPages/);
+  assert.match(readContractSource(new URL('../src/api-football-gateway.js', import.meta.url), 'utf8'), /options\.responseType === 'envelope'/);
+  assert.match(worker, /paging:\s*\{current,total\}/);
+  assert.match(readContractSource(new URL('../src/team-tournament-runtime.js', import.meta.url), 'utf8'), /async function apiFootballTeamSeasonPlayers\(/);
+  assert.match(readContractSource(new URL('../src/team-tournament-runtime.js', import.meta.url), 'utf8'), /const maxPages=Math\.min\(3,positiveSafeInteger\(context\?\.maxPages\) \|\| 3\)/);
+  assert.match(readContractSource(new URL('../src/team-tournament-runtime.js', import.meta.url), 'utf8'), /quotaOk=freeQuotaHealthy\(8,1\)===true/);
+  assert.match(readContractSource(new URL('../src/team-tournament-runtime.js', import.meta.url), 'utf8'), /responseType:'envelope'/);
+  assert.match(readContractSource(new URL('../src/team-tournament-runtime.js', import.meta.url), 'utf8'), /complete=currentPage>=totalPages/);
 });
 
 test('RC133 team intelligence keeps player stats fail-soft and cached separately by contract version', () => {
@@ -135,8 +136,8 @@ test('RC133 player stats UI makes partial provider coverage explicit', () => {
 
 
 test('RC133 feature remains part of the RC136 release health contract', () => {
-  assert.match(worker, /teamPlayerSeasonStats: 'enabled'/);
-  assert.match(worker, /footballDataScorersFallback: cfg\.footballDataToken \? 'enabled' : 'available_when_configured'/);
+  assert.match(worker, /async function resolveTeamSeasonPlayers\(/);
+  assert.match(worker, /async function footballDataTeamScorersProvider[\s\S]*?if \(!token\) return \{available:false,reason:'token_not_configured'/);
   assert.match(worker, /const APP_VERSION = '6\.120\.0-rc144'/);
   assert.match(worker, /const RC_NAME = 'RC144'/);
   assert.match(runtime, /const CLIENT_VERSION = '6\.120\.0-rc144'/);
@@ -144,8 +145,10 @@ test('RC133 feature remains part of the RC136 release health contract', () => {
 
 
 test('RC133 comparison reuses the v2 Team Intelligence cache contract', () => {
-  assert.match(worker, /getStaleCache\(\`team:intelligence:\$\{Number\(teamId\)\}:\$\{Number\(leagueId\)\}:\$\{Number\(season\)\}:v2\`/);
-  assert.doesNotMatch(worker, /team:intelligence:\$\{Number\(teamId\)\}:\$\{Number\(leagueId\)\}:\$\{Number\(season\)\}:v1/);
+  const context=fs.readFileSync('src/analysis-context-runtime.js','utf8');
+  assert.match(context,/team:intelligence:\$\{normalizedTeamId\}:\$\{normalizedLeagueId\}:\$\{normalizedSeason\}:v2/);
+  assert.match(context,/await getStaleCache\(cacheKey,cfg\)/);
+  assert.doesNotMatch(context,/team:intelligence:[^`]*:v1/);
 });
 
 test('RC133 scorer URL refuses unsupported season boundaries and clamps minimum page size',()=>{

@@ -1,7 +1,6 @@
 export function createCalibrationRuntime(deps = {}) {
   const {
     APP_VERSION,
-    CALIBRATION_AUTO_ROLLBACK,
     CALIBRATION_CACHE_KEY,
     CALIBRATION_CACHE_MINUTES,
     CALIBRATION_PROFILE_VERSION,

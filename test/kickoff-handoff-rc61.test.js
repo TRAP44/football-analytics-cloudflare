@@ -70,7 +70,8 @@ test('RC61 classifies prematch imminent live clock-started finished and unknown 
   assert.ok(drill.cases>=6);
 });
 
-test('analysis response always carries freshness and kickoff handoff metadata',()=>{
+test('analysis response always carries freshness and kickoff handoff metadata',(t)=>{
+  t.mock.method(Date,'now',()=>NOW);
   const payload=lifecycle.analysisResponsePayload({
     generatedAt:'2026-09-23T17:58:00Z',
     match:{fixtureId:7,date:'2026-09-23T18:30:00Z',status:'NS'},
@@ -82,7 +83,8 @@ test('analysis response always carries freshness and kickoff handoff metadata',(
   assert.equal(payload.freshness.state,'fresh');
 });
 
-test('freshness and kickoff handoff agree at the scheduled kickoff even if provider status still says NS',()=>{
+test('freshness and kickoff handoff agree at the scheduled kickoff even if provider status still says NS',(t)=>{
+  t.mock.method(Date,'now',()=>NOW);
   const payload=lifecycle.analysisResponsePayload({
     generatedAt:'2026-09-23T17:59:00Z',
     match:{fixtureId:8,date:'2026-09-23T18:00:00Z',status:'NS'},

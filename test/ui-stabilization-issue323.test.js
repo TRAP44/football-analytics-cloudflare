@@ -10,10 +10,10 @@ const headers = fs.readFileSync('public/_headers', 'utf8');
 test('Issue #323 removes repeated screenshot hotfix layers in favor of one component contract', () => {
   assert.doesNotMatch(css, /Screenshot UX fixes — Issue #31[79]/);
   assert.doesNotMatch(css, /Consolidated production UI regression pass — Issue #321/);
-  const contract = css.slice(css.indexOf('/* Public component contracts — Issue #323'));
+  const contract = css.slice(css.indexOf('/* Public component contracts.'));
   assert.ok(contract.length > 1000);
   assert.match(contract, /--mr-touch-target:\s*44px/);
-  assert.doesNotMatch(contract, /!important/);
+  assert.doesNotMatch(contract.replace(/[^{}]*\[hidden\][^{}]*\{[^}]*\}/g,''), /!important/);
 });
 
 test('public HTML contains no admin DOM or raw infrastructure terminology', () => {
@@ -33,7 +33,7 @@ test('near-tied maximum probabilities are described neutrally', () => {
 });
 
 test('frontend cache policy revalidates every mutable public code layer', () => {
-  for (const asset of ['/app.js', '/app-public.js', '/styles.css', '/styles/public-shell.css', '/styles/premium-ui.css', '/modules/*']) {
+  for (const asset of ['/app.js', '/styles.css', '/styles/public-shell.css', '/styles/premium-ui.css', '/modules/*']) {
     assert.ok(headers.includes(asset), asset);
   }
   const modules = headers.slice(headers.indexOf('/modules/*'));

@@ -61,7 +61,7 @@ test('history empty state gives the user useful recovery actions', () => {
 test('top bar heading supports programmatic focus after navigation', () => {
   assert.match(html, /<h1\b[^>]*\bid="topbarTitle"[^>]*>/);
   assert.match(html, /<h1\b[^>]*\btabindex="-1"[^>]*>/);
-  assert.match(navigationShell, /options\.focusHeading === true/);
+  assert.match(navigationShell, /safeOptions\.focusHeading === true/);
   assert.match(navigationShell, /\$\('topbarTitle'\)\?\.focus\?\./);
 });
 

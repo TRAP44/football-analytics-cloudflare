@@ -477,7 +477,7 @@ test('Issue #441 observability callback failures never block successful search U
   await assert.doesNotReject(()=>controller.runGlobalSearch());
 
   assert.equal(state.globalSearch.loading,false);
-  assert.equal(state.globalSearch.status,'done');
+  assert.equal(state.globalSearch.status,'found');
   assert.equal(state.globalSearch.remoteTeams[0].id,1);
 });
 

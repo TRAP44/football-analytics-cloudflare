@@ -100,12 +100,12 @@ test('a malformed supplied sourceUpdatedAt fails closed instead of falling back 
       sourceUpdatedAt,
     }),{mode:'live',now:NOW});
 
-    assert.equal(meta.sourceTimestampInvalid,true,String(sourceUpdatedAt));
-    assert.equal(meta.timestampInvalid,true,String(sourceUpdatedAt));
-    assert.equal(meta.ageSeconds,null,String(sourceUpdatedAt));
-    assert.equal(meta.state,'invalid_freshness',String(sourceUpdatedAt));
-    assert.equal(meta.freshnessReason,'source_timestamp_invalid',String(sourceUpdatedAt));
-    assert.equal(meta.confidenceBearing,false,String(sourceUpdatedAt));
+    assert.equal(meta.sourceTimestampInvalid,true,'malformed sourceUpdatedAt');
+    assert.equal(meta.timestampInvalid,true,'malformed sourceUpdatedAt');
+    assert.equal(meta.ageSeconds,null,'malformed sourceUpdatedAt');
+    assert.equal(meta.state,'invalid_freshness','malformed sourceUpdatedAt');
+    assert.equal(meta.freshnessReason,'source_timestamp_invalid','malformed sourceUpdatedAt');
+    assert.equal(meta.confidenceBearing,false,'malformed sourceUpdatedAt');
   }
 });
 

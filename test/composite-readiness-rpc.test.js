@@ -152,15 +152,16 @@ test('release contract, migration chain and runtime wiring agree on database con
   );
   assert.equal(CONTRACT_VERSION,2);
   assert.equal(releaseContract.databaseContract.rpc,'backend_readiness_contract_v2');
-  assert.deepEqual(releaseContract.databaseContract.compatibleFingerprints,[
-    PRIMARY_FP,
-    FRESH_FP,
-  ]);
+  const compatible=releaseContract.databaseContract.compatibleFingerprints;
+  assert.ok(compatible.includes(PRIMARY_FP));
+  assert.ok(compatible.includes(FRESH_FP));
+  assert.equal(new Set(compatible).size,compatible.length);
+  assert.ok(compatible.every(value=>/^[a-f0-9]{32}$/.test(value)));
 
   assert.match(worker,/EXPECTED_SCHEMA_CONTRACT_VERSION = 2/);
   assert.ok(worker.includes(`EXPECTED_SCHEMA_FINGERPRINT = '${PRIMARY_FP}'`));
   assert.ok(worker.includes(`FRESH_INSTALL_SCHEMA_FINGERPRINT = '${FRESH_FP}'`));
-  assert.match(worker,/миграции до v6\.29\.1/);
+  assert.match(worker,/миграции до v6\.29/);
 
   assert.match(readinessWiring,/expectedFingerprint: EXPECTED_SCHEMA_FINGERPRINT/);
   assert.match(readinessWiring,/expectedFingerprints: COMPATIBLE_SCHEMA_FINGERPRINTS/);

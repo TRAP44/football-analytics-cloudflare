@@ -30,13 +30,13 @@ test('access-control helper opens signed normal users unless strict beta is expl
 });
 
 test('production beta mode defaults public and becomes strict only on explicit true',()=>{
-  const cfg=block(worker,'function config(env)','function currentReleaseIdentity');
+  const cfg=block(readFileSync('src/common-infrastructure-runtime.js','utf8'),'function config(env)','function currentReleaseIdentity');
   assert.match(cfg,/betaAccessConfigured:\s*boolEnvState\(env\.BETA_ACCESS_ENABLED\)/);
   assert.match(cfg,/betaAccessEnabled:\s*boolEnv\(env\.BETA_ACCESS_ENABLED, false\)/);
 
-  const routes=block(workerCore,"if (!url.pathname.startsWith('/api/'))","async scheduled(controller")+'\n'+router;
-  const guard=routes.indexOf('closedBetaAccessDecision(user, cfg)');
-  const dispatch=routes.indexOf('dispatchApiRoute(request, url, cfg, user, API_ROUTE_DEPS)',guard);
+  const routes=readFileSync('src/worker-bootstrap-runtime.js','utf8');
+  const guard=routes.indexOf('closedBetaAccessDecision(user,cfg)');
+  const dispatch=routes.indexOf('dispatchApiRoute(request,url,cfg,user,API_ROUTE_DEPS)',guard);
   assert.ok(guard>=0 && dispatch>guard);
   assert.match(providerRoutes,/method:'GET', path:'\/api\/matches', handler:'apiMatches'/);
   assert.match(routes,/CLOSED_BETA_ACCESS_DENIED/);
@@ -57,7 +57,7 @@ test('unauthorized Mini App stops before favorites and match loading',()=>{
 });
 
 test('shared quota and cooldown are persisted before provider fan-out',()=>{
-  const quota=block(worker,"const PROVIDER_QUOTA_SHARED_CACHE_KEY",'function quotaUsed');
+  const quota=readFileSync('src/provider-budget-runtime.js','utf8');
   assert.match(quota,/provider-state:api-football:quota:v1/);
   assert.match(quota,/provider-state:api-football:cooldown:v1/);
   assert.match(quota,/loadSharedProviderState/);
@@ -81,20 +81,20 @@ test('FREE distributed budget leaves boundary safety margin',()=>{
 });
 
 test('release evidence captures beta config and one real provider quota probe',()=>{
-  const evidence=block(worker,'async function claimReleaseEvidenceLock','async function readinessSnapshot');
+  const evidence=readFileSync('src/release-field-evidence.js','utf8');
   assert.match(evidence,/BETA_ACCESS_CONFIG_CONFIRMED/);
   assert.match(evidence,/betaAccessConfigured/);
   assert.match(evidence,/betaAllowlistCount/);
   assert.match(evidence,/newestUserBetaAllowlisted/);
   assert.match(evidence,/PROVIDER_RELEASE_QUOTA_PROBE/);
-  assert.match(evidence,/apiFootball\('\/status',\{\},cfg,\{responseType:'any',transportRetries:0/);
+  assert.match(evidence,/apiFootball\('\/status',\{\},cfg,\{\s*responseType:'any',\s*transportRetries:0/);
   assert.match(evidence,/evidenceSource:'controlled_release_probe'/);
 
-  const readinessCompute=block(worker,'async function computeReadinessSnapshot','async function readinessSnapshot');
+  const readinessCompute=readFileSync('src/public-status.js','utf8');
   assert.match(readinessCompute,/scheduleReleaseFieldEvidence\(cfg\)/);
 
-  const readiness=block(worker,'async function readinessSnapshot','export default');
-  assert.match(readiness,/computeReadinessSnapshot\(cfg\)/);
+  const readiness=readFileSync('src/public-health.js','utf8');
+  assert.match(readiness,/computeReadiness\(context\)/);
 });
 
 test('one normal startup match-list request delegates to one bounded shared provider loader',()=>{
@@ -104,7 +104,7 @@ test('one normal startup match-list request delegates to one bounded shared prov
   assert.match(matches,/providerBatch/);
   assert.match(matches,/getCache\(providerBatchKey/);
 
-  const loader=block(providerFixtureRuntime,'async function loadProviderFixturesForDate','function providerFixtureDirectCacheKey');
+  const loader=block(providerFixtureRuntime,'async function loadProviderFixturesForDate','function providerTeamDiscoveryCacheKey');
   assert.equal((loader.match(/apiFootball\(/g) || []).length,1);
   assert.match(loader,/apiFootball\('\/fixtures',\{date:normalized\},cfg\)/);
 });

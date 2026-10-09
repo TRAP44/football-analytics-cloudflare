@@ -30,7 +30,7 @@ test('Home keeps frequent match filters visible and secondary filters behind one
   }
   assert.match(drawer,/data-filter-summary-value hidden/);
   assert.match(app,/summaryValue\.hidden = !activeDrawerFilter/);
-  assert.match(app,/const drawerFilters = \['favorites', 'international', 'cups', 'england', 'spain', 'italy', 'germany', 'france'\]/);
+  assert.match(app,/const drawerFilters = \['favorites', 'international', 'cups', 'england', 'spain', 'italy', 'germany', 'france',[\s\S]*?'saudi'\]/);
   assert.match(app,/querySelector\('\[data-filter-summary-value\]'\)/);
   assert.match(css,/MatchRadar Home Filter Simplification — fast choices first/);
 });

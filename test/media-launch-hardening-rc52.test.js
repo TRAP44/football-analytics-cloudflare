@@ -101,7 +101,9 @@ test('public legal pages stay linked while technical status stays outside the Mi
   assert.match(terms,/не гарантирует исход/i);
   assert.match(html,/\/privacy\.html/);
   assert.match(html,/\/terms\.html/);
-  assert.doesNotMatch(html,/\/status\.html/);
+  const navigation=html.match(/<nav[\s\S]*?<\/nav>/)?.[0];
+  assert.ok(navigation);
+  assert.doesNotMatch(navigation,/\/status\.html/);
   assert.equal(fs.existsSync('public/status.html'),true);
   assert.doesNotMatch(html,/id="privacyView"/);
 });

@@ -1,3 +1,5 @@
+export const PHASE5_VALIDATION_COHORT = 'phase5_public_v2';
+
 // Closed-beta and Phase 5 analytics, evidence gates and expansion dashboards extracted from worker.js.
 // Diagnostics, telemetry and provider primitives are injected by the composition root.
 export function createBetaPhase5Runtime(deps) {

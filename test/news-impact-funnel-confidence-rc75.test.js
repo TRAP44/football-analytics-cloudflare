@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createNewsImpactRecoveryRuntime } from '../src/news-impact-recovery-runtime.js';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
 const recovery=fs.readFileSync('src/news-impact-recovery-runtime.js','utf8');

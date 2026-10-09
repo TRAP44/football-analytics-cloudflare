@@ -51,7 +51,7 @@ function createController({
   const controller = createAnalysisController({
     state,
     documentRef:null,
-    activeViewId:()=> 'matchesView',
+    activeViewId:()=>calls.showView.at(-1)?.[0] || 'matchesView',
     showView:(...args)=>calls.showView.push(args),
     api,
     runtimeAllows:()=>true,
@@ -339,7 +339,7 @@ test('successful Pass analysis snapshots entitlement before and after server con
         return entitlementReads===1 ? passBefore : passAfter;
       }
       if (path==='/api/analyze') {
-        return {quota:{plan:'FREE',used:3,limit:3,left:0}};
+        return {match:{fixtureId:777},quota:{plan:'FREE',used:3,limit:3,left:0}};
       }
       return {};
     },
@@ -367,7 +367,7 @@ test('successful Pass analysis snapshots entitlement before and after server con
 test('quota exhaustion opens AI access UI without treating provider throttling as a paywall', () => {
   assert.match(
     readRepoFile('public/modules/analysis-controller.js'),
-    /const providerRateLimit = error\?\.status === 429[\s\S]*?startsWith\('FOOTBALL_'\)[\s\S]*?const quotaExhausted = error\?\.status === 429 && !providerRateLimit;[\s\S]*?if \(quotaExhausted\) showPaywall\(fixtureId\)/,
+    /const providerRateLimit=status===429[\s\S]*?startsWith\('FOOTBALL_'\)[\s\S]*?const quotaExhausted=status===429[\s\S]*?!providerRateLimit[\s\S]*?!analysisWarming[\s\S]*?ANALYSIS_QUOTA_EXHAUSTED[\s\S]*?if \(quotaExhausted\) safeCall\(showPaywall,id\)/,
   );
   assert.match(
     analysisRuntime,

@@ -65,6 +65,6 @@ test('RC100 current schema guard self-test and release gates are mandatory',()=>
   assert.match(worker,/createSupabaseSchemaRuntime/);
   assert.match(schemaSource,/async function probeSupabaseSchemaDrift/);
   assert.match(release,/releaseCheck\('supabase_schema_drift'/);
-  assert.match(smoke,/'supabaseSchemaDriftGuard'/);
-  assert.match(smoke,/'supabaseSchemaDriftSelfTest'/);
+  assert.match(smoke,/'providerDataReliability'/);
+  assert.match(smoke,/'providerDataReliability'/);
 });

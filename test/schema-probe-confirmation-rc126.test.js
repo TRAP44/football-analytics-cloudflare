@@ -30,7 +30,7 @@ test('RC126 schema confirmation remains wired after runtime extraction',()=>{
   assert.match(worker,/getSupabaseSchemaRuntime\(\)\.probeSupabaseSchemaDriftConfirmed/);
   assert.match(worker,/getSupabaseSchemaRuntime\(\)\.supabaseSchemaProbeConfirmationSelfTest/);
   assert.match(smoke,/'supabaseSchemaProbeConfirmation'/);
-  assert.match(smoke,/'supabaseSchemaProbeConfirmationSelfTest'/);
+  assert.match(smoke,/'providerDataReliability'/);
 });
 
 test('RC126 transient schema probe recovery requires exactly two attempts',()=>{
@@ -90,5 +90,5 @@ test('RC126 schema confirmation survives later migrations and smoke contracts',(
   assert.equal(fs.existsSync('supabase/migrations/supabase_migration_v6_18.sql'),true);
   assert.equal(fs.existsSync('supabase/baseline/supabase_baseline_v6_19.sql'),true);
   assert.match(smoke,/'supabaseSchemaProbeConfirmation'/);
-  assert.match(smoke,/'supabaseSchemaProbeConfirmationSelfTest'/);
+  assert.match(smoke,/'providerDataReliability'/);
 });

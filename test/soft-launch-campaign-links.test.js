@@ -1,3 +1,4 @@
+import { readFileSync as readContractSource } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -43,9 +44,9 @@ test('worker parses generic media campaign into source campaign and content', ()
   const worker=fs.readFileSync('src/worker.js','utf8');
   assert.match(worker,/campaignStartParam/);
   assert.match(worker,/telegramCampaignDeepLink/);
-  assert.match(worker,/campaignParsed\.source==='telegram_channel'/);
-  assert.match(worker,/campaignParsed\.campaign==='soft_launch'/);
-  assert.match(worker,/campaignParsed\.content==='post1'/);
+  assert.match(readContractSource(new URL('../src/publisher-runtime.js', import.meta.url), 'utf8'),/campaignParsed\.source==='telegram_channel'/);
+  assert.match(readContractSource(new URL('../src/publisher-runtime.js', import.meta.url), 'utf8'),/campaignParsed\.campaign==='soft_launch'/);
+  assert.match(readContractSource(new URL('../src/publisher-runtime.js', import.meta.url), 'utf8'),/campaignParsed\.content==='post1'/);
 });
 
 test('admin media publisher supports generic promo link when fixture is empty', () => {
@@ -56,7 +57,7 @@ test('admin media publisher supports generic promo link when fixture is empty', 
   assert.match(module,/soft_launch/);
   assert.match(module,/post1/);
 
-  const worker=fs.readFileSync('src/worker.js','utf8');
+  const worker=fs.readFileSync('src/publisher-runtime.js','utf8');
   const start=worker.indexOf('async function apiMediaPublisherLink');
   const end=worker.indexOf('function mediaPublisherDrill',start);
   const block=worker.slice(start,end);
@@ -75,7 +76,7 @@ test('admin UI explains generic promotion and optional fixture targeting', () =>
 });
 
 test('launch funnel keeps source campaign content performance dimensions', () => {
-  const worker=fs.readFileSync('src/worker.js','utf8');
+  const worker=fs.readFileSync('src/telegram-campaign-runtime.js','utf8');
   const start=worker.indexOf('function buildMediaCampaignPerformance');
   const end=worker.indexOf('function mediaCampaignControlDrill',start);
   const block=worker.slice(start,end);

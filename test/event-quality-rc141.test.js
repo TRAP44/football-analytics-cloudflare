@@ -423,5 +423,5 @@ test('Match Center UI exposes the event-quality state alongside the sanitized ti
 
   assert.match(app,/function eventQualityHintHtml/);
   assert.match(app,/eventQualityHintHtml\(d\.eventQuality\)/);
-  assert.match(app,/timelineEventsHtml\(d\.events, m\)/);
+  assert.match(app,/timelineEventsHtml\(eventRows, m\)/);
 });

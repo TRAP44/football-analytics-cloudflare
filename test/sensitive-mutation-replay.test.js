@@ -57,13 +57,13 @@ function coordinator(store=new Map()) {
       const row=store.get(identity.operationKey);
       if (!row || row.leaseToken!==claim.leaseToken) return {ok:false,updated:false};
       store.set(identity.operationKey,{...row,state:'completed',retryable:false});
-      return {ok:true,updated:true};
+      return {ok:true,updated:true,state:'completed'};
     },
     async fail(identity,claim,retryable) {
       const row=store.get(identity.operationKey);
       if (!row || row.leaseToken!==claim.leaseToken) return {ok:false,updated:false};
       store.set(identity.operationKey,{...row,state:'failed',retryable:Boolean(retryable)});
-      return {ok:true,updated:true,retryable:Boolean(retryable)};
+      return {ok:true,updated:true,state:'failed',retryable:Boolean(retryable)};
     },
   };
 }

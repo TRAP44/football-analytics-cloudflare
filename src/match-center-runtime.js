@@ -1363,7 +1363,7 @@ export function createMatchCenterRuntime(deps) {
     const prematchCandidate=live
       ? await optionalAsync(
           getStaleCache,
-          `fixture:${fixtureId}:v15-availability-quality-rc144`,
+          `fixture:${fixtureId}:v17-starting-xi-rc146`,
           cfg,
         )
       : null;

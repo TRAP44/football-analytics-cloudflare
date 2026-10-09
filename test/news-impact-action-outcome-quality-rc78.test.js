@@ -1,3 +1,4 @@
+import { readFileSync as readContractSource } from 'node:fs';
 import { createNewsImpactRecoveryRuntime } from '../src/news-impact-recovery-runtime.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -36,7 +37,7 @@ test('RC78 outcome correlation is ordered and fixture-scoped',()=>{
   assert.match(recovery,/const fixtureId=newsImpactPositiveId\(row\?\.fixture_id\)/);
   assert.match(recovery,/outcomeAt<action\.actionAt \|\| outcomeAt>action\.actionAt\+outcomeWindowMs/);
   assert.match(recovery,/if \(!code \|\| !expected \|\| code!==expected\) continue/);
-  assert.match(worker,/const NEWS_IMPACT_OUTCOME_WINDOW_MINUTES = 5/);
+  assert.match(readContractSource(new URL('../src/news-impact-contract.js', import.meta.url), 'utf8'),/const NEWS_IMPACT_OUTCOME_WINDOW_MINUTES = 5/);
 });
 
 test('RC78 protects very recent actions from false failure',()=>{

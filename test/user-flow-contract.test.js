@@ -28,19 +28,20 @@ test('inactive views and tab panels are not focusable or exposed to assistive te
 });
 
 test('history opens cached analysis read-only without spending another analysis quota', () => {
-  const match = worker.match(/async function apiHistoryAnalysis[\s\S]*?\n}\n\n\nasync function apiFavorites/);
+  const historySource=fs.readFileSync('src/user-data-api-runtime.js','utf8');
+  const match = historySource.match(/async function apiHistoryAnalysis[\s\S]*?async function apiFavorites/);
   assert.ok(match, 'apiHistoryAnalysis must exist');
-  assert.match(match[0], /getHistory\(user\.id, cfg\)/);
+  assert.match(match[0], /getHistory\(userId,cfg\)/);
   assert.match(match[0], /getStaleCache\(cacheKey, cfg\)/);
   assert.doesNotMatch(match[0], /incrementUsage\(/);
-  assert.match(worker, /url\.pathname === '\/api\/history-analysis'/);
-  assert.match(historyRenderer, /openHistoryAnalysis\(Number\(btn\.dataset\.fixture\), btn\)/);
+  assert.match(fs.readFileSync('src/router.js','utf8'), /pathname === '\/api\/history-analysis'/);
+  assert.match(historyRenderer, /safeCall\(openHistoryAnalysis,fixtureId,btn\)/);
 });
 
 test('global search ignores stale responses and mobile navigation does not force the keyboard open', () => {
   assert.match(app, /requestSeq:\s*0/);
-  assert.match(app, /seq !== state\.globalSearch\.requestSeq/);
-  assert.match(app, /query !== String\(state\.globalSearch\.query \|\| ''\)\.trim\(\)/);
+  assert.match(fs.readFileSync('public/modules/global-search-controller.js','utf8'), /seq!==currentRequestSeq\(\)/);
+  assert.match(fs.readFileSync('public/modules/global-search-controller.js','utf8'), /query!==currentQuery\(\)/);
   assert.doesNotMatch(html, /id="navSearch"/);
   assert.match(html, /id="homeSearchBtn"/);
 });

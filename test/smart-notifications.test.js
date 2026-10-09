@@ -1,3 +1,4 @@
+import { readFileSync as readContractSource } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -416,10 +417,10 @@ test('v6.24 migration adds only Smart Notification state and keeps Favorite Play
   assert.match(wiring,/createFavoritePlayersService\(\{/);
   assert.match(wiring,/loadFavoritePlayersByUser: loadFavoritePlayersForSmartNotifications/);
   assert.match(wiring,/filterRecipients: filterSmartNotificationRecipients/);
-  assert.match(worker,/publicSmartNotificationCapabilities\(quota\?\.plan\)/);
+  assert.match(readContractSource(new URL('../src/user-data-api-runtime.js', import.meta.url), 'utf8'),/publicSmartNotificationCapabilities\(quota\?\.plan\)/);
   assert.match(worker,/radarStrongSignalState/);
   assert.match(worker,/expandedDailyDigestText/);
-  assert.match(worker,/ai\.digest_expanded/);
+  assert.match(readContractSource(new URL('../src/telegram-digest-runtime.js', import.meta.url), 'utf8'),/ai\.digest_expanded/);
 });
 
 

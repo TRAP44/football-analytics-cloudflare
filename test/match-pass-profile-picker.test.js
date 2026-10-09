@@ -48,7 +48,7 @@ test('profile button selects a match before attempting Stars invoice',async()=>{
   const elements=new Map(ids.map(id=>[id,new FakeElement()]));
   const calls=[],opened=[];
   const storedDocument=globalThis.document;
-  globalThis.document={createElement:()=>new FakeElement()};
+  globalThis.document={createElement:()=>new FakeElement(),querySelectorAll:()=>[]};
   const entitlement={
     paymentsEnabled:true,
     products:{MATCH_PASS:{stars:39,saleReady:true,durationHours:72}},
@@ -112,6 +112,6 @@ test('profile picker HTML is accessible and asset revision matches runtime',()=>
   }
   assert.match(css,/\.match-pass-picker-matches/);
   assert.match(css,/\.match-pass-picker\[hidden\]/);
-  assert.match(html,/6\.120\.0-launch62/);
-  assert.match(runtime,/FRONTEND_ASSET_REVISION = '6\.120\.0-launch62'/);
+  assert.match(html,/6\.120\.0-launch67/);
+  assert.match(runtime,/FRONTEND_ASSET_REVISION = '6\.120\.0-launch67'/);
 });

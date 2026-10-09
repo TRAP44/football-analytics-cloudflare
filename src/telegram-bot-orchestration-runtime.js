@@ -464,7 +464,7 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
     const id=positiveSafeInteger(fixtureId);
     const uid=positiveSafeInteger(userId);
     const cid=chatIdValue(chatId);
-    const selected=safeText(section,32,'verdict');
+    const selected=typeof section==='string' ? safeText(section,32) : '';
     const suppressFallback=plainObject(options)?.suppressFallback===true;
     if (!id || !uid || !cid || !SECTION_NAMES.has(selected)) {
       const message=!SECTION_NAMES.has(selected)

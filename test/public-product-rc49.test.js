@@ -1,3 +1,4 @@
+import { readFileSync as readContractSource } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -11,30 +12,32 @@ const appCapabilities=fs.readFileSync('src/app-capabilities.js','utf8');
 test('global search recognizes major clubs across countries and Russian aliases',()=> {
   assert.match(worker,/TOP_TEAM_SEARCH_CATALOG/);
   for (const sample of ['реал мадрид','барселона','ман сити','мю','псж','бавария','интер','ювентус','бенфика','аякс','галатасарай','аль наср']) {
-    assert.ok(worker.includes(sample), `missing club alias: ${sample}`);
+    assert.ok(fs.readFileSync('src/search-discovery-runtime.js','utf8').includes(sample), `missing club alias: ${sample}`);
   }
-  assert.match(worker,/function topTeamSearchPlan/);
-  assert.match(worker,/teamPlan\.providerQuery/);
-  assert.match(worker,/v2-global/);
+  assert.match(readContractSource(new URL('../src/search-discovery-runtime.js', import.meta.url), 'utf8'),/function topTeamSearchPlan/);
+  assert.match(readContractSource(new URL('../src/search-discovery-runtime.js', import.meta.url), 'utf8'),/teamPlan\.providerQuery/);
+  assert.match(fs.readFileSync('src/search-discovery-runtime.js','utf8'),/v2-global/);
 });
 
 test('telegram search shares the same canonical club resolution',()=> {
-  assert.match(worker,/const plan=topTeamSearchPlan\(query\)/);
-  assert.match(worker,/apiFootball\('\/teams',\{search:plan\.providerQuery \|\| query\}/);
-  assert.match(worker,/normalizeSearchTeam\(x,query,plan\.candidates\)/);
+  const search=fs.readFileSync('src/telegram-search-runtime.js','utf8');
+  assert.match(search,/const plan=safeSearchPlan\(query\)/);
+  assert.match(search,/optionalCall\(topTeamSearchPlan,null,query\)/);
+  assert.match(search,/optionalAsync\(apiFootball,\[\], '\/teams',\{search:providerQuery\}/);
+  assert.match(search,/normalizeSearchTeam\(row,query,plan\.candidates\)/);
 });
 
 test('main Telegram navigation keeps content in chat',()=> {
-  assert.match(worker,/\{ text: '⚽ Матчи' \}/);
-  assert.match(worker,/\{ text: '🔴 LIVE' \}/);
-  assert.match(worker,/\{ text: '⭐ Мои команды' \}/);
+  assert.match(readContractSource(new URL('../src/telegram-bot-ui-runtime.js', import.meta.url), 'utf8'),/\{\s*text:\s*'⚽\s*Матчи'\s*\}/);
+  assert.match(readContractSource(new URL('../src/telegram-bot-ui-runtime.js', import.meta.url), 'utf8'),/\{\s*text:\s*'🔴\s*LIVE'\s*\}/);
+  assert.match(readContractSource(new URL('../src/telegram-bot-ui-runtime.js', import.meta.url), 'utf8'),/\{\s*text:\s*'⭐\s*Мои\s*команды'\s*\}/);
   assert.match(worker,/function sendBotDayMatches/);
   assert.match(worker,/function sendBotFavoriteTeams/);
   assert.match(worker,/🤖 AI-подборка/);
   assert.match(worker,/••• Ещё/);
-  assert.match(worker,/text === '⚽ Матчи'/);
-  assert.match(worker,/text === '🔴 LIVE'/);
-  assert.match(worker,/text === '⭐ Мои команды'/);
+  assert.match(readContractSource(new URL('../src/telegram-update-orchestration.js', import.meta.url), 'utf8'),/text === '⚽ Матчи'/);
+  assert.match(readContractSource(new URL('../src/telegram-update-orchestration.js', import.meta.url), 'utf8'),/text === '🔴 LIVE'/);
+  assert.match(readContractSource(new URL('../src/telegram-update-orchestration.js', import.meta.url), 'utf8'),/text === '⭐ Мои команды'/);
 });
 
 test('mini app exposes the current public football shell',()=> {
@@ -49,7 +52,8 @@ test('mini app exposes the current public football shell',()=> {
   assert.doesNotMatch(html,/data-admin-only|class="panel admin-console"/);
   assert.match(html,/id="navMyTeams" class="nav-item"/); assert.doesNotMatch(html,/id="navSearch"/);
   assert.doesNotMatch(app,/MINIAPP_PRODUCT_MODE = 'ai-analysis-only'/);
-  assert.match(css,/RC49 — public Mini App shell/);
+  assert.match(html,/styles\/public-shell\.css/);
+  assert.match(fs.readFileSync('public/styles/public-shell.css','utf8'),/\.miniapp-public-shell \.bottom-nav/);
 });
 
 test('normal mini app startup prepares the public home-first match feed',()=> {

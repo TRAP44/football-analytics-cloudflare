@@ -1,3 +1,4 @@
+import { workerRuntime } from '../test-support/worker-root.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -87,8 +88,8 @@ test('RC86 acknowledgements require exact categorical strings and cannot precede
   assert.match(growth,/typeof body\?\.reason==='string'/);
   assert.match(growth,/typeof body\?\.code==='string'/);
   assert.match(growth,/typeof body\?\.lastSeenAt==='string'/);
-  assert.match(worker,/\/api\/recovery-incident-ack/);
-  assert.match(worker,/isAdminUser\(user, cfg\)/);
+  assert.match(router,/\/api\/recovery-incident-ack/);
+  assert.match(router,/pathname === '\/api\/recovery-incident-ack'[\s\S]*?if \(!adminAllowed\(\)\) return adminForbidden\(\)/);
   assert.match(router,/recovery-incident-ack/);
 });
 
@@ -201,7 +202,7 @@ test('RC89 breach feed rejects malformed containers, coercive labels and truthy 
   assert.equal(feed.routingChanged,false);
 });
 
-test('RC85-RC89 admin, health and storage contracts remain present',()=>{
+test('RC85-RC89 admin, runtime and storage contracts remain present',()=>{
   for (const textValue of [
     'Recovery Incident Center',
     'Incident SLO Dashboard · 4 недели',
@@ -210,19 +211,15 @@ test('RC85-RC89 admin, health and storage contracts remain present',()=>{
     'Recovery SLO просрочено',
   ]) assert.ok(app.includes(textValue),textValue);
 
-  for (const flag of [
-    'newsImpactRecoveryIncidentCenter',
-    'newsImpactRecoveryIncidentAcknowledgement',
-    'newsImpactRecoveryIncidentSlo',
-    'newsImpactRecoveryIncidentSloDashboard',
-    'newsImpactRecoveryIncidentSloBreachFeed',
-  ]) assert.ok(worker.includes(flag + ": 'enabled'"),flag);
+  for (const method of ['buildNewsImpactRecoveryIncidentCenter','buildNewsImpactRecoveryIncidentAcknowledgements','buildNewsImpactRecoveryIncidentSloDashboard','buildNewsImpactRecoveryIncidentSloBreachFeed']) {
+    assert.equal(typeof workerRuntime.getNewsImpactRecoveryRuntime()[method],'function',method);
+  }
 
-  assert.match(worker,/newsImpactRecoveryIncidentSelfTest: newsImpactRecoveryIncidentDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  assert.match(worker,/newsImpactRecoveryIncidentAckSelfTest: newsImpactRecoveryIncidentAckDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  assert.match(worker,/newsImpactRecoveryIncidentSloSelfTest: newsImpactRecoveryIncidentSloDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  assert.match(worker,/newsImpactRecoveryIncidentSloDashboardSelfTest: newsImpactRecoveryIncidentSloDashboardDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  assert.match(worker,/newsImpactRecoveryIncidentSloBreachFeedSelfTest: newsImpactRecoveryIncidentSloBreachFeedDrill\(\)\.pass \? 'enabled' : 'failed'/);
+  assert.equal(workerRuntime.getNewsImpactRecoveryRuntime().newsImpactRecoveryIncidentDrill().pass,true);
+  assert.equal(workerRuntime.getNewsImpactRecoveryRuntime().newsImpactRecoveryIncidentAckDrill().pass,true);
+  assert.equal(workerRuntime.getNewsImpactRecoveryRuntime().newsImpactRecoveryIncidentSloDrill().pass,true);
+  assert.equal(workerRuntime.getNewsImpactRecoveryRuntime().newsImpactRecoveryIncidentSloDashboardDrill().pass,true);
+  assert.equal(workerRuntime.getNewsImpactRecoveryRuntime().newsImpactRecoveryIncidentSloBreachFeedDrill().pass,true);
 
   const files=fs.readdirSync('supabase/migrations').filter(x=>/^supabase_migration_v6_\d/.test(x));
   assert.ok(files.includes('supabase_migration_v6_15.sql'));

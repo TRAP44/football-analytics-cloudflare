@@ -1,3 +1,4 @@
+import { settlementDependencies } from '../test-support/runtime-deps.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -25,11 +26,11 @@ const math=createPredictionMathRuntime({
   normalizeThree,
 });
 
-const settlement=createSettlementRuntime({
+const settlement=createSettlementRuntime(settlementDependencies({
   actualOutcomeFromGoals:math.actualOutcomeFromGoals,
   brierFromProbabilities:math.brierFromProbabilities,
   predictionOutcomeKey:math.predictionOutcomeKey,
-});
+}));
 
 function json(payload,status=200) {
   return new Response(JSON.stringify(payload),{
@@ -117,7 +118,7 @@ function createTelegramRuntime({
     searchText:value=>String(value || '').toLowerCase().trim(),
     setCache:async()=>true,
     telegramApi,
-    telegramWebAppUrl:(_request,params={})=>`https://app.test/?${new URLSearchParams(params)}`,
+    telegramWebAppUrl:(_request,params={})=>`https://bot.test/?${new URLSearchParams(params)}`,
     todayUtc:()=> '2026-10-07',
     topTeamSearchPlan:query=>({best:{score:100,canonical:query},providerQuery:query,candidates:[]}),
   });
@@ -137,7 +138,7 @@ test('RC64 public track-record route remains GET-only without an admin gate', ()
     /if \(method === 'GET' && pathname === '\/api\/ai-track-record'\) return await apiAiTrackRecord\(request, cfg\)/,
   );
   const routeIndex=router.indexOf("pathname === '/api/ai-track-record'");
-  const routeWindow=router.slice(Math.max(0,routeIndex-120),routeIndex+220);
+  const routeWindow=router.slice(router.lastIndexOf('if (',routeIndex),router.indexOf(';',routeIndex)+1);
   assert.doesNotMatch(routeWindow,/adminAllowed\(|adminForbidden\(/);
 });
 

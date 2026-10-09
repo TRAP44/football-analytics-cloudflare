@@ -1,3 +1,4 @@
+import { readFileSync as readContractSource } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -153,7 +154,7 @@ test('Telegram renders a dedicated before-vs-after News Impact Delta block',()=>
 
 test('RC71 analytics remain aggregate and exclude article text and URL',()=>{
   assert.match(botUi,/eventName:'news_impact_delta'/);
-  const event=/eventName:'news_impact_delta'[\s\S]{0,900}?metadata:\{([\s\S]*?)\}\}\);/.exec(botUi);
+  const event=/eventName:'news_impact_delta'[\s\S]{0,900}?metadata:\{([\s\S]*?)\}\s*,?\s*\}\);/.exec(botUi);
   assert.ok(event,'news impact growth event missing');
   assert.match(event[1],/compared/);
   assert.match(event[1],/material/);
@@ -162,7 +163,7 @@ test('RC71 analytics remain aggregate and exclude article text and URL',()=>{
 
   assert.match(growth,/impactCompared:newsImpactCompared\.size/);
   assert.match(growth,/impactMaterial:newsImpactMaterial\.size/);
-  assert.match(app,/News Impact:/);
+  assert.match(readContractSource(new URL('../public/modules/admin-launch-funnel.js', import.meta.url), 'utf8'),/News Impact:/);
 });
 
 test('RC71 lifecycle contract stays explicitly wired from Worker',()=>{

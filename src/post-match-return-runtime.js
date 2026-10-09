@@ -1,5 +1,7 @@
 export function createPostMatchReturnRuntime(deps = {}) {
   const {
+    APP_VERSION,
+    memory,
     actualOutcomeFromGoals,
     bumpTelemetry,
     fetchWithTimeout,

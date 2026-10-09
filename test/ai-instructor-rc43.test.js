@@ -62,7 +62,7 @@ function createTelegramSearch({
     setCache: async () => true,
     telegramApi,
     telegramWebAppUrl: (_request, params = {}) =>
-      `https://app.test/?${new URLSearchParams(params)}`,
+      `https://bot.test/?${new URLSearchParams(params)}`,
     todayUtc: () => '2026-10-06',
     topTeamSearchPlan: query => ({
       best: { score: 100, canonical: query },
@@ -206,16 +206,16 @@ test('RC43 Supabase persistence uses an idempotent user+fixture conflict key', a
 test('RC43 public history API maps only compact saved verdict fields', () => {
   assert.match(
     userDataApi,
-    /async function apiHistory\(request, cfg, user\)[\s\S]*?aiSignalCode: x\.ai_signal_code \|\| ''[\s\S]*?aiSignalLabel: x\.ai_signal_label \|\| ''[\s\S]*?aiConfidence:[\s\S]*?aiRisk: x\.ai_risk \|\| ''[\s\S]*?aiOutcome: x\.ai_outcome \|\| ''[\s\S]*?aiTotal: x\.ai_total \|\| ''[\s\S]*?aiBtts: x\.ai_btts \|\| ''/,
+    /async function apiHistory\(request, cfg, user\)[\s\S]*?aiSignalCode:safeText\(row\.ai_signal_code,40\)[\s\S]*?aiSignalLabel:safeText\(row\.ai_signal_label,160\)[\s\S]*?aiConfidence:confidence[\s\S]*?aiRisk:safeText\(row\.ai_risk,60\)[\s\S]*?aiOutcome:safeText\(row\.ai_outcome,80\)[\s\S]*?aiTotal:safeText\(row\.ai_total,80\)[\s\S]*?aiBtts:safeText\(row\.ai_btts,80\)/,
   );
 });
 
 test('RC43 history analysis re-open uses the same active full-analysis cache generation', () => {
   const analysisMatch = analysisRuntime.match(
-    /const cacheKey = `fixture:\$\{fixtureId\}:(v\d+-availability-quality-rc\d+)`/,
+    /const cacheKey\s*=\s*`fixture:\$\{fixtureId\}:(v\d+-[a-z-]+-rc\d+)`/,
   );
   const historyMatch = userDataApi.match(
-    /const cacheKey = `fixture:\$\{fixtureId\}:(v\d+-availability-quality-rc\d+)`/,
+    /const cacheKey\s*=\s*`fixture:\$\{fixtureId\}:(v\d+-[a-z-]+-rc\d+)`/,
   );
 
   assert.ok(analysisMatch, 'analysis cache key generation missing');

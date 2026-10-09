@@ -87,7 +87,7 @@ test('non-owner waits for shared fixture analysis instead of recomputing',()=> {
 });
 
 test('analysis owner always releases the distributed lock after usage finalization',()=> {
-  const finalization=analysis.slice(analysis.indexOf('} finally {'),analysis.indexOf('} catch (error)',analysis.indexOf('} finally {')));
+  const finalization=analysis.slice(analysis.indexOf('} finally {'),analysis.indexOf('return Object.freeze({'));
   assert.match(finalization,/finalizeAnalysisUsageReservation/);
   assert.match(finalization,/refundAnalysisQuota/);
   assert.match(finalization,/refundEntitlementUsage/);

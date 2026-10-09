@@ -23,7 +23,8 @@ const modelRuntime = createModelIntelligenceRuntime({
   MODEL_BASE_WEIGHTS: {
     market: 0.42,
     apiPrediction: 0.24,
-    recentForm: 0.26,
+    recentForm: 0.25,
+    seasonStrength: 0.01,
     h2h: 0.08,
   },
   apiFootball: async () => [],
@@ -77,13 +78,14 @@ test('RC105 confidence coverage is weighted by canonical signal families and ign
   const allSignals = [
     { name: 'market', probabilities: probability, weight: 0.42 },
     { name: 'apiPrediction', probabilities: probability, weight: 0.24 },
-    { name: 'recentForm', probabilities: probability, weight: 0.26 },
+    { name: 'recentForm', probabilities: probability, weight: 0.25 },
+    { name: 'seasonStrength', probabilities: probability, weight: 0.01 },
     { name: 'h2h', probabilities: probability, weight: 0.08 },
   ];
 
-  assert.equal(modelRuntime.signalCanonicalCoverage(marketOnly), 0.42);
-  assert.equal(modelRuntime.signalCanonicalCoverage(duplicatedMarket), 0.42);
-  assert.equal(modelRuntime.signalCanonicalCoverage(allSignals), 1);
+  assert.ok(Math.abs(modelRuntime.signalCanonicalCoverage(marketOnly) - 0.42) < 1e-12);
+  assert.ok(Math.abs(modelRuntime.signalCanonicalCoverage(duplicatedMarket) - 0.42) < 1e-12);
+  assert.ok(Math.abs(modelRuntime.signalCanonicalCoverage(allSignals) - 1) < 1e-12);
 
   const confidence = modelRuntime.confidenceModel(
     duplicatedMarket,
@@ -325,10 +327,10 @@ test('RC105 deterministic quality-gate self-test remains release-blocking health
   );
 });
 
-test('RC105 analysis payload preserves an availability-quality cohort version without hard-coding one release number', () => {
+test('RC105 analysis payload preserves the current starting-XI cohort version without hard-coding one release number', () => {
   const match = analysisRuntimeSource.match(/analysisVersion:\s*'([^']+)'/);
   assert.ok(match);
-  assert.match(match[1], /^\d+\.\d+\.\d+-availability-quality$/);
+  assert.match(match[1], /^\d+\.\d+\.\d+-starting-xi$/);
 });
 
 test('RC105 UI exposes quality gate reason and goal-sample quality', () => {

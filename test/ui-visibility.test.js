@@ -28,5 +28,5 @@ test('public shell never embeds the admin console while admin shell defaults hid
   assert.doesNotMatch(html,/data-admin-only|id="adminRoleBadge"|class="panel admin-console"/);
   assert.match(adminHtml,/<section class="panel admin-console" data-admin-only hidden>/);
   assert.match(adminHtml,/id="adminRoleBadge"[^>]*data-admin-only hidden aria-hidden="true"/);
-  assert.match(app,/el\.setAttribute\('aria-hidden',admin \? 'false' : 'true'\)/);
+  assert.match(app,/el\.setAttribute\('aria-hidden',\s*admin \? 'false' : 'true'\)/);
 });

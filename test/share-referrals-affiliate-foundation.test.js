@@ -1,3 +1,4 @@
+import { readFileSync as readContractSource } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -10,7 +11,7 @@ import {
 import { createTelegramLinksRuntime } from '../src/telegram-links.js';
 
 const growthReferral=fs.readFileSync('src/growth-referral.js','utf8');
-const backendSource=(fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'))+'\n'+growthReferral;
+const backendSource=(fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'))+'\n'+growthReferral+'\n'+fs.readFileSync('src/publisher-runtime.js','utf8')+'\n'+fs.readFileSync('src/billing-runtime.js','utf8');
 
 function cleanLaunchPart(value, maxLength = 24) {
   return String(value || '')
@@ -108,9 +109,9 @@ test('backend growth/referral domain uses idempotent growth events for share and
   }
   assert.match(growthReferral,/supaSelectOne/);
   assert.match(growthReferral,/eventRowMatches/);
-  assert.match(backendSource,/eventKey:\`share_open:\$\{userId\}:\$\{startParam\}\`/);
+  assert.match(readContractSource(new URL('../src/telegram-update-orchestration.js', import.meta.url), 'utf8'),/eventKey:\`share_open:\$\{userId\}:\$\{startParam\}\`/);
   assert.match(growthReferral,/referralAttributionDecision/);
-  assert.match(growthReferral,/referral_code:referral\.referralCode/);
+  assert.match(growthReferral,/referral_code:referralCode/);
 });
 
 test('share UX stays single-action and omits invented AI signal when signal is unavailable', () => {

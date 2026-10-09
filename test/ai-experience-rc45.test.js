@@ -48,7 +48,7 @@ function createSearchRuntime(overrides = {}) {
     searchText,
     setCache: async () => true,
     telegramApi: async () => ({}),
-    telegramWebAppUrl: (_request, params = {}) => `https://app.test/?${new URLSearchParams(params)}`,
+    telegramWebAppUrl: (request, params = {}) => `${new URL(request.url).origin}/?${new URLSearchParams(params)}`,
     todayUtc: () => '2026-10-06',
     topTeamSearchPlan: query => ({
       best: { score: 200, canonical: query },
@@ -118,6 +118,7 @@ test('Telegram search escapes HTML in user-controlled match content', () => {
   );
 
   const line = runtime.botMatchLine({
+    fixtureId: 77,
     home: { name: '<Arsenal>' },
     away: { name: 'Chelsea & Co' },
     league: '<Premier League>',
