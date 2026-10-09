@@ -1,68 +1,67 @@
-name: Quality
+name: Isolated Load and Resilience
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, closed]
-    paths-ignore:
-      - "docs/**"
-      - "**/*.md"
   push:
     branches: [main]
-    paths-ignore:
-      - "docs/**"
-      - "**/*.md"
-      - ".github/workflows/cleanup-merged-branches.yml"
-      - ".github/workflows/repository-maintenance.yml"
+    paths:
+      - '.github/workflows/isolated-load-resilience.yml'
+      - 'scripts/isolated-*-check.js'
+      - 'scripts/*supabase*.sql'
+      - 'supabase/migrations/**'
+      - 'test/supabase-backup-workflow.test.js'
+  pull_request:
+    paths:
+      - '.github/workflows/isolated-load-resilience.yml'
+      - 'scripts/isolated-*-check.js'
+      - 'scripts/*supabase*.sql'
+      - 'supabase/migrations/**'
+      - 'test/supabase-backup-workflow.test.js'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  # PRs share one key and may supersede older commits. Every main SHA gets its
-  # own key so GitHub cannot replace a pending production gate with a newer push.
-  group: quality-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: isolated-load-resilience
+  cancel-in-progress: false
 
 jobs:
-  test:
-    # A synthetic pull_request.closed run exists only to cancel superseded PR work.
-    if: ${{ github.event_name != 'pull_request' || github.event.action != 'closed' }}
-    # This job executes PR-controlled npm/scripts. Keep it ephemeral for public-repo PR safety.
+  runtime-load:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm audit --audit-level=high
-      - run: npm run security:dependencies
-      - run: npm run security:scan
-      - run: npm run security:privileged
-      - run: npm run lint
-      - run: npm run check
-      - run: npm run verify:supabase
-      - name: Run release-critical tests
-        run: npm run test:release
-      - name: Run full regression suite
-        run: npm test
-      - name: Run review-tail regression tests
-        run: npm run test:review-tail
-      - run: node scripts/bottom-nav-render-smoke.js
-      - run: npm run verify:release
       - run: node scripts/isolated-load-check.js
-      - run: npm run verify:worker
-
+      - name: Failure, replay and compensation regressions
+        run: node --test test/api-football-gateway-phase2.test.js test/provider-fixture-runtime-boundaries.test.js test/distributed-analysis-lock-runtime-boundaries.test.js test/sensitive-mutation-replay.test.js test/billing-refund-replay.test.js test/analysis-lifecycle-runtime-boundaries.test.js
+      - run: npm test
+      - name: Publish measurements
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: isolated-load-results
+          path: load-results/
+          if-no-files-found: warn
+      - name: Job summary
+        if: always()
+        run: |
+          if [[ -f load-results/isolated-load.md ]]; then
+            cat load-results/isolated-load.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   database-integration:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     # Local Supabase integration runs on an ephemeral hosted runner so release
     # readiness is not coupled to the persistent WSL runner. Fork PRs remain
     # excluded to keep the heavier database gate scoped to trusted code.
-    if: ${{ github.event_name != 'pull_request' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -160,6 +159,17 @@ jobs:
           grep -q "Fresh-install baseline refused" \
             "$RUNNER_TEMP/supabase-baseline-guard.log"
 
+      - name: Test backup and restoration in disposable database
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source "$RUNNER_TEMP/supabase-fresh.env"
+          set +a
+          export ISOLATED_PG_CONTAINER="supabase_db_matchradar-supabase-fresh"
+          node scripts/isolated-db-load-check.js
+          node scripts/isolated-restore-check.js
+
       - name: Stop fresh Supabase stack
         if: always()
         shell: bash
@@ -240,3 +250,11 @@ jobs:
             cd "$UPGRADE_DIR"
             npx --yes "supabase@$SUPABASE_CLI_VERSION" stop --no-backup || true
           fi
+
+      - name: Upload database measurements
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: isolated-database-results
+          path: load-results/
+          if-no-files-found: warn
