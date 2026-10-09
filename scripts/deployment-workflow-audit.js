@@ -12,6 +12,7 @@ const REQUIRED_RELEASE_GATES=Object.freeze([
   'npm run test:release',
   'npm test',
   'npm run test:review-tail',
+  'node scripts/isolated-load-check.js',
   'node scripts/bottom-nav-render-smoke.js',
   'npm run verify:release',
   'npm run verify:worker',
