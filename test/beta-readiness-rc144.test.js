@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createClientTelemetryRuntime } from '../src/client-telemetry-runtime.js';
@@ -87,11 +87,10 @@ function extractSet(source, name) {
 
 function readJavaScriptTree(root) {
   let source = '';
-  for (const name of readdirSync(root)) {
-    const path = join(root, name);
-    const stat = statSync(path);
-    if (stat.isDirectory()) source += readJavaScriptTree(path);
-    else if (name.endsWith('.js')) source += `\n// ${path}\n${readFileSync(path, 'utf8')}`;
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) source += readJavaScriptTree(path);
+    else if (entry.isFile() && entry.name.endsWith('.js')) source += `\n// ${path}\n${readFileSync(path, 'utf8')}`;
   }
   return source;
 }
