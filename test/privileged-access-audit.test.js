@@ -253,7 +253,7 @@ test('public text assets reveal only forbidden secret names, never their actual 
 });
 
 test('Codex pilot permits only the OpenAI API key and rejects Production credentials', () => {
-  const allowed = \`name: Codex Pilot
+  const allowed = `name: Codex Pilot
 permissions:
   contents: read
 jobs:
@@ -263,9 +263,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Review
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: \${{ secrets.OPENAI_API_KEY }}
         run: echo review
-\`;
+`;
   assert.deepEqual(auditWorkflow('.github/workflows/codex-review-pilot.yml', allowed), []);
   const denied = allowed.replace(
     'OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}',
