@@ -41,9 +41,9 @@ try {
   }
   run('createdb',['--maintenance-db='+source,name]);created=true;
   if (container) {
-    run('docker',['exec','-i',container,'pg_restore','-U','postgres','-d',name,'--no-owner','--exit-on-error'],{input:readFileSync(dump),stdio:['pipe','pipe','pipe']});
+    run('docker',['exec','-i',container,'pg_restore','-U','postgres','-d',name,'--no-owner','--clean','--if-exists','--single-transaction','--exit-on-error'],{input:readFileSync(dump),stdio:['pipe','pipe','pipe']});
   } else {
-    run('pg_restore',['--dbname='+target,'--no-owner','--exit-on-error',dump]);
+    run('pg_restore',['--dbname='+target,'--no-owner','--clean','--if-exists','--single-transaction','--exit-on-error',dump]);
   }
   run('psql',[target,'-X','-v','ON_ERROR_STOP=1','-f','scripts/apply-supabase-restore-hardening.sql']);
   run('psql',[target,'-X','-v','ON_ERROR_STOP=1','-f','scripts/verify-supabase-restore.sql']);
