@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import {
+  chromeProxyArguments,
   isTransientNavigationError,
   launchChromeWithRetry,
   navigateWithRetry,
@@ -249,4 +250,14 @@ test('render smoke main path still cleans the successful profile and uses retry 
   assert.match(main, /navigateForExpectedRevision\(cdp, targetUrl, Boolean\(remoteUrl\)\)/);
   assert.match(main, /if \(profileDir\)[\s\S]*?fsp\.rm\(profileDir/);
   assert.doesNotMatch(script, /spawnSync\('sh'/);
+});
+
+
+test('browser proxy is explicit and preserves TLS verification',()=>{
+  assert.deepEqual(chromeProxyArguments(),['--no-proxy-server']);
+  assert.deepEqual(chromeProxyArguments('http://proxy.example:8080'),['--proxy-server=http://proxy.example:8080']);
+  assert.deepEqual(chromeProxyArguments('https://proxy.example'),['--proxy-server=https://proxy.example']);
+  for (const value of ['bad','socks5://proxy.example','http://user:password@proxy.example','http://proxy.example/path','http://proxy.example?token=x','http://proxy.example#fragment']) {
+    assert.throws(()=>chromeProxyArguments(value),/CHROME_PROXY_SERVER/);
+  }
 });

@@ -171,7 +171,7 @@ export async function launchChromeWithRetry(executable, attempts = 3, runtime = 
         '--no-sandbox',
         '--disable-gpu',
         '--disable-dev-shm-usage',
-        '--no-proxy-server',
+        ...chromeProxyArguments(process.env.CHROME_PROXY_SERVER),
         '--no-first-run',
         '--no-default-browser-check',
         '--remote-debugging-port=0',
@@ -243,6 +243,16 @@ class Cdp {
   close() {
     try { this.socket.close(); } catch {}
   }
+}
+
+export function chromeProxyArguments(value = '') {
+  if (!value) return ['--no-proxy-server'];
+  let proxy;
+  try { proxy=new URL(value); } catch { throw new Error('CHROME_PROXY_SERVER must be an HTTP or HTTPS proxy URL.'); }
+  if (!['http:','https:'].includes(proxy.protocol) || proxy.username || proxy.password || proxy.pathname!=='/' || proxy.search || proxy.hash) {
+    throw new Error('CHROME_PROXY_SERVER must be an HTTP or HTTPS proxy URL without credentials, path, query or fragment.');
+  }
+  return ['--proxy-server='+proxy.origin];
 }
 
 export function isTransientNavigationError(errorText = '') {
