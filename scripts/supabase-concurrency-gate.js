@@ -119,6 +119,26 @@ async function testAnalysisQuota() {
   assert.equal(used, limit, 'analysis quota row must stop exactly at the configured limit');
 }
 
+// Fixed-window guards legitimately reset at a wall-clock boundary. Count claims
+// per returned window so CI cannot mistake two valid windows for one overrun.
+export function assertProviderBudgetWindows(results,limit) {
+  const windows=new Map();
+  let denied=0;
+  for(const item of results) {
+    assert.equal(typeof item.allowed,'boolean','Provider result must contain an allowed flag');
+    const window=Date.parse(item.windowStartedAt);
+    assert.ok(Number.isFinite(window),'Provider result must identify its time window');
+    assert.ok(Number.isSafeInteger(item.count) && item.count>=1 && item.count<=limit,'Persisted provider count must remain within limit');
+    if(!item.allowed) {denied++;continue;}
+    const claims=windows.get(window) || new Set();
+    assert.ok(!claims.has(item.count),'Concurrent provider claims must have distinct counts within one window');
+    claims.add(item.count);windows.set(window,claims);
+    assert.ok(claims.size<=limit,'Provider admission must not exceed the configured limit in any window');
+  }
+  assert.ok(denied>0,'Concurrency gate must exercise rejected provider claims');
+  assert.ok([...windows.values()].some(claims=>claims.size===limit),'Concurrency gate must fill at least one provider window exactly');
+}
+
 async function testProviderBudget() {
   const key = 'ci-433-provider-budget';
   const limit = 4;
@@ -133,16 +153,12 @@ async function testProviderBudget() {
   );
   const decoded = results.map((value) => parseJson(value, 'claim_provider_request'));
 
-  assert.equal(
-    decoded.filter((item) => item.allowed === true).length,
-    limit,
-    'distributed provider budget must allow exactly the configured number of claims',
-  );
+  assertProviderBudgetWindows(decoded,limit);
 
   const count = Number(await psql(
     "select request_count from public.provider_rate_windows where bucket_key='" + key + "';",
   ));
-  assert.equal(count, limit, 'provider budget row must not exceed the configured limit');
+  assert.ok(count>=1 && count<=limit, 'provider budget row must not exceed the configured limit');
 }
 
 async function testTelegramDedupe() {

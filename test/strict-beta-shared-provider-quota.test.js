@@ -132,13 +132,13 @@ test('distributed provider quota uses one server-side atomic guard and fails clo
   assert.match(section,/allowed:false,[\s\S]*degraded:true,[\s\S]*local:false/);
   assert.doesNotMatch(section,/claimEmergencyLocalProviderBudget\('guard_unavailable'\)/);
 });
-test('concurrency CI verifies exact distributed provider quota rather than only final counts',()=>{
+test('concurrency CI verifies distributed provider quota per fixed time window',()=>{
   const gate=readFileSync(new URL('../scripts/supabase-concurrency-gate.js',import.meta.url),'utf8');
   const section=block(gate,'async function testProviderBudget','async function testTelegramDedupe');
   assert.match(section,/const limit = 4/);
   assert.match(section,/Array\.from\(\{ length: 12 \}/);
   assert.match(section,/Promise\.all\(/);
   assert.match(section,/claim_provider_request/);
-  assert.match(section,/decoded\.filter\(\(item\) => item\.allowed === true\)\.length/);
-  assert.match(section,/assert\.equal\(count, limit/);
+  assert.match(section,/assertProviderBudgetWindows\(decoded,limit\)/);
+  assert.match(section,/count>=1 && count<=limit/);
 });

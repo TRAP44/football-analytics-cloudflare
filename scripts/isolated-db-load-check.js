@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { performance } from 'node:perf_hooks';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { requireDbUrl } from './supabase-concurrency-gate.js';
+import { requireDbUrl, assertProviderBudgetWindows } from './supabase-concurrency-gate.js';
 const execute=promisify(execFile);
 const url=requireDbUrl();
 const user=900000000436;
@@ -34,11 +34,11 @@ try {
     assert.equal(quota.output.map(JSON.parse).filter(r=>r.allowed===true).length,5);
     assert.equal(Number(await query(`select analyses from public.usage_daily where telegram_id=${user} and usage_date=date '2099-10-09';`)),5);
     const provider=await batch(requests,()=>query(`select public.claim_provider_request('${key}',4,60)::text;`,true));
-    assert.equal(provider.output.map(JSON.parse).filter(r=>r.allowed===true).length,4);
+    assertProviderBudgetWindows(provider.output.map(JSON.parse),4);
     const dedupe=await batch(requests,()=>query(`select public.claim_telegram_update('${key}',90);`,true));
     assert.equal(dedupe.output.filter(r=>r==='t').length,1);
     assert.equal(Number(await query(`select duplicate_count from public.telegram_update_claims where update_key='${key}';`)),requests-1);
-    rows.push({requests,sqlConcurrency:Math.min(requests,20),quotaAdmitted:5,providerAdmitted:4,telegramOwners:1,quotaP95Ms:quota.p95Ms,providerP95Ms:provider.p95Ms,dedupeP95Ms:dedupe.p95Ms});
+    rows.push({requests,sqlConcurrency:Math.min(requests,20),quotaAdmitted:5,providerAdmitted:provider.output.map(JSON.parse).filter(r=>r.allowed===true).length,providerLimitPerWindow:4,telegramOwners:1,quotaP95Ms:quota.p95Ms,providerP95Ms:provider.p95Ms,dedupeP95Ms:dedupe.p95Ms});
   }
   mkdirSync('load-results',{recursive:true});
   writeFileSync('load-results/database-load.json',JSON.stringify({scope:'disposable Supabase; queue bursts with at most 20 psql sessions; timings include process startup, not production HTTP latency',rows},null,2));
