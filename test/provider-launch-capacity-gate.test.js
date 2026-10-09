@@ -71,6 +71,15 @@ test('FREE daily reserve does not carry stale quota across a UTC day boundary', 
   assert.equal(gateway.dailyReserveDecision().blocked,false);
 });
 
+test('FREE daily reserve ignores stale evidence so a plan upgrade can refresh from headers', () => {
+  const stale = new Date(Date.now() - 45 * 60_000).toISOString();
+  const { gateway } = createGateway({updatedAt:stale,dailyRemaining:1});
+  assert.equal(gateway.dailyReserveDecision().blocked,false);
+  const recent = new Date(Date.now() - 5 * 60_000).toISOString();
+  const { gateway: fresh } = createGateway({updatedAt:recent,dailyRemaining:1});
+  assert.equal(fresh.dailyReserveDecision().blocked,true);
+});
+
 test('paid provider plans are not constrained by the FREE daily reserve', () => {
   const { gateway } = createGateway({plan:'PRO',dailyLimit:7500,dailyRemaining:10,minuteLimit:300,minuteRemaining:100});
   assert.equal(gateway.dailyReserveDecision().blocked,false);
