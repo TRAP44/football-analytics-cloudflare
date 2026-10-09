@@ -251,3 +251,26 @@ test('public text assets reveal only forbidden secret names, never their actual 
   assert.equal(findings.some(item=>JSON.stringify(item).includes('private-value')),false);
   assert.equal(findings.some(item=>item.path==='public/image.png'),false);
 });
+
+test('Codex pilot permits only the OpenAI API key and rejects Production credentials', () => {
+  const allowed = \`name: Codex Pilot
+permissions:
+  contents: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Review
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: echo review
+\`;
+  assert.deepEqual(auditWorkflow('.github/workflows/codex-review-pilot.yml', allowed), []);
+  const denied = allowed.replace(
+    'OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}',
+    'CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}',
+  );
+  const findings = auditWorkflow('.github/workflows/codex-review-pilot.yml', denied);
+  assert.ok(findings.some(item => item.type === 'unexpected_secret_reference' && item.name === 'CLOUDFLARE_API_TOKEN'));
+});
