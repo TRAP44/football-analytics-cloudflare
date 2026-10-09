@@ -41,7 +41,7 @@ try {
   }
   run('createdb',['--maintenance-db='+source,name]);created=true;
   if (container) {
-    run('docker',['exec','-i',container,'pg_restore','-U','postgres','-d',name,'--no-owner','--clean','--if-exists','--single-transaction','--exit-on-error'],{input:readFileSync(dump),stdio:['pipe','pipe','pipe']});
+    run('docker',['exec','-i',container,'pg_restore','-U','supabase_admin','-d',name,'--no-owner','--clean','--if-exists','--single-transaction','--exit-on-error'],{input:readFileSync(dump),stdio:['pipe','pipe','pipe']});
   } else {
     run('pg_restore',['--dbname='+target,'--no-owner','--clean','--if-exists','--single-transaction','--exit-on-error',dump]);
   }
