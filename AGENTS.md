@@ -25,6 +25,17 @@ These instructions apply to automated coding and review agents operating on this
 - When agents disagree, surface the disagreement and evidence in the PR; do not automatically select a winner.
 - Any auto-generated PR must start as **draft**, remain unmerged, and identify its source agent.
 
+## Code Review Rules
+
+### Football data integrity
+- Flag any change that promotes unverified or stale provider data to a confirmed lineup, injury, result, market movement, or win probability. Confirmed starting lineups require eleven unique starters per team and trustworthy provider provenance. Show unavailable data as unavailable rather than manufacturing a value.
+
+### Quota and cache safety
+- Flag any code path that introduces unbounded or duplicate API-Football requests, bypasses provider quota guards, or performs unnecessary live refreshes. Prefer validated shared cached data and retain graceful behavior when the free provider tier lacks an endpoint.
+
+### Production and user authorization
+- Flag any change that weakens Telegram initData verification, server-side admin authorization, paid entitlement checks, isolated Supabase permissions, or deploy provenance/rollback guarantees. Require targeted regression tests and an explicit owner decision for production-affecting changes.
+
 ## Local gates
 Run appropriate checks for the change. The existing CI is authoritative:
 ```sh
