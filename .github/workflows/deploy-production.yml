@@ -147,6 +147,8 @@ jobs:
           npm run lint
           npm run check
           npm run test:release
+          npm test
+          npm run test:review-tail
           node scripts/bottom-nav-render-smoke.js
           npm run verify:release
           npm run verify:worker

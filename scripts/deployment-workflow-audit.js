@@ -10,6 +10,8 @@ const REQUIRED_RELEASE_GATES=Object.freeze([
   'npm run lint',
   'npm run check',
   'npm run test:release',
+  'npm test',
+  'npm run test:review-tail',
   'node scripts/bottom-nav-render-smoke.js',
   'npm run verify:release',
   'npm run verify:worker',
@@ -124,6 +126,13 @@ export function auditDeploymentWorkflowSources({
   for (const gate of REQUIRED_RELEASE_GATES) {
     requireContains(findings,'deploy re-verification',reverify,gate);
     requireContains(findings,'Quality gate',qualityText,gate);
+  }
+
+  if (/continue-on-error:\s*true\b/.test(qualityText)) {
+    findings.push('Quality must fail on regression errors; continue-on-error is forbidden');
+  }
+  if (/continue-on-error:\s*true\b/.test(stepBlock(deployText,'Re-verify release artifact'))) {
+    findings.push('deploy re-verification must fail on regression errors');
   }
 
   const credentialStep=stepBlock(deployText,'Check Cloudflare credentials');

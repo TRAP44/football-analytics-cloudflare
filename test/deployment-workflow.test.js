@@ -216,3 +216,21 @@ test('production deploy uses an ephemeral hosted runner',()=>{
   assert.match(deploy,/runs-on:\s*ubuntu-latest/);
   assert.doesNotMatch(deploy,/runs-on:\s*\[self-hosted/);
 });
+
+
+test('Quality rejects non-blocking regression failures',()=>{
+  for (const command of ['npm test','npm run test:review-tail']) {
+    const weakened=quality.replace('        run: '+command+'\n','        continue-on-error: true\n        run: '+command+'\n');
+    assert.notEqual(weakened,quality);
+    assert.ok(audit({quality:weakened}).some(message=>message.includes('continue-on-error')));
+  }
+});
+
+test('full and review-tail regressions cannot be removed from release verification',()=>{
+  for (const command of ['npm test','npm run test:review-tail']) {
+    const weakenedQuality=quality.replace('        run: '+command+'\n','');
+    assert.ok(audit({quality:weakenedQuality}).some(message=>message.includes('Quality gate') && message.includes(command)));
+    const weakenedDeploy=deploy.replace('          '+command+'\n','');
+    assert.ok(audit({deploy:weakenedDeploy}).some(message=>message.includes('deploy re-verification') && message.includes(command)));
+  }
+});
