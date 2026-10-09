@@ -47,7 +47,11 @@ try {
   }
   run('psql',[target,'-X','-v','ON_ERROR_STOP=1','-f','scripts/apply-supabase-restore-hardening.sql']);
   run('psql',[target,'-X','-v','ON_ERROR_STOP=1','-f','scripts/verify-supabase-restore.sql']);
-  assert.deepEqual(JSON.parse(query(target,'select public.backend_schema_contract_v2()::text;')),JSON.parse(before));
+  const {checkedAt:sourceCheckedAt,...expectedContract}=JSON.parse(before);
+  const {checkedAt:restoredCheckedAt,...restoredContract}=JSON.parse(query(target,'select public.backend_schema_contract_v2()::text;'));
+  assert.ok(Number.isFinite(Date.parse(sourceCheckedAt)));
+  assert.ok(Number.isFinite(Date.parse(restoredCheckedAt)));
+  assert.deepEqual(restoredContract,expectedContract); // checkedAt is generated per query, not part of schema identity.
   assert.equal(query(target,'select count(*) from public.users;'),count);
   assert.equal(query(target,`select analyses from public.usage_daily where telegram_id=${fixtureUser} and usage_date=date '2099-10-09';`),'1');
   console.log('Disposable backup/restore: schema fingerprint, users count and security acceptance passed. No production database accessed.');
