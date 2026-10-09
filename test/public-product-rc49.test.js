@@ -2,6 +2,7 @@ import { readFileSync as readContractSource } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { workerRuntime } from '../test-support/worker-root.js';
 
 const worker=(fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
 const app=fs.readFileSync('public/app.js','utf8');
@@ -10,13 +11,21 @@ const css=fs.readFileSync('public/styles.css','utf8');
 const appCapabilities=fs.readFileSync('src/app-capabilities.js','utf8');
 
 test('global search recognizes major clubs across countries and Russian aliases',()=> {
-  assert.match(worker,/TOP_TEAM_SEARCH_CATALOG/);
-  for (const sample of ['реал мадрид','барселона','ман сити','мю','псж','бавария','интер','ювентус','бенфика','аякс','галатасарай','аль наср']) {
-    assert.ok(fs.readFileSync('src/search-discovery-runtime.js','utf8').includes(sample), `missing club alias: ${sample}`);
+  const search=workerRuntime.getSearchDiscoveryRuntime();
+  const cases=[
+    ['реал мадрид','Real Madrid'],['барселона','Barcelona'],
+    ['ман сити','Manchester City'],['мю','Manchester United'],
+    ['псж','Paris Saint Germain'],['бавария','Bayern Munich'],
+    ['интер','Inter'],['ювентус','Juventus'],['бенфика','Benfica'],
+    ['аякс','Ajax'],['галатасарай','Galatasaray'],['аль наср','Al-Nassr'],
+  ];
+  for (const [query,canonical] of cases) {
+    const plan=search.topTeamSearchPlan(query);
+    assert.equal(plan.best?.canonical,canonical,query);
+    assert.equal(plan.providerQuery,canonical,query);
+    assert.equal(plan.resolved,true,query);
+    assert.ok(plan.candidates.some(team=>team.canonical===canonical),query);
   }
-  assert.match(readContractSource(new URL('../src/search-discovery-runtime.js', import.meta.url), 'utf8'),/function topTeamSearchPlan/);
-  assert.match(readContractSource(new URL('../src/search-discovery-runtime.js', import.meta.url), 'utf8'),/teamPlan\.providerQuery/);
-  assert.match(fs.readFileSync('src/search-discovery-runtime.js','utf8'),/v2-global/);
 });
 
 test('telegram search shares the same canonical club resolution',()=> {
