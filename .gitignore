@@ -28,3 +28,6 @@ Thumbs.db
 !.vscode/extensions.json
 !.vscode/settings.json
 .idea/
+
+# Isolated performance reports
+load-results/
