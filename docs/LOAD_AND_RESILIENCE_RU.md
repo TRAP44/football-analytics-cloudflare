@@ -4,11 +4,11 @@
 
 `node scripts/isolated-load-check.js` — 21 сценарий runtime с 10/50/100 одновременными вызовами: shared requests, разные запросы и FREE-бюджет, отказ БД, таймауты, HTTP 429, восстановление после 503, повторы чувствительной операции. Транспорт имитируется с задержкой 10 мс; persistent coordinator также имитируется. Никаких реальных платежей или отправок в Telegram.
 
-`Isolated Load and Resilience` в GitHub Actions запускается вручную через `workflow_dispatch`. Он выполняет полный набор тестов, сценарии отказов, поднимает одноразовый Supabase, проверяет свежую установку/обновление миграций, SQL-квоты и Telegram dedupe, а затем dump/restore схем приложения public/private в отдельной тестовой БД с security acceptance.
+`Isolated Load and Resilience` в GitHub Actions запускается автоматически для соответствующих изменений в pull request и main, а также вручную через `workflow_dispatch`. Он выполняет полный набор тестов, сценарии отказов, поднимает одноразовый Supabase, проверяет свежую установку/обновление миграций, SQL-квоты и Telegram dedupe, а затем dump/restore схем приложения public/private в отдельной тестовой БД с security acceptance.
 
 SQL-нагрузка: пакеты 10/50/100 запросов при ограничении 20 одновременных psql-сессий. Это защищает тестовый PostgreSQL от исчерпания соединений; такой результат не доказывает работу 100 одновременных соединений. Время включает запуск psql, поэтому не является production HTTP latency.
 
-Результаты runtime и SQL сохраняются в artifacts. Локальные отчёты — `load-results/`, исключены из Git. Автоматический runtime-check также входит в Quality.
+Результаты runtime и SQL сохраняются в artifacts. Локальные отчёты — `load-results/`, исключены из Git. Автоматический runtime-check также входит в Quality и обязательные проверки deployment.
 
 ## Что считается успешным
 
