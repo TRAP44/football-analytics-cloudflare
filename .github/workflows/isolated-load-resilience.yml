@@ -1,6 +1,15 @@
 name: Isolated Load and Resilience
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/isolated-load-resilience.yml'
+      - 'scripts/isolated-*-check.js'
+  pull_request:
+    paths:
+      - '.github/workflows/isolated-load-resilience.yml'
+      - 'scripts/isolated-*-check.js'
   workflow_dispatch:
 
 permissions:
@@ -43,6 +52,7 @@ jobs:
           fi
 
   database-integration:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     # Local Supabase integration runs on an ephemeral hosted runner so release
     # readiness is not coupled to the persistent WSL runner. Fork PRs remain
     # excluded to keep the heavier database gate scoped to trusted code.
