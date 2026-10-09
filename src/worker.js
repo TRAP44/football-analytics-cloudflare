@@ -2292,6 +2292,28 @@ const {
 });
 
 
+// First immutable pre-match model snapshot (home/draw/away, percent) per fixture, used by the home cards.
+async function getModelProbabilities(fixtureIds, cfg) {
+  const ids = [...new Set((Array.isArray(fixtureIds) ? fixtureIds : []).map(Number).filter(id => Number.isSafeInteger(id) && id > 0))].slice(0, 200);
+  if (!ids.length || !hasSupabase(cfg)) return {};
+  const rows = await supaSelectMany(cfg, 'model_predictions', { fixture_id: `in.(${ids.join(',')})` }, {
+    limit: ids.length + 2,
+    select: 'fixture_id,home_prob,draw_prob,away_prob',
+  });
+  const result = {};
+  for (const row of rows) {
+    const id = Number(row?.fixture_id);
+    const values = [row?.home_prob, row?.draw_prob, row?.away_prob].map(Number);
+    const sum = values.reduce((total, value) => total + value, 0);
+    if (!Number.isSafeInteger(id) || id <= 0) continue;
+    if (!values.every(value => Number.isFinite(value) && value >= 0 && value <= 100)) continue;
+    if (sum < 98 || sum > 102) continue;
+    const [home, draw, away] = values.map(value => Math.round(value * 10) / 10);
+    result[id] = { home, draw, away };
+  }
+  return result;
+}
+
 let userDataApiRuntime = null;
 function getUserDataApiRuntime() {
   if (!userDataApiRuntime) {
@@ -2306,6 +2328,7 @@ function getUserDataApiRuntime() {
       getFavoritePlayers,
       getFavorites,
       getHistory,
+      getModelProbabilities,
       getPreferences,
       getQuota,
       getReminders,

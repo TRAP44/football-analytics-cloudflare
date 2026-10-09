@@ -93,7 +93,17 @@ function normalizeHistoryItem(value) {
     aiSignalLabel:safeText(safeRead(item,'aiSignalLabel'),160),
     aiSignalCode:safeText(safeRead(item,'aiSignalCode'),40),
     aiConfidence:confidenceValue(safeRead(item,'aiConfidence')),
+    aiProbabilities:probabilitiesValue(safeRead(item,'aiProbabilities')),
   };
+}
+
+function probabilitiesValue(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const values=['home','draw','away'].map(key=>Number(safeRead(value,key)));
+  if (!values.every(item=>Number.isFinite(item) && item>=0 && item<=100)) return null;
+  const sum=values.reduce((total,item)=>total+item,0);
+  if (sum<98 || sum>102) return null;
+  return {home:values[0],draw:values[1],away:values[2]};
 }
 
 function normalizedHistory(value) {

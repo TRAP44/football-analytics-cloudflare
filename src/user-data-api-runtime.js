@@ -15,6 +15,7 @@ export function createUserDataApiRuntime(deps) {
     getFavoritePlayers,
     getFavorites,
     getHistory,
+    getModelProbabilities,
     getPreferences,
     getQuota,
     getReminders,
@@ -184,11 +185,27 @@ export function createUserDataApiRuntime(deps) {
     if (!userId) return json({error:'Сессия Telegram не подтверждена.',code:'AUTH_REQUIRED'},401);
 
     const rows=safeRows(await getHistory(userId,cfg));
+    // Optional enrichment: the first pre-match model snapshot for fixtures the user already analysed.
+    // Any failure leaves the history response untouched (probabilities are null).
+    let probabilitiesByFixture={};
+    if (typeof getModelProbabilities === 'function') {
+      const fixtureIds=[...new Set(rows.map(row=>positiveId(row.fixture_id)).filter(Boolean))];
+      if (fixtureIds.length) {
+        try {
+          const loaded=await getModelProbabilities(fixtureIds,cfg);
+          if (loaded && typeof loaded === 'object' && !Array.isArray(loaded)) probabilitiesByFixture=loaded;
+        } catch {
+          probabilitiesByFixture={};
+        }
+      }
+    }
     return json({
       items:rows.map(row=>{
         const confidence=finiteNumber(row.ai_confidence);
+        const fixtureId=positiveId(row.fixture_id) || null;
         return {
-          fixtureId:positiveId(row.fixture_id) || null,
+          fixtureId,
+          aiProbabilities:fixtureId ? (probabilitiesByFixture[fixtureId] || null) : null,
           homeName:safeText(row.home_name,180),
           awayName:safeText(row.away_name,180),
           leagueName:safeText(row.league_name,180),
