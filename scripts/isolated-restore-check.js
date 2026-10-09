@@ -39,6 +39,9 @@ try {
   query(source,`select public.consume_analysis_quota(${fixtureUser},date '2099-10-09',5);`);
   assert.equal(query(source,`select analyses from public.usage_daily where telegram_id=${fixtureUser} and usage_date=date '2099-10-09';`),'1');
   const before=query(source,'select public.backend_schema_contract_v2()::text;');
+  const contractBody=query(source,"select prosrc from pg_proc where oid='public.backend_schema_contract_v2()'::regprocedure;");
+  const contractPartsSql=contractBody.slice(0,contractBody.lastIndexOf('select jsonb_build_object('))+'select jsonb_agg(part order by part)::text from parts;';
+  const beforeParts=JSON.parse(query(source,contractPartsSql));
   const count=query(source,'select count(*) from public.users;');
   if (container) {
     const bytes=run('docker',['exec',container,'pg_dump','-U','postgres','-d',decodeURIComponent(new URL(source).pathname.slice(1)),'--format=custom','--schema=public','--schema=private','--no-owner'],{encoding:null});
@@ -58,6 +61,12 @@ try {
   const {checkedAt:restoredCheckedAt,...restoredContract}=JSON.parse(query(target,'select public.backend_schema_contract_v2()::text;'));
   assert.ok(Number.isFinite(Date.parse(sourceCheckedAt)));
   assert.ok(Number.isFinite(Date.parse(restoredCheckedAt)));
+  if (restoredContract.fingerprint!==expectedContract.fingerprint) {
+    const afterParts=JSON.parse(query(target,contractPartsSql));
+    const removed=beforeParts.filter(part=>!afterParts.includes(part));
+    const added=afterParts.filter(part=>!beforeParts.includes(part));
+    console.error('Restored schema differences:',JSON.stringify({removed:removed.slice(0,30),added:added.slice(0,30)}));
+  }
   assert.deepEqual(restoredContract,expectedContract); // checkedAt is generated per query, not part of schema identity.
   assert.equal(query(target,'select count(*) from public.users;'),count);
   assert.equal(query(target,`select analyses from public.usage_daily where telegram_id=${fixtureUser} and usage_date=date '2099-10-09';`),'1');
