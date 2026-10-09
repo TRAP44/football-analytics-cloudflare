@@ -33,6 +33,15 @@ revoke all privileges on all sequences in schema public from service_role;
 grant usage, select on all sequences in schema public to service_role;
 grant execute on all functions in schema public to service_role;
 
+-- Snapshot history is append-only in v6.29.14. Restore must retain that boundary.
+do $$
+begin
+  if to_regclass('public.live_pressure_snapshots') is not null then
+    revoke update, delete on public.live_pressure_snapshots from service_role;
+  end if;
+end;
+$$;
+
 -- A no-owner restore may use a different local administrative owner. Normalize
 -- every application object owner rather than assuming the executing role owns
 -- all restored objects. Supabase defaults can grant broader service_role rights.

@@ -6,10 +6,16 @@ on:
     paths:
       - '.github/workflows/isolated-load-resilience.yml'
       - 'scripts/isolated-*-check.js'
+      - 'scripts/*supabase*.sql'
+      - 'supabase/migrations/**'
+      - 'test/supabase-backup-workflow.test.js'
   pull_request:
     paths:
       - '.github/workflows/isolated-load-resilience.yml'
       - 'scripts/isolated-*-check.js'
+      - 'scripts/*supabase*.sql'
+      - 'supabase/migrations/**'
+      - 'test/supabase-backup-workflow.test.js'
   workflow_dispatch:
 
 permissions:

@@ -127,11 +127,20 @@ begin
       and (
         not has_table_privilege('service_role', c.oid, 'SELECT')
         or not has_table_privilege('service_role', c.oid, 'INSERT')
-        or not has_table_privilege('service_role', c.oid, 'UPDATE')
-        or not has_table_privilege('service_role', c.oid, 'DELETE')
+        or (c.relname <> 'live_pressure_snapshots' and (
+          not has_table_privilege('service_role', c.oid, 'UPDATE')
+          or not has_table_privilege('service_role', c.oid, 'DELETE')
+        ))
       )
   ) then
-    raise exception 'restore acceptance: service_role is missing CRUD privileges on a public table';
+    raise exception 'restore acceptance: service_role is missing required privileges on a public table';
+  end if;
+
+  if to_regclass('public.live_pressure_snapshots') is not null and (
+    has_table_privilege('service_role', 'public.live_pressure_snapshots', 'UPDATE')
+    or has_table_privilege('service_role', 'public.live_pressure_snapshots', 'DELETE')
+  ) then
+    raise exception 'restore acceptance: live_pressure_snapshots must remain append-only';
   end if;
 
   if not exists (

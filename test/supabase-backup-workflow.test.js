@@ -113,6 +113,9 @@ test('Supabase restore drill is isolated, measurable and preserves least privile
   assert.match(restoreHardeningSql, /revoke all privileges on all sequences in schema public from service_role/i);
   assert.match(restoreHardeningSql, /grant select, insert, update, delete on all tables in schema public to service_role/i);
 
+  assert.match(restoreHardeningSql, /revoke update, delete on public\.live_pressure_snapshots from service_role/i);
+  assert.match(restoreSql, /live_pressure_snapshots must remain append-only/);
+
   assert.match(runbook, /Изолированный restore drill/i);
   assert.match(runbook, /Observed backup freshness/i);
   assert.match(runbook, /Measured restore time/i);
