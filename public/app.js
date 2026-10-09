@@ -3232,6 +3232,19 @@ function renderPopularCompetitions() {
   el.querySelectorAll('[data-open-tournament]').forEach(btn => btn.addEventListener('click', () => openTournament(Number(btn.dataset.openTournament))));
 }
 
+function aiConfidenceMeterHtml(history) {
+  if (!history) return '';
+  const raw = Number(history.aiConfidence);
+  const hasScore = history.aiConfidence !== null && history.aiConfidence !== undefined && Number.isFinite(raw);
+  const score = hasScore ? Math.max(0, Math.min(100, raw)) : 0;
+  const label = score >= 70 ? 'Высокая' : score >= 45 ? 'Средняя' : 'Низкая';
+  const bars = Math.max(1, Math.min(5, Math.round(score / 20)));
+  const meter = hasScore
+    ? `<span class="mr-ai-meter" role="img" aria-label="Уверенность модели: ${label}">${[1, 2, 3, 4, 5].map(n => `<i class="${n <= bars ? 'on' : ''}"></i>`).join('')}<b>${label}</b></span>`
+    : '';
+  return `<div class="mr-ai-strip"><span>✦ AI-разбор готов</span>${meter}</div>`;
+}
+
 function matchCardHtml(m, { grouped = false } = {}) {
   const aiHistory = analysisHistoryForFixture(m.fixtureId);
   const cardState = m.live ? 'is-live' : m.finished ? 'is-finished' : 'is-upcoming';
@@ -3272,6 +3285,7 @@ function matchCardHtml(m, { grouped = false } = {}) {
           <strong>${escapeHtml(m.away?.name || '')}</strong>
         </button>
       </div>
+      ${!m.live && !m.finished ? aiConfidenceMeterHtml(aiHistory) : ''}
       <div class="match-card-actions compact-actions single">${primaryAction}</div>
       <div class="match-secondary-actions" aria-label="Дополнительные действия">
         <span>${favoriteButton(m.home)}${favoriteButton(m.away)}</span>
