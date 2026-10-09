@@ -27,22 +27,40 @@ revoke all privileges on all tables in schema public from public, anon, authenti
 revoke all privileges on all sequences in schema public from public, anon, authenticated;
 revoke execute on all functions in schema public from public, anon, authenticated;
 
+revoke all privileges on all tables in schema public from service_role;
 grant select, insert, update, delete on all tables in schema public to service_role;
+revoke all privileges on all sequences in schema public from service_role;
 grant usage, select on all sequences in schema public to service_role;
 grant execute on all functions in schema public to service_role;
 
-alter default privileges in schema public
-  revoke all privileges on tables from public, anon, authenticated;
-alter default privileges in schema public
-  revoke all privileges on sequences from public, anon, authenticated;
-alter default privileges in schema public
-  revoke execute on functions from public, anon, authenticated;
-
-alter default privileges in schema public
-  grant select, insert, update, delete on tables to service_role;
-alter default privileges in schema public
-  grant usage, select on sequences to service_role;
-alter default privileges in schema public
-  grant execute on functions to service_role;
+-- A no-owner restore may use a different local administrative owner. Normalize
+-- every application object owner rather than assuming the executing role owns
+-- all restored objects. Supabase defaults can grant broader service_role rights.
+do $$
+declare
+  owner_name text;
+begin
+  for owner_name in
+    select distinct pg_catalog.pg_get_userbyid(owner_oid)
+    from (
+      select c.relowner as owner_oid
+      from pg_catalog.pg_class c
+      join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+      where n.nspname='public' and c.relkind in ('r','p','v','m','f','S')
+      union
+      select p.proowner from pg_catalog.pg_proc p
+      join pg_catalog.pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='public'
+    ) owners
+  loop
+    execute format('alter default privileges for role %I in schema public revoke all privileges on tables from public, anon, authenticated, service_role',owner_name);
+    execute format('alter default privileges for role %I in schema public revoke all privileges on sequences from public, anon, authenticated, service_role',owner_name);
+    execute format('alter default privileges for role %I in schema public revoke all privileges on functions from public, anon, authenticated, service_role',owner_name);
+    execute format('alter default privileges for role %I in schema public grant select, insert, update, delete on tables to service_role',owner_name);
+    execute format('alter default privileges for role %I in schema public grant usage, select on sequences to service_role',owner_name);
+    execute format('alter default privileges for role %I in schema public grant execute on functions to service_role',owner_name);
+  end loop;
+end;
+$$;
 
 commit;
