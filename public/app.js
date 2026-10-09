@@ -3232,6 +3232,17 @@ function renderPopularCompetitions() {
   el.querySelectorAll('[data-open-tournament]').forEach(btn => btn.addEventListener('click', () => openTournament(Number(btn.dataset.openTournament))));
 }
 
+function aiProbabilityBarHtml(history) {
+  const p = history?.aiProbabilities;
+  if (!p) return '';
+  const values = [Number(p.home), Number(p.draw), Number(p.away)];
+  if (!values.every(Number.isFinite)) return '';
+  const label = `Вероятности модели: победа хозяев ${Math.round(values[0])}%, ничья ${Math.round(values[1])}%, победа гостей ${Math.round(values[2])}%`;
+  const top = values.indexOf(Math.max(...values));
+  const cell = (cls, value, index) => `<span class="mr-prob-seg ${cls}${index === top ? ' lead' : ''}" style="flex-grow:${Math.max(value, 4)}"><b>${Math.round(value)}%</b></span>`;
+  return `<div class="mr-prob" role="img" aria-label="${escapeHtml(label)}">${cell('home', values[0], 0)}${cell('draw', values[1], 1)}${cell('away', values[2], 2)}</div>`;
+}
+
 function aiConfidenceMeterHtml(history) {
   if (!history) return '';
   const raw = Number(history.aiConfidence);
@@ -3242,7 +3253,7 @@ function aiConfidenceMeterHtml(history) {
   const meter = hasScore
     ? `<span class="mr-ai-meter" role="img" aria-label="Уверенность модели: ${label}">${[1, 2, 3, 4, 5].map(n => `<i class="${n <= bars ? 'on' : ''}"></i>`).join('')}<b>${label}</b></span>`
     : '';
-  return `<div class="mr-ai-strip"><span>✦ AI-разбор готов</span>${meter}</div>`;
+  return `${aiProbabilityBarHtml(history)}<div class="mr-ai-strip"><span>✦ AI-разбор готов</span>${meter}</div>`;
 }
 
 function matchCardHtml(m, { grouped = false } = {}) {

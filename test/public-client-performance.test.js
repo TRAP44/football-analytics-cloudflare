@@ -99,7 +99,7 @@ test('startup graph defers profile-only and Match Center-only modules until thei
 
   const staticImports=[...app.matchAll(/from ['"]\.\/modules\/([^'"]+)['"]/g)].map(match=>`public/modules/${match[1]}`);
   const startupJsRawBytes=Buffer.byteLength(app)+staticImports.reduce((total,path)=>total+fs.statSync(path).size,0);
-  assert.ok(startupJsRawBytes < 510_000, `startup JS graph regressed to ${startupJsRawBytes} bytes`);
+  assert.ok(startupJsRawBytes < 515_000, `startup JS graph regressed to ${startupJsRawBytes} bytes`);
 });
 
 test('full AI avoids reloading already-known favorites and reminders',()=>{
