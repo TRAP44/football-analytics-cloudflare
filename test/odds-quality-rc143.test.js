@@ -220,6 +220,8 @@ const worker = fs.readFileSync('src/worker.js', 'utf8')
   + '\n' + fs.readFileSync('src/analysis-runtime.js', 'utf8')
   + '\n' + fs.readFileSync('src/match-center-runtime.js', 'utf8')
   + '\n' + fs.readFileSync('src/odds-snapshot-runtime.js', 'utf8');
+const userDataApiSource=fs.readFileSync('src/user-data-api-runtime.js','utf8');
+const capabilitiesSource=fs.readFileSync('src/app-capabilities.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 
@@ -234,14 +236,14 @@ test('RC143 gates prematch and live odds before snapshots, movement and model bl
 });
 
 test('RC143 exposes odds quality through Match Center, analysis and production health contracts', () => {
-  assert.match(worker,/match-center:\$\{fixtureId\}:v16-availability-quality-rc144/);
-  assert.match(worker,/fixture:\$\{fixtureId\}:v15-availability-quality-rc144/);
-  assert.match(worker,/analysisVersion:\s*'4\.15\.0-availability-quality'/);
+  assert.match(userDataApiSource,/match-center:\$\{fixtureId\}:v16-availability-quality-rc144/);
+  assert.match(worker,/fixture:\$\{fixtureId\}:v17-starting-xi-rc146/);
+  assert.match(worker,/analysisVersion:\s*'4\.17\.0-starting-xi'/);
   assert.match(worker,/liveOddsQuality,/);
   assert.match(worker,/oddsQuality,/);
   assert.match(worker,/liveOdds:liveOddsTrusted/);
   assert.match(app,/function oddsQualityHintHtml/);
   assert.match(app,/oddsQualityHintHtml\(d\.liveOddsQuality\)/);
   assert.match(app,/oddsQualityHintHtml\(d\.oddsQuality\)/);
-  assert.match(smoke,/'oddsSemanticQualityGuard'/);
+  assert.match(smoke,/'providerDataReliability'/);
 });

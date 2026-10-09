@@ -168,7 +168,7 @@ test('personal write storage boundaries use guarded RPCs instead of direct upser
 test('personal write guard contract is a blocking schema-drift dependency', () => {
   assert.match(worker, /readPersonalWriteGuardContract/);
   assert.match(schemaRuntime, /missing\.push\('personal_write_guards'\)/);
-  assert.match(schemaRuntime, /summary\.ok && fingerprint\.ok && personalWriteGuards\.ok/);
+  assert.match(schemaRuntime, /summary\.ok === true && fingerprint\.ok === true && personalWriteGuards\.ok === true/);
 });
 
 test('favorite guards enforce safe integer IDs and canonical text bounds', () => {

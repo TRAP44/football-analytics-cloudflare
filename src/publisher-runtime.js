@@ -155,7 +155,7 @@ export function createPublisherRuntime(deps = {}) {
     const referralCode=await ensureReferralCode(userId,cfg).catch(()=>'');
     const [match,analysis,link]=await Promise.all([
       loadBotFixtureCard(safeFixtureId,cfg),
-      getCache(`fixture:${safeFixtureId}:v15-availability-quality-rc144`,cfg).catch(()=>null),
+      getCache(`fixture:${safeFixtureId}:v17-starting-xi-rc146`,cfg).catch(()=>null),
       fixtureTelegramDeepLink(cfg,safeFixtureId,{source:'social',campaign:'match_share',content:'telegram',referralCode}),
     ]);
     if (!match) throw new Error('Матч не найден.');
@@ -312,7 +312,7 @@ export function createPublisherRuntime(deps = {}) {
       mode='fixture';
       link=await fixtureTelegramDeepLink(cfg,fixtureId,{source,campaign,content});
       const cached=await getCache(`bot:fixture-card:${fixtureId}:v2`,cfg).catch(()=>null);
-      const analyzed=await getCache(`fixture:${fixtureId}:v15-availability-quality-rc144`,cfg).catch(()=>null);
+      const analyzed=await getCache(`fixture:${fixtureId}:v17-starting-xi-rc146`,cfg).catch(()=>null);
       const match=normalizeBotFixtureCard(cached?.match || analyzed?.match || {fixtureId,homeName:'Матч',awayName:String(fixtureId),league:'Футбол'});
       copy=mediaPublisherCopy(match,link.url,{source,campaign,content});
     } else {

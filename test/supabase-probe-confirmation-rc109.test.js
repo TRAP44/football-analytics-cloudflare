@@ -33,7 +33,7 @@ function success(){
   return {ok:true,status:200,headers:{get:()=> '0-0/0'},json:async()=>[]};
 }
 test('RC109 confirmed Supabase probe is owned by extracted readiness runtime',()=>{
-  assert.match(worker,/createSupabaseReadinessRuntime/);
+  assert.match(fs.readFileSync('src/provider-readiness-wiring-runtime.js','utf8'),/createSupabaseReadinessRuntime/);
   assert.match(readinessSource,/function combineSupabaseProbeAttempts/);
   assert.match(readinessSource,/async function probeSupabaseConfirmed/);
   assert.match(monitor,/probeSupabaseConfirmed\(cfg\)/);
@@ -79,5 +79,5 @@ test('RC109 readiness, release and admin contracts retain the confirmation self-
   assert.match(admin,/releaseCheck\('supabase_probe_confirmation'/);
   assert.match(release,/productionCheck\('supabase_probe_confirmation'/);
   assert.match(smoke,/'supabaseProbeConfirmation'/);
-  assert.match(smoke,/'supabaseProbeConfirmationSelfTest'/);
+  assert.match(smoke,/'providerDataReliability'/);
 });

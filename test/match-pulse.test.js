@@ -287,7 +287,7 @@ test('team names remain escaped and bounded on trusted pressure data', () => {
   assert.match(rendered,/&amp; Away/);
   assert.match(
     css,
-    /.match-pulse-team{[sS]*?min-width:0[sS]*?overflow-wrap:anywhere/,
+    /.match-pulse-team{[\s\S]*?min-width:0[\s\S]*?overflow-wrap:anywhere/,
   );
 });
 
@@ -346,17 +346,17 @@ test('market movement requires trusted coherent history and Smart Insights need 
 });
 
 test('Match Pulse source keeps strict freshness and scalar boundaries', () => {
-  assert.match(source,/Array.isArray(statistics?.items)/);
+  assert.ok(source.includes('Array.isArray(statistics?.items)'));
   assert.match(source,/typeof value==='string'/);
   assert.match(source,/provenanceState/);
   assert.match(source,/confidenceBearing===true/);
-  assert.match(source,/meta?.stale!==true/);
-  assert.match(source,/Math.abs(home+away-100)>2/);
-  assert.match(source,/source?.sample,2,100000/);
-  assert.match(source,/rows.reduce((sum,row)=>sum+row.value,0)/);
+  assert.ok(source.includes('meta?.stale!==true'));
+  assert.ok(source.includes('Math.abs(home+away-100)>2'));
+  assert.ok(source.includes('source?.sample,2,100000'));
+  assert.ok(source.includes('rows.reduce((sum,row)=>sum+row.value,0)'));
   assert.doesNotMatch(
     source,
-    /lasts*10|последние 10 минут|fake|synthetic momentum/i,
+    /last\s*10|последние 10 минут|fake|synthetic momentum/i,
   );
 });
 
@@ -367,7 +367,7 @@ test('Match Pulse integration stays below scoreboard without creating a new tab'
 
   assert.match(
     app,
-    /import\('\.\/modules\/match-pulse\.js\?v=6\.120\.0-launch64'\)/,
+    /import\('\.\/modules\/match-pulse\.js\?v=6\.120\.0-launch65'\)/,
   );
   const pulseRender=center.indexOf('${matchPulseHtml}');
   assert.ok(pulseRender>=0);
@@ -377,7 +377,7 @@ test('Match Pulse integration stays below scoreboard without creating a new tab'
     (center.match(/data-center-tab="pulse"/g) || []).length,
     0,
   );
-  assert.doesNotMatch(center,/livePressureHtml(/);
+  assert.doesNotMatch(center,/livePressureHtml\(/);
 });
 
 test('mobile rules cover 320 360 375 390 430 without horizontal Match Pulse scroll', () => {
@@ -389,15 +389,15 @@ test('mobile rules cover 320 360 375 390 430 without horizontal Match Pulse scro
   }
   assert.match(
     css,
-    /.match-pulse{[sS]*?min-width:0[sS]*?overflow:hidden/,
+    /.match-pulse{[\s\S]*?min-width:0[\s\S]*?overflow:hidden/,
   );
   assert.match(
     css,
-    /.match-pulse-metrics{[sS]*?minmax(0,1fr)/,
+    /.match-pulse-metrics{[\s\S]*?minmax\(0,1fr\)/,
   );
   assert.match(
     css,
-    /.match-pulse-timeline{[sS]*?minmax(0,1fr)/,
+    /.match-pulse-timeline{[\s\S]*?minmax\(0,1fr\)/,
   );
   assert.doesNotMatch(
     css.slice(css.indexOf('/* Match Pulse — Issue #286 */')),
@@ -408,7 +408,7 @@ test('mobile rules cover 320 360 375 390 430 without horizontal Match Pulse scro
 test('Match Pulse keeps navigation onboarding and frontend revision contracts intact', () => {
   assert.match(
     html,
-    /id="navMatches"[sS]*id="navMyTeams"[sS]*id="navHistory"[sS]*id="navProfile"/,
+    /id="navMatches"[\s\S]*id="navMyTeams"[\s\S]*id="navHistory"[\s\S]*id="navProfile"/,
   );
   assert.match(app,/class="center-tabs"/);
   assert.match(app,/data-center-tab="summary"/);
@@ -421,9 +421,9 @@ test('Match Pulse keeps navigation onboarding and frontend revision contracts in
   const revision=html.match(
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
-  assert.equal(revision,'6.120.0-launch65');
+  assert.equal(revision,'6.120.0-launch67');
   assert.match(
     html,
-    /<script type="module" src="\/app\.js\?v=6\.120\.0-launch64"><\/script>/,
+    /<script type="module" src="\/app\.js\?v=6\.120\.0-launch67"><\/script>/,
   );
 });

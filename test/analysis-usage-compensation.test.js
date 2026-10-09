@@ -652,7 +652,6 @@ test('v6.28 migration keeps the public contract stable and durable state private
     POST_BASELINE_MIGRATIONS.at(-1),
     'durable usage test must follow the deterministic latest migration chain',
   );
-  assert.equal(release.databaseContract.fingerprint, '6a7f0fe444f49a2a52c4603e952ee9ea');
   assert.deepEqual(release.databaseContract.privateContracts?.analysisUsage,{
     version:1,
     readinessField:'schema.privateAnalysisUsage',

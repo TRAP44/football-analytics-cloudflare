@@ -807,6 +807,7 @@ export function createOperationalOrchestrationRuntime(deps = {}) {
   }
 
   const exportedRuntime={
+    modelQualityEligibleRow,
     API_ROUTE_DEPS,
     captureModelPrediction,
     handleScheduled,

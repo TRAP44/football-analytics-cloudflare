@@ -1,3 +1,4 @@
+import { readFileSync as readContractSource } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -24,10 +25,10 @@ test('search exposes teams, leagues, upcoming and finished modes', () => {
 
 test('search enriches league queries with cached upcoming and finished fixtures', () => {
   assert.match(searchDiscoveryRuntime, /async function loadSearchCompetitionMatches\(/);
-  assert.match(worker, /apiFootball\('\/fixtures', \{ league: leagueId, season, from, to \}/);
+  assert.match(readContractSource(new URL('../src/search-discovery-runtime.js', import.meta.url), 'utf8'), /apiFootball\('\/fixtures',\s*\{\s*league:\s*leagueId,\s*season,\s*from,\s*to\s*\}/);
   assert.match(searchDiscoveryRuntime, /preferCompetitionSearch\(/);
-  assert.match(app, /data\.matches \|\| \[\]/);
-  assert.match(app, /data\.matchSource\?\.name/);
+  assert.match(app, /remoteMatches:entityRows\(\s*safeRead\(data,'matches'\),\s*'fixtureId'/);
+  assert.match(app, /safeText\(safeRead\(matchSource,'name'\),160\)/);
 });
 
 test('search enriches a team query on the server with recent and upcoming fixtures', () => {
@@ -36,18 +37,18 @@ test('search enriches a team query on the server with recent and upcoming fixtur
   assert.match(providerFixtureRuntime, /apiFootball\('\/fixtures',\{team:id,next:12\},cfg\)/);
   assert.match(providerFixtureRuntime, /apiFootball\('\/fixtures',\{team:id,last:8\},cfg\)/);
   assert.doesNotMatch(providerFixtureRuntime, /apiFootball\('\/fixtures',\{team:id,from,to\},cfg\)/);
-  assert.match(worker, /teamFixtureDiscovery: 'enabled'/);
+  assert.match(searchDiscoveryRuntime, /loadProviderTeamDiscoveryFixtures\(teamId,cfg/);
   assert.doesNotMatch(app, /const hub = await api\(`\/api\/team\?teamId=/);
-  assert.match(app, /data\.matchDiscovery \|\| null/);
-  assert.match(app, /Предстоящие матчи/);
-  assert.match(app, /Завершённые матчи/);
+  assert.match(app, /plainObject\(safeRead\(data,'matchDiscovery'\)\) \|\| null/);
+  assert.match(readContractSource(new URL('../public/modules/global-search-renderer.js', import.meta.url), 'utf8'), /Предстоящие матчи/);
+  assert.match(readContractSource(new URL('../public/modules/global-search-renderer.js', import.meta.url), 'utf8'), /Завершённые матчи/);
 });
 
 test('team fixture discovery avoids date-range queries that require a season', () => {
   assert.doesNotMatch(searchDiscoveryRuntime+'\n'+providerFixtureRuntime, /apiFootball\('\/fixtures',\s*\{\s*team:[^}]*\bfrom\b[^}]*\bto\b/);
-  assert.match(worker, /apiFootball\('\/fixtures', \{ team: Number\(teamId\), last: 20 \}, cfg\)/);
-  assert.match(worker, /apiFootball\('\/fixtures', \{ team:teamId, next:12 \}, cfg\)/);
-  assert.match(worker, /apiFootball\('\/fixtures', \{ team:teamId, last:8 \}, cfg\)/);
+  assert.match(searchDiscoveryRuntime,/loadProviderTeamDiscoveryFixtures\(teamId,cfg/);
+  assert.match(providerFixtureRuntime,/apiFootball\('\/fixtures',\{team:id,next:12\},cfg\)/);
+  assert.match(providerFixtureRuntime,/apiFootball\('\/fixtures',\{team:id,last:8\},cfg\)/);
 });
 
 test('search match results have direct actions without running analysis automatically', () => {
@@ -60,9 +61,9 @@ test('search match results have direct actions without running analysis automati
 });
 
 test('server manifest advertises unified search capabilities', () => {
-  assert.match(worker, /unifiedSearch:\s*true/);
-  assert.match(worker, /searchMatchHistory:\s*true/);
-  assert.match(worker, /searchLeagueFixtures:\s*true/);
+  assert.match(readContractSource(new URL('../src/app-capabilities.js', import.meta.url), 'utf8'), /unifiedSearch:\s*true/);
+  assert.match(readContractSource(new URL('../src/app-capabilities.js', import.meta.url), 'utf8'), /searchMatchHistory:\s*true/);
+  assert.match(readContractSource(new URL('../src/app-capabilities.js', import.meta.url), 'utf8'), /searchLeagueFixtures:\s*true/);
 });
 
 test('unified search discards out-of-order provider responses and errors',()=>{

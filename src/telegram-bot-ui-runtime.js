@@ -322,7 +322,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
     const id=positiveSafeInteger(fixtureId);
     return id===null
       ? ''
-      : `fixture:${id}:v15-availability-quality-rc144`;
+      : `fixture:${id}:v17-starting-xi-rc146`;
   }
 
   function footballMatchActionKeyboard(

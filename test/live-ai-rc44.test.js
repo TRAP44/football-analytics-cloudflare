@@ -182,7 +182,7 @@ test('RC44 Match Center only constructs AI LIVE for live mode and suppresses sta
   assert.match(matchCenter,/liveAiCoach=objectValue\(buildLiveAiCoach\(\{/);
   assert.match(
     matchCenter,
-    /getStaleCache,[\s\S]*fixture:\$\{fixtureId\}:v15-availability-quality-rc144/,
+    /getStaleCache,[\s\S]*fixture:\$\{fixtureId\}:v17-starting-xi-rc146/,
   );
   assert.match(
     matchCenter,

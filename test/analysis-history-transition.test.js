@@ -1,3 +1,4 @@
+import { userDataDependencies } from '../test-support/runtime-deps.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -21,7 +22,7 @@ function createUserDataRuntime({
   analysisFreshness = () => ({reasonCode:'fresh'}),
   recordOpsEvent = async () => {},
 } = {}) {
-  return createUserDataApiRuntime({
+  return createUserDataApiRuntime(userDataDependencies({
     analysisFreshness,
     analysisResponsePayload:(payload,meta)=>({...payload,...meta}),
     getCache:async()=>fresh,
@@ -30,7 +31,7 @@ function createUserDataRuntime({
     getStaleCache:async()=>stale,
     json,
     recordOpsEvent,
-  });
+  }));
 }
 
 const app = readRepoFile('public/app.js');
@@ -71,31 +72,31 @@ test('completed analysis is shown before conditional secondary synchronization s
   assert.ok(start >= 0 && end > start, 'analysis controller must own analyzeMatch');
   const analyze = analysisController.slice(start, end);
 
-  const renderIndex = analyze.indexOf('if (ownsAnalysisView) renderResult(data)');
-  const secondaryIndex = analyze.indexOf('const secondaryTasks = [refreshHistory(false)]');
+  const renderIndex = analyze.indexOf('if (ownsAnalysisView) safeCall(renderResult,data)');
+  const secondaryIndex = analyze.indexOf('const secondaryTasks=[');
   assert.ok(renderIndex >= 0 && secondaryIndex > renderIndex);
 
-  assert.match(analyze, /if \(!state\.remindersLoaded\) secondaryTasks\.push\(refreshReminders\(\)\)/);
-  assert.match(analyze, /if \(!state\.favoritesLoaded\) secondaryTasks\.push\(refreshFavorites\(\)\)/);
+  assert.match(analyze, /if \(safeRead\(state,'remindersLoaded'\)!==true\)[\s\S]*?secondaryTasks\.push\([\s\S]*?refreshReminders\(\)/);
+  assert.match(analyze, /if \(safeRead\(state,'favoritesLoaded'\)!==true\)[\s\S]*?secondaryTasks\.push\([\s\S]*?refreshFavorites\(\)/);
   assert.match(analyze, /void Promise\.allSettled\(secondaryTasks\)/);
 });
 
 test('pending AI analysis cannot reclaim navigation after the user leaves or opens another match', () => {
   assert.match(app, /analysisRequestSeq:\s*0/);
-  assert.match(analysisController, /const requestSeq = \+\+state\.analysisRequestSeq/);
+  assert.match(analysisController, /const requestSeq=currentSeq\+1;\s*state\.analysisRequestSeq=requestSeq/);
   assert.match(
     analysisController,
-    /const ownsAnalysisView = requestSeq === state\.analysisRequestSeq[\s\S]*?activeViewId\(\) === 'analysisView'/,
+    /const ownsAnalysisView=\s*requestSeq===safeRead\(state,'analysisRequestSeq'\)[\s\S]*?currentView\(\)==='analysisView'/,
   );
-  assert.match(analysisController, /if \(ownsAnalysisView\) renderResult\(data\)/);
+  assert.match(analysisController, /if \(ownsAnalysisView\) safeCall\(renderResult,data\)/);
   assert.match(
     analysisController,
-    /if \(requestSeq !== state\.analysisRequestSeq \|\| activeViewId\(\) !== 'analysisView'\) return/,
+    /if \(\s*requestSeq!==safeRead\(state,'analysisRequestSeq'\)\s*\|\| currentView\(\)!=='analysisView'\s*\) return/,
   );
 
   assert.match(
     matchCenterController,
-    /async function openMatchCenter\(fixtureId, button\)[\s\S]*?if \(state\.analysisActionPending\) state\.analysisRequestSeq \+= 1/,
+    /async function openMatchCenter\(fixtureId,button\)[\s\S]*?if \(safeRead\(state,'analysisActionPending'\)===true\)[\s\S]*?state\.analysisRequestSeq=\s*Number\.isSafeInteger\(seq\) && seq>=0 \? seq\+1 : 1/,
   );
   assert.match(
     app,
@@ -251,10 +252,37 @@ test('history reopen remains available if freshness diagnostics throw', async ()
 test('backend source keeps history identity validation adjacent to cached payload reuse', () => {
   assert.match(
     userDataApiSource,
-    /const payloadFixtureId = Number\(payload\?\.match\?\.fixtureId\)[\s\S]*?HISTORY_ANALYSIS_IDENTITY_MISMATCH/,
+    /const payloadFixtureId=positiveId\(plainObject\(payload\?\.match\)\?\.fixtureId\)[\s\S]*?HISTORY_ANALYSIS_IDENTITY_MISMATCH/,
   );
   assert.match(
     userDataApiSource,
     /analysisResponsePayload\(payload,\{cached:true,stale:!fresh,historyReadOnly:true/,
   );
+});
+
+
+test('history reads the same cache generation that AI writes', async () => {
+  const writer = readRepoFile('src/analysis-runtime.js');
+  const generation = writer.match(/fixture:\$\{fixtureId\}:([^`]+)/)?.[1];
+  assert.ok(generation);
+  const keys = [];
+  const runtime = createUserDataApiRuntime(userDataDependencies({
+    getHistory: async () => [{fixture_id:42}],
+    getCache: async key => { keys.push(key); return {match:{fixtureId:42}}; },
+    getQuota: async () => ({left:2}),
+    analysisFreshness: () => ({reasonCode:'fresh'}),
+    analysisResponsePayload: (payload, meta) => ({...payload,...meta}),
+    json,
+  }));
+  const response = await runtime.apiHistoryAnalysis(
+    new Request('https://app.test/api/history-analysis?fixtureId=42'), {}, {id:123},
+  );
+  assert.equal(response.status,200);
+  assert.deepEqual(keys,[`fixture:42:${generation}`]);
+  for (const owner of ['telegram-bot-ui-runtime','match-center-runtime','publisher-runtime']) {
+    const source = readRepoFile(`src/${owner}.js`);
+    const generations = [...source.matchAll(/fixture:\$\{[^}]+\}:([^`]+)/g)].map(match=>match[1]);
+    assert.ok(generations.length,owner);
+    assert.ok(generations.every(value=>value===generation),owner);
+  }
 });

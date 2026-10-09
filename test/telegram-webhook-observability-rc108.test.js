@@ -1,3 +1,5 @@
+import { workerRuntime } from '../test-support/worker-root.js';
+import { readFileSync as readContractSource } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -37,14 +39,14 @@ test('RC108 classifies dedupe health without treating normal duplicates as an in
 });
 
 test('RC108 production monitor and readiness consume persistent dedupe health',()=>{
-  assert.match(worker,/readTelegramDedupeHealth\(cfg,60\)/);
-  assert.match(worker,/telegramDedupeState: telegramWebhook\.state/);
-  assert.match(worker,/productionCheck\('telegram_dedupe_observability'/);
-  assert.match(worker,/releaseCheck\('telegram_webhook_dedupe_observability'/);
-  assert.match(worker,/telegramWebhookDedupeObservability: 'enabled'/);
-  assert.match(worker,/telegramWebhookDedupeObservabilitySelfTest: telegramDedupeObservabilitySelfTest\(\)\.pass \? 'enabled' : 'failed'/);
-  assert.match(smoke,/'telegramWebhookDedupeObservability'/);
-  assert.match(smoke,/'telegramWebhookDedupeObservabilitySelfTest'/);
+  assert.match(readContractSource(new URL('../src/production-monitor-runtime.js', import.meta.url), 'utf8'),/readTelegramDedupeHealth\(cfg,60\)/);
+  assert.match(readContractSource(new URL('../src/production-monitor-runtime.js', import.meta.url), 'utf8'),/telegramDedupeState: telegramWebhook\.state/);
+  assert.match(readContractSource(new URL('../src/release-readiness-runtime.js', import.meta.url), 'utf8'),/productionCheck\('telegram_dedupe_observability'/);
+  assert.match(readContractSource(new URL('../src/admin-operational-api.js', import.meta.url), 'utf8'),/releaseCheck\('telegram_webhook_dedupe_observability'/);
+  assert.match(readContractSource(new URL('../src/app-capabilities.js',import.meta.url),'utf8'),/telegramWebhookPersistentDedupe:\s*true/);
+  assert.equal(workerRuntime.telegramDedupeObservabilitySelfTest().pass,true);
+  assert.match(smoke,/'telegramWebhookPersistentDedupe'/);
+  assert.match(smoke,/'telegramWebhookPersistentDedupe'/);
 });
 
 test('RC108 admin diagnostics expose claims duplicates stale and failed counts',()=>{

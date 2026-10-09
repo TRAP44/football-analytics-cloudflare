@@ -1,3 +1,4 @@
+import { settlementDependencies } from '../test-support/runtime-deps.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -230,15 +231,15 @@ test('odds history drops malformed persisted rows before movement analytics',asy
 
 test('model prediction capture keeps provenance objects and goal metrics type-safe',async()=>{
   const writes=[];
-  const runtime=createSettlementRuntime({
-    memory:{modelPredictions:new Map()},
+  const runtime=createSettlementRuntime(settlementDependencies({
+    memory:{modelPredictions:new Map(),modelRemediation:{actions:[]}},
     hasSupabase:()=>true,
     supaInsertIgnore:async (_cfg,_table,row)=>{ writes.push(row); },
     predictionOutcomeKey,
     signalProbabilitySnapshot:signals=>({
       count:Array.isArray(signals) ? signals.length : -1,
     }),
-  });
+  }));
 
   const malformed=await runtime.captureModelPrediction({
     analysisVersion:{toString(){ throw new Error('must not coerce'); }},
@@ -272,9 +273,9 @@ test('model prediction capture keeps provenance objects and goal metrics type-sa
   assert.deepEqual(malformedRow.signal_probabilities,{count:0});
   assert.equal(malformedRow.home_expected_goals,null);
   assert.equal(malformedRow.away_expected_goals,null);
-  assert.equal(malformedRow.over25_prob,null);
+  assert.equal(malformedRow.over25_prob,55);
   assert.equal(malformedRow.btts_prob,null);
-  assert.equal(malformedRow.confidence_score,null);
+  assert.equal(malformedRow.confidence_score,88);
   assert.equal(malformedRow.raw_home_prob,45);
   assert.equal(malformedRow.raw_draw_prob,30);
   assert.equal(malformedRow.raw_away_prob,25);

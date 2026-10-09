@@ -1,3 +1,4 @@
+import { readFileSync as readContractSource } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -90,7 +91,7 @@ test('Telegram initData validation is bound to the current primary bot token', a
   const invalidOld = await validateTelegramInitData(initDataB,tokenA,3600);
   assert.equal(valid?.id,24681012);
   assert.equal(invalidOld,null);
-  assert.match(worker,/validateTelegramInitData\(initData, cfg\.botToken, initDataMaxAgeSeconds\)/);
+  assert.match(readContractSource(new URL('../src/auth-user.js',import.meta.url),'utf8'),/validateTelegramInitData\(initData, cfg\?\.botToken, initDataMaxAgeSeconds\)/);
 });
 
 test('publisher token stays independent from primary bot migration', async () => {
@@ -115,13 +116,13 @@ test('publisher token stays independent from primary bot migration', async () =>
   });
   assert.match(calledUrl,/\/bottest-publisher-token\/sendMessage$/);
   assert.equal(calledUrl.includes(cfg.botToken),false);
-  assert.match(worker,/publisherBotToken:\s*env\.TELEGRAM_PUBLISHER_BOT_TOKEN/);
+  assert.match(readContractSource(new URL('../src/common-infrastructure-runtime.js', import.meta.url), 'utf8'),/publisherBotToken:\s*env\.TELEGRAM_PUBLISHER_BOT_TOKEN/);
 });
 
 test('user data remains keyed by Telegram user id, independent of bot username', () => {
-  assert.match(worker,/telegram_id:\s*userId/);
-  assert.match(worker,/supaUpsert\(cfg, 'users', record, 'telegram_id'\)/);
-  assert.match(worker,/supaSelectOne\(cfg, 'users', \{ telegram_id: `eq\.\$\{Number\(userId\)\}` \}\)/);
+  assert.match(readContractSource(new URL('../src/auth-user.js', import.meta.url), 'utf8'),/telegram_id:\s*userId/);
+  assert.match(readContractSource(new URL('../src/auth-user.js', import.meta.url), 'utf8'),/supaUpsert\(cfg, 'users', record, 'telegram_id'\)/);
+  assert.match(readContractSource(new URL('../src/auth-user.js',import.meta.url),'utf8'),/supaSelectOne\(cfg, 'users', \{ telegram_id: `eq\.\$\{normalizedUserId\}` \}\)/);
 });
 
 test('webhook, start attribution, reminders, billing and Mini App URL contracts stay on primary bot', () => {
@@ -132,7 +133,7 @@ test('webhook, start attribution, reminders, billing and Mini App URL contracts 
   assert.match(serviceWiring,/createReminderDeliveryService\(\{/);
   assert.match(serviceWiring,/sendTelegramMessage,/);
   assert.match(reminderDeliveryService,/async function processDueReminders\(cfg\)/);
-  assert.match(reminderDeliveryService,/sendTelegramMessage\(row\.telegram_id, text, cfg\)/);
+  assert.match(reminderDeliveryService,/sendTelegramMessage\(positiveSafeInteger\(row\.telegram_id\), text, cfg\)/);
   assert.match(billingApi,/makeInvoicePayload\(user\.id, plan, cfg\.botToken\)/);
   assert.match(telegramLinks,/function telegramWebAppUrl\(request, params = \{\}\)/);
   assert.match(telegramLinks,/url\.pathname = '\/'/);
@@ -168,7 +169,7 @@ test('/api/me and admin identity remain keyed by Telegram user id after primary 
 });
 
 test('disabled monetization remains fail-closed during primary bot migration', () => {
-  assert.match(router,/if \(cfg\?\.monetizationEnabled !== true\) return json\(\{ error: 'Монетизация отложена до финального этапа проекта\.' \}, 404\)/);
+  assert.match(router,/if \(cfg\?\.monetizationEnabled !== true\) return json\(\{ error: 'Монетизация пока отключена\.' \}, 404\)/);
 });
 
 

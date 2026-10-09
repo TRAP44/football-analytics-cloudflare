@@ -275,7 +275,7 @@ test('regression guard keeps navigation shell generic while Match Center owns li
   assert.match(app, /function deactivateLiveRefresh\(\)[\s\S]*?matchCenterController\?\.deactivateLiveRefresh\(\)/);
   assert.match(app, /onLeaveView:\s*\(\{ from, to, options \}\) => \{[\s\S]*?deactivateLiveRefresh\(\)/);
   assert.match(matchCenterController, /function stopLiveRefresh\(\)/);
-  assert.match(matchCenterController, /let liveRefreshTimer = null/);
+  assert.match(matchCenterController, /let liveRefreshTimer=null/);
   assert.doesNotMatch(shell, /stopLiveRefresh|liveRefreshTimer|provider|supabase|api\(/i);
   assert.match(app, /createFirstRunGuideController\([\s\S]*?showView:\s*\(id, options\) => showView\(id, options\)/);
   assert.match(app, /function applyLaunchIntent\(\)[\s\S]*?showView\('searchView'\)/);

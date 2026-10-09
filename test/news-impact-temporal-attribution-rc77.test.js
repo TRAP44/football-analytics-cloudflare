@@ -1,3 +1,4 @@
+import { workerRuntime } from '../test-support/worker-root.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -106,7 +107,7 @@ test('RC77 deterministic runtime drill covers pre-decision, late and cross-fixtu
   assert.match(recovery,/2026-09-23T10:45:00Z/);
   assert.match(recovery,/fixture_id:999/);
   assert.match(worker,/function newsImpactTemporalAttributionDrill\(\.\.\.args\).*getNewsImpactRecoveryRuntime\(\)\.newsImpactTemporalAttributionDrill/s);
-  assert.match(worker,/newsImpactTemporalAttributionSelfTest: newsImpactTemporalAttributionDrill\(\)\.pass \? 'enabled' : 'failed'/);
+  assert.equal(workerRuntime.getNewsImpactRecoveryRuntime().newsImpactTemporalAttributionDrill().pass,true);
 });
 
 test('RC77 needs no new Supabase migration',()=>{

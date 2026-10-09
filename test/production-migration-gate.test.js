@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { checkProductionMigration, expectedProductionMigration } from '../scripts/verify-production-migrations.js';
 
 const contract=JSON.parse(fs.readFileSync('release-contract.json','utf8'));
-const name='supabase_migration_v6_29_13';
+const name='supabase_migration_v6_29_14';
 const auth={contract,token:'unit-test-token',projectRef:'abcdefghijklmnopqrst'};
 
 test('required migration derives from the checked-in release contract',()=>{

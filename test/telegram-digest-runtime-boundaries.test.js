@@ -155,7 +155,7 @@ test('expanded digest contains malformed Radar evidence without NaN or unsafe HT
   }]]);
   const text=api.expandedDailyDigestText(rows,radar);
   assert.match(text,/—%/);
-  assert.match(text,/Radar 100\/100/);
+  assert.doesNotMatch(text,/Radar \d+\/100/);
   assert.doesNotMatch(text,/NaN|<A>|B & C/);
   assert.match(text,/&lt;A&gt;/);
   assert.match(text,/B &amp; C/);

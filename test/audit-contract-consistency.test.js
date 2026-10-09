@@ -80,7 +80,7 @@ const packageMeta=JSON.parse(read('package.json'));
 const releaseContract=JSON.parse(read('release-contract.json'));
 const indexHtml=read('public/index.html');
 const statusHtml=read('public/status.html');
-const wranglerConfig=JSON.parse(read('wrangler.jsonc'));
+const wranglerConfig=JSON.parse(read('wrangler.jsonc').replace(/^\s*\/\/.*$/gm, ''));
 const telemetrySource=read('src/telemetry-ops-runtime.js');
 const infrastructureSource=read('src/common-infrastructure-runtime.js');
 const bootstrapSource=read('src/worker-bootstrap-runtime.js');
@@ -183,7 +183,7 @@ test('audit: operational metadata recursively removes identifiers and redacts em
   assert.equal(clean.safe,'Bearer [redacted]');
   assert.deepEqual(clean.nested,{
     keep:'bot[redacted]',
-    deeper:{value:'x-apisports-key=[redacted]'},
+    deeper:{value:'api-key=[redacted]'},
   });
   assert.deepEqual(clean.list,[
     {ok:'sb_secret_[redacted]'},
@@ -221,7 +221,7 @@ test('audit: operational telemetry remains fail-soft when helper hooks fail',asy
   assert.equal(row.metadata.safe,'Bearer [redacted]');
   assert.equal(memory.telemetry.opsWaitUntilErrors,1);
 
-  const provider=await runtime.observeProviderRequest({provider:'api-football'},{});
+  const provider=await runtime.observeProviderRequest({provider:'api-football',outcome:'success'},{});
   assert.deepEqual(provider,{
     ok:true,
     persistent:false,
@@ -236,7 +236,12 @@ test('audit: native external fetch ownership stays inside the shared timeout tra
     if(/\bawait\s+fetch\s*\(/.test(read(file))) owners.add(file);
   }
 
-  assert.deepEqual([...owners].sort(),['src/common-infrastructure-runtime.js']);
+  assert.deepEqual([...owners].sort(),['src/common-infrastructure-runtime.js','src/sensitive-mutation-replay.js']);
+  const replayTransport=read('src/sensitive-mutation-replay.js');
+  assert.match(replayTransport,/const controller=new AbortController\(\)/);
+  assert.match(replayTransport,/setTimeout\(\(\)=>controller\.abort\(\),boundedTimeout\(timeoutMs\)\)/);
+  assert.match(replayTransport,/signal:controller\.signal/);
+  assert.match(replayTransport,/finally \{\s*clearTimeout\(timer\)/);
   assert.match(
     infrastructureSource,
     /async function fetchWithTimeout\([\s\S]*?return await fetch\(input, \{ \.\.\.init, signal: controller\.signal \}\)/,
@@ -291,22 +296,22 @@ test('audit: fire-and-forget observability is anchored to the Cloudflare lifecyc
   );
   assert.match(
     growthReferral,
-    /async function recordGrowthEvent\(cfg, event = \{\}\)[\s\S]*?cfg\.waitUntil\(task\)[\s\S]*?return await task/,
+    /async function recordGrowthEvent\(cfg,eventInput=\{\}\)[\s\S]*?safeRead\(cfg,'waitUntil'\)[\s\S]*?waitUntil\.call\(cfg,task\)[\s\S]*?return await task/,
   );
   assert.match(
     telemetrySource,
-    /async function recordOpsEvent\(cfg, event = \{\}\)[\s\S]*?cfg\.waitUntil\(task\)[\s\S]*?return await task/,
+    /async function recordOpsEvent\(cfg, event = \{\}\)[\s\S]*?waitUntil\.call\(cfg,task\)[\s\S]*?return await task/,
   );
 });
 
 test('audit: top-level route errors are redacted before console logging',()=>{
   assert.match(
     bootstrapSource,
-    /console\.error\('api route',safeRedact\(error\?\.message \|\| error,240\)\)/,
+    /console\.error\(\s*'api route',\s*safeRedact\(safeRead\(error,'message'\) \|\| error,240\)/,
   );
   assert.match(
     bootstrapSource,
-    /console\.error\('telegram webhook', safeRedact\(error\?\.message \|\| error,240\)\)/,
+    /console\.error\('telegram webhook',safeRedact\(safeRead\(error,'message'\) \|\| error,240\)\)/,
   );
   assert.doesNotMatch(bootstrapSource,/console\.error\(error\)/);
   assert.doesNotMatch(bootstrapSource,/console\.error\('telegram webhook',\s*error\)/);

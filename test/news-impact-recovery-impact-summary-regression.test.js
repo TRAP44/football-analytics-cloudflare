@@ -1,3 +1,5 @@
+import { workerRuntime } from '../test-support/worker-root.js';
+import { readFileSync as readContractSource } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -37,16 +39,14 @@ test('RC95 admin renders top contribution concentration',()=>{
   assert.match(app,/RC95 — концентрация является только кумулятивной долей фактических overdue minutes/);
 });
 
-test('RC95 deterministic drill and health contract',()=>{
+test('RC95 deterministic drill and production runtime contract',()=>{
   assert.match(recovery,/function newsImpactRecoveryIncidentSloImpactConcentrationDrill\(/);
   assert.match(recovery,/result\.summary\.top1ContributionPct===40/);
   assert.match(recovery,/result\.summary\.top3ContributionPct===80/);
   assert.match(recovery,/result\.summary\.top5ContributionPct===95/);
   assert.match(recovery,/result\.summary\.residualAfterTop5Pct===5/);
-  assert.match(worker,/newsImpactRecoveryIncidentSloImpactConcentrationSelfTest: newsImpactRecoveryIncidentSloImpactConcentrationDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  for (const flag of ['newsImpactRecoveryIncidentSloImpactConcentration','newsImpactRecoveryIncidentTopContributionShares']) {
-    assert.ok(worker.includes(flag + ": 'enabled'"), 'missing ' + flag);
-  }
+  assert.equal(workerRuntime.getNewsImpactRecoveryRuntime().newsImpactRecoveryIncidentSloImpactConcentrationDrill().pass,true);
+  assert.equal(typeof workerRuntime.getNewsImpactRecoveryRuntime().buildNewsImpactRecoveryIncidentSloImpactConcentration,'function');
 });
 
 test('RC95 privacy and storage boundaries remain fail-closed',()=>{
@@ -100,10 +100,8 @@ test('RC96 deterministic drill locks concentration arithmetic',()=>{
 });
 
 test('RC96 health, privacy and storage boundaries remain fail-closed',()=>{
-  assert.match(worker,/newsImpactRecoveryIncidentSloImpactConcentrationTrendSelfTest: newsImpactRecoveryIncidentSloImpactConcentrationTrendDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  for (const flag of ['newsImpactRecoveryIncidentSloImpactConcentrationTrend','newsImpactRecoveryIncidentWeeklyConcentrationShares']) {
-    assert.ok(worker.includes(flag + ": 'enabled'"), 'missing ' + flag);
-  }
+  assert.equal(workerRuntime.getNewsImpactRecoveryRuntime().newsImpactRecoveryIncidentSloImpactConcentrationTrendDrill().pass,true);
+  assert.equal(typeof workerRuntime.getNewsImpactRecoveryRuntime().buildNewsImpactRecoveryIncidentSloImpactConcentrationTrend,'function');
   assert.match(recovery,/privacy:\{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false\}/);
   const files=fs.readdirSync('supabase/migrations').filter(x=>/^supabase_migration_v6_\d/.test(x));
   assert.ok(files.includes('supabase_migration_v6_15.sql'));
@@ -120,7 +118,7 @@ test('RC97 executive summary only composes existing RC93-RC96 views',()=>{
   assert.match(recovery,/function buildNewsImpactRecoveryIncidentSloImpactExecutiveSummary\(/);
   assert.match(recovery,/sourceReleases:\['RC93','RC94','RC95','RC96'\]/);
   assert.match(recovery,/methodology:'summary_of_existing_slo_impact_views'/);
-  assert.match(worker,/newsImpactRecoveryIncidentSloImpactExecutiveSummary=buildNewsImpactRecoveryIncidentSloImpactExecutiveSummary\(/);
+  assert.match(readContractSource(new URL('../src/growth-analytics-runtime.js', import.meta.url), 'utf8'),/newsImpactRecoveryIncidentSloImpactExecutiveSummary=buildNewsImpactRecoveryIncidentSloImpactExecutiveSummary\(/);
 });
 
 test('RC97 exposes cumulative, weekly and concentration facts without new thresholds',()=>{
@@ -152,10 +150,8 @@ test('RC97 deterministic drill locks the unified factual contract',()=>{
 });
 
 test('RC97 health, privacy and storage boundaries remain fail-closed',()=>{
-  assert.match(worker,/newsImpactRecoveryIncidentSloImpactExecutiveSummarySelfTest: newsImpactRecoveryIncidentSloImpactExecutiveSummaryDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  for (const flag of ['newsImpactRecoveryIncidentSloImpactExecutiveSummary','newsImpactRecoveryIncidentSloImpactUnifiedView']) {
-    assert.ok(worker.includes(flag + ": 'enabled'"), 'missing ' + flag);
-  }
+  assert.equal(workerRuntime.getNewsImpactRecoveryRuntime().newsImpactRecoveryIncidentSloImpactExecutiveSummaryDrill().pass,true);
+  assert.equal(typeof workerRuntime.getNewsImpactRecoveryRuntime().buildNewsImpactRecoveryIncidentSloImpactExecutiveSummary,'function');
   assert.match(recovery,/privacy:\{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false\}/);
   const files=fs.readdirSync('supabase/migrations').filter(x=>/^supabase_migration_v6_\d/.test(x));
   assert.ok(files.includes('supabase_migration_v6_15.sql'));
@@ -258,10 +254,8 @@ test('RC95-RC98 impact summary runtime rejects malformed containers and coercive
 });
 
 test('RC98 health, privacy and storage boundaries remain fail-closed',()=>{
-  assert.match(worker,/newsImpactRecoveryIncidentSloImpactFocusQueueSelfTest: newsImpactRecoveryIncidentSloImpactFocusQueueDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  for (const flag of ['newsImpactRecoveryIncidentSloImpactFocusQueue','newsImpactRecoveryIncidentSloImpactFocusOrdering']) {
-    assert.ok(worker.includes(flag + ": 'enabled'"), 'missing ' + flag);
-  }
+  assert.equal(workerRuntime.getNewsImpactRecoveryRuntime().newsImpactRecoveryIncidentSloImpactFocusQueueDrill().pass,true);
+  assert.equal(typeof workerRuntime.getNewsImpactRecoveryRuntime().buildNewsImpactRecoveryIncidentSloImpactFocusQueue,'function');
   assert.match(recovery,/privacy:\{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false\}/);
   const files=fs.readdirSync('supabase/migrations').filter(x=>/^supabase_migration_v6_\d/.test(x));
   assert.ok(files.includes('supabase_migration_v6_15.sql'));

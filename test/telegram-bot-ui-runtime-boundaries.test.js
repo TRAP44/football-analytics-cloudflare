@@ -276,7 +276,7 @@ test('Telegram UI reuses only the current analysis cache revision', async () => 
     },
   });
 
-  cache.set('fixture:123:v15-availability-quality-rc144',{
+  cache.set('fixture:123:v17-starting-xi-rc146',{
     match:{
       fixtureId:123,
       home:{id:1,name:'Cached Home'},

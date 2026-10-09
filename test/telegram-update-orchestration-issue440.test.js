@@ -130,9 +130,9 @@ test('ordinary Telegram text delegates to football search', async()=>{
 test('worker keeps Telegram webhook transport wiring but no longer owns update dispatch body',()=>{
   // Source-contract assertions intentionally live here after the bounded extraction.
   const worker=fs.readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
-  assert.match(worker,/createTelegramUpdateProcessor/);
+  assert.match(fs.readFileSync(new URL('../src/operational-orchestration-runtime.js',import.meta.url),'utf8'),/createTelegramUpdateProcessor/);
   assert.doesNotMatch(worker,/async function processTelegramUpdate\s*\(/);
-  assert.match(worker,/processTelegramUpdate,\n\s+releaseTelegramUpdate/);
+  assert.match(fs.readFileSync(new URL('../src/operational-orchestration-runtime.js',import.meta.url),'utf8'),/processTelegramUpdate,\n\s+releaseTelegramUpdate/);
 });
 
 test('security lockdown does not allow an ordinary search to reach downstream handlers',async()=>{

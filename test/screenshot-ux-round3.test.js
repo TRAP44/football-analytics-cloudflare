@@ -60,7 +60,7 @@ test('match rate-limit UI no longer exposes a long countdown', () => {
   const start = app.indexOf('async function loadMatches');
   const end = app.indexOf('function syncFilterButtons', start);
   const block = app.slice(start, end);
-  assert.match(block, /Источник матчей временно занят/);
+  assert.match(block, /Источник матчей ограничил запросы/);
   assert.doesNotMatch(block, /Повторите примерно через \$\{retry\} сек/);
 });
 

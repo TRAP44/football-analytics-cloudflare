@@ -227,14 +227,14 @@ test('What changed appears before AI and detailed Match Center data', () => {
 });
 
 test('Match Intelligence assets use the current frontend revision', () => {
-  assert.match(styles, /Match Intelligence — launch10/);
+  assert.match(styles, /Match Intelligence/);
   assert.match(styles, /\.match-change-panel\s*\{/);
   assert.match(styles, /\.match-change-item\s*\{/);
 
   const revision=index.match(
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
-  assert.equal(revision,'6.120.0-launch54');
+  assert.equal(revision,'6.120.0-launch67');
   for (const asset of [
     'styles.css',
     'styles/public-shell.css',

@@ -1,3 +1,4 @@
+import { readFileSync as readContractSource } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -138,8 +139,8 @@ test('permanent Telegram rejection never retries even without side effects', () 
 
 test('worker tracks only side-effecting Telegram API methods for retry suppression', () => {
   const worker = fs.readFileSync('src/worker.js','utf8');
-  assert.match(worker, /!\/\^get\[A-Z\]\//);
-  assert.match(worker, /markTelegramWebhookEffect\(cfg, method\)/);
+  assert.match(readContractSource(new URL('../src/billing-runtime.js', import.meta.url), 'utf8'), /!\/\^get\[A-Z\]\//);
+  assert.match(readContractSource(new URL('../src/billing-runtime.js',import.meta.url),'utf8'), /markTelegramWebhookEffect\(cfg,safeMethod\)/);
 });
 
 

@@ -1,3 +1,4 @@
+import { readFileSync as readContractSource } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -79,9 +80,9 @@ test('common user-facing mixed English labels are removed from the Mini App', ()
   assert.match(app, /function publicText\(value\)/);
   assert.match(app, /function dataPolicyModeLabel\(value\)/);
   assert.match(app, /function predictionAdviceLabel\(value\)/);
-  assert.match(app, /Защитная проверка/);
+  assert.match(readContractSource(new URL('../public/modules/admin-model-quality.js', import.meta.url), 'utf8'), /Защитная проверка/);
   assert.match(app, /подтверждено ·/);
-  assert.match(app, /первый ответ/);
+  assert.match(readContractSource(new URL('../public/modules/admin-provider.js', import.meta.url), 'utf8'), /первый ответ/);
   assert.match(app, /Преданализ матча/);
   assert.match(app, /Сохранённые данные/);
 });
@@ -145,8 +146,8 @@ test('Russian copy contracts live in client renderers after worker extraction',(
 test('Russian counters use grammatical forms for user-facing quantities', () => {
   assert.match(app, /function russianCountLabel\(/);
   assert.match(app, /'матч', 'матча', 'матчей'/);
-  assert.match(app, /'команда', 'команды', 'команд'/);
-  assert.match(app, /'лига', 'лиги', 'лиг'/);
+  assert.match(readContractSource(new URL('../public/modules/global-search-renderer.js', import.meta.url), 'utf8'), /'команда',\s*'команды',\s*'команд'/);
+  assert.match(readContractSource(new URL('../public/modules/global-search-renderer.js', import.meta.url), 'utf8'), /'лига',\s*'лиги',\s*'лиг'/);
 });
 
 test('public and admin surfaces keep Russian document language and separated scope',()=>{

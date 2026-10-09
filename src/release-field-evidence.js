@@ -70,7 +70,9 @@ function safeSupabaseUrl(cfg) {
   if (typeof cfg?.supabaseUrl !== 'string' || !cfg.supabaseUrl.trim()) return '';
   try {
     const url=new URL(cfg.supabaseUrl.trim());
-    return ['http:','https:'].includes(url.protocol) ? url.origin : '';
+    return url.protocol === 'https:' && !url.username && !url.password
+      ? url.origin
+      : '';
   } catch {
     return '';
   }

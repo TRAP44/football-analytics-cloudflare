@@ -395,6 +395,6 @@ test('worker keeps exact match-formatting dependency wiring', () => {
     worker,
     /createMatchFormattingRuntime\(\{[\s\S]*?assessLineupQuality[\s\S]*?normalizeFixtureAbsences[\s\S]*?\}\);/,
   );
-  assert.match(source,/if \(!isFinishedStatus\(entry\?\.fixture\?\.status\?\.short\)\) continue;/);
+  assert.match(source,/if \(!isFinishedStatus\(finishedStatus\)\) continue;/);
   assert.match(source,/return Object\.freeze\(\{/);
 });

@@ -24,10 +24,10 @@ function block(source,start,end){
 }
 
 test('FREE LIVE cadence and shared feature cache protect provider minute budget',()=>{
-  const refresh=block(worker,'function liveRefreshSeconds','function providerFeaturePolicy');
+  const refresh=block(providerBudgetRuntime,'function liveRefreshSeconds','function paidQuotaHealthy');
   assert.match(refresh,/return 90/);
 
-  const policy=block(worker,'function providerFeaturePolicy','function featureCacheAgeSeconds');
+  const policy=block(providerBudgetRuntime,'function providerFeaturePolicy','function featureCacheAgeSeconds');
   assert.match(policy,/mode === 'live'/);
   assert.match(policy,/\['events','statistics'\]/);
   assert.match(policy,/ttlSeconds = Math\.max\(ttlSeconds, 180\)/);
@@ -53,13 +53,13 @@ test('fixtures are reused from persistent shared caches before provider calls',(
   assert.match(sharedDateLoader,/providerFeedDateTtl\(normalized,cfg\)/);
   assert.equal((worker.match(/apiFootball\('\/fixtures',\s*\{\s*date\s*\}\s*,\s*cfg\)/g) || []).length,0);
 
-  const botFixture=block(worker,'async function loadBotFixtureCard','function botFixtureDateTime');
-  assert.match(botFixture,/loadProviderFixture\(id,cfg\)/);
+  const botFixture=block(readFileSync(new URL('../src/telegram-bot-ui-runtime.js',import.meta.url),'utf8'),'async function loadBotFixtureCard','function botFixtureDateTime');
+  assert.match(botFixture,/optionalAsync\(loadProviderFixture,id,cfg\)/);
 
-  const matchCenter=block(matchCenterRuntime,'async function apiMatchCenter','  return { apiMatchCenter };');
+  const matchCenter=block(matchCenterRuntime,'async function apiMatchCenter','  return Object.freeze({apiMatchCenter});');
   assert.match(matchCenter,/loadProviderFixture\(fixtureId,cfg\)/);
 
-  const analyze=block(analysisRuntime,'async function apiAnalyze','  return { apiAnalyze };');
+  const analyze=block(analysisRuntime,'async function apiAnalyze','  return Object.freeze({apiAnalyze});');
   assert.match(analyze,/loadProviderFixture\(fixtureId,cfg\)/);
 });
 
@@ -75,20 +75,20 @@ test('public match feed uses the shared provider-valid exact-date fixtures loade
 
 test('FREE AI avoids optional network fan-out and reuses cached feature data',()=>{
   const providerFetch=block(providerDataRuntime,'async function analysisProviderFetch','async function providerFeatureFetch');
-  assert.match(providerFetch,/analysis-provider:/);
-  assert.match(providerFetch,/provider-feature:/);
+  assert.match(providerDataRuntime,/analysis-provider:/);
+  assert.match(providerDataRuntime,/provider-feature:/);
   assert.match(providerFetch,/source:'cache'/);
   assert.match(providerFetch,/source:'stale'/);
 
-  const analyze=block(analysisRuntime,'async function apiAnalyze','  return { apiAnalyze };');
+  const analyze=block(analysisRuntime,'async function apiAnalyze','  return Object.freeze({apiAnalyze});');
   assert.match(analyze,/const canFetchLineups = detailedCoverage && paid/);
   assert.match(analyze,/const canFetchFreshForm = detailedCoverage && paid/);
   assert.match(analyze,/const canFetchH2H = detailedCoverage && paid/);
-  assert.match(analyze,/const canFetchInjuries = paid/);
+  assert.match(analyze,/const canFetchInjuries=detailedCoverage && paid/);
 });
 
 test('provider budget telemetry exposes shared date-fixture reuse',()=>{
-  const budget=block(worker,'function providerBudgetProfile','function providerPublicBudgetMode');
+  const budget=block(providerBudgetRuntime,'function providerBudgetProfile','function providerPublicBudgetMode');
   assert.match(budget,/fixtureDateReuses/);
   assert.match(worker,/providerFixtureDateReuses:\s*0/);
 });
@@ -128,8 +128,8 @@ test('client deduplicates match center refreshes and keeps provider cooldown non
   assert.match(matchCenterController,/safeRead\(perf,'deduped'\)/);
 
   const open=block(matchCenterController,'async function openMatchCenter','return Object.freeze');
-  assert.match(open,/\['rate_limit', 'provider'\]/);
-  assert.match(open,/showView\(sourceView/);
+  assert.match(open,/category==='rate_limit' \|\| category==='provider'/);
+  assert.match(open,/safeCall\(showView,sourceView/);
 
   const search=block(searchController,'async function runGlobalSearch','function handleSearchInput');
   assert.doesNotMatch(search,/dedupe:\s*false/);
@@ -139,8 +139,8 @@ test('client deduplicates match center refreshes and keeps provider cooldown non
   assert.match(matches,/const fallbackSnapshot = readMatchSnapshot\(date\)/);
   assert.match(matches,/fallbackSnapshot\.matches\.length/);
   assert.match(matches,/Показана последняя сохранённая версия/);
-  assert.match(searchController,/query\.trim\(\)\.length >= 3/);
-  assert.match(searchController,/setTimer\(\(\) => runGlobalSearch\(\), 500\)/);
+  assert.match(searchController,/query\.length>=3/);
+  assert.match(searchController,/safeCall\(\s*setTimer,[\s\S]*?void runGlobalSearch\(\);[\s\S]*?500,/);
 });
 
 test('public shell owns final shared layout declarations without duplicate base cascade ownership',()=>{
@@ -168,7 +168,7 @@ test('360-400px mobile layout keeps score status teams and title stable',()=>{
 test('Match Center keeps partial provider blocks independent and renderable',()=>{
   const render=block(app,'function renderMatchCenter','async function openMatchCenter');
   assert.match(render,/centerKeyStatsHtml\(d\.statistics\)/);
-  assert.match(render,/timelineEventsHtml\(d\.events, m\)/);
+  assert.match(render,/timelineEventsHtml\(eventRows, m\)/);
   assert.match(render,/centerAllStatsHtml\(d\.statistics\)/);
   assert.match(render,/lineupLiveHtml\(d\.lineups, m\)/);
   assert.match(render,/centerPlayersHtml\(d\.playerLeaders, m\)/);
@@ -186,16 +186,16 @@ test('Match Center keeps partial provider blocks independent and renderable',()=
 
 test('Match Center preserves the originating view across degraded provider failure',()=>{
   const open=block(matchCenterController,'async function openMatchCenter','return Object.freeze');
-  assert.match(open,/const sourceView = activeViewId\(\)/);
-  assert.match(open,/state\.analysisBackView = sourceView/);
-  assert.match(open,/showView\('analysisView'\)/);
-  assert.match(open,/\['rate_limit','provider'\]\.includes\(category\)/);
-  assert.match(open,/showView\(sourceView, \{ restore: true \}\)/);
+  assert.match(open,/const sourceView=currentView\(\)/);
+  assert.match(open,/state\.analysisBackView=sourceView/);
+  assert.match(open,/safeCall\(showView,'analysisView'\)/);
+  assert.match(open,/category==='rate_limit' \|\| category==='provider'/);
+  assert.match(open,/safeCall\(showView,sourceView,\{restore:true\}\)/);
 
   const request=block(matchCenterController,'async function requestMatchCenter','function isActiveLiveFixture');
-  assert.match(request,/const existing = inFlight\.get\(key\)/);
+  assert.match(request,/const existing=inFlight\.get\(key\)/);
   assert.match(request,/if \(existing\)/);
-  assert.match(request,/inFlight\.set\(key, task\)/);
+  assert.match(request,/inFlight\.set\(key,task\)/);
   assert.match(request,/inFlight\.delete\(key\)/);
 });
 

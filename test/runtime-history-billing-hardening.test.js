@@ -1,3 +1,4 @@
+import { readFileSync as readContractSource } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -29,16 +30,16 @@ test('runtime history failures are surfaced instead of being rendered as an empt
   assert.match(saveRuntime, /RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED/);
   assert.match(saveRuntime, /X-Runtime-Action/);
   assert.match(saveRuntime, /X-Runtime-Reason-Hex/);
-  assert.match(saveRuntime, /const historyReady = true/);
+  assert.match(saveRuntime, /const historyReady\s*=\s*true/);
   assert.doesNotMatch(saveRuntime, /RUNTIME_HISTORY_APPEND_FAILED/);
   assert.doesNotMatch(saveRuntime, /await appendRuntimeHistory\(/);
-  assert.match(saveRuntime, /return \{ value, status: 200, historyReady, historyReason \}/);
+  assert.match(saveRuntime, /return \{\s*value,\s*status:\s*200,\s*historyReady,\s*historyReason\s*\}/);
 
-  const rollback = section(runtimeControls, 'async function apiRuntimeRollback', 'return {\n    runtimeControlsSnapshot');
+  const rollback = section(runtimeControls, 'async function apiRuntimeRollback', 'return Object.freeze({');
   assert.match(rollback, /RUNTIME_HISTORY_ROLLBACK_READ_FAILED/);
   assert.doesNotMatch(rollback, /historyReady:\s*true/);
 
-  assert.match(app, /historyReady: Boolean\(result\.historyReady\),\s*historyReason: String\(result\.historyReason \|\| ''\)/);
+  assert.match(readContractSource(new URL('../public/modules/admin-runtime-controls.js', import.meta.url), 'utf8'), /historyReady: Boolean\(result\.historyReady\),\s*historyReason: String\(result\.historyReason \|\| ''\)/);
   const rollbackClient = section(app, 'async function restoreRuntimeRevision', 'function renderRuntimeControls');
   assert.doesNotMatch(rollbackClient, /historyReady:\s*true/);
 });

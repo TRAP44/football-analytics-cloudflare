@@ -165,7 +165,9 @@ test('memory first-touch attribution is immutable and timestamped from injected 
     'partner_partner_later_other',
     {},
   );
-  assert.deepEqual(second,first);
+  const {referralCode,...firstTouch}=first;
+  assert.equal(referralCode,'');
+  assert.deepEqual(second,firstTouch);
   assert.equal(
     memory.users.get(42).acquisition_first_touch_at,
     first.firstTouchAt,

@@ -125,7 +125,7 @@ test('provider enable failure is isolated and the next provider can still serve 
   assert.equal(result.sourceMeta.provider,'fallback');
   assert.equal(result.sourceMeta.fallback,true);
   assert.deepEqual(result.sourceMeta.attempts,[
-    {provider:'broken-enable',state:'error',reason:'enable_POLICY_FAILURE',status:null},
+    {provider:'broken-enable',state:'error',reason:'enable_POLICY_FAILURE'},
     {provider:'fallback',state:'available',reason:''},
   ]);
 });
@@ -185,7 +185,7 @@ test('malformed accepted provider payload cannot escape through enumerable gette
   assert.deepEqual(result.data,['fallback']);
   assert.equal(result.sourceMeta.provider,'safe');
   assert.deepEqual(result.sourceMeta.attempts,[
-    {provider:'dangerous',state:'unavailable',reason:'result_MALFORMED_PAYLOAD',status:null},
+    {provider:'dangerous',state:'unavailable',reason:'result_MALFORMED_PAYLOAD'},
     {provider:'safe',state:'available',reason:''},
   ]);
 });

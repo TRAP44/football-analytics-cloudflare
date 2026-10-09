@@ -26,7 +26,7 @@ test('telegram AI verdict includes skip confidence risk and data quality',()=> {
 test('telegram sections reuse the protected analysis pipeline',()=> {
   assert.match(worker,/function botAnalyzeFixture/);
   assert.match(worker,/await apiAnalyze\(inner,cfg,\{id:user\}\)/);
-  assert.match(worker,/fixture:\$\{id\}:v15-availability-quality-rc144/);
+  assert.match(worker,/fixture:\$\{id\}:v17-starting-xi-rc146/);
 });
 
 test('match cards are cached and selectable from multi-result search and daily picks',()=> {

@@ -48,8 +48,8 @@ test('RC79 exposes safe recovery in Telegram and Mini App',()=>{
   assert.match(recovery,/function newsImpactRecoveryKeyboard\(/);
   assert.match(recovery,/async function sendNewsImpactRecoveryMessage\(/);
   assert.match(analysis,/error\.newsImpactRecovery=recovery/);
-  assert.match(analysisController,/error\?\.payload\?\.newsImpactRecovery/);
-  assert.match(analysisController,/recovery\.action === 'search'/);
+  assert.match(analysisController,/safeRead\(errorPayload,'newsImpactRecovery'\)/);
+  assert.match(analysisController,/recoveryAction==='search'/);
 });
 
 test('RC79 aggregates failure reasons without interpreting dissatisfaction',()=>{

@@ -77,7 +77,7 @@ test('standard public actions keep a centered 44px touch geometry contract', () 
   );
 
   const contractTail=section(css,'/* Public component contracts.');
-  assert.doesNotMatch(contractTail,/!important/);
+  assert.doesNotMatch(contractTail.replace(/[^{}]*\[hidden\][^{}]*\{[^}]*\}/g,''),/!important/);
 });
 
 test('compact and analysis favorite controls share the same 19px SVG primitive', () => {
@@ -100,7 +100,8 @@ test('public match center hides stale snapshot/countdown copy and keeps a stable
 
   assert.doesNotMatch(center,/Показан последний сохранённый снимок/);
   assert.doesNotMatch(center,/Автообновление через \$\{/);
-  assert.doesNotMatch(center,/liveRefreshSeconds|retryAfter/);
+  assert.match(center,/quota-public-chip[\s\S]*?escapeHtml\(publicText\(d\.quotaMode\.label/);
+  assert.match(center,/обновление \$\{Number\(d\.quotaMode\.liveRefreshSeconds \|\| d\.refreshSeconds \|\| 0\)\} сек\./);
   assert.match(center,/<small id="liveRefreshText">Обновляется автоматически<\/small>/);
 });
 

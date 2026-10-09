@@ -79,8 +79,8 @@ test('global search shows local results first and bounds the remote wait', () =>
   assert.match(body, /Повторить/);
   assert.match(run, /timeoutMs:\s*6500/);
   assert.match(run, /retry:\s*false/);
-  assert.match(globalSearchController, /state\.globalSearch\.query\.trim\(\)\.length >= 3/);
-  assert.match(globalSearchController, /searchTimer = setTimer\(\(\) => runGlobalSearch\(\), 500\)/);
+  assert.match(globalSearchController, /query\.length>=3/);
+  assert.match(globalSearchController, /safeCall\(\s*setTimer,[\s\S]*?void runGlobalSearch\(\);[\s\S]*?500,/);
 });
 
 test('match list renders snapshots immediately and refreshes without blocking visible matches', () => {

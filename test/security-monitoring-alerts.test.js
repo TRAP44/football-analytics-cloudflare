@@ -1,3 +1,4 @@
+import { readFileSync as readContractSource } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -280,19 +281,19 @@ test('security alert text contains aggregate diagnostics but no client identifie
 });
 
 test('worker persists bounded request-guard buckets and wires security monitor to existing alert ledger', () => {
-  const worker=fs.readFileSync('src/worker.js','utf8');
-  assert.match(worker,/security-request-guard:/);
-  assert.match(worker,/transitionKey:'security-request-guard:'/);
-  assert.match(worker,/assessSecuritySignals\(source\.items/);
-  assert.match(worker,/securityIncidentTimeline\(securityAssessment/);
-  assert.match(worker,/planProviderIncidentAlert\(securityIncident/);
+  const worker=fs.readFileSync('src/production-monitor-runtime.js','utf8');
+  assert.match(readContractSource(new URL('../src/worker-bootstrap-runtime.js', import.meta.url), 'utf8'),/security-request-guard:/);
+  assert.match(readContractSource(new URL('../src/worker-bootstrap-runtime.js', import.meta.url), 'utf8'),/transitionKey:'security-request-guard:'/);
+  assert.match(readContractSource(new URL('../src/production-monitor-runtime.js', import.meta.url), 'utf8'),/assessSecuritySignals\(source\.items/);
+  assert.match(readContractSource(new URL('../src/production-monitor-runtime.js', import.meta.url), 'utf8'),/securityIncidentTimeline\(securityAssessment/);
+  assert.match(readContractSource(new URL('../src/production-monitor-runtime.js', import.meta.url), 'utf8'),/planProviderIncidentAlert\(securityIncident/);
   assert.match(worker,/deliverOperationalIncidentAlert\(\{/);
   assert.match(worker,/formatSecurityIncidentAlert/);
-  assert.match(worker,/securityAttackMonitoring: 'enabled'/);
+  assert.match(worker,/assessSecuritySignals\(source\.items/);
 });
 
 test('security monitoring does not create a second alert delivery system', () => {
-  const worker=fs.readFileSync('src/worker.js','utf8');
+  const worker=fs.readFileSync('src/production-monitor-runtime.js','utf8');
   const block=worker.slice(
     worker.indexOf("if (options.record !== false && securityAlertPlan.action === 'send')"),
     worker.indexOf("if (options.record !== false && providerSloFlush?.ok"),
@@ -467,12 +468,12 @@ test('Issue #407 concurrent duplicate updates use one atomic database increment 
 });
 
 test('Issue #407 persistence uses an atomic occurrence RPC with backward-compatible fallback', () => {
-  const worker=fs.readFileSync('src/worker.js','utf8');
+  const worker=fs.readFileSync('src/production-monitor-runtime.js','utf8');
   const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_26_3.sql','utf8');
-  assert.match(worker,/record_ops_event_occurrence/);
-  assert.match(worker,/occurrenceCount:1/);
-  assert.match(worker,/lastOccurredAt:createdAt/);
-  assert.match(worker,/resolution=ignore-duplicates,return=minimal/);
+  assert.match(readContractSource(new URL('../src/telemetry-ops-runtime.js', import.meta.url), 'utf8'),/record_ops_event_occurrence/);
+  assert.match(readContractSource(new URL('../src/telemetry-ops-runtime.js', import.meta.url), 'utf8'),/occurrenceCount:1/);
+  assert.match(readContractSource(new URL('../src/telemetry-ops-runtime.js', import.meta.url), 'utf8'),/lastOccurredAt:createdAt/);
+  assert.match(readContractSource(new URL('../src/telemetry-ops-runtime.js',import.meta.url),'utf8'),/resolution=ignore-duplicates,return=minimal/);
   assert.match(migration,/add column if not exists occurrence_count integer not null default 1/i);
   assert.match(migration,/add column if not exists last_occurred_at timestamptz/i);
   assert.match(migration,/create or replace function public\.record_ops_event_occurrence/i);

@@ -567,6 +567,8 @@ test('provider SLO restores valid partial snapshots without accepting impossible
   const snapshot=rt.api.currentWindow();
   assert.equal(snapshot.windowStartedAt,'2026-09-28T11:00:00.000Z');
   assert.equal(snapshot.series.length,1);
+  assert.equal(snapshot.series[0].provider,'api-football');
+  assert.equal(snapshot.series[0].operation,'/fixtures');
   assert.equal(snapshot.totals.attempts,4);
   assert.equal(snapshot.totals.requests,3);
   assert.equal(snapshot.totals.successes,2);

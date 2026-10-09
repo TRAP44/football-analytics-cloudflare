@@ -43,11 +43,11 @@ test('expired subscription renders as FREE without trusting stale client plan st
   assert.equal(snapshot.canceled, true);
 });
 
-test('billing endpoints remain fail-closed while MONETIZATION_ENABLED is false', () => {
+test('billing keeps plan previews readable and purchases fail-closed while MONETIZATION_ENABLED is false', () => {
   const gate = router.indexOf("if (cfg?.monetizationEnabled !== true) return json");
   const plans = router.indexOf("pathname === '/api/billing/plans'");
   const invoice = router.indexOf("pathname === '/api/billing/invoice'");
-  assert.ok(gate > 0 && plans > gate && invoice > gate);
+  assert.ok(plans > 0 && gate > plans && invoice > gate);
   assert.match(billingModule, /state\.profile\?\.features\?\.monetizationEnabled === false/);
   assert.match(billingApi, /enabled: cfg\.monetizationEnabled === true/);
   assert.match(billingApi, /ready: Boolean\(cfg\.monetizationEnabled === true && webhook\.ready\)/);
@@ -104,9 +104,9 @@ test('Profile contains compact FREE PRO PREMIUM billing UI and four-item bottom 
 test('AI quota exhaustion is a soft paywall and does not hide football surfaces', () => {
   assert.match(html, /id="analysisQuotaPaywall"/);
   assert.match(html, /Матчи, LIVE, составы и статистика остаются доступны бесплатно/);
-  assert.match(analysisController, /const quotaExhausted = error\?\.status === 429/);
-  assert.match(analysisController, /showPaywall\(fixtureId\)/);
-  assert.match(analysisController, /retry: \(\) => analyzeMatch/);
+  assert.match(analysisController, /const quotaExhausted=status===429/);
+  assert.match(analysisController, /safeCall\(showPaywall,id\)/);
+  assert.match(analysisController, /retry:\(\)=>analyzeMatch/);
   assert.match(billingModule, /quotaUpgradeBtn/);
   assert.match(billingModule, /openProfile/);
 });

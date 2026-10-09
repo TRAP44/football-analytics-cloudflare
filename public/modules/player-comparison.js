@@ -149,7 +149,7 @@ function availabilityLabel(player = {}) {
   return '';
 }
 
-function coverageLabel(player = {}) {
+function playerCoverageLabel(player = {}) {
   const stats = player?.seasonStats || {};
   if (stats.loading) return 'сезон загружается';
   if (stats.error) return 'сезон недоступен';
@@ -220,7 +220,7 @@ export function buildPlayerComparisonModel(primary = {}, secondary = {}) {
       position: String(leftPosition || ''),
       age: profileAge(primary),
       photo: String(primary?.squadProfile?.photo || primary?.data?.photo || ''),
-      coverage: coverageLabel(primary),
+      coverage: playerCoverageLabel(primary),
     },
     secondary: {
       name: String(secondary?.data?.name || 'Игрок 2'),
@@ -228,7 +228,7 @@ export function buildPlayerComparisonModel(primary = {}, secondary = {}) {
       position: String(rightPosition || ''),
       age: profileAge(secondary),
       photo: String(secondary?.squadProfile?.photo || secondary?.data?.photo || ''),
-      coverage: coverageLabel(secondary),
+      coverage: playerCoverageLabel(secondary),
     },
     differentRoles,
     categories,

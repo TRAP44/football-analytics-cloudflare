@@ -87,11 +87,10 @@ function extractSet(source, name) {
 
 function readJavaScriptTree(root) {
   let source = '';
-  for (const name of readdirSync(root)) {
-    const path = join(root, name);
-    const stat = statSync(path);
-    if (stat.isDirectory()) source += readJavaScriptTree(path);
-    else if (name.endsWith('.js')) source += `\n// ${path}\n${readFileSync(path, 'utf8')}`;
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) source += readJavaScriptTree(path);
+    else if (entry.isFile() && entry.name.endsWith('.js')) source += `\n// ${path}\n${readFileSync(path, 'utf8')}`;
   }
   return source;
 }
@@ -264,21 +263,21 @@ test('critical Mini App journey keeps bounded analytics and explicit loading/ret
   assert.match(app, /sendProductAction\('history_item_open'/);
   assert.match(app, /sendProductAction\('profile_open'/);
   assert.match(app, /sendProductAction\('player_open'/);
-  assert.match(globalSearchController, /productAction\('search_used','searchView'\)/);
+  assert.match(globalSearchController, /safeCall\(productAction,'search_used','searchView'\)/);
 
   const center = block(matchCenterController, 'async function openMatchCenter', 'return Object.freeze');
-  assert.match(center, /showView\('analysisView'\)/);
-  assert.match(center, /renderJourney\('loading'/);
-  assert.match(center, /renderJourney\('error'/);
-  assert.match(center, /retry: \(\) => openMatchCenter/);
-  assert.match(center, /productAction\('match_open'/);
+  assert.match(center, /safeCall\(showView,'analysisView'\)/);
+  assert.match(center, /safeCall\(renderJourney,'loading'/);
+  assert.match(center, /safeCall\(renderJourney,'error'/);
+  assert.match(center, /retry:\(\)=>openMatchCenter/);
+  assert.match(center, /safeCall\(productAction,'match_open'/);
 
   const analysis = block(analysisController, 'async function analyzeMatch', 'return Object.freeze');
-  assert.match(analysis, /productAction\('ai_start'/);
-  assert.match(analysis, /productAction\('ai_complete'/);
-  assert.match(analysis, /renderJourney\('loading'/);
-  assert.match(analysis, /renderJourney\('error'/);
-  assert.match(analysis, /retry: \(\) => analyzeMatch/);
+  assert.match(analysis, /safeCall\(productAction,'ai_start'/);
+  assert.match(analysis, /safeCall\(productAction,'ai_complete'/);
+  assert.match(analysis, /safeCall\(renderJourney,'loading'/);
+  assert.match(analysis, /safeCall\(renderJourney,'error'/);
+  assert.match(analysis, /retry:\(\)=>analyzeMatch/);
 
   assert.match(journeyState, /analysisStateRetry/);
 });
@@ -286,14 +285,14 @@ test('critical Mini App journey keeps bounded analytics and explicit loading/ret
 test('LIVE refresh remains timeout-sized, stale-safe and automatically recoverable', () => {
   const live = block(matchCenterController, 'function isActiveLiveFixture', 'async function openMatchCenter');
   assert.doesNotMatch(live, /setInterval\s*\(/);
-  assert.match(live, /setTimer\(async \(\) =>/);
-  assert.match(live, /delayMs/);
-  assert.match(live, /activeViewId\(\) === 'analysisView'/);
-  assert.match(live, /currentCenter\?\.match\?\.fixtureId/);
-  assert.match(live, /if \(!data \|\| !isActiveLiveFixture\(fixtureId\)\) return/);
+  assert.match(live, /safeCall\(setTimer,async\(\)=>/);
+  assert.match(live, /refreshDelayMs/);
+  assert.match(live, /currentView\(\)==='analysisView'/);
+  assert.match(live, /currentCenterFixtureId\(\)===id/);
+  assert.match(live, /if \(!data \|\| !isActiveLiveFixture\(id\)\) return/);
   assert.match(live, /Не удалось обновить\. Повторим автоматически\./);
-  assert.match(live, /actionError\('live_refresh'/);
-  assert.match(live, /clearTimer\(liveRefreshTimer\)/);
+  assert.match(live, /safeCall\(actionError,'live_refresh'/);
+  assert.match(live, /safeCall\(clearTimer,liveRefreshTimer\)/);
   assert.doesNotMatch(live, /setInterval\s*\(|showToast\(error\?\.message\)/);
 });
 

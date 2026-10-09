@@ -206,7 +206,7 @@ test('webhook ceiling is intentionally looser than API and sensitive ceilings', 
 });
 
 test('wrangler bindings stay synchronized with runtime edge policy definitions', () => {
-  const cfg=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+  const cfg=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8').replace(/^\s*\/\/.*$/gm,''));
   const bindings=Object.fromEntries(cfg.ratelimits.map(item=>[item.name,item.simple]));
   const policies=cloudflareEdgePolicies();
 
@@ -272,7 +272,7 @@ test('degraded edge protection hands control to the next pre-auth guard', async 
 });
 
 test('obvious scanner paths are routed through Worker before SPA asset fallback', () => {
-  const cfg=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+  const cfg=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8').replace(/^\s*\/\/.*$/gm,''));
   for (const pattern of [
     '/.env*',
     '/.git/*',

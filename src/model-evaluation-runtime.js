@@ -9,6 +9,7 @@ export function createModelEvaluationRuntime(deps = {}) {
     json,
     logLossFromProbabilities,
     memory,
+    modelQualityEligibleRow,
     parseJsonObject,
     predictedOutcomeForProbabilities,
     predictionOutcomeLabel,

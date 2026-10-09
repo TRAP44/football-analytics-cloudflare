@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createNewsImpactRecoveryRuntime } from '../src/news-impact-recovery-runtime.js';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
 const recovery=fs.readFileSync('src/news-impact-recovery-runtime.js','utf8');
@@ -22,7 +23,7 @@ test('RC74 builds per-decision News Impact action conversion',()=>{
 test('RC74 identifies the lowest-conversion eligible decision state without exposing user ids',()=>{
   assert.match(recovery,/function newsImpactActionFunnelBottleneck\(/);
   assert.match(recovery,/eligibleForBottleneck/);
-  assert.match(recovery,/Number\(a\.conversionPct \|\| 0\)-Number\(b\.conversionPct \|\| 0\)/);
+  assert.match(recovery,/return aPct-bPct \|\| newsImpactCount\(b\.users\)-newsImpactCount\(a\.users\)/);
   assert.match(analytics,/const newsImpactActionBottleneck=newsImpactActionFunnelBottleneck\(newsImpactActionFunnel\)/);
   assert.match(analytics,/newsImpactActionBottleneck,/);
 });

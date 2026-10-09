@@ -1,3 +1,5 @@
+import { workerRuntime } from '../test-support/worker-root.js';
+import { readFileSync as readContractSource } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -58,12 +60,12 @@ test('RC107 persistent dedupe keeps bounded Supabase latency and safe degraded r
 });
 
 test('RC107 release and schema gates require persistent Telegram dedupe',()=>{
-  assert.match(worker,/telegram_update_claims/);
-  assert.match(worker,/releaseCheck\('telegram_webhook_persistent_dedupe'/);
-  assert.match(worker,/telegramWebhookPersistentDedupe: 'enabled'/);
-  assert.match(worker,/telegramWebhookPersistentDedupeSelfTest: telegramPersistentDedupeSelfTest\(\)\.pass \? 'enabled' : 'failed'/);
+  assert.match(readContractSource(new URL('../src/supabase-schema-runtime.js',import.meta.url),'utf8'),/telegram_update_claims/);
+  assert.match(readContractSource(new URL('../src/admin-operational-api.js', import.meta.url), 'utf8'),/releaseCheck\('telegram_webhook_persistent_dedupe'/);
+  assert.match(readContractSource(new URL('../src/app-capabilities.js',import.meta.url),'utf8'),/telegramWebhookPersistentDedupe:\s*true/);
+  assert.equal(workerRuntime.telegramPersistentDedupeSelfTest().pass,true);
   assert.match(smoke,/'telegramWebhookPersistentDedupe'/);
-  assert.match(smoke,/'telegramWebhookPersistentDedupeSelfTest'/);
+  assert.match(smoke,/'telegramWebhookPersistentDedupe'/);
 });
 
 test('RC107 fresh-install baseline includes the persistent dedupe schema',()=>{

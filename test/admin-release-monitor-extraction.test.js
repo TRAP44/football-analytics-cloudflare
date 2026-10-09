@@ -240,7 +240,7 @@ test('regression response mutation preserves POST contract and refreshes authori
       reason: 'stale',
       postDeployRegression: {
         response: {
-          deploySha: 'abc123',
+          deploySha: 'a'.repeat(40),
         },
       },
     },
@@ -270,7 +270,7 @@ test('regression response mutation preserves POST contract and refreshes authori
         method: 'POST',
         body: JSON.stringify({
           state: 'acknowledged',
-          deploySha: 'abc123',
+          deploySha: 'a'.repeat(40),
         }),
         retry: false,
         dedupe: false,
@@ -301,7 +301,7 @@ test('409 regression response conflict reloads authoritative monitor state and c
       reason: 'stale',
       postDeployRegression: {
         response: {
-          deploySha: 'abc123',
+          deploySha: 'a'.repeat(40),
         },
       },
     },

@@ -74,15 +74,15 @@ test('unknown API route keeps response compatibility', async () => {
   assert.equal(result.body.error, 'Маршрут не найден.');
 });
 
-test('billing remains disabled for truthy non-boolean monetization configuration',async()=>{
+test('billing purchases remain disabled for truthy non-boolean monetization configuration',async()=>{
   let calls=0;
   const deps={
     ...baseDeps(),
-    apiBillingPlans:async()=>{calls+=1;return {ok:true};},
+    apiBillingInvoice:async()=>{calls+=1;return {ok:true};},
   };
   const result=await dispatchApiRoute(
-    request('GET'),
-    url('/api/billing/plans'),
+    request('POST'),
+    url('/api/billing/invoice'),
     {monetizationEnabled:'true'},
     {id:7},
     deps,
@@ -103,9 +103,9 @@ test('router tolerates malformed request path input without throwing',async()=>{
 });
 
 test('billing stays unavailable while monetization is disabled', async () => {
-  const result = await dispatchApiRoute(request('GET'), url('/api/billing/plans'), { monetizationEnabled: false }, { id: 7 }, baseDeps());
+  const result = await dispatchApiRoute(request('POST'), url('/api/billing/invoice'), { monetizationEnabled: false }, { id: 7 }, baseDeps());
   assert.equal(result.status, 404);
-  assert.equal(result.body.error, 'Монетизация отложена до финального этапа проекта.');
+  assert.equal(result.body.error, 'Монетизация пока отключена.');
 });
 
 
@@ -183,12 +183,12 @@ test('router blocks exact replay of a successful sensitive admin mutation', asyn
 });
 
 test('worker authenticates and applies beta/runtime/burst guards before router dispatch', () => {
-  const source = fs.readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
+  const source = fs.readFileSync(new URL('../src/worker-bootstrap-runtime.js', import.meta.url), 'utf8');
   const auth = source.indexOf('const user = await getRequestUser(request, cfg)');
-  const beta = source.indexOf('const betaAccess = closedBetaAccessDecision(user, cfg)', auth);
-  const runtime = source.indexOf('const runtimeResponse = runtimeGuard(request, user, cfg', beta);
-  const burst = source.indexOf('const burstResponse = enforceRouteBurst(request, user)', runtime);
-  const dispatch = source.indexOf('dispatchApiRoute(request, url, cfg, user, API_ROUTE_DEPS)', burst);
+  const beta = source.indexOf('betaAccess=plainObject(closedBetaAccessDecision(user,cfg))', auth);
+  const runtime = source.indexOf('runtimeResponse=runtimeGuard(request,user,cfg', beta);
+  const burst = source.indexOf('burstResponse=enforceRouteBurst(request,user)', runtime);
+  const dispatch = source.indexOf('dispatchApiRoute(request,url,cfg,user,API_ROUTE_DEPS)', burst);
   assert.ok(auth > -1 && auth < beta && beta < runtime && runtime < burst && burst < dispatch);
 });
 

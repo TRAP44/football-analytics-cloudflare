@@ -1,3 +1,4 @@
+import { readFileSync as readContractSource } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -277,7 +278,7 @@ test('RC56 preserves upcoming-first discovery with recent-match recovery',()=>{
 });
 
 test('Mini App reuses search discovery payload without an automatic second team-hub fetch',()=>{
-  assert.match(app,/matchDiscovery:data\.matchDiscovery \|\| null/);
+  assert.match(app,/matchDiscovery:matchDiscovery\s*\? safeShallowCopy\(matchDiscovery\)\s*: null/);
   assert.doesNotMatch(
     app,
     /const hub = await api\(`\/api\/team\?teamId=/,
@@ -288,12 +289,12 @@ test('Mini App reuses search discovery payload without an automatic second team-
 });
 
 test('zero-result UX remains explicit while backend retains recent recovery',()=>{
-  assert.match(app,/Матчей сейчас нет/);
-  assert.match(app,/Матч найден/);
+  assert.match(readContractSource(new URL('../public/modules/global-search-renderer.js', import.meta.url), 'utf8'),/Матчей сейчас нет/);
+  assert.match(readContractSource(new URL('../public/modules/global-search-renderer.js', import.meta.url), 'utf8'),/Матч найден/);
   assert.match(app,/Источник отвечает слишком долго/);
   assert.match(
     searchDiscoveryRuntime,
-    /mode:upcoming\.length \? 'upcoming' : recent\.length \? 'recent' : 'empty'/,
+    /mode:upcoming\.length\s*\? 'upcoming'\s*: recent\.length\s*\? 'recent'\s*: 'empty'/,
   );
 });
 

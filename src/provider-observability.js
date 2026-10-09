@@ -91,7 +91,7 @@ function counterValue(row,camel,snake=camel) {
   return nonNegativeIntegerCandidate(value);
 }
 
-function normalizeMetricRow(row = {}) {
+function normalizeMetricRow(row) {
   if (!row || typeof row !== 'object' || Array.isArray(row)) return null;
   const metric=emptySeries(row.provider,row.operation);
   const mappings=[

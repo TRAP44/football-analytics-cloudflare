@@ -117,6 +117,8 @@ test('RC142 leaves xG for the dedicated RC140 xG guard', () => {
 });
 
 const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/match-center-runtime.js', 'utf8');
+const userDataApiSource=fs.readFileSync('src/user-data-api-runtime.js','utf8');
+const capabilitiesSource=fs.readFileSync('src/app-capabilities.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 
@@ -131,10 +133,10 @@ test('RC142 routes sanitized statistics into comparative live analytics', () => 
 });
 
 test('RC142 exposes statistics quality in Match Center and release health contracts', () => {
-  assert.match(worker,/match-center:\$\{fixtureId\}:v16-availability-quality-rc144/);
+  assert.match(userDataApiSource,/match-center:\$\{fixtureId\}:v16-availability-quality-rc144/);
   assert.match(app,/function statisticsQualityHintHtml/);
   assert.match(app,/statisticsQualityHintHtml\(d\.statisticsQuality\)/);
-  assert.match(smoke,/'statisticsSemanticQualityGuard'/);
+  assert.match(smoke,/'providerDataReliability'/);
 });
 
 test('RC142 rejects duplicate guarded rows before comparative analytics',()=>{

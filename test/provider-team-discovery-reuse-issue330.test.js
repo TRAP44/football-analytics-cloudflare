@@ -29,7 +29,7 @@ test('Issue #330 shares team discovery fixtures across search and team page flow
   assert.match(helper,/team:id,next:12/);
   assert.match(helper,/team:id,last:8/);
   assert.match(helper,/hasLive/);
-  assert.match(helper,/Math\.ceil\(liveRefreshSeconds\(\)\/60\)/);
+  assert.match(helper,/Math\.ceil\(Number\(liveRefreshSeconds\(\)\)\/60\)/);
   assert.match(helper,/ttlMinutes/);
 
   const search=block('async function loadSearchTeamMatches','async function apiSearch',searchDiscoveryRuntime);
@@ -37,7 +37,7 @@ test('Issue #330 shares team discovery fixtures across search and team page flow
   assert.doesNotMatch(search,/apiFootball\('\/fixtures',\{team:teamId,next:12\}/);
   assert.doesNotMatch(search,/apiFootball\('\/fixtures',\{team:teamId,last:8\}/);
 
-  const team=block('async function apiTeam(request, cfg)','async function apiTeamIntelligence',teamTournamentRuntime);
+  const team=block('async function apiTeam(request, cfg)','  return Object.freeze',teamTournamentRuntime);
   assert.match(team,/loadProviderTeamDiscoveryFixtures\(teamId,cfg\)/);
   assert.doesNotMatch(team,/apiFootball\('\/fixtures', \{ team:teamId, next:12 \}/);
   assert.doesNotMatch(team,/apiFootball\('\/fixtures', \{ team:teamId, last:8 \}/);

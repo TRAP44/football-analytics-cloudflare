@@ -48,6 +48,6 @@ test('index evidence audit is snapshot-only and never clears production statisti
   assert.match(sql,/pg_stat_database/);
   assert.match(sql,/stats_reset/);
   assert.doesNotMatch(sql,/\bselect\s+pg_stat_reset(?:_single_table_counters)?\s*\(/i);
-  assert.doesNotMatch(sql,/\b(?:vacuum|reindex|cluster|analyze)\s+(?:public\.|[a-z_])/i);
+  assert.doesNotMatch(sql.replace(/^\s*--.*$/gm,''),/\b(?:vacuum|reindex|cluster|analyze)\s+(?:public\.|[a-z_])/i);
   assert.match(sql,/\brollback\s*;\s*$/i);
 });

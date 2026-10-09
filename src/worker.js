@@ -1,3 +1,35 @@
+import {
+  NEWS_IMPACT_ACTION_WINDOW_MINUTES,
+  NEWS_IMPACT_FAILURE_CODES,
+  NEWS_IMPACT_FUNNEL_MIN_USERS,
+  NEWS_IMPACT_FUNNEL_STABLE_USERS,
+  NEWS_IMPACT_OUTCOME_WINDOW_MINUTES,
+  NEWS_IMPACT_RECOVERY_DRIFT_DROP_PCT_POINTS,
+  NEWS_IMPACT_RECOVERY_DRIFT_PRIOR_MIN_ATTEMPTS,
+  NEWS_IMPACT_RECOVERY_DRIFT_RECENT_MIN_ATTEMPTS,
+  NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
+  NEWS_IMPACT_RECOVERY_INCIDENT_ACK_EVENT,
+  NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
+  NEWS_IMPACT_RECOVERY_INCIDENT_CODES,
+  NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,
+  NEWS_IMPACT_RECOVERY_SOURCE_WINDOW_MINUTES,
+  NEWS_IMPACT_RECOVERY_STABILITY_MIN_ATTEMPTS,
+  NEWS_IMPACT_RECOVERY_STABILITY_WINDOW_DAYS,
+  NEWS_IMPACT_RECOVERY_STRATEGY_LOOKBACK_DAYS,
+  NEWS_IMPACT_RECOVERY_STRATEGY_MIN_ATTEMPTS,
+  NEWS_IMPACT_RECOVERY_STRATEGY_MIN_LIFT_PCT_POINTS,
+  NEWS_IMPACT_RECOVERY_WINDOW_MINUTES,
+  NEWS_IMPACT_ACTION_CODES,
+  NEWS_IMPACT_ACTION_LABELS,
+  NEWS_IMPACT_DECISION_CODES,
+  NEWS_IMPACT_FAILURE_LABELS,
+  NEWS_IMPACT_FUNNEL_DECISIONS,
+  NEWS_IMPACT_OUTCOME_CODES,
+  NEWS_IMPACT_RECOVERY_CODES,
+  NEWS_IMPACT_RECOVERY_LABELS,
+  NEWS_IMPACT_RECOVERY_STRATEGY_CACHE_MS,
+  NEWS_IMPACT_RECOVERY_STRATEGY_GUARD_CODES
+} from './news-impact-contract.js';
 import { createTelegramDigestRuntime } from './telegram-digest-runtime.js';
 import { createMarketParsingRuntime } from './market-parsing-runtime.js';
 import { createReleaseMonitorApiRuntime } from './release-monitor-api-runtime.js';
@@ -8,7 +40,7 @@ import { createBillingRuntime } from './billing-runtime.js';
 import { createBillingApiRuntime } from './billing-api-runtime.js';
 import { createClientTelemetryRuntime } from './client-telemetry-runtime.js';
 import { CLIENT_TELEMETRY_CODES } from './client-telemetry-contract.js';
-import { createBetaPhase5Runtime } from './beta-phase5-runtime.js';
+import { PHASE5_VALIDATION_COHORT, createBetaPhase5Runtime } from './beta-phase5-runtime.js';
 import { createProviderSloRuntime } from './provider-slo-runtime.js';
 import { createProductionMonitorRuntime } from './production-monitor-runtime.js';
 import { createSupabaseSchemaRuntime } from './supabase-schema-runtime.js';
@@ -59,7 +91,7 @@ import { createAuthGrowthWiringRuntime } from './auth-growth-wiring-runtime.js';
 import { assessSecuritySignals, formatSecurityIncidentAlert, securityIncidentOpsEvent, securityIncidentTimeline } from './security-incidents.js';
 import { channelPublisherState, publishChannelMessage } from './channel-publisher.js';
 import { createPublisherRuntime } from './publisher-runtime.js';
-import { createChannelPublishIdempotencyRuntime } from './channel-publish-idempotency-runtime.js';
+import { CHANNEL_PUBLISH_IDEMPOTENCY_MINUTES, createChannelPublishIdempotencyRuntime } from './channel-publish-idempotency-runtime.js';
 import {
   calibrationProfileFingerprint,
   evaluatePostPromotionRollback,
@@ -91,7 +123,7 @@ import { createSettlementSupportRuntime } from './settlement-support-runtime.js'
 import { createPostMatchReturnRuntime } from './post-match-return-runtime.js';
 import { createAnalysisUsageCompensationRuntime, durableAnalysisUsageHeaders } from './analysis-usage-compensation.js';
 import { createQuotaUsageRuntime } from './quota-usage-runtime.js';
-import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
+import { compactProviderError, markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
 import { applyFeatureFreshness, applyFeatureFreshnessMap } from './data-freshness.js';
 import { assessExpectedGoalsQuality, sanitizeExpectedGoalsForDisplay, statisticsForTrustedExpectedGoals } from './xg-quality.js';
 import { annotateStatisticsReliability, assessMatchStatisticsQuality, sanitizeStatisticsForDisplay, statisticsForTrustedAnalytics } from './statistics-quality.js';
@@ -871,7 +903,7 @@ function getPublisherRuntime() {
       normalizeBotFixtureCard,
       parseLaunchStartParam,
       publishChannelMessage,
-      readJson,
+      readJson: request => request.json().catch(() => null),
       recordGrowthEvent,
       recordOpsEvent,
       redactOpsString,
@@ -1383,7 +1415,6 @@ function getCalibrationRuntime() {
   if (!calibrationRuntime) {
     calibrationRuntime = createCalibrationRuntime({
       APP_VERSION,
-      CALIBRATION_AUTO_ROLLBACK,
       CALIBRATION_CACHE_KEY,
       CALIBRATION_CACHE_MINUTES,
       CALIBRATION_PROFILE_VERSION,
@@ -1489,6 +1520,7 @@ let modelEvaluationRuntime = null;
 function getModelEvaluationRuntime() {
   if (!modelEvaluationRuntime) {
     modelEvaluationRuntime = createModelEvaluationRuntime({
+      modelQualityEligibleRow,
       MODEL_BASE_WEIGHTS,
       actualOutcomeFromGoals,
       brierFromProbabilities,
@@ -1575,6 +1607,8 @@ let postMatchReturnRuntime = null;
 function getPostMatchReturnRuntime() {
   if (!postMatchReturnRuntime) {
     postMatchReturnRuntime = createPostMatchReturnRuntime({
+      APP_VERSION,
+      memory,
       actualOutcomeFromGoals,
       bumpTelemetry,
       fetchWithTimeout,
@@ -2812,6 +2846,7 @@ const apiAnalyze = async (request, cfg, user) => getAnalysisRuntime().apiAnalyze
 
 const {
   API_ROUTE_DEPS,
+  modelQualityEligibleRow,
   captureModelPrediction,
   handleScheduled,
   handleTelegramWebhook,

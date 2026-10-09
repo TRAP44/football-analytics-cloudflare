@@ -68,7 +68,7 @@ test('public profile exposes only charge presence and never returns the raw char
   assert.ok(start >= 0 && end > start, 'apiMe boundary must remain discoverable');
 
   const apiMe = userDataApi.slice(start, end);
-  assert.match(apiMe, /paymentChargeIdPresent:\s*Boolean\(record\?\.telegram_payment_charge_id\)/);
+  assert.match(apiMe, /paymentChargeIdPresent:\s*Boolean\(record\.telegram_payment_charge_id\)/);
   assert.doesNotMatch(apiMe, /paymentChargeId\s*:/);
   assert.doesNotMatch(apiMe, /telegramPaymentChargeId\s*:/);
 });
