@@ -34,10 +34,10 @@ try {
   const before=query(source,'select public.backend_schema_contract_v2()::text;');
   const count=query(source,'select count(*) from public.users;');
   if (container) {
-    const bytes=run('docker',['exec',container,'pg_dump','-U','postgres','-d',decodeURIComponent(new URL(source).pathname.slice(1)),'--format=custom','--no-owner'],{encoding:null});
+    const bytes=run('docker',['exec',container,'pg_dump','-U','postgres','-d',decodeURIComponent(new URL(source).pathname.slice(1)),'--format=custom','--schema=public','--schema=private','--no-owner'],{encoding:null});
     writeFileSync(dump,bytes);
   } else {
-    run('pg_dump',['--dbname='+source,'--format=custom','--no-owner','--file='+dump]);
+    run('pg_dump',['--dbname='+source,'--format=custom','--schema=public','--schema=private','--no-owner','--file='+dump]);
   }
   run('createdb',['--maintenance-db='+source,name]);created=true;
   if (container) {
