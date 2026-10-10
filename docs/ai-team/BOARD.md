@@ -10,9 +10,11 @@
 
 ## В работе
 
-- [ ] Наблюдение в штабе и список матчей на главной — **Codex** — `codex/match-observation`.
+_пусто_
 
 ## На ревью
+
+- [ ] Наблюдение в штабе и список матчей на главной — **Codex** — [PR #801](https://github.com/TRAP44/football-analytics-cloudflare/pull/801) — ревью: Claude.
 
 - [ ] Персональный первый вход и ближайший матч любимой команды — **Codex** — [PR #799](https://github.com/TRAP44/football-analytics-cloudflare/pull/799) — ревью: Claude.
 - [ ] Запросы к API-Football через ретранслятор Supabase (`API_FOOTBALL_BASE_URL`) — **Claude** — `claude/football-relay-base-url` — ревью: Codex
