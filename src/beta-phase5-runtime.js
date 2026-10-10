@@ -141,11 +141,20 @@ export function createBetaPhase5Runtime(deps) {
     return map[category] || map.ux;
   }
   
+  // Обратная связь открыта всем пользователям с подтверждённым Telegram (initData),
+  // а не только закрытой beta. Отзывы beta-участников по-прежнему идут в beta-метрики;
+  // остальные пишутся отдельным типом user_feedback и не смешиваются с beta-статистикой.
+  function feedbackSenderVerified(user) {
+    const id=Number(user?.id);
+    return Number.isSafeInteger(id) && id>0 && user?.__telegramValidated === true;
+  }
+
   async function apiBetaFeedback(request, cfg, user) {
     if (request.method !== 'POST') return json({error:'Метод не поддерживается.'},405);
-    if (!isClosedBetaUser(user,cfg)) {
-      return json({error:'Обратная связь закрытой beta доступна только приглашённым тестировщикам.',code:'BETA_MEMBERSHIP_REQUIRED'},403);
+    if (!feedbackSenderVerified(user)) {
+      return json({error:'Откройте MatchRadar в Telegram, чтобы отправить сообщение.',code:'AUTH_REQUIRED'},401);
     }
+    const betaMember=isClosedBetaUser(user,cfg) === true;
     let body={};
     try { body=await request.json(); } catch {}
     const category=String(body?.category || '').trim().toLowerCase();
@@ -154,15 +163,28 @@ export function createBetaPhase5Runtime(deps) {
     if (!BETA_FEEDBACK_CATEGORIES.has(category)) return json({error:'Выберите раздел проблемы.'},400);
     if (!BETA_FEEDBACK_SEVERITIES.has(betaSeverity)) return json({error:'Выберите важность проблемы.'},400);
     if (note.length < 5) return json({error:'Кратко опишите, что произошло.'},400);
-    const severity=betaSeverity==='BLOCKER' ? 'critical' : betaSeverity==='MAJOR' ? 'warning' : 'info';
+    if (betaMember) {
+      const severity=betaSeverity==='BLOCKER' ? 'critical' : betaSeverity==='MAJOR' ? 'warning' : 'info';
+      await recordOpsEvent(cfg,{
+        severity,
+        source:'beta',
+        eventType:'beta_feedback',
+        code:'BETA_FEEDBACK',
+        message:`Beta feedback: ${note}`,
+        endpoint:'/api/beta-feedback',
+        meta:{category,betaSeverity,explicitUserFeedback:true,betaCohort:CLOSED_BETA_COHORT,betaMembershipVerified:true},
+      });
+      return json({ok:true});
+    }
+    // Публичный отзыв не поднимается до critical: это мнение пользователя, а не авария сервиса.
     await recordOpsEvent(cfg,{
-      severity,
-      source:'beta',
-      eventType:'beta_feedback',
-      code:'BETA_FEEDBACK',
-      message:`Beta feedback: ${note}`,
+      severity:betaSeverity==='MINOR' ? 'info' : 'warning',
+      source:'feedback',
+      eventType:'user_feedback',
+      code:'USER_FEEDBACK',
+      message:`User feedback: ${note}`,
       endpoint:'/api/beta-feedback',
-      meta:{category,betaSeverity,explicitUserFeedback:true,betaCohort:CLOSED_BETA_COHORT,betaMembershipVerified:true},
+      meta:{category,betaSeverity,explicitUserFeedback:true,betaMembershipVerified:false},
     });
     return json({ok:true});
   }
