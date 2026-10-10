@@ -1,4 +1,4 @@
-import { publicSignalLabel } from './signal-wording.js';
+import { neutralReasonText, neutralSignalText, NO_CLEAR_SIGNAL_LABEL } from './signal-wording.js';
 export function createTelegramBotUiRuntime(deps = {}) {
   if (!deps || typeof deps!=='object' || Array.isArray(deps)) {
     throw new TypeError('Telegram bot UI runtime dependencies are required.');
@@ -386,7 +386,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
       ],
       [
         {text:'👥 Составы и потери',callback_data:`match:squads:${fixtureId}`},
-        {text:'💹 Рынок и риски',callback_data:`match:market:${fixtureId}`},
+        {text:'⚠️ Риски матча',callback_data:`match:market:${fixtureId}`},
       ],
     );
 
@@ -443,7 +443,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
         {text:'👥 Составы',callback_data:`match:squads:${fixtureId}`},
       ],
       [
-        {text:'💹 Рынок и риски',callback_data:`match:market:${fixtureId}`},
+        {text:'⚠️ Риски матча',callback_data:`match:market:${fixtureId}`},
         {text:'🔄 Обновить AI',callback_data:`match:refresh:${fixtureId}`},
       ],
       [{
@@ -1092,7 +1092,6 @@ export function createTelegramBotUiRuntime(deps = {}) {
     const match=objectValue(source.match) || {};
     const ai=objectValue(source.aiInstructor) || {};
     const signal=objectValue(ai.betSignal) || {};
-    const verdict=objectValue(ai.verdict) || {};
     const trust=objectValue(ai.dataTrust) || {};
     const refereeHistory=objectValue(ai.refereeHistory);
     const refereeProfile=objectValue(ai.refereeProfile);
@@ -1124,9 +1123,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
     }
 
     const skip=safeText(signal.code,24).toLowerCase()==='skip';
-    const headline=skip
-      ? '⛔ <b>Лучше пропустить</b>'
-      : '🧠 <b>AI-вердикт</b>';
+    const headline='🧠 <b>AI · сценарии матча</b>';
 
     const confidenceValue=finiteNumber(ai.confidenceScore);
     const confidence=confidenceValue!==null
@@ -1144,28 +1141,60 @@ export function createTelegramBotUiRuntime(deps = {}) {
 
     const home=objectValue(match.home);
     const away=objectValue(match.away);
+    const homeName=safeText(home?.name,120,'Хозяева');
+    const awayName=safeText(away?.name,120,'Гости');
+
+    // Сценарии из вероятностей модели — только если три значения корректны и в сумме ≈100.
+    const p=objectValue(source.probabilities) || {};
+    const outcomes=[
+      {label:`Победа ${homeName}`,value:finiteNumber(p.home)},
+      {label:'Ничья',value:finiteNumber(p.draw)},
+      {label:`Победа ${awayName}`,value:finiteNumber(p.away)},
+    ];
+    const validOutcomes=outcomes.every(row=>row.value!==null && row.value>=0 && row.value<=100)
+      && Math.abs(outcomes.reduce((sum,row)=>sum+row.value,0)-100)<=3;
+    const sorted=validOutcomes ? [...outcomes].sort((a,b)=>b.value-a.value) : [];
+    const scenarioLines=sorted.length
+      ? [
+          `📊 Основной сценарий: <b>${escapeHtml(sorted[0].value-sorted[1].value<1 ? 'нет явного фаворита' : sorted[0].label,160)}</b> · ${Math.round(sorted[0].value)}%`,
+          `↔️ Альтернатива: ${escapeHtml(sorted[1].label,160)} · ${Math.round(sorted[1].value)}%`,
+        ]
+      : [`🎯 Вывод: <b>${escapeHtml(neutralSignalText(signal.code,{home:homeName,away:awayName}) || NO_CLEAR_SIGNAL_LABEL,180)}</b>`];
+
+    const goal=objectValue(source.goalModel) || {};
+    const over=finiteNumber(goal.over25);
+    const both=finiteNumber(goal.btts);
+    const goalLines=[];
+    if (over!==null && over>=0 && over<=100) {
+      goalLines.push(over>=55
+        ? `⚽ Голы: результативная игра (3+) · ${Math.round(over)}%`
+        : over<=45
+          ? `⚽ Голы: скорее мало голов (до 2) · ${Math.round(100-over)}%`
+          : `⚽ Голы: 3+ гола — шансы равны · ${Math.round(over)}%`);
+    }
+    if (both!==null && both>=0 && both<=100) goalLines.push(`🥅 Забьют обе команды · ${Math.round(both)}%`);
+
+    const reasons=[signal.reason,...(Array.isArray(ai.factors) ? ai.factors : [])]
+      .map(value=>neutralReasonText(typeof value==='string' ? value : ''))
+      .filter(Boolean);
+
     return [
       headline,
-      `<b>${escapeHtml(home?.name,120) || 'Хозяева'} — ${escapeHtml(away?.name,120) || 'Гости'}</b>`,
+      `<b>${escapeHtml(homeName,120)} — ${escapeHtml(awayName,120)}</b>`,
       '',
-      `🎯 Вывод: <b>${escapeHtml(publicSignalLabel(signal.label),180) || 'Нет выраженного сигнала'}</b>`,
-      `📊 Исход: ${escapeHtml(verdict.outcome,120) || '—'}`,
-      `⚽ Тотал: ${escapeHtml(verdict.total,120) || '—'}`,
-      `🥅 Обе забьют: ${escapeHtml(verdict.btts,120) || '—'}`,
-      `🧠 Уверенность: <b>${escapeHtml(ai.confidenceLabel,120) || '—'}</b> · ${confidence}`,
+      ...scenarioLines,
+      ...goalLines,
+      `🧠 Уверенность модели: <b>${escapeHtml(ai.confidenceLabel,120) || '—'}</b> · ${confidence}`,
+      `⚠️ Неопределённость: ${escapeHtml(ai.riskLabel,120) || '—'}`,
       `🗂 Качество данных: <b>${escapeHtml(trust.label,120) || '—'}</b> · ${trustScore}`,
-      `⚠️ Риск: <b>${escapeHtml(ai.riskLabel,120) || '—'}</b>`,
       `🧑‍⚖️ Судья: ${escapeHtml(referee,360)}`,
       '',
-      `Почему: ${escapeHtml(
-        signal.reason ?? ai.riskNote,
-        900,
-      ) || 'Оцениваю доступные данные матча.'}`,
+      `Почему: ${escapeHtml(reasons[0],900) || 'Оцениваю доступные данные матча.'}`,
       skip
         ? 'Сильного перевеса нет — исход матча открыт.'
-        : 'Перед стартом ещё раз проверьте составы и движение рынка.',
+        : 'Перед стартом стоит проверить стартовые составы.',
       '',
-      '<i>AI-сигнал основан на доступных данных и не гарантирует результат.</i>',
+      '<i>Сценарии — оценка модели по данным матча, а не гарантия результата.</i>',
     ].join('\n');
   }
 

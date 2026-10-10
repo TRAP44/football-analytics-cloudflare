@@ -4,6 +4,10 @@ import fs from 'node:fs';
 
 import {
   NO_CLEAR_SIGNAL_LABEL,
+  isBettingText,
+  neutralOutcomeText,
+  neutralSignalText,
+  neutralReasonText,
   publicSignalLabel,
   withPublicSignalLabel,
 } from '../src/signal-wording.js';
@@ -43,7 +47,9 @@ test('user-facing code no longer tells people to bet or skip a bet',()=>{
   // History, search and post-match reads normalize labels stored before this change.
   assert.match(fs.readFileSync('src/user-data-api-runtime.js','utf8'),/publicSignalLabel\(safeText\(row\.ai_signal_label,160\)\)/);
   assert.match(fs.readFileSync('src/telegram-search-runtime.js','utf8'),/publicSignalLabel\(safeText\(source\.ai_signal_label,300\)\)/);
-  assert.match(fs.readFileSync('src/post-match-return-runtime.js','utf8'),/publicSignalLabel\(String\(history\.ai_signal_label/);
+  // Бот после матча и в поиске показывает нейтральный вывод по коду сигнала, а не сохранённую метку.
+  assert.match(fs.readFileSync('src/post-match-return-runtime.js','utf8'),/neutralSignalText\(history\.ai_signal_code/);
+  assert.match(fs.readFileSync('src/telegram-search-runtime.js','utf8'),/neutralSignalText\(source\.ai_signal_code/);
   assert.match(fs.readFileSync('src/analysis-runtime.js','utf8'),/withPublicSignalLabel\(objectValue\(analysisResponsePayload/);
 });
 
@@ -51,7 +57,28 @@ test('full history re-open and Telegram share cards also use the neutral label (
   const userData=fs.readFileSync('src/user-data-api-runtime.js','utf8');
   assert.match(userData,/return json\(withPublicSignalLabel\(analysisResponsePayload\(payload,\{cached:true,stale:!fresh,historyReadOnly:true/);
   const publisher=fs.readFileSync('src/publisher-runtime.js','utf8');
-  assert.match(publisher,/telegramHtmlEscape\(publicSignalLabel\(signal\.label\)\)/);
+  assert.match(publisher,/telegramHtmlEscape\(neutralSignalText\(signal\.code/);
+  assert.doesNotMatch(publisher,/signal\.label/);
   const tasks=fs.readFileSync('docs/ai-team/TASKS_RU.md','utf8');
   assert.doesNotMatch(tasks,/Задача 5 \(LLM\) без этого требует секрет/);
+});
+
+test('betting filter catches the full 1X2 token in both scripts', () => {
+  assert.equal(isBettingText('Нет доступной линии 1X2 от источника'), true);
+  assert.equal(isBettingText('Линия 1Х2 недоступна'), true);
+  assert.equal(neutralReasonText('Нет доступной линии 1X2, оценка без рынка.'), '');
+  assert.equal(isBettingText('Хозяева сильнее в последних 5 матчах'), false);
+});
+
+test('signal codes and outcomes turn into neutral words', () => {
+  const teams = { home: 'Милан', away: 'Рома' };
+  assert.equal(neutralSignalText('home', teams), 'Перевес Милан');
+  assert.equal(neutralSignalText('DOUBLE_AWAY', teams), 'Рома скорее не проиграет');
+  assert.equal(neutralSignalText('over25', teams), 'Результативная игра: 3+ гола');
+  assert.equal(neutralSignalText('skip', teams), NO_CLEAR_SIGNAL_LABEL);
+  assert.equal(neutralSignalText('unknown', teams), '');
+  assert.equal(neutralOutcomeText('П1 · 52%', teams), 'Победа Милан · 52%');
+  assert.equal(neutralOutcomeText('Х · 27,5%', teams), 'Ничья · 27.5%');
+  assert.equal(neutralOutcomeText('ТБ 2.5 · 61%', teams), '');
+  assert.equal(neutralOutcomeText('Нет данных', teams), '');
 });
