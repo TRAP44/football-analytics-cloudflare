@@ -216,34 +216,6 @@ function importantEvents(events = [], match = {}) {
     .sort((a,b)=>a.effective-b.effective || a.index-b.index);
 }
 
-function strongestOddsMovement(oddsMovement, match = {}) {
-  const source=objectValue(oddsMovement);
-  const movement=objectValue(source?.probabilityChange);
-  const sample=integer(source?.sample,2,100000);
-  if (!movement || sample===null) return null;
-
-  const rows=['home','draw','away'].map(key=>({
-    key,
-    value:finiteNumber(movement[key],{min:-100,max:100}),
-  }));
-  if (rows.some(row=>row.value===null)) return null;
-  if (Math.abs(rows.reduce((sum,row)=>sum+row.value,0))>1) return null;
-
-  const strongest=rows.sort(
-    (a,b)=>Math.abs(b.value)-Math.abs(a.value),
-  )[0];
-  if (!strongest || Math.abs(strongest.value)<0.5) return null;
-  const labels={
-    home:safeText(match?.home?.name,120) || 'П1',
-    draw:'Ничья',
-    away:safeText(match?.away?.name,120) || 'П2',
-  };
-  return {
-    label:'Рынок',
-    text:`${labels[strongest.key]}: ${strongest.value>0?'+':''}${strongest.value.toFixed(1)} п.п.`,
-  };
-}
-
 function firstSmartInsight(smartInsights) {
   const source=objectValue(smartInsights);
   if (source?.available!==true) return null;
@@ -307,7 +279,6 @@ export function deriveMatchPulse(payload = {}) {
 
   const statisticsTrusted=trustedFeature(source,'statistics');
   const eventsTrusted=trustedFeature(source,'events');
-  const oddsTrusted=trustedFeature(source,'liveOdds');
 
   const pressure=statisticsTrusted
     ? normalizePressure(source.livePressure)
@@ -375,9 +346,8 @@ export function deriveMatchPulse(payload = {}) {
           latest.player,
         ].filter(Boolean).join(' · '),
       }
-    : oddsTrusted
-      ? strongestOddsMovement(source.oddsMovement,match)
-      : null;
+    // Движение коэффициентов в пульсе не показываем — только события матча.
+    : null;
 
   const insightsTrusted=source.stale!==true
     && (statisticsTrusted || eventsTrusted);

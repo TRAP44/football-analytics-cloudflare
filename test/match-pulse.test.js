@@ -291,15 +291,15 @@ test('team names remain escaped and bounded on trusted pressure data', () => {
   );
 });
 
-test('market movement requires trusted coherent history and Smart Insights need trusted context', () => {
+test('market movement is never shown in the pulse and Smart Insights need trusted context', () => {
+  // Даже корректное движение коэффициентов не превращается в «что изменилось».
   const market=deriveMatchPulse(withTrust(payload({
     oddsMovement:{
       sample:2,
       probabilityChange:{home:2.4,draw:-0.6,away:-1.8},
     },
   }),['liveOdds']));
-  assert.equal(market.change.label,'Рынок');
-  assert.equal(market.change.text,'Arsenal: +2.4 п.п.');
+  assert.ok(market===null || market.change?.label!=='Рынок');
 
   for (const probabilityChange of [
     {home:[2.4],draw:-0.6,away:-1.8},
@@ -352,8 +352,7 @@ test('Match Pulse source keeps strict freshness and scalar boundaries', () => {
   assert.match(source,/confidenceBearing===true/);
   assert.ok(source.includes('meta?.stale!==true'));
   assert.ok(source.includes('Math.abs(home+away-100)>2'));
-  assert.ok(source.includes('source?.sample,2,100000'));
-  assert.ok(source.includes('rows.reduce((sum,row)=>sum+row.value,0)'));
+  assert.doesNotMatch(source,/strongestOddsMovement|oddsMovement|label:'Рынок'/);
   assert.doesNotMatch(
     source,
     /last\s*10|последние 10 минут|fake|synthetic momentum/i,
@@ -423,9 +422,9 @@ test('Match Pulse keeps navigation onboarding and frontend revision contracts in
   const revision=html.match(
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
-  assert.equal(revision,'6.120.0-launch86');
+  assert.equal(revision,'6.120.0-launch87');
   assert.match(
     html,
-    /<script type="module" src="\/app\.js\?v=6\.120\.0-launch86"><\/script>/,
+    /<script type="module" src="\/app\.js\?v=6\.120\.0-launch87"><\/script>/,
   );
 });

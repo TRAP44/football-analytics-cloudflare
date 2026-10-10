@@ -242,9 +242,8 @@ test('RC143 exposes odds quality through Match Center, analysis and production h
   assert.match(worker,/liveOddsQuality,/);
   assert.match(worker,/oddsQuality,/);
   assert.match(worker,/liveOdds:liveOddsTrusted/);
-  assert.match(app,/function oddsQualityHintHtml/);
-  assert.match(app,/oddsQualityHintHtml\(d\.liveOddsQuality\)/);
-  // Полный разбор больше не показывает коэффициенты букмекеров (вкладка «Рынок» → «Модель»).
-  assert.doesNotMatch(app,/oddsQualityHintHtml\(d\.oddsQuality\)/);
+  // Сервер по-прежнему проверяет качество коэффициентов (для модели и мониторинга),
+  // но Mini App их больше нигде не показывает: ни в разборе, ни в штабе матча.
+  assert.doesNotMatch(app,/oddsQualityHintHtml|centerMarketHtml|oddsMovementHtml/);
   assert.match(smoke,/'providerDataReliability'/);
 });
