@@ -152,7 +152,7 @@ const state = {
   currentAnalysisTab: 'brief',
   analysisBackView: 'matchesView',
   currentCenter: null,
-  currentCenterTab: 'summary',
+  currentCenterTab: 'ai',
   currentTournament: null,
   tournamentBackView: 'matchesView',
   currentTeam: null,
@@ -1102,9 +1102,11 @@ async function ensureMatchCenterExtras() {
     matchCenterExtrasPromise = Promise.all([
       import('./modules/match-pulse.js?v=6.120.0-launch65'),
       import('./modules/ai-timeline.js?v=6.120.0-launch63'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch76'),
-    ]).then(([pulse, timeline, headquarters]) => {
+      import('./modules/match-headquarters.js?v=6.120.0-launch77'),
+      import('./modules/match-center-view.js?v=6.120.0-launch77'),
+    ]).then(([pulse, timeline, headquarters, centerView]) => {
       matchCenterExtras = Object.freeze({
+        renderMatchCenterView: centerView.renderMatchCenterView,
         renderMatchPulse: pulse.renderMatchPulse,
         renderMatchHeadquarters: headquarters.renderMatchHeadquarters,
         renderAiTimelineCompact: timeline.renderAiTimelineCompact,
@@ -2918,7 +2920,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch76');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch77');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3416,7 +3418,7 @@ function renderAiFocus() {
 }
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch76').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch77').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -4839,7 +4841,7 @@ function centerAbsenceSummary(absences, match) {
 }
 
 function setMatchCenterTab(tab, scroll = false) {
-  state.currentCenterTab = tab || 'summary';
+  state.currentCenterTab = tab || 'ai';
   const buttons = [...document.querySelectorAll('.center-tab-btn')];
   const panels = [...document.querySelectorAll('.center-tab-panel')];
   buttons.forEach(btn => {
@@ -4870,7 +4872,7 @@ function bindMatchCenterTabs() {
   const buttons = [...document.querySelectorAll('.center-tab-btn')];
   buttons.forEach(btn => btn.addEventListener('click', () => setMatchCenterTab(btn.dataset.centerTab, false)));
   bindRovingTabKeyboard(buttons, 'centerTab', value => setMatchCenterTab(value, false));
-  setMatchCenterTab(state.currentCenterTab || 'summary');
+  setMatchCenterTab(state.currentCenterTab || 'ai');
 }
 
 
@@ -5175,229 +5177,15 @@ function renderMatchCenter(d) {
   if (isAdmin() && d?.provider?.visibility === 'admin') { state.provider = d.provider; renderProvider(); }
   state.currentAnalysis = null;
   const m = d.match || {};
-  if (previousFixture && previousFixture !== Number(m.fixtureId || 0)) state.currentCenterTab = 'summary';
-
-  const live = d.mode === 'live';
-  const finished = d.mode === 'finished';
-  const upcoming = d.mode === 'upcoming';
-  if (upcoming && !state.remindersLoaded && !state.remindersLoading && !state.remindersLoadError) void loadReminders();
-  const score = m.score || {};
-  const scoreText = upcoming
-    ? timeOf(m.date)
-    : homeMatchScoreLabel({...m,live,finished});
-  const statusText = live ? '● ИДЁТ' : finished ? '✓ ЗАВЕРШЁН' : 'ПРЕДСТОИТ';
-  const eventRows=Array.isArray(d.events) ? d.events : [];
-  const latestEvents=upcoming ? [] : eventRows.slice(-3).reverse();
-  const matchPulseHtml=matchCenterExtraHtml('renderMatchPulse',{
-    ...d,
-    events:eventRows,
-  });
-  const aiTimelineCompactHtml=matchCenterExtraHtml(
-    'renderAiTimelineCompact',
-    d.aiTimeline || {},
-    m,
-  );
-  const aiTimelineDetailsHtml=matchCenterExtraHtml(
-    'renderAiTimelineDetails',
-    d.aiTimeline || {},
-    m,
-  );
-
-  $('analysis').innerHTML = `
-    <section class="panel center-hero ${live ? 'is-live' : ''}">
-      <div class="center-brand-kicker">MatchRadar · Центр матча</div>
-      <div class="center-hero-top">
-        <span class="live-pill ${live ? 'active' : finished ? 'finished' : ''}">${statusText}</span>
-        <span class="center-competition">${escapeHtml(m.league || '')}${m.round ? ` · ${escapeHtml(m.round)}` : ''}</span>
-      </div>
-
-      <div class="center-scoreboard">
-        <button class="center-team-card" type="button" data-center-team="${Number(m.home?.id || 0)}">
-          ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : '<span class="center-logo-fallback">⚽</span>'}
-          <strong>${escapeHtml(m.home?.name || '')}</strong>
-          <small>Хозяева</small>
-        </button>
-        <div class="center-score-core">
-          <strong>${escapeHtml(scoreText)}</strong>
-          <span>${escapeHtml(m.statusLabel || '')}</span>
-          ${live ? '<small id="liveRefreshText">Обновляется автоматически</small>' : `<small>${upcoming ? dateTime(m.date) : `Обновлено ${dateTime(d.generatedAt)}`}</small>`}
-        </div>
-        <button class="center-team-card away" type="button" data-center-team="${Number(m.away?.id || 0)}">
-          ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : '<span class="center-logo-fallback">⚽</span>'}
-          <strong>${escapeHtml(m.away?.name || '')}</strong>
-          <small>Гости</small>
-        </button>
-      </div>
-
-      <div class="center-meta-line">
-        ${m.venue ? `<span>🏟 ${escapeHtml(m.venue)}</span>` : ''}
-        ${m.city ? `<span>📍 ${escapeHtml(m.city)}</span>` : ''}
-      </div>
-
-      <div class="center-hero-actions ${isAdmin() ? 'has-admin-audit' : ''}">
-        <button id="centerRefreshBtn" class="reminder-btn" type="button">↻ Обновить</button>
-        ${upcoming ? `<button id="centerAnalyzeBtn" class="primary-btn center-analyze-inline" type="button">🧠 Разобрать матч</button>${state.profile?.features?.monetizationEnabled === true ? '<button id="centerMatchPassBtn" class="reminder-btn center-pass-btn" type="button">⭐ Pass на матч</button>' : ''}` : ''}
-        ${isAdmin() ? `<button id="centerCoverageAuditBtn" class="reminder-btn admin-audit-btn" type="button">🧪 Покрытие</button>` : ''}
-        ${isAdmin() ? `<button id="centerE2EBtn" class="reminder-btn admin-e2e-btn" type="button">🚦 E2E</button>` : ''}
-      </div>
-    </section>
-
-    ${matchCenterExtraHtml('renderMatchHeadquarters',d)}
-    <section class="panel observation-controls" aria-label="Наблюдение за матчем">
-      <p class="muted">Наблюдение сохраняет матч на этом устройстве. Telegram-напоминание включается отдельно.</p>
-      ${!finished || isWatchedMatch(m.fixtureId) ? `<button id="centerWatchBtn" class="secondary-btn" type="button" aria-pressed="${isWatchedMatch(m.fixtureId)}">${isWatchedMatch(m.fixtureId)?'Убрать из наблюдения':'Следить за матчем'}</button>` : ''}
-      ${upcoming ? `<button class="quick-reminder-btn secondary-btn" data-quick-reminder="${positiveEntityId(m.fixtureId)}" type="button">Telegram-напоминание</button>` : ''}
-    </section>
-
-    ${matchPulseHtml}
-
-    ${aiTimelineCompactHtml}
-
-    ${d.note ? `<section class="panel center-note"><p class="tiny warning">${escapeHtml(publicText(d.note))}</p></section>` : ''}
-
-    <div class="match-center-primary" aria-label="Главное о матче">
-      ${matchChangeNarrativeHtml(d, m)}
-      ${aiTimelineDetailsHtml}
-      ${live ? liveAiCoachHtml(d.liveAiCoach, m) : ''}
-      ${smartInsightsHeroHtml(d.smartInsights, m)}
-      ${finished ? postMatchReviewHtml(d.postMatchReview || {}, m) : ''}
-
-      <section class="panel center-primary-metrics">
-        <div class="center-section-title"><div><span class="center-priority-label">ГЛАВНОЕ</span><h2>Ключевые показатели</h2><p>Самые полезные метрики без перегрузки</p></div></div>
-        ${centerKeyStatsHtml(d.statistics)}
-      </section>
-
-      ${latestEvents.length ? `<section class="panel center-primary-events"><div class="center-section-title"><div><span class="center-priority-label">СЕЙЧАС</span><h2>Последние события</h2><p>Что недавно изменило ход матча</p></div></div>${liveEventsHtml(latestEvents)}</section>` : ''}
-    </div>
-
-    <details class="match-center-more">
-      <summary>Статистика, составы и хронология</summary>
-      <div class="match-center-more-body">
-      <div class="center-tabs-wrap">
-      <div class="center-tabs" role="tablist" aria-label="Разделы матча">
-        <button class="center-tab-btn" data-center-tab="summary" type="button">Данные</button>
-        <button class="center-tab-btn" data-center-tab="insights" type="button">Инсайты</button>
-        <button class="center-tab-btn" data-center-tab="timeline" type="button">Хронология</button>
-        <button class="center-tab-btn" data-center-tab="stats" type="button">Статистика</button>
-        <button class="center-tab-btn" data-center-tab="lineups" type="button">Составы</button>
-        <button class="center-tab-btn" data-center-tab="players" type="button">Игроки</button>
-        <button class="center-tab-btn" data-center-tab="market" type="button">Рынок</button>
-      </div>
-    </div>
-
-    <div class="center-tab-panel" data-center-panel="summary">
-      ${(d.availabilityQuality?.observed || d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><div class="center-section-title"><div><h2>🩺 Потери состава</h2><p>Доступность игроков и важные отсутствия</p></div></div>${centerAbsenceSummary(d.absences,m)}${liveAbsencesHtml(d.absences,m)}</section>` : ''}
-
-      <details class="panel analysis-disclosure coverage-panel">
-        <summary>Подробнее о данных</summary>
-        <div class="analysis-disclosure-body">
-        <div class="center-section-title"><div><h2>Покрытие и свежесть</h2><p>${d.cached ? 'Данные из сохранённой версии' : 'Свежие данные источника'} · ${dateTime(d.generatedAt)}</p></div></div>
-        ${centerCoverageHtml(d)}
-        ${centerFreshnessHtml(d)}
-        ${d.quotaMode ? `<div class="quota-public-chip">${escapeHtml(publicText(d.quotaMode.label || ''))} · обновление ${Number(d.quotaMode.liveRefreshSeconds || d.refreshSeconds || 0)} сек.</div>` : ''}
-        ${d.availability?.limitedCoverage ? '<div class="coverage-badge limited">Ограниченное покрытие · экономим лимит запросов</div>' : ''}
-
-        </div>
-      </details>
-    </div>
-
-    <div class="center-tab-panel" data-center-panel="insights">
-      ${smartInsightsFullHtml(d.smartInsights, m)}
-    </div>
-
-    <div class="center-tab-panel" data-center-panel="timeline">
-      <section class="panel">
-        <div class="center-section-title"><div><h2>⚡ Хронология матча</h2><p>Голы, карточки, замены и видеопросмотры</p></div></div>
-        ${eventQualityHintHtml(d.eventQuality)}
-        ${timelineEventsHtml(eventRows, m)}
-      </section>
-    </div>
-
-    <div class="center-tab-panel" data-center-panel="stats">
-      <section class="panel">
-        <div class="center-section-title"><div><h2>📊 Статистика матча</h2><p>Сравнение команд по доступным показателям</p></div></div>
-        ${statisticsQualityHintHtml(d.statisticsQuality)}
-        ${xgQualityHintHtml(d.xgQuality)}
-        ${centerAllStatsHtml(d.statistics)}
-      </section>
-    </div>
-
-    <div class="center-tab-panel" data-center-panel="lineups">
-      <section class="panel">
-        <div class="center-section-title"><div><h2>👥 Составы и схема</h2><p>Стартовые составы, схемы и запасные</p></div></div>
-        ${lineupLiveHtml(d.lineups, m)}
-      </section>
-      ${(d.availabilityQuality?.observed || d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><h2>🩺 Потери и сомнения</h2>${availabilityQualityHintHtml(d.availabilityQuality)}${liveAbsencesHtml(d.absences,m)}</section>` : ''}
-    </div>
-
-    <div class="center-tab-panel" data-center-panel="players">
-      <section class="panel">
-        <div class="center-section-title"><div><h2>⭐ Игроки матча</h2><p>Лучшие доступные показатели игроков и рейтинг</p></div></div>
-        ${centerPlayersHtml(d.playerLeaders, m)}
-      </section>
-    </div>
-
-    <div class="center-tab-panel" data-center-panel="market">
-      <section class="panel">
-        <div class="center-section-title"><div><h2>💹 Рынок в реальном времени</h2><p>Коэффициенты П1 / Н / П2 и изменение расчётной рыночной вероятности</p></div></div>
-        ${centerMarketHtml(d)}
-      </section>
-    </div>
-    ${m.referee ? `<section class="panel analysis-referee-line"><h2>Судья</h2><p>${escapeHtml(m.referee)}</p></section>` : ''}
-      </div>
-    </details>
-  `;
-
-  bindMatchCenterTabs();
-  document.querySelectorAll('.smart-open-insights').forEach(btn => btn.addEventListener('click', () => {
-    const details = document.querySelector('.match-center-more');
-    if (details) details.open = true;
-    setMatchCenterTab('insights', false);
-    requestAnimationFrame(() => {
-      document.querySelector('[data-center-panel="insights"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  }));
-
-  document.querySelectorAll('[data-center-player]').forEach(btn => btn.addEventListener('click', () => {
-    openPlayerFromMatch(Number(btn.dataset.centerPlayer || 0), btn.dataset.centerPlayerSide || '');
-  }));
-
-  document.querySelectorAll('[data-center-team]').forEach(btn => btn.addEventListener('click', () => {
-    const teamId = Number(btn.dataset.centerTeam || 0);
-    if (!teamId) return;
-    openTeam(teamId, btn);
-  }));
-
-  $('centerWatchBtn')?.addEventListener('click',()=>toggleMatchWatch({...m,finished:false}));
-  $('analysis').querySelectorAll('[data-quick-reminder]').forEach(button=>{syncQuickReminderButton(button,m.fixtureId);if(!state.remindersLoaded){button.disabled=true;button.textContent=state.remindersLoadError?'Напоминания недоступны · обновите в профиле':'Загружаю напоминания…';}button.addEventListener('click',()=>toggleReminder(m));});
-  $('centerAnalyzeBtn')?.addEventListener('click', e => analyzeMatch(Number(m.fixtureId), e.currentTarget));
-  $('centerMatchPassBtn')?.addEventListener('click', () => { void openPassStoreForFixture(Number(m.fixtureId)); });
-  $('centerCoverageAuditBtn')?.addEventListener('click', async () => {
-    await runProviderCoverageAudit(Number(m.fixtureId), true);
-    await openProfileView();
-    setTimeout(() => $('providerAuditResult')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);
-  });
-  $('centerE2EBtn')?.addEventListener('click', async () => {
-    await runProviderE2E(Number(m.fixtureId));
-    await openProfileView();
-    setTimeout(() => $('expandedGateSteps')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);
-  });
-
-  $('centerRefreshBtn')?.addEventListener('click', async () => {
-    const btn = $('centerRefreshBtn');
-    btn.disabled = true; btn.textContent = '⏳ Обновляю…';
-    try {
-      const data = await requestMatchCenter(m.fixtureId, { t: Date.now() });
-      if (!data) return;
-      state.currentCenter = data;
-      renderMatchCenter(data);
-    } catch (e) {
-      toast(e.message);
-      btn.disabled = false; btn.textContent = '↻ Обновить';
-    }
-  });
-
-  if (live) startLiveRefresh(m.fixtureId); else stopLiveRefresh();
+  if (previousFixture && previousFixture !== Number(m.fixtureId || 0)) state.currentCenterTab = 'ai';
+  if (d.mode === 'upcoming' && !state.remindersLoaded && !state.remindersLoading && !state.remindersLoadError) void loadReminders();
+  const view = matchCenterExtras?.renderMatchCenterView;
+  if (typeof view !== 'function') {
+    $('analysis').innerHTML = '<section class="panel"><p class="muted">Загружаю штаб матча…</p></section>';
+    ensureMatchCenterExtras().then(() => { if (state.currentCenter === d) renderMatchCenter(d); }).catch(() => toast('Не удалось загрузить штаб матча. Попробуйте ещё раз.'));
+    return;
+  }
+  view(d, { state, $, escapeHtml, publicText, safeUrl, timeOf, dateTime, isAdmin, isWatchedMatch, positiveEntityId, matchCenterExtraHtml, matchChangeNarrativeHtml, liveAiCoachHtml, smartInsightsHeroHtml, smartInsightsFullHtml, postMatchReviewHtml, centerKeyStatsHtml, liveEventsHtml, centerAbsenceSummary, liveAbsencesHtml, centerCoverageHtml, centerFreshnessHtml, eventQualityHintHtml, timelineEventsHtml, statisticsQualityHintHtml, xgQualityHintHtml, centerAllStatsHtml, lineupLiveHtml, availabilityQualityHintHtml, centerPlayersHtml, centerMarketHtml, analysisHistoryForFixture, aiConfidenceMeterHtml, bindMatchCenterTabs, setMatchCenterTab, openPlayerFromMatch, openTeam, toggleMatchWatch, syncQuickReminderButton, toggleReminder, analyzeMatch, openHistoryAnalysis, openPassStoreForFixture, runProviderCoverageAudit, openProfileView, runProviderE2E, requestMatchCenter, renderMatchCenter, toast, startLiveRefresh, stopLiveRefresh });
 }
 
 async function openMatchCenter(fixtureId, btn) {

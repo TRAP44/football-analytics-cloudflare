@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8') + '\n' + readFileSync(new URL('../public/modules/match-center-view.js', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
 const index = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 
@@ -217,10 +217,10 @@ test('change narrative keeps strict signal boundaries in source', () => {
 });
 
 test('What changed appears before AI and detailed Match Center data', () => {
-  const source = sourceBetween('function renderMatchCenter(d)', 'async function openMatchCenter');
+  const source = sourceBetween('export function renderMatchCenterView', '// end renderMatchCenterView');
   const changes = source.indexOf('matchChangeNarrativeHtml(d, m)');
   const liveAi = source.indexOf('liveAiCoachHtml(d.liveAiCoach, m)');
-  const details = source.indexOf('Статистика, составы и хронология');
+  const details = source.indexOf('data-center-panel="summary"');
   assert.ok(changes >= 0);
   assert.ok(liveAi > changes);
   assert.ok(details > liveAi);
@@ -234,7 +234,7 @@ test('Match Intelligence assets use the current frontend revision', () => {
   const revision=index.match(
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
-  assert.equal(revision,'6.120.0-launch76');
+  assert.equal(revision,'6.120.0-launch77');
   for (const asset of [
     'styles.css',
     'styles/public-shell.css',

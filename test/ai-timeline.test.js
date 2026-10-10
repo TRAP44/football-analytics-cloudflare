@@ -70,7 +70,7 @@ function createTimelineRuntime({
 const analysisRuntimeSource=readRepoFile('src/analysis-runtime.js');
 const matchCenterSource=readRepoFile('src/match-center-runtime.js');
 const workerSource=readRepoFile('src/worker.js');
-const appSource=readRepoFile('public/app.js');
+const appSource=readRepoFile('public/app.js')+'\n'+readRepoFile('public/modules/match-center-view.js');
 const migration=readRepoFile('supabase/migrations/supabase_migration_v6_22.sql').toLowerCase();
 const shellCss=readRepoFile('public/styles/public-shell.css');
 

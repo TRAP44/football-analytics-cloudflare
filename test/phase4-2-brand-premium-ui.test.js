@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const html=fs.readFileSync('public/index.html','utf8');
-const app=fs.readFileSync('public/app.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/match-center-view.js','utf8');
 const runtime=fs.readFileSync('public/modules/app-runtime.js','utf8');
 const css=fs.readFileSync('public/styles/public-shell.css','utf8');
 const client=fs.readFileSync('public/modules/client-core.js','utf8');
@@ -66,10 +66,10 @@ test('AI match center keeps probabilities quality factors and risks above detail
 });
 
 test('ordinary Match Center promotes smart context without fabricating probability fields',()=>{
-  const center=block(app,'function renderMatchCenter','async function openMatchCenter');
+  const center=block(app,'export function renderMatchCenterView','// end renderMatchCenterView');
   const hero=center.indexOf('center-hero');
   const smart=center.indexOf('smartInsightsHeroHtml(d.smartInsights, m)');
-  const details=center.indexOf('<details class="match-center-more">');
+  const details=center.indexOf('data-center-panel="summary"');
   assert.ok(hero>=0 && hero<smart && smart<details);
   assert.doesNotMatch(center,/d\.probabilities|probabilityStrip\(/);
 });

@@ -8,7 +8,7 @@ const matchCenter = fs.readFileSync('src/match-center-runtime.js', 'utf8');
 const modelEvaluation = fs.readFileSync('src/model-evaluation-runtime.js', 'utf8');
 const telegram = fs.readFileSync('src/telegram-bot-orchestration-runtime.js', 'utf8');
 const telegramUpdates = fs.readFileSync('src/telegram-update-orchestration.js', 'utf8');
-const app=fs.readFileSync('public/app.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/match-center-view.js','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
 
 test('RC62 uses the immutable first pre-match model snapshot',()=> {

@@ -8,7 +8,7 @@ import {
   timeOf,
 } from '../public/modules/client-core.js';
 
-const app=fs.readFileSync('public/app.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/match-center-view.js','utf8');
 const css=fs.readFileSync('public/styles/premium-ui.css','utf8');
 
 function section(source,start,end) {
@@ -96,7 +96,7 @@ test('compact and analysis favorite controls share the same 19px SVG primitive',
 });
 
 test('public match center hides stale snapshot/countdown copy and keeps a stable live status', () => {
-  const center=section(app,'function renderMatchCenter','async function openMatchCenter');
+  const center=section(app,'export function renderMatchCenterView','// end renderMatchCenterView');
 
   assert.doesNotMatch(center,/Показан последний сохранённый снимок/);
   assert.doesNotMatch(center,/Автообновление через \$\{/);

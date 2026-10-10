@@ -437,7 +437,7 @@ export function createMatchCenterController({
       state.analysisBackView=sourceView;
     }
     if (previousFixtureId!==id) {
-      state.currentCenterTab='summary';
+      state.currentCenterTab='ai';
     }
 
     const original=buttonText(button);

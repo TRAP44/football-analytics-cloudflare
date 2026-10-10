@@ -5,6 +5,9 @@ import { readFileSync } from 'node:fs';
 const app = readFileSync(
   new URL('../public/app.js', import.meta.url),
   'utf8',
+)+'\n'+readFileSync(
+  new URL('../public/modules/match-center-view.js', import.meta.url),
+  'utf8',
 );
 const styles = readFileSync(
   new URL('../public/styles.css', import.meta.url),
@@ -25,22 +28,26 @@ function sourceBlock(startToken,endToken) {
 
 function matchCenterRendererSource() {
   return sourceBlock(
-    'function renderMatchCenter(d) {',
-    '\nasync function openMatchCenter',
+    'export function renderMatchCenterView',
+    '// end renderMatchCenterView',
   );
 }
 
-test('Match Center keeps primary match story above progressive details', () => {
+test('Match Center opens on the AI tab and keeps details in the other tabs', () => {
   const source=matchCenterRendererSource();
-  const primary=source.indexOf('class="match-center-primary"');
-  const details=source.indexOf('class="match-center-more"');
+  const scoreboard=source.indexOf('center-scoreboard');
+  const tabs=source.indexOf('mr-hq-tabs');
+  const ai=source.indexOf('data-center-panel="ai"');
+  const summary=source.indexOf('data-center-panel="summary"');
+  const game=source.indexOf('data-center-panel="game"');
+  const lineups=source.indexOf('data-center-panel="lineups"');
 
-  assert.ok(primary>0);
-  assert.ok(details>primary);
+  assert.ok(scoreboard>0 && tabs>scoreboard && ai>tabs);
+  assert.ok(summary>ai && game>summary && lineups>game);
+  assert.match(source,/class="center-tab-panel match-center-primary" data-center-panel="ai"/);
   assert.match(source,/ГЛАВНОЕ/);
   assert.match(source,/Ключевые показатели/);
   assert.match(source,/Последние события/);
-  assert.match(source,/Статистика, составы и хронология/);
 });
 
 test('Match Center does not duplicate key metrics inside the detail summary tab', () => {
@@ -52,7 +59,7 @@ test('Match Center does not duplicate key metrics inside the detail summary tab'
   );
   assert.match(
     source,
-    /data-center-tab="summary"[^>]*>Данные<\/button>/,
+    /data-center-tab="summary"[^>]*>Обзор<\/button>/,
   );
 });
 
@@ -125,7 +132,7 @@ test('Match Center hierarchy styles and current asset revision are wired consist
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
 
-  assert.equal(revision,'6.120.0-launch76');
+  assert.equal(revision,'6.120.0-launch77');
 
   for (const asset of [
     'styles.css',

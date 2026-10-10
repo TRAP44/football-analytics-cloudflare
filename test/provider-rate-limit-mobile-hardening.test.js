@@ -10,7 +10,7 @@ const matchCenterRuntime=readFileSync(new URL('../src/match-center-runtime.js',i
 const providerFixtureRuntime=readFileSync(new URL('../src/provider-fixture-runtime.js',import.meta.url),'utf8');
 const gateway=readFileSync(new URL('../src/api-football-gateway.js',import.meta.url),'utf8');
 const worker=workerCore+'\n'+providerDataRuntime+'\n'+analysisRuntime+'\n'+matchCenterRuntime+'\n'+providerFixtureRuntime+'\n'+gateway;
-const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../public/modules/match-center-view.js',import.meta.url),'utf8');
 const searchController=readFileSync(new URL('../public/modules/global-search-controller.js',import.meta.url),'utf8');
 const matchCenterController=readFileSync(new URL('../public/modules/match-center-controller.js',import.meta.url),'utf8');
 const css=readFileSync(new URL('../public/styles.css',import.meta.url),'utf8') + '\n' + readFileSync(new URL('../public/styles/public-shell.css', import.meta.url), 'utf8');
@@ -166,7 +166,7 @@ test('360-400px mobile layout keeps score status teams and title stable',()=>{
 
 
 test('Match Center keeps partial provider blocks independent and renderable',()=>{
-  const render=block(app,'function renderMatchCenter','async function openMatchCenter');
+  const render=block(app,'export function renderMatchCenterView','// end renderMatchCenterView');
   assert.match(render,/centerKeyStatsHtml\(d\.statistics\)/);
   assert.match(render,/timelineEventsHtml\(eventRows, m\)/);
   assert.match(render,/centerAllStatsHtml\(d\.statistics\)/);
