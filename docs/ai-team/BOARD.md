@@ -22,7 +22,7 @@ _пусто_
 
 ## На ревью
 
-- [ ] Главная: без повтора матча «Для вас» в ленте, подсказка поиска помещается — **Claude** — `claude/home-dedupe` — ревью: Codex
+- [ ] Главная: без повтора матча «Для вас» в ленте, подсказка поиска помещается — **Claude** — [PR #811](https://github.com/TRAP44/football-analytics-cloudflare/pull/811) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 ## Ждут ревью Codex (у Codex закончился лимит)
@@ -30,7 +30,7 @@ _пусто_
 _Решение Сергея: такие PR можно мержить, но Codex обязан проверить их, когда лимит восстановится. В PR (даже уже слитый) пишется `@codex review`; замечания исправляет автор отдельным PR._
 
 - [ ] [PR #810](https://github.com/TRAP44/football-analytics-cloudflare/pull/810) — личные экраны (уже в `main`)
-- [ ] PR «Главная: без повтора матча „Для вас“» — `claude/home-dedupe`
+- [ ] [PR #811](https://github.com/TRAP44/football-analytics-cloudflare/pull/811) — главная без повторов
 
 ## Готово
 
