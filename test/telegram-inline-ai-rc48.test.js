@@ -16,10 +16,11 @@ test('telegram match buttons answer inline instead of forcing the mini app',()=>
 
 test('telegram AI verdict includes skip confidence risk and data quality',()=> {
   assert.match(worker,/function botAiVerdictText/);
-  assert.match(worker,/Лучше пропустить/);
+  assert.match(worker,/AI · сценарии матча/);
+  assert.doesNotMatch(worker,/Лучше пропустить/);
   assert.match(worker,/Качество данных/);
   assert.match(worker,/Уверенность/);
-  assert.match(worker,/Риск/);
+  assert.match(worker,/Неопределённость/);
   assert.match(worker,/Судья/);
 });
 

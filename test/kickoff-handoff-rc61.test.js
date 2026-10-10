@@ -99,8 +99,8 @@ test('freshness and kickoff handoff agree at the scheduled kickoff even if provi
 });
 
 test('Telegram freezes the prematch signal after kickoff',()=>{
-  assert.match(telegram,/Предматчевый сигнал зафиксирован/);
-  assert.match(telegram,/не превращает предматчевый сигнал в live-рекомендацию/);
+  assert.match(telegram,/Предматчевый вывод зафиксирован/);
+  assert.match(telegram,/не превращает предматчевый вывод в live-подсказку/);
   assert.match(telegram,/Используйте центр матча для счёта, событий и статистики/);
 });
 

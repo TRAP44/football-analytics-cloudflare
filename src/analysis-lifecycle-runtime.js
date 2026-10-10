@@ -1,3 +1,5 @@
+import { neutralSignalText } from './signal-wording.js';
+
 // Analysis freshness, kickoff handoff and recheck-delta lifecycle extracted from worker.js.
 // Storage and match-status primitives are injected by the composition root.
 export function createAnalysisLifecycleRuntime(deps) {
@@ -462,10 +464,12 @@ export function createAnalysisLifecycleRuntime(deps) {
 
     const oldSignal=safeText(before?.aiInstructor?.betSignal?.code,40);
     const newSignal=safeText(after?.aiInstructor?.betSignal?.code,40);
-    const oldSignalLabel=safeText(before?.aiInstructor?.betSignal?.label || oldSignal || '—',120);
-    const newSignalLabel=safeText(after?.aiInstructor?.betSignal?.label || newSignal || '—',120);
+    // Нейтральные слова по коду сигнала вместо ставочных меток («ТБ 2.5», «П1»).
+    const signalNames={home:before?.match?.home?.name || after?.match?.home?.name,away:before?.match?.away?.name || after?.match?.away?.name};
+    const oldSignalLabel=safeText(neutralSignalText(oldSignal,signalNames) || 'AI-разбор',120);
+    const newSignalLabel=safeText(neutralSignalText(newSignal,signalNames) || 'AI-разбор',120);
     if (oldSignal && newSignal && oldSignal!==newSignal) {
-      add('signal','AI-сигнал изменился',oldSignalLabel,newSignalLabel,'high');
+      add('signal','Вывод AI изменился',oldSignalLabel,newSignalLabel,'high');
     } else if (!oldSignal || !newSignal) {
       incomplete=true;
     }
@@ -604,13 +608,17 @@ export function createAnalysisLifecycleRuntime(deps) {
     const material=items.some(item=>item.importance==='high')
       || codes.some(code=>['signal','probability','lineups','market'].includes(code));
     const stable=items.length===0 && !incomplete;
+    // Изменения рынка (коэффициенты) учитываются в существенности, но пользователю не показываются.
+    const visibleItems=items.filter(item=>item.code!=='market');
     const summary=stable
       ? 'Значимых изменений после перепроверки не найдено.'
-      : items.length
+      : visibleItems.length
         ? material
-          ? `После перепроверки есть значимые изменения: ${items.slice(0,3).map(item=>item.title.toLocaleLowerCase('ru-RU')).join(', ')}.`
-          : `Обновились детали матча: ${items.slice(0,3).map(item=>item.title.toLocaleLowerCase('ru-RU')).join(', ')}.`
-        : 'Часть полей двух снимков не удалось надёжно сопоставить; стабильность прогноза не подтверждена.';
+          ? `После перепроверки есть значимые изменения: ${visibleItems.slice(0,3).map(item=>item.title.toLocaleLowerCase('ru-RU')).join(', ')}.`
+          : `Обновились детали матча: ${visibleItems.slice(0,3).map(item=>item.title.toLocaleLowerCase('ru-RU')).join(', ')}.`
+        : items.length
+          ? 'После перепроверки обновились внешние данные матча; выводы AI не изменились.'
+          : 'Часть полей двух снимков не удалось надёжно сопоставить; стабильность прогноза не подтверждена.';
 
     return {
       available:true,
@@ -619,7 +627,7 @@ export function createAnalysisLifecycleRuntime(deps) {
       incomplete,
       reasonCode:incomplete && !items.length ? 'comparison_incomplete' : '',
       codes,
-      items:items.slice(0,6),
+      items:visibleItems.slice(0,6),
       summary,
     };
   }

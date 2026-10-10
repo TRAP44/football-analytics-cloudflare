@@ -273,7 +273,8 @@ test('market appearance and referee reassignment are tracked without zero coerci
   assert.equal(result.material,true);
   assert.ok(result.codes.includes('market'));
   assert.ok(result.codes.includes('referee'));
-  assert.equal(result.items.find(item=>item.code==='market')?.after,'Доступен');
+  // Изменения рынка учитываются в существенности, но пользователю не показываются.
+  assert.equal(result.items.find(item=>item.code==='market'),undefined);
   assert.equal(result.items.find(item=>item.code==='referee')?.after,'Ref B');
 });
 

@@ -43,7 +43,9 @@ test('user-facing code no longer tells people to bet or skip a bet',()=>{
   // History, search and post-match reads normalize labels stored before this change.
   assert.match(fs.readFileSync('src/user-data-api-runtime.js','utf8'),/publicSignalLabel\(safeText\(row\.ai_signal_label,160\)\)/);
   assert.match(fs.readFileSync('src/telegram-search-runtime.js','utf8'),/publicSignalLabel\(safeText\(source\.ai_signal_label,300\)\)/);
-  assert.match(fs.readFileSync('src/post-match-return-runtime.js','utf8'),/publicSignalLabel\(String\(history\.ai_signal_label/);
+  // Бот после матча и в поиске показывает нейтральный вывод по коду сигнала, а не сохранённую метку.
+  assert.match(fs.readFileSync('src/post-match-return-runtime.js','utf8'),/neutralSignalText\(history\.ai_signal_code/);
+  assert.match(fs.readFileSync('src/telegram-search-runtime.js','utf8'),/neutralSignalText\(source\.ai_signal_code/);
   assert.match(fs.readFileSync('src/analysis-runtime.js','utf8'),/withPublicSignalLabel\(objectValue\(analysisResponsePayload/);
 });
 
@@ -51,7 +53,8 @@ test('full history re-open and Telegram share cards also use the neutral label (
   const userData=fs.readFileSync('src/user-data-api-runtime.js','utf8');
   assert.match(userData,/return json\(withPublicSignalLabel\(analysisResponsePayload\(payload,\{cached:true,stale:!fresh,historyReadOnly:true/);
   const publisher=fs.readFileSync('src/publisher-runtime.js','utf8');
-  assert.match(publisher,/telegramHtmlEscape\(publicSignalLabel\(signal\.label\)\)/);
+  assert.match(publisher,/telegramHtmlEscape\(neutralSignalText\(signal\.code/);
+  assert.doesNotMatch(publisher,/signal\.label/);
   const tasks=fs.readFileSync('docs/ai-team/TASKS_RU.md','utf8');
   assert.doesNotMatch(tasks,/Задача 5 \(LLM\) без этого требует секрет/);
 });

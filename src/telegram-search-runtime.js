@@ -1,4 +1,4 @@
-import { publicSignalLabel } from './signal-wording.js';
+import { neutralOutcomeText, neutralSignalText, publicSignalLabel } from './signal-wording.js';
 export function createTelegramSearchRuntime(deps = {}) {
   if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
     throw new TypeError('Telegram search runtime dependencies are required.');
@@ -572,7 +572,10 @@ export function createTelegramSearchRuntime(deps = {}) {
     const home=safeText(source.home_name,120,'Хозяева');
     const away=safeText(source.away_name,120,'Гости');
     const teams=`${home} — ${away}`;
-    const signal=publicSignalLabel(safeText(source.ai_signal_label,300));
+    // Нейтральный вывод по коду сигнала; старые записи без кода — только если метка не ставочная.
+    const legacyLabel=publicSignalLabel(safeText(source.ai_signal_label,300));
+    const signal=neutralSignalText(source.ai_signal_code,{home,away})
+      || (legacyLabel==='Без уверенного вывода' ? legacyLabel : legacyLabel ? 'AI-разбор готов' : '');
     if (!signal) {
       return safeMessageText(
         `Последний анализ: ${teams}. Он был создан до сохранения быстрых AI-вердиктов; откройте историю в приложении.`,
@@ -584,9 +587,9 @@ export function createTelegramSearchRuntime(deps = {}) {
       ? ` · уверенность ${Math.round(confidenceNumber)}/100`
       : '';
     const risk=safeText(source.ai_risk,80);
-    const outcome=safeText(source.ai_outcome,300);
+    const outcome=neutralOutcomeText(safeText(source.ai_outcome,300),{home,away});
     return safeMessageText(
-      `🧠 Последний AI-разбор\n${teams}\n${signal}${confidence}${risk ? ` · риск ${risk.toLowerCase()}` : ''}${outcome ? `\nИсход: ${outcome}` : ''}`,
+      `🧠 Последний AI-разбор\n${teams}\n${signal}${confidence}${risk ? ` · неопределённость ${risk.toLowerCase()}` : ''}${outcome ? `\nИсход по модели: ${outcome}` : ''}`,
     );
   }
 
