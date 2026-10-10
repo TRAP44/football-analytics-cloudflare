@@ -74,3 +74,11 @@ test('a failed core Match Center view is retried on the next call',async()=>{
   const extras=await loader.ensureMatchCenterExtras();
   assert.equal(typeof extras.renderMatchCenterView,'function');
 });
+
+test('sticky Match Center tabs stay below the sticky top bar',()=>{
+  const css=fs.readFileSync('public/styles/premium-ui.css','utf8');
+  const rule=block(css,'body.miniapp-public-shell .mr-hq-tabs-wrap {','}');
+  assert.match(rule,/top: max\(62px, env\(safe-area-inset-top\)\)/);
+  assert.match(rule,/z-index: 14/);
+  assert.doesNotMatch(rule,/top: 0;/);
+});

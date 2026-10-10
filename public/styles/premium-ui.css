@@ -2265,7 +2265,8 @@ html[data-theme] body.miniapp-public-shell .mr-hq-hero .center-score-core strong
 }
 
 html[data-theme] body.miniapp-public-shell .mr-hq-tabs-wrap {
-  position: sticky; top: 0; z-index: 6; margin: 12px 0; padding: 6px 0;
+  /* Под липкой верхней шапкой (z-index 18), как у остальных вкладок приложения. */
+  position: sticky; top: max(62px, env(safe-area-inset-top)); z-index: 14; margin: 12px 0; padding: 6px 0;
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
 }
