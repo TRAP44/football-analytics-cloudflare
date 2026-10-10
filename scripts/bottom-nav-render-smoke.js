@@ -804,6 +804,16 @@ async function main() {
       });
       await cdp.call('Runtime.evaluate', { expression:`localStorage.removeItem('football-analytics:first-run-guide:v1')` });
       await navigateForExpectedRevision(cdp, targetUrl, Boolean(remoteUrl));
+      const observationCheck=await cdp.call('Runtime.evaluate',{awaitPromise:true,expression:`(async()=>{
+        const {renderObservationPanel}=await import('/modules/match-observation.js');
+        const root=document.getElementById('matchObservation');
+        renderObservationPanel({root,watchlist:[{fixtureId:991,homeName:'Очень длинное название футбольного клуба International United',awayName:'Ещё одна длинная команда Athletic Club'},{fixtureId:992,homeName:'Архивный матч',awayName:'Гости'}],matches:[{fixtureId:991,live:true,home:{name:'Очень длинное название футбольного клуба International United'},away:{name:'Ещё одна длинная команда Athletic Club'}}],reminders:[],remindersLoaded:true,escapeHtml:s=>String(s).replaceAll('<','&lt;'),dateTime:()=>'',onOpen:id=>{window.observationOpened=id;},onRemove:id=>{window.observationRemoved=id;}});
+        root.open=true;
+        root.querySelector('[data-observation-open]').click();
+        root.querySelector('[data-observation-remove]').click();
+        if(window.observationOpened!==991 || window.observationRemoved!==991)throw Error('observation actions failed');
+      })()`});
+      if(observationCheck.exceptionDetails) throw new Error('Observation browser scenario failed: '+JSON.stringify(observationCheck.exceptionDetails));
       const evaluated = await cdp.call('Runtime.evaluate', {
         returnByValue: true,
         expression: `(() => {

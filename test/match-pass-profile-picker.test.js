@@ -112,6 +112,6 @@ test('profile picker HTML is accessible and asset revision matches runtime',()=>
   }
   assert.match(css,/\.match-pass-picker-matches/);
   assert.match(css,/\.match-pass-picker\[hidden\]/);
-  assert.match(html,/6\.120\.0-launch71/);
-  assert.match(runtime,/FRONTEND_ASSET_REVISION = '6\.120\.0-launch71'/);
+  assert.match(html,/6\.120\.0-launch72/);
+  assert.match(runtime,/FRONTEND_ASSET_REVISION = '6\.120\.0-launch72'/);
 });
