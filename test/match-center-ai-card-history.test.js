@@ -22,7 +22,13 @@ test('AI card does not claim a missing analysis while history is still loading',
   assert.ok(pending>=0 && pending<absent && absent<analyze);
   const pendingBranch=center.slice(pending,center.indexOf(': history',pending));
   assert.doesNotMatch(pendingBranch,/centerAnalyzeBtn/);
-  assert.match(center,/historyUnknown \? 'Не удалось проверить сохранённые разборы'/);
+  const unknown=center.indexOf(': historyUnknown\n    ?');
+  const unknownBranch=center.slice(unknown,center.indexOf(': upcoming',unknown));
+  assert.ok(unknown>pending);
+  assert.match(unknownBranch,/Не удалось проверить сохранённые разборы/);
+  assert.match(unknownBranch,/centerHistoryRetryBtn/);
+  assert.doesNotMatch(unknownBranch,/centerAnalyzeBtn/);
+  assert.match(center,/\$\('centerHistoryRetryBtn'\)\?\.addEventListener\('click'[\s\S]*?void loadHistory\(false\)/);
 });
 
 test('Match Center loads history itself and rerenders the open center when it arrives',()=>{
@@ -81,4 +87,12 @@ test('sticky Match Center tabs stay below the sticky top bar',()=>{
   assert.match(rule,/top: max\(62px, env\(safe-area-inset-top\)\)/);
   assert.match(rule,/z-index: 14/);
   assert.doesNotMatch(rule,/top: 0;/);
+});
+
+test('AI card headline never shows saved betting-style signal labels',()=>{
+  const center=block(view,'export function renderMatchCenterView','// end renderMatchCenterView');
+  assert.doesNotMatch(center,/history\.aiSignalLabel|history\.aiOutcome|history\.aiRisk/);
+  assert.match(center,/<h2 id="mrAiCardTitle">AI уже разобрал этот матч<\/h2>/);
+  const card=block(center,'const aiCardBody = historyPending','$(\'analysis\').innerHTML');
+  for (const token of ['ТБ 2.5','Обе забьют','П1','коэффициент','ставк']) assert.ok(!card.includes(token),token);
 });

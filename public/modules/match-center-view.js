@@ -23,7 +23,7 @@ export function renderMatchCenterView(d, deps) {
     xgQualityHintHtml, centerAllStatsHtml, lineupLiveHtml, availabilityQualityHintHtml, centerPlayersHtml,
     centerMarketHtml, analysisHistoryForFixture, aiConfidenceMeterHtml,
     bindMatchCenterTabs, setMatchCenterTab, openPlayerFromMatch, openTeam, toggleMatchWatch,
-    syncQuickReminderButton, toggleReminder, analyzeMatch, openHistoryAnalysis, openPassStoreForFixture,
+    syncQuickReminderButton, toggleReminder, analyzeMatch, loadHistory, openHistoryAnalysis, openPassStoreForFixture,
     runProviderCoverageAudit, openProfileView, runProviderE2E, requestMatchCenter, renderMatchCenter, toast,
     startLiveRefresh, stopLiveRefresh,
   } = deps;
@@ -53,19 +53,25 @@ export function renderMatchCenterView(d, deps) {
   // История разборов грузится лениво: пока не загружена, отсутствие разбора не подтверждено.
   const historyPending = !history && !state.historyLoaded && !state.historyLoadError;
   const historyUnknown = !history && !state.historyLoaded && Boolean(state.historyLoadError);
+  // Заголовок карточки нейтральный: метки сигнала из истории бывают ставочными
+  // (тоталы, исходы в рыночной записи), поэтому ни aiSignalLabel, ни aiOutcome здесь не выводим.
   const aiCardBody = historyPending
     ? `<h2 id="mrAiCardTitle">Проверяю сохранённые AI-разборы…</h2>
        <p class="mr-ai-card-note">Секунду: смотрю, разбирал ли AI этот матч раньше.</p>`
     : history
-    ? `<h2 id="mrAiCardTitle">${escapeHtml(publicText(history.aiSignalLabel || history.aiOutcome || 'AI-разбор готов'))}</h2>
-       ${history.aiRisk ? `<p class="mr-ai-card-note">Риск: ${escapeHtml(publicText(history.aiRisk))}</p>` : ''}
+    ? `<h2 id="mrAiCardTitle">AI уже разобрал этот матч</h2>
+       <p class="mr-ai-card-note">Вероятности исходов, ключевые факторы и что может изменить картину — в полном разборе.</p>
        ${aiConfidenceMeterHtml(history)}
        <button class="primary-btn mr-ai-card-btn" type="button" data-center-open-analysis="${fixtureId}">Открыть полный AI-разбор</button>`
+    : historyUnknown
+    ? `<h2 id="mrAiCardTitle">Не удалось проверить сохранённые разборы</h2>
+       <p class="mr-ai-card-note">Проверим ещё раз, чтобы не тратить дневной лимит на повторный разбор.</p>
+       <button id="centerHistoryRetryBtn" class="primary-btn mr-ai-card-btn" type="button">Проверить ещё раз</button>`
     : upcoming
-      ? `<h2 id="mrAiCardTitle">${historyUnknown ? 'Не удалось проверить сохранённые разборы' : 'AI ещё не разбирал этот матч'}</h2>
-         <p class="mr-ai-card-note">${historyUnknown ? 'Если вы уже запускали разбор, он есть во вкладке «История». ' : ''}Разбор посчитает вероятности исходов, ключевые факторы и риски. Учитывается в дневном лимите разборов.</p>
+      ? `<h2 id="mrAiCardTitle">AI ещё не разбирал этот матч</h2>
+         <p class="mr-ai-card-note">Разбор посчитает вероятности исходов, ключевые факторы и риски. Учитывается в дневном лимите разборов.</p>
          <button id="centerAnalyzeBtn" class="primary-btn mr-ai-card-btn" type="button">✦ Запустить AI-разбор</button>`
-      : `<h2 id="mrAiCardTitle">${historyUnknown ? 'Не удалось проверить сохранённые разборы' : 'AI-разбор до матча не запускался'}</h2>
+      : `<h2 id="mrAiCardTitle">AI-разбор до матча не запускался</h2>
          <p class="mr-ai-card-note">Ниже — что AI видит по данным матча прямо сейчас.</p>`;
 
   $('analysis').innerHTML = `
@@ -210,6 +216,11 @@ export function renderMatchCenterView(d, deps) {
   $('centerWatchBtn')?.addEventListener('click',()=>toggleMatchWatch({...m,finished:false}));
   root.querySelectorAll('[data-quick-reminder]').forEach(button=>{syncQuickReminderButton(button,m.fixtureId);if(!state.remindersLoaded){button.disabled=true;button.textContent=state.remindersLoadError?'Напоминания недоступны · обновите в профиле':'Загружаю напоминания…';}button.addEventListener('click',()=>toggleReminder(m));});
   $('centerAnalyzeBtn')?.addEventListener('click', e => analyzeMatch(Number(m.fixtureId), e.currentTarget));
+  $('centerHistoryRetryBtn')?.addEventListener('click', e => {
+    e.currentTarget.disabled = true;
+    e.currentTarget.textContent = 'Проверяю…';
+    void loadHistory(false);
+  });
   $('centerMatchPassBtn')?.addEventListener('click', () => { void openPassStoreForFixture(Number(m.fixtureId)); });
   $('centerCoverageAuditBtn')?.addEventListener('click', async () => {
     await runProviderCoverageAudit(Number(m.fixtureId), true);
