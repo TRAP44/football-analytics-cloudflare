@@ -83,3 +83,34 @@ test('paid-plan requests are paced below the provider per-second limit', async (
   assert.equal(waits.length, 3);
   assert.ok(waits[0] > 0 && waits[2] > waits[0], 'later requests wait longer than earlier ones');
 });
+
+test('apiFootballBaseUrl routes requests through a relay and rejects unsafe values', async () => {
+  const urls = [];
+  const build = () => createApiFootballGateway({
+    memory: { provider: { plan: 'PRO', minuteLimit: 300, minuteRemaining: 299, dailyRemaining: 7000 } },
+    providerPlanLimits: { FREE: { minute: 10 }, PRO: { minute: 300 }, UNKNOWN: { minute: 10 } },
+    providerBudgetFloors: { FREE: { minuteReserve: 2 }, PRO: { minuteReserve: 20 }, UNKNOWN: { minuteReserve: 2 } },
+    hasSupabase: () => false,
+    supaRpc: async () => ({ allowed: true }),
+    bumpTelemetry: () => {},
+    observeProviderRequest: () => {},
+    recordOpsEvent: async () => {},
+    loadSharedProviderState: async () => {},
+    phase5ProviderUsage: () => {},
+    persistSharedProviderCooldown: async () => {},
+    fetchWithTimeout: async url => { urls.push(String(url)); return new Response(JSON.stringify(OK_BODY), { status: 200 }); },
+    updateProviderFromHeaders: () => {},
+    persistSharedProviderQuota: async () => {},
+    providerQuotaEvidence: () => {},
+    providerSnapshot: () => ({ cooldownActive: false }),
+    withSingleFlight: async (_key, fn) => fn(),
+    sleepMs: async () => {},
+  });
+  const params = { date: '2026-10-10' };
+  await build().apiFootball('/fixtures', params, { apiFootballKey: 'k', apiFootballBaseUrl: 'https://abc.supabase.co/functions/v1/football-relay/' });
+  await build().apiFootball('/fixtures', params, { apiFootballKey: 'k', apiFootballBaseUrl: 'http://evil.example/x' });
+  await build().apiFootball('/fixtures', params, { apiFootballKey: 'k' });
+  assert.equal(urls[0], 'https://abc.supabase.co/functions/v1/football-relay/fixtures?date=2026-10-10');
+  assert.equal(urls[1], 'https://v3.football.api-sports.io/fixtures?date=2026-10-10');
+  assert.equal(urls[2], 'https://v3.football.api-sports.io/fixtures?date=2026-10-10');
+});

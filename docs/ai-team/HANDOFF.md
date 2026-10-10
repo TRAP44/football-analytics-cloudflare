@@ -27,6 +27,19 @@ PR: [#799](https://github.com/TRAP44/football-analytics-cloudflare/pull/799), в
 - Браузерный smoke прошёл для 320–1280 px и трёх тем; нужен CHROME_PROXY_SERVER=http://proxy:8080 в этой облачной среде. TLS-проверка не отключалась.
 - Merge выполняет Сергей согласно AGENTS.md; ревью — Claude.
 
+## 2026-10-10 — Claude — Ретранслятор API-Football на Supabase
+PR: ветка `claude/football-relay-base-url`
+Сделано:
+- Воркер умеет ходить в API-Football через необязательный базовый адрес `API_FOOTBALL_BASE_URL` (только https, без query/учётных данных; иначе — прямой провайдер). В `wrangler.jsonc` задан адрес функции `football-relay` в Supabase.
+- Исходник функции — `supabase/functions/football-relay/index.ts`: прозрачный GET-ретранслятор, белый список путей, ключ приходит в запросе и нигде не хранится.
+Решения:
+- Причина: Cloudflare Workers ходят с общего исходящего IP, API-Football режет такие запросы до учёта квоты ключа (подтверждено поддержкой). Проверка: через Supabase приходит полный список матчей.
+- Функцию Сергей развернул вручную в Supabase (JWT verification выключен): авто-режим развёртывание заблокировал. Откат: очистить `API_FOOTBALL_BASE_URL` в `wrangler.jsonc`.
+Осталось / внимание:
+- Функция не в CI: изменения кода функции нужно заново вставлять в Supabase вручную.
+- Если Supabase-адрес тоже начнёт отклоняться, запасной вариант — собственный сервер (VPS) с постоянным IP.
+- Ревью — Codex, merge в `main` — только Сергей.
+
 ## 2026-10-10 — Codex — Янтарный акцент в бренд-спецификации
 PR: [#797](https://github.com/TRAP44/football-analytics-cloudflare/pull/797), ветка `codex/brand-spec-amber`
 Сделано:
