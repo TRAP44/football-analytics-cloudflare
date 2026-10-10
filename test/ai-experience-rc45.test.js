@@ -63,26 +63,12 @@ const app = readRepoFile('public/app.js');
 const css = readRepoFile('public/styles.css');
 const telegramOrchestration = readRepoFile('src/telegram-update-orchestration.js');
 
-test('home AI ranking is capped at three matches and explicitly not presented as a prediction', () => {
-  const block = sourceBlock(app, 'function renderAiFocus()', 'function homeMatchSections(');
-
-  assert.match(block, /slice\(0,3\)/);
-  assert.match(block, /AI-РЕЙТИНГ ДНЯ/);
-  assert.match(block, /Это ещё не прогноз исхода/);
-  assert.match(block, /analysisHistoryForFixture\(m\.fixtureId\)/);
-  assert.match(block, /data-ai-rank-history/);
-  assert.match(block, /data-ai-rank-fixture/);
-  assert.match(css, /\.ai-rank-row\{/);
-});
-
-test('AI center gives analyzed skip signals a dedicated caution lane', () => {
-  const block = sourceBlock(app, 'function renderAiCenterSummary()', 'function renderAiFocus()');
-
-  assert.match(block, /aiSignalCode === 'skip'/);
-  assert.match(block, /Лучше пропустить/);
-  assert.match(block, /ai-center-feature caution/);
-  assert.match(block, /highRisk/);
-  assert.match(css, /\.ai-center-feature\.caution\{/);
+// Скрытые «AI-рейтинг дня» и «AI-центр» на главной удалены (были спрятаны CSS-ом,
+// «AI-центр» содержал ставочное «Лучше пропустить»). Проверяем, что они не вернулись.
+test('hidden home AI ranking and AI center are removed for good', () => {
+  assert.doesNotMatch(app, /function renderAiFocus\(|function renderAiCenterSummary\(/);
+  assert.doesNotMatch(app, /Лучше пропустить|AI-РЕЙТИНГ ДНЯ|data-ai-center-history|data-ai-rank-/);
+  assert.doesNotMatch(css, /\.ai-(focus|center|rank)-/);
 });
 
 test('Telegram natural-language search parser recognizes intent and match separators', () => {

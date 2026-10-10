@@ -424,8 +424,9 @@ if (!worker.includes('saveRefereeMatchHistory')) failures.push('RC44 referee his
 if (!fs.existsSync('test/phase4-2-brand-premium-ui.test.js')) failures.push('Missing Phase 4.2 brand/UI regression test');
 if (!fs.existsSync('public/assets/brand/matchradar-mark.svg') || !fs.existsSync('public/assets/brand/matchradar-avatar.svg') || !fs.existsSync('public/assets/brand/matchradar-wordmark.svg')) failures.push('MatchRadar brand assets are incomplete');
 if (!html.includes('MatchRadar') || /FutLens|FM AI/.test(html) || /FutLens|FM AI/.test(app)) failures.push('MatchRadar public brand replacement is incomplete');
-if (!app.includes('function renderAiFocus')) failures.push('RC44 AI focus card is missing');
-if (!worker.includes('createRefereeIntelligenceRuntime') || !app.includes('function renderAiFocus')) failures.push('RC44 referee/AI focus contract is missing');
+// Скрытый «AI-рейтинг дня» (renderAiFocus) удалён: он был спрятан CSS-ом. Проверяем, что не вернулся.
+if (app.includes('function renderAiFocus') || app.includes('function renderAiCenterSummary')) failures.push('Hidden home AI ranking/AI center must stay removed');
+if (!worker.includes('createRefereeIntelligenceRuntime')) failures.push('RC44 referee intelligence contract is missing');
 if (!worker.includes('function buildLineupImpact')) failures.push('RC44 lineup impact engine is missing');
 if (!worker.includes('function marketMovementNote')) failures.push('RC44 market movement explanation is missing');
 if (!worker.includes('processDailyDigests')) failures.push('RC44 daily bot digest is missing');

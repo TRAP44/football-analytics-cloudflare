@@ -1106,10 +1106,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch81'),
+      import('./modules/match-center-view.js?v=6.120.0-launch82'),
       import('./modules/match-pulse.js?v=6.120.0-launch65'),
       import('./modules/ai-timeline.js?v=6.120.0-launch63'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch81'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch82'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -2929,7 +2929,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch81');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch82');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3374,64 +3374,9 @@ function analysisHistoryForFixture(fixtureId) {
   return state.history.find(item => Number(item.fixtureId) === id && item.aiSignalLabel) || null;
 }
 
-function renderAiCenterSummary() {
-  const wrap = $('aiCenterSummary');
-  if (!wrap) return;
-  const upcoming = state.matches.filter(m => !m.live && !m.finished);
-  const analyzed = upcoming.map(match => ({ match, history:analysisHistoryForFixture(match.fixtureId) })).filter(x => x.history);
-  if (!analyzed.length) { wrap.hidden = true; wrap.innerHTML = ''; return; }
-  const signals = analyzed.filter(x => x.history.aiSignalCode !== 'skip');
-  const skips = analyzed.filter(x => x.history.aiSignalCode === 'skip');
-  const highRisk = analyzed.filter(x => String(x.history.aiRisk || '').toLowerCase() === 'высокий');
-  const strongest = [...signals].sort((a,b) => Number(b.history.aiConfidence || 0) - Number(a.history.aiConfidence || 0))[0] || null;
-  const cautionPool = [...skips, ...highRisk.filter(x => !skips.some(s => Number(s.match.fixtureId) === Number(x.match.fixtureId)))];
-  const caution = cautionPool.sort((a,b) => {
-    const aSkip = a.history.aiSignalCode === 'skip' ? 1 : 0;
-    const bSkip = b.history.aiSignalCode === 'skip' ? 1 : 0;
-    return bSkip - aSkip || Number(a.history.aiConfidence || 0) - Number(b.history.aiConfidence || 0);
-  })[0] || null;
-  const featureButton = (item, kind) => {
-    if (!item) return '';
-    const h = item.history, m = item.match;
-    const label = kind === 'caution' ? '⚠️ Лучше пропустить' : '🧠 Сильнейший разбор';
-    const featureClass = kind === 'caution' ? 'ai-center-feature caution' : 'ai-center-feature';
-    const detail = kind === 'caution'
-      ? `${escapeHtml(h.aiSignalLabel || 'Высокий риск')} · ${escapeHtml(h.aiRisk || 'риск повышен')}`
-      : `${escapeHtml(h.aiSignalLabel || 'AI-разбор')} · уверенность ${Math.round(Number(h.aiConfidence || 0))}/100`;
-    return `<button class="${featureClass}" type="button" data-ai-center-history="${Number(m.fixtureId)}"><span>${label}</span><strong>${escapeHtml(m.home?.name || '')} — ${escapeHtml(m.away?.name || '')}</strong><small>${detail}</small></button>`;
-  };
-  wrap.hidden = false;
-  wrap.innerHTML = `<div class="ai-center-head"><div><span>AI-ЦЕНТР</span><strong>Уже разобранные матчи</strong></div><small>Повторное открытие не тратит новый анализ</small></div><div class="ai-center-metrics"><div><b>${signals.length}</b><span>сигналов</span></div><div><b>${skips.length}</b><span>лучше пропустить</span></div><div><b>${highRisk.length}</b><span>высокий риск</span></div></div><div class="ai-center-features">${featureButton(strongest,'strong')}${featureButton(caution,'caution')}</div>`;
-  wrap.querySelectorAll('[data-ai-center-history]').forEach(button => button.addEventListener('click', event => openHistoryAnalysis(Number(event.currentTarget.dataset.aiCenterHistory), event.currentTarget)));
-}
-function renderAiFocus() {
-  const wrap = $('aiFocus');
-  if (!wrap) return;
-  const signals = personalContextSignals();
-  const candidates = state.matches
-    .filter(m => !m.live && !m.finished && !m.youthReserve)
-    .map(m => ({ match:m, insight:personalMatchInsight(m, signals) }))
-    .sort((a,b) => b.insight.score - a.insight.score || Number(b.match.interestScore || 0) - Number(a.match.interestScore || 0));
-  if (!candidates.length) { wrap.hidden = true; wrap.innerHTML = ''; return; }
-  const preferred = candidates.filter(x => x.insight.recommended);
-  const ranked = (preferred.length ? preferred : candidates).slice(0,3);
-  const rowHtml = (item, index) => {
-    const m = item.match;
-    const saved = analysisHistoryForFixture(m.fixtureId);
-    const reason = item.insight.reason || (m.featured ? 'Главный матч дня' : Number(m.interestScore || 0) >= 75 ? 'Высокий интерес' : 'Подходит по контексту');
-    const action = saved
-      ? `<button type="button" data-ai-rank-history="${Number(m.fixtureId)}">Открыть разбор</button>`
-      : `<button type="button" data-ai-rank-fixture="${Number(m.fixtureId)}" data-ai-focus-fixture="${Number(m.fixtureId)}">Разобрать</button>`;
-    return `<article class="ai-rank-row"><b class="ai-rank-number">${index + 1}</b><div class="ai-rank-teams">${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : '<span>⚽</span>'}<div><strong>${escapeHtml(m.home?.name || '')} — ${escapeHtml(m.away?.name || '')}</strong><small>${escapeHtml(reason)} · ${timeOf(m.date)}${m.league ? ` · ${escapeHtml(m.league)}` : ''}</small></div>${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : '<span>⚽</span>'}</div>${action}</article>`;
-  };
-  wrap.hidden = false;
-  wrap.innerHTML = `<div class="ai-rank-head"><div><span>AI-РЕЙТИНГ ДНЯ</span><strong>Матчи, которые заслуживают внимания</strong></div><small>Рейтинг по интересу, избранному и вашей истории. Это ещё не прогноз исхода. Полный вывод появится после анализа.</small></div><div class="ai-rank-list">${ranked.map(rowHtml).join('')}</div>`;
-  wrap.querySelectorAll('[data-ai-rank-fixture]').forEach(button => button.addEventListener('click', event => analyzeMatch(Number(event.currentTarget.dataset.aiRankFixture), event.currentTarget)));
-  wrap.querySelectorAll('[data-ai-rank-history]').forEach(button => button.addEventListener('click', event => openHistoryAnalysis(Number(event.currentTarget.dataset.aiRankHistory), event.currentTarget)));
-}
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch81').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch82').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -3477,8 +3422,6 @@ function renderMatches() {
   renderDailyOverview();
   renderRadarFeed();
   renderHomeSignal();
-  renderAiFocus();
-  renderAiCenterSummary();
   renderPopularCompetitions();
 
   if ($('dataNotice')) {
