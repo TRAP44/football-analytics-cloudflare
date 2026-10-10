@@ -10,9 +10,11 @@
 
 ## В работе
 
-- [ ] Персональный первый вход и ближайший матч любимой команды — **Codex** — `codex/personal-first-entry` — PR #640 закрыт по указанию Сергея; реализация и проверки.
+_пусто_
 
 ## На ревью
+
+- [ ] Персональный первый вход и ближайший матч любимой команды — **Codex** — [PR #799](https://github.com/TRAP44/football-analytics-cloudflare/pull/799) — ревью: Claude.
 
 - [ ] Обновить `MATCHRADAR_BRAND_SPEC_RU.md` под янтарный неон-акцент — **Codex** — `codex/brand-spec-amber` / [PR #797](https://github.com/TRAP44/football-analytics-cloudflare/pull/797) — ревью: Claude
 - [ ] Настройка совместной работы Claude + Codex (`AGENTS.md`, `CLAUDE.md`, `docs/ai-team/`) — **Claude** — `claude/ai-team-setup` — ревью: Codex
