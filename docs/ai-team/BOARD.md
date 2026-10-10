@@ -35,7 +35,7 @@ _Лимит Codex восстановился 10.10 вечером, очеред�
 - [x] [PR #812](https://github.com/TRAP44/football-analytics-cloudflare/pull/812) — удалить скрытый AI-центр (уже в `main`) — Codex: замечаний нет
 - [x] [PR #813](https://github.com/TRAP44/football-analytics-cloudflare/pull/813) — «Поделиться матчем» (уже в `main`) — Codex: замечаний нет
 - [x] [PR #814](https://github.com/TRAP44/football-analytics-cloudflare/pull/814) — обратная связь для всех (уже в `main`; серверная авторизация — проверить особенно) — Codex: замечаний нет
-- [ ] [PR #815](https://github.com/TRAP44/football-analytics-cloudflare/pull/815) — отзывы: уведомление и админка (проверить дубли уведомлений) — Codex: 1 замечание (P2, устаревший список после сбоя обновления) → исправление отдельным PR
+- [ ] [PR #815](https://github.com/TRAP44/football-analytics-cloudflare/pull/815) — отзывы: уведомление и админка (проверить дубли уведомлений) — Codex: 1 замечание (P2, устаревший список после сбоя обновления) → исправление [PR #817](https://github.com/TRAP44/football-analytics-cloudflare/pull/817)
 
 ## Готово
 
