@@ -1102,7 +1102,7 @@ async function ensureMatchCenterExtras() {
     matchCenterExtrasPromise = Promise.all([
       import('./modules/match-pulse.js?v=6.120.0-launch65'),
       import('./modules/ai-timeline.js?v=6.120.0-launch63'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch70'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch71'),
     ]).then(([pulse, timeline, headquarters]) => {
       matchCenterExtras = Object.freeze({
         renderMatchPulse: pulse.renderMatchPulse,
@@ -2254,6 +2254,7 @@ async function loadFavorites() {
   } finally {
     state.favoritesLoading = false;
     renderFavoriteTeams();
+    renderFirstRunGuide();
   }
 }
 
@@ -3085,6 +3086,7 @@ function renderRadarFeed() {
 }
 
 function renderDailyOverview() {
+  renderFirstRunGuide();
   const root = $('dailyOverview');
   const personalCard = $('homePersonalMatchBtn');
   if (!root) return;
@@ -6824,12 +6826,7 @@ $('homePersonalMatchBtn')?.addEventListener('click', event => {
   if (!fixtureId) return;
   const match = state.matches.find(item => Number(item.fixtureId) === fixtureId);
   if (!match) return;
-  if (match.live) openMatchCenter(fixtureId, button);
-  else {
-    const saved = analysisHistoryForFixture(fixtureId);
-    if (saved) openHistoryAnalysis(fixtureId, button);
-    else analyzeMatch(fixtureId, button);
-  }
+  openMatchCenter(fixtureId, button);
 });
 document.querySelectorAll('[data-theme-choice]').forEach(button => {
   button.addEventListener('click', () => saveInterfacePreference('theme', button.dataset.themeChoice || 'system'));

@@ -18,7 +18,7 @@ test('first run guide exists on Home and explains the product before requiring n
   assert.match(html,/id="firstRunGuideDismiss"/);
 });
 
-test('first run actions reuse existing search surfaces and dismiss the guide',()=>{
+test('first run actions reuse search surfaces and keep team selection resumable',()=>{
   const searchStart=firstRun.indexOf('function startFirstRunSearch');
   const favoriteStart=firstRun.indexOf('function startFirstRunFavorite');
   assert.ok(searchStart>=0 && favoriteStart>searchStart);
@@ -26,7 +26,7 @@ test('first run actions reuse existing search surfaces and dismiss the guide',()
   const favoriteBlock=firstRun.slice(favoriteStart,firstRun.indexOf('return {',favoriteStart));
   assert.match(searchBlock,/dismissFirstRunGuide\(\)/);
   assert.match(searchBlock,/focusMatchSearch\(\)/);
-  assert.match(favoriteBlock,/dismissFirstRunGuide\(\)/);
+  assert.doesNotMatch(favoriteBlock,/dismissFirstRunGuide\(\)/);
   assert.match(favoriteBlock,/safeCall\(showView,'searchView'\)/);
   assert.match(favoriteBlock,/resetGlobalSearchQuery\(\)/);
   assert.match(favoriteBlock,/focusGlobalSearch/);
@@ -45,7 +45,7 @@ test('first run guide is one-time local UI state with privacy-safe product actio
 
 test('direct launch intent bypasses the guide and is not overwritten by the default Home route',()=>{
   assert.match(firstRun,/function hasDirectLaunchIntent\(\)/);
-  assert.match(firstRun,/const hidden=dismissed \|\| hasDirectLaunchIntent\(\)/);
+  assert.match(firstRun,/const hidden=dismissed \|\| dismissedThisSession \|\| count>=3 \|\| hasDirectLaunchIntent\(\)/);
   assert.match(firstRun,/view==='search'/);
   assert.match(firstRun,/view==='history'/);
   assert.match(firstRun,/\['analysis','center'\]\.includes\(action\)/);
@@ -96,7 +96,7 @@ test('first-run controller handles deep links and dismisses guide without networ
     ['renderGlobalSearch'],
     ['showView','searchView'],
   ]);
-  assert.equal(controller.renderFirstRunGuide(),false);
+  assert.equal(controller.renderFirstRunGuide(),true);
   assert.equal(controller.startFirstRunSearch(),true);
   assert.equal(matchSearch.focused,true);
 });

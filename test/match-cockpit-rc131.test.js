@@ -312,7 +312,7 @@ test('RC131 frontend revision includes the strict cockpit model',()=>{
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
 
-  assert.equal(revision,'6.120.0-launch70');
+  assert.equal(revision,'6.120.0-launch71');
   assert.ok(
     html.includes('/app.js?v='+revision),
   );

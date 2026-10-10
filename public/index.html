@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#07111f" />
   <meta name="description" content="MatchRadar — AI-футбольный ассистент в Telegram: матчи, команды, LIVE и понятный разбор ключевых факторов." />
   <meta name="matchradar-surface" content="public" />
-  <meta name="frontend-asset-revision" content="6.120.0-launch70" />
+  <meta name="frontend-asset-revision" content="6.120.0-launch71" />
   <title>MatchRadar · AI-футбольный ассистент</title>
   <link rel="icon" type="image/svg+xml" href="/assets/brand/matchradar-mark.svg?v=6.120.0-p42" />
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=6.120.0-launch70" />
-  <link rel="stylesheet" href="/styles/public-shell.css?v=6.120.0-launch70" />
-  <link rel="stylesheet" href="/styles/premium-ui.css?v=6.120.0-launch70" />
+  <link rel="stylesheet" href="/styles.css?v=6.120.0-launch71" />
+  <link rel="stylesheet" href="/styles/public-shell.css?v=6.120.0-launch71" />
+  <link rel="stylesheet" href="/styles/premium-ui.css?v=6.120.0-launch71" />
 </head>
 <body class="miniapp-public-shell">
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
@@ -63,11 +63,12 @@
             <span>Быстрый старт</span>
             <strong>Найдите матч — MatchRadar соберёт главное в одном месте</strong>
             <p>Составы, форма, ключевые факторы и AI-разбор доступны из карточки матча.</p>
+            <p id="firstRunGuideProgress" role="status">Выберите 1–3 любимые команды. Их матчи появятся в блоке «Для вас».</p>
           </div>
           <div class="first-run-guide-actions">
             <button id="firstRunGuideSearch" class="primary-btn" type="button">Найти матч</button>
-            <button id="firstRunGuideFavorite" class="secondary-btn" type="button">Добавить команду</button>
-            <button id="firstRunGuideDismiss" class="first-run-guide-dismiss" type="button">Понятно</button>
+            <button id="firstRunGuideFavorite" class="secondary-btn" type="button">Выбрать команды</button>
+            <button id="firstRunGuideDismiss" class="first-run-guide-dismiss" type="button">Пропустить</button>
           </div>
         </section>
 
@@ -83,7 +84,7 @@
             <span id="homePersonalMatchKicker">Для вас</span>
             <strong id="homePersonalMatchText">Персональный матч</strong>
             <small id="homePersonalMatchMeta"></small>
-            <b>Открыть →</b>
+            <b>Штаб матча →</b>
           </button>
         </section>
 
@@ -641,6 +642,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=6.120.0-launch70"></script>
+  <script type="module" src="/app.js?v=6.120.0-launch71"></script>
 </body>
 </html>

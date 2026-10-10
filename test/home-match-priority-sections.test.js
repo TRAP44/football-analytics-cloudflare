@@ -262,7 +262,7 @@ test('Home personal relevance requires genuine favorite or viewed-team evidence'
   );
 });
 
-test('Home personal relevance prioritizes explicit LIVE then strict numeric score',()=>{
+test('Home personal relevance prioritizes LIVE then nearest kickoff over score',()=>{
   const now=Date.UTC(2026,8,29,18,0,0);
   const matches=[
     {
@@ -312,7 +312,7 @@ test('Home personal relevance prioritizes explicit LIVE then strict numeric scor
     insightForMatch,
     nowMs:now,
   });
-  assert.equal(nonLiveSelected.match.fixtureId,1);
+  assert.equal(nonLiveSelected.match.fixtureId,2);
 });
 
 test('Home personal relevance rejects stale, timezone-less and malformed match state',()=>{
@@ -489,15 +489,9 @@ test('Home rendering preserves cards, existing actions and progressive disclosur
 
   assert.match(app,/homePersonalMatchBtn/);
   assert.match(app,/dataset\.personalFixture/);
-  assert.match(
-    app,
-    /if \(match\.live\) openMatchCenter\(fixtureId, button\)/,
-  );
-  assert.match(
-    app,
-    /if \(saved\) openHistoryAnalysis\(fixtureId, button\)/,
-  );
-  assert.match(app,/else analyzeMatch\(fixtureId, button\)/);
+  const personalAction=app.slice(app.indexOf("$('homePersonalMatchBtn')?.addEventListener"),app.indexOf("document.querySelectorAll('[data-theme-choice]')"));
+  assert.match(personalAction,/openMatchCenter\(fixtureId, button\)/);
+  assert.doesNotMatch(personalAction,/analyzeMatch|openHistoryAnalysis/);
 });
 
 test('Home priority styling remains compact, collapsible and mobile-safe',()=>{
@@ -538,3 +532,16 @@ test('Home priority styling remains compact, collapsible and mobile-safe',()=>{
     /\.home-match-section\.is-collapsible:not\(\[open\]\) > \.home-match-section-list\{[\s\S]*?display:none/,
   );
 });
+
+ test('favorite card chooses nearest favorite over higher scores and viewed teams',()=>{
+  const result=selectHomePersonalMatch({
+    signals:{hasPersonalData:true},nowMs:Date.parse('2026-10-10T10:00:00Z'),
+    matches:[
+      {fixtureId:1,date:'2026-10-10T11:00:00Z'},
+      {fixtureId:2,date:'2026-10-10T12:00:00Z'},
+      {fixtureId:3,date:'2026-10-10T10:30:00Z'},
+    ],
+    insightForMatch:m=>({favorite:m.fixtureId!==3,viewedTeam:true,score:m.fixtureId*100}),
+  });
+  assert.equal(result.match.fixtureId,1);
+ });
