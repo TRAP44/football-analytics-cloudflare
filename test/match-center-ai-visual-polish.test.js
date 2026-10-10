@@ -137,7 +137,7 @@ test('frontend asset revision is consistent after Match Center presentation chan
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
 
-  assert.equal(revision,'6.120.0-launch88');
+  assert.equal(revision,'6.120.0-launch89');
   for(const asset of [
     'styles.css',
     'styles/public-shell.css',
