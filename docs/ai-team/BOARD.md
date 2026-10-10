@@ -22,7 +22,7 @@ _пусто_
 
 ## На ревью
 
-- [ ] Удалить скрытый «AI-центр» и «AI-рейтинг дня» на главной (мёртвый код со ставочными формулировками) — **Claude** — [PR #812](https://github.com/TRAP44/football-analytics-cloudflare/pull/812) — ревью: Codex
+- [ ] «Поделиться матчем»: нейтральный текст для друзей, кнопка в штабе матча — **Claude** — `claude/share-match` — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 ## Ждут ревью Codex (у Codex закончился лимит)
@@ -31,10 +31,12 @@ _Решение Сергея: такие PR можно мержить, но Code
 
 - [ ] [PR #810](https://github.com/TRAP44/football-analytics-cloudflare/pull/810) — личные экраны (уже в `main`)
 - [ ] [PR #811](https://github.com/TRAP44/football-analytics-cloudflare/pull/811) — главная без повторов (уже в `main`)
-- [ ] [PR #812](https://github.com/TRAP44/football-analytics-cloudflare/pull/812) — удалить скрытый AI-центр
+- [ ] [PR #812](https://github.com/TRAP44/football-analytics-cloudflare/pull/812) — удалить скрытый AI-центр (уже в `main`)
+- [ ] PR «Поделиться матчем» — `claude/share-match`
 
 ## Готово
 
+- [x] Удалить скрытый «AI-центр» и «AI-рейтинг дня» на главной — **Claude** — [PR #812](https://github.com/TRAP44/football-analytics-cloudflare/pull/812) (слит без ревью Codex — лимит)
 - [x] Главная: без повтора матча «Для вас» в ленте, подсказка поиска помещается — **Claude** — [PR #811](https://github.com/TRAP44/football-analytics-cloudflare/pull/811) (слит без ревью Codex — лимит)
 - [x] Личные экраны: без ставочных меток в «Истории» и ленте, без дублей в «Профиле», «Мои команды» — **Claude** — [PR #810](https://github.com/TRAP44/football-analytics-cloudflare/pull/810) (слит без ревью Codex — лимит; см. «Ждут ревью»)
 - [x] «Команда» и «Турнир»: починить вкладки, стиль SIGNAL — **Claude** — [PR #809](https://github.com/TRAP44/football-analytics-cloudflare/pull/809)

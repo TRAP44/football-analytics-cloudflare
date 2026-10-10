@@ -114,15 +114,17 @@ test('backend growth/referral domain uses idempotent growth events for share and
   assert.match(growthReferral,/referral_code:referralCode/);
 });
 
-test('share UX stays single-action and omits invented AI signal when signal is unavailable', () => {
+test('share UX stays single-action and never shares betting-style signal labels', () => {
   const app=fs.readFileSync('public/app.js','utf8');
+  const shareModule=fs.readFileSync('public/modules/match-share.js','utf8');
   const start=app.indexOf('async function shareAnalysis');
   const end=app.indexOf('function bindRovingTabKeyboard',start);
   const share=app.slice(start,end);
-  assert.match(share,/if \(signal\.label\)/);
-  assert.doesNotMatch(share,/Наиболее вероятно:/);
-  assert.match(share,/tg\?\.openTelegramLink/);
-  assert.match(share,/navigator\.share/);
+  // Полный разбор делегирует общему модулю «Поделиться матчем».
+  assert.match(share,/return shareMatchCard\(/);
+  assert.doesNotMatch(share+shareModule,/betSignal|signal\.label|П1 \$\{|Наиболее вероятно:/);
+  assert.match(shareModule,/tg\?\.openTelegramLink/);
+  assert.match(shareModule,/navigatorRef\?\.share/);
   assert.equal((app.match(/id="shareAnalysisBtn"/g) || []).length,1);
 });
 

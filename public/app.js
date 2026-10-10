@@ -1106,10 +1106,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch82'),
+      import('./modules/match-center-view.js?v=6.120.0-launch83'),
       import('./modules/match-pulse.js?v=6.120.0-launch65'),
       import('./modules/ai-timeline.js?v=6.120.0-launch63'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch82'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch83'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -2929,7 +2929,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch82');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch83');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3376,7 +3376,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch82').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch83').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -5143,7 +5143,7 @@ function renderMatchCenter(d) {
     ensureMatchCenterExtras().then(() => { if (state.currentCenter === d) renderMatchCenter(d); }).catch(() => toast('Не удалось загрузить штаб матча. Попробуйте ещё раз.'));
     return;
   }
-  view(d, { state, $, escapeHtml, publicText, safeUrl, timeOf, dateTime, isAdmin, isWatchedMatch, positiveEntityId, matchCenterExtraHtml, matchChangeNarrativeHtml, liveAiCoachHtml, smartInsightsHeroHtml, smartInsightsFullHtml, postMatchReviewHtml, centerKeyStatsHtml, liveEventsHtml, centerAbsenceSummary, liveAbsencesHtml, centerCoverageHtml, centerFreshnessHtml, eventQualityHintHtml, timelineEventsHtml, statisticsQualityHintHtml, xgQualityHintHtml, centerAllStatsHtml, lineupLiveHtml, availabilityQualityHintHtml, centerPlayersHtml, centerMarketHtml, analysisHistoryForFixture, aiConfidenceMeterHtml, bindMatchCenterTabs, setMatchCenterTab, openPlayerFromMatch, openTeam, toggleMatchWatch, syncQuickReminderButton, toggleReminder, analyzeMatch, loadHistory, openHistoryAnalysis, openPassStoreForFixture, runProviderCoverageAudit, openProfileView, runProviderE2E, requestMatchCenter, renderMatchCenter, toast, startLiveRefresh, stopLiveRefresh });
+  view(d, { state, $, escapeHtml, publicText, safeUrl, timeOf, dateTime, isAdmin, isWatchedMatch, positiveEntityId, matchCenterExtraHtml, matchChangeNarrativeHtml, liveAiCoachHtml, smartInsightsHeroHtml, smartInsightsFullHtml, postMatchReviewHtml, centerKeyStatsHtml, liveEventsHtml, centerAbsenceSummary, liveAbsencesHtml, centerCoverageHtml, centerFreshnessHtml, eventQualityHintHtml, timelineEventsHtml, statisticsQualityHintHtml, xgQualityHintHtml, centerAllStatsHtml, lineupLiveHtml, availabilityQualityHintHtml, centerPlayersHtml, centerMarketHtml, analysisHistoryForFixture, aiConfidenceMeterHtml, bindMatchCenterTabs, setMatchCenterTab, openPlayerFromMatch, openTeam, toggleMatchWatch, syncQuickReminderButton, toggleReminder, analyzeMatch, loadHistory, openHistoryAnalysis, openPassStoreForFixture, runProviderCoverageAudit, openProfileView, runProviderE2E, requestMatchCenter, renderMatchCenter, toast, startLiveRefresh, stopLiveRefresh, shareMatchCard });
 }
 
 async function openMatchCenter(fixtureId, btn) {
@@ -5571,62 +5571,27 @@ function lineupBlock(title, lineup) {
   return `<div class="squad-block"><div class="squad-title">${escapeHtml(title)} <span>${escapeHtml(lineup?.formation || '')}</span></div>${players.length ? `<div class="lineup-list">${players.map((x,i) => `<span><b>${lineupPlayerNumber(x) || i+1}</b>${escapeHtml(lineupPlayerName(x))}</span>`).join('')}</div>` : '<p class="muted">Стартовый состав ещё не опубликован.</p>'}</div>`;
 }
 
+// «Поделиться матчем» — ленивый модуль: нейтральный текст без ставочных меток.
+let matchShareModule = null;
+async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
+  try {
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch83');
+    const { shareMatch } = await matchShareModule;
+    return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
+  } catch {
+    matchShareModule = null;
+    toast('Не удалось поделиться матчем');
+    return 'failed';
+  }
+}
+
 async function shareAnalysis(d) {
-  const m=d?.match || {};
-  const p=d?.probabilities || {};
-  const fixtureId=Number(m.fixtureId || 0);
-  const signal=d?.aiInstructor?.betSignal || {};
-  const confidenceScore=d?.confidence?.score ?? d?.aiInstructor?.confidenceScore;
-  const hasProbabilities=[p.home,p.draw,p.away].every(value=>Number.isFinite(Number(value)));
-  const title=`${m.home?.name || ''} — ${m.away?.name || ''}`;
-  const lines=[
-    `⚽ ${title}`,
-    `${m.league || ''}${m.date ? ` · ${dateTime(m.date)}` : ''}`,
-  ].filter(Boolean);
-  if (hasProbabilities) lines.push(`П1 ${pct(p.home)} · Н ${pct(p.draw)} · П2 ${pct(p.away)}`);
-  if (signal.label) {
-    lines.push(`MatchRadar AI: ${signal.label}`);
-    if (Number.isFinite(Number(confidenceScore))) lines.push(`Уверенность: ${Number(confidenceScore)}/100`);
-  }
-  lines.push(
-    '',
-    'Открой матч в MatchRadar — ссылка сразу приведёт к матчу и доступному AI-разбору.',
-    'Аналитическая оценка модели · не гарантия результата.',
-  );
-  let shareUrl='';
-  let telegramShareUrl='';
-  try {
-    if (fixtureId) {
-      const share=await api(`/api/share-link?fixtureId=${fixtureId}&source=social&campaign=match_share&content=miniapp`,{retry:false,timeoutMs:7000});
-      shareUrl=String(share?.url || '');
-      telegramShareUrl=String(share?.telegramShareUrl || '');
-    }
-  } catch {}
-  const text=lines.join('\n');
-  const fullText=shareUrl ? `${text}\n\n${shareUrl}` : text;
-  try {
-    const safeTelegramShareUrl=safeTelegramUrl(telegramShareUrl);
-    if (safeTelegramShareUrl && tg?.openTelegramLink) {
-      tg.openTelegramLink(safeTelegramShareUrl);
-      toast('Открыто окно отправки матча');
-      return;
-    }
-    if (navigator.share) {
-      await navigator.share({title,text,...(shareUrl?{url:shareUrl}:{})});
-      return;
-    }
-    await navigator.clipboard.writeText(fullText);
-    toast(shareUrl ? 'Ссылка на матч скопирована' : 'Краткий анализ скопирован');
-  } catch (e) {
-    if (e?.name !== 'AbortError') {
-      try {
-        await navigator.clipboard.writeText(fullText);
-        toast(shareUrl ? 'Ссылка на матч скопирована' : 'Краткий анализ скопирован');
-      } catch {
-        toast('Не удалось поделиться анализом');
-      }
-    }
-  }
+  return shareMatchCard({
+    match: d?.match || {},
+    probabilities: d?.probabilities || null,
+    confidence: d?.confidence?.score ?? d?.aiInstructor?.confidenceScore ?? null,
+    source: 'miniapp',
+  });
 }
 
 function bindRovingTabKeyboard(buttons, dataKey, activate) {
