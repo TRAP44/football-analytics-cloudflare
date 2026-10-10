@@ -20,9 +20,9 @@ function safeIso(value) {
 }
 
 function outcomeLabel(key = '', match = {}) {
-  if (key === 'home') return match?.home?.name || 'П1';
+  if (key === 'home') return match?.home?.name || 'Хозяева';
   if (key === 'draw') return 'Ничья';
-  if (key === 'away') return match?.away?.name || 'П2';
+  if (key === 'away') return match?.away?.name || 'Гости';
   return '—';
 }
 
@@ -236,9 +236,9 @@ function chartFromModel(model, match = {}) {
     return '<p class="ai-prob-chart-unavailable">История прогнозов пока недостаточна для графика.</p>';
   }
   const keys=[
-    {key:'home',css:'home',label:String(match?.home?.name || 'П1')},
+    {key:'home',css:'home',label:String(match?.home?.name || 'Хозяева')},
     {key:'draw',css:'draw',label:'Ничья'},
-    {key:'away',css:'away',label:String(match?.away?.name || 'П2')},
+    {key:'away',css:'away',label:String(match?.away?.name || 'Гости')},
   ];
   const x=point=>38+(Date.parse(point.capturedAt)-from)/(to-from)*587;
   const y=value=>148-value/100*132;
@@ -264,7 +264,7 @@ function chartFromModel(model, match = {}) {
     +' сохранённых оценок. Последняя: '
     +keys.map(item=>item.label+' '+Number(latest[item.key]).toFixed(1)+'%').join(', ')+'.';
   return '<figure class="ai-prob-chart">'
-    +'<div class="ai-prob-chart-heading"><strong>Вероятности П1 / Н / П2</strong>'
+    +'<div class="ai-prob-chart-heading"><strong>Вероятности исходов</strong>'
     +'<small>'+snapshots.length+' сохранённых снимков</small></div>'
     +'<svg viewBox="0 0 640 176" class="ai-prob-chart-svg" role="img" aria-label="'
     +escapeHtml(accessible)+'">'
