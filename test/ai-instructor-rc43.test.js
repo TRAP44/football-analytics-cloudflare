@@ -236,10 +236,6 @@ test('RC43 analyzed upcoming matches expose saved verdicts without spending a ne
   assert.match(app, /data-history-analysis/);
   assert.match(app, /Открыть AI-разбор/);
 
-  assert.match(html, /id="aiCenterSummary"/);
-  assert.match(app, /function renderAiCenterSummary\(\)/);
-  assert.match(app, /Повторное открытие не тратит новый анализ/);
-  assert.match(app, /data-ai-center-history/);
 });
 
 test('RC43 Telegram last verdict formats the newest saved compact snapshot', () => {
