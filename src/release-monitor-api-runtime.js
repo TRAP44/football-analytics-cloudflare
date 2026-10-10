@@ -63,6 +63,37 @@ export function createReleaseMonitorApiRuntime(deps) {
     }
   }
   
+  // Только отзывы пользователей (beta и публичные) — чтобы их не вытесняла телеметрия.
+  const FEEDBACK_EVENT_TYPES = ['beta_feedback', 'user_feedback'];
+  async function readFeedbackOpsEvents(cfg, startIso, endIso, limit = 100) {
+    const startMs = Date.parse(startIso || '');
+    const endMs = Date.parse(endIso || '');
+    const cap = boundedPositiveInteger(limit, 100, 200);
+    const fallback = () => ({
+      persistent: false,
+      items: memory.opsEvents.filter(item => {
+        const t = Date.parse(item?.created_at || '');
+        return Number.isFinite(t) && t >= startMs && t < endMs && FEEDBACK_EVENT_TYPES.includes(item?.event_type);
+      }).slice(0, cap),
+    });
+    if (!hasSupabase(cfg)) return fallback();
+    try {
+      const url = new URL(`${cfg.supabaseUrl}/rest/v1/ops_events`);
+      url.searchParams.set('select', 'created_at,severity,source,event_type,code,message,metadata');
+      url.searchParams.set('event_type', `in.(${FEEDBACK_EVENT_TYPES.join(',')})`);
+      url.searchParams.set('created_at', `gte.${startIso}`);
+      url.searchParams.append('created_at', `lt.${endIso}`);
+      url.searchParams.set('order', 'created_at.desc');
+      url.searchParams.set('limit', String(cap));
+      const r = await fetchWithTimeout(url, { headers: supaHeaders(cfg) }, 7000, 'Supabase feedback inbox');
+      if (!r.ok) return fallback();
+      const items = await r.json();
+      return Array.isArray(items) ? { persistent: true, items } : fallback();
+    } catch {
+      return fallback();
+    }
+  }
+
   async function readDailyDigestOpsEvents(cfg, startIso, endIso, limit = 1000) {
     const startMs=Date.parse(startIso || '');
     const endMs=Date.parse(endIso || '');
@@ -322,6 +353,7 @@ export function createReleaseMonitorApiRuntime(deps) {
 
   return {
     readOpsEventsRange,
+    readFeedbackOpsEvents,
     readDailyDigestOpsEvents,
     readDailyDigestSloEvents,
     apiPostDeployRegressionResponse,

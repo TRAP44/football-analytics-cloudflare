@@ -19,8 +19,10 @@ export function createBetaPhase5Runtime(deps) {
     json,
     providerSnapshot,
     readOpsEventsRange,
+    readFeedbackOpsEvents,
     recordOpsEvent,
     redactOpsString,
+    sendTelegramMessage,
   } = deps;
 
   const BETA_FEEDBACK_CATEGORIES = new Set(['search','matches','ai','live','ux','data_sources','performance']);
@@ -141,6 +143,59 @@ export function createBetaPhase5Runtime(deps) {
     return map[category] || map.ux;
   }
   
+  const FEEDBACK_CATEGORY_LABELS = Object.freeze({
+    search:'Поиск', matches:'Матчи', ai:'AI', live:'LIVE', ux:'Интерфейс',
+    data_sources:'Источники данных', performance:'Производительность',
+  });
+  const FEEDBACK_SEVERITY_LABELS = Object.freeze({
+    BLOCKER:'Невозможно пользоваться', MAJOR:'Нестабильно или непонятно', MINOR:'Небольшой недочёт',
+  });
+  // Защита от дублей уведомлений: тот же отзыв того же пользователя за 10 минут
+  // не пересылается повторно; плюс общий потолок уведомлений в час на изолят.
+  const FEEDBACK_DUPLICATE_WINDOW_MS = 10 * 60_000;
+  const FEEDBACK_NOTIFY_HOURLY_CAP = 30;
+  const recentFeedbackKeys = new Map();
+  let feedbackNotifyWindow = { startedAt:0, sent:0 };
+
+  function feedbackDuplicate(key, now = Date.now()) {
+    for (const [stored, at] of recentFeedbackKeys) {
+      if (now-at > FEEDBACK_DUPLICATE_WINDOW_MS) recentFeedbackKeys.delete(stored);
+    }
+    if (recentFeedbackKeys.has(key)) return true;
+    recentFeedbackKeys.set(key, now);
+    if (recentFeedbackKeys.size > 500) recentFeedbackKeys.delete(recentFeedbackKeys.keys().next().value);
+    return false;
+  }
+
+  function feedbackNotifyAllowed(now = Date.now()) {
+    if (now-feedbackNotifyWindow.startedAt >= 3600_000) feedbackNotifyWindow = { startedAt:now, sent:0 };
+    if (feedbackNotifyWindow.sent >= FEEDBACK_NOTIFY_HOURLY_CAP) return false;
+    feedbackNotifyWindow.sent += 1;
+    return true;
+  }
+
+  function feedbackNotificationText({ betaMember, category, betaSeverity, note }) {
+    return [
+      '💬 Новый отзыв в MatchRadar',
+      `${FEEDBACK_CATEGORY_LABELS[category] || category} · ${FEEDBACK_SEVERITY_LABELS[betaSeverity] || betaSeverity}`,
+      betaMember ? 'От: участник закрытой беты' : 'От: пользователь',
+      '',
+      `«${note}»`,
+      '',
+      'Все отзывы — в админке, раздел «Отзывы».',
+    ].join('\n');
+  }
+
+  async function notifyFeedbackAdmins(cfg, payload) {
+    const admins=[...new Set((Array.isArray(cfg?.adminTelegramIds) ? cfg.adminTelegramIds : []).map(Number))]
+      .filter(id=>Number.isSafeInteger(id) && id>0);
+    if (typeof sendTelegramMessage !== 'function' || !cfg?.botToken || !admins.length) return;
+    if (!feedbackNotifyAllowed()) return;
+    const text=feedbackNotificationText(payload);
+    // Без parse_mode: текст пользователя уходит как обычный текст, без HTML-разметки.
+    await Promise.allSettled(admins.map(id=>sendTelegramMessage(id,text,cfg)));
+  }
+
   // Обратная связь открыта всем пользователям с подтверждённым Telegram (initData),
   // а не только закрытой beta. Отзывы beta-участников по-прежнему идут в beta-метрики;
   // остальные пишутся отдельным типом user_feedback и не смешиваются с beta-статистикой.
@@ -163,6 +218,8 @@ export function createBetaPhase5Runtime(deps) {
     if (!BETA_FEEDBACK_CATEGORIES.has(category)) return json({error:'Выберите раздел проблемы.'},400);
     if (!BETA_FEEDBACK_SEVERITIES.has(betaSeverity)) return json({error:'Выберите важность проблемы.'},400);
     if (note.length < 5) return json({error:'Кратко опишите, что произошло.'},400);
+    // Повторная отправка того же текста (двойное нажатие, повтор сети) не создаёт дубль.
+    if (feedbackDuplicate(`${Number(user.id)}:${category}:${note.toLowerCase()}`)) return json({ok:true});
     if (betaMember) {
       const severity=betaSeverity==='BLOCKER' ? 'critical' : betaSeverity==='MAJOR' ? 'warning' : 'info';
       await recordOpsEvent(cfg,{
@@ -174,6 +231,7 @@ export function createBetaPhase5Runtime(deps) {
         endpoint:'/api/beta-feedback',
         meta:{category,betaSeverity,explicitUserFeedback:true,betaCohort:CLOSED_BETA_COHORT,betaMembershipVerified:true},
       });
+      await notifyFeedbackAdminsSafely(cfg,{betaMember:true,category,betaSeverity,note});
       return json({ok:true});
     }
     // Публичный отзыв не поднимается до critical: это мнение пользователя, а не авария сервиса.
@@ -186,7 +244,50 @@ export function createBetaPhase5Runtime(deps) {
       endpoint:'/api/beta-feedback',
       meta:{category,betaSeverity,explicitUserFeedback:true,betaMembershipVerified:false},
     });
+    await notifyFeedbackAdminsSafely(cfg,{betaMember:false,category,betaSeverity,note});
     return json({ok:true});
+  }
+
+  // Уведомление не должно ни ломать, ни задерживать ответ пользователю.
+  async function notifyFeedbackAdminsSafely(cfg, payload) {
+    const task=Promise.resolve().then(()=>notifyFeedbackAdmins(cfg,payload)).catch(()=>{});
+    const waitUntil=cfg?.waitUntil;
+    if (typeof waitUntil === 'function') {
+      try { waitUntil.call(cfg,task); return; } catch {}
+    }
+    await task;
+  }
+
+  function feedbackInboxItem(row) {
+    const meta=row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+    const category=String(meta.category || '');
+    const betaSeverity=String(meta.betaSeverity || '');
+    const beta=row?.event_type === 'beta_feedback';
+    const note=String(row?.message || '').replace(/^(Beta|User) feedback:\s*/,'').slice(0,600);
+    return {
+      createdAt:typeof row?.created_at === 'string' ? row.created_at : null,
+      kind:beta ? 'beta' : 'user',
+      category,
+      categoryLabel:FEEDBACK_CATEGORY_LABELS[category] || 'Другое',
+      severity:betaSeverity,
+      severityLabel:FEEDBACK_SEVERITY_LABELS[betaSeverity] || '—',
+      note,
+    };
+  }
+
+  // Админка: последние отзывы (beta и публичные) без идентификаторов пользователей.
+  async function apiAdminFeedback(request, cfg) {
+    const url=new URL(request.url);
+    const requestedDays=finiteEvidenceNumber(url.searchParams.get('days'));
+    const days=requestedDays === null ? 30 : Math.max(1,Math.min(90,Math.floor(requestedDays)));
+    if (typeof readFeedbackOpsEvents !== 'function') return json({available:false,reason:'Чтение отзывов не настроено.',days,items:[]});
+    const now=Date.now();
+    const result=await readFeedbackOpsEvents(cfg,new Date(now-days*86400_000).toISOString(),new Date(now+1000).toISOString(),100);
+    const items=(Array.isArray(result?.items) ? result.items : [])
+      .filter(row=>row?.event_type==='beta_feedback' || row?.event_type==='user_feedback')
+      .map(feedbackInboxItem)
+      .filter(item=>item.note);
+    return json({available:true,persistent:result?.persistent === true,days,items});
   }
   
   function betaClientEventRows(rows = [], eventName = '') {
@@ -1347,6 +1448,7 @@ export function createBetaPhase5Runtime(deps) {
     betaClientEventRows,
     betaMetricSummary,
     betaTimingSummary,
+    apiAdminFeedback,
     betaFeedbackCounts,
     betaErrorCountByAction,
     betaErrorCountByKind,
