@@ -22,7 +22,7 @@ _пусто_
 
 ## На ревью
 
-- [ ] «Команда» и «Турнир»: починить вкладки, стиль SIGNAL — **Claude** — `claude/team-tournament-signal` — ревью: Codex
+- [ ] «Команда» и «Турнир»: починить вкладки, стиль SIGNAL — **Claude** — [PR #809](https://github.com/TRAP44/football-analytics-cloudflare/pull/809) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 ## Готово
