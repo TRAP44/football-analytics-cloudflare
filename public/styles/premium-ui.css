@@ -2344,3 +2344,14 @@ html[data-theme] body.miniapp-public-shell .standings-table .standings-points b 
 html[data-theme] body.miniapp-public-shell .team-fixture-row .mini-match-action {
   min-height: 36px; padding: 0 12px; border-radius: 999px; font-size: 12px; font-weight: 800;
 }
+
+/* ── Личные экраны в стиле SIGNAL ── */
+/* «Мои команды»: «Открыть →» в одном ряду с названием, а не отдельной строкой. */
+html[data-theme] body.miniapp-public-shell .my-team-head { grid-template-columns: 44px minmax(0, 1fr) auto; }
+html[data-theme] body.miniapp-public-shell .my-team-head > b { grid-column: auto; width: auto; }
+/* «Профиль»: тариф и лимит показывает блок «AI-лимит» — в верхней карточке не дублируем. */
+html[data-theme] body.miniapp-public-shell .profile-panel .profile-billing-dup { display: none; }
+html[data-theme] body.miniapp-public-shell #profileView .profile-panel .plan-card { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* Пока оплата выключена, «Подписка: нет активной» — лишний шум. */
+html[data-theme] body.miniapp-public-shell .billing-panel.is-paused .billing-expiry-cell { display: none; }
+html[data-theme] body.miniapp-public-shell .billing-panel.is-paused .billing-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }

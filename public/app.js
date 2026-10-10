@@ -1106,10 +1106,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch79'),
+      import('./modules/match-center-view.js?v=6.120.0-launch80'),
       import('./modules/match-pulse.js?v=6.120.0-launch65'),
       import('./modules/ai-timeline.js?v=6.120.0-launch63'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch79'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch80'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -2929,7 +2929,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch79');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch80');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3024,7 +3024,8 @@ function radarFeedItems(nowMs = Date.now()) {
         tone: 'ai',
         kicker: 'AI-РАЗБОР ГОТОВ',
         title: `${match.home?.name || ''} — ${match.away?.name || ''}`,
-        meta: [history.aiSignalLabel || 'Сохранённый разбор', Number(history.aiConfidence || 0) ? `уверенность ${Math.round(Number(history.aiConfidence))}/100` : '', timeOf(match.date)].filter(Boolean).join(' · '),
+        // Метки сигнала бывают ставочными («ТБ 2.5», «П1») — показываем только нейтральный итог.
+        meta: [history.aiSignalCode === 'skip' ? 'Без уверенного вывода' : 'Сохранённый разбор', Number(history.aiConfidence || 0) ? `уверенность ${Math.round(Number(history.aiConfidence))}/100` : '', timeOf(match.date)].filter(Boolean).join(' · '),
         action: 'history',
         fixtureId,
       };
@@ -3427,7 +3428,7 @@ function renderAiFocus() {
 }
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch79').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch80').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
