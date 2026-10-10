@@ -206,7 +206,7 @@ test('RC43 Supabase persistence uses an idempotent user+fixture conflict key', a
 test('RC43 public history API maps only compact saved verdict fields', () => {
   assert.match(
     userDataApi,
-    /async function apiHistory\(request, cfg, user\)[\s\S]*?aiSignalCode:safeText\(row\.ai_signal_code,40\)[\s\S]*?aiSignalLabel:safeText\(row\.ai_signal_label,160\)[\s\S]*?aiConfidence:confidence[\s\S]*?aiRisk:safeText\(row\.ai_risk,60\)[\s\S]*?aiOutcome:safeText\(row\.ai_outcome,80\)[\s\S]*?aiTotal:safeText\(row\.ai_total,80\)[\s\S]*?aiBtts:safeText\(row\.ai_btts,80\)/,
+    /async function apiHistory\(request, cfg, user\)[\s\S]*?aiSignalCode:safeText\(row\.ai_signal_code,40\)[\s\S]*?aiSignalLabel:publicSignalLabel\(safeText\(row\.ai_signal_label,160\)\)[\s\S]*?aiConfidence:confidence[\s\S]*?aiRisk:safeText\(row\.ai_risk,60\)[\s\S]*?aiOutcome:safeText\(row\.ai_outcome,80\)[\s\S]*?aiTotal:safeText\(row\.ai_total,80\)[\s\S]*?aiBtts:safeText\(row\.ai_btts,80\)/,
   );
 });
 

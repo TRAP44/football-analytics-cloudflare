@@ -1,3 +1,4 @@
+import { publicSignalLabel } from './signal-wording.js';
 export function createTelegramBotUiRuntime(deps = {}) {
   if (!deps || typeof deps!=='object' || Array.isArray(deps)) {
     throw new TypeError('Telegram bot UI runtime dependencies are required.');
@@ -1147,7 +1148,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
       headline,
       `<b>${escapeHtml(home?.name,120) || 'Хозяева'} — ${escapeHtml(away?.name,120) || 'Гости'}</b>`,
       '',
-      `🎯 Идея: <b>${escapeHtml(signal.label,180) || 'Нет выраженного сигнала'}</b>`,
+      `🎯 Вывод: <b>${escapeHtml(publicSignalLabel(signal.label),180) || 'Нет выраженного сигнала'}</b>`,
       `📊 Исход: ${escapeHtml(verdict.outcome,120) || '—'}`,
       `⚽ Тотал: ${escapeHtml(verdict.total,120) || '—'}`,
       `🥅 Обе забьют: ${escapeHtml(verdict.btts,120) || '—'}`,
@@ -1161,7 +1162,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
         900,
       ) || 'Оцениваю доступные данные матча.'}`,
       skip
-        ? 'Сильного перевеса нет — не нужно искать ставку любой ценой.'
+        ? 'Сильного перевеса нет — исход матча открыт.'
         : 'Перед стартом ещё раз проверьте составы и движение рынка.',
       '',
       '<i>AI-сигнал основан на доступных данных и не гарантирует результат.</i>',

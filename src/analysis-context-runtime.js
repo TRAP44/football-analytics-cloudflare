@@ -1,3 +1,4 @@
+import { NO_CLEAR_SIGNAL_LABEL } from './signal-wording.js';
 // Cached team context, match comparison and AI instructor helpers extracted from worker.js.
 // Cache, provider and analysis primitives are injected by the composition root.
 export function createAnalysisContextRuntime(deps) {
@@ -725,7 +726,7 @@ export function createAnalysisContextRuntime(deps) {
 
     let betSignal=candidates[0] || {
       code:'skip',
-      label:'Пропустить ставку',
+      label:NO_CLEAR_SIGNAL_LABEL,
       strength:0,
       reason:safeProbabilities
         ? 'Нет достаточно выраженного перевеса по доступным сигналам.'
@@ -735,14 +736,14 @@ export function createAnalysisContextRuntime(deps) {
     if (!safeProbabilities) {
       betSignal={
         code:'skip',
-        label:'Пропустить ставку',
+        label:NO_CLEAR_SIGNAL_LABEL,
         strength:0,
         reason:'Расчётные вероятности не прошли проверку качества.',
       };
     } else if (confidenceScore<56 || completenessScore<6) {
       betSignal={
         code:'skip',
-        label:'Пропустить ставку',
+        label:NO_CLEAR_SIGNAL_LABEL,
         strength:0,
         reason:confidenceScore<56
           ? 'Уверенность модели ниже рабочего порога.'
@@ -774,7 +775,7 @@ export function createAnalysisContextRuntime(deps) {
     if (dataTrustScore<60 && betSignal.code!=='skip') {
       betSignal={
         code:'skip',
-        label:'Пропустить ставку',
+        label:NO_CLEAR_SIGNAL_LABEL,
         strength:0,
         reason:'Надёжность входных данных ниже рабочего порога.',
       };
@@ -812,7 +813,7 @@ export function createAnalysisContextRuntime(deps) {
       );
       betSignal={
         code:'skip',
-        label:'Пропустить ставку',
+        label:NO_CLEAR_SIGNAL_LABEL,
         strength:0,
         reason:safeText(primaryReason?.text,280)
           || 'Качество входных данных не прошло рабочий gate.',

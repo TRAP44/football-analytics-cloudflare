@@ -99,7 +99,7 @@ test('AI instructor exposes a real skip state for weak confidence', () => {
 
   assert.equal(result.role, 'football-ai-instructor');
   assert.equal(result.betSignal.code, 'skip');
-  assert.equal(result.betSignal.label, 'Пропустить ставку');
+  assert.equal(result.betSignal.label, 'Без уверенного вывода');
   assert.match(result.betSignal.reason, /Уверенность модели ниже рабочего порога/);
   assert.equal(result.riskLabel, 'Высокий');
   assert.match(result.matchPlan.cancel, /не форсировать решение/);
@@ -198,7 +198,7 @@ test('Telegram verdict renders skip state, referee and user-controlled text safe
   });
 
   assert.match(text, /Лучше пропустить/);
-  assert.match(text, /Пропустить ставку/);
+  assert.match(text, /Без уверенного вывода/);
   assert.match(text, /Судья: &lt;Ref&gt;/);
   assert.match(text, /&lt;Home &amp; Co&gt;/);
   assert.match(text, /Away &gt; Team/);

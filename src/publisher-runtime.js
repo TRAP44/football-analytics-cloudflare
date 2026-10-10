@@ -1,3 +1,4 @@
+import { publicSignalLabel } from './signal-wording.js';
 export function createPublisherRuntime(deps = {}) {
   if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
     throw new TypeError('Publisher runtime dependencies are required.');
@@ -143,7 +144,7 @@ export function createPublisherRuntime(deps = {}) {
       `<b>${telegramHtmlEscape(card.homeName)} — ${telegramHtmlEscape(card.awayName)}</b>`,
       telegramHtmlEscape(card.league || 'Футбол'),
       card.date ? `🗓 ${telegramHtmlEscape(botFixtureDateTime(card.date))}` : '',
-      signal.label ? `🧠 AI: <b>${telegramHtmlEscape(signal.label)}</b>${confidence?` · ${confidence}`:''}` : '🧠 AI-разбор откроется сразу по ссылке.',
+      signal.label ? `🧠 AI: <b>${telegramHtmlEscape(publicSignalLabel(signal.label))}</b>${confidence?` · ${confidence}`:''}` : '🧠 AI-разбор откроется сразу по ссылке.',
       '',
       '<i>Информационная аналитика, не гарантия результата.</i>',
     ].filter(Boolean).join('\n');
