@@ -169,6 +169,11 @@ test('boot screen is amber before app.js sets data-accent (not the Telegram/gree
   // The early rule must not outlive startup: app.js always sets data-accent.
   const app=fs.readFileSync('public/app.js','utf8');
   assert.match(app,/document\.documentElement\.dataset\.accent = initialUiPreferences\.accent;/);
+  // The favicon URL is explicitly versioned: it must change with the recoloured mark.
+  for (const surface of [index,fs.readFileSync('public/admin.html','utf8')]) {
+    assert.match(surface,/matchradar-mark\.svg\?v=6\.120\.0-p43-amber"/);
+    assert.doesNotMatch(surface,/matchradar-mark\.svg\?v=6\.120\.0-p42"/);
+  }
   // Boot glow and progress bar use --brand-mint; it must follow the amber accent.
   const shell=fs.readFileSync('public/styles/public-shell.css','utf8');
   assert.match(shell,/--brand-mint:var\(--accent\);/);
