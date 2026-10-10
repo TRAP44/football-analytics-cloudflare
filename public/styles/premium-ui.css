@@ -1834,6 +1834,9 @@ html[data-theme="light"] .miniapp-public-shell {
 /* Янтарный акцент по умолчанию (пока человек не выбрал свой в настройках). */
 html[data-accent="system"] { --accent: #fbbf24; --accent-text: #1a1203; }
 html[data-accent="system"][data-theme="light"] { --accent: #b45309; --accent-text: #ffffff; }
+/* Явно выбранная «Тёмная» тема: правило :root[data-theme="dark"] из styles.css сильнее по специфичности
+   и раньше возвращало старый зелёный акцент. Янтарь бренда должен быть и здесь. */
+html[data-accent="system"][data-theme="dark"] { --accent: #fbbf24; --accent-text: #1a1203; }
 
 html[data-theme] body.miniapp-public-shell {
   --mr-live: #ff6b7a;
@@ -2028,3 +2031,211 @@ html[data-theme] body.miniapp-public-shell .mr-prob-seg.away {
   border-radius: 6px 999px 999px 6px; background: var(--mr-away); color: #04141f;
 }
 html[data-theme] body.miniapp-public-shell .mr-prob-seg.away.lead { box-shadow: 0 0 18px -4px var(--mr-away); }
+
+/* --------------------------------------------------------------------------
+   MatchRadar SIGNAL — главная в духе прототипа SIGNAL V2 (PR 781), но в янтаре «Стадиона».
+   Редакционная шапка, «Главный матч», компактные строки в ленте.
+   Цвета только из токенов темы (--accent, --surface, --text…), поэтому
+   работают светлая/тёмная/ocean темы и выбранный пользователем акцент.
+   -------------------------------------------------------------------------- */
+html[data-theme] body.miniapp-public-shell .mr-kicker {
+  margin: 0 0 6px; font-size: 11px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* Шапка «Читай игру» */
+html[data-theme] body.miniapp-public-shell .mr-hero {
+  position: relative; overflow: hidden; margin: 4px 0 16px; padding: 6px 2px 0;
+}
+html[data-theme] body.miniapp-public-shell .mr-hero-title {
+  position: relative; z-index: 1; max-width: 12ch; margin: 0;
+  font-size: clamp(34px, 10.5vw, 46px); line-height: 1; font-weight: 900; letter-spacing: -.045em;
+  color: var(--text);
+}
+html[data-theme] body.miniapp-public-shell .mr-hero-title em {
+  font-style: normal; color: var(--accent); text-shadow: 0 0 28px var(--mr-glow);
+}
+html[data-theme] body.miniapp-public-shell .mr-hero-sub {
+  position: relative; z-index: 1; max-width: 30ch; margin: 12px 0 0; font-size: 14px; line-height: 1.45; color: var(--hint);
+}
+html[data-theme] body.miniapp-public-shell .mr-hero-radar {
+  position: absolute; z-index: 0; top: -14px; right: -26px; width: 120px; height: 120px;
+  fill: none; stroke: color-mix(in srgb, var(--accent) 40%, transparent); stroke-width: 1;
+  opacity: .6; pointer-events: none;
+}
+html[data-theme] body.miniapp-public-shell .mr-hero-radar .mr-hero-sweep {
+  stroke: none; fill: color-mix(in srgb, var(--accent) 22%, transparent); transform-origin: 60px 60px;
+}
+html[data-theme] body.miniapp-public-shell .mr-hero-radar .mr-hero-dot { fill: var(--accent); stroke: none; }
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme] body.miniapp-public-shell .mr-hero-radar .mr-hero-sweep { animation: mr-sweep 6s linear infinite; }
+}
+@keyframes mr-sweep { to { transform: rotate(360deg); } }
+html[data-theme] body.miniapp-public-shell .mr-hero-stats {
+  position: relative; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px;
+  margin-top: 16px; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text);
+}
+html[data-theme] body.miniapp-public-shell .mr-hero-stats[hidden] { display: none; }
+html[data-theme] body.miniapp-public-shell .mr-hero-stats > span { display: inline-flex; align-items: center; gap: 7px; }
+html[data-theme] body.miniapp-public-shell .mr-hero-stats b { font-size: 13px; color: var(--accent); font-variant-numeric: tabular-nums; }
+html[data-theme] body.miniapp-public-shell .mr-hero-live b { color: var(--mr-live); }
+html[data-theme] body.miniapp-public-shell .mr-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--mr-glow);
+}
+html[data-theme] body.miniapp-public-shell .mr-dot.is-live { background: var(--mr-live); box-shadow: 0 0 10px var(--mr-live); }
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme] body.miniapp-public-shell .mr-dot.is-live { animation: mr-live-pulse 1.6s ease-in-out infinite; }
+}
+
+/* Заголовки разделов «01 / …» */
+html[data-theme] body.miniapp-public-shell #matchesView > .section-head p.mr-kicker { display: block; margin: 0 0 6px; font-size: 11px; color: var(--accent); }
+html[data-theme] body.miniapp-public-shell #matchesView > .section-head { align-items: flex-end; margin-top: 22px; }
+html[data-theme] body.miniapp-public-shell .mr-section-head {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 22px 0 12px;
+}
+html[data-theme] body.miniapp-public-shell .mr-section-head h2,
+html[data-theme] body.miniapp-public-shell #matchesView .section-head h2 {
+  margin: 0; font-size: 24px; line-height: 1.1; font-weight: 900; letter-spacing: -.03em; color: var(--text);
+}
+html[data-theme] body.miniapp-public-shell .mr-section-note {
+  flex: none; font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--hint);
+}
+
+/* «Главный матч» */
+html[data-theme] body.miniapp-public-shell .mr-featured[hidden] { display: none; }
+html[data-theme] body.miniapp-public-shell .mr-featured-card {
+  position: relative; overflow: hidden; padding: 16px 16px 14px; border-radius: 26px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  background:
+    radial-gradient(260px 200px at 50% 38%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%),
+    radial-gradient(circle at 50% 46%, transparent 0 54px, color-mix(in srgb, var(--text) 6%, transparent) 55px 56px, transparent 57px),
+    linear-gradient(90deg, transparent calc(50% - .5px), color-mix(in srgb, var(--text) 5%, transparent) calc(50% - .5px) calc(50% + .5px), transparent calc(50% + .5px)),
+    linear-gradient(180deg, var(--surface-2), var(--surface));
+  box-shadow: 0 0 40px -18px var(--mr-glow), 0 22px 44px -28px rgba(0,0,0,.75);
+}
+html[data-theme] body.miniapp-public-shell .mr-featured-card.is-live {
+  border-color: color-mix(in srgb, var(--mr-live) 40%, var(--line));
+}
+html[data-theme] body.miniapp-public-shell .mr-featured-top {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 16px;
+}
+html[data-theme] body.miniapp-public-shell .mr-featured-league {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--hint);
+}
+html[data-theme] body.miniapp-public-shell .mr-featured-status {
+  flex: none; font-size: 13px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums;
+}
+html[data-theme] body.miniapp-public-shell .mr-featured-status.is-live {
+  display: inline-flex; align-items: center; gap: 6px; color: var(--mr-live); letter-spacing: .04em;
+}
+html[data-theme] body.miniapp-public-shell .mr-featured-status.is-live::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme] body.miniapp-public-shell .mr-featured-status.is-live::before { animation: mr-live-pulse 1.6s ease-in-out infinite; }
+}
+html[data-theme] body.miniapp-public-shell .mr-featured-teams {
+  display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); align-items: start; gap: 6px;
+}
+html[data-theme] body.miniapp-public-shell .mr-featured-team {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; min-height: 44px;
+  padding: 0; border: 0; background: none; color: var(--text); text-align: center; box-shadow: none;
+}
+html[data-theme] body.miniapp-public-shell .mr-featured-crest {
+  display: grid; place-items: center; width: 60px; height: 60px; border-radius: 18px;
+  background: color-mix(in srgb, var(--text) 5%, transparent); border: 1px solid var(--line);
+}
+html[data-theme] body.miniapp-public-shell .mr-featured-crest img,
+html[data-theme] body.miniapp-public-shell .mr-featured-crest .team-logo-fallback {
+  width: 42px; height: 42px; object-fit: contain; filter: drop-shadow(0 4px 10px rgba(0,0,0,.45)); font-size: 26px; text-align: center;
+}
+html[data-theme] body.miniapp-public-shell .mr-featured-team strong {
+  width: 100%; font-size: 13px; font-weight: 800; line-height: 1.2; letter-spacing: .02em; text-transform: uppercase;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
+}
+html[data-theme] body.miniapp-public-shell .mr-featured-team small { font-size: 11px; color: var(--hint); }
+html[data-theme] body.miniapp-public-shell .mr-featured-score {
+  display: grid; justify-items: center; align-content: center; gap: 6px; min-width: 96px; padding-top: 8px;
+}
+html[data-theme] body.miniapp-public-shell .mr-featured-score strong {
+  font-size: 44px; line-height: 1; font-weight: 900; letter-spacing: -.02em; white-space: nowrap;
+  font-variant-numeric: tabular-nums; color: var(--text); text-shadow: 0 0 24px var(--mr-glow);
+}
+html[data-theme] body.miniapp-public-shell .mr-featured-score strong.is-time { font-size: 32px; color: var(--accent); }
+html[data-theme] body.miniapp-public-shell .mr-featured-score small {
+  max-width: 104px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--hint); text-align: center;
+}
+html[data-theme] body.miniapp-public-shell .mr-featured-card .mr-prob,
+html[data-theme] body.miniapp-public-shell .mr-featured-card .mr-ai-strip { margin-top: 14px; }
+html[data-theme] body.miniapp-public-shell .mr-featured-open {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 52px;
+  margin-top: 16px; padding: 0 20px; border-radius: 18px; border: 0;
+  background: var(--accent); color: var(--accent-text); font-size: 15px; font-weight: 800; text-align: left;
+  box-shadow: 0 0 26px -8px var(--mr-glow);
+}
+html[data-theme] body.miniapp-public-shell .mr-featured-open span { font-size: 20px; line-height: 1; }
+
+/* Лента: компактные строки — команды друг под другом, счёт справа */
+html[data-theme] body.miniapp-public-shell #matches .match-card.compact-match-card { padding: 12px 14px 6px; border-radius: 20px; }
+html[data-theme] body.miniapp-public-shell #matches .match-card-topline { margin-bottom: 10px; }
+html[data-theme] body.miniapp-public-shell #matches .match-card-topline .competition-name {
+  font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--hint);
+}
+html[data-theme] body.miniapp-public-shell #matches .compact-match-row {
+  grid-template-columns: minmax(0,1fr) auto;
+  grid-template-areas: "home score" "away score";
+  align-items: center; column-gap: 12px; row-gap: 4px;
+}
+html[data-theme] body.miniapp-public-shell #matches .compact-team { grid-area: home; }
+html[data-theme] body.miniapp-public-shell #matches .compact-team.away { grid-area: away; }
+html[data-theme] body.miniapp-public-shell #matches .compact-team,
+html[data-theme] body.miniapp-public-shell #matches .compact-team.away {
+  flex-direction: row; align-items: center; justify-content: flex-start; gap: 10px; min-height: 44px; text-align: left;
+}
+html[data-theme] body.miniapp-public-shell #matches .compact-team img,
+html[data-theme] body.miniapp-public-shell #matches .compact-team .team-logo-fallback,
+html[data-theme] body.miniapp-public-shell #matches .compact-team.away img,
+html[data-theme] body.miniapp-public-shell #matches .compact-team.away .team-logo-fallback {
+  flex: none; width: 30px; height: 30px;
+}
+html[data-theme] body.miniapp-public-shell #matches .compact-team strong,
+html[data-theme] body.miniapp-public-shell #matches .compact-team.away strong {
+  text-align: left; font-size: 15px; font-weight: 700;
+}
+html[data-theme] body.miniapp-public-shell #matches .compact-score {
+  grid-area: score; align-self: center; min-width: 64px; padding: 8px 10px; border-radius: 14px;
+  font-size: 22px; text-align: center;
+  background: color-mix(in srgb, var(--text) 4%, transparent); border: 1px solid var(--line);
+}
+html[data-theme] body.miniapp-public-shell #matches .compact-score.score-upcoming {
+  font-size: 12px; font-weight: 800; letter-spacing: .1em; color: var(--hint); background: none; border-color: transparent;
+}
+html[data-theme] body.miniapp-public-shell #matches .compact-actions .analyze-btn { min-height: 44px; margin-top: 12px; font-size: 14px; }
+
+/* Финальный блок «Мы объясняем изменения» */
+html[data-theme] body.miniapp-public-shell .mr-manifesto {
+  position: relative; overflow: hidden; margin: 22px 0 8px; padding: 22px 20px; border-radius: 26px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  background:
+    radial-gradient(circle at 100% 100%, transparent 0 70px, color-mix(in srgb, var(--accent) 12%, transparent) 71px 72px, transparent 73px 110px, color-mix(in srgb, var(--accent) 8%, transparent) 111px 112px, transparent 113px),
+    linear-gradient(160deg, color-mix(in srgb, var(--accent) 10%, var(--surface-2)), var(--surface));
+}
+html[data-theme] body.miniapp-public-shell .mr-manifesto h2 {
+  margin: 0; font-size: 24px; line-height: 1.12; font-weight: 900; letter-spacing: -.03em; color: var(--text);
+}
+html[data-theme] body.miniapp-public-shell .mr-manifesto h2 em { display: block; font-style: normal; color: var(--accent); }
+html[data-theme] body.miniapp-public-shell .mr-manifesto p:last-child { margin: 12px 0 0; font-size: 13px; line-height: 1.5; color: var(--hint); }
+
+@media (max-width: 359px) {
+  html[data-theme] body.miniapp-public-shell .mr-hero-radar { width: 84px; height: 84px; }
+  html[data-theme] body.miniapp-public-shell .mr-featured-score { min-width: 80px; }
+  html[data-theme] body.miniapp-public-shell .mr-featured-score strong { font-size: 36px; }
+  html[data-theme] body.miniapp-public-shell .mr-featured-crest { width: 52px; height: 52px; }
+}
+
+/* Поиск: на узких экранах поле не сжимается до пары букв из-за кнопки. */
+html[data-theme] body.miniapp-public-shell .home-search-block .search-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+html[data-theme] body.miniapp-public-shell .home-search-block .search-input { width: 100%; min-width: 0; }
+html[data-theme] body.miniapp-public-shell .home-search-block .global-search-btn { width: auto; }

@@ -1102,7 +1102,7 @@ async function ensureMatchCenterExtras() {
     matchCenterExtrasPromise = Promise.all([
       import('./modules/match-pulse.js?v=6.120.0-launch65'),
       import('./modules/ai-timeline.js?v=6.120.0-launch63'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch72'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch73'),
     ]).then(([pulse, timeline, headquarters]) => {
       matchCenterExtras = Object.freeze({
         renderMatchPulse: pulse.renderMatchPulse,
@@ -2759,6 +2759,7 @@ async function loadMatches(options = {}) {
     $('matches')?.setAttribute('aria-busy', 'false');
   } else if (!silent) {
     state.matches = [];
+    renderHomeSignal();
     $('matches')?.setAttribute('aria-busy', 'true');
     $('matches').innerHTML = matchSkeletonHtml();
     $('matchesCount').textContent = '';
@@ -2917,7 +2918,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch72');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch73');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3413,6 +3414,12 @@ function renderAiFocus() {
   wrap.querySelectorAll('[data-ai-rank-fixture]').forEach(button => button.addEventListener('click', event => analyzeMatch(Number(event.currentTarget.dataset.aiRankFixture), event.currentTarget)));
   wrap.querySelectorAll('[data-ai-rank-history]').forEach(button => button.addEventListener('click', event => openHistoryAnalysis(Number(event.currentTarget.dataset.aiRankHistory), event.currentTarget)));
 }
+let homeSignal;
+function renderHomeSignal() {
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch73').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal.then(r=>r?.render());
+}
+
 function homeMatchSections(list, nowMs = Date.now()) {
   return buildHomeMatchSections(list,nowMs);
 }
@@ -3454,6 +3461,7 @@ function renderMatches() {
   if ($('matchesCount')) $('matchesCount').textContent = '';
   renderDailyOverview();
   renderRadarFeed();
+  renderHomeSignal();
   renderAiFocus();
   renderAiCenterSummary();
   renderPopularCompetitions();
