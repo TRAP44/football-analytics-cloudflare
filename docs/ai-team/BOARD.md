@@ -8,6 +8,15 @@
 
 ## Бэклог (Сергей расставляет приоритет сверху вниз)
 
+- [ ] Задача 0: деплой после правок секретов в панели Cloudflare (правка гейта, нужно явное «да» Сергея) — **Claude** — см. `TASKS_RU.md`
+- [ ] Задача 2: вероятности на карточках для всех главных матчей дня — **Codex** — см. `TASKS_RU.md`
+- [ ] Задача 3: кривая вероятности по ходу матча — **Codex** — см. `TASKS_RU.md`
+- [ ] Задача 4: экран составов (макет E, 2.5D на CSS) — **Codex** — см. `TASKS_RU.md`
+- [ ] Задача 5: LLM-слой «объяснение» + нейтральные формулировки — **Codex** — после задачи 0 — см. `TASKS_RU.md`
+- [ ] Задача 6: вопросы по матчу — **Codex** — после задачи 5 — см. `TASKS_RU.md`
+- [ ] Задача 7: разбор после матча — базовый блок уже есть, найти и закрыть пробелы — **Codex** — см. `TASKS_RU.md`
+- [ ] Янтарные логотип, иконка и аватар (`public/assets/brand/*.svg`, сейчас mint) — **Claude**
+
 ## В работе
 
 _пусто_
@@ -16,15 +25,13 @@ _пусто_
 
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
-- [ ] Запросы к API-Football через ретранслятор Supabase (`API_FOOTBALL_BASE_URL`) — **Claude** — `claude/football-relay-base-url` — ревью: Codex
-- [ ] Главная в стиле SIGNAL (вариант 3, янтарь): шапка «Читай игру», «Главный матч», компактная лента — **Claude** — `claude/home-signal-amber` / [PR #803](https://github.com/TRAP44/football-analytics-cloudflare/pull/803) — ревью: Codex
-
 ## Готово
 
 - [x] Наблюдение в штабе и список матчей на главной — **Codex** — [PR #801](https://github.com/TRAP44/football-analytics-cloudflare/pull/801)
 - [x] Персональный первый вход и ближайший матч любимой команды — **Codex** — [PR #799](https://github.com/TRAP44/football-analytics-cloudflare/pull/799)
 - [x] Обновить `MATCHRADAR_BRAND_SPEC_RU.md` под янтарный неон-акцент — **Codex** — `codex/brand-spec-amber` / [PR #797](https://github.com/TRAP44/football-analytics-cloudflare/pull/797)
-
+- [x] Главная в стиле SIGNAL (янтарь) — **Claude** — [PR #803](https://github.com/TRAP44/football-analytics-cloudflare/pull/803)
+- [x] Запросы к API-Football через ретранслятор Supabase — **Claude** — [PR #800](https://github.com/TRAP44/football-analytics-cloudflare/pull/800)
 - [x] Настройка совместной работы Claude + Codex — **Claude** — [PR #793](https://github.com/TRAP44/football-analytics-cloudflare/pull/793)
 
 ## Идеи / найдено по пути
