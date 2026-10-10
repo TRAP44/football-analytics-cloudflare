@@ -242,9 +242,8 @@ export function selectHomePersonalMatch({
   rows.sort((a,b)=>{
     if (a.live!==b.live) return a.live ? -1 : 1;
     if (a.favorite!==b.favorite) return a.favorite ? -1 : 1;
-    const kickoffDelta=(a.kickoffMs ?? Number.POSITIVE_INFINITY)
-      -(b.kickoffMs ?? Number.POSITIVE_INFINITY);
-    if (Number.isFinite(kickoffDelta) && kickoffDelta) return kickoffDelta;
+    if ((a.kickoffMs===null)!==(b.kickoffMs===null)) return a.kickoffMs===null ? 1 : -1;
+    if (a.kickoffMs!==null && b.kickoffMs!==null && a.kickoffMs!==b.kickoffMs) return a.kickoffMs-b.kickoffMs;
     return b.score-a.score;
   });
 
