@@ -1106,10 +1106,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch87'),
+      import('./modules/match-center-view.js?v=6.120.0-launch88'),
       import('./modules/match-pulse.js?v=6.120.0-launch87'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch87'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch87'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch88'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch88'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1265,7 +1265,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch87').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch88').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -2941,7 +2941,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch87');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch88');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3388,7 +3388,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch87').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch88').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -5309,7 +5309,7 @@ function formCard(title, form) {
       <span><b>${o.ppg}</b><small>очки/матч</small></span>
       <span><b>${o.gfAvg}</b><small>забито</small></span>
       <span><b>${o.gaAvg}</b><small>пропущено</small></span>
-      <span><b>${o.over25Pct}%</b><small>ТБ 2.5</small></span>
+      <span><b>${o.over25Pct}%</b><small>3+ гола</small></span>
     </div>
     ${v?.sample ? `<p class="muted">${form.preferredVenue === 'home' ? 'Дома' : 'В гостях'}: ${v.ppg} очка/матч · выборка ${v.sample}</p>` : ''}
   </div>`;
@@ -5504,7 +5504,7 @@ function lineupBlock(title, lineup) {
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch87');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch88');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {
@@ -5612,8 +5612,8 @@ function comparisonTeamHeader(team, side, edges) {
 
 
 function prematchOutcomeName(key, match) {
-  if (key === 'home') return match.home?.name || 'П1';
-  if (key === 'away') return match.away?.name || 'П2';
+  if (key === 'home') return match.home?.name || 'Хозяева';
+  if (key === 'away') return match.away?.name || 'Гости';
   if (key === 'draw') return 'Ничья';
   return '—';
 }
@@ -5680,9 +5680,9 @@ function prematchBriefHtml(pm, match, probabilities) {
       </div>
 
       <div class="prematch-hero-probs">
-        <div><span>${escapeHtml(match.home?.name || 'П1')}</span><strong>${pct(probabilities?.home)}</strong></div>
+        <div><span>${escapeHtml(match.home?.name || 'Хозяева')}</span><strong>${pct(probabilities?.home)}</strong></div>
         <div><span>Ничья</span><strong>${pct(probabilities?.draw)}</strong></div>
-        <div><span>${escapeHtml(match.away?.name || 'П2')}</span><strong>${pct(probabilities?.away)}</strong></div>
+        <div><span>${escapeHtml(match.away?.name || 'Гости')}</span><strong>${pct(probabilities?.away)}</strong></div>
       </div>
       ${probabilityStrip(probabilities)}
     </section>

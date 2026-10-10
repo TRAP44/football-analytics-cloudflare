@@ -234,7 +234,7 @@ test('Match Intelligence assets use the current frontend revision', () => {
   const revision=index.match(
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
-  assert.equal(revision,'6.120.0-launch87');
+  assert.equal(revision,'6.120.0-launch88');
   for (const asset of [
     'styles.css',
     'styles/public-shell.css',
