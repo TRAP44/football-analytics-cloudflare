@@ -2315,5 +2315,6 @@ html[data-theme] body.miniapp-public-shell .mr-ai-proof-bar i { display: block; 
 html[data-theme] body.miniapp-public-shell .mr-ai-proof-bar .hit { background: var(--accent); }
 html[data-theme] body.miniapp-public-shell .mr-ai-proof-bar .miss { background: color-mix(in srgb, var(--hint) 45%, transparent); }
 html[data-theme] body.miniapp-public-shell .mr-ai-proof-note { margin: 8px 0 0; font-size: 12px; line-height: 1.45; color: var(--hint); }
+html[data-theme] body.miniapp-public-shell .mr-ai-proof-stale { margin: 6px 0 0; font-size: 12px; line-height: 1.45; color: var(--accent); }
 html[data-theme] body.miniapp-public-shell .mr-ai-proof.is-empty p { margin: 6px 0 0; font-size: 13px; line-height: 1.45; color: var(--hint); }
 html[data-theme] body.miniapp-public-shell .mr-ai-proof-link { margin-top: 6px; min-height: 44px; padding: 0; color: var(--accent); font-weight: 700; }

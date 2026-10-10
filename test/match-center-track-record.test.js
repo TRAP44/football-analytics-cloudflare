@@ -70,3 +70,13 @@ test('Match Center loads the public protocol lazily and rerenders when it arrive
   assert.match(load.slice(load.indexOf('finally')),/rerenderOpenMatchCenter\(\);/);
   assert.match(load,/\/api\/ai-track-record\?days=180/);
 });
+
+test('a retained protocol after a failed refresh is labelled as the last loaded version',()=>{
+  const sample={verified:42,matched:23,missed:19,state:'forming',label:'Выборка формируется'};
+  const fresh=matchCenterTrackRecordHtml({aiTrackRecordLoaded:true,aiTrackRecord:record(sample)},escapeHtml);
+  assert.doesNotMatch(fresh,/последняя загруженная версия/);
+  const stale=matchCenterTrackRecordHtml({aiTrackRecordLoaded:true,aiTrackRecordError:'timeout',aiTrackRecord:record(sample)},escapeHtml);
+  assert.match(stale,/class="mr-ai-proof-stale"/);
+  assert.match(stale,/показана последняя загруженная версия/);
+  assert.match(stale,/совпал в <strong>23<\/strong> из <strong>42<\/strong>/);
+});

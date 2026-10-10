@@ -53,6 +53,7 @@ export function matchCenterTrackRecordHtml(state, escapeHtml) {
       <i class="hit" style="flex-grow:${matched}"></i><i class="miss" style="flex-grow:${missed}"></i>
     </div>
     <p class="mr-ai-proof-note">За ${days} дней, только прогнозы, сделанные до матча. ${small ? 'Выборка пока маленькая — цифры будут меняться.' : 'Прошлые результаты не гарантируют будущие.'}</p>
+    ${state.aiTrackRecordError ? '<p class="mr-ai-proof-stale">Не удалось обновить протокол — показана последняя загруженная версия.</p>' : ''}
     <button class="text-btn mr-ai-proof-link" type="button" data-center-track-record>Вся проверенная история модели →</button>
   </section>`;
 }
