@@ -182,8 +182,9 @@ test('RC41 AI verdict summarizes outcome, total, BTTS and a concrete action', ()
   });
   assert.equal(ai.betSignal.code, 'double_home');
   assert.equal(ai.betSignal.label, '1X · хозяева не проиграют');
-  assert.match(app, /aria-label="Вердикт AI за 10 секунд"/);
-  assert.match(css, /\.ai-verdict-grid/);
+  // Mini App показывает «Сценарии матча» словами, а не ставочный вердикт (сервер не меняется).
+  assert.match(app, /aria-label="Сценарии матча по оценке модели"/);
+  assert.doesNotMatch(app, /aria-label="Вердикт AI за 10 секунд"/);
 });
 
 test('RC41 market movement note validates samples and reports the strongest 1X2 shift', () => {
@@ -281,7 +282,8 @@ test('RC41 pre-match analysis wires odds movement and lineup impact into the AI 
     /aiInstructor=objectValue\(buildAiInstructor\(\{[\s\S]*?lineupImpact,[\s\S]*?marketMovement,/,
   );
   assert.match(analysisRuntime, /\n\s*aiInstructor,\n/);
-  assert.match(app, /ai-market-note/);
+  // Заметка о движении рынка больше не показывается в Mini App; заметка о составах — да.
+  assert.doesNotMatch(app, /ai-market-note/);
   assert.match(app, /ai-lineup-note/);
 });
 

@@ -1106,10 +1106,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch84'),
+      import('./modules/match-center-view.js?v=6.120.0-launch85'),
       import('./modules/match-pulse.js?v=6.120.0-launch65'),
       import('./modules/ai-timeline.js?v=6.120.0-launch63'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch84'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch85'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1265,7 +1265,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch84').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch85').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -2941,7 +2941,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch84');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch85');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3388,7 +3388,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch84').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch85').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -5587,7 +5587,7 @@ function lineupBlock(title, lineup) {
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch84');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch85');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {
@@ -5819,59 +5819,82 @@ function providerCoverageHtml(reliability = {}) {
   return `<section class="provider-coverage-card ${escapeHtml(state)}"><div class="provider-coverage-head"><strong>${escapeHtml(title)}</strong><span>доверие ≤ ${cap}</span></div><div class="provider-coverage-grid">${rows}</div><p>${escapeHtml(publicText(typeof data.note === 'string' && data.note.trim() ? data.note : 'AI использует только подтверждённые сигналы.'))}</p></section>`;
 }
 
-function aiInstructorHtml(ai = {}, match = {}, kickoffHandoff = {}) {
-  const signal = ai.betSignal || {};
-  const verdict = ai.verdict || {};
-  const factors = Array.isArray(ai.factors) ? ai.factors.slice(0, 3) : [];
-  const risks = Array.isArray(ai.risks) ? ai.risks.slice(0, 2) : [];
-  const handoffLocked = Boolean(kickoffHandoff?.locked);
-  const signalClass = handoffLocked ? 'archived' : signal.code === 'skip' ? 'skip' : signal.code === 'watch' ? 'watch' : 'active';
-  const confidenceText = Number.isFinite(Number(ai.confidenceScore)) ? `${Math.round(Number(ai.confidenceScore))}/100` : 'данных мало';
+// «Сценарии матча» вместо ставочного «AI-инструктора»: исходы и голы словами,
+// без меток сигнала («ТБ 2.5», «1X»), рынка и «решений».
+// Границы слов через Unicode-классы: \b в JS не видит кириллицу (ревью Codex #816).
+// Без просмотра назад (lookbehind): Safari до 16.4 — старые iPhone в Telegram — его не разбирает.
+const SCENARIO_BETTING_TEXT = /коэффициент|рын(ок|ка|ке|ком)|ставк|букмекер|тотал|обе забьют|форсир|(^|[^\p{L}\p{N}])(ТБ|ТМ|П1|П2|1X|X2|Х2|1Х)(?![\p{L}\p{N}])/iu;
+function scenarioText(value) {
+  const text = publicText(String(value || ''));
+  return text && !SCENARIO_BETTING_TEXT.test(text) ? text : '';
+}
+
+function scenarioOutcomes(p = {}, match = {}) {
+  const rows = [
+    { label: `Победа ${match.home?.name || 'хозяев'}`, value: p.home },
+    { label: 'Ничья', value: p.draw },
+    { label: `Победа ${match.away?.name || 'гостей'}`, value: p.away },
+  ].map(row => ({ ...row, value: row.value === null || row.value === undefined || row.value === '' ? NaN : Number(row.value) }));
+  if (!rows.every(row => Number.isFinite(row.value) && row.value >= 0 && row.value <= 100)) return [];
+  if (Math.abs(rows.reduce((sum, row) => sum + row.value, 0) - 100) > 3) return [];
+  return rows.sort((x, y) => y.value - x.value);
+}
+
+function scenarioCardHtml(kind, title, label, value) {
+  const percent = Math.round(clampPercent(value));
+  return `<article class="scenario-card ${kind}"><span>${escapeHtml(title)}</span><strong>${escapeHtml(label)}</strong><b>${percent}%</b><i style="--scenario:${percent}%"></i></article>`;
+}
+
+function matchScenariosHtml({ ai = {}, match = {}, probabilities = {}, goal = null, kickoffHandoff = {} } = {}) {
+  const locked = Boolean(kickoffHandoff?.locked);
+  const outcomes = scenarioOutcomes(probabilities, match);
+  const [main, alt] = outcomes;
+  const open = Boolean(main && alt && main.value - alt.value < 1);
+  const over = Number(goal?.over25);
+  const both = Number(goal?.btts);
+  const goalCards = [];
+  if (goal && Number.isFinite(over) && over >= 0 && over <= 100) {
+    goalCards.push(over >= 55
+      ? scenarioCardHtml('goals', 'Голы', 'Результативная игра: 3+ гола', over)
+      : over <= 45
+        ? scenarioCardHtml('goals', 'Голы', 'Скорее мало голов: до 2', 100 - over)
+        : scenarioCardHtml('goals', 'Голы', '3+ гола — шансы равны', over));
+  }
+  if (goal && Number.isFinite(both) && both >= 0 && both <= 100) goalCards.push(scenarioCardHtml('goals', 'Голы', 'Забьют обе команды', both));
+
+  const factors = (Array.isArray(ai.factors) ? ai.factors : []).map(scenarioText).filter(Boolean).slice(0, 3);
+  const risks = (Array.isArray(ai.risks) ? ai.risks : []).map(scenarioText).filter(Boolean).slice(0, 3);
+  const checks = (Array.isArray(ai.matchPlan?.checks) ? ai.matchPlan.checks : []).map(scenarioText).filter(Boolean).slice(0, 2);
+  const liveWatch = scenarioText(ai.matchPlan?.liveWatch);
+  const confidenceText = Number.isFinite(Number(ai.confidenceScore)) ? `${Math.round(clampPercent(ai.confidenceScore))}/100` : 'данных мало';
   const dataTrust = ai.dataTrust || {};
+  const dataTrustScore = Number.isFinite(Number(dataTrust.score)) ? `${Math.round(clampPercent(dataTrust.score))}%` : '—';
+  const lineupNote = scenarioText(ai.lineupImpact?.note);
   const qualityGate = ai.qualityGate || {};
   const gateReasons = Array.isArray(qualityGate.reasons) ? qualityGate.reasons.slice(0, 2) : [];
-  const matchPlan = ai.matchPlan || {};
-  const checks = Array.isArray(matchPlan.checks) ? matchPlan.checks.slice(0, 3) : [];
-  const dataTrustScore = Number.isFinite(Number(dataTrust.score)) ? `${Math.round(Number(dataTrust.score))}%` : '—';
   return `
-    <section class="panel ai-instructor-card ${signalClass}">
+    <section class="panel ai-instructor-card match-scenarios ${locked ? 'archived' : 'active'}">
       <div class="ai-instructor-head">
-        <div><span>AI ФУТБОЛЬНЫЙ ИНСТРУКТОР</span><h2>${handoffLocked ? 'Предматчевый разбор зафиксирован' : 'Мой разбор перед матчем'}</h2></div>
+        <div><span>AI · СЦЕНАРИИ МАТЧА</span><h2>${locked ? 'Предматчевый разбор зафиксирован' : 'Как может сложиться игра'}</h2></div>
         <b>AI</b>
       </div>
-      <div class="ai-verdict-grid" aria-label="Вердикт AI за 10 секунд">
-        <div><span>Исход</span><strong>${escapeHtml(verdict.outcome || '—')}</strong></div>
-        <div><span>Тотал 2.5</span><strong>${escapeHtml(verdict.total || '—')}</strong></div>
-        <div><span>Обе забьют</span><strong>${escapeHtml(verdict.btts || '—')}</strong></div>
-        <div class="${handoffLocked ? 'archived' : signal.code === 'skip' ? 'skip' : 'action'}"><span>${handoffLocked ? 'Сигнал до старта' : 'Решение'}</span><strong>${escapeHtml(signal.label || 'Изучить матч')}</strong></div>
+      ${outcomes.length ? `<div class="scenario-grid" aria-label="Сценарии матча по оценке модели">
+        ${scenarioCardHtml('main', 'Основной сценарий', open ? 'Нет явного фаворита' : main.label, main.value)}
+        ${scenarioCardHtml('alt', 'Альтернатива', alt.label, alt.value)}
+        ${goalCards.join('')}
+      </div>` : `<div class="empty compact-empty">Сценарии появятся, когда у модели будет достаточно данных по матчу.</div>`}
+      ${lineupNote ? `<div class="ai-lineup-note">👥 ${escapeHtml(lineupNote)}</div>` : ''}
+      <div class="ai-instructor-facts">
+        <div><span>Уверенность модели</span><strong>${escapeHtml(ai.confidenceLabel || '—')}</strong><small>${confidenceText}</small></div>
+        <div class="ai-data-trust"><span>Качество данных</span><strong>${escapeHtml(dataTrust.label || 'Оценивается')}</strong><small>${dataTrustScore}${scenarioText(dataTrust.note) ? ` · ${escapeHtml(scenarioText(dataTrust.note))}` : ''}</small></div>
+        <div class="ai-data-trust"><span>Проверка качества</span><strong>${escapeHtml(qualityGate.label || 'Оценивается')}</strong><small>${escapeHtml(scenarioText(gateReasons[0]?.text) || 'Без блокирующих замечаний к данным.')}</small></div>
+        <div><span>Судья</span><strong>${escapeHtml(ai.refereeProfile?.name || ai.referee || match.referee || 'Ещё не указан')}</strong><small>${escapeHtml(publicText(ai.refereeHistory?.available ? `${ai.refereeHistory.styleLabel} · ${ai.refereeHistory.avgYellow} жёлт. · ${ai.refereeHistory.avgRed} красн. · выборка ${ai.refereeHistory.sample}` : ai.refereeProfile?.country ? `${ai.refereeProfile.country} · ${ai.refereeNote || ''}` : ai.refereeNote || 'Назначение судьи может появиться ближе к матчу.'))}</small></div>
       </div>
-      <div class="ai-instructor-main">
-        <div class="ai-instructor-pick">
-          <span>${handoffLocked ? 'Архивная идея до старта' : 'Главная идея'}</span>
-          <strong>${escapeHtml(signal.label || 'Сначала изучить матч')}</strong>
-          <small>${escapeHtml(publicText(signal.reason || 'Собираю доступные сигналы и риски.'))}</small>
-          ${ai.marketNote ? `<div class="ai-market-note">💹 ${escapeHtml(publicText(ai.marketNote))}</div>` : ''}
-          ${ai.lineupImpact?.note ? `<div class="ai-lineup-note">👥 ${escapeHtml(publicText(ai.lineupImpact.note))}</div>` : ''}
-        </div>
-        <div class="ai-instructor-facts">
-          <div><span>Уверенность</span><strong>${escapeHtml(ai.confidenceLabel || '—')}</strong><small>${confidenceText}</small></div>
-          <div><span>Риск</span><strong>${escapeHtml(ai.riskLabel || '—')}</strong><small>${escapeHtml(publicText(ai.riskNote || 'Оценивайте несколько факторов.'))}</small></div>
-          <div><span>Судья</span><strong>${escapeHtml(ai.refereeProfile?.name || ai.referee || match.referee || 'Ещё не указан')}</strong><small>${escapeHtml(publicText(ai.refereeHistory?.available ? `${ai.refereeHistory.styleLabel} · ${ai.refereeHistory.avgYellow} жёлт. · ${ai.refereeHistory.avgRed} красн. · выборка ${ai.refereeHistory.sample}` : ai.refereeProfile?.country ? `${ai.refereeProfile.country} · ${ai.refereeNote || ''}` : ai.refereeNote || 'Назначение судьи может появиться ближе к матчу.'))}</small></div>
-          <div class="ai-data-trust"><span>Качество данных</span><strong>${escapeHtml(dataTrust.label || 'Оценивается')}</strong><small>${dataTrustScore} · ${escapeHtml(publicText(dataTrust.note || 'Отдельно от уверенности модели.'))}</small></div>
-          <div class="ai-data-trust"><span>Quality Gate</span><strong>${escapeHtml(qualityGate.label || 'Оценивается')}</strong><small>${escapeHtml(publicText(gateReasons[0]?.text || 'Проверка качества сигнала пройдена без блокирующих причин.'))}</small></div>
-        </div>
-      </div>
-      ${factors.length ? `<div class="ai-instructor-reasons"><strong>Почему так</strong><ul>${factors.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul></div>` : ''}
-      ${risks.length ? `<div class="ai-instructor-risks"><strong>Что может сломать сценарий</strong><ul>${risks.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul></div>` : ''}
-      <div class="ai-match-plan">
-        <div class="ai-match-plan-head"><span>AI-ПЛАН ДО СТАРТОВОГО СВИСТКА</span><strong>Что проверить перед решением</strong></div>
-        ${checks.length ? `<div class="ai-match-plan-checks">${checks.map((x,i) => `<div><b>${i+1}</b><span>${escapeHtml(publicText(x))}</span></div>`).join('')}</div>` : ''}
-        <div class="ai-match-plan-grid">
-          <div><span>Условие отмены</span><strong>${escapeHtml(publicText(matchPlan.cancel || 'Если ключевые данные изменятся — пересмотреть сценарий.'))}</strong></div>
-          <div><span>Что смотреть дальше</span><strong>${escapeHtml(publicText(matchPlan.liveWatch || 'После стартового свистка сверять фактический рисунок игры с предматчевым сценарием.'))}</strong></div>
-        </div>
-      </div>
-      <p class="ai-instructor-disclaimer">Это аналитический сигнал по данным матча, а не гарантия результата. Если сигнал слабый, честнее считать исход открытым.</p>
+      ${factors.length ? `<div class="ai-instructor-reasons"><strong>Почему так</strong><ul>${factors.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>` : ''}
+      ${risks.length ? `<div class="ai-instructor-risks"><strong>Что может изменить картину</strong><ul>${risks.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>` : ''}
+      ${!locked && checks.length ? `<div class="ai-instructor-reasons"><strong>Что уточнить до начала</strong><ul>${checks.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>` : ''}
+      ${liveWatch ? `<div class="ai-instructor-reasons"><strong>Что смотреть по ходу матча</strong><p>${escapeHtml(liveWatch)}</p></div>` : ''}
+      <p class="ai-instructor-disclaimer">Сценарии — это оценка модели по данным матча, а не гарантия результата. Если перевес небольшой, исход стоит считать открытым.</p>
     </section>`;
 }
 
@@ -5890,8 +5913,10 @@ let launchIntentHandled = false;
 async function openLaunchFixture(fixtureId, action, tab = '', handoff = false, newsImpactDecision = '', newsImpactAction = '', newsImpactRecoveryCode = '', newsImpactRecoveryFrom = '') {
   const id = canonicalLaunchFixtureId(fixtureId);
   if (id === null) return;
-  const allowedTabs = new Set(['brief','overview','form','comparison','market','squads','context']);
-  const requestedTab = allowedTabs.has(String(tab || '').toLowerCase()) ? String(tab).toLowerCase() : '';
+  const allowedTabs = new Set(['brief','overview','form','comparison','model','squads','context']);
+  // Старые ссылки на вкладку «Рынок» ведут во вкладку «Модель».
+  const rawTab = String(tab || '').toLowerCase() === 'market' ? 'model' : String(tab || '').toLowerCase();
+  const requestedTab = allowedTabs.has(rawTab) ? rawTab : '';
   if (requestedTab) state.currentAnalysisTab = requestedTab;
   if (action === 'center') return openMatchCenter(id, null);
   if (action === 'analysis') {
@@ -6012,13 +6037,6 @@ function dataProvenanceHtml(provenance = {}) {
   </section>`;
 }
 
-function cockpitProviderLabel(provider = '') {
-  const key=String(provider || '').toLowerCase();
-  if (key==='api-football') return 'API-Football';
-  if (key==='the-odds-api') return 'The Odds API';
-  return provider ? String(provider) : '—';
-}
-
 function matchCockpitHtml(d = {}) {
   const cockpit=deriveMatchCockpit(d);
   const {
@@ -6030,7 +6048,6 @@ function matchCockpitHtml(d = {}) {
     injuries,
     lineups,
     h2h,
-    market,
     quality,
   }=cockpit;
 
@@ -6040,11 +6057,6 @@ function matchCockpitHtml(d = {}) {
   const rank=value=>Number.isSafeInteger(value)
     ? `${value} место`
     : '—';
-
-  const movement=market?.strongestMove;
-  const movementText=movement
-    ? `Рынок: ${movement[0]} ${movement[1]>0?'+':''}${movement[1].toFixed(1)} п.п.`
-    : '';
 
   const lineupText=lineups.confirmedCount===2
     ? 'Оба стартовых состава подтверждены'
@@ -6102,10 +6114,6 @@ function matchCockpitHtml(d = {}) {
         h2h ? `${h2h.homeWins} — ${h2h.draws} — ${h2h.awayWins}` : 'Нет выборки',
         h2h ? `${homeName} · ничьи · ${awayName}, выборка ${h2h.sample}` : 'H2H не используется, если источник не вернул выборку',
         Boolean(h2h))}
-      ${card('market','💹','Коэффициенты П1 / Н / П2',
-        market ? `${market.odds.home} · ${market.odds.draw} · ${market.odds.away}` : 'Недоступен',
-        market ? `${cockpitProviderLabel(market.provider)}${movementText ? ` · ${movementText}` : ''}` : 'Рыночный сигнал исключён из модели',
-        Boolean(market))}
       ${card('overview','🧠','Качество оценки',
         qualityText,
         quality.label || 'Уверенность модели и полнота входных данных считаются отдельно',
@@ -6141,7 +6149,6 @@ function renderAnalysis(d) {
   state.currentAnalysis = d;
   const p = d.probabilities || {};
   const m = d.match || {};
-  const market = d.market;
   const pred = d.apiPrediction;
   const h2h = d.h2h || {};
   const news = d.news || {};
@@ -6189,9 +6196,9 @@ function renderAnalysis(d) {
       </div>
 
       <div class="experience-prob-labels">
-        <div><span>П1</span><strong>${pct(p.home)}</strong></div>
-        <div><span>Н</span><strong>${pct(p.draw)}</strong></div>
-        <div><span>П2</span><strong>${pct(p.away)}</strong></div>
+        <div><span>Хозяева</span><strong>${pct(p.home)}</strong></div>
+        <div><span>Ничья</span><strong>${pct(p.draw)}</strong></div>
+        <div><span>Гости</span><strong>${pct(p.away)}</strong></div>
       </div>
       ${probabilityStrip(p)}
 
@@ -6223,14 +6230,14 @@ function renderAnalysis(d) {
       <button class="analysis-tab-btn" data-tab="overview" type="button">Обзор</button>
       <button class="analysis-tab-btn" data-tab="form" type="button">Форма</button>
       <button class="analysis-tab-btn" data-tab="comparison" type="button">Сравнение</button>
-      <button class="analysis-tab-btn" data-tab="market" type="button">Рынок</button>
+      <button class="analysis-tab-btn" data-tab="model" type="button">Модель</button>
       <button class="analysis-tab-btn" data-tab="squads" type="button">Составы</button>
       <button class="analysis-tab-btn" data-tab="context" type="button">Контекст</button>
     </div>
 
     <div class="analysis-tab-panel" data-panel="brief">
       ${prematchBriefHtml(d.preMatchIntelligence, m, p)}
-      ${aiInstructorHtml(d.aiInstructor || {}, m, d.kickoffHandoff || {})}
+      ${matchScenariosHtml({ ai: d.aiInstructor || {}, match: m, probabilities: p, goal, kickoffHandoff: d.kickoffHandoff || {} })}
     </div>
 
     <div class="analysis-tab-panel" data-panel="overview">
@@ -6250,8 +6257,8 @@ function renderAnalysis(d) {
           <div><span>${escapeHtml(m.away?.name || 'Гости')}</span><strong>${goal.awayExpected}</strong></div>
         </div>
         <div class="goal-market-grid">
-          <div><span>ТБ 2.5</span><strong>${pct(goal.over25)}</strong><div class="mini-progress"><i style="width:${clampPercent(goal.over25)}%"></i></div></div>
-          <div><span>Обе забьют</span><strong>${pct(goal.btts)}</strong><div class="mini-progress"><i style="width:${clampPercent(goal.btts)}%"></i></div></div>
+          <div><span>3+ гола в матче</span><strong>${pct(goal.over25)}</strong><div class="mini-progress"><i style="width:${clampPercent(goal.over25)}%"></i></div></div>
+          <div><span>Забьют обе команды</span><strong>${pct(goal.btts)}</strong><div class="mini-progress"><i style="width:${clampPercent(goal.btts)}%"></i></div></div>
         </div>
         <p class="muted">Модель Пуассона по недавней результативности. Качество выборки: <b>${escapeHtml(goal.qualityLabel || 'Оценивается')}</b>${Number.isFinite(Number(goal.qualityScore)) ? ` · ${Math.round(Number(goal.qualityScore))}/100` : ''}. Это не официальный показатель ожидаемых голов.</p>` : '<p class="muted">Недостаточно недавних матчей для голевой модели.</p>'}
       </section>
@@ -6306,17 +6313,7 @@ function renderAnalysis(d) {
 
     </div>
 
-    <div class="analysis-tab-panel" data-panel="market">
-      <section class="panel">
-        <h2>💹 Коэффициенты П1 / Н / П2</h2>
-        ${oddsQualityHintHtml(d.oddsQuality)}
-        <div class="odds-grid">
-          <div><span>П1</span><strong>${market?.odds?.home ?? '—'}</strong></div>
-          <div><span>Н</span><strong>${market?.odds?.draw ?? '—'}</strong></div>
-          <div><span>П2</span><strong>${market?.odds?.away ?? '—'}</strong></div>
-        </div>
-        <p class="muted">Букмекеров в выборке: ${market?.bookmakers ?? '—'}. Коэффициенты отражают рынок, а не гарантированный исход.</p>
-      </section>
+    <div class="analysis-tab-panel" data-panel="model">
       <details class="panel analysis-disclosure">
         <summary>Подробнее о расчёте</summary>
         <div class="analysis-disclosure-body">

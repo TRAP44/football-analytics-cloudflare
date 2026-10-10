@@ -334,7 +334,7 @@ test('RC105 analysis payload preserves the current starting-XI cohort version wi
 });
 
 test('RC105 UI exposes quality gate reason and goal-sample quality', () => {
-  assert.match(appSource, /<span>Quality Gate<\/span>/);
+  assert.match(appSource, /<span>Проверка качества<\/span>/);
   assert.match(appSource, /qualityGate\.label/);
   assert.match(appSource, /gateReasons\[0\]\?\.text/);
   assert.match(appSource, /Качество выборки:/);

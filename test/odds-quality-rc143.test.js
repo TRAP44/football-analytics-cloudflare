@@ -244,6 +244,7 @@ test('RC143 exposes odds quality through Match Center, analysis and production h
   assert.match(worker,/liveOdds:liveOddsTrusted/);
   assert.match(app,/function oddsQualityHintHtml/);
   assert.match(app,/oddsQualityHintHtml\(d\.liveOddsQuality\)/);
-  assert.match(app,/oddsQualityHintHtml\(d\.oddsQuality\)/);
+  // Полный разбор больше не показывает коэффициенты букмекеров (вкладка «Рынок» → «Модель»).
+  assert.doesNotMatch(app,/oddsQualityHintHtml\(d\.oddsQuality\)/);
   assert.match(smoke,/'providerDataReliability'/);
 });
