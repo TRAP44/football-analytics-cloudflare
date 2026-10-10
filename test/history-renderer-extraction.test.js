@@ -314,7 +314,9 @@ test('history rows are normalized, deduplicated and invalid fixture identities a
     (root.innerHTML.match(/class="history-item"/g) || []).length,
     1,
   );
-  assert.match(root.innerHTML,/AI · Сигнал · 82\/100/);
+  // Метки сигнала бывают ставочными — в списке только нейтральный итог.
+  assert.match(root.innerHTML,/AI · без уверенного вывода · 82\/100/);
+  assert.doesNotMatch(root.innerHTML,/Сигнал/);
   assert.deepEqual(calls,[[77,firstButton]]);
 });
 
