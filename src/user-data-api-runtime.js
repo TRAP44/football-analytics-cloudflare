@@ -1,4 +1,4 @@
-import { publicSignalLabel } from './signal-wording.js';
+import { publicSignalLabel, withPublicSignalLabel } from './signal-wording.js';
 // User profile, history, favorites, reminders, digest and preferences API extracted from worker.js.
 // User data, cache and presentation primitives are injected by the composition root.
 export function createUserDataApiRuntime(deps) {
@@ -270,7 +270,7 @@ export function createUserDataApiRuntime(deps) {
       freshnessReason=String(analysisFreshness(payload)?.reasonCode || freshnessReason).slice(0,80);
     } catch {}
 
-    return json(analysisResponsePayload(payload,{cached:true,stale:!fresh,historyReadOnly:true,recheck:{requested:false,performed:false,free:false,reasonCode:freshnessReason},quota:await getQuota(userId,cfg)}));
+    return json(withPublicSignalLabel(analysisResponsePayload(payload,{cached:true,stale:!fresh,historyReadOnly:true,recheck:{requested:false,performed:false,free:false,reasonCode:freshnessReason},quota:await getQuota(userId,cfg)})));
   }
   
   

@@ -46,3 +46,12 @@ test('user-facing code no longer tells people to bet or skip a bet',()=>{
   assert.match(fs.readFileSync('src/post-match-return-runtime.js','utf8'),/publicSignalLabel\(String\(history\.ai_signal_label/);
   assert.match(fs.readFileSync('src/analysis-runtime.js','utf8'),/withPublicSignalLabel\(objectValue\(analysisResponsePayload/);
 });
+
+test('full history re-open and Telegram share cards also use the neutral label (Codex review)',()=>{
+  const userData=fs.readFileSync('src/user-data-api-runtime.js','utf8');
+  assert.match(userData,/return json\(withPublicSignalLabel\(analysisResponsePayload\(payload,\{cached:true,stale:!fresh,historyReadOnly:true/);
+  const publisher=fs.readFileSync('src/publisher-runtime.js','utf8');
+  assert.match(publisher,/telegramHtmlEscape\(publicSignalLabel\(signal\.label\)\)/);
+  const tasks=fs.readFileSync('docs/ai-team/TASKS_RU.md','utf8');
+  assert.doesNotMatch(tasks,/Задача 5 \(LLM\) без этого требует секрет/);
+});
