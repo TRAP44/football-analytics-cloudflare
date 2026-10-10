@@ -93,7 +93,11 @@ export function createApiFootballGateway({
     const updatedToday = Number.isFinite(updatedAtMs)
       && new Date(updatedAtMs).toISOString().slice(0,10) === new Date().toISOString().slice(0,10);
     const reserve = Math.max(1, Number(providerBudgetFloors.FREE?.dailyReserve || 20));
-    const blocked = updatedToday && (!Number.isFinite(remaining) || remaining <= reserve);
+    // The FREE reserve guard may only act on recent evidence. A stale FREE snapshot
+    // (for example from before a plan upgrade) must not block the very request that
+    // would refresh the plan from the provider response headers.
+    const evidenceFresh = Number.isFinite(updatedAtMs) && Date.now() - updatedAtMs <= 30 * 60_000;
+    const blocked = updatedToday && evidenceFresh && (!Number.isFinite(remaining) || remaining <= reserve);
     return {
       blocked,
       plan,
