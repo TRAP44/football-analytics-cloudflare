@@ -548,7 +548,7 @@ async function assertFirstRunBehavior(cdp, targetUrl) {
   await clearFirstRunAndNavigate(cdp,base.toString());
   await cdp.call('Runtime.evaluate',{expression:`document.getElementById('firstRunGuideFavorite')?.click()`});
   await waitForCondition(cdp,
-    `(() => document.querySelector('#searchView')?.classList.contains('active') && localStorage.getItem('football-analytics:first-run-guide:v1')==='1')()`,
+    `(() => document.querySelector('#searchView')?.classList.contains('active') && !localStorage.getItem('football-analytics:first-run-guide:v1'))()`,
     'first-run favorite action');
 
   await cdp.call('Runtime.evaluate',{expression:`localStorage.removeItem('football-analytics:first-run-guide:v1')`});
