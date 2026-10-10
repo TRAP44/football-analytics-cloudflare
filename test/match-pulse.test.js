@@ -366,7 +366,7 @@ test('Match Pulse integration stays below scoreboard without creating a new tab'
 
   assert.match(
     app,
-    /import\('\.\/modules\/match-pulse\.js\?v=6\.120\.0-launch65'\)/,
+    /import\('\.\/modules\/match-pulse\.js\?v=6\.120\.0-launch87'\)/,
   );
   const pulseRender=center.indexOf('${matchPulseHtml}');
   assert.ok(pulseRender>=0);

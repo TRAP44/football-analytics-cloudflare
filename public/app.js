@@ -1107,8 +1107,8 @@ async function ensureMatchCenterExtras() {
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
       import('./modules/match-center-view.js?v=6.120.0-launch87'),
-      import('./modules/match-pulse.js?v=6.120.0-launch65'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch63'),
+      import('./modules/match-pulse.js?v=6.120.0-launch87'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch87'),
       import('./modules/match-headquarters.js?v=6.120.0-launch87'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
@@ -4976,7 +4976,11 @@ function liveAiCoachHtml(ai, match) {
   const pressureText = Number.isFinite(Number(pressure.home)) && Number.isFinite(Number(pressure.away)) ? `${pressure.home}:${pressure.away}` : '—';
   const xgText = Number.isFinite(Number(xg.home)) && Number.isFinite(Number(xg.away)) ? `${Number(xg.home).toFixed(2)}:${Number(xg.away).toFixed(2)}` : '—';
   const xgQualityLabel = publicText(ai.current?.xgQuality?.label || '');
-  const watch = Array.isArray(ai.watchNext) ? ai.watchNext.slice(0,3) : [];
+  // Рыночные подсказки из старых или кешированных ответов сервера не показываем.
+  const neutral = value => (typeof value === 'string' && !SCENARIO_BETTING_TEXT.test(value) ? value : '');
+  const watch = Array.isArray(ai.watchNext) ? ai.watchNext.filter(neutral).slice(0,3) : [];
+  const volatilityReason = neutral(ai.volatility?.reason) || 'Матч может быстро измениться.';
+  const prematchLabel = neutral(ai.prematch?.signal) || neutral(ai.prematch?.outcome) || 'AI-разбор';
   const confidence=Math.round(clampPercent(ai.confidence));
   const currentMinute = typeof ai.current?.minute === 'number' && Number.isFinite(ai.current.minute)
     ? Math.max(0,Math.min(180,Math.round(ai.current.minute)))
@@ -4997,9 +5001,9 @@ function liveAiCoachHtml(ai, match) {
       <div><span>Счёт</span><strong>${scoreText}</strong><small>${currentMinute !== null ? `${currentMinute} мин.` : 'Матч идёт'}</small></div>
       <div><span>Давление</span><strong>${pressureText}</strong><small>${escapeHtml(publicText(ai.current?.pressureLeaderLabel || 'Баланс'))}</small></div>
       <div><span>xG</span><strong>${xgText}</strong><small>${escapeHtml(publicText(ai.current?.chanceLabel || 'По доступным данным'))}${xgQualityLabel ? ` · ${escapeHtml(xgQualityLabel)}` : ''}</small></div>
-      <div><span>Риск сценария</span><strong>${escapeHtml(publicText(ai.volatility?.label || 'Средний'))}</strong><small>${escapeHtml(publicText(ai.volatility?.reason || 'Матч может быстро измениться.'))}</small></div>
+      <div><span>Риск сценария</span><strong>${escapeHtml(publicText(ai.volatility?.label || 'Средний'))}</strong><small>${escapeHtml(publicText(volatilityReason))}</small></div>
     </div>
-    ${ai.prematch?.available ? `<div class="live-ai-prematch"><span>До матча</span><strong>${escapeHtml(publicText(ai.prematch.signal || ai.prematch.outcome || 'AI-разбор'))}</strong><b>${escapeHtml(publicText(ai.prematch.stateLabel || 'сравниваю'))}</b></div>` : `<div class="live-ai-prematch muted"><span>До матча</span><strong>Сохранённого AI-разбора нет</strong><b>читаю только текущий матч</b></div>`}
+    ${ai.prematch?.available ? `<div class="live-ai-prematch"><span>До матча</span><strong>${escapeHtml(publicText(prematchLabel))}</strong><b>${escapeHtml(publicText(ai.prematch.stateLabel || 'сравниваю'))}</b></div>` : `<div class="live-ai-prematch muted"><span>До матча</span><strong>Сохранённого AI-разбора нет</strong><b>читаю только текущий матч</b></div>`}
     ${watch.length ? `<div class="live-ai-watch"><strong>Что смотреть дальше</strong><ul>${watch.map(x=>`<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul></div>` : ''}
     <p class="live-ai-disclaimer">Оценка по ходу матча перестраивается при каждом обновлении счёта, событий и статистики. Это объяснение сценария, а не гарантия результата.</p>
   </section>`;
@@ -5736,7 +5740,7 @@ function providerCoverageHtml(reliability = {}) {
 // без меток сигнала («ТБ 2.5», «1X»), рынка и «решений».
 // Границы слов через Unicode-классы: \b в JS не видит кириллицу (ревью Codex #816).
 // Без просмотра назад (lookbehind): Safari до 16.4 — старые iPhone в Telegram — его не разбирает.
-const SCENARIO_BETTING_TEXT = /коэффициент|рын(ок|ка|ке|ком)|ставк|букмекер|тотал|обе забьют|форсир|(^|[^\p{L}\p{N}])(ТБ|ТМ|П1|П2|1X|X2|Х2|1Х)(?![\p{L}\p{N}])/iu;
+const SCENARIO_BETTING_TEXT = /коэффициент|рын(ок|ка|ке|ком|очн)|ставк|букмекер|тотал|обе забьют|форсир|(^|[^\p{L}\p{N}])(1[XХ]2|ТБ|ТМ|П1|П2|1X|X2|Х2|1Х)(?![\p{L}\p{N}])/iu;
 function scenarioText(value) {
   const text = publicText(String(value || ''));
   return text && !SCENARIO_BETTING_TEXT.test(text) ? text : '';

@@ -303,8 +303,25 @@ test('AI Timeline: market snapshots remain separate from AI probability points',
   assert.equal(timeline.marketContext.length,2);
   assert.equal(timeline.generatedFrom.marketSnapshots,2);
 
+  // Mini App не выводит рыночные данные: рыночный контекст в деталях не рисуется.
   const html=renderAiTimelineDetails(timeline,match);
-  assert.match(html,/Это сохранённые рыночные вероятности, а не точки AI-модели/);
+  assert.doesNotMatch(html,/Рыночный контекст|рыночн|ai-timeline-market-context/i);
+});
+
+test('AI Timeline: stored market-move trigger renders as a neutral data update', () => {
+  const timeline={
+    available:true,
+    points:[
+      point('2026-10-01T12:00:00Z',{home:52,draw:27,away:21}),
+      {
+        ...point('2026-10-01T15:00:00Z',{home:57,draw:24,away:19}),
+        trigger:{category:'odds_move',relation:'correlated',label:'Движение рынка',explanation:'Изменение оценки по времени совпало с заметным движением рынка.'},
+      },
+    ],
+  };
+  const html=renderAiTimelineDetails(timeline,match);
+  assert.match(html,/Обновление внешних данных/);
+  assert.doesNotMatch(html,/Движение рынка|движением рынка/);
 });
 
 test('AI Timeline: stale provenance and missing confidence stay explicit', () => {
@@ -471,7 +488,7 @@ test('AI Timeline wiring captures fresh analyses and loads timeline into Match C
 });
 
 test('AI Timeline UI remains lazy-loaded after Match Pulse and supports narrow mobile widths', () => {
-  assert.match(appSource,/import\('\.\/modules\/ai-timeline\.js\?v=6\.120\.0-launch63'\)/);
+  assert.match(appSource,/import\('\.\/modules\/ai-timeline\.js\?v=6\.120\.0-launch87'\)/);
   const pulse=appSource.indexOf("matchCenterExtraHtml('renderMatchPulse'");
   const timeline=appSource.indexOf("'renderAiTimelineCompact',",appSource.indexOf('const matchPulseHtml'));
   assert.ok(pulse>=0 && timeline>pulse,'AI Timeline must be rendered after existing Match Pulse');
