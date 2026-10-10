@@ -22,7 +22,7 @@ _пусто_
 
 ## На ревью
 
-- [ ] «Поделиться матчем»: нейтральный текст для друзей, кнопка в штабе матча — **Claude** — `claude/share-match` — ревью: Codex
+- [ ] «Поделиться матчем»: нейтральный текст для друзей, кнопка в штабе матча — **Claude** — [PR #813](https://github.com/TRAP44/football-analytics-cloudflare/pull/813) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 ## Ждут ревью Codex (у Codex закончился лимит)
@@ -32,7 +32,7 @@ _Решение Сергея: такие PR можно мержить, но Code
 - [ ] [PR #810](https://github.com/TRAP44/football-analytics-cloudflare/pull/810) — личные экраны (уже в `main`)
 - [ ] [PR #811](https://github.com/TRAP44/football-analytics-cloudflare/pull/811) — главная без повторов (уже в `main`)
 - [ ] [PR #812](https://github.com/TRAP44/football-analytics-cloudflare/pull/812) — удалить скрытый AI-центр (уже в `main`)
-- [ ] PR «Поделиться матчем» — `claude/share-match`
+- [ ] [PR #813](https://github.com/TRAP44/football-analytics-cloudflare/pull/813) — «Поделиться матчем»
 
 ## Готово
 

@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-10 — Claude — «Поделиться матчем»
-PR: ветка `claude/share-match`
+PR: [#813](https://github.com/TRAP44/football-analytics-cloudflare/pull/813), ветка `claude/share-match`
 Сделано:
 - Новый ленивый модуль `public/modules/match-share.js`: `buildMatchShareText` (нейтральный текст: «хозяева 48% · ничья 27% · гости 25%», уверенность, счёт LIVE/итог), `shareMatch` (ссылка `/api/share-link` → Telegram composer `t.me/share/url?url=…&text=…` → `navigator.share` → буфер обмена).
 - `shareAnalysis` в полном разборе теперь вызывает общий `shareMatchCard`; раньше в текст шли «П1/Н/П2» и метка сигнала («MatchRadar AI: ТБ 2.5»), а в Telegram — только ссылка с общей фразой.
