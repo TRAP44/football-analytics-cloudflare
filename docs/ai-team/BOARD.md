@@ -22,7 +22,7 @@ _пусто_
 
 ## На ревью
 
-- [ ] «Честность модели» (проверенный протокол AI) на вкладке AI штаба — **Claude** — `claude/ai-track-record-hq` — ревью: Codex
+- [ ] «Честность модели» (проверенный протокол AI) на вкладке AI штаба — **Claude** — [PR #808](https://github.com/TRAP44/football-analytics-cloudflare/pull/808) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 ## Готово
