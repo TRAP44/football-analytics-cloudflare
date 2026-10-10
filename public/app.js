@@ -1106,10 +1106,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch80'),
+      import('./modules/match-center-view.js?v=6.120.0-launch81'),
       import('./modules/match-pulse.js?v=6.120.0-launch65'),
       import('./modules/ai-timeline.js?v=6.120.0-launch63'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch80'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch81'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -2929,7 +2929,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch80');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch81');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -2988,12 +2988,15 @@ function toggleMatchWatch(match = {}) {
 function radarFeedItems(nowMs = Date.now()) {
   const favoriteIds = favoriteSet();
   const viewed = personalContextSignals();
+  // Матч из плашки «Для вас» уже показан прямо над лентой — не повторяем его.
+  const personalFixtureId = Number(homePersonalMatch(viewed, nowMs)?.match?.fixtureId || 0);
   const rows = [];
 
   for (const match of state.matches) {
     if (!match || match.youthReserve) continue;
     const fixtureId = Number(match.fixtureId || 0);
     if (!fixtureId) continue;
+    if (fixtureId === personalFixtureId) continue;
 
     const homeId = Number(match.home?.id || 0);
     const awayId = Number(match.away?.id || 0);
@@ -3428,7 +3431,7 @@ function renderAiFocus() {
 }
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch80').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch81').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
