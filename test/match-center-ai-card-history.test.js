@@ -96,3 +96,35 @@ test('AI card headline never shows saved betting-style signal labels',()=>{
   const card=block(center,'const aiCardBody = historyPending','$(\'analysis\').innerHTML');
   for (const token of ['ТБ 2.5','Обе забьют','П1','коэффициент','ставк']) assert.ok(!card.includes(token),token);
 });
+
+function leaveViewHandler(state) {
+  const source=block(app,'onLeaveView: ({ from, to, options }) => {','\n  onEffectError');
+  const body=source.slice(source.indexOf('=> {')+4,source.lastIndexOf('}'));
+  return new Function('state','deactivateLiveRefresh',`return ({ from, to, options }) => {${body}};`)(state,()=>{});
+}
+
+test('leaving the Match Center cancels a pending saved-analysis open started there',()=>{
+  const state={ historyOpenRequestSeq:5, historyOpenSourceView:'analysisView', analysisActionPending:false, analysisRequestSeq:0 };
+  const onLeave=leaveViewHandler(state);
+  onLeave({ from:'analysisView', to:'matchesView', options:{} });
+  assert.equal(state.historyOpenRequestSeq,6);
+  // Переход, который делает сам успешный ответ, запрос не отменяет.
+  onLeave({ from:'matchesView', to:'analysisView', options:{ fromHistoryOpen:true } });
+  assert.equal(state.historyOpenRequestSeq,6);
+  // Уход с «Истории» отменяет как раньше.
+  state.historyOpenSourceView='historyView';
+  onLeave({ from:'historyView', to:'profileView', options:{} });
+  assert.equal(state.historyOpenRequestSeq,7);
+  // Посторонние экраны не трогают чужой запрос.
+  state.historyOpenSourceView='analysisView';
+  onLeave({ from:'profileView', to:'matchesView', options:{} });
+  assert.equal(state.historyOpenRequestSeq,7);
+});
+
+test('saved-analysis opens report the real source view in telemetry',()=>{
+  const open=block(app,'async function openHistoryAnalysis','\nlet historyRenderer');
+  assert.match(open,/state\.historyOpenSourceView = sourceView;/);
+  assert.match(open,/sendProductAction\('history_item_open', sourceView\)/);
+  assert.match(open,/sendActionError\('history', error, sourceView\)/);
+  assert.doesNotMatch(open,/'historyView'\)/);
+});

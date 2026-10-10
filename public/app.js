@@ -189,6 +189,7 @@ const state = {
   aiTrackRecordLoading: false,
   aiTrackRecordError: '',
   historyOpenRequestSeq: 0,
+  historyOpenSourceView: '',
   providerLoaded: false,
   matchesLoadSeq: 0,
   analysisActionPending: false,
@@ -328,6 +329,9 @@ const navigationShell = createNavigationShell({
   syncTelegramBackButton,
   onLeaveView: ({ from, to, options }) => {
     if (from === 'historyView' && to !== 'historyView' && !options.fromHistoryOpen) {
+      state.historyOpenRequestSeq += 1;
+    } else if (from !== to && from === state.historyOpenSourceView && !options.fromHistoryOpen) {
+      // Разбор открывали не из «Истории» (штаб, главная): уход с экрана отменяет ожидающий ответ.
       state.historyOpenRequestSeq += 1;
     }
     if (from === 'analysisView' && to !== 'analysisView' && state.analysisActionPending) {
@@ -5337,6 +5341,7 @@ async function openHistoryAnalysis(fixtureId, btn) {
 
   const sourceView = activeViewId();
   if (sourceView !== 'analysisView') state.analysisBackView = sourceView;
+  state.historyOpenSourceView = sourceView;
   const seq = ++state.historyOpenRequestSeq;
   const original = btn?.textContent || '';
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Открываю…'; }
@@ -5346,7 +5351,7 @@ async function openHistoryAnalysis(fixtureId, btn) {
     state.currentCenter = null;
     renderAnalysis(data);
     showView('analysisView', { fromHistoryOpen: true });
-    sendProductAction('history_item_open', 'historyView');
+    sendProductAction('history_item_open', sourceView);
   } catch (error) {
     if (seq !== state.historyOpenRequestSeq) return;
     if (Number(error?.status || 0) === 404) {
@@ -5359,7 +5364,7 @@ async function openHistoryAnalysis(fixtureId, btn) {
       showView('analysisView', { fromHistoryOpen: true });
       toast('Сохранённый полный анализ уже недоступен — открыт центр матча.');
     } else {
-      sendActionError('history', error, 'historyView');
+      sendActionError('history', error, sourceView);
       toast(error.message);
     }
   } finally {
