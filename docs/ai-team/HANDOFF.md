@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-10 — Claude — Удалён скрытый «AI-центр» на главной
-PR: ветка `claude/remove-hidden-ai-center`
+PR: [#812](https://github.com/TRAP44/football-analytics-cloudflare/pull/812), ветка `claude/remove-hidden-ai-center`
 Сделано:
 - Удалены `renderAiCenterSummary` («AI-центр»: «сигналов / лучше пропустить / высокий риск») и `renderAiFocus` («AI-рейтинг дня»), их контейнеры `#aiCenterSummary`/`#aiFocus` (index + admin), стили `.ai-center-*`/`.ai-focus-*`/`.ai-rank-*` и правило `.secondary-home-insight { display:none !important }`. Оба блока давно были спрятаны CSS-ом, но считались при каждой отрисовке главной.
 - Тесты rc45/rc43 и `scripts/verify-release.js` закрепляли наличие этих блоков — теперь проверяют, что они не вернулись. Проверка рефери в верификаторе сохранена.
