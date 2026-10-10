@@ -1102,7 +1102,7 @@ async function ensureMatchCenterExtras() {
     matchCenterExtrasPromise = Promise.all([
       import('./modules/match-pulse.js?v=6.120.0-launch65'),
       import('./modules/ai-timeline.js?v=6.120.0-launch63'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch74'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch75'),
     ]).then(([pulse, timeline, headquarters]) => {
       matchCenterExtras = Object.freeze({
         renderMatchPulse: pulse.renderMatchPulse,
@@ -2918,7 +2918,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch74');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch75');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3416,7 +3416,7 @@ function renderAiFocus() {
 }
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch74').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch75').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
