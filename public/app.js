@@ -1102,9 +1102,11 @@ async function ensureMatchCenterExtras() {
     matchCenterExtrasPromise = Promise.all([
       import('./modules/match-pulse.js?v=6.120.0-launch65'),
       import('./modules/ai-timeline.js?v=6.120.0-launch63'),
-    ]).then(([pulse, timeline]) => {
+      import('./modules/match-headquarters.js?v=6.120.0-launch70'),
+    ]).then(([pulse, timeline, headquarters]) => {
       matchCenterExtras = Object.freeze({
         renderMatchPulse: pulse.renderMatchPulse,
+        renderMatchHeadquarters: headquarters.renderMatchHeadquarters,
         renderAiTimelineCompact: timeline.renderAiTimelineCompact,
         renderAiTimelineDetails: timeline.renderAiTimelineDetails,
       });
@@ -5214,6 +5216,8 @@ function renderMatchCenter(d) {
         ${isAdmin() ? `<button id="centerE2EBtn" class="reminder-btn admin-e2e-btn" type="button">🚦 E2E</button>` : ''}
       </div>
     </section>
+
+    ${matchCenterExtraHtml('renderMatchHeadquarters',d)}
 
     ${matchPulseHtml}
 

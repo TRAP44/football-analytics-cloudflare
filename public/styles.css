@@ -3580,3 +3580,18 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
   .admin-billing-refund-item{align-items:flex-start;flex-direction:column}
   .admin-billing-refund-item>button{width:100%}
 }
+
+/* Shared match journey: preparation, live, review. */
+.match-headquarters{display:grid;gap:14px}
+.headquarters-heading small{color:var(--accent);font-weight:900;letter-spacing:.1em}
+.headquarters-heading h2{margin:6px 0 0;font-size:20px}
+.headquarters-phases{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.headquarters-phases li{text-align:center;border:1px solid var(--line);border-radius:12px;padding:9px 4px;color:var(--hint);font-size:12px}
+.headquarters-phases .is-current{background:color-mix(in srgb,var(--accent) 15%,var(--surface));border-color:var(--accent);color:var(--text);font-weight:900}
+.headquarters-phases .is-complete{color:var(--text)}
+.headquarters-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.headquarters-facts>div{display:grid;align-content:start;gap:7px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2);min-width:0}
+.headquarters-facts small{color:var(--hint);font-size:11px}
+.headquarters-facts strong{font-size:13px;line-height:1.4;overflow-wrap:anywhere}
+.headquarters-freshness{margin:0;color:var(--hint);font-size:11px;line-height:1.5}
+@media(max-width:480px){.headquarters-facts{grid-template-columns:1fr}.headquarters-facts>div{grid-template-columns:100px minmax(0,1fr);align-items:center}.headquarters-heading h2{font-size:18px}}

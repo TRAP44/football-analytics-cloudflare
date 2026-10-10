@@ -85,6 +85,7 @@ test('startup graph defers profile-only and Match Center-only modules until thei
     'analysis-controller.js',
     'match-pulse.js',
     'ai-timeline.js',
+    'match-headquarters.js',
   ];
   for (const moduleName of deferred) {
     assert.equal(app.includes(`from './modules/${moduleName}'`), false);
