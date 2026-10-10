@@ -1,3 +1,4 @@
+import { publicSignalLabel } from './signal-wording.js';
 export function createTelegramSearchRuntime(deps = {}) {
   if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
     throw new TypeError('Telegram search runtime dependencies are required.');
@@ -571,7 +572,7 @@ export function createTelegramSearchRuntime(deps = {}) {
     const home=safeText(source.home_name,120,'Хозяева');
     const away=safeText(source.away_name,120,'Гости');
     const teams=`${home} — ${away}`;
-    const signal=safeText(source.ai_signal_label,300);
+    const signal=publicSignalLabel(safeText(source.ai_signal_label,300));
     if (!signal) {
       return safeMessageText(
         `Последний анализ: ${teams}. Он был создан до сохранения быстрых AI-вердиктов; откройте историю в приложении.`,

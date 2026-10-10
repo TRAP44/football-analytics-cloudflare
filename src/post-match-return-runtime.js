@@ -1,3 +1,4 @@
+import { publicSignalLabel } from './signal-wording.js';
 export function createPostMatchReturnRuntime(deps = {}) {
   const {
     APP_VERSION,
@@ -84,7 +85,7 @@ export function createPostMatchReturnRuntime(deps = {}) {
     const actualLabel=postMatchOutcomeLabel(actual);
     const probability=postMatchPredictionProbability(prediction,predicted);
     const correct=prediction.correct===true || (predicted && predicted===actual);
-    const signal=String(history.ai_signal_label || '').trim();
+    const signal=publicSignalLabel(String(history.ai_signal_label || '').trim());
     const text=[
       '🏁 <b>Матч завершён · MatchRadar AI</b>',
       `<b>${telegramHtmlEscape(home)} — ${telegramHtmlEscape(away)} · ${homeGoals}:${awayGoals}</b>`,

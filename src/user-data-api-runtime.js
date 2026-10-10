@@ -1,3 +1,4 @@
+import { publicSignalLabel } from './signal-wording.js';
 // User profile, history, favorites, reminders, digest and preferences API extracted from worker.js.
 // User data, cache and presentation primitives are injected by the composition root.
 export function createUserDataApiRuntime(deps) {
@@ -213,7 +214,7 @@ export function createUserDataApiRuntime(deps) {
           homeLogo:safeText(row.home_logo,2048),
           awayLogo:safeText(row.away_logo,2048),
           aiSignalCode:safeText(row.ai_signal_code,40),
-          aiSignalLabel:safeText(row.ai_signal_label,160),
+          aiSignalLabel:publicSignalLabel(safeText(row.ai_signal_label,160)),
           aiConfidence:confidence,
           aiRisk:safeText(row.ai_risk,60),
           aiOutcome:safeText(row.ai_outcome,80),

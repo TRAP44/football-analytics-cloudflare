@@ -1,3 +1,4 @@
+import { NO_CLEAR_SIGNAL_LABEL, withPublicSignalLabel } from './signal-wording.js';
 // AI analysis orchestration extracted from worker.js.
 // Provider, entitlement, cache, settlement and model capabilities are injected by the composition root.
 export function createAnalysisRuntime(deps) {
@@ -267,10 +268,10 @@ export function createAnalysisRuntime(deps) {
     const source=objectValue(payload) || {};
     const additions=objectValue(extra) || {};
     try {
-      return objectValue(analysisResponsePayload(source,additions))
-        || {...source,...additions};
+      return withPublicSignalLabel(objectValue(analysisResponsePayload(source,additions))
+        || {...source,...additions});
     } catch {
-      return {...source,...additions};
+      return withPublicSignalLabel({...source,...additions});
     }
   }
 
@@ -1844,7 +1845,7 @@ export function createAnalysisRuntime(deps) {
       riskLabel:'Высокий',
       betSignal:{
         code:'skip',
-        label:'Пропустить ставку',
+        label:NO_CLEAR_SIGNAL_LABEL,
         strength:0,
         reason:'AI-инструктор не смог подтвердить рабочий сигнал.',
       },
