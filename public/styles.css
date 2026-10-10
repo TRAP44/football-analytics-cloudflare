@@ -3580,3 +3580,13 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .observation-row small{color:var(--hint);}
 .observation-controls{display:flex;flex-wrap:wrap;gap:8px;}
 .observation-controls p{flex-basis:100%;margin:0;}
+/* Админка: раздел «Отзывы». */
+.admin-feedback-list { display: grid; gap: 8px; margin-top: 10px; }
+.admin-feedback-panel .beta-section-head { align-items: flex-start; }
+.admin-feedback-item { padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--hint); border-radius: 12px; background: var(--surface); }
+.admin-feedback-item.blocker { border-left-color: #ef4444; }
+.admin-feedback-item.major { border-left-color: var(--accent); }
+.admin-feedback-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 12px; }
+.admin-feedback-meta span { color: var(--hint); }
+.admin-feedback-meta small { margin-left: auto; color: var(--hint); }
+.admin-feedback-item p { margin: 6px 0 0; font-size: 13px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }

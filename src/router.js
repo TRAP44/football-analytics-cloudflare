@@ -31,6 +31,7 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     adminForbidden,
     apiAiTrackRecord,
     apiBetaDashboard,
+    apiAdminFeedback,
     apiBetaFeedback,
     apiChannelPublisherTest,
     apiPhase5Dashboard,
@@ -135,6 +136,10 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
   if (method === 'GET' && pathname === '/api/beta-dashboard') {
     if (!adminAllowed()) return adminForbidden();
     return await apiBetaDashboard(request, cfg);
+  }
+  if (method === 'GET' && pathname === '/api/admin/feedback') {
+    if (!adminAllowed()) return adminForbidden();
+    return await apiAdminFeedback(request, cfg);
   }
   if (method === 'GET' && pathname === '/api/admin/billing/refundable') {
     if (!adminAllowed()) return adminForbidden();

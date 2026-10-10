@@ -1820,8 +1820,10 @@ function getBetaPhase5Runtime() {
       json,
       providerSnapshot,
       readOpsEventsRange,
+      readFeedbackOpsEvents,
       recordOpsEvent,
       redactOpsString,
+      sendTelegramMessage,
     });
   }
   return betaPhase5Runtime;
@@ -1830,6 +1832,7 @@ function getBetaPhase5Runtime() {
 const betaPercentileMs = (...args) => getBetaPhase5Runtime().betaPercentileMs(...args);
 const betaIssueMeta = (...args) => getBetaPhase5Runtime().betaIssueMeta(...args);
 const apiBetaFeedback = (...args) => getBetaPhase5Runtime().apiBetaFeedback(...args);
+const apiAdminFeedback = (...args) => getBetaPhase5Runtime().apiAdminFeedback(...args);
 const betaClientEventRows = (...args) => getBetaPhase5Runtime().betaClientEventRows(...args);
 const betaMetricSummary = (...args) => getBetaPhase5Runtime().betaMetricSummary(...args);
 const betaTimingSummary = (...args) => getBetaPhase5Runtime().betaTimingSummary(...args);
@@ -1926,6 +1929,7 @@ function getReleaseMonitorApiRuntime() {
 }
 
 const readOpsEventsRange = (...args) => getReleaseMonitorApiRuntime().readOpsEventsRange(...args);
+const readFeedbackOpsEvents = (...args) => getReleaseMonitorApiRuntime().readFeedbackOpsEvents(...args);
 const readDailyDigestOpsEvents = (...args) => getReleaseMonitorApiRuntime().readDailyDigestOpsEvents(...args);
 const readDailyDigestSloEvents = (...args) => getReleaseMonitorApiRuntime().readDailyDigestSloEvents(...args);
 const apiPostDeployRegressionResponse = (...args) => getReleaseMonitorApiRuntime().apiPostDeployRegressionResponse(...args);
@@ -2914,6 +2918,7 @@ const {
   apiAiTrackRecord,
   apiAnalyze,
   apiBetaDashboard,
+  apiAdminFeedback,
   apiBetaFeedback,
   apiBillingInvoice,
   apiBillingPlans,
