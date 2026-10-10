@@ -72,12 +72,37 @@
           </div>
         </section>
 
+        <section id="homeHero" class="mr-hero" aria-labelledby="homeHeroTitle">
+          <svg class="mr-hero-radar" viewBox="0 0 120 120" aria-hidden="true" focusable="false">
+            <circle cx="60" cy="60" r="56" />
+            <circle cx="60" cy="60" r="38" />
+            <circle cx="60" cy="60" r="20" />
+            <path class="mr-hero-sweep" d="M60 60 L60 4 A56 56 0 0 1 108.5 32 Z" />
+            <circle class="mr-hero-dot" cx="60" cy="60" r="4" />
+          </svg>
+          <p id="homeHeroDate" class="mr-kicker"></p>
+          <h2 id="homeHeroTitle" class="mr-hero-title">Читай <em>игру.</em> Не&nbsp;только счёт.</h2>
+          <p class="mr-hero-sub">Важные изменения. Один экран. Полная картина.</p>
+          <div id="homeHeroStats" class="mr-hero-stats" hidden>
+            <span><i class="mr-dot" aria-hidden="true"></i><b id="homeHeroTotal">0</b> <span id="homeHeroTotalLabel">матчей в поле зрения</span></span>
+            <span id="homeHeroLiveWrap" class="mr-hero-live" hidden><i class="mr-dot is-live" aria-hidden="true"></i><b id="homeHeroLive">0</b> LIVE сейчас</span>
+          </div>
+        </section>
+
         <div class="home-search-block">
           <div class="search-row">
             <input id="matchSearch" class="search-input" type="search" aria-label="Поиск команды или матча" inputmode="search" enterkeyhint="search" placeholder="Команда, матч или турнир" autocomplete="off" />
             <button id="homeSearchBtn" class="global-search-btn" type="button">Найти</button>
           </div>
         </div>
+
+        <section id="homeFeatured" class="mr-featured" aria-labelledby="homeFeaturedTitle" hidden>
+          <div class="mr-section-head">
+            <div><p class="mr-kicker">01 / Под прицелом</p><h2 id="homeFeaturedTitle">Главный матч</h2></div>
+            <span id="homeFeaturedReason" class="mr-section-note"></span>
+          </div>
+          <div id="homeFeaturedCard"></div>
+        </section>
 
         <section id="dailyOverview" class="home-priority-stack" aria-label="Главное сейчас" hidden>
           <button id="homePersonalMatchBtn" class="home-priority-card home-personal-match" type="button" hidden>
@@ -149,6 +174,7 @@
 
         <div class="section-head">
           <div>
+            <p class="mr-kicker">02 / Лента</p>
             <h2 id="matchesTitle">Матчи сегодня</h2>
             <p id="quotaText" hidden>Загрузка профиля…</p>
           </div>
@@ -163,6 +189,11 @@
             <div class="skeleton-card"><i></i><b></b><b></b><span></span></div>
           </div>
         </div>
+        <section class="mr-manifesto" aria-label="Чем отличается MatchRadar">
+          <p class="mr-kicker">Чем отличается MatchRadar</p>
+          <h2>Мы не повторяем цифры. <em>Мы объясняем изменения.</em></h2>
+          <p>Причины, уверенность и ограничения данных — в одном разборе. Если данных нет, мы так и говорим.</p>
+        </section>
         <section id="aiFocus" class="secondary-home-insight" hidden aria-hidden="true"></section>
         <section id="aiCenterSummary" class="secondary-home-insight" hidden aria-hidden="true"></section>
 

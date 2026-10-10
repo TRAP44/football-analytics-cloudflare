@@ -2759,6 +2759,7 @@ async function loadMatches(options = {}) {
     $('matches')?.setAttribute('aria-busy', 'false');
   } else if (!silent) {
     state.matches = [];
+    renderHomeSignal();
     $('matches')?.setAttribute('aria-busy', 'true');
     $('matches').innerHTML = matchSkeletonHtml();
     $('matchesCount').textContent = '';
@@ -3413,6 +3414,29 @@ function renderAiFocus() {
   wrap.querySelectorAll('[data-ai-rank-fixture]').forEach(button => button.addEventListener('click', event => analyzeMatch(Number(event.currentTarget.dataset.aiRankFixture), event.currentTarget)));
   wrap.querySelectorAll('[data-ai-rank-history]').forEach(button => button.addEventListener('click', event => openHistoryAnalysis(Number(event.currentTarget.dataset.aiRankHistory), event.currentTarget)));
 }
+let homeSignalRenderer = null;
+let homeSignalPromise = null;
+
+// Шапка «Читай игру» и «Главный матч» грузятся отдельным модулем после
+// данных матчей, чтобы не утяжелять стартовый JS.
+function ensureHomeSignal() {
+  homeSignalPromise ||= import('./modules/home-signal.js?v=6.120.0-launch72')
+    .then(mod => {
+      homeSignalRenderer = mod.createHomeSignalRenderer({
+        $, state, localDate, timeOf, safeUrl, escapeHtml, matchCenter,
+        analysisHistoryForFixture, aiConfidenceMeterHtml, openMatchCenter, openTeam,
+      });
+      return homeSignalRenderer;
+    })
+    .catch(() => { homeSignalPromise = null; return null; });
+  return homeSignalPromise;
+}
+
+function renderHomeSignal() {
+  if (homeSignalRenderer) homeSignalRenderer.render();
+  else ensureHomeSignal().then(renderer => renderer?.render());
+}
+
 function homeMatchSections(list, nowMs = Date.now()) {
   return buildHomeMatchSections(list,nowMs);
 }
@@ -3454,6 +3478,7 @@ function renderMatches() {
   if ($('matchesCount')) $('matchesCount').textContent = '';
   renderDailyOverview();
   renderRadarFeed();
+  renderHomeSignal();
   renderAiFocus();
   renderAiCenterSummary();
   renderPopularCompetitions();

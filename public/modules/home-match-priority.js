@@ -253,3 +253,9 @@ export function selectHomePersonalMatch({
     ? {match:best.match,insight:best.insight}
     : null;
 }
+
+export {
+  matchEvidence as homeMatchEvidence,
+  strictKickoffMs as homeKickoffMs,
+  positiveFixtureId as homeFixtureId,
+};
