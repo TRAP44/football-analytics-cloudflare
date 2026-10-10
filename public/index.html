@@ -4,6 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#07111f" />
+  <!-- Экран загрузки до запуска app.js: признак data-accent ещё не выставлен, и без этого
+       акцентом становится цвет кнопок темы Telegram или зелёный. Янтарь бренда — сразу. -->
+  <style>html:not([data-accent]){--accent:#fbbf24;--accent-text:#1a1203}</style>
   <meta name="description" content="MatchRadar — AI-футбольный ассистент в Telegram: матчи, команды, LIVE и понятный разбор ключевых факторов." />
   <meta name="matchradar-surface" content="public" />
   <meta name="frontend-asset-revision" content="6.120.0-launch74" />
