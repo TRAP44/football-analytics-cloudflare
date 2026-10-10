@@ -91,3 +91,21 @@ test('full analysis shows neutral labels and a model tab instead of bookmaker od
   const launch=block('async function openLaunchFixture','\n}\n');
   assert.match(launch,/=== 'market' \? 'model'/);
 });
+
+test('the betting filter catches standalone Cyrillic labels but keeps ordinary words',()=>{
+  const html=render({
+    ai:{ factors:['Подтверждённые составы: поправка к П1 около 3%','Поправка к П2 после потери','ТБ выглядит вероятнее','Хозяева в форме'], risks:['Ставка ТМ 2.5 рискованна','Сыграть 1Х надёжнее','Гости без лидера'] },
+    match, probabilities:{home:48,draw:27,away:25}, goal:null,
+  });
+  assert.doesNotMatch(html,/П1|П2|ТБ|ТМ|1Х/);
+  assert.match(html,/Хозяева в форме/);
+  assert.match(html,/Гости без лидера/);
+  // Обычные слова, содержащие похожие буквы, не отбрасываются.
+  const ordinary=render({ ai:{ factors:['ТМК и П1ус — не метки','Тбилиси принимает матч'] }, match, probabilities:{home:48,draw:27,away:25}, goal:null });
+  assert.match(ordinary,/ТМК и П1ус/);
+  assert.match(ordinary,/Тбилиси принимает матч/);
+});
+
+test('public app source avoids regex lookbehind (unsupported by older Telegram iOS webviews)',()=>{
+  assert.doesNotMatch(app,/\(\?<[!=]/);
+});

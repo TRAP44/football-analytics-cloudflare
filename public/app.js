@@ -5821,7 +5821,9 @@ function providerCoverageHtml(reliability = {}) {
 
 // «Сценарии матча» вместо ставочного «AI-инструктора»: исходы и голы словами,
 // без меток сигнала («ТБ 2.5», «1X»), рынка и «решений».
-const SCENARIO_BETTING_TEXT = /коэффициент|рын(ок|ка|ке|ком)|ставк|букмекер|тотал|обе забьют|\bТБ\b|\bТМ\b|\bП1\b|\bП2\b|\b1X\b|\bX2\b|форсир/i;
+// Границы слов через Unicode-классы: \b в JS не видит кириллицу (ревью Codex #816).
+// Без просмотра назад (lookbehind): Safari до 16.4 — старые iPhone в Telegram — его не разбирает.
+const SCENARIO_BETTING_TEXT = /коэффициент|рын(ок|ка|ке|ком)|ставк|букмекер|тотал|обе забьют|форсир|(^|[^\p{L}\p{N}])(ТБ|ТМ|П1|П2|1X|X2|Х2|1Х)(?![\p{L}\p{N}])/iu;
 function scenarioText(value) {
   const text = publicText(String(value || ''));
   return text && !SCENARIO_BETTING_TEXT.test(text) ? text : '';
