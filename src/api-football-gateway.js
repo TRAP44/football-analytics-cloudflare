@@ -580,6 +580,13 @@ export function createApiFootballGateway({
             operation:path,
             attempt,
             finalResult:'rate_limited',
+            keyLength:String(cfg.apiFootballKey || '').length,
+            hdrMinuteLimit:r.headers.get('x-ratelimit-limit'),
+            hdrMinuteRemaining:r.headers.get('x-ratelimit-remaining'),
+            hdrDailyLimit:r.headers.get('x-ratelimit-requests-limit'),
+            hdrDailyRemaining:r.headers.get('x-ratelimit-requests-remaining'),
+            hdrRetryAfter:r.headers.get('retry-after'),
+            cfRay:r.headers.get('cf-ray'),
           },
         });
         throw footballError('API-Football достиг лимита запросов. Покажем сохранённые данные, если они есть.', 'FOOTBALL_RATE_LIMIT', 65, r.status);
