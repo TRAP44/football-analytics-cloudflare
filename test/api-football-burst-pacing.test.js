@@ -5,7 +5,7 @@ import { createApiFootballGateway } from '../src/api-football-gateway.js';
 const BURST_BODY = { errors: { rateLimit: 'Too many requests. You have exceeded the limit of requests per minute of your subscription.' }, response: [] };
 const OK_BODY = { errors: [], response: [{ fixture: { id: 1 } }] };
 
-function runtime({ provider, bodies }) {
+function runtime({ provider, bodies, edge = false }) {
   const memory = { provider: { minuteLimit: 300, minuteRemaining: 299, dailyRemaining: 7000, ...provider } };
   const sleeps = [];
   const cooldowns = [];
@@ -26,7 +26,8 @@ function runtime({ provider, bodies }) {
     fetchWithTimeout: async () => {
       fetches += 1;
       const body = queue.length > 1 ? queue.shift() : queue[0];
-      return new Response(JSON.stringify(body), { status: 200 });
+      const headers = edge ? {} : { 'x-ratelimit-limit': '300', 'x-ratelimit-remaining': '299' };
+      return new Response(JSON.stringify(body), { status: 200, headers });
     },
     updateProviderFromHeaders: () => {},
     persistSharedProviderQuota: async () => {},
@@ -82,4 +83,23 @@ test('paid-plan requests are paced below the provider per-second limit', async (
   const waits = sleeps.filter(ms => ms > 0 && ms < 1500);
   assert.equal(waits.length, 3);
   assert.ok(waits[0] > 0 && waits[2] > waits[0], 'later requests wait longer than earlier ones');
+});
+
+test('header-less (edge) rejections are retried with growing pauses before a short cooldown', async () => {
+  const { gateway, sleeps, cooldowns, fetches } = runtime({ provider: { plan: 'PRO' }, bodies: [BURST_BODY], edge: true });
+  await assert.rejects(
+    () => gateway.apiFootball('/fixtures', { date: '2026-10-10' }, cfg),
+    error => error?.code === 'FOOTBALL_RATE_LIMIT',
+  );
+  assert.equal(fetches(), 4);
+  assert.ok([1500, 2000, 3500].every(ms => sleeps.includes(ms)));
+  assert.deepEqual(cooldowns.map(item => item.seconds), [30]);
+});
+
+test('an edge rejection followed by a success returns data without any cooldown', async () => {
+  const { gateway, cooldowns, fetches } = runtime({ provider: { plan: 'PRO' }, bodies: [BURST_BODY, BURST_BODY, OK_BODY], edge: true });
+  const rows = await gateway.apiFootball('/fixtures', { date: '2026-10-10' }, cfg);
+  assert.equal(rows.length, 1);
+  assert.equal(fetches(), 3);
+  assert.deepEqual(cooldowns, []);
 });

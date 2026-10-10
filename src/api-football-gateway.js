@@ -244,6 +244,18 @@ export function createApiFootballGateway({
   const PROVIDER_PACE_GAP_MS = { FREE: 0, UNKNOWN: 300, PRO: 240, ULTRA: 160, MEGA: 75 };
   const PROVIDER_PACE_MAX_WAIT_MS = 6000;
   const BURST_RETRY_DELAY_MS = 1500;
+  // Rejections that carry no x-ratelimit-* headers are not about the key's own
+  // quota (observed: shared-egress/edge throttling with a nearly empty minute
+  // bucket). They are retried a few times with growing pauses before a shared
+  // cooldown is set; such rejections are not counted by the provider.
+  const EDGE_RETRY_DELAYS_MS = [1000, 2000, 3500];
+  const EDGE_MAX_ATTEMPTS = EDGE_RETRY_DELAYS_MS.length + 1;
+  const EDGE_COOLDOWN_SECONDS = 30;
+
+  function edgeRejection(headers) {
+    const get = name => String(headers?.get?.(name) || '').trim();
+    return get('x-ratelimit-limit') === '' && get('x-ratelimit-remaining') === '' && get('retry-after') === '';
+  }
 
   function providerPaceGapMs() {
     const plan = String(memory.provider?.plan || 'UNKNOWN').toUpperCase();
@@ -431,7 +443,7 @@ export function createApiFootballGateway({
 
     if (r.status === 429) {
       const explicitRetryAfter = String(r.headers?.get?.('retry-after') || '').trim() !== '';
-      if (!explicitRetryAfter && attempt < 2 && looksLikeBurstRejection()) {
+      if (!explicitRetryAfter && ((attempt < 2 && looksLikeBurstRejection()) || (edgeRejection(r.headers) && attempt < EDGE_MAX_ATTEMPTS))) {
         memory.provider.lastError = 'rate_limit_burst';
         bumpTelemetry('rateLimits');
         bumpTelemetry('providerRateLimits');
@@ -548,12 +560,14 @@ export function createApiFootballGateway({
       bumpTelemetry('apiErrors');
       bumpTelemetry('providerErrors');
       if (/too many requests|rate.?limit|requests per minute/i.test(message)) {
-        if (attempt < 2 && looksLikeBurstRejection()) {
+        const edge = edgeRejection(r.headers);
+        if ((attempt < 2 && looksLikeBurstRejection()) || (edge && attempt < EDGE_MAX_ATTEMPTS)) {
           bumpTelemetry('rateLimits');
           bumpTelemetry('providerRateLimits');
           throw burstRejection('API-Football ограничил частоту запросов в секунду. Повторяем запрос.', r.status);
         }
-        await persistSharedProviderCooldown(cfg, 65, 'rate_limit_body').catch(() => null);
+        if (edge) await persistSharedProviderCooldown(cfg, EDGE_COOLDOWN_SECONDS, 'rate_limit_edge').catch(() => null);
+        else await persistSharedProviderCooldown(cfg, 65, 'rate_limit_body').catch(() => null);
         bumpTelemetry('rateLimits');
         bumpTelemetry('providerRateLimits');
         phase5ProviderUsage(cfg,'quotaBlocks',1);
@@ -736,14 +750,17 @@ export function createApiFootballGateway({
           }
           throw lastError;
         };
-        try {
-          return await runTransportAttempts(0);
-        } catch (error) {
-          // A per-second burst rejection is retried once after a short pause (no shared cooldown is set).
-          if (error?.burst !== true) throw error;
-          bumpTelemetry('providerRetries');
-          await sleepMs(BURST_RETRY_DELAY_MS);
-          return await runTransportAttempts(1);
+        // Burst / edge rejections are retried after growing pauses (no shared cooldown is set until they run out).
+        let offset = 0;
+        for (;;) {
+          try {
+            return await runTransportAttempts(offset);
+          } catch (error) {
+            if (error?.burst !== true || offset >= EDGE_RETRY_DELAYS_MS.length) throw error;
+            bumpTelemetry('providerRetries');
+            await sleepMs(offset === 0 ? BURST_RETRY_DELAY_MS : EDGE_RETRY_DELAYS_MS[offset]);
+            offset += 1;
+          }
         }
       },
     );
