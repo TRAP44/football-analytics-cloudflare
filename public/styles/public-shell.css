@@ -1146,7 +1146,8 @@ html {
 .miniapp-public-shell{
   --brand-night:#07111f;
   --brand-surface:#0f1d2e;
-  --brand-mint:#43e6a1;
+  /* Исторически mint; бренд теперь янтарный — переменная следует акценту (свечение и полоска экрана загрузки). */
+  --brand-mint:var(--accent);
   --brand-sky:#7cc7ff;
   --brand-live:#ff5a67;
   --brand-paper:#eaf2f7;

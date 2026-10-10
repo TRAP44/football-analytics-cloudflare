@@ -161,3 +161,24 @@ test('legal and support links remain user-facing, local and outside the match-se
   const search=block(html,'<section id="searchView"','<section id="tournamentView"');
   assert.doesNotMatch(search,/href="\/(?:privacy|terms|status)\.html"/);
 });
+
+test('boot screen is amber before app.js sets data-accent (not the Telegram/green fallback)',()=>{
+  const index=fs.readFileSync('public/index.html','utf8');
+  const head=index.slice(0,index.indexOf('</head>'));
+  assert.match(head,/<style>html:not\(\[data-accent\]\)\{--accent:#fbbf24;--accent-text:#1a1203\}<\/style>/);
+  // The early rule must not outlive startup: app.js always sets data-accent.
+  const app=fs.readFileSync('public/app.js','utf8');
+  assert.match(app,/document\.documentElement\.dataset\.accent = initialUiPreferences\.accent;/);
+  // The favicon URL is explicitly versioned: it must change with the recoloured mark.
+  for (const surface of [index,fs.readFileSync('public/admin.html','utf8')]) {
+    assert.match(surface,/matchradar-mark\.svg\?v=6\.120\.0-p43-amber"/);
+    assert.doesNotMatch(surface,/matchradar-mark\.svg\?v=6\.120\.0-p42"/);
+  }
+  // Boot glow and progress bar use --brand-mint; it must follow the amber accent.
+  const shell=fs.readFileSync('public/styles/public-shell.css','utf8');
+  assert.match(shell,/--brand-mint:var\(--accent\);/);
+  assert.doesNotMatch(shell,/--brand-mint:#43e6a1/i);
+  for (const file of ['public/assets/brand/matchradar-mark.svg','public/assets/brand/matchradar-avatar.svg','public/assets/brand/matchradar-wordmark.svg']) {
+    assert.doesNotMatch(fs.readFileSync(file,'utf8'),/#43E6A1/i,`${file} must not use the legacy mint`);
+  }
+});
