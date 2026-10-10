@@ -69,7 +69,7 @@ export function renderMatchCenterView(d, deps) {
     bindMatchCenterTabs, setMatchCenterTab, openPlayerFromMatch, openTeam, toggleMatchWatch,
     syncQuickReminderButton, toggleReminder, analyzeMatch, loadHistory, openHistoryAnalysis, openPassStoreForFixture,
     runProviderCoverageAudit, openProfileView, runProviderE2E, requestMatchCenter, renderMatchCenter, toast,
-    startLiveRefresh, stopLiveRefresh,
+    startLiveRefresh, stopLiveRefresh, shareMatchCard,
   } = deps;
 
   const m = d.match || {};
@@ -145,6 +145,7 @@ export function renderMatchCenterView(d, deps) {
 
       <div class="center-hero-actions ${isAdmin() ? 'has-admin-audit' : ''}">
         <button id="centerRefreshBtn" class="reminder-btn" type="button">↻ Обновить</button>
+        <button id="centerShareBtn" class="reminder-btn center-share-btn" type="button">↗ Поделиться</button>
         ${upcoming && state.profile?.features?.monetizationEnabled === true ? '<button id="centerMatchPassBtn" class="reminder-btn center-pass-btn" type="button">⭐ Pass на матч</button>' : ''}
         ${isAdmin() ? `<button id="centerCoverageAuditBtn" class="reminder-btn admin-audit-btn" type="button">🧪 Покрытие</button>` : ''}
         ${isAdmin() ? `<button id="centerE2EBtn" class="reminder-btn admin-e2e-btn" type="button">🚦 E2E</button>` : ''}
@@ -292,6 +293,22 @@ export function renderMatchCenterView(d, deps) {
     } catch (e) {
       toast(e.message);
       btn.disabled = false; btn.textContent = '↻ Обновить';
+    }
+  });
+
+  // Поделиться: вероятности и уверенность — только из сохранённого разбора пользователя.
+  $('centerShareBtn')?.addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      await shareMatchCard({
+        match: { ...m, live, finished },
+        probabilities: history?.aiProbabilities || null,
+        confidence: history?.aiConfidence ?? null,
+        source: 'center',
+      });
+    } finally {
+      btn.disabled = false;
     }
   });
 

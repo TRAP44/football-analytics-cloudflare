@@ -89,8 +89,9 @@ test('existing fixture deep-link and share contracts remain available',()=>{
   const launch=block(app,'function applyLaunchIntent','function analysisFreshnessHtml');
   assert.match(launch,/fixtureId/);
   assert.match(launch,/\['analysis','center'\]/);
-  assert.match(app,/\/api\/share-link\?fixtureId=/);
-  assert.match(app,/telegramShareUrl/);
+  const share=fs.readFileSync('public/modules/match-share.js','utf8');
+  assert.match(share,/\/api\/share-link\?fixtureId=/);
+  assert.match(share,/t\.me\/share\/url\?url=/);
   assert.match(brand,/Channel post → generated fixture link → MatchRadar Mini App/);
 });
 

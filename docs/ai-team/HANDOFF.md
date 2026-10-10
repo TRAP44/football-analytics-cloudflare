@@ -14,6 +14,17 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-10 — Claude — «Поделиться матчем»
+PR: [#813](https://github.com/TRAP44/football-analytics-cloudflare/pull/813), ветка `claude/share-match`
+Сделано:
+- Новый ленивый модуль `public/modules/match-share.js`: `buildMatchShareText` (нейтральный текст: «хозяева 48% · ничья 27% · гости 25%», уверенность, счёт LIVE/итог), `shareMatch` (ссылка `/api/share-link` → Telegram composer `t.me/share/url?url=…&text=…` → `navigator.share` → буфер обмена).
+- `shareAnalysis` в полном разборе теперь вызывает общий `shareMatchCard`; раньше в текст шли «П1/Н/П2» и метка сигнала («MatchRadar AI: ТБ 2.5»), а в Telegram — только ссылка с общей фразой.
+- В шапке штаба — «↗ Поделиться» рядом с «Обновить» (в один ряд). Вероятности и уверенность — только из сохранённого разбора пользователя (`history.aiProbabilities`/`aiConfidence`), валидируются (три процента, сумма ≈100, уверенность 0–100).
+Решения:
+- `content` в share-link: `miniapp` для полного разбора (как было, чтобы не ломать аналитику), `center` для штаба. Стартовый параметр Telegram ограничен по длине — значения короткие.
+Осталось / внимание:
+- Ревизия ассетов — launch83. Серверный `telegramShareUrl` больше не используется клиентом (оставлен для совместимости).
+
 ## 2026-10-10 — Claude — Удалён скрытый «AI-центр» на главной
 PR: [#812](https://github.com/TRAP44/football-analytics-cloudflare/pull/812), ветка `claude/remove-hidden-ai-center`
 Сделано:

@@ -75,11 +75,14 @@ test('Telegram match cards expose native share flow',()=> {
 });
 
 test('Mini App share includes a fixture deep link and native Telegram fallback',()=> {
-  assert.match(app,/\/api\/share-link\?fixtureId=/);
-  assert.match(app,/campaign=match_share/);
-  assert.match(app,/tg\?\.openTelegramLink/);
-  assert.match(app,/navigator\.share/);
-  assert.match(app,/Ссылка на матч скопирована/);
+  // «Поделиться матчем» вынесено в ленивый модуль match-share.js.
+  const share=fs.readFileSync('public/modules/match-share.js','utf8');
+  assert.match(app,/import\('\.\/modules\/match-share\.js\?v=/);
+  assert.match(share,/\/api\/share-link\?fixtureId=/);
+  assert.match(share,/campaign=match_share/);
+  assert.match(share,/tg\?\.openTelegramLink/);
+  assert.match(share,/navigatorRef\?\.share/);
+  assert.match(share,/Ссылка на матч скопирована/);
 });
 
 test('admin funnel exposes media share to AI conversion',()=> {
