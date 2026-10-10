@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-10 — Claude — Обратная связь для всех пользователей
-PR: ветка `claude/feedback-for-all`
+PR: [#814](https://github.com/TRAP44/football-analytics-cloudflare/pull/814), ветка `claude/feedback-for-all`
 Сделано:
 - `/api/beta-feedback` раньше принимал отзывы только от закрытой beta (`isClosedBetaUser`, админов тоже не пускал) — остальные получали 403 «только приглашённым тестировщикам», хотя кнопка «Сообщить о проблеме» видна всем в «Профиле».
 - Теперь принимает любого пользователя с подтверждённым Telegram (`__telegramValidated`), иначе 401 `AUTH_REQUIRED`. Beta-участники пишутся как раньше (`beta_feedback`, в beta-метрики); остальные — `source:'feedback'`, `user_feedback`/`USER_FEEDBACK`, важность не выше `warning`. Лимит 4/мин на аккаунт уже был.
