@@ -36,6 +36,10 @@ test('rate-limited tomorrow feed retains a one-tap path to today LIVE without by
 
 test('frontend revision covers public, status, admin and runtime',()=>{
   for(const path of ['../public/index.html','../public/status.html','../public/admin.html','../public/modules/app-runtime.js']){
-    assert.match(read(path),/6\.120\.0-launch85/);
+<<<<<<< HEAD
+    assert.match(read(path),/6\.120\.0-launch86/);
+=======
+    assert.match(read(path),/6\.120\.0-launch86/);
+>>>>>>> e383d798 (fix(admin): «Отзывы» после сбоя обновления помечаются как устаревшие)
   }
 });

@@ -132,7 +132,11 @@ test('Match Center hierarchy styles and current asset revision are wired consist
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
 
-  assert.equal(revision,'6.120.0-launch85');
+<<<<<<< HEAD
+  assert.equal(revision,'6.120.0-launch86');
+=======
+  assert.equal(revision,'6.120.0-launch86');
+>>>>>>> e383d798 (fix(admin): «Отзывы» после сбоя обновления помечаются как устаревшие)
 
   for (const asset of [
     'styles.css',

@@ -122,3 +122,25 @@ test('admin inbox renders escaped feedback and honest empty state', async () => 
   await inbox.load(true);
   assert.match(nodes.get('adminFeedbackList').innerHTML, /Отзывов пока нет/);
 });
+
+test('a failed refresh after a successful load is shown as stale, not as current data',async()=>{
+  const nodes = new Map([['adminFeedbackList', { innerHTML: '' }], ['adminFeedbackMeta', { textContent: '' }]]);
+  const escapeHtml = value => String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  let fail = false;
+  const inbox = createAdminFeedbackInbox({
+    elementById: id => nodes.get(id),
+    api: async () => { if (fail) throw new Error('сеть недоступна'); return { available: true, persistent: true, days: 30, items: [{ kind: 'user', categoryLabel: 'AI', severity: 'MAJOR', severityLabel: 'Нестабильно', note: 'Старый отзыв' }] }; },
+    escapeHtml, dateTime: () => '', isAdmin: () => true,
+  });
+  await inbox.load(true);
+  assert.doesNotMatch(nodes.get('adminFeedbackList').innerHTML, /data-notice stale/);
+  fail = true;
+  await inbox.load(true);
+  const html = nodes.get('adminFeedbackList').innerHTML;
+  assert.match(html, /data-notice stale/);
+  assert.match(html, /Не удалось обновить отзывы: сеть недоступна\. Показана последняя загруженная версия\./);
+  assert.match(html, /Старый отзыв/);
+  fail = false;
+  await inbox.load(true);
+  assert.doesNotMatch(nodes.get('adminFeedbackList').innerHTML, /data-notice stale/);
+});

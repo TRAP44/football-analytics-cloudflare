@@ -52,9 +52,14 @@ export function createAdminFeedbackInbox({ elementById, api, escapeHtml, dateTim
         ? `За ${Number(data.days) || 30} дн. · ${reviewsLabel(items.length)}${data.persistent === false ? ' · только из памяти воркера' : ''}`
         : '';
     }
-    list.innerHTML = items.length
+    // Ревью Codex (#815): после неудачного обновления показываем ошибку над старым списком,
+    // чтобы не выдавать устаревшие данные за свежие.
+    const stale = error
+      ? `<div class="data-notice stale">⚠️ Не удалось обновить отзывы: ${escapeHtml(error)}. Показана последняя загруженная версия.</div>`
+      : '';
+    list.innerHTML = stale + (items.length
       ? items.map(itemHtml).join('')
-      : '<div class="beta-empty">Отзывов пока нет. Они появятся, когда пользователи нажмут «Сообщить о проблеме» в профиле.</div>';
+      : '<div class="beta-empty">Отзывов пока нет. Они появятся, когда пользователи нажмут «Сообщить о проблеме» в профиле.</div>');
   }
 
   async function load(force = false) {

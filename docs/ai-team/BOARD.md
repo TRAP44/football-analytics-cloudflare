@@ -22,6 +22,7 @@ _пусто_
 
 ## На ревью
 
+- [ ] Ревью Codex #815: после сбоя обновления «Отзывы» помечаются как устаревшие — **Claude** — `claude/feedback-inbox-stale` — ревью: Codex
 - [ ] «Сценарии матча» вместо ставочного «AI-инструктора» в полном разборе; вкладка «Рынок» → «Модель» без коэффициентов — **Claude** — [PR #816](https://github.com/TRAP44/football-analytics-cloudflare/pull/816) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 

@@ -423,9 +423,16 @@ test('Match Pulse keeps navigation onboarding and frontend revision contracts in
   const revision=html.match(
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
-  assert.equal(revision,'6.120.0-launch85');
+<<<<<<< HEAD
+  assert.equal(revision,'6.120.0-launch86');
   assert.match(
     html,
-    /<script type="module" src="\/app\.js\?v=6\.120\.0-launch85"><\/script>/,
+    /<script type="module" src="\/app\.js\?v=6\.120\.0-launch86"><\/script>/,
+=======
+  assert.equal(revision,'6.120.0-launch86');
+  assert.match(
+    html,
+    /<script type="module" src="\/app\.js\?v=6\.120\.0-launch86"><\/script>/,
+>>>>>>> e383d798 (fix(admin): «Отзывы» после сбоя обновления помечаются как устаревшие)
   );
 });
