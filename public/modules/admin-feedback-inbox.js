@@ -54,8 +54,9 @@ export function createAdminFeedbackInbox({ elementById, api, escapeHtml, dateTim
     }
     // Ревью Codex (#815): после неудачного обновления показываем ошибку над старым списком,
     // чтобы не выдавать устаревшие данные за свежие.
+    // Пока идёт повторная попытка, старый список всё ещё старый — пометка остаётся (ревью Codex #817).
     const stale = error
-      ? `<div class="data-notice stale">⚠️ Не удалось обновить отзывы: ${escapeHtml(error)}. Показана последняя загруженная версия.</div>`
+      ? `<div class="data-notice stale">⚠️ Не удалось обновить отзывы: ${escapeHtml(error)}. ${loading ? 'Повторяю попытку — пока показана' : 'Показана'} последняя загруженная версия.</div>`
       : '';
     list.innerHTML = stale + (items.length
       ? items.map(itemHtml).join('')
@@ -66,10 +67,10 @@ export function createAdminFeedbackInbox({ elementById, api, escapeHtml, dateTim
     if (typeof isAdmin === 'function' && !isAdmin()) return;
     if (loading || (!force && data)) { render(); return; }
     loading = true;
-    error = '';
     render();
     try {
       data = await api('/api/admin/feedback?days=30', { retry: false, timeoutMs: 9000 });
+      error = '';
     } catch (e) {
       error = String(e?.message || 'ошибка сети');
     } finally {

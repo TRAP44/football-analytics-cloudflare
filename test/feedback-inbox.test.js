@@ -140,7 +140,28 @@ test('a failed refresh after a successful load is shown as stale, not as current
   assert.match(html, /data-notice stale/);
   assert.match(html, /Не удалось обновить отзывы: сеть недоступна\. Показана последняя загруженная версия\./);
   assert.match(html, /Старый отзыв/);
+  // Повторная попытка: пока ответ не пришёл, пометка не исчезает.
   fail = false;
-  await inbox.load(true);
+  let release;
+  const slow = createAdminFeedbackInbox({
+    elementById: id => nodes.get(id),
+    api: async () => {
+      if (fail) throw new Error('сеть недоступна');
+      if (release) await new Promise(resolve => { release = resolve; });
+      return { available: true, persistent: true, days: 30, items: [{ kind: 'user', categoryLabel: 'AI', severity: 'MAJOR', severityLabel: 'Нестабильно', note: 'Новый отзыв' }] };
+    },
+    escapeHtml, dateTime: () => '', isAdmin: () => true,
+  });
+  await slow.load(true);
+  fail = true;
+  await slow.load(true);
+  fail = false;
+  release = () => {};
+  const pending = slow.load(true);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(nodes.get('adminFeedbackList').innerHTML, /data-notice stale[\s\S]*Повторяю попытку/);
+  release();
+  await pending;
   assert.doesNotMatch(nodes.get('adminFeedbackList').innerHTML, /data-notice stale/);
+  assert.match(nodes.get('adminFeedbackList').innerHTML, /Новый отзыв/);
 });
