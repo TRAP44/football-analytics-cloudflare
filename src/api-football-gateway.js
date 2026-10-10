@@ -233,6 +233,69 @@ export function createApiFootballGateway({
     }
   }
 
+  // API-Football also enforces a per-second rate (PRO: 5/s) on top of the per-minute quota,
+  // and rejects the excess of a burst with "Too many requests" even when the minute quota is nearly full.
+  // Requests are therefore paced per isolate, and burst rejections are retried briefly instead of
+  // triggering a minute-long cooldown.
+  const PROVIDER_PACE_GAP_MS = { FREE: 0, UNKNOWN: 300, PRO: 240, ULTRA: 160, MEGA: 75 };
+  const PROVIDER_PACE_MAX_WAIT_MS = 6000;
+  const BURST_RETRY_DELAY_MS = 1500;
+
+  function providerPaceGapMs() {
+    const plan = String(memory.provider?.plan || 'UNKNOWN').toUpperCase();
+    const gap = PROVIDER_PACE_GAP_MS[plan];
+    return Number.isFinite(gap) ? gap : PROVIDER_PACE_GAP_MS.UNKNOWN;
+  }
+
+  async function paceProviderRequest() {
+    const now = Date.now();
+    const start = Math.max(now, Number(memory.providerPaceNextAt) || 0);
+    const wait = start - now;
+    if (wait > PROVIDER_PACE_MAX_WAIT_MS) {
+      bumpTelemetry('quotaBlocks');
+      throw footballError(
+        `Очередь запросов к API-Football переполнена. Повторите примерно через ${Math.ceil(wait / 1000)} сек.`,
+        'FOOTBALL_COOLDOWN',
+        Math.max(1, Math.ceil(wait / 1000)),
+      );
+    }
+    const gap = providerPaceGapMs();
+    if (gap <= 0) return; // FREE is already limited by the distributed per-minute guard.
+    memory.providerPaceNextAt = start + gap;
+    if (wait > 0) await sleepMs(wait);
+  }
+
+  function noteProviderSend() {
+    const now = Date.now();
+    const log = Array.isArray(memory.providerSendLog) ? memory.providerSendLog : [];
+    log.push(now);
+    memory.providerSendLog = log.filter(at => now - at <= 60_000);
+  }
+
+  function recentProviderSends() {
+    const now = Date.now();
+    return Array.isArray(memory.providerSendLog) ? memory.providerSendLog.filter(at => now - at <= 60_000).length : 0;
+  }
+
+  // A rejection is a per-second burst (not an exhausted minute quota) when the minute quota is evidently not used up.
+  function looksLikeBurstRejection() {
+    const plan = String(memory.provider?.plan || 'UNKNOWN').toUpperCase();
+    if (plan === 'FREE') return false;
+    if (['PRO', 'ULTRA', 'MEGA'].includes(plan)) {
+      const left = Number(memory.provider?.minuteRemaining);
+      return !Number.isFinite(left) || left > 5;
+    }
+    return recentProviderSends() <= 6;
+  }
+
+  function burstRejection(message, status) {
+    // Slow every following request of this isolate down for a moment instead of a shared minute cooldown.
+    memory.providerPaceNextAt = Math.max(Number(memory.providerPaceNextAt) || 0, Date.now() + BURST_RETRY_DELAY_MS);
+    const error = footballError(message, 'FOOTBALL_RATE_LIMIT', 2, status);
+    error.burst = true;
+    return error;
+  }
+
   async function apiFootballNetwork(path, params, cfg, options = {}) {
     if (!cfg.apiFootballKey) {
       await emitOpsEvent(cfg, { severity: 'critical', source: 'provider', eventType: 'configuration', code: 'FOOTBALL_CONFIG', message: 'Ключ API-Football отсутствует.' });
@@ -311,6 +374,8 @@ export function createApiFootballGateway({
       if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
     }
 
+    await paceProviderRequest();
+    noteProviderSend();
     const startedAt = Date.now();
     const attempt = Math.max(1, Number(options.attempt || 1));
     const maxAttempts = Math.max(attempt, Number(options.maxAttempts || attempt));
@@ -361,6 +426,13 @@ export function createApiFootballGateway({
     memory.provider.lastLatencyMs = durationMs;
 
     if (r.status === 429) {
+      const explicitRetryAfter = String(r.headers?.get?.('retry-after') || '').trim() !== '';
+      if (!explicitRetryAfter && attempt < 2 && looksLikeBurstRejection()) {
+        memory.provider.lastError = 'rate_limit_burst';
+        bumpTelemetry('rateLimits');
+        bumpTelemetry('providerRateLimits');
+        throw burstRejection('API-Football ограничил частоту запросов в секунду. Повторяем запрос.', r.status);
+      }
       const retryAfter = retryAfterSeconds(r.headers, 65);
       await persistSharedProviderCooldown(cfg, retryAfter, 'rate_limit').catch(() => null);
       memory.provider.lastError = 'rate_limit';
@@ -472,6 +544,11 @@ export function createApiFootballGateway({
       bumpTelemetry('apiErrors');
       bumpTelemetry('providerErrors');
       if (/too many requests|rate.?limit|requests per minute/i.test(message)) {
+        if (attempt < 2 && looksLikeBurstRejection()) {
+          bumpTelemetry('rateLimits');
+          bumpTelemetry('providerRateLimits');
+          throw burstRejection('API-Football ограничил частоту запросов в секунду. Повторяем запрос.', r.status);
+        }
         await persistSharedProviderCooldown(cfg, 65, 'rate_limit_body').catch(() => null);
         bumpTelemetry('rateLimits');
         bumpTelemetry('providerRateLimits');
@@ -625,27 +702,38 @@ export function createApiFootballGateway({
       providerRequestKey(path, params, policy),
       async () => {
         const retries = policy.transportRetries;
-        const maxAttempts = retries + 1;
-        let lastError = null;
-        for (let attempt = 0; attempt <= retries; attempt += 1) {
-          try {
-            return await apiFootballNetwork(path, params, cfg, {
-              ...options,
-              responseType:policy.responseType,
-              transportRetries:policy.transportRetries,
-              timeoutMs:policy.timeoutMs,
-              allowDailyReserve:policy.allowDailyReserve,
-              attempt: attempt + 1,
-              maxAttempts,
-            });
-          } catch (error) {
-            lastError = error;
-            if (attempt >= retries || !isRetryableFootballTransportError(error)) throw error;
-            bumpTelemetry('providerRetries');
-            await sleepMs(180 * (attempt + 1));
+        const runTransportAttempts = async (attemptOffset) => {
+          const maxAttempts = retries + 1 + attemptOffset;
+          let lastError = null;
+          for (let attempt = 0; attempt <= retries; attempt += 1) {
+            try {
+              return await apiFootballNetwork(path, params, cfg, {
+                ...options,
+                responseType:policy.responseType,
+                transportRetries:policy.transportRetries,
+                timeoutMs:policy.timeoutMs,
+                allowDailyReserve:policy.allowDailyReserve,
+                attempt: attempt + 1 + attemptOffset,
+                maxAttempts,
+              });
+            } catch (error) {
+              lastError = error;
+              if (attempt >= retries || !isRetryableFootballTransportError(error)) throw error;
+              bumpTelemetry('providerRetries');
+              await sleepMs(180 * (attempt + 1));
+            }
           }
+          throw lastError;
+        };
+        try {
+          return await runTransportAttempts(0);
+        } catch (error) {
+          // A per-second burst rejection is retried once after a short pause (no shared cooldown is set).
+          if (error?.burst !== true) throw error;
+          bumpTelemetry('providerRetries');
+          await sleepMs(BURST_RETRY_DELAY_MS);
+          return await runTransportAttempts(1);
         }
-        throw lastError;
       },
     );
   }
