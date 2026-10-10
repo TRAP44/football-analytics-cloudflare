@@ -110,44 +110,65 @@ test('closed beta timing evidence ignores ambiguous and out-of-range durations',
   assert.equal(runtime.betaPercentileMs({not:'an array'},0.5),null);
 });
 
-test('explicit beta feedback requires verified membership and records no automatic identity fields', async () => {
+test('feedback is open to every verified Telegram user and records no automatic identity fields', async () => {
   const {runtime,events}=createHarness();
 
-  const denied=await runtime.apiBetaFeedback(
+  // Без подтверждённого Telegram (нет initData / отладочная личность) — отказ.
+  const unverified=await runtime.apiBetaFeedback(
     {method:'POST',json:async()=>({category:'search',severity:'MAJOR',note:'Search is empty'})},
     {},
     {id:202},
   );
-  assert.equal(denied.status,403);
-  assert.equal(denied.body.code,'BETA_MEMBERSHIP_REQUIRED');
+  assert.equal(unverified.status,401);
+  assert.equal(unverified.body.code,'AUTH_REQUIRED');
   assert.equal(events.length,0);
 
   const invalid=await runtime.apiBetaFeedback(
     {method:'POST',json:async()=>({category:'unknown',severity:'MAJOR',note:'Search is empty'})},
     {},
-    {id:101},
+    {id:101,__telegramValidated:true},
   );
   assert.equal(invalid.status,400);
   assert.equal(events.length,0);
 
-  const accepted=await runtime.apiBetaFeedback(
+  // Участник закрытой beta — как раньше, в beta-метрики.
+  const beta=await runtime.apiBetaFeedback(
     {method:'POST',json:async()=>({category:' Search ',severity:'major',note:'Search result is empty'})},
     {},
-    {id:101,username:'private-user'},
+    {id:101,username:'private-user',__telegramValidated:true},
   );
-  assert.deepEqual(accepted,{status:200,body:{ok:true}});
+  assert.deepEqual(beta,{status:200,body:{ok:true}});
   assert.equal(events.length,1);
+  const betaEvent=events[0];
+  assert.equal(betaEvent.source,'beta');
+  assert.equal(betaEvent.code,'BETA_FEEDBACK');
+  assert.equal(betaEvent.meta.category,'search');
+  assert.equal(betaEvent.meta.betaSeverity,'MAJOR');
+  assert.equal(betaEvent.meta.explicitUserFeedback,true);
+  assert.equal(betaEvent.meta.betaMembershipVerified,true);
 
-  const event=events[0];
-  assert.equal(event.code,'BETA_FEEDBACK');
-  assert.equal(event.meta.category,'search');
-  assert.equal(event.meta.betaSeverity,'MAJOR');
-  assert.equal(event.meta.explicitUserFeedback,true);
-  assert.equal(event.meta.betaMembershipVerified,true);
-  assert.equal('userId' in event.meta,false);
-  assert.equal('telegramId' in event.meta,false);
-  assert.equal('username' in event.meta,false);
-  assert.doesNotMatch(JSON.stringify(event),/private-user|202/);
+  // Любой другой подтверждённый пользователь — отдельный тип, не смешивается с beta.
+  const publicBlocker=await runtime.apiBetaFeedback(
+    {method:'POST',json:async()=>({category:'ai',severity:'BLOCKER',note:'AI tab does not open'})},
+    {},
+    {id:202,username:'another-user',__telegramValidated:true},
+  );
+  assert.deepEqual(publicBlocker,{status:200,body:{ok:true}});
+  assert.equal(events.length,2);
+  const userEvent=events[1];
+  assert.equal(userEvent.source,'feedback');
+  assert.equal(userEvent.eventType,'user_feedback');
+  assert.equal(userEvent.code,'USER_FEEDBACK');
+  assert.equal(userEvent.severity,'warning');
+  assert.equal(userEvent.meta.betaMembershipVerified,false);
+  assert.equal('betaCohort' in userEvent.meta,false);
+
+  for (const event of events) {
+    assert.equal('userId' in event.meta,false);
+    assert.equal('telegramId' in event.meta,false);
+    assert.equal('username' in event.meta,false);
+  }
+  assert.doesNotMatch(JSON.stringify(events),/private-user|another-user|"202"|:202\b/);
 });
 
 test('one subjective feedback remains evidence-pending until repeated or correlated evidence exists', () => {

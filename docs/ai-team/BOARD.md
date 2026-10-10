@@ -22,7 +22,7 @@ _пусто_
 
 ## На ревью
 
-- [ ] «Поделиться матчем»: нейтральный текст для друзей, кнопка в штабе матча — **Claude** — [PR #813](https://github.com/TRAP44/football-analytics-cloudflare/pull/813) — ревью: Codex
+- [ ] Обратная связь для всех пользователей (не только закрытой beta) — **Claude** — [PR #814](https://github.com/TRAP44/football-analytics-cloudflare/pull/814) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 ## Ждут ревью Codex (у Codex закончился лимит)
@@ -32,10 +32,12 @@ _Решение Сергея: такие PR можно мержить, но Code
 - [ ] [PR #810](https://github.com/TRAP44/football-analytics-cloudflare/pull/810) — личные экраны (уже в `main`)
 - [ ] [PR #811](https://github.com/TRAP44/football-analytics-cloudflare/pull/811) — главная без повторов (уже в `main`)
 - [ ] [PR #812](https://github.com/TRAP44/football-analytics-cloudflare/pull/812) — удалить скрытый AI-центр (уже в `main`)
-- [ ] [PR #813](https://github.com/TRAP44/football-analytics-cloudflare/pull/813) — «Поделиться матчем»
+- [ ] [PR #813](https://github.com/TRAP44/football-analytics-cloudflare/pull/813) — «Поделиться матчем» (уже в `main`)
+- [ ] [PR #814](https://github.com/TRAP44/football-analytics-cloudflare/pull/814) — обратная связь для всех (серверная авторизация — проверить особенно)
 
 ## Готово
 
+- [x] «Поделиться матчем»: нейтральный текст для друзей, кнопка в штабе матча — **Claude** — [PR #813](https://github.com/TRAP44/football-analytics-cloudflare/pull/813) (слит без ревью Codex — лимит)
 - [x] Удалить скрытый «AI-центр» и «AI-рейтинг дня» на главной — **Claude** — [PR #812](https://github.com/TRAP44/football-analytics-cloudflare/pull/812) (слит без ревью Codex — лимит)
 - [x] Главная: без повтора матча «Для вас» в ленте, подсказка поиска помещается — **Claude** — [PR #811](https://github.com/TRAP44/football-analytics-cloudflare/pull/811) (слит без ревью Codex — лимит)
 - [x] Личные экраны: без ставочных меток в «Истории» и ленте, без дублей в «Профиле», «Мои команды» — **Claude** — [PR #810](https://github.com/TRAP44/football-analytics-cloudflare/pull/810) (слит без ревью Codex — лимит; см. «Ждут ревью»)
@@ -62,3 +64,4 @@ _Сюда оба ассистента пишут проблемы и идеи, �
 - [ ] `/api/history` молча отдаёт `[]`, если Supabase не прочитал `analysis_history` (`src/user-history.js`, `getHistory`): клиент не может отличить «разборов нет» от «не удалось проверить». Нужен признак `degraded` в ответе и его учёт в карточке штаба и на главной. Лимит при этом не теряется: свежий разбор из кэша отдаётся до проверки лимита (`src/analysis-runtime.js`) — найдено **Codex** в ревью #807, не назначено
 - [x] Мёртвый код: «AI-центр» на главной (`renderAiCenterSummary`, `#aiCenterSummary`, `#aiFocus`) скрыт CSS-ом (`.secondary-home-insight { display:none !important }`), но всё ещё считается и содержит ставочные формулировки («Лучше пропустить», «сигналов»). Удалить или переписать — найдено **Claude**, не назначено → удалено в [PR #812](https://github.com/TRAP44/football-analytics-cloudflare/pull/812)
 - [ ] Бот: вердикт «⛔ Лучше пропустить» (`src/telegram-bot-ui-runtime.js`, около строки 1128) — ставочная формулировка, в Mini App уже нейтрально («Без уверенного вывода»). Привести бота к тому же при работе над ботом — найдено **Claude**, не назначено
+- [ ] Отзывы пользователей нигде не видны Сергею: `/api/beta-feedback` пишет их только в `ops_events`, админка показывает лишь агрегаты беты. Нужен раздел «Отзывы» в админке и/или уведомление админу в бот (с защитой от дублей) — найдено **Claude**, следующий шаг после «Обратной связи для всех»

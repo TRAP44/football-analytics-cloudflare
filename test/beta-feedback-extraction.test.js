@@ -273,28 +273,38 @@ test('feedback API failure restores sending state and does not schedule auto-clo
   assert.equal(scheduled, 0);
 });
 
-test('server feedback endpoint is fail-closed on method, membership and invalid fields', async () => {
+test('server feedback endpoint is fail-closed on method, Telegram verification and invalid fields', async () => {
   const { runtime } = createFeedbackRuntime();
+  const verified = { id: 1, __telegramValidated: true };
 
   assert.deepEqual(
-    await runtime.apiBetaFeedback(request({}, 'GET'), {}, { id: 1 }),
+    await runtime.apiBetaFeedback(request({}, 'GET'), {}, verified),
     { status: 405, body: { error: 'Метод не поддерживается.' } },
   );
 
-  const outsider = createFeedbackRuntime({ invited: false }).runtime;
-  const membership = await outsider.apiBetaFeedback(request({
+  // Обратная связь открыта не только beta, но только для подтверждённого Telegram.
+  const unverified = await runtime.apiBetaFeedback(request({
     category: 'search',
     severity: 'MINOR',
     note: 'valid note',
   }), {}, { id: 1 });
-  assert.equal(membership.status, 403);
-  assert.equal(membership.body.code, 'BETA_MEMBERSHIP_REQUIRED');
+  assert.equal(unverified.status, 401);
+  assert.equal(unverified.body.code, 'AUTH_REQUIRED');
+
+  const outsider = createFeedbackRuntime({ invited: false });
+  const accepted = await outsider.runtime.apiBetaFeedback(request({
+    category: 'search',
+    severity: 'MINOR',
+    note: 'valid note',
+  }), {}, verified);
+  assert.equal(accepted.status, 200);
+  assert.equal(outsider.recorded[0].code, 'USER_FEEDBACK');
 
   const invalidCategory = await runtime.apiBetaFeedback(request({
     category: 'other',
     severity: 'MINOR',
     note: 'valid note',
-  }), {}, { id: 1 });
+  }), {}, verified);
   assert.equal(invalidCategory.status, 400);
   assert.equal(invalidCategory.body.error, 'Выберите раздел проблемы.');
 
@@ -302,7 +312,7 @@ test('server feedback endpoint is fail-closed on method, membership and invalid 
     category: 'search',
     severity: 'URGENT',
     note: 'valid note',
-  }), {}, { id: 1 });
+  }), {}, verified);
   assert.equal(invalidSeverity.status, 400);
   assert.equal(invalidSeverity.body.error, 'Выберите важность проблемы.');
 
@@ -310,7 +320,7 @@ test('server feedback endpoint is fail-closed on method, membership and invalid 
     category: 'search',
     severity: 'MINOR',
     note: 'bad',
-  }), {}, { id: 1 });
+  }), {}, verified);
   assert.equal(shortNote.status, 400);
   assert.equal(shortNote.body.error, 'Кратко опишите, что произошло.');
 });
@@ -327,6 +337,7 @@ test('server stores only bounded explicit feedback metadata and never raw identi
   }), {}, {
     id: 123456789,
     username: 'private-user',
+    __telegramValidated: true,
   });
 
   assert.deepEqual(result, { status: 200, body: { ok: true } });
