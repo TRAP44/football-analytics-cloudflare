@@ -36,7 +36,9 @@ test('Match Center loads history itself and rerenders the open center when it ar
   assert.match(render,/if \(!state\.historyLoaded && !state\.historyLoading && !state\.historyLoadError\) void loadHistory\(false\);/);
   const load=block(app,'async function loadHistory','async function openHistoryAnalysis');
   const fin=load.slice(load.indexOf('} finally {'));
-  assert.match(fin,/state\.currentCenter && !state\.currentAnalysis && activeViewId\(\) === 'analysisView'\) renderMatchCenter\(state\.currentCenter\)/);
+  assert.match(fin,/rerenderOpenMatchCenter\(\);/);
+  const helper=block(app,'function rerenderOpenMatchCenter()','\n}');
+  assert.match(helper,/state\.currentCenter && !state\.currentAnalysis && activeViewId\(\) === 'analysisView'\) renderMatchCenter\(state\.currentCenter\)/);
 });
 
 // Поведенческая проверка загрузчика: исходник функции исполняется с подменённым import().

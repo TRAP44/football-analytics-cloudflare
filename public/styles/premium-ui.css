@@ -2303,3 +2303,18 @@ html[data-theme] body.miniapp-public-shell .mr-ai-card-btn {
 html[data-theme] body.miniapp-public-shell .mr-ai-honesty { margin: 4px 4px 0; font-size: 12px; line-height: 1.45; color: var(--hint); }
 html[data-theme] body.miniapp-public-shell .center-tab-panel[data-center-panel="ai"] > * + * { margin-top: 12px; }
 html[data-theme] body.miniapp-public-shell .mr-hq-meta { font-size: 12px; line-height: 1.4; }
+/* «Честность модели» на вкладке AI: счётчики проверенного протокола, без процента побед. */
+html[data-theme] body.miniapp-public-shell .mr-ai-proof { padding: 14px 16px; }
+html[data-theme] body.miniapp-public-shell .mr-ai-proof-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+html[data-theme] body.miniapp-public-shell .mr-ai-proof-sample { font-size: 11px; font-weight: 700; color: var(--hint); border: 1px solid var(--line); border-radius: 999px; padding: 3px 8px; white-space: nowrap; }
+html[data-theme] body.miniapp-public-shell .mr-ai-proof-sample.early { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+html[data-theme] body.miniapp-public-shell .mr-ai-proof-main { margin: 8px 0 10px; font-size: 15px; line-height: 1.4; color: var(--text); }
+html[data-theme] body.miniapp-public-shell .mr-ai-proof-main strong { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+html[data-theme] body.miniapp-public-shell .mr-ai-proof-bar { display: flex; gap: 3px; height: 8px; border-radius: 999px; overflow: hidden; }
+html[data-theme] body.miniapp-public-shell .mr-ai-proof-bar i { display: block; min-width: 0; flex-basis: 0; }
+html[data-theme] body.miniapp-public-shell .mr-ai-proof-bar .hit { background: var(--accent); }
+html[data-theme] body.miniapp-public-shell .mr-ai-proof-bar .miss { background: color-mix(in srgb, var(--hint) 45%, transparent); }
+html[data-theme] body.miniapp-public-shell .mr-ai-proof-note { margin: 8px 0 0; font-size: 12px; line-height: 1.45; color: var(--hint); }
+html[data-theme] body.miniapp-public-shell .mr-ai-proof-stale { margin: 6px 0 0; font-size: 12px; line-height: 1.45; color: var(--accent); }
+html[data-theme] body.miniapp-public-shell .mr-ai-proof.is-empty p { margin: 6px 0 0; font-size: 13px; line-height: 1.45; color: var(--hint); }
+html[data-theme] body.miniapp-public-shell .mr-ai-proof-link { margin-top: 6px; min-height: 44px; padding: 0; color: var(--accent); font-weight: 700; }

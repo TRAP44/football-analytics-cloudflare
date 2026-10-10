@@ -1106,10 +1106,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch77'),
+      import('./modules/match-center-view.js?v=6.120.0-launch78'),
       import('./modules/match-pulse.js?v=6.120.0-launch65'),
       import('./modules/ai-timeline.js?v=6.120.0-launch63'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch77'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch78'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -2929,7 +2929,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch77');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch78');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3427,7 +3427,7 @@ function renderAiFocus() {
 }
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch77').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch78').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -5188,6 +5188,7 @@ function renderMatchCenter(d) {
   const m = d.match || {};
   if (previousFixture && previousFixture !== Number(m.fixtureId || 0)) state.currentCenterTab = 'ai';
   if (!state.historyLoaded && !state.historyLoading && !state.historyLoadError) void loadHistory(false);
+  if (!state.aiTrackRecordLoaded && !state.aiTrackRecordLoading && !state.aiTrackRecordError) void loadAiTrackRecord();
   if (d.mode === 'upcoming' && !state.remindersLoaded && !state.remindersLoading && !state.remindersLoadError) void loadReminders();
   const view = matchCenterExtras?.renderMatchCenterView;
   if (typeof view !== 'function') {
@@ -5277,6 +5278,7 @@ async function loadAiTrackRecord() {
   } finally {
     state.aiTrackRecordLoading=false;
     renderAiTrackRecord();
+    rerenderOpenMatchCenter();
   }
 }
 
@@ -5304,6 +5306,10 @@ function renderAiTrackRecord() {
   void ensureAiTrackRecordRenderer().then(module => module?.renderAiTrackRecord());
 }
 
+function rerenderOpenMatchCenter() {
+  if (state.currentCenter && !state.currentAnalysis && activeViewId() === 'analysisView') renderMatchCenter(state.currentCenter);
+}
+
 async function loadHistory(showLoader = true) {
   if (state.historyLoading) return;
   const revisionAtStart = state.historyRevision;
@@ -5328,7 +5334,7 @@ async function loadHistory(showLoader = true) {
     state.historyLoading = false;
     renderHistory();
     // Карточка «Вывод AI» в открытом штабе зависит от истории — обновляем её после загрузки.
-    if (state.currentCenter && !state.currentAnalysis && activeViewId() === 'analysisView') renderMatchCenter(state.currentCenter);
+    rerenderOpenMatchCenter();
   }
 }
 
