@@ -112,11 +112,6 @@ test('profile picker HTML is accessible and asset revision matches runtime',()=>
   }
   assert.match(css,/\.match-pass-picker-matches/);
   assert.match(css,/\.match-pass-picker\[hidden\]/);
-<<<<<<< HEAD
   assert.match(html,/6\.120\.0-launch86/);
   assert.match(runtime,/FRONTEND_ASSET_REVISION = '6\.120\.0-launch86'/);
-=======
-  assert.match(html,/6\.120\.0-launch86/);
-  assert.match(runtime,/FRONTEND_ASSET_REVISION = '6\.120\.0-launch86'/);
->>>>>>> e383d798 (fix(admin): «Отзывы» после сбоя обновления помечаются как устаревшие)
 });

@@ -114,11 +114,7 @@ test('watchlist controls stay compact on the public mobile shell', () => {
 });
 
 test('match watchlist ships with one exact frontend asset revision across public and admin shells', () => {
-<<<<<<< HEAD
   assert.equal(FRONTEND_ASSET_REVISION,'6.120.0-launch86');
-=======
-  assert.equal(FRONTEND_ASSET_REVISION,'6.120.0-launch86');
->>>>>>> e383d798 (fix(admin): «Отзывы» после сбоя обновления помечаются как устаревшие)
 
   const revisions=[html,adminHtml].map(surface=>
     surface.match(

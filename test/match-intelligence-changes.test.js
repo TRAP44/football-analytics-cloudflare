@@ -234,11 +234,7 @@ test('Match Intelligence assets use the current frontend revision', () => {
   const revision=index.match(
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
-<<<<<<< HEAD
   assert.equal(revision,'6.120.0-launch86');
-=======
-  assert.equal(revision,'6.120.0-launch86');
->>>>>>> e383d798 (fix(admin): «Отзывы» после сбоя обновления помечаются как устаревшие)
   for (const asset of [
     'styles.css',
     'styles/public-shell.css',
