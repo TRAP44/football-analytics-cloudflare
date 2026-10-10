@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-10 — Claude — Штаб матча без коэффициентов
-PR: ветка `claude/remove-center-odds`
+PR: [#818](https://github.com/TRAP44/football-analytics-cloudflare/pull/818), ветка `claude/remove-center-odds`
 Сделано:
 - Убран свёрнутый блок «Рыночные данные» (live-коэффициенты П1/Н/П2 и «Движение рынка») во вкладке «Игра» штаба; удалены `centerMarketHtml`, `oddsMovementHtml`, `oddsQualityHintHtml`, `signedPp`.
 - «Что изменилось» (`matchChangeNarrativeHtml`) больше не выводит «Изменилась оценка: … сдвиг расчётной рыночной вероятности»; пульс матча — «Рынок: Милан +2.4 п.п.» (`strongestOddsMovement` удалён).
