@@ -1099,18 +1099,23 @@ let matchCenterExtrasPromise = null;
 async function ensureMatchCenterExtras() {
   if (matchCenterExtras) return matchCenterExtras;
   if (!matchCenterExtrasPromise) {
-    matchCenterExtrasPromise = Promise.all([
+    // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
+    // дополнения: если какое-то не загрузилось, штаб показывается без него.
+    matchCenterExtrasPromise = Promise.allSettled([
+      import('./modules/match-center-view.js?v=6.120.0-launch77'),
       import('./modules/match-pulse.js?v=6.120.0-launch65'),
       import('./modules/ai-timeline.js?v=6.120.0-launch63'),
       import('./modules/match-headquarters.js?v=6.120.0-launch77'),
-      import('./modules/match-center-view.js?v=6.120.0-launch77'),
-    ]).then(([pulse, timeline, headquarters, centerView]) => {
+    ]).then(([centerView, pulse, timeline, headquarters]) => {
+      if (centerView.status !== 'fulfilled') throw centerView.reason;
+      const optional = result => (result.status === 'fulfilled' ? result.value : {});
+      const p = optional(pulse), t = optional(timeline), h = optional(headquarters);
       matchCenterExtras = Object.freeze({
-        renderMatchCenterView: centerView.renderMatchCenterView,
-        renderMatchPulse: pulse.renderMatchPulse,
-        renderMatchHeadquarters: headquarters.renderMatchHeadquarters,
-        renderAiTimelineCompact: timeline.renderAiTimelineCompact,
-        renderAiTimelineDetails: timeline.renderAiTimelineDetails,
+        renderMatchCenterView: centerView.value.renderMatchCenterView,
+        renderMatchPulse: p.renderMatchPulse,
+        renderMatchHeadquarters: h.renderMatchHeadquarters,
+        renderAiTimelineCompact: t.renderAiTimelineCompact,
+        renderAiTimelineDetails: t.renderAiTimelineDetails,
       });
       return matchCenterExtras;
     }).catch(error => {

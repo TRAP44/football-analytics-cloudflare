@@ -32,3 +32,45 @@ test('Match Center loads history itself and rerenders the open center when it ar
   const fin=load.slice(load.indexOf('} finally {'));
   assert.match(fin,/state\.currentCenter && !state\.currentAnalysis && activeViewId\(\) === 'analysisView'\) renderMatchCenter\(state\.currentCenter\)/);
 });
+
+// Поведенческая проверка загрузчика: исходник функции исполняется с подменённым import().
+function loadExtrasLoader(fakeImport) {
+  const source=block(app,'async function ensureMatchCenterExtras()','\nasync function loadProfile');
+  const factory=new Function('fakeImport',`
+    let matchCenterExtras=null; let matchCenterExtrasPromise=null;
+    ${source.replace(/\bimport\(/g,'fakeImport(')}
+    return { ensureMatchCenterExtras, extras: () => matchCenterExtras };
+  `);
+  return factory(fakeImport);
+}
+
+test('an optional Match Center chunk failing does not block the core view',async()=>{
+  const view=()=>'view';
+  const loader=loadExtrasLoader(async url=>{
+    if (url.includes('match-center-view.js')) return { renderMatchCenterView:view };
+    if (url.includes('match-pulse.js')) throw new Error('chunk failed');
+    if (url.includes('ai-timeline.js')) return { renderAiTimelineCompact:()=>'c', renderAiTimelineDetails:()=>'d' };
+    return { renderMatchHeadquarters:()=>'hq' };
+  });
+  const extras=await loader.ensureMatchCenterExtras();
+  assert.equal(extras.renderMatchCenterView,view);
+  assert.equal(extras.renderMatchPulse,undefined);
+  assert.equal(typeof extras.renderAiTimelineCompact,'function');
+  assert.equal(typeof extras.renderMatchHeadquarters,'function');
+});
+
+test('a failed core Match Center view is retried on the next call',async()=>{
+  let fail=true;
+  const loader=loadExtrasLoader(async url=>{
+    if (url.includes('match-center-view.js')) {
+      if (fail) throw new Error('core failed');
+      return { renderMatchCenterView:()=>'view' };
+    }
+    return {};
+  });
+  await assert.rejects(loader.ensureMatchCenterExtras(),/core failed/);
+  assert.equal(loader.extras(),null);
+  fail=false;
+  const extras=await loader.ensureMatchCenterExtras();
+  assert.equal(typeof extras.renderMatchCenterView,'function');
+});
