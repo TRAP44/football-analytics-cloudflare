@@ -258,6 +258,7 @@ test('AI Timeline: trigger wording separates confirmed chronology from correlati
   assert.equal(market.category,'odds_move');
   assert.match(market.explanation,/совпало/i);
   assert.match(market.explanation,/Причинность не подтверждена/i);
+  assert.doesNotMatch(market.label+market.explanation,/рын(ок|ка|ке)/i);
 
   const row=analysisTimelineSnapshotRow({
     generatedAt:'2026-10-01T17:05:00Z',

@@ -22,7 +22,7 @@ export function withPublicSignalLabel(payload) {
 }
 
 // Ставочные слова и метки. Границы слов — через Unicode-классы: \b не видит кириллицу.
-const BETTING_TEXT = /коэффициент|рын(ок|ка|ке|ком|очн)|ставк|букмекер|тотал|обе забьют|форсир|пропустить\s+(матч|ставку)|(^|[^\p{L}\p{N}])(ТБ|ТМ|П1|П2|1X|X2|Х2|1Х)(?![\p{L}\p{N}])/iu;
+const BETTING_TEXT = /коэффициент|рын(ок|ка|ке|ком|очн)|ставк|букмекер|тотал|обе забьют|форсир|пропустить\s+(матч|ставку)|(^|[^\p{L}\p{N}])(1[XХ]2|ТБ|ТМ|П1|П2|1X|X2|Х2|1Х)(?![\p{L}\p{N}])/iu;
 
 export function isBettingText(text) {
   return typeof text === 'string' && BETTING_TEXT.test(text);

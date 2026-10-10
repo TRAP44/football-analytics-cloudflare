@@ -273,9 +273,26 @@ test('market appearance and referee reassignment are tracked without zero coerci
   assert.equal(result.material,true);
   assert.ok(result.codes.includes('market'));
   assert.ok(result.codes.includes('referee'));
-  // Изменения рынка учитываются в существенности, но пользователю не показываются.
+  // Изменения рынка учитываются в существенности, а пользователю видна одна нейтральная строка.
   assert.equal(result.items.find(item=>item.code==='market'),undefined);
+  assert.equal(result.items.find(item=>item.code==='external_data')?.title,'Обновились внешние данные матча');
   assert.equal(result.items.find(item=>item.code==='referee')?.after,'Ref B');
+  assert.doesNotMatch(JSON.stringify(result.items)+result.summary,/[Рр]ын(ок|оч)|коэффициент/);
+});
+
+test('market-only recheck keeps a visible neutral item so the change count is not zero', () => {
+  const runtime=createAnalysisLifecycleRuntime(deps());
+  const previous=snapshot({market:null});
+  const next=snapshot({market:{probabilities:{home:48,draw:31,away:21}}});
+  const result=runtime.analysisRecheckDelta(previous,next);
+
+  assert.equal(result.material,true);
+  assert.deepEqual(result.codes,['market']);
+  assert.equal(result.items.length,1);
+  assert.equal(result.items[0].code,'external_data');
+  assert.equal(result.items[0].importance,'high');
+  assert.match(result.summary,/обновились внешние данные матча/);
+  assert.doesNotMatch(JSON.stringify(result.items)+result.summary,/[Рр]ын(ок|оч)|коэффициент/);
 });
 
 test('news impact comparison is bound to the same fixture', () => {

@@ -608,17 +608,26 @@ export function createAnalysisLifecycleRuntime(deps) {
     const material=items.some(item=>item.importance==='high')
       || codes.some(code=>['signal','probability','lineups','market'].includes(code));
     const stable=items.length===0 && !incomplete;
-    // Изменения рынка (коэффициенты) учитываются в существенности, но пользователю не показываются.
+    // Изменения рынка (коэффициенты) учитываются в существенности, но пользователю
+    // показываются одной нейтральной строкой — без рыночных цифр.
+    const marketItems=items.filter(item=>item.code==='market');
     const visibleItems=items.filter(item=>item.code!=='market');
+    if (marketItems.length) {
+      visibleItems.push({
+        code:'external_data',
+        title:'Обновились внешние данные матча',
+        before:'',
+        after:'учтено при перепроверке',
+        importance:marketItems.some(item=>item.importance==='high') ? 'high' : 'medium',
+      });
+    }
     const summary=stable
       ? 'Значимых изменений после перепроверки не найдено.'
       : visibleItems.length
         ? material
           ? `После перепроверки есть значимые изменения: ${visibleItems.slice(0,3).map(item=>item.title.toLocaleLowerCase('ru-RU')).join(', ')}.`
           : `Обновились детали матча: ${visibleItems.slice(0,3).map(item=>item.title.toLocaleLowerCase('ru-RU')).join(', ')}.`
-        : items.length
-          ? 'После перепроверки обновились внешние данные матча; выводы AI не изменились.'
-          : 'Часть полей двух снимков не удалось надёжно сопоставить; стабильность прогноза не подтверждена.';
+        : 'Часть полей двух снимков не удалось надёжно сопоставить; стабильность прогноза не подтверждена.';
 
     return {
       available:true,

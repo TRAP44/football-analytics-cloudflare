@@ -4,6 +4,10 @@ import fs from 'node:fs';
 
 import {
   NO_CLEAR_SIGNAL_LABEL,
+  isBettingText,
+  neutralOutcomeText,
+  neutralSignalText,
+  neutralReasonText,
   publicSignalLabel,
   withPublicSignalLabel,
 } from '../src/signal-wording.js';
@@ -57,4 +61,24 @@ test('full history re-open and Telegram share cards also use the neutral label (
   assert.doesNotMatch(publisher,/signal\.label/);
   const tasks=fs.readFileSync('docs/ai-team/TASKS_RU.md','utf8');
   assert.doesNotMatch(tasks,/Задача 5 \(LLM\) без этого требует секрет/);
+});
+
+test('betting filter catches the full 1X2 token in both scripts', () => {
+  assert.equal(isBettingText('Нет доступной линии 1X2 от источника'), true);
+  assert.equal(isBettingText('Линия 1Х2 недоступна'), true);
+  assert.equal(neutralReasonText('Нет доступной линии 1X2, оценка без рынка.'), '');
+  assert.equal(isBettingText('Хозяева сильнее в последних 5 матчах'), false);
+});
+
+test('signal codes and outcomes turn into neutral words', () => {
+  const teams = { home: 'Милан', away: 'Рома' };
+  assert.equal(neutralSignalText('home', teams), 'Перевес Милан');
+  assert.equal(neutralSignalText('DOUBLE_AWAY', teams), 'Рома скорее не проиграет');
+  assert.equal(neutralSignalText('over25', teams), 'Результативная игра: 3+ гола');
+  assert.equal(neutralSignalText('skip', teams), NO_CLEAR_SIGNAL_LABEL);
+  assert.equal(neutralSignalText('unknown', teams), '');
+  assert.equal(neutralOutcomeText('П1 · 52%', teams), 'Победа Милан · 52%');
+  assert.equal(neutralOutcomeText('Х · 27,5%', teams), 'Ничья · 27.5%');
+  assert.equal(neutralOutcomeText('ТБ 2.5 · 61%', teams), '');
+  assert.equal(neutralOutcomeText('Нет данных', teams), '');
 });
