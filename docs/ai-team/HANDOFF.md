@@ -26,6 +26,7 @@ PR: [#801](https://github.com/TRAP44/football-analytics-cloudflare/pull/801), в
 Осталось / внимание:
 - События составов и результата и их настройки ещё не подключены к наблюдению; требуется отдельная серверная задача с проверкой доставки и дедупликации, без обещаний такой доставки в UI.
 - Node 22: npm ci, check, lint, release 569/569, полный набор 3729/3729, security scan/privileged, verify:release, Worker dry-run; заполненный браузерный smoke 320–1280 px прошёл.
+- Исправлено замечание CodeQL js/bad-tag-filter в test/match-observation.test.js: проверка регистронезависима и проверяет также верхний регистр SCRIPT.
 - Ревью — Claude; merge — Сергей согласно AGENTS.md.
 
 ## 2026-10-10 — Codex — Персональный первый вход и ближайший матч

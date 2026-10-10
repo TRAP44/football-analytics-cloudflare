@@ -15,9 +15,9 @@ test('empty observation hides and clears previous content',()=>{
 });
 test('observation escapes names and exposes separate notification state',()=>{
  const root={hidden:true,innerHTML:'',querySelectorAll:()=>[]};
- renderObservationPanel({root,watchlist:[{fixtureId:1,homeName:'<script>',awayName:'B'}],matches:[],reminders:[{fixtureId:1}],escapeHtml:s=>String(s).replaceAll('<','&lt;'),dateTime:()=>'',onOpen:()=>{},onRemove:()=>{}});
+ renderObservationPanel({root,watchlist:[{fixtureId:1,homeName:'<script><SCRIPT>',awayName:'B'}],matches:[],reminders:[{fixtureId:1}],escapeHtml:s=>String(s).replaceAll('<','&lt;'),dateTime:()=>'',onOpen:()=>{},onRemove:()=>{}});
  assert.equal(root.hidden,false);
- assert.match(root.innerHTML,/&lt;script>/);assert.doesNotMatch(root.innerHTML,/<script>/);
+ assert.match(root.innerHTML,/&lt;script>/);assert.match(root.innerHTML,/&lt;SCRIPT>/);assert.doesNotMatch(root.innerHTML,/<script>/i);
  assert.match(root.innerHTML,/Нет в текущей ленте/);
  assert.match(root.innerHTML,/Telegram-напоминание включено/);
 });
