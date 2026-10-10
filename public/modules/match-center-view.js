@@ -65,7 +65,7 @@ export function renderMatchCenterView(d, deps) {
     postMatchReviewHtml, centerKeyStatsHtml, liveEventsHtml, centerAbsenceSummary, liveAbsencesHtml,
     centerCoverageHtml, centerFreshnessHtml, eventQualityHintHtml, timelineEventsHtml, statisticsQualityHintHtml,
     xgQualityHintHtml, centerAllStatsHtml, lineupLiveHtml, availabilityQualityHintHtml, centerPlayersHtml,
-    centerMarketHtml, analysisHistoryForFixture, aiConfidenceMeterHtml,
+    analysisHistoryForFixture, aiConfidenceMeterHtml,
     bindMatchCenterTabs, setMatchCenterTab, openPlayerFromMatch, openTeam, toggleMatchWatch,
     syncQuickReminderButton, toggleReminder, analyzeMatch, loadHistory, openHistoryAnalysis, openPassStoreForFixture,
     runProviderCoverageAudit, openProfileView, runProviderE2E, requestMatchCenter, renderMatchCenter, toast,
@@ -217,13 +217,6 @@ export function renderMatchCenterView(d, deps) {
         ${xgQualityHintHtml(d.xgQuality)}
         ${centerAllStatsHtml(d.statistics)}
       </section>
-      <details class="panel analysis-disclosure center-market-panel">
-        <summary>Рыночные данные</summary>
-        <div class="analysis-disclosure-body">
-          <div class="center-section-title"><div><h2>Оценка рынка</h2><p>Как рынок оценивает исходы П1 / Н / П2 и как это меняется</p></div></div>
-          ${centerMarketHtml(d)}
-        </div>
-      </details>
     </div>
 
     <div class="center-tab-panel" data-center-panel="lineups">

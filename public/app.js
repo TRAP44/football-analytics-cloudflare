@@ -1106,10 +1106,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch86'),
-      import('./modules/match-pulse.js?v=6.120.0-launch65'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch63'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch86'),
+      import('./modules/match-center-view.js?v=6.120.0-launch87'),
+      import('./modules/match-pulse.js?v=6.120.0-launch87'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch87'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch87'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1265,7 +1265,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch86').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch87').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -2941,7 +2941,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch86');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch87');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3388,7 +3388,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch86').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch87').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -4104,23 +4104,6 @@ function startLiveRefresh(fixtureId) {
     .catch(error => sendActionError('live_refresh', error, 'analysisView'));
 }
 
-function signedPp(v) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return '—';
-  return `${n > 0 ? '+' : ''}${n.toFixed(1)} п.п.`;
-}
-
-function oddsMovementHtml(move) {
-  if (!move?.baseline || !move?.probabilityChange) return '<p class="muted">История движения появится после нескольких снимков во время матча.</p>';
-  const row = (label, key) => {
-    const d = Number(move.probabilityChange?.[key] || 0);
-    const cls = d > .4 ? 'up' : d < -.4 ? 'down' : 'flat';
-    const arrow = d > .4 ? '↑' : d < -.4 ? '↓' : '→';
-    return `<div class="odds-move-row ${cls}"><span>${label}</span><strong>${move.baseline?.[key] ?? '—'} → ${move.current?.[key] ?? '—'}</strong><b>${arrow} ${signedPp(d)}</b></div>`;
-  };
-  return `<div class="odds-movement-grid">${row('П1','home')}${row('Н','draw')}${row('П2','away')}</div><p class="tiny">Сравнение с самым ранним сохранённым снимком во время матча${move.from ? ` · ${dateTime(move.from)}` : ''}. Изменение указано в расчётной вероятности.</p>`;
-}
-
 function playerMetricText(p) {
   const bits = [];
   if (Number(p.goals)) bits.push(`${p.goals} гол`);
@@ -4253,20 +4236,6 @@ function statisticsQualityHintHtml(quality = {}) {
         : 'некорректные значения исключены';
   const limited = quality.state === 'verified' ? '' : 'limited';
   return `<div class="coverage-badge ${limited}">Статистика · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
-}
-
-function oddsQualityHintHtml(quality = {}) {
-  if (!quality?.state || quality.state === 'unavailable') return '';
-  const label = publicText(quality.label || 'Качество рынка');
-  const detail = quality.state === 'verified'
-    ? `источников: ${Number(quality.sourceCount || 0)}`
-    : quality.state === 'sanitized'
-      ? 'вероятности пересчитаны из валидных коэффициентов'
-      : quality.state === 'source_untrusted'
-        ? 'данные источника недостаточно свежие или подтверждённые'
-        : 'некорректный рынок исключён из аналитики';
-  const limited = ['verified','sanitized'].includes(quality.state) ? '' : 'limited';
-  return `<div class="coverage-badge ${limited}">Рынок · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
 }
 
 function centerAllStatsHtml(stats) {
@@ -4739,9 +4708,10 @@ function freshnessAgeLabel(seconds) {
 }
 
 function centerFreshnessHtml(d) {
-  const rows = Object.entries(d.dataFreshness || {});
+  // Коэффициенты букмекеров пользователю не показываются — и в свежести данных тоже.
+  const rows = Object.entries(d.dataFreshness || {}).filter(([key]) => key !== 'liveOdds');
   if (!rows.length) return '';
-  const names = { events:'События', statistics:'Статистика', players:'Игроки', lineups:'Составы', injuries:'Потери', liveOdds:'Коэффициенты' };
+  const names = { events:'События', statistics:'Статистика', players:'Игроки', lineups:'Составы', injuries:'Потери' };
   return `<div class="center-freshness">
     ${rows.map(([key, meta]) => `<div class="${escapeHtml(meta?.source || '')}">
       <span>${escapeHtml(names[key] || key)}</span>
@@ -4759,33 +4729,8 @@ function centerCoverageHtml(d) {
     ['Составы', d.availability?.lineups],
     ['Игроки', d.availability?.players],
     ['Потери', d.availability?.injuries],
-    ['Рынок', Boolean(d.availability?.liveOdds)],
   ];
   return `<div class="center-coverage">${cells.map(([label,ok])=>`<span class="${ok?'ok':''}">${ok?'✓':'·'} ${label}</span>`).join('')}</div>`;
-}
-
-function centerMarketHtml(d) {
-  const quality = oddsQualityHintHtml(d.liveOddsQuality);
-  if (!d.liveOdds) return `${quality}<div class="empty compact-empty">Коэффициенты П1 / Н / П2 в реальном времени сейчас недоступны. Покрытие зависит от турнира и режима данных.</div>`;
-  const odd=value=>{
-    const numeric=typeof value==='number'
-      ? value
-      : typeof value==='string' && /^\d+(?:[.,]\d+)?$/.test(value.trim())
-        ? Number(value.trim().replace(',','.'))
-        : NaN;
-    return Number.isFinite(numeric) && numeric>1 && numeric<1000
-      ? escapeHtml(String(Math.round(numeric*100)/100))
-      : '—';
-  };
-  return `${quality}<div class="center-market">
-    <div class="odds-grid">
-      <div><span>П1</span><strong>${odd(d.liveOdds.odds?.home)}</strong></div>
-      <div><span>Н</span><strong>${odd(d.liveOdds.odds?.draw)}</strong></div>
-      <div><span>П2</span><strong>${odd(d.liveOdds.odds?.away)}</strong></div>
-    </div>
-    <p class="tiny">Источников: ${Number(d.liveOdds.sources || 0)}${d.liveOdds.updatedAt ? ` · ${escapeHtml(String(d.liveOdds.updatedAt))}` : ''}</p>
-    <div class="odds-movement-wrap"><h3>Движение рынка</h3>${oddsMovementHtml(d.oddsMovement)}</div>
-  </div>`;
 }
 
 function centerAbsenceSummary(absences, match) {
@@ -4949,39 +4894,7 @@ function matchChangeNarrativeHtml(d = {}, match = {}) {
     }
   }
 
-  const movement = mode === 'live'
-    && trusted('liveOdds')
-    && scalar(d?.oddsMovement?.sample,2,100000) !== null
-    ? d?.oddsMovement?.probabilityChange
-    : null;
-  if (movement && typeof movement === 'object' && !Array.isArray(movement)) {
-    const rows=['home','draw','away'].map(key=>({
-      key,
-      value:scalar(movement[key],-100,100),
-    }));
-    if (
-      rows.every(row=>row.value !== null)
-      && Math.abs(rows.reduce((sum,row)=>sum+row.value,0)) <= 1
-    ) {
-      const labels={
-        home:match.home?.name || 'П1',
-        draw:'Ничья',
-        away:match.away?.name || 'П2',
-      };
-      const strongest=rows.sort(
-        (x,y)=>Math.abs(y.value)-Math.abs(x.value),
-      )[0];
-      if (strongest && Math.abs(strongest.value) >= .5) {
-        items.push({
-          kind:'change',
-          icon:strongest.value > 0 ? '📈' : '📉',
-          title:`Изменилась оценка: ${labels[strongest.key]}`,
-          text:`Сдвиг расчётной рыночной вероятности: ${signedPp(strongest.value)}.`,
-          tone:strongest.value > 0 ? 'up' : 'down',
-        });
-      }
-    }
-  }
+  // Движение коэффициентов букмекеров пользователю не показываем.
 
   if (mode === 'upcoming' && trusted('injuries')) {
     const homeAbsences=Array.isArray(d?.absences?.home)
@@ -5063,7 +4976,11 @@ function liveAiCoachHtml(ai, match) {
   const pressureText = Number.isFinite(Number(pressure.home)) && Number.isFinite(Number(pressure.away)) ? `${pressure.home}:${pressure.away}` : '—';
   const xgText = Number.isFinite(Number(xg.home)) && Number.isFinite(Number(xg.away)) ? `${Number(xg.home).toFixed(2)}:${Number(xg.away).toFixed(2)}` : '—';
   const xgQualityLabel = publicText(ai.current?.xgQuality?.label || '');
-  const watch = Array.isArray(ai.watchNext) ? ai.watchNext.slice(0,3) : [];
+  // Рыночные подсказки из старых или кешированных ответов сервера не показываем.
+  const neutral = value => (typeof value === 'string' && !SCENARIO_BETTING_TEXT.test(value) ? value : '');
+  const watch = Array.isArray(ai.watchNext) ? ai.watchNext.filter(neutral).slice(0,3) : [];
+  const volatilityReason = neutral(ai.volatility?.reason) || 'Матч может быстро измениться.';
+  const prematchLabel = neutral(ai.prematch?.signal) || neutral(ai.prematch?.outcome) || 'AI-разбор';
   const confidence=Math.round(clampPercent(ai.confidence));
   const currentMinute = typeof ai.current?.minute === 'number' && Number.isFinite(ai.current.minute)
     ? Math.max(0,Math.min(180,Math.round(ai.current.minute)))
@@ -5084,9 +5001,9 @@ function liveAiCoachHtml(ai, match) {
       <div><span>Счёт</span><strong>${scoreText}</strong><small>${currentMinute !== null ? `${currentMinute} мин.` : 'Матч идёт'}</small></div>
       <div><span>Давление</span><strong>${pressureText}</strong><small>${escapeHtml(publicText(ai.current?.pressureLeaderLabel || 'Баланс'))}</small></div>
       <div><span>xG</span><strong>${xgText}</strong><small>${escapeHtml(publicText(ai.current?.chanceLabel || 'По доступным данным'))}${xgQualityLabel ? ` · ${escapeHtml(xgQualityLabel)}` : ''}</small></div>
-      <div><span>Риск сценария</span><strong>${escapeHtml(publicText(ai.volatility?.label || 'Средний'))}</strong><small>${escapeHtml(publicText(ai.volatility?.reason || 'Матч может быстро измениться.'))}</small></div>
+      <div><span>Риск сценария</span><strong>${escapeHtml(publicText(ai.volatility?.label || 'Средний'))}</strong><small>${escapeHtml(publicText(volatilityReason))}</small></div>
     </div>
-    ${ai.prematch?.available ? `<div class="live-ai-prematch"><span>До матча</span><strong>${escapeHtml(publicText(ai.prematch.signal || ai.prematch.outcome || 'AI-разбор'))}</strong><b>${escapeHtml(publicText(ai.prematch.stateLabel || 'сравниваю'))}</b></div>` : `<div class="live-ai-prematch muted"><span>До матча</span><strong>Сохранённого AI-разбора нет</strong><b>читаю только текущий матч</b></div>`}
+    ${ai.prematch?.available ? `<div class="live-ai-prematch"><span>До матча</span><strong>${escapeHtml(publicText(prematchLabel))}</strong><b>${escapeHtml(publicText(ai.prematch.stateLabel || 'сравниваю'))}</b></div>` : `<div class="live-ai-prematch muted"><span>До матча</span><strong>Сохранённого AI-разбора нет</strong><b>читаю только текущий матч</b></div>`}
     ${watch.length ? `<div class="live-ai-watch"><strong>Что смотреть дальше</strong><ul>${watch.map(x=>`<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul></div>` : ''}
     <p class="live-ai-disclaimer">Оценка по ходу матча перестраивается при каждом обновлении счёта, событий и статистики. Это объяснение сценария, а не гарантия результата.</p>
   </section>`;
@@ -5155,7 +5072,7 @@ function renderMatchCenter(d) {
     ensureMatchCenterExtras().then(() => { if (state.currentCenter === d) renderMatchCenter(d); }).catch(() => toast('Не удалось загрузить штаб матча. Попробуйте ещё раз.'));
     return;
   }
-  view(d, { state, $, escapeHtml, publicText, safeUrl, timeOf, dateTime, isAdmin, isWatchedMatch, positiveEntityId, matchCenterExtraHtml, matchChangeNarrativeHtml, liveAiCoachHtml, smartInsightsHeroHtml, smartInsightsFullHtml, postMatchReviewHtml, centerKeyStatsHtml, liveEventsHtml, centerAbsenceSummary, liveAbsencesHtml, centerCoverageHtml, centerFreshnessHtml, eventQualityHintHtml, timelineEventsHtml, statisticsQualityHintHtml, xgQualityHintHtml, centerAllStatsHtml, lineupLiveHtml, availabilityQualityHintHtml, centerPlayersHtml, centerMarketHtml, analysisHistoryForFixture, aiConfidenceMeterHtml, bindMatchCenterTabs, setMatchCenterTab, openPlayerFromMatch, openTeam, toggleMatchWatch, syncQuickReminderButton, toggleReminder, analyzeMatch, loadHistory, openHistoryAnalysis, openPassStoreForFixture, runProviderCoverageAudit, openProfileView, runProviderE2E, requestMatchCenter, renderMatchCenter, toast, startLiveRefresh, stopLiveRefresh, shareMatchCard });
+  view(d, { state, $, escapeHtml, publicText, safeUrl, timeOf, dateTime, isAdmin, isWatchedMatch, positiveEntityId, matchCenterExtraHtml, matchChangeNarrativeHtml, liveAiCoachHtml, smartInsightsHeroHtml, smartInsightsFullHtml, postMatchReviewHtml, centerKeyStatsHtml, liveEventsHtml, centerAbsenceSummary, liveAbsencesHtml, centerCoverageHtml, centerFreshnessHtml, eventQualityHintHtml, timelineEventsHtml, statisticsQualityHintHtml, xgQualityHintHtml, centerAllStatsHtml, lineupLiveHtml, availabilityQualityHintHtml, centerPlayersHtml, analysisHistoryForFixture, aiConfidenceMeterHtml, bindMatchCenterTabs, setMatchCenterTab, openPlayerFromMatch, openTeam, toggleMatchWatch, syncQuickReminderButton, toggleReminder, analyzeMatch, loadHistory, openHistoryAnalysis, openPassStoreForFixture, runProviderCoverageAudit, openProfileView, runProviderE2E, requestMatchCenter, renderMatchCenter, toast, startLiveRefresh, stopLiveRefresh, shareMatchCard });
 }
 
 async function openMatchCenter(fixtureId, btn) {
@@ -5587,7 +5504,7 @@ function lineupBlock(title, lineup) {
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch86');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch87');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {
@@ -5823,7 +5740,7 @@ function providerCoverageHtml(reliability = {}) {
 // без меток сигнала («ТБ 2.5», «1X»), рынка и «решений».
 // Границы слов через Unicode-классы: \b в JS не видит кириллицу (ревью Codex #816).
 // Без просмотра назад (lookbehind): Safari до 16.4 — старые iPhone в Telegram — его не разбирает.
-const SCENARIO_BETTING_TEXT = /коэффициент|рын(ок|ка|ке|ком)|ставк|букмекер|тотал|обе забьют|форсир|(^|[^\p{L}\p{N}])(ТБ|ТМ|П1|П2|1X|X2|Х2|1Х)(?![\p{L}\p{N}])/iu;
+const SCENARIO_BETTING_TEXT = /коэффициент|рын(ок|ка|ке|ком|очн)|ставк|букмекер|тотал|обе забьют|форсир|(^|[^\p{L}\p{N}])(1[XХ]2|ТБ|ТМ|П1|П2|1X|X2|Х2|1Х)(?![\p{L}\p{N}])/iu;
 function scenarioText(value) {
   const text = publicText(String(value || ''));
   return text && !SCENARIO_BETTING_TEXT.test(text) ? text : '';

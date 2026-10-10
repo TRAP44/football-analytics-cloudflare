@@ -85,20 +85,16 @@ test('AI visual scores are bounded before presentation',()=>{
   assert.doesNotMatch(live,/Math\.round\(Number\(ai\.confidence \|\| 0\)\)/);
 });
 
-test('Match Center escapes insight metrics and validates visual market/player values',()=>{
+test('Match Center escapes insight metrics, validates player values and shows no bookmaker odds',()=>{
   const insight=block(app,'function smartInsightCardHtml','function matchChangeNarrativeHtml');
-  const market=block(app,'function centerMarketHtml','function centerAbsenceSummary');
   const players=block(app,'function centerPlayersHtml','function playerPositionLabel');
 
   assert.match(insight,/escapeHtml\(publicText\(value\)\)/);
   assert.match(insight,/metricValue\(m\?\.home\)/);
   assert.match(insight,/metricValue\(m\?\.away\)/);
 
-  assert.match(market,/Number\.isFinite\(numeric\) && numeric>1 && numeric<1000/);
-  assert.doesNotMatch(
-    market,
-    /d\.liveOdds\.odds\?\.home \?\? '—'|d\.liveOdds\.odds\?\.draw \?\? '—'|d\.liveOdds\.odds\?\.away \?\? '—'/,
-  );
+  // Коэффициенты букмекеров в штабе матча больше не показываются.
+  assert.doesNotMatch(app,/function centerMarketHtml|Рыночные данные|d\.liveOdds\.odds/);
 
   assert.match(
     players,
@@ -141,7 +137,7 @@ test('frontend asset revision is consistent after Match Center presentation chan
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
 
-  assert.equal(revision,'6.120.0-launch86');
+  assert.equal(revision,'6.120.0-launch87');
   for(const asset of [
     'styles.css',
     'styles/public-shell.css',
