@@ -1106,10 +1106,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch78'),
+      import('./modules/match-center-view.js?v=6.120.0-launch79'),
       import('./modules/match-pulse.js?v=6.120.0-launch65'),
       import('./modules/ai-timeline.js?v=6.120.0-launch63'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch78'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch79'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -2929,7 +2929,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch78');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch79');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3427,7 +3427,7 @@ function renderAiFocus() {
 }
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch78').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch79').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -3605,14 +3605,14 @@ function renderTournamentStandings(data) {
     <section class="panel standings-panel">
       ${group.name ? `<h2>${escapeHtml(group.name)}</h2>` : `<h2>Турнирная таблица</h2>`}
       <div class="standings-scroll"><table class="standings-table">
-        <thead><tr><th>#</th><th>Команда</th><th>И</th><th class="wide-stat">В</th><th class="wide-stat">Н</th><th class="wide-stat">П</th><th>М</th><th>+/-</th><th>О</th><th>Форма</th></tr></thead>
+        <thead><tr><th>#</th><th>Команда</th><th>И</th><th class="standings-points">О</th><th>+/-</th><th class="wide-stat">В</th><th class="wide-stat">Н</th><th class="wide-stat">П</th><th>М</th><th>Форма</th></tr></thead>
         <tbody>${group.rows.map(row => `<tr class="${currentIds.has(Number(row.team?.id)) ? 'today-team' : ''}">
           <td><b>${Number(row.rank)}</b></td>
           <td>${Number(row.team?.id || 0) > 0
             ? `<button class="standing-team team-open-link" type="button" data-open-team="${Number(row.team.id)}" data-team-name="${escapeHtml(row.team?.name || '')}" data-team-logo="${escapeHtml(row.team?.logo || '')}">${row.team?.logo ? `<img src="${safeUrl(row.team.logo)}" alt="">` : ''}<strong>${escapeHtml(row.team?.name || '')}</strong></button>`
             : `<span class="standing-team standing-team-readonly"><strong>${escapeHtml(row.team?.name || '')}</strong></span>`}</td>
-          <td>${Number(row.played)}</td><td class="wide-stat">${Number(row.win)}</td><td class="wide-stat">${Number(row.draw)}</td><td class="wide-stat">${Number(row.lose)}</td>
-          <td>${Number(row.goalsFor)}:${Number(row.goalsAgainst)}</td><td class="${Number(row.goalsDiff) > 0 ? 'positive' : Number(row.goalsDiff) < 0 ? 'negative' : ''}">${Number(row.goalsDiff) > 0 ? '+' : ''}${Number(row.goalsDiff)}</td><td><b>${Number(row.points)}</b></td><td>${standingFormHtml(row.form)}</td>
+          <td>${Number(row.played)}</td><td class="standings-points"><b>${Number(row.points)}</b></td><td class="${Number(row.goalsDiff) > 0 ? 'positive' : Number(row.goalsDiff) < 0 ? 'negative' : ''}">${Number(row.goalsDiff) > 0 ? '+' : ''}${Number(row.goalsDiff)}</td>
+          <td class="wide-stat">${Number(row.win)}</td><td class="wide-stat">${Number(row.draw)}</td><td class="wide-stat">${Number(row.lose)}</td><td>${Number(row.goalsFor)}:${Number(row.goalsAgainst)}</td><td>${standingFormHtml(row.form)}</td>
         </tr>`).join('')}</tbody>
       </table></div>
       <p class="tiny table-note">Источник: ${escapeHtml(data.sourceMeta?.label || 'API-Football')}${data.sourceMeta?.fallback ? ' · резервный источник' : ''}. ${data.sourceMeta?.attribution ? escapeHtml(data.sourceMeta.attribution) + '. ' : ''}Свежие данные сохраняются в общем кэше; резервные таблицы перепроверяются чаще основного источника.</p>
@@ -3662,6 +3662,7 @@ async function loadTournamentStandings(force = false) {
 
 function setTournamentTab(tab, load = true) {
   const buttons = [...document.querySelectorAll('.tournament-tab')];
+  // Панели ищутся по постоянным id — не переименовывать их, иначе следующее переключение их не найдёт.
   const panels = [['tournamentMatchesPanel', 'matches'], ['tournamentTablePanel', 'table']];
   buttons.forEach(btn => {
     const active = btn.dataset.tournamentTab === tab;
@@ -3669,7 +3670,7 @@ function setTournamentTab(tab, load = true) {
     btn.id = `tournament-tab-${name}`;
     btn.classList.toggle('active', active);
     btn.setAttribute('role', 'tab');
-    btn.setAttribute('aria-controls', `tournament-panel-${name}`);
+    btn.setAttribute('aria-controls', (panels.find(([, key]) => key === name) || panels[0])[0]);
     btn.setAttribute('aria-selected', active ? 'true' : 'false');
     btn.tabIndex = active ? 0 : -1;
   });
@@ -3677,7 +3678,6 @@ function setTournamentTab(tab, load = true) {
     const panel = $(id);
     if (!panel) return;
     const active = tab === key;
-    panel.id = `tournament-panel-${key}`;
     panel.classList.toggle('active', active);
     panel.hidden = !active;
     panel.toggleAttribute('inert', !active);
@@ -3897,10 +3897,10 @@ function renderTeamHub(data) {
   const team = data?.team || state.currentTeam || {}; state.currentTeam = { ...state.currentTeam, ...team, data };
   const fav = isFavorite(team.id), favoritePending = state.favoriteMutations.has(Number(team.id)), comp = data?.primaryCompetition, standing = data?.standing, form = data?.form, next = data?.liveNow || data?.nextMatch;
   const stale = data?.stale ? `<div class="data-notice stale">⚠️ ${escapeHtml(data.warning || 'Показаны сохранённые данные команды.')}</div>` : '';
-  $('teamHero').innerHTML = `${stale}<section class="panel team-hero"><div class="team-hero-main"><div class="team-hero-logo">${team.logo ? `<img src="${safeUrl(team.logo)}" alt="">` : '⚽'}</div><div class="team-hero-copy"><span>СТРАНИЦА КОМАНДЫ</span><h2>${escapeHtml(team.name || 'Команда')}</h2><p>${comp ? `${escapeHtml(comp.name)} · ${escapeHtml(comp.country || '')}` : 'Турнир определяется по последним матчам'}</p></div><button id="teamFavoriteBtn" class="team-favorite-big ${fav ? 'active' : ''} ${favoritePending ? 'is-pending' : ''}" type="button" data-team-id="${Number(team.id)}" aria-pressed="${fav ? 'true' : 'false'}" aria-label="${fav ? 'Удалить команду из избранного' : 'Добавить команду в избранное'}" ${favoritePending ? 'disabled' : ''}>${fav ? '★' : '☆'}</button></div><div class="team-hero-stats"><div><span>Форма</span><strong>${form?.form ? escapeHtml(form.form.replace(/W/g,'В').replace(/D/g,'Н').replace(/L/g,'П')) : '—'}</strong></div><div><span>Очки / матч</span><strong>${form?.ppg ?? '—'}</strong></div><div><span>Голы</span><strong>${form ? `${form.gfAvg} / ${form.gaAvg}` : '—'}</strong></div><div><span>Место</span><strong>${standing?.rank ? `${standing.rank}` : '—'}</strong></div></div>${comp ? `<button id="teamTournamentBtn" class="secondary-btn team-tournament-btn" type="button">🏆 ${escapeHtml(comp.shortName || comp.name)} · открыть турнир</button>` : ''}</section>`;
+  $('teamHero').innerHTML = `${stale}<section class="panel team-hero"><div class="team-hero-main"><div class="team-hero-logo">${team.logo ? `<img src="${safeUrl(team.logo)}" alt="">` : '⚽'}</div><div class="team-hero-copy"><span>СТРАНИЦА КОМАНДЫ</span><h2>${escapeHtml(team.name || 'Команда')}</h2><p>${comp ? `${escapeHtml(comp.name)} · ${escapeHtml(comp.country || '')}` : 'Турнир определяется по последним матчам'}</p></div><button id="teamFavoriteBtn" class="team-favorite-big ${fav ? 'active' : ''} ${favoritePending ? 'is-pending' : ''}" type="button" data-team-id="${Number(team.id)}" aria-pressed="${fav ? 'true' : 'false'}" aria-label="${fav ? 'Удалить команду из избранного' : 'Добавить команду в избранное'}" ${favoritePending ? 'disabled' : ''}>${fav ? '★' : '☆'}</button></div><div class="team-hero-stats"><div><span>Форма</span><strong class="team-hero-form">${form?.form ? String(form.form).slice(-5).split('').map(teamResultBadge).join('') || '—' : '—'}</strong></div><div><span>Очки / матч</span><strong>${form?.ppg ?? '—'}</strong></div><div><span>Голы</span><strong>${form ? `${form.gfAvg} / ${form.gaAvg}` : '—'}</strong></div><div><span>Место</span><strong>${standing?.rank ? `${standing.rank}` : '—'}</strong></div></div>${comp ? `<button id="teamTournamentBtn" class="secondary-btn team-tournament-btn" type="button">🏆 ${escapeHtml(comp.shortName || comp.name)} · открыть турнир</button>` : ''}</section>`;
   $('teamFavoriteBtn')?.addEventListener('click', async () => { await toggleFavorite({ id:Number(team.id), name:team.name||'', logo:team.logo||'' }); renderTeamHub(state.currentTeam?.data || data); });
   $('teamTournamentBtn')?.addEventListener('click', () => openTournamentFromTeam(false));
-  const formHtml = form ? `<section class="panel team-form-panel"><h2>📈 Последние ${russianCountLabel(form.sample || 0, 'матч', 'матча', 'матчей')}</h2><div class="team-form-line">${String(form.form || '').split('').map(teamResultBadge).join('')}</div><div class="team-kpi-grid"><div><span>Победы</span><strong>${Number(form.wins||0)}</strong></div><div><span>Ничьи</span><strong>${Number(form.draws||0)}</strong></div><div><span>Поражения</span><strong>${Number(form.losses||0)}</strong></div><div><span>Забивает</span><strong>${form.gfAvg ?? '—'}</strong></div><div><span>Пропускает</span><strong>${form.gaAvg ?? '—'}</strong></div><div><span>ОЗ</span><strong>${form.bttsPct ?? '—'}%</strong></div></div></section>` : '<section class="panel"><div class="empty compact-empty">Пока недостаточно завершённых матчей для формы.</div></section>';
+  const formHtml = form ? `<section class="panel team-form-panel"><h2>📈 Последние ${russianCountLabel(form.sample || 0, 'матч', 'матча', 'матчей')}</h2><div class="team-form-line">${String(form.form || '').split('').map(teamResultBadge).join('')}</div><div class="team-kpi-grid"><div><span>Победы</span><strong>${Number(form.wins||0)}</strong></div><div><span>Ничьи</span><strong>${Number(form.draws||0)}</strong></div><div><span>Поражения</span><strong>${Number(form.losses||0)}</strong></div><div><span>Забивает</span><strong>${form.gfAvg ?? '—'}</strong></div><div><span>Пропускает</span><strong>${form.gaAvg ?? '—'}</strong></div><div><span>Забивали обе</span><strong>${Number.isFinite(Number(form.bttsPct)) && form.bttsPct !== null ? `${Number(form.bttsPct)}%` : '—'}</strong></div></div></section>` : '<section class="panel"><div class="empty compact-empty">Пока недостаточно завершённых матчей для формы.</div></section>';
   const nextHtml = next ? `<section class="panel next-team-match"><div class="mini-section-head"><strong>${next.live ? '🔴 Матч идёт' : '⏭ Ближайший матч'}</strong><span>${escapeHtml(dateTime(next.date))}</span></div>${teamMatchRow(next)}</section>` : '<section class="panel"><div class="empty compact-empty">Ближайший матч в доступном окне не найден.</div></section>';
   const positionHtml = standing ? `<section class="panel team-standing-card"><h2>🏆 Положение в турнире</h2><div class="team-standing-summary"><strong>${Number(standing.rank)} место</strong><span>${Number(standing.points)} очков · ${russianCountLabel(standing.played, 'матч', 'матча', 'матчей')} · ${Number(standing.goalsFor)}:${Number(standing.goalsAgainst)}</span></div></section>` : `<section class="panel team-standing-card"><h2>🏆 Положение в турнире</h2><p class="muted">Позиция появится после загрузки таблицы турнира. Так мы не делаем отдельный запрос к источнику данных автоматически.</p>${comp ? '<button id="teamStandingTableBtn" class="secondary-btn" type="button">Открыть турнирную таблицу</button>' : ''}</section>`;
   $('teamOverview').innerHTML = `${nextHtml}${formHtml}${positionHtml}`;
@@ -3966,6 +3966,14 @@ function openTeam(team) {
   showView('teamView');
   loadTeamHub(state.currentTeam,false);
 }
+// Панели ищутся по постоянным id — не переименовывать их, иначе следующее переключение их не найдёт.
+const teamPanels = [
+  ['teamOverviewPanel', 'overview'],
+  ['teamIntelligencePanel', 'intelligence'],
+  ['teamSquadPanel', 'squad'],
+  ['teamResultsPanel', 'results'],
+  ['teamSchedulePanel', 'schedule'],
+];
 function setTeamTab(tab) {
   const buttons = [...document.querySelectorAll('.team-tab')];
   buttons.forEach(btn => {
@@ -3974,22 +3982,14 @@ function setTeamTab(tab) {
     btn.id = `team-tab-${name}`;
     btn.classList.toggle('active', active);
     btn.setAttribute('role', 'tab');
-    btn.setAttribute('aria-controls', `team-panel-${name}`);
+    btn.setAttribute('aria-controls', (teamPanels.find(([, key]) => key === name) || teamPanels[0])[0]);
     btn.setAttribute('aria-selected', active ? 'true' : 'false');
     btn.tabIndex = active ? 0 : -1;
   });
-  const panels = [
-    ['teamOverviewPanel', 'overview'],
-    ['teamIntelligencePanel', 'intelligence'],
-    ['teamSquadPanel', 'squad'],
-    ['teamResultsPanel', 'results'],
-    ['teamSchedulePanel', 'schedule'],
-  ];
-  panels.forEach(([id, key]) => {
+  teamPanels.forEach(([id, key]) => {
     const panel = $(id);
     if (!panel) return;
     const active = tab === key;
-    panel.id = `team-panel-${key}`;
     panel.classList.toggle('active', active);
     panel.hidden = !active;
     panel.toggleAttribute('inert', !active);
