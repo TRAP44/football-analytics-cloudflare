@@ -1,7 +1,9 @@
+import { localDate, timeOf } from './client-core.js';
 import {
-  homeFixtureId,
-  homeKickoffMs,
-  homeMatchEvidence,
+  homeMatchScoreLabel,
+  matchEvidence as homeMatchEvidence,
+  positiveFixtureId as homeFixtureId,
+  strictKickoffMs as homeKickoffMs,
 } from './home-match-priority.js';
 
 // Главная в стиле SIGNAL: шапка «Читай игру» и карточка «Главный матч».
@@ -98,11 +100,8 @@ export function russianPlural(count,one,few,many) {
 export function createHomeSignalRenderer({
   $,
   state,
-  localDate,
-  timeOf,
   safeUrl,
   escapeHtml,
-  matchCenter,
   analysisHistoryForFixture,
   aiConfidenceMeterHtml,
   openMatchCenter,
@@ -124,7 +123,10 @@ export function createHomeSignalRenderer({
     if (dateEl) dateEl.textContent=heroDateLabel();
     const statsEl=$('homeHeroStats');
     if (!statsEl) return;
-    const loaded=state.matchesMeta?.date===localDate(state.offset) || state.matchesMeta?.localSnapshot===true;
+    // Ответ уже применён, если есть matchesMeta: applyMatchPayload() рисует ленту
+    // раньше, чем loadMatches() проставит matchesMeta.date, поэтому по дате не
+    // сверяемся. При смене дня state.matches очищается и счётчики скрываются.
+    const loaded=Boolean(state.matchesMeta) && state.matchesMeta.restrictedDate!==true;
     const stats=homeHeroStats(state.matches);
     statsEl.hidden=!loaded || stats.total<1;
     if (statsEl.hidden) return;
@@ -168,7 +170,7 @@ export function createHomeSignalRenderer({
         ? '<span class="mr-featured-status">Завершён</span>'
         : `<span class="mr-featured-status">${escapeHtml(timeOf(match.date))}</span>`;
     const centre=match.live || match.finished
-      ? `<strong>${escapeHtml(matchCenter(match))}</strong><small>${escapeHtml(match.live ? [phase,minute].filter(Boolean).join(' · ') || 'Идёт матч' : 'Итоговый счёт')}</small>`
+      ? `<strong>${escapeHtml(homeMatchScoreLabel(match))}</strong><small>${escapeHtml(match.live ? [phase,minute].filter(Boolean).join(' · ') || 'Идёт матч' : 'Итоговый счёт')}</small>`
       : `<strong class="is-time">${escapeHtml(timeOf(match.date))}</strong><small>Начало</small>`;
     const meta=[match.league || 'Турнир',match.roundLabel || ''].filter(Boolean).join(' · ');
     const aiHistory=!match.live && !match.finished ? analysisHistoryForFixture(fixtureId) : null;

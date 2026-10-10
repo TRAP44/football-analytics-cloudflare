@@ -22,7 +22,7 @@ function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function positiveFixtureId(value) {
+export function positiveFixtureId(value) {
   if (typeof value==='number') {
     return Number.isSafeInteger(value) && value>0 ? value : 0;
   }
@@ -33,7 +33,7 @@ function positiveFixtureId(value) {
   return Number.isSafeInteger(parsed) && parsed>0 ? parsed : 0;
 }
 
-function strictKickoffMs(value) {
+export function strictKickoffMs(value) {
   if (typeof value!=='string' || !value.trim()) return null;
   const raw=value.trim();
   const match=/^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/i.exec(raw);
@@ -54,7 +54,7 @@ function booleanFieldIsValid(value) {
     || typeof value==='boolean';
 }
 
-function matchEvidence(value) {
+export function matchEvidence(value) {
   const match=plainObject(value);
   if (!match) return null;
   const fixtureId=positiveFixtureId(safeRead(match,'fixtureId'));
@@ -253,9 +253,3 @@ export function selectHomePersonalMatch({
     ? {match:best.match,insight:best.insight}
     : null;
 }
-
-export {
-  matchEvidence as homeMatchEvidence,
-  strictKickoffMs as homeKickoffMs,
-  positiveFixtureId as homeFixtureId,
-};

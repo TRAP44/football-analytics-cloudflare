@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 import {
+  createHomeSignalRenderer,
   homeHeroStats,
   russianPlural,
   selectHomeFeaturedMatch,
@@ -117,13 +118,14 @@ test('featured card escapes provider text, uses safe logos and opens the match h
   // The featured card never auto-starts a paid AI analysis.
   assert.doesNotMatch(featured,/analyzeMatch\(/);
   // Score comes from the shared, non-fabricating label.
-  assert.match(featured,/matchCenter\(match\)/);
+  assert.match(featured,/homeMatchScoreLabel\(match\)/);
 });
 
 test('hero renders text only and hides stats until real data is loaded',()=>{
   const hero=block(signal,'function renderHomeHero','function teamHtml');
   assert.doesNotMatch(hero,/innerHTML/);
   assert.match(hero,/statsEl\.hidden=!loaded \|\| stats\.total<1/);
+  assert.doesNotMatch(hero,/matchesMeta\?\.date===/);
   assert.match(hero,/\$\('homeHeroLiveWrap'\)\.hidden=stats\.live<1/);
 });
 
@@ -141,7 +143,8 @@ test('home SIGNAL is loaded lazily so the startup bundle does not grow',()=>{
   assert.match(app,/import\('\.\/modules\/home-signal\.js\?v=6\.120\.0-launch\d+'\)/);
   assert.match(app,/renderDailyOverview\(\);\s*renderRadarFeed\(\);\s*renderHomeSignal\(\);/);
   // A failed chunk load must not break the home feed and may retry later.
-  assert.match(app,/\.catch\(\(\) => \{ homeSignalPromise = null; return null; \}\)/);
+  assert.match(app,/\.catch\(\(\)=>\{homeSignal=null;\}\)/);
+  assert.match(app,/homeSignal\.then\(r=>r\?\.render\(\)\)/);
 });
 
 test('russian plural forms for the hero counter',()=>{
@@ -158,4 +161,51 @@ test('explicit dark theme keeps the amber brand accent instead of the legacy gre
   // the brand override must be at least as specific and load later.
   assert.match(css,/html\[data-accent="system"\]\[data-theme="dark"\] \{ --accent: #fbbf24; --accent-text: #1a1203; \}/);
   assert.match(css,/html\[data-accent="system"\]\[data-theme="light"\] \{ --accent: #b45309;/);
+});
+
+function fakeHome(state) {
+  const nodes=new Map();
+  const node=()=>({hidden:false,textContent:'',innerHTML:'',dataset:{},querySelector:()=>null,querySelectorAll:()=>[]});
+  for (const id of ['homeHeroDate','homeHeroStats','homeHeroTotal','homeHeroTotalLabel','homeHeroLive','homeHeroLiveWrap','homeFeatured','homeFeaturedCard','homeFeaturedReason','homePersonalMatchBtn']) nodes.set(id,node());
+  nodes.get('homeHeroStats').hidden=true;
+  nodes.get('homeFeatured').hidden=true;
+  const renderer=createHomeSignalRenderer({
+    $:id=>nodes.get(id) || null,
+    state,
+    safeUrl:value=>value,
+    escapeHtml:value=>String(value),
+    analysisHistoryForFixture:()=>null,
+    aiConfidenceMeterHtml:()=>'',
+    openMatchCenter:()=>{},
+    openTeam:()=>{},
+  });
+  return {nodes,renderer};
+}
+
+test('hero counters appear as soon as a payload is applied, before matchesMeta.date is set (Codex review)',()=>{
+  // applyMatchPayload() replaces matchesMeta without a date and renders first;
+  // loadMatches() assigns the date only afterwards.
+  const state={offset:0,matches:[match(1,{live:true}),match(2)],matchesMeta:{cached:false,refreshing:false}};
+  const {nodes,renderer}=fakeHome(state);
+  renderer.render();
+  assert.equal(nodes.get('homeHeroStats').hidden,false);
+  assert.equal(nodes.get('homeHeroTotal').textContent,'2');
+  assert.equal(nodes.get('homeHeroTotalLabel').textContent,'матча в поле зрения');
+  assert.equal(nodes.get('homeHeroLive').textContent,'1');
+  assert.equal(nodes.get('homeHeroLiveWrap').hidden,false);
+});
+
+test('hero counters stay hidden while a new day is loading or the date is unavailable',()=>{
+  const loading=fakeHome({offset:1,matches:[],matchesMeta:{date:'2026-10-10'}});
+  loading.renderer.render();
+  assert.equal(loading.nodes.get('homeHeroStats').hidden,true);
+  assert.equal(loading.nodes.get('homeFeatured').hidden,true);
+
+  const noPayload=fakeHome({offset:0,matches:[match(1)],matchesMeta:null});
+  noPayload.renderer.render();
+  assert.equal(noPayload.nodes.get('homeHeroStats').hidden,true);
+
+  const restricted=fakeHome({offset:-1,matches:[match(1)],matchesMeta:{restrictedDate:true}});
+  restricted.renderer.render();
+  assert.equal(restricted.nodes.get('homeHeroStats').hidden,true);
 });

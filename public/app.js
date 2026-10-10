@@ -1102,7 +1102,7 @@ async function ensureMatchCenterExtras() {
     matchCenterExtrasPromise = Promise.all([
       import('./modules/match-pulse.js?v=6.120.0-launch65'),
       import('./modules/ai-timeline.js?v=6.120.0-launch63'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch72'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch73'),
     ]).then(([pulse, timeline, headquarters]) => {
       matchCenterExtras = Object.freeze({
         renderMatchPulse: pulse.renderMatchPulse,
@@ -2918,7 +2918,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch72');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch73');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3414,27 +3414,10 @@ function renderAiFocus() {
   wrap.querySelectorAll('[data-ai-rank-fixture]').forEach(button => button.addEventListener('click', event => analyzeMatch(Number(event.currentTarget.dataset.aiRankFixture), event.currentTarget)));
   wrap.querySelectorAll('[data-ai-rank-history]').forEach(button => button.addEventListener('click', event => openHistoryAnalysis(Number(event.currentTarget.dataset.aiRankHistory), event.currentTarget)));
 }
-let homeSignalRenderer = null;
-let homeSignalPromise = null;
-
-// Шапка «Читай игру» и «Главный матч» грузятся отдельным модулем после
-// данных матчей, чтобы не утяжелять стартовый JS.
-function ensureHomeSignal() {
-  homeSignalPromise ||= import('./modules/home-signal.js?v=6.120.0-launch72')
-    .then(mod => {
-      homeSignalRenderer = mod.createHomeSignalRenderer({
-        $, state, localDate, timeOf, safeUrl, escapeHtml, matchCenter,
-        analysisHistoryForFixture, aiConfidenceMeterHtml, openMatchCenter, openTeam,
-      });
-      return homeSignalRenderer;
-    })
-    .catch(() => { homeSignalPromise = null; return null; });
-  return homeSignalPromise;
-}
-
+let homeSignal;
 function renderHomeSignal() {
-  if (homeSignalRenderer) homeSignalRenderer.render();
-  else ensureHomeSignal().then(renderer => renderer?.render());
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch73').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal.then(r=>r?.render());
 }
 
 function homeMatchSections(list, nowMs = Date.now()) {
