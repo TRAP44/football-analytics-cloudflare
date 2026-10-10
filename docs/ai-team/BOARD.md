@@ -14,7 +14,7 @@ _пусто_
 
 ## На ревью
 
-- [ ] Обновить `MATCHRADAR_BRAND_SPEC_RU.md` под янтарный неон-акцент — **Codex** — `codex/brand-spec-amber` — ревью: Claude
+- [ ] Обновить `MATCHRADAR_BRAND_SPEC_RU.md` под янтарный неон-акцент — **Codex** — `codex/brand-spec-amber` / [PR #797](https://github.com/TRAP44/football-analytics-cloudflare/pull/797) — ревью: Claude
 - [ ] Настройка совместной работы Claude + Codex (`AGENTS.md`, `CLAUDE.md`, `docs/ai-team/`) — **Claude** — `claude/ai-team-setup` — ревью: Codex
 
 ## Готово
