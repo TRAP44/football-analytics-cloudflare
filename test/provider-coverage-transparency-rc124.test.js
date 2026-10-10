@@ -29,7 +29,7 @@ test('RC124 exposes reliability trust cap without inventing missing data',()=>{
 
 function renderProviderCoverageForTest(input){
   const begin=app.indexOf('function providerCoverageHtml(');
-  const end=app.indexOf('\nfunction aiInstructorHtml(',begin);
+  const end=app.indexOf('\nconst SCENARIO_BETTING_TEXT',begin);
   assert.ok(begin>=0 && end>begin);
   const escapeHtml=value=>String(value??'').replace(/[&<>'"]/g,ch=>({
     '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;',

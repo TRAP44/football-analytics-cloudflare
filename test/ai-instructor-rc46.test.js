@@ -235,10 +235,10 @@ test('RC46 Mini App renders data trust and the concrete pre-kickoff plan as sepa
   assert.match(app, /dataTrust\.label/);
   assert.match(app, /dataTrustScore/);
 
-  assert.match(app, /AI-ПЛАН ДО СТАРТОВОГО СВИСТКА/);
-  assert.match(app, /Условие отмены/);
-  assert.match(app, /Что смотреть дальше/);
-  assert.match(css, /\.ai-match-plan/);
+  // План до старта без «решений»: только нейтральные уточнения и что смотреть по ходу матча.
+  assert.match(app, /Что уточнить до начала/);
+  assert.match(app, /Что смотреть по ходу матча/);
+  assert.doesNotMatch(app, /AI-ПЛАН ДО СТАРТОВОГО СВИСТКА|Условие отмены|Что проверить перед решением/);
 });
 
 test('RC46 Telegram intent parser understands referee, pick, analysis and generic search questions', () => {

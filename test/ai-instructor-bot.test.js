@@ -353,7 +353,7 @@ test('startup experience presents MatchRadar without internal release details', 
 });
 
 test('Mini App exposes instructor/referee UI and current capability flags', () => {
-  assert.match(app, /function aiInstructorHtml\(/);
+  assert.match(app, /function matchScenariosHtml\(/);
   assert.match(app, /analysis-referee-line/);
   assert.match(app, /Судья/);
   assert.match(css, /\.ai-instructor-card/);

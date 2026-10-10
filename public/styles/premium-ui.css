@@ -2359,3 +2359,18 @@ html[data-theme] body.miniapp-public-shell .billing-panel.is-paused .billing-sum
 /* Шапка штаба: «Обновить» и «Поделиться» в один ряд, чтобы не растягивать первый экран. */
 html[data-theme] body.miniapp-public-shell .mr-hq-hero .center-hero-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 html[data-theme] body.miniapp-public-shell .mr-hq-hero .center-hero-actions > button { min-height: 44px; }
+
+/* «Сценарии матча» в полном разборе: исходы и голы словами, полоска — доля по модели. */
+.match-scenarios .scenario-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
+.match-scenarios .scenario-card { position: relative; display: grid; gap: 4px; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); overflow: hidden; }
+.match-scenarios .scenario-card.main { grid-column: 1 / -1; border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 10%, var(--surface)), var(--surface)); }
+.match-scenarios .scenario-card > span { color: var(--hint); font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.match-scenarios .scenario-card > strong { font-size: 15px; line-height: 1.3; overflow-wrap: anywhere; }
+.match-scenarios .scenario-card.main > strong { font-size: 18px; }
+.match-scenarios .scenario-card > b { font-size: 20px; font-weight: 900; font-variant-numeric: tabular-nums; color: var(--text); }
+.match-scenarios .scenario-card.main > b { color: var(--accent); font-size: 26px; }
+.match-scenarios .scenario-card > i { display: block; height: 4px; border-radius: 999px; background: linear-gradient(90deg, var(--accent) var(--scenario, 0%), color-mix(in srgb, var(--hint) 25%, transparent) var(--scenario, 0%)); }
+/* Альтернатива во всю ширину; карточки «Голы» парой, одиночная — тоже во всю ширину. */
+.match-scenarios .scenario-card.alt { grid-column: 1 / -1; }
+.match-scenarios .scenario-grid > .scenario-card.goals:last-child:nth-child(odd) { grid-column: 1 / -1; }
+html[data-theme] body.miniapp-public-shell .match-scenarios .ai-instructor-reasons p { margin: 6px 0 0; color: var(--hint); font-size: 13px; line-height: 1.45; }

@@ -433,7 +433,7 @@ if (!worker.includes('processDailyDigests')) failures.push('RC44 daily bot diges
 if (!worker.includes('buildAiInstructor') || !worker.includes('processDailyDigests')) failures.push('RC44 AI/digest contract is missing');
 if (!worker.includes('function buildAiInstructor')) failures.push('AI football instructor engine is missing');
 if (!worker.includes('referee:safeText(fixture?.fixture?.referee,180)')) failures.push('Pre-match referee context is missing');
-if (!app.includes('function aiInstructorHtml')) failures.push('AI instructor UI is missing');
+if (!app.includes('function matchScenariosHtml')) failures.push('AI match scenarios UI is missing');
 if (!html.includes('boot-card boot-card-simple') || !html.includes('MatchRadar') || !html.includes('Видим, что меняет матч.') || !html.includes('Загружаем матчи…') || html.includes('id="bootVersion"')) failures.push('MatchRadar minimal public startup is missing');
 if (!worker.includes('createTelegramBotOrchestrationRuntime') || !worker.includes('buildAiInstructor')) failures.push('RC44 AI/bot contract is missing');
 if (!html.includes('id="dailyOverview"') || !html.includes('id="homePersonalMatchBtn"') || html.includes('id="homeLiveCard"') || html.includes('id="homeTeamsBtn"') || html.includes('id="homeFavoriteBtn"')) failures.push('Phase 4.1 clean Home priority contract is missing');
