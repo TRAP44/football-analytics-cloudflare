@@ -43,6 +43,7 @@ export function createCommonInfrastructureRuntime(deps = {}) {
     return {
       devMode: boolEnv(env.DEV_MODE, false),
       apiFootballKey: env.API_FOOTBALL_KEY || '',
+      apiFootballBaseUrl: env.API_FOOTBALL_BASE_URL || '',
       footballDataToken: env.FOOTBALL_DATA_TOKEN || '',
       theOddsApiKey: env.THE_ODDS_API_KEY || '',
       tavilyKey: env.TAVILY_KEY || '',

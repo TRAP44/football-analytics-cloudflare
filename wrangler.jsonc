@@ -40,7 +40,8 @@
     "GROWTH_RETENTION_DAYS": "90",
     "WEEKEND_PASS_DURATION_HOURS": "168",
     "WEEKEND_PASS_USAGE_LIMIT": "6",
-    "MONETIZATION_ENABLED": "true"
+    "MONETIZATION_ENABLED": "true",
+    "API_FOOTBALL_BASE_URL": "https://nlmvhkjkpgzzlfavaohk.supabase.co/functions/v1/football-relay"
   },
   "ratelimits": [
     {

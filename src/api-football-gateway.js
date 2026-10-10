@@ -39,6 +39,22 @@ export function createApiFootballGateway({
     }
   }
 
+  const DEFAULT_PROVIDER_BASE_URL = 'https://v3.football.api-sports.io';
+  // Optional override (a relay with its own network egress, see
+  // supabase/functions/football-relay). Only plain https base URLs are accepted;
+  // anything else falls back to the provider.
+  function providerBaseUrl(cfg) {
+    const raw = typeof cfg?.apiFootballBaseUrl === 'string' ? cfg.apiFootballBaseUrl.trim() : '';
+    if (!raw) return DEFAULT_PROVIDER_BASE_URL;
+    try {
+      const parsed = new URL(raw);
+      if (parsed.protocol !== 'https:' || parsed.search || parsed.hash || parsed.username || parsed.password) return DEFAULT_PROVIDER_BASE_URL;
+      return `${parsed.origin}${parsed.pathname.replace(/\/+$/, '')}`;
+    } catch {
+      return DEFAULT_PROVIDER_BASE_URL;
+    }
+  }
+
   function footballError(message, code = 'FOOTBALL_API', retryAfter = 0, status = null) {
     const error = new Error(message);
     error.code = code;
@@ -373,7 +389,7 @@ export function createApiFootballGateway({
       throw footballError(`Глобальная минутная квота API-Football защищена. Повторите примерно через ${retryAfter} сек.`, 'FOOTBALL_COOLDOWN', retryAfter);
     }
 
-    const url = new URL(`https://v3.football.api-sports.io${path}`);
+    const url = new URL(`${providerBaseUrl(cfg)}${path}`);
     for (const [key, value] of Object.entries(params || {})) {
       if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
     }
