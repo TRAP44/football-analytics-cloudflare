@@ -2318,3 +2318,29 @@ html[data-theme] body.miniapp-public-shell .mr-ai-proof-note { margin: 8px 0 0; 
 html[data-theme] body.miniapp-public-shell .mr-ai-proof-stale { margin: 6px 0 0; font-size: 12px; line-height: 1.45; color: var(--accent); }
 html[data-theme] body.miniapp-public-shell .mr-ai-proof.is-empty p { margin: 6px 0 0; font-size: 13px; line-height: 1.45; color: var(--hint); }
 html[data-theme] body.miniapp-public-shell .mr-ai-proof-link { margin-top: 6px; min-height: 44px; padding: 0; color: var(--accent); font-weight: 700; }
+
+/* ── Команда и Турнир в стиле SIGNAL: вкладки-«таблетка» как в штабе матча ── */
+html[data-theme] body.miniapp-public-shell .team-tabs,
+html[data-theme] body.miniapp-public-shell .tournament-tabs {
+  display: flex; gap: 4px; margin: 12px 0; padding: 4px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
+  overflow-x: auto; scrollbar-width: none;
+}
+html[data-theme] body.miniapp-public-shell .team-tabs::-webkit-scrollbar { display: none; }
+html[data-theme] body.miniapp-public-shell .tournament-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+html[data-theme] body.miniapp-public-shell .team-tab,
+html[data-theme] body.miniapp-public-shell .tournament-tab {
+  flex: 0 0 auto; min-width: 0; min-height: 44px; padding: 0 14px;
+  border: 0; border-radius: 999px; background: transparent; color: var(--hint);
+  font-size: 13px; font-weight: 800; white-space: nowrap;
+}
+html[data-theme] body.miniapp-public-shell .team-tab.active,
+html[data-theme] body.miniapp-public-shell .tournament-tab.active {
+  background: var(--accent); color: var(--accent-text); box-shadow: 0 0 18px -6px var(--accent);
+}
+html[data-theme] body.miniapp-public-shell .team-hero-form { display: flex; justify-content: center; gap: 3px; }
+html[data-theme] body.miniapp-public-shell .team-hero-form .team-result { min-width: 20px; height: 20px; padding: 0 4px; border-radius: 6px; font-size: 10px; }
+html[data-theme] body.miniapp-public-shell .standings-table .standings-points b { color: var(--accent); font-size: 14px; }
+html[data-theme] body.miniapp-public-shell .team-fixture-row .mini-match-action {
+  min-height: 36px; padding: 0 12px; border-radius: 999px; font-size: 12px; font-weight: 800;
+}

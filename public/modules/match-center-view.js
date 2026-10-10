@@ -251,10 +251,12 @@ export function renderMatchCenterView(d, deps) {
     openPlayerFromMatch(Number(btn.dataset.centerPlayer || 0), btn.dataset.centerPlayerSide || '');
   }));
 
+  // openTeam ждёт объект команды {id, name, logo}, а не голый id.
   root.querySelectorAll('[data-center-team]').forEach(btn => btn.addEventListener('click', () => {
     const teamId = Number(btn.dataset.centerTeam || 0);
     if (!teamId) return;
-    openTeam(teamId, btn);
+    const side = [m.home, m.away].find(team => Number(team?.id || 0) === teamId) || {};
+    openTeam({ id: teamId, name: typeof side.name === 'string' ? side.name : '', logo: typeof side.logo === 'string' ? side.logo : '' });
   }));
 
   root.querySelector('[data-center-open-analysis]')?.addEventListener('click', e => openHistoryAnalysis(fixtureId, e.currentTarget));
