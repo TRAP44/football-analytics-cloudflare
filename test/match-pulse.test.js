@@ -423,9 +423,9 @@ test('Match Pulse keeps navigation onboarding and frontend revision contracts in
   const revision=html.match(
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
-  assert.equal(revision,'6.120.0-launch80');
+  assert.equal(revision,'6.120.0-launch81');
   assert.match(
     html,
-    /<script type="module" src="\/app\.js\?v=6\.120\.0-launch80"><\/script>/,
+    /<script type="module" src="\/app\.js\?v=6\.120\.0-launch81"><\/script>/,
   );
 });
