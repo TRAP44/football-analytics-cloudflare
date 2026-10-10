@@ -233,6 +233,7 @@ export function selectHomePersonalMatch({
       match:evidence.match,
       insight:normalized.insight,
       score:normalized.score,
+      favorite:normalized.favorite,
       live,
       kickoffMs,
     });
@@ -240,11 +241,11 @@ export function selectHomePersonalMatch({
 
   rows.sort((a,b)=>{
     if (a.live!==b.live) return a.live ? -1 : 1;
-    const scoreDelta=b.score-a.score;
-    if (scoreDelta) return scoreDelta;
-
-    return (a.kickoffMs ?? Number.POSITIVE_INFINITY)
+    if (a.favorite!==b.favorite) return a.favorite ? -1 : 1;
+    const kickoffDelta=(a.kickoffMs ?? Number.POSITIVE_INFINITY)
       -(b.kickoffMs ?? Number.POSITIVE_INFINITY);
+    if (Number.isFinite(kickoffDelta) && kickoffDelta) return kickoffDelta;
+    return b.score-a.score;
   });
 
   const best=rows[0];

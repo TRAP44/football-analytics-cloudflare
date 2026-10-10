@@ -84,6 +84,8 @@ export function createFirstRunGuideController({
     );
   }
 
+  let dismissedThisSession=false;
+
   function hasDirectLaunchIntent() {
     const startParam=telegramStartParam(tg);
     const location=plainObject(safeRead(windowObject,'location'));
@@ -117,7 +119,23 @@ export function createFirstRunGuideController({
       dismissed=storageObject.getItem(FIRST_RUN_GUIDE_KEY)==='1';
     } catch {}
 
-    const hidden=dismissed || hasDirectLaunchIntent();
+    const favorites=safeRead(stateObject,'favorites');
+    const ids=new Set();
+    if (Array.isArray(favorites)) {
+      for (const row of favorites.slice(0,100)) {
+        const raw=safeRead(row,'teamId');
+        const id=typeof raw==='number' ? raw : positiveFixtureId(raw);
+        if (Number.isSafeInteger(id) && id>0) ids.add(id);
+      }
+    }
+    const count=ids.size;
+    const progress=safeElement(elementById,'firstRunGuideProgress');
+    const favoriteButton=safeElement(elementById,'firstRunGuideFavorite');
+    if (progress) safeCall(()=>{progress.textContent=count
+      ? `Выбрано команд: ${count}. Можно добавить ещё или открыть матч.`
+      : 'Выберите 1–3 любимые команды. Их матчи появятся в блоке «Для вас».';});
+    if (favoriteButton) safeCall(()=>{favoriteButton.textContent=count ? 'Добавить ещё команду' : 'Выбрать команды';});
+    const hidden=dismissed || dismissedThisSession || count>=3 || hasDirectLaunchIntent();
     try {
       guide.hidden=hidden;
       return !hidden;
@@ -128,11 +146,12 @@ export function createFirstRunGuideController({
 
   function dismissFirstRunGuide() {
     const guide=safeElement(elementById,'firstRunGuide');
+    dismissedThisSession=true;
     try {
       storageObject.setItem(FIRST_RUN_GUIDE_KEY,'1');
     } catch {}
     try {
-      if (guide) guide.hidden=true;
+      if (guide) safeCall(()=>{guide.hidden=true;});
     } catch {}
     return true;
   }
@@ -185,7 +204,8 @@ export function createFirstRunGuideController({
   }
 
   function startFirstRunFavorite() {
-    dismissFirstRunGuide();
+    const guide=safeElement(elementById,'firstRunGuide');
+    if (guide) safeCall(()=>{guide.hidden=true;});
     safeCall(sendProductAction,'first_run_favorite','searchView');
     resetGlobalSearchQuery();
     safeCall(renderGlobalSearch);

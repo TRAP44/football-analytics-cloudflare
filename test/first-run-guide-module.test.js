@@ -302,3 +302,32 @@ test('element lookup and DOM method failures stay inside the onboarding boundary
   assert.doesNotThrow(()=>h.controller.startFirstRunSearch());
   assert.doesNotThrow(()=>h.controller.startFirstRunFavorite());
 });
+
+ test('favorite selection stays resumable until completion or explicit skip',()=>{
+  const h=harness();
+  h.controller.startFirstRunFavorite();
+  assert.equal(h.stored.has(FIRST_RUN_GUIDE_KEY),false);
+  h.state.favorites=[{teamId:1},{teamId:'1'},{teamId:0},{teamId:2}];
+  assert.equal(h.controller.renderFirstRunGuide(),true);
+  h.state.favorites.push({teamId:3});
+  assert.equal(h.controller.renderFirstRunGuide(),false);
+ });
+ test('explicit skip survives storage failure on subsequent renders',()=>{
+  const h=harness({storage:{getItem:()=>null,setItem:()=>{throw Error('denied');}}});
+  h.controller.dismissFirstRunGuide();
+  assert.equal(h.controller.renderFirstRunGuide(),false);
+ });
+
+test('guide progress uses unique saved teams and safe text content',()=>{
+  const h=harness({state:{favorites:[{teamId:1},{teamId:'1'},{teamId:2}]}});
+  const progress={textContent:''}, button={textContent:''};
+  h.elements.set('firstRunGuideProgress',progress);
+  h.elements.set('firstRunGuideFavorite',button);
+  assert.equal(h.controller.renderFirstRunGuide(),true);
+  assert.match(progress.textContent,/Выбрано команд: 2/);
+  assert.equal(button.textContent,'Добавить ещё команду');
+  h.state.favorites=[];
+  h.controller.renderFirstRunGuide();
+  assert.match(progress.textContent,/1–3/);
+  assert.equal(button.textContent,'Выбрать команды');
+});
