@@ -1102,7 +1102,7 @@ async function ensureMatchCenterExtras() {
     matchCenterExtrasPromise = Promise.all([
       import('./modules/match-pulse.js?v=6.120.0-launch65'),
       import('./modules/ai-timeline.js?v=6.120.0-launch63'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch71'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch72'),
     ]).then(([pulse, timeline, headquarters]) => {
       matchCenterExtras = Object.freeze({
         renderMatchPulse: pulse.renderMatchPulse,
@@ -2279,6 +2279,8 @@ async function loadReminders() {
     renderReminderList();
     syncAllQuickReminderButtons();
     if (state.matches.length) renderRadarFeed();
+    renderObservationPanel();
+    if (state.currentCenter) renderMatchCenter(state.currentCenter);
   }
 }
 
@@ -2913,6 +2915,16 @@ function homePersonalMatchMeta(item) {
   return [reason, status, match.league || ''].filter(Boolean).join(' · ');
 }
 
+let observationModulePromise;
+function renderObservationPanel() {
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch72');
+  observationModulePromise.then(module=>module.renderObservationPanel({
+    root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
+    escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
+    onRemove:id=>{state.watchlist=state.watchlist.filter(row=>Number(row.fixtureId)!==id);persistMatchWatchlist();renderMatches();if(state.currentCenter)renderMatchCenter(state.currentCenter);},
+  })).catch(()=>{});
+}
+
 function watchedMatch(fixtureId) {
   const id = Number(fixtureId || 0);
   return id > 0 ? state.watchlist.find(item => Number(item.fixtureId) === id) || null : null;
@@ -2958,6 +2970,7 @@ function toggleMatchWatch(match = {}) {
     toast('Матч добавлен в слежение');
   }
   renderMatches();
+  if (state.currentCenter) renderMatchCenter(state.currentCenter);
 }
 
 function radarFeedItems(nowMs = Date.now()) {
@@ -3087,6 +3100,7 @@ function renderRadarFeed() {
 
 function renderDailyOverview() {
   renderFirstRunGuide();
+  renderObservationPanel();
   const root = $('dailyOverview');
   const personalCard = $('homePersonalMatchBtn');
   if (!root) return;
@@ -5158,6 +5172,7 @@ function renderMatchCenter(d) {
   const live = d.mode === 'live';
   const finished = d.mode === 'finished';
   const upcoming = d.mode === 'upcoming';
+  if (upcoming && !state.remindersLoaded && !state.remindersLoading && !state.remindersLoadError) void loadReminders();
   const score = m.score || {};
   const scoreText = upcoming
     ? timeOf(m.date)
@@ -5220,6 +5235,11 @@ function renderMatchCenter(d) {
     </section>
 
     ${matchCenterExtraHtml('renderMatchHeadquarters',d)}
+    <section class="panel observation-controls" aria-label="Наблюдение за матчем">
+      <p class="muted">Наблюдение сохраняет матч на этом устройстве. Telegram-напоминание включается отдельно.</p>
+      ${!finished || isWatchedMatch(m.fixtureId) ? `<button id="centerWatchBtn" class="secondary-btn" type="button" aria-pressed="${isWatchedMatch(m.fixtureId)}">${isWatchedMatch(m.fixtureId)?'Убрать из наблюдения':'Следить за матчем'}</button>` : ''}
+      ${upcoming ? `<button class="quick-reminder-btn secondary-btn" data-quick-reminder="${positiveEntityId(m.fixtureId)}" type="button">Telegram-напоминание</button>` : ''}
+    </section>
 
     ${matchPulseHtml}
 
@@ -5340,6 +5360,8 @@ function renderMatchCenter(d) {
     openTeam(teamId, btn);
   }));
 
+  $('centerWatchBtn')?.addEventListener('click',()=>toggleMatchWatch({...m,finished:false}));
+  $('analysis').querySelectorAll('[data-quick-reminder]').forEach(button=>{syncQuickReminderButton(button,m.fixtureId);if(!state.remindersLoaded){button.disabled=true;button.textContent=state.remindersLoadError?'Напоминания недоступны · обновите в профиле':'Загружаю напоминания…';}button.addEventListener('click',()=>toggleReminder(m));});
   $('centerAnalyzeBtn')?.addEventListener('click', e => analyzeMatch(Number(m.fixtureId), e.currentTarget));
   $('centerMatchPassBtn')?.addEventListener('click', () => { void openPassStoreForFixture(Number(m.fixtureId)); });
   $('centerCoverageAuditBtn')?.addEventListener('click', async () => {
@@ -5738,6 +5760,8 @@ async function toggleReminder(match) {
   } finally {
     state.reminderMutations.delete(fixtureId);
     syncReminderMutationUi(fixtureId);
+    renderObservationPanel();
+    if (state.currentCenter) renderMatchCenter(state.currentCenter);
   }
 }
 

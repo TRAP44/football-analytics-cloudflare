@@ -3595,3 +3595,12 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .headquarters-facts strong{font-size:13px;line-height:1.4;overflow-wrap:anywhere}
 .headquarters-freshness{margin:0;color:var(--hint);font-size:11px;line-height:1.5}
 @media(max-width:480px){.headquarters-facts{grid-template-columns:1fr}.headquarters-facts>div{grid-template-columns:100px minmax(0,1fr);align-items:center}.headquarters-heading h2{font-size:18px}}
+
+.match-observation summary{cursor:pointer;font-weight:800;min-height:44px;display:flex;align-items:center;}
+.observation-list{display:grid;gap:8px;}
+.observation-row{display:flex;gap:6px;align-items:center;}
+.observation-row>button:first-child{flex:1;min-width:0;display:grid;text-align:left;gap:5px;}
+.observation-row strong,.observation-row small{overflow-wrap:anywhere;white-space:normal;}
+.observation-row small{color:var(--hint);}
+.observation-controls{display:flex;flex-wrap:wrap;gap:8px;}
+.observation-controls p{flex-basis:100%;margin:0;}
