@@ -5178,6 +5178,7 @@ function renderMatchCenter(d) {
   state.currentAnalysis = null;
   const m = d.match || {};
   if (previousFixture && previousFixture !== Number(m.fixtureId || 0)) state.currentCenterTab = 'ai';
+  if (!state.historyLoaded && !state.historyLoading && !state.historyLoadError) void loadHistory(false);
   if (d.mode === 'upcoming' && !state.remindersLoaded && !state.remindersLoading && !state.remindersLoadError) void loadReminders();
   const view = matchCenterExtras?.renderMatchCenterView;
   if (typeof view !== 'function') {
@@ -5317,6 +5318,8 @@ async function loadHistory(showLoader = true) {
   } finally {
     state.historyLoading = false;
     renderHistory();
+    // Карточка «Вывод AI» в открытом штабе зависит от истории — обновляем её после загрузки.
+    if (state.currentCenter && !state.currentAnalysis && activeViewId() === 'analysisView') renderMatchCenter(state.currentCenter);
   }
 }
 

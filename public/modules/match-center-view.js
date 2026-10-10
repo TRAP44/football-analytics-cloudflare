@@ -50,16 +50,22 @@ export function renderMatchCenterView(d, deps) {
   state.currentCenterTab=normalizeMatchCenterTab(state.currentCenterTab);
 
   // «Вывод AI»: сохранённый разбор пользователя или честное приглашение его запустить.
-  const aiCardBody = history
+  // История разборов грузится лениво: пока не загружена, отсутствие разбора не подтверждено.
+  const historyPending = !history && !state.historyLoaded && !state.historyLoadError;
+  const historyUnknown = !history && !state.historyLoaded && Boolean(state.historyLoadError);
+  const aiCardBody = historyPending
+    ? `<h2 id="mrAiCardTitle">Проверяю сохранённые AI-разборы…</h2>
+       <p class="mr-ai-card-note">Секунду: смотрю, разбирал ли AI этот матч раньше.</p>`
+    : history
     ? `<h2 id="mrAiCardTitle">${escapeHtml(publicText(history.aiSignalLabel || history.aiOutcome || 'AI-разбор готов'))}</h2>
        ${history.aiRisk ? `<p class="mr-ai-card-note">Риск: ${escapeHtml(publicText(history.aiRisk))}</p>` : ''}
        ${aiConfidenceMeterHtml(history)}
        <button class="primary-btn mr-ai-card-btn" type="button" data-center-open-analysis="${fixtureId}">Открыть полный AI-разбор</button>`
     : upcoming
-      ? `<h2 id="mrAiCardTitle">AI ещё не разбирал этот матч</h2>
-         <p class="mr-ai-card-note">Разбор посчитает вероятности исходов, ключевые факторы и риски. Учитывается в дневном лимите разборов.</p>
+      ? `<h2 id="mrAiCardTitle">${historyUnknown ? 'Не удалось проверить сохранённые разборы' : 'AI ещё не разбирал этот матч'}</h2>
+         <p class="mr-ai-card-note">${historyUnknown ? 'Если вы уже запускали разбор, он есть во вкладке «История». ' : ''}Разбор посчитает вероятности исходов, ключевые факторы и риски. Учитывается в дневном лимите разборов.</p>
          <button id="centerAnalyzeBtn" class="primary-btn mr-ai-card-btn" type="button">✦ Запустить AI-разбор</button>`
-      : `<h2 id="mrAiCardTitle">AI-разбор до матча не запускался</h2>
+      : `<h2 id="mrAiCardTitle">${historyUnknown ? 'Не удалось проверить сохранённые разборы' : 'AI-разбор до матча не запускался'}</h2>
          <p class="mr-ai-card-note">Ниже — что AI видит по данным матча прямо сейчас.</p>`;
 
   $('analysis').innerHTML = `
