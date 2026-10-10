@@ -10,9 +10,11 @@
 
 ## В работе
 
-- [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — `codex/nearest-favorite-order`.
+_пусто_
 
 ## На ревью
+
+- [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 - [ ] Запросы к API-Football через ретранслятор Supabase (`API_FOOTBALL_BASE_URL`) — **Claude** — `claude/football-relay-base-url` — ревью: Codex
 - [ ] Главная в стиле SIGNAL (вариант 3, янтарь): шапка «Читай игру», «Главный матч», компактная лента — **Claude** — `claude/home-signal-amber` / [PR #803](https://github.com/TRAP44/football-analytics-cloudflare/pull/803) — ревью: Codex
