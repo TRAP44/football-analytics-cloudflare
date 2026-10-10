@@ -127,7 +127,7 @@ test('RC134 lineup impact exposes injuries, suspensions, doubts and reconciled r
 
 const userDataApiSource=fs.readFileSync('src/user-data-api-runtime.js','utf8');
 const capabilitiesSource=fs.readFileSync('src/app-capabilities.js','utf8');
-const app = fs.readFileSync('public/app.js', 'utf8');
+const app = fs.readFileSync('public/app.js', 'utf8')+'\n'+fs.readFileSync('public/modules/match-center-view.js','utf8');
 const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 

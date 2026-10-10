@@ -419,7 +419,7 @@ test('Match Center wires sanitized events into analytics and uses the rolled cac
 });
 
 test('Match Center UI exposes the event-quality state alongside the sanitized timeline',()=>{
-  const app=fs.readFileSync('public/app.js','utf8');
+  const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/match-center-view.js','utf8');
 
   assert.match(app,/function eventQualityHintHtml/);
   assert.match(app,/eventQualityHintHtml\(d\.eventQuality\)/);

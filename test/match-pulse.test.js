@@ -6,7 +6,7 @@ import {
   renderMatchPulse,
 } from '../public/modules/match-pulse.js';
 
-const app=fs.readFileSync('public/app.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/match-center-view.js','utf8');
 const html=fs.readFileSync('public/index.html','utf8');
 const css=fs.readFileSync('public/styles/public-shell.css','utf8');
 const source=fs.readFileSync('public/modules/match-pulse.js','utf8');
@@ -361,8 +361,8 @@ test('Match Pulse source keeps strict freshness and scalar boundaries', () => {
 });
 
 test('Match Pulse integration stays below scoreboard without creating a new tab', () => {
-  const start=app.indexOf('function renderMatchCenter');
-  const end=app.indexOf('async function openMatchCenter',start);
+  const start=app.indexOf('export function renderMatchCenterView');
+  const end=app.indexOf('// end renderMatchCenterView',start);
   const center=app.slice(start,end);
 
   assert.match(
@@ -371,8 +371,10 @@ test('Match Pulse integration stays below scoreboard without creating a new tab'
   );
   const pulseRender=center.indexOf('${matchPulseHtml}');
   assert.ok(pulseRender>=0);
-  assert.ok(center.indexOf('center-scoreboard')<pulseRender);
-  assert.ok(pulseRender<center.indexOf('match-center-primary'));
+  const gamePanel=center.indexOf('data-center-panel="game"');
+  assert.ok(center.indexOf('center-scoreboard')<gamePanel);
+  assert.ok(gamePanel<pulseRender);
+  assert.ok(pulseRender<center.indexOf('data-center-panel="lineups"'));
   assert.equal(
     (center.match(/data-center-tab="pulse"/g) || []).length,
     0,
@@ -410,10 +412,10 @@ test('Match Pulse keeps navigation onboarding and frontend revision contracts in
     html,
     /id="navMatches"[\s\S]*id="navMyTeams"[\s\S]*id="navHistory"[\s\S]*id="navProfile"/,
   );
-  assert.match(app,/class="center-tabs"/);
+  assert.match(app,/class="center-tabs[ "]/);
   assert.match(app,/data-center-tab="summary"/);
   assert.match(app,/smart-open-insights/);
-  assert.match(app,/details.open = true/);
+  assert.match(app,/setMatchCenterTab\('ai', false\)/);
   assert.match(html,/id="firstRunGuide"/);
   assert.match(html,/id="firstRunGuideSearch"/);
   assert.match(html,/id="firstRunGuideFavorite"/);
@@ -421,9 +423,9 @@ test('Match Pulse keeps navigation onboarding and frontend revision contracts in
   const revision=html.match(
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
-  assert.equal(revision,'6.120.0-launch76');
+  assert.equal(revision,'6.120.0-launch77');
   assert.match(
     html,
-    /<script type="module" src="\/app\.js\?v=6\.120\.0-launch76"><\/script>/,
+    /<script type="module" src="\/app\.js\?v=6\.120\.0-launch77"><\/script>/,
   );
 });

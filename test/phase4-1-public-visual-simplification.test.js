@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const app=fs.readFileSync('public/app.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/match-center-view.js','utf8');
 const html=fs.readFileSync('public/index.html','utf8');
 const css=fs.readFileSync('public/styles/public-shell.css','utf8');
 const client=fs.readFileSync('public/modules/client-core.js','utf8');
@@ -66,9 +66,10 @@ test('AI match view exposes key decision layer before detailed data',()=>{
   assert.ok(analysis.indexOf('analysisGlanceHtml(d)') < analysis.indexOf('Подробные данные матча'));
   assert.match(analysis,/class="analysis-more-data"/);
   assert.doesNotMatch(analysis.slice(0,analysis.indexOf('Подробные данные матча')),/analysisVersion|fingerprint|temperature/);
-  const center=block(app,'function renderMatchCenter','async function openMatchCenter');
-  assert.match(center,/class="match-center-more"/);
-  assert.ok(center.indexOf('center-scoreboard') < center.indexOf('Статистика, составы и хронология'));
+  const center=block(app,'export function renderMatchCenterView','// end renderMatchCenterView');
+  assert.match(center,/class="center-tabs mr-hq-tabs"/);
+  assert.ok(center.indexOf('center-scoreboard') < center.indexOf('mr-hq-tabs'));
+  assert.ok(center.indexOf('mr-ai-card') < center.indexOf('data-center-panel="summary"'));
 });
 
 test('profile prioritizes actionable team counter reminders settings and moves legal to About',()=>{

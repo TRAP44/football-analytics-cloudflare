@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import { homeMatchScoreLabel } from '../public/modules/home-match-priority.js';
 
 const html=fs.readFileSync('public/index.html','utf8');
-const app=fs.readFileSync('public/app.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/match-center-view.js','utf8');
 const css=fs.readFileSync('public/styles/public-shell.css','utf8');
 
 function block(source,start,end){
@@ -18,7 +18,7 @@ function block(source,start,end){
 
 test('Match Center premium polish keeps the existing data and interaction contract',()=>{
   assert.match(css,/MatchRadar Public UI Polish — Match Center \+ AI Analysis/);
-  const center=block(app,'function renderMatchCenter','async function openMatchCenter');
+  const center=block(app,'export function renderMatchCenterView','// end renderMatchCenterView');
   for(const token of [
     'center-hero',
     'center-scoreboard',
@@ -27,12 +27,12 @@ test('Match Center premium polish keeps the existing data and interaction contra
     'centerRefreshBtn',
     'centerAnalyzeBtn',
     'smartInsightsHeroHtml',
-    'match-center-more',
+    'mr-ai-card',
+    'mr-hq-tabs',
   ]) assert.ok(center.includes(token),token);
   assert.doesNotMatch(center,/d\.probabilities|probabilityStrip\(/);
-  assert.match(center,/const details = document\.querySelector\('\.match-center-more'\)/);
-  assert.match(center,/details\.open = true/);
-  assert.match(center,/data-center-panel="insights"/);
+  assert.match(center,/setMatchCenterTab\('ai', false\)/);
+  assert.match(center,/data-center-section="insights"/);
   assert.match(center,/scrollIntoView/);
 });
 
@@ -62,7 +62,7 @@ test('Match Center score presentation never invents a result when provider score
     '3 : 1',
   );
 
-  const center=block(app,'function renderMatchCenter','async function openMatchCenter');
+  const center=block(app,'export function renderMatchCenterView','// end renderMatchCenterView');
   assert.match(
     center,
     /homeMatchScoreLabel\(\{\.\.\.m,live,finished\}\)/,
@@ -141,7 +141,7 @@ test('frontend asset revision is consistent after Match Center presentation chan
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
 
-  assert.equal(revision,'6.120.0-launch76');
+  assert.equal(revision,'6.120.0-launch77');
   for(const asset of [
     'styles.css',
     'styles/public-shell.css',

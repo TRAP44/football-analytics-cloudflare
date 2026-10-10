@@ -119,7 +119,7 @@ test('RC142 leaves xG for the dedicated RC140 xG guard', () => {
 const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/match-center-runtime.js', 'utf8');
 const userDataApiSource=fs.readFileSync('src/user-data-api-runtime.js','utf8');
 const capabilitiesSource=fs.readFileSync('src/app-capabilities.js','utf8');
-const app=fs.readFileSync('public/app.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/match-center-view.js','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 
 test('RC142 routes sanitized statistics into comparative live analytics', () => {

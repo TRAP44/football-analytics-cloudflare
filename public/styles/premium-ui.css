@@ -2239,3 +2239,67 @@ html[data-theme] body.miniapp-public-shell .mr-manifesto p:last-child { margin: 
 html[data-theme] body.miniapp-public-shell .home-search-block .search-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
 html[data-theme] body.miniapp-public-shell .home-search-block .search-input { width: 100%; min-width: 0; }
 html[data-theme] body.miniapp-public-shell .home-search-block .global-search-btn { width: auto; }
+
+/* --------------------------------------------------------------------------
+   «Штаб матча» — главный AI-экран в стиле SIGNAL (янтарь).
+   Вкладки ✦ AI · Обзор · Игра · Составы, карточка «Вывод AI».
+   Только токены темы, без хардкода цветов.
+   -------------------------------------------------------------------------- */
+html[data-theme] body.miniapp-public-shell .mr-hq-hero {
+  padding: 18px 16px 14px; border-radius: 26px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
+  background:
+    radial-gradient(280px 200px at 50% 45%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--surface-2), var(--surface));
+}
+html[data-theme] body.miniapp-public-shell .mr-hq-hero.is-live { border-color: color-mix(in srgb, var(--mr-live) 40%, var(--line)); }
+html[data-theme] body.miniapp-public-shell .mr-hq-hero .center-hero-top {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px;
+}
+html[data-theme] body.miniapp-public-shell .mr-hq-hero .center-competition {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--hint);
+}
+html[data-theme] body.miniapp-public-shell .mr-hq-hero .center-score-core strong {
+  font-size: 44px; font-weight: 900; letter-spacing: -.02em; font-variant-numeric: tabular-nums; text-shadow: 0 0 24px var(--mr-glow);
+}
+
+html[data-theme] body.miniapp-public-shell .mr-hq-tabs-wrap {
+  /* Под липкой верхней шапкой (z-index 18), как у остальных вкладок приложения. */
+  position: sticky; top: max(62px, env(safe-area-inset-top)); z-index: 14; margin: 12px 0; padding: 6px 0;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+html[data-theme] body.miniapp-public-shell .mr-hq-tabs {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 4px; overflow: visible;
+  border-radius: 999px; background: var(--surface); border: 1px solid var(--line);
+}
+html[data-theme] body.miniapp-public-shell .mr-hq-tabs .center-tab-btn {
+  min-width: 0; min-height: 44px; padding: 0 6px; border: 0; border-radius: 999px;
+  background: transparent; color: var(--hint); font-size: 14px; font-weight: 800; white-space: nowrap; box-shadow: none;
+}
+html[data-theme] body.miniapp-public-shell .mr-hq-tabs .center-tab-btn.active {
+  background: var(--accent); color: var(--accent-text); box-shadow: 0 0 18px -4px var(--mr-glow);
+}
+
+html[data-theme] body.miniapp-public-shell .mr-ai-card {
+  position: relative; overflow: hidden; padding: 18px 16px 16px; border-radius: 24px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--line));
+  background:
+    radial-gradient(240px 160px at 100% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%),
+    var(--surface);
+}
+html[data-theme] body.miniapp-public-shell .mr-ai-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+html[data-theme] body.miniapp-public-shell .mr-ai-card-head .mr-kicker { margin: 0; }
+html[data-theme] body.miniapp-public-shell .mr-ai-card-conf { font-size: 12px; font-weight: 800; color: var(--hint); font-variant-numeric: tabular-nums; }
+html[data-theme] body.miniapp-public-shell .mr-ai-card h2 {
+  margin: 10px 0 0; font-size: 22px; line-height: 1.2; font-weight: 900; letter-spacing: -.02em; color: var(--text);
+}
+html[data-theme] body.miniapp-public-shell .mr-ai-card-note { margin: 8px 0 0; font-size: 14px; line-height: 1.45; color: var(--hint); }
+html[data-theme] body.miniapp-public-shell .mr-ai-card-btn {
+  width: 100%; min-height: 48px; margin-top: 14px; border-radius: 16px; border: 0;
+  background: var(--accent); color: var(--accent-text); font-size: 15px; font-weight: 800; box-shadow: 0 0 24px -8px var(--mr-glow);
+}
+html[data-theme] body.miniapp-public-shell .mr-ai-honesty { margin: 4px 4px 0; font-size: 12px; line-height: 1.45; color: var(--hint); }
+html[data-theme] body.miniapp-public-shell .center-tab-panel[data-center-panel="ai"] > * + * { margin-top: 12px; }
+html[data-theme] body.miniapp-public-shell .mr-hq-meta { font-size: 12px; line-height: 1.4; }
