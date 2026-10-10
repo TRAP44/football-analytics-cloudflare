@@ -22,7 +22,7 @@ _пусто_
 
 ## На ревью
 
-- [ ] Отзывы: уведомление админу в бот (без дублей) + раздел «Отзывы» в админке — **Claude** — `claude/feedback-inbox` — ревью: Codex
+- [ ] Отзывы: уведомление админу в бот (без дублей) + раздел «Отзывы» в админке — **Claude** — [PR #815](https://github.com/TRAP44/football-analytics-cloudflare/pull/815) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 ## Ждут ревью Codex (у Codex закончился лимит)
@@ -34,7 +34,7 @@ _Решение Сергея: такие PR можно мержить, но Code
 - [ ] [PR #812](https://github.com/TRAP44/football-analytics-cloudflare/pull/812) — удалить скрытый AI-центр (уже в `main`)
 - [ ] [PR #813](https://github.com/TRAP44/football-analytics-cloudflare/pull/813) — «Поделиться матчем» (уже в `main`)
 - [ ] [PR #814](https://github.com/TRAP44/football-analytics-cloudflare/pull/814) — обратная связь для всех (уже в `main`; серверная авторизация — проверить особенно)
-- [ ] PR «Отзывы: уведомление и админка» — `claude/feedback-inbox`
+- [ ] [PR #815](https://github.com/TRAP44/football-analytics-cloudflare/pull/815) — отзывы: уведомление и админка (проверить дубли уведомлений)
 
 ## Готово
 
@@ -66,4 +66,4 @@ _Сюда оба ассистента пишут проблемы и идеи, �
 - [ ] `/api/history` молча отдаёт `[]`, если Supabase не прочитал `analysis_history` (`src/user-history.js`, `getHistory`): клиент не может отличить «разборов нет» от «не удалось проверить». Нужен признак `degraded` в ответе и его учёт в карточке штаба и на главной. Лимит при этом не теряется: свежий разбор из кэша отдаётся до проверки лимита (`src/analysis-runtime.js`) — найдено **Codex** в ревью #807, не назначено
 - [x] Мёртвый код: «AI-центр» на главной (`renderAiCenterSummary`, `#aiCenterSummary`, `#aiFocus`) скрыт CSS-ом (`.secondary-home-insight { display:none !important }`), но всё ещё считается и содержит ставочные формулировки («Лучше пропустить», «сигналов»). Удалить или переписать — найдено **Claude**, не назначено → удалено в [PR #812](https://github.com/TRAP44/football-analytics-cloudflare/pull/812)
 - [ ] Бот: вердикт «⛔ Лучше пропустить» (`src/telegram-bot-ui-runtime.js`, около строки 1128) — ставочная формулировка, в Mini App уже нейтрально («Без уверенного вывода»). Привести бота к тому же при работе над ботом — найдено **Claude**, не назначено
-- [x] Отзывы пользователей нигде не видны Сергею: `/api/beta-feedback` пишет их только в `ops_events`, админка показывает лишь агрегаты беты. Нужен раздел «Отзывы» в админке и/или уведомление админу в бот (с защитой от дублей) — найдено **Claude**, следующий шаг после «Обратной связи для всех» → делается в `claude/feedback-inbox`
+- [x] Отзывы пользователей нигде не видны Сергею: `/api/beta-feedback` пишет их только в `ops_events`, админка показывает лишь агрегаты беты. Нужен раздел «Отзывы» в админке и/или уведомление админу в бот (с защитой от дублей) — найдено **Claude**, следующий шаг после «Обратной связи для всех» → [PR #815](https://github.com/TRAP44/football-analytics-cloudflare/pull/815)
