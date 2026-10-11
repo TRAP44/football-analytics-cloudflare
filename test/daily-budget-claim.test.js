@@ -98,3 +98,19 @@ test('the hour is rechecked right before the claim (a slow read can cross the ho
   assert.equal(result.reason, 'hour_boundary');
   assert.equal(rpc, 0);
 });
+
+test('peekDailyBudget reports exhaustion without claiming and fails closed', async () => {
+  const { peekDailyBudget } = await import('../src/daily-budget-claim.js');
+  const now = () => Date.parse('2026-10-11T12:30:00.000Z');
+  const rows = [
+    { bucket_key: 'job:h03', window_started_at: '2026-10-11T03:00:00.000Z', request_count: 7 },
+    { bucket_key: 'job:h12', window_started_at: '2026-10-11T12:00:00.000Z', request_count: 2 },
+    { bucket_key: 'job:h23', window_started_at: '2026-10-10T23:00:00.000Z', request_count: 50 },
+  ];
+  const select = async () => rows;
+  assert.deepEqual(await peekDailyBudget({ supaSelectMany: select, prefix: 'job', limit: 10, now }), { available: true, used: 9, reason: '' });
+  assert.deepEqual(await peekDailyBudget({ supaSelectMany: select, prefix: 'job', limit: 9, now }), { available: false, used: 9, reason: 'daily_limit' });
+  assert.equal((await peekDailyBudget({ supaSelectMany: async () => { throw new Error('down'); }, prefix: 'job', limit: 9, now })).reason, 'budget_unavailable');
+  assert.equal((await peekDailyBudget({ supaSelectMany: async () => null, prefix: 'job', limit: 9, now })).reason, 'budget_unavailable');
+  assert.equal((await peekDailyBudget({ supaSelectMany: select, prefix: 'job', limit: 0, now })).reason, 'disabled');
+});

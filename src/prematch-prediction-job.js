@@ -7,13 +7,18 @@
 // придумывается: первая предматчевая строка model_predictions неизменяема,
 // поэтому критерий отбора — «строки нет», а не «прогноз устарел».
 
-import { claimDailyBudget } from './daily-budget-claim.js';
+import { claimDailyBudget, peekDailyBudget } from './daily-budget-claim.js';
 
 const DAY_SECONDS = 86400;
 const FEED_CACHE_KEY = date => `matches:${date}:v6-integrity`;
+// Тот же ключ, что providerFixtureDateCacheKey в provider-fixture-runtime.js.
+const RAW_FIXTURES_CACHE_KEY = date => `provider-fixtures:${date}:v1`;
+const BUDGET_PREFIX = 'prematch-predictions';
 const MIN_LEAD_MINUTES = 20;
 const MAX_LEAD_HOURS = 36;
 const UPCOMING_STATUSES = new Set(['NS', 'TBD']);
+const MAX_FEED_MATCHES = 3000;
+const MAX_FAVORITE_LOOKUP_TEAMS = 4000;
 
 function plainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
@@ -82,7 +87,7 @@ export function prematchCandidates(feeds = [], favoriteTeamIds = new Set(), nowM
   const rows = [];
   for (const feed of feeds) {
     const matches = Array.isArray(safeRead(plainObject(feed), 'matches')) ? feed.matches : [];
-    for (const match of matches.slice(0, 2000)) {
+    for (const match of matches.slice(0, MAX_FEED_MATCHES)) {
       const m = plainObject(match);
       const fixtureId = positiveId(m?.fixtureId);
       if (!fixtureId || seen.has(fixtureId)) continue;
@@ -200,20 +205,56 @@ export function createPrematchPredictionJob(deps = {}) {
     };
   }
 
-  async function loadFeed(date, cfg) {
-    const key = FEED_CACHE_KEY(date);
-    try {
-      const feed = plainObject(await getCache(key, cfg)) || plainObject(await getStaleCache(key, cfg));
-      if (feed) return feed;
-    } catch {}
-    if (typeof loadProviderFixturesForDate !== 'function') return null;
+  function rawFixtureRows(payload, date) {
+    const value = plainObject(payload);
+    if (!value || (value.date && String(value.date) !== date) || !Array.isArray(value.fixtures)) return null;
+    return value.fixtures;
+  }
+
+  // Полный пакет матчей дня. Сначала кеш (свежий, затем устаревший — он
+  // переживает TTL), и только если кеша нет совсем и нет нормализованной
+  // ленты — один запрос к источнику; он же заполнит кеш на следующие запуски.
+  async function loadRawFixtures(date, cfg, allowNetwork) {
+    const key = RAW_FIXTURES_CACHE_KEY(date);
+    for (const read of [getCache, getStaleCache]) {
+      try {
+        const rows = rawFixtureRows(await read(key, cfg), date);
+        if (rows) return rows;
+      } catch {}
+    }
+    if (!allowNetwork || typeof loadProviderFixturesForDate !== 'function') return [];
     try {
       const rows = await loadProviderFixturesForDate(date, cfg, { allowNetwork: true });
-      const matches = (Array.isArray(rows) ? rows : []).slice(0, 2000).map(rawFixtureMatch).filter(row => row.fixtureId);
-      return matches.length ? { matches, source: 'provider-fixtures' } : null;
+      return Array.isArray(rows) ? rows : [];
     } catch {
-      return null;
+      return [];
     }
+  }
+
+  // Кандидаты — из полного пакета матчей дня: нормализованная лента хранит
+  // только ~120 матчей и ничего не знает об избранных командах. Записи ленты
+  // (интерес, «главный», классификация) важнее сырых и идут первыми.
+  async function loadFeed(date, cfg) {
+    let normalized = [];
+    try {
+      const key = FEED_CACHE_KEY(date);
+      const feed = plainObject(await getCache(key, cfg)) || plainObject(await getStaleCache(key, cfg));
+      normalized = Array.isArray(feed?.matches) ? feed.matches : [];
+    } catch {
+      normalized = [];
+    }
+    const raw = await loadRawFixtures(date, cfg, !normalized.length);
+    const byId = new Map();
+    for (const match of normalized) {
+      const id = positiveId(safeRead(plainObject(match), 'fixtureId'));
+      if (id && !byId.has(id)) byId.set(id, match);
+    }
+    for (const row of raw.slice(0, MAX_FEED_MATCHES)) {
+      const match = rawFixtureMatch(row);
+      if (match.fixtureId && !byId.has(match.fixtureId)) byId.set(match.fixtureId, match);
+    }
+    const matches = [...byId.values()].slice(0, MAX_FEED_MATCHES);
+    return matches.length ? { matches } : null;
   }
 
   // Все команды кандидатов, частями по 200. Строка favorites — это пара
@@ -221,7 +262,7 @@ export function createPrematchPredictionJob(deps = {}) {
   // страницу: пагинация по ключу team_id (gt) перескакивает её дубли, число
   // страниц ограничено числом различных команд, а не числом пользователей.
   async function favoriteTeams(teamIds, cfg) {
-    const ids = [...new Set(teamIds.filter(Boolean))].sort((a, b) => a - b).slice(0, 2000);
+    const ids = [...new Set(teamIds.filter(Boolean))].sort((a, b) => a - b).slice(0, MAX_FAVORITE_LOOKUP_TEAMS);
     const found = new Set();
     for (let index = 0; index < ids.length; index += 200) {
       const chunk = ids.slice(index, index + 200);
@@ -311,14 +352,20 @@ export function createPrematchPredictionJob(deps = {}) {
     // Тихий пропуск без ops-события: при ограничении источника задание просто ждёт.
     if (!budget.allowed) return { ...summary, reason: budget.reason };
 
+    // Суточный потолок исчерпан — не тратим запросы к источнику на ленту.
+    const peek = await peekDailyBudget({ cfg, supaSelectMany, prefix: BUDGET_PREFIX, limit: settings.dailyLimit, now: realNow });
+    if (!peek.available) return { ...summary, reason: peek.reason };
+
     const nowMs = at.getTime();
     const feeds = (await Promise.all([utcDate(nowMs), utcDate(nowMs + DAY_SECONDS * 1000)].map(date => loadFeed(date, cfg)))).filter(Boolean);
     if (!feeds.length) return { ...summary, reason: 'feed_not_cached' };
 
-    const preliminary = prematchCandidates(feeds, new Set(), nowMs);
-    const allTeams = feeds.flatMap(feed => (Array.isArray(feed.matches) ? feed.matches : []))
-      .flatMap(match => [positiveId(safeRead(plainObject(safeRead(match, 'home')), 'id')), positiveId(safeRead(plainObject(safeRead(match, 'away')), 'id'))]);
-    const favorites = await favoriteTeams(allTeams, cfg);
+    // Избранные ищутся только среди команд матчей, которые вообще могут стать
+    // кандидатами (предстоящие, в окне, не молодёжь/товарищеские/низшие лиги):
+    // полный пакет дня может содержать тысячи матчей.
+    const eligible = prematchCandidates(feeds, { has: () => true }, nowMs);
+    const preliminary = eligible.filter(row => row.top);
+    const favorites = await favoriteTeams(eligible.flatMap(row => [row.homeId, row.awayId]), cfg);
     const candidates = prematchCandidates(feeds, favorites, nowMs).slice(0, 200);
     summary.candidates = candidates.length;
     if (!candidates.length) return { ...summary, reason: preliminary.length ? 'no_candidates' : 'no_main_matches' };
@@ -336,7 +383,7 @@ export function createPrematchPredictionJob(deps = {}) {
     for (const row of queue.slice(0, settings.perRun)) {
       // Настоящий суточный потолок (24 часовые корзины, см. daily-budget-claim.js):
       // окно claim_provider_request само по себе не длиннее часа.
-      const claim = await claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix: 'prematch-predictions', limit: settings.dailyLimit, now: realNow });
+      const claim = await claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix: BUDGET_PREFIX, limit: settings.dailyLimit, now: realNow });
       if (!claim.allowed) {
         summary.stopReason = claim.reason || 'daily_limit';
         break;

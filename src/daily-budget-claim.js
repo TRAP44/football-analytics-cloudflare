@@ -53,6 +53,33 @@ export function dailyBudgetUsed(rows, prefix, nowMs = Date.now()) {
   return previous + current;
 }
 
+// Проверка без списания: исчерпан ли суточный потолок. Нужна, чтобы не
+// тратить запросы к источнику на подготовку, когда считать уже нельзя.
+// Ошибка чтения — «недоступно» (fail-closed), как и у claimDailyBudget.
+export async function peekDailyBudget({ cfg, supaSelectMany, prefix, limit, now = Date.now } = {}) {
+  if (!Number.isInteger(limit) || limit <= 0) return { available: false, used: 0, reason: 'disabled' };
+  if (typeof supaSelectMany !== 'function' || !/^[a-z0-9:-]{3,80}$/.test(String(prefix || ''))) {
+    return { available: false, used: 0, reason: 'budget_unavailable' };
+  }
+  const value = Number(typeof now === 'function' ? now() : now);
+  const nowMs = Number.isFinite(value) ? value : Date.now();
+  try {
+    const rows = await supaSelectMany(
+      cfg,
+      'provider_rate_windows',
+      { bucket_key: `like.${prefix}:h*` },
+      { select: 'bucket_key,window_started_at,request_count', limit: 30 },
+    );
+    if (!Array.isArray(rows)) throw new TypeError('provider_rate_windows lookup returned an invalid response.');
+    const used = dailyBudgetUsed(rows, prefix, nowMs);
+    return used >= limit
+      ? { available: false, used, reason: 'daily_limit' }
+      : { available: true, used, reason: '' };
+  } catch {
+    return { available: false, used: 0, reason: 'budget_unavailable' };
+  }
+}
+
 export async function claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix, limit, now = Date.now } = {}) {
   const clock = () => {
     const value = Number(typeof now === 'function' ? now() : now);

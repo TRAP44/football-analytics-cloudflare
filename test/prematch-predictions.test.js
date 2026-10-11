@@ -71,18 +71,29 @@ function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-function job({ feed, predicted = [], snapshot = { plan: 'PRO' }, rpcAllowed = () => true, analyze, favorites = [], rateRows = [] } = {}) {
-  const calls = { analyzed: [], rpc: [], events: [], selects: [] };
+function job({ feed, predicted = [], snapshot = { plan: 'PRO' }, rpcAllowed = () => true, analyze, favorites = [], rateRows = [], raw = {}, staleRaw = {}, network = {} } = {}) {
+  const calls = { analyzed: [], rpc: [], events: [], selects: [], cacheReads: [], network: [] };
   const rt = createPrematchPredictionJob({
     analyzeFixtureForSystem: async (fixtureId, cfg) => {
       calls.analyzed.push(fixtureId);
       return analyze ? analyze(fixtureId, cfg) : jsonResponse({ cached: false, match: { fixtureId } });
     },
     clock: () => NOW,
-    getCache: async key => (key === 'matches:2026-10-11:v6-integrity' ? feed : null),
-    getStaleCache: async () => null,
+    getCache: async key => {
+      calls.cacheReads.push(key);
+      if (key === 'matches:2026-10-11:v6-integrity') return feed;
+      const rawDate = /^provider-fixtures:(.+):v1$/.exec(key)?.[1];
+      return rawDate && raw[rawDate] ? { date: rawDate, fixtures: raw[rawDate] } : null;
+    },
+    getStaleCache: async key => {
+      calls.cacheReads.push(`stale:${key}`);
+      const rawDate = /^provider-fixtures:(.+):v1$/.exec(key)?.[1];
+      return rawDate && staleRaw[rawDate] ? { date: rawDate, fixtures: staleRaw[rawDate] } : null;
+    },
     hasSupabase: () => true,
+    loadProviderFixturesForDate: async date => { calls.network.push(date); return network[date] || []; },
     loadSharedProviderState: async () => { calls.sharedLoads = (calls.sharedLoads || 0) + 1; },
+    normalizeCompetition: leagueId => ({ youth: false, friendly: false, lower: false, featured: leagueId === 39 }),
     providerSnapshot: () => snapshot,
     recordOpsEvent: async (_cfg, event) => { calls.events.push(event); },
     supaRpc: async (_cfg, name, params) => {
@@ -137,8 +148,10 @@ test('job: per-run cap, daily cap and provider limits stop the run', async () =>
   ] });
   const usedResult = await usedToday.rt.processPrematchPredictions({}, at);
   assert.deepEqual(usedToday.calls.analyzed, [], '12 + 8 used today reaches the daily cap of 20; yesterday is not counted');
-  assert.equal(usedResult.stopReason, 'daily_limit');
+  assert.equal(usedResult.reason, 'daily_limit');
   assert.equal(usedToday.calls.rpc.length, 0);
+  assert.deepEqual(usedToday.calls.cacheReads, [], 'an exhausted daily cap is checked before any feed is loaded');
+  assert.deepEqual(usedToday.calls.network, []);
 
   const limited = job({ feed, analyze: () => jsonResponse({ error: 'limited' }, 429) });
   const limitedResult = await limited.rt.processPrematchPredictions({}, at);
@@ -169,6 +182,34 @@ test('job: skips quietly without provider budget, outside the interval, when dis
   }
   const noFeed = job({ feed: null });
   assert.equal((await noFeed.rt.processPrematchPredictions({}, at)).reason, 'feed_not_cached');
+});
+
+function rawFixture(id, minutes, leagueId, homeId, awayId) {
+  return { fixture: { id, date: iso(minutes), status: { short: 'NS' } }, league: { id: leagueId, name: `League ${leagueId}` }, teams: { home: { id: homeId }, away: { id: awayId } } };
+}
+
+test('job: a cold deployment reuses the stale raw fixture cache instead of refetching', async () => {
+  const day = [rawFixture(701, 120, 39, 1, 2)];
+  const cold = job({ feed: null, network: { '2026-10-11': day } });
+  await cold.rt.processPrematchPredictions({}, at);
+  assert.deepEqual(cold.calls.network, ['2026-10-11', '2026-10-12'], 'nothing cached at all: one fetch per date');
+
+  const expired = job({ feed: null, staleRaw: { '2026-10-11': day, '2026-10-12': [] } });
+  await expired.rt.processPrematchPredictions({}, at);
+  assert.deepEqual(expired.calls.network, [], 'an expired raw cache (even an empty day) is reused, not refetched');
+
+  const withFeed = job({ feed: { matches: [match(1, 120, { isTop: true })] } });
+  await withFeed.rt.processPrematchPredictions({}, at);
+  assert.deepEqual(withFeed.calls.network.filter(date => date === '2026-10-11'), [], 'a normalized feed never triggers a network fetch for its date');
+});
+
+test('job: a favorite fixture outside the 120-match feed is found in the full raw batch', async () => {
+  const feed = { matches: [match(1, 120, { isTop: true, interestScore: 90 })] };
+  const raw = { '2026-10-11': [rawFixture(1, 120, 39, 11, 12), rawFixture(801, 100, 555, 77, 78)] };
+  const { rt, calls } = job({ feed, raw, favorites: [77] });
+  await rt.processPrematchPredictions({ prematchPredictionsPerRun: 2 }, at);
+  assert.deepEqual(calls.analyzed, [801, 1], 'favorite first, then the top match; no duplicate of fixture 1');
+  assert.deepEqual(calls.network, ['2026-10-12'], 'only the uncached tomorrow is fetched');
 });
 
 test('job: favorites are looked up for every team of the feed, in chunks', async () => {
