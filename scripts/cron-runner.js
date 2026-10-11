@@ -122,6 +122,12 @@ export function summarizeRun(settled = []) {
   return { failed, tasks };
 }
 
+export function degradedWarnings(tasks = []) {
+  return (Array.isArray(tasks) ? tasks : [])
+    .filter(row => row && row.status === 'degraded' && row.task !== 'scheduled_execution')
+    .map(row => `::warning title=Фоновая задача ${String(row.task).slice(0, 60)}::частичный сбой${row.reason ? `: ${String(row.reason).slice(0, 160)}` : ''}`);
+}
+
 export async function runCron({ worker, env, nowMs = Date.now(), timeoutMs = RUN_TIMEOUT_MS } = {}) {
   const pending = [];
   const ctx = {
@@ -170,6 +176,10 @@ async function main() {
   for (const row of result.tasks) {
     console.log(redact(`  ${row.task || '—'}: ${row.status}${row.reason ? ` (${row.reason.slice(0, 200)})` : ''}`));
   }
+  // Частичный сбой задачи (например, часть доставок в Telegram не прошла —
+  // пользователь заблокировал бота) — предупреждение в Actions, а не красный
+  // запуск: иначе каждый заблокировавший бота делал бы все запуски красными.
+  for (const line of degradedWarnings(result.tasks)) console.log(redact(line));
   // Ни одной задачи — обработчик остановился раньше (нет связи с Supabase,
   // защитный режим или пауза фоновых задач). Это видно как провал запуска.
   if (!result.tasks.length) console.log('  задачи не запускались (проверь ключи Supabase и runtime controls)');

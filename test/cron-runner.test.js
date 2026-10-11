@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  CRON_RUNNER_SECRET_KEYS, cronSlot, missingRequiredSecrets, redactor, runCron, runnerEnv, summarizeRun, wranglerVars,
+  CRON_RUNNER_SECRET_KEYS, cronSlot, degradedWarnings, missingRequiredSecrets, redactor, runCron, runnerEnv, summarizeRun, wranglerVars,
 } from '../scripts/cron-runner.js';
 
 test('cron runner aligns delayed GitHub runs to the 5-minute cron slot', () => {
@@ -100,4 +100,10 @@ test('the run refuses to start without the mandatory job secrets', () => {
   assert.deepEqual(missingRequiredSecrets({ ...full, API_FOOTBALL_KEY: undefined }), ['API_FOOTBALL_KEY']);
   assert.equal(missingRequiredSecrets({}).length, 4);
   assert.match(fs.readFileSync('scripts/cron-runner.js', 'utf8'), /const missing = missingRequiredSecrets\(env\);\n  if \(missing\.length\) \{/);
+});
+
+test('a partially failed task is a visible Actions warning, not a red run', () => {
+  const tasks = [{ task: 'daily_digest', status: 'degraded', reason: 'partial_failures:2' }, { task: 'reminders', status: 'ok', reason: '' }];
+  assert.deepEqual(degradedWarnings(tasks), ['::warning title=Фоновая задача daily_digest::частичный сбой: partial_failures:2']);
+  assert.equal(summarizeRun([{ status: 'fulfilled', value: tasks }]).failed, false);
 });
