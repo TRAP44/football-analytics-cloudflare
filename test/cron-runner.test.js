@@ -150,3 +150,25 @@ test('request trace shows service, path and status but never tokens or query val
   }
   assert.deepEqual(trace.entries, ['GET supabase /rest/v1/b → 401', 'POST supabase /rest/v1/c → 401']);
 });
+
+test('with BACKGROUND_JOBS_EXECUTOR=github a Cloudflare cron invocation exits without touching the lease', async () => {
+  const { default: worker } = await import('../src/worker.js');
+  const original = globalThis.fetch;
+  const urls = [];
+  globalThis.fetch = async url => { urls.push(String(url)); return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } }); };
+  const base = { SUPABASE_URL: 'https://x1aaaaaaaaaa.supabase.co', SUPABASE_SECRET_KEY: 'sb_secret_x', BACKGROUND_JOBS_EXECUTOR: 'github' };
+  const pending = [];
+  const ctx = { waitUntil: p => pending.push(p), passThroughOnException() {} };
+  try {
+    await worker.scheduled({ scheduledTime: Date.now(), cron: '*/5 * * * *' }, base, ctx);
+    await Promise.allSettled(pending);
+    assert.deepEqual(urls, [], 'the ghost Cloudflare cron does nothing');
+    await worker.scheduled({ scheduledTime: Date.now(), cron: '*/5 * * * *' }, { ...base, CRON_RUNNER: 'github-actions' }, ctx);
+    await Promise.allSettled(pending);
+    assert.ok(urls.some(url => url.includes('/rest/v1/runtime_controls')), 'the GitHub runner proceeds');
+  } finally {
+    globalThis.fetch = original;
+  }
+  assert.equal(runnerEnv({}, {}).CRON_RUNNER, 'github-actions');
+  assert.match(fs.readFileSync('wrangler.jsonc', 'utf8'), /"BACKGROUND_JOBS_EXECUTOR": "github"/);
+});

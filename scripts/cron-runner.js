@@ -59,6 +59,8 @@ export function runnerEnv(processEnv = {}, vars = {}, { sha = '', now = Date.now
     const value = processEnv[key];
     if (typeof value === 'string' && value.trim()) env[key] = value.trim();
   }
+  // Отметка исполнителя: воркер с BACKGROUND_JOBS_EXECUTOR=github выполняет задачи только при ней.
+  env.CRON_RUNNER = 'github-actions';
   env.CF_VERSION_METADATA = {
     id: 'github-actions-cron',
     tag: /^[0-9a-f]{7,40}$/.test(String(sha)) ? String(sha) : 'github-actions',
