@@ -5637,8 +5637,9 @@ function prematchDriverCard(driver, match) {
 
 // Старые и кешированные сценарии могли содержать «ТБ 2.5» и «обе забьют» —
 // переводим в слова; остальное ставочное прячем.
-function prematchScenarioText(value) {
+function prematchScenarioText(value, match = {}) {
   return publicText(String(value || ''))
+    .replace(/(^|[^\p{L}\p{N}])П([12])(?![\p{L}\p{N}])/gu, (all, before, side) => `${before}${prematchOutcomeName(side === '1' ? 'home' : 'away', match)}`)
     .replace(/(на\s+)?ТБ\s*2[.,]5/g, (match, on) => `${on || ''}3+ гола в матче`)
     .replace(/(вероятность\s+)?«?обе забьют»?/gi, (match, chance) => (chance ? 'вероятность, что забьют обе команды,' : 'забьют обе команды'))
     .replace(/\s*Это не букмекерская рекомендация, а/g, ' Это')
@@ -5646,9 +5647,9 @@ function prematchScenarioText(value) {
     .replace(/(движение|изменение) рынка/g, 'новые данные');
 }
 
-function prematchScenarioCard(scenario) {
-  const title = prematchScenarioText(scenario.title);
-  const text = prematchScenarioText(scenario.text);
+function prematchScenarioCard(scenario, match = {}) {
+  const title = prematchScenarioText(scenario.title, match);
+  const text = prematchScenarioText(scenario.text, match);
   if (SCENARIO_BETTING_TEXT.test(`${title} ${text}`)) return '';
   return `<article class="prematch-scenario ${escapeHtml(scenario.tone || 'balanced')}">
     <div class="prematch-scenario-top"><span>${escapeHtml(scenario.icon || '•')}</span><small>${escapeHtml(publicText(scenario.relevance || ''))}</small></div>
@@ -5679,6 +5680,7 @@ function prematchBriefHtml(pm, match, probabilities) {
   const uncertainty = pm.uncertainty || {};
   const leader = pm.leader || {};
   const dataScore = Number(pm.dataScore || 0);
+  const scenarioCards = (Array.isArray(pm.scenarios) ? pm.scenarios : []).map(item => prematchScenarioCard(item, match)).filter(Boolean);
   return `
     <section class="panel prematch-brief-hero">
       <div class="prematch-brief-top">
@@ -5711,7 +5713,7 @@ function prematchBriefHtml(pm, match, probabilities) {
 
     <section class="panel">
       <div class="prematch-section-head"><div><h2>Сценарии матча</h2><p>Не новые прогнозы, а интерпретация уже рассчитанных сигналов</p></div></div>
-      <div class="prematch-scenarios">${(pm.scenarios || []).length ? pm.scenarios.map(prematchScenarioCard).join('') : '<div class="empty compact-empty">Сценарии не сформированы из-за ограниченных данных.</div>'}</div>
+      <div class="prematch-scenarios">${scenarioCards.length ? scenarioCards.join('') : '<div class="empty compact-empty">Сценарии не сформированы из-за ограниченных данных.</div>'}</div>
     </section>
 
     <section class="panel">

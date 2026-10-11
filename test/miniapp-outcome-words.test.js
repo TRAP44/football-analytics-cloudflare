@@ -34,7 +34,8 @@ test('cached pre-match goal scenarios are rewritten in words, betting-only cards
   const regex = block('const SCENARIO_BETTING_TEXT', '\n');
   const fns = block('function prematchScenarioText(', '\nfunction prematchSourceRow');
   const escapeHtml = value => String(value ?? '');
-  const card = new Function('escapeHtml', 'publicText', `${regex}\n${fns}\nreturn prematchScenarioCard;`)(escapeHtml, value => value);
+  const outcome = block('function prematchOutcomeName(', '\n}\n') + '\n}\n';
+  const card = new Function('escapeHtml', 'publicText', `${regex}\n${outcome}\n${fns}\nreturn prematchScenarioCard;`)(escapeHtml, value => value);
   const goals = card({
     title: 'Голевой сценарий: более открытая игра',
     text: 'Модель Пуассона даёт 3.1 ожидаемых гола суммарно и 64% на ТБ 2.5. Это вспомогательная модель.',
@@ -53,5 +54,14 @@ test('cached pre-match goal scenarios are rewritten in words, betting-only cards
   });
   assert.match(close, /состав или новые данные могут перевернуть/);
   assert.doesNotMatch(close, /рынка/);
+  const leader = card({
+    title: 'Базовый сценарий: П1',
+    text: 'П1 получает наибольшую вероятность (52%). Ключевой вопрос — реализуется ли перевес.',
+  }, { home: { name: 'Милан' }, away: {} });
+  assert.match(leader, /Базовый сценарий: Милан/);
+  assert.match(leader, /Милан получает наибольшую вероятность/);
+  const noNames = card({ title: 'Базовый сценарий: П2', text: 'П2 получает наибольшую вероятность (40%).' }, {});
+  assert.match(noNames, /Базовый сценарий: Гости/);
   assert.equal(card({ title: 'Ставка дня', text: 'П1 по коэффициенту 1.85' }), '');
+  assert.match(app, /scenarioCards\.length \? scenarioCards\.join\(''\)/);
 });
