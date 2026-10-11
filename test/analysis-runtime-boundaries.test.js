@@ -291,8 +291,8 @@ test('analysis wiring owns Tavily adapter and keeps boundary helpers local to th
   assert.match(runtime, /return Object\.freeze\(\{apiAnalyze,analyzeFixtureForSystem\}\)/);
 });
 
-function staleRecheckRuntime({ ownership, quota = { plan:'FREE', used:3, limit:3, left:0 } } = {}) {
-  const calls = { quota:0, ownershipOptions:null };
+function staleRecheckRuntime({ ownership, quota = { plan:'FREE', used:3, limit:3, left:0 }, entitlements = { source:'free', access:{} }, reserve } = {}) {
+  const calls = { quota:0, ownershipOptions:null, reservations:0 };
   const stale = {
     generatedAt:new Date(Date.now() - 6 * 3600_000).toISOString(),
     match:{ fixtureId:123, date:new Date(Date.now() + 3600_000).toISOString(), status:'NS' },
@@ -307,7 +307,8 @@ function staleRecheckRuntime({ ownership, quota = { plan:'FREE', used:3, limit:3
       return ownership();
     },
     analysisResponsePayload: (payload, meta) => ({ ...payload, ...meta }),
-    resolveUserEntitlements: async () => ({ source:'free', access:{} }),
+    resolveUserEntitlements: async () => entitlements,
+    ...(reserve ? { reserveEntitlementUsage: async (...args) => { calls.reservations += 1; return reserve(...args); } } : {}),
     getQuota: async () => { calls.quota += 1; return quota; },
   });
   const request = () => runtime.apiAnalyze({ json: async () => ({ fixtureId:123, recheck:true }) }, {}, { id:456 });
@@ -335,4 +336,20 @@ test('a confirmed "never analysed" recheck still goes through the normal quota c
   assert.equal(response.status, 429);
   assert.equal(response.body.code, 'ANALYSIS_QUOTA_EXHAUSTED');
   assert.ok(calls.quota >= 1);
+});
+
+// Ревью Codex #825: ограниченный Weekend Pass при сбое истории не тратит использование.
+test('history outage protects a usage-limited Pass like the quota; only an unlimited Pass recomputes', async () => {
+  const outage = () => { const error = new Error('down'); error.code = 'HISTORY_UNAVAILABLE'; throw error; };
+  const pass = usageLimit => ({ source:'pass', access:{ expandedAi:true }, passes:{ active:[{ id:'p1', type:'WEEKEND_PASS', usageLimit, usageCount:1 }] } });
+  const limited = staleRecheckRuntime({ ownership: outage, entitlements: pass(5), reserve: async () => ({ reserved:true }) });
+  const response = await limited.request();
+  assert.equal(response.status, 200);
+  assert.equal(response.body.recheck.reasonCode, 'history_unavailable');
+  assert.match(response.body.warning, /лимит не списан/);
+  assert.equal(limited.calls.reservations, 0, 'no Pass use is reserved while ownership is unknown');
+
+  const source = readRepoFile('src/analysis-runtime.js');
+  assert.match(source, /const unlimitedPassCandidate=passCandidate\s*&& activePasses\.some\(item=>objectValue\(item\) && objectValue\(item\)\.usageLimit==null\);/);
+  assert.match(source, /if \(recheckOwnershipUnknown && !unlimitedPassCandidate && staleBefore\)/);
 });
