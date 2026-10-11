@@ -78,6 +78,54 @@ export function missingRequiredSecrets(env = {}) {
   return missing;
 }
 
+function jwtRole(token) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 3) return '';
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+    return typeof payload?.role === 'string' ? payload.role : '';
+  } catch {
+    return '';
+  }
+}
+
+/** Ошибка формата ключей Supabase — понятным текстом и без значений. */
+export function supabaseFormatProblem(env = {}) {
+  const url = String(env.SUPABASE_URL || '').trim();
+  if (!/^https:\/\/[a-z0-9]{10,40}\.supabase\.co\/?$/i.test(url)) {
+    return 'SUPABASE_URL должен выглядеть как https://<проект>.supabase.co — без /rest/v1, пробелов и кавычек.';
+  }
+  const key = String(env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  if (/^sb_publishable_/.test(key)) return 'вместо секретного ключа Supabase вставлен publishable-ключ; нужен secret (sb_secret_…) или service_role.';
+  if (/^sb_secret_/.test(key)) return '';
+  const role = jwtRole(key);
+  if (role === 'anon') return 'вместо service_role вставлен anon-ключ Supabase (Legacy API Keys → service_role).';
+  if (role !== 'service_role') return 'ключ Supabase не похож ни на service_role (eyJ…), ни на secret (sb_secret_…) — проверь, что скопирован целиком.';
+  return '';
+}
+
+// Пробный запрос к Supabase до запуска задач: иначе при неверном ключе
+// воркер молча уходит в защитный режим, а записать причину в базу не может.
+export async function supabaseProblem(env = {}, fetchImpl = globalThis.fetch) {
+  const format = supabaseFormatProblem(env);
+  if (format) return format;
+  const url = String(env.SUPABASE_URL).trim().replace(/\/$/, '');
+  const key = String(env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY).trim();
+  let response;
+  try {
+    response = await fetchImpl(`${url}/rest/v1/runtime_controls?select=id&limit=1`, {
+      headers: { apikey: key, authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    return 'Supabase недоступен по адресу из SUPABASE_URL (сеть или неверный адрес проекта).';
+  }
+  if (response.status === 401 || response.status === 403) return `Supabase отклонил ключ (HTTP ${response.status}) — значение SUPABASE_SERVICE_ROLE_KEY/SUPABASE_SECRET_KEY не подходит к этому проекту.`;
+  if (response.status === 404) return 'Supabase ответил 404 — проверь адрес проекта в SUPABASE_URL.';
+  if (!response.ok) return `Supabase ответил HTTP ${response.status} на пробный запрос.`;
+  return '';
+}
+
 export function redactor(env = {}) {
   const secrets = CRON_RUNNER_SECRET_KEYS
     .map(key => env[key])
@@ -168,6 +216,11 @@ async function main() {
   const missing = missingRequiredSecrets(env);
   if (missing.length) {
     console.error(`cron-runner: в окружении background-jobs не заданы обязательные ключи: ${missing.join(', ')} — запуск невозможен.`);
+    process.exit(1);
+  }
+  const problem = await supabaseProblem(env);
+  if (problem) {
+    console.error(`cron-runner: ${problem}`);
     process.exit(1);
   }
   const { default: worker } = await import(pathToFileURL(path.join(root, 'src', 'worker.js')).href);

@@ -14,6 +14,11 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-11 — Claude — Фоновые задачи: диагностика ключей Supabase
+PR: [#840](https://github.com/TRAP44/football-analytics-cloudflare/pull/840), ветка `claude/cron-runner-diagnostics`
+Причина: первый ручной запуск Background Jobs завершился «задачи не запускались» без единой записи в `ops_events` — воркер ушёл в защитный режим, потому что Supabase не принял адрес/ключ, и записать причину в базу тоже не смог.
+Сделано: `scripts/cron-runner.js` до запуска задач проверяет формат `SUPABASE_URL` (https://<проект>.supabase.co) и ключа (anon/publishable/обрывок → понятный текст), затем делает пробный запрос к `runtime_controls` и сообщает 401/403/404/сеть. Значения ключей в выводе не появляются.
+
 ## 2026-10-11 — Claude — Задача 6: «Спросить про матч»
 PR: [#835](https://github.com/TRAP44/football-analytics-cloudflare/pull/835), ветка `claude/match-questions`
 Сделано:

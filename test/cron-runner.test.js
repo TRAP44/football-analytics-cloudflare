@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  CRON_RUNNER_SECRET_KEYS, cronSlot, degradedWarnings, missingRequiredSecrets, redactor, runCron, runnerEnv, summarizeRun, wranglerVars,
+  CRON_RUNNER_SECRET_KEYS, cronSlot, degradedWarnings, missingRequiredSecrets, supabaseFormatProblem, supabaseProblem, redactor, runCron, runnerEnv, summarizeRun, wranglerVars,
 } from '../scripts/cron-runner.js';
 
 test('cron runner aligns delayed GitHub runs to the 5-minute cron slot', () => {
@@ -106,4 +106,27 @@ test('a partially failed task is a visible Actions warning, not a red run', () =
   const tasks = [{ task: 'daily_digest', status: 'degraded', reason: 'partial_failures:2' }, { task: 'reminders', status: 'ok', reason: '' }];
   assert.deepEqual(degradedWarnings(tasks), ['::warning title=Фоновая задача daily_digest::частичный сбой: partial_failures:2']);
   assert.equal(summarizeRun([{ status: 'fulfilled', value: tasks }]).failed, false);
+});
+
+const jwt = role => `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify({ role })).toString('base64url')}.sig`;
+
+test('Supabase key and URL problems are explained without printing values', async () => {
+  const ok = { SUPABASE_URL: 'https://nlmvhkjkpgzzlfavaohk.supabase.co', SUPABASE_SERVICE_ROLE_KEY: jwt('service_role') };
+  assert.equal(supabaseFormatProblem(ok), '');
+  assert.equal(supabaseFormatProblem({ ...ok, SUPABASE_SERVICE_ROLE_KEY: '', SUPABASE_SECRET_KEY: 'sb_secret_abc' }), '');
+  assert.match(supabaseFormatProblem({ ...ok, SUPABASE_URL: 'https://nlmvhkjkpgzzlfavaohk.supabase.co/rest/v1' }), /без \/rest\/v1/);
+  assert.match(supabaseFormatProblem({ ...ok, SUPABASE_SERVICE_ROLE_KEY: jwt('anon') }), /anon-ключ/);
+  assert.match(supabaseFormatProblem({ ...ok, SUPABASE_SERVICE_ROLE_KEY: 'sb_publishable_x' }), /publishable/);
+  assert.match(supabaseFormatProblem({ ...ok, SUPABASE_SERVICE_ROLE_KEY: 'eyJbroken' }), /скопирован целиком/);
+  for (const text of [supabaseFormatProblem({ ...ok, SUPABASE_SERVICE_ROLE_KEY: jwt('anon') })]) assert.doesNotMatch(text, /eyJ[A-Za-z0-9]{8}/);
+
+  const respond = status => async () => new Response('[]', { status });
+  assert.equal(await supabaseProblem(ok, respond(200)), '');
+  assert.match(await supabaseProblem(ok, respond(401)), /отклонил ключ \(HTTP 401\)/);
+  assert.match(await supabaseProblem(ok, respond(404)), /404/);
+  assert.match(await supabaseProblem(ok, async () => { throw new Error('ENOTFOUND'); }), /недоступен/);
+  let seen;
+  await supabaseProblem(ok, async (url, init) => { seen = { url, init }; return new Response('[]', { status: 200 }); });
+  assert.equal(seen.url, 'https://nlmvhkjkpgzzlfavaohk.supabase.co/rest/v1/runtime_controls?select=id&limit=1');
+  assert.equal(seen.init.headers.apikey, ok.SUPABASE_SERVICE_ROLE_KEY);
 });
