@@ -9,7 +9,6 @@
 ## Бэклог (Сергей расставляет приоритет сверху вниз)
 
 - [ ] Задача 0: деплой после правок секретов в панели Cloudflare (правка гейта, нужно явное «да» Сергея) — **Claude** — см. `TASKS_RU.md`
-- [ ] Задача 4: экран составов (макет E, 2.5D на CSS) — **Codex** — см. `TASKS_RU.md`
 
 ## В работе
 
@@ -17,8 +16,7 @@ _пусто_
 
 ## На ревью
 
-- [ ] Задача 3 (часть 1): кривая 1/X/2 в Штабе матча для LIVE и завершённых — ось минут, точка «до матча», отметки голов и красных карточек, пустое состояние «Кривая появится по ходу матча»; периодические LIVE-снимки ждут рабочих фоновых задач — **Claude** (по решению Сергея) — [PR #836](https://github.com/TRAP44/football-analytics-cloudflare/pull/836) — ревью: Codex
-- [ ] Ревью Codex #829: «Линия 1X2», «Live-коэффициенты» и «рыночный сигнал» больше не попадают в «Что было пропущено» и «Риски» (сервер + фильтр сохранённых разборов) — **Claude** — [PR #833](https://github.com/TRAP44/football-analytics-cloudflare/pull/833) (перенос #832, который слили в ветку #831, а не в `main`) — ревью: Codex 👍 на #832
+- [ ] Задача 4: экран составов — 2.5D поле в «Штабе матча» (обе команды, расстановка по сетке источника, роли для скринридера, запасные, честные пустые состояния; макета нет — дизайн Claude по решению Сергея) — **Claude** — [PR #839](https://github.com/TRAP44/football-analytics-cloudflare/pull/839) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 ## Ждут ревью Codex (у Codex закончился лимит)
@@ -36,6 +34,7 @@ _Лимит Codex восстановился 10.10 вечером, очеред�
 
 ## Готово
 
+- [x] Задача 3 (часть 1): кривая 1/X/2 в Штабе матча для LIVE и завершённых — ось минут, точка «до матча», отметки голов и красных карточек, пустое состояние «Кривая появится по ходу матча»; периодические LIVE-снимки ждут рабочих фоновых задач — **Claude** (по решению Сергея) — [PR #836](https://github.com/TRAP44/football-analytics-cloudflare/pull/836) — слит 11.10
 - [x] Фоновые задачи: диагностика ключей Supabase, журнал запросов, ключ как у воркера и выключение «призрачного» cron Cloudflare (`BACKGROUND_JOBS_EXECUTOR=github`) — **Claude** — [PR #840](https://github.com/TRAP44/football-analytics-cloudflare/pull/840), [#841](https://github.com/TRAP44/football-analytics-cloudflare/pull/841), [#842](https://github.com/TRAP44/football-analytics-cloudflare/pull/842) — слиты 11.10; первый полный запуск — 23:29
 - [x] Фоновые задачи через GitHub Actions вместо cron Cloudflare (Workers Free) — **Claude** — [PR #838](https://github.com/TRAP44/football-analytics-cloudflare/pull/838) — слит 11.10; ключи в окружении `background-jobs`
 - [x] Задача 6: «Спросить про матч» — **Claude** — [PR #835](https://github.com/TRAP44/football-analytics-cloudflare/pull/835) — слит 11.10

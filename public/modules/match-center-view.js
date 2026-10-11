@@ -1,4 +1,5 @@
 import { homeMatchScoreLabel } from './home-match-priority.js';
+import { lineupPitchViewHtml } from './lineup-pitch.js';
 
 // «Штаб матча» — главный AI-экран MatchRadar.
 // Разметка вынесена из app.js в ленивый модуль: стартовый JS не растёт, а
@@ -227,7 +228,7 @@ export function renderMatchCenterView(d, deps) {
     <div class="center-tab-panel" data-center-panel="lineups">
       <section class="panel">
         <div class="center-section-title"><div><h2>Составы и схема</h2><p>Стартовые составы, схемы и запасные</p></div></div>
-        ${lineupLiveHtml(d.lineups, m)}
+        ${lineupPitchViewHtml(d.lineups, {...m,live,finished}, { escapeHtml, fallback: lineupLiveHtml })}
       </section>
       ${hasAbsences ? `<section class="panel"><h2>Потери и сомнения</h2>${availabilityQualityHintHtml(d.availabilityQuality)}${liveAbsencesHtml(d.absences,m)}</section>` : ''}
       <section class="panel">

@@ -170,7 +170,8 @@ test('Match Center keeps partial provider blocks independent and renderable',()=
   assert.match(render,/centerKeyStatsHtml\(d\.statistics\)/);
   assert.match(render,/timelineEventsHtml\(eventRows, m\)/);
   assert.match(render,/centerAllStatsHtml\(d\.statistics\)/);
-  assert.match(render,/lineupLiveHtml\(d\.lineups, m\)/);
+  // Задача 4: поле расстановки; прежний список — запасной вариант без сетки.
+  assert.match(render,/lineupPitchViewHtml\(d\.lineups, \{\.\.\.m,live,finished\}, \{ escapeHtml, fallback: lineupLiveHtml \}\)/);
   assert.match(render,/centerPlayersHtml\(d\.playerLeaders, m\)/);
   assert.doesNotMatch(render,/centerMarketHtml|Рыночные данные/);
   assert.match(render,/d\.cached \? 'Данные из сохранённой версии' : 'Свежие данные источника'/);
