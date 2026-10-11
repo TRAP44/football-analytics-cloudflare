@@ -132,7 +132,7 @@ test('Match Center hierarchy styles and current asset revision are wired consist
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
 
-  assert.equal(revision,'6.120.0-launch95');
+  assert.equal(revision,'6.120.0-launch96');
 
   for (const asset of [
     'styles.css',
