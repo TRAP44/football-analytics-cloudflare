@@ -299,7 +299,8 @@ export function createAnalysisLifecycleRuntime(deps) {
     };
   }
 
-  async function userHasAnalyzedFixture(userId, fixtureId, cfg) {
+  // strict:true — сбой чтения истории пробрасывается: «не знаю» ≠ «не анализировал».
+  async function userHasAnalyzedFixture(userId, fixtureId, cfg, { strict=false }={}) {
     const uid=positiveSafeInteger(userId);
     const id=positiveSafeInteger(fixtureId);
     if (!uid || !id) return false;
@@ -313,7 +314,13 @@ export function createAnalysisLifecycleRuntime(deps) {
         ));
         return positiveSafeInteger(row?.telegram_id)===uid
           && positiveSafeInteger(row?.fixture_id)===id;
-      } catch {
+      } catch (error) {
+        if (strict) {
+          const unavailable=new Error('Analysis history ownership check is unavailable.');
+          unavailable.code='HISTORY_UNAVAILABLE';
+          unavailable.cause=error;
+          throw unavailable;
+        }
         return false;
       }
     }

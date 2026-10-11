@@ -145,6 +145,10 @@ test('free freshness recheck eligibility remains scoped to the user analysis his
     },
   });
   assert.equal(await failingSupabase.userHasAnalyzedFixture(42, 77, {}), false);
+  await assert.rejects(
+    failingSupabase.userHasAnalyzedFixture(42, 77, {}, { strict: true }),
+    error => error.code === 'HISTORY_UNAVAILABLE',
+  );
 });
 
 test('RC59 recheck delta detects material changes and rejects cross-fixture comparisons', () => {
@@ -202,7 +206,7 @@ test('server only bypasses cached analysis for a real freshness or news-impact r
   );
   assert.match(
     analysisRuntime,
-    /if \(needsFreshnessRecheck\) \{\s*try \{ freeRecheck=await userHasAnalyzedFixture\(userId,fixtureId,cfg\)/,
+    /if \(needsFreshnessRecheck\) \{\s*try \{ freeRecheck=await userHasAnalyzedFixture\(userId,fixtureId,cfg,\{strict:true\}\)/,
   );
   assert.match(
     analysisRuntime,
