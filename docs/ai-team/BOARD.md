@@ -11,7 +11,6 @@
 - [ ] Задача 0: деплой после правок секретов в панели Cloudflare (правка гейта, нужно явное «да» Сергея) — **Claude** — см. `TASKS_RU.md`
 - [ ] Задача 3: кривая вероятности по ходу матча — **Codex** — см. `TASKS_RU.md`
 - [ ] Задача 4: экран составов (макет E, 2.5D на CSS) — **Codex** — см. `TASKS_RU.md`
-- [ ] Задача 6: вопросы по матчу — **Codex** — после задачи 5 — см. `TASKS_RU.md`
 
 ## В работе
 
@@ -19,6 +18,7 @@ _пусто_
 
 ## На ревью
 
+- [ ] Задача 6: «Спросить про матч» — 4 готовые подсказки (без LLM и лимита) + свой вопрос: Workers AI выбирает 0–3 факта из того же каталога, иначе «в данных этого нет»; ставки — отказ до LLM; лимиты на пользователя в час и сервис в сутки — **Claude** (по решению Сергея) — [PR #835](https://github.com/TRAP44/football-analytics-cloudflare/pull/835) — ревью: Codex
 - [ ] Фоновые задачи через GitHub Actions: cron Cloudflare на Workers Free обрывается с 9.10 (10 мс CPU) — запуск `scheduled()` воркера из Node раз в 5 минут, ключи в окружении `background-jobs` (только `main`), cron в `wrangler.jsonc` выключен (вариант А, решение Сергея 11.10) — **Claude** — [PR #838](https://github.com/TRAP44/football-analytics-cloudflare/pull/838) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 

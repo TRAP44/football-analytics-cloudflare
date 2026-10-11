@@ -1106,10 +1106,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch97'),
+      import('./modules/match-center-view.js?v=6.120.0-launch98'),
       import('./modules/match-pulse.js?v=6.120.0-launch87'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch97'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch97'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch98'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch98'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1265,7 +1265,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch97').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch98').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -2941,7 +2941,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch97');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch98');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3403,7 +3403,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch97').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch98').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -5592,7 +5592,7 @@ async function loadAnalysisExplanation(fixtureId) {
   const root = $('matchExplanation');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch97');
+    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch98');
     const { loadMatchExplanation } = await matchExplanationModule;
     await loadMatchExplanation({
       root,
@@ -5606,10 +5606,30 @@ async function loadAnalysisExplanation(fixtureId) {
   }
 }
 
+// Задача 6: «Спросить про матч» — ленивый модуль под объяснением.
+let matchQuestionsModule = null;
+async function loadMatchQuestions(fixtureId) {
+  const root = $('matchQuestions');
+  if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
+  try {
+    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch98');
+    const { mountMatchQuestions } = await matchQuestionsModule;
+    mountMatchQuestions({
+      root,
+      fixtureId,
+      api,
+      escapeHtml,
+      isCurrent: () => Number(state.currentAnalysis?.match?.fixtureId || 0) === fixtureId,
+    });
+  } catch {
+    matchQuestionsModule = null;
+  }
+}
+
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch97');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch98');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {
@@ -6269,6 +6289,7 @@ function renderAnalysis(d) {
 
     ${renderFormIntelligence(d)}
     <section class="panel match-explanation" id="matchExplanation" data-fixture="${Number(m.fixtureId) || 0}" aria-live="polite" hidden></section>
+    <section class="panel match-explanation match-questions" id="matchQuestions" data-fixture="${Number(m.fixtureId) || 0}" hidden></section>
     ${analysisGlanceHtml(d)}
 
     ${kickoffHandoffHtml(d.kickoffHandoff || {}, m)}
@@ -6441,6 +6462,7 @@ function renderAnalysis(d) {
   })));
   $('openPrematchBrief')?.addEventListener('click', () => setAnalysisTab('brief', true));
   void loadAnalysisExplanation(Number(m.fixtureId));
+  void loadMatchQuestions(Number(m.fixtureId));
   $('analysis')?.querySelectorAll('[data-cockpit-tab]').forEach(btn => btn.addEventListener('click', () => setAnalysisTab(btn.dataset.cockpitTab || 'overview', true)));
   $('analysis')?.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({
     id: Number(btn.dataset.openTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '',
