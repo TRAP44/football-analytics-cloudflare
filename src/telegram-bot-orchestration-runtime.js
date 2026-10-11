@@ -422,28 +422,33 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
     const home=plainObject(match.home) || {};
     const away=plainObject(match.away) || {};
     const review=plainObject(root.postMatchReview) || {};
-    if (review.available!==true) {
-      return [
-        `🧠 <b>Итог AI · ${escapeHtml(home.name,120)} — ${escapeHtml(away.name,120)}</b>`,
-        '',
-        escapeHtml(review.summary || 'Для этого матча нет сохранённого предматчевого снимка, поэтому честное сравнение с AI-прогнозом недоступно.',1000),
-        '',
-        '<i>Фактические события и статистика доступны в центре матча.</i>',
-      ].join('\n');
-    }
-    const outcome=plainObject(review.outcome) || {};
+    const evidence=rowsOrEmpty(review.evidence,3).map(item=>{
+      const row=plainObject(item) || {};
+      return `• ${safeText(row.icon,16,'•')} ${safeText(row.title,180,'Фактор')}: ${safeText(row.text,500,'—')}`;
+    });
     const score=plainObject(review.score) || {};
     const homeScore=finiteNumber(score.home);
     const awayScore=finiteNumber(score.away);
     const scoreText=homeScore!==null && awayScore!==null ? `${homeScore}:${awayScore}` : '—:—';
+    if (review.available!==true) {
+      // Без предматчевого снимка сравнения нет, но наблюдаемые факторы матча показываем.
+      return [
+        `🧠 <b>Итог AI · ${escapeHtml(home.name,120)} — ${escapeHtml(away.name,120)}</b>`,
+        ...(homeScore!==null && awayScore!==null ? [`Счёт: <b>${escapeHtml(scoreText,40)}</b>`] : []),
+        '',
+        escapeHtml(review.summary || 'Для этого матча нет сохранённого предматчевого снимка, поэтому честное сравнение с AI-прогнозом недоступно.',1000),
+        ...(evidence.length ? ['', '<b>Что видно по матчу:</b>', ...evidence.map(line=>escapeHtml(line,1000))] : []),
+        '',
+        evidence.length
+          ? '<i>Наблюдаемые факторы не доказывают причинность результата.</i>'
+          : '<i>Фактические события и статистика доступны в центре матча.</i>',
+      ].join('\n');
+    }
+    const outcome=plainObject(review.outcome) || {};
     const marketLines=rowsOrEmpty(review.markets,8).map(item=>{
       const row=plainObject(item) || {};
       const probability=finiteNumber(row.probability);
       return `${row.correct===true?'✓':'✕'} ${safeText(row.label,160,'Показатель')}: ${safeText(row.predicted,220,'—')}${probability!==null?` (${probability}%)`:''} → ${safeText(row.actual,220,'—')}`;
-    });
-    const evidence=rowsOrEmpty(review.evidence,3).map(item=>{
-      const row=plainObject(item) || {};
-      return `• ${safeText(row.icon,16,'•')} ${safeText(row.title,180,'Фактор')}: ${safeText(row.text,500,'—')}`;
     });
     const outcomeProbability=finiteNumber(outcome.probability);
     return [
