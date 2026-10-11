@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-12 — Claude — Фоновые задачи: cron Cloudflare запускает GitHub Actions
-PR: ветка `claude/cron-dispatch`
+PR: [#846](https://github.com/TRAP44/football-analytics-cloudflare/pull/846), ветка `claude/cron-dispatch`
 Сделано:
 - Расписание GitHub (`schedule`) в этом репозитории срабатывает раз в 4–7 часов (почасовой «External Production Monitor» — 4–5 раз в сутки), поэтому `*/5` из #838 фактически не работает: после ручного запуска 11.10 20:29 UTC задач не было.
 - Cron Cloudflare снова включён (`*/5 * * * *`), но задач не выполняет: при `BACKGROUND_JOBS_EXECUTOR=github` воркер делает один запрос `workflow_dispatch` к `cron-runner.yml` на `main` (`src/github-dispatch-runtime.js`) — укладывается в 10 мс CPU Workers Free. Сам запуск из GitHub (`CRON_RUNNER=github-actions`) никого не вызывает.

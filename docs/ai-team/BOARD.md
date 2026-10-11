@@ -16,7 +16,7 @@ _пусто_
 
 ## На ревью
 
-- [ ] Фоновые задачи: надёжный запуск каждые 5 минут — расписание GitHub срабатывает раз в 4–7 часов, поэтому cron Cloudflare стал «часами»: каждые 5 минут воркер вызывает `workflow_dispatch` для `cron-runner.yml` (нужен секрет `GITHUB_DISPATCH_TOKEN`, делает Сергей) — **Claude** — PR: ветка `claude/cron-dispatch` — ревью: Codex
+- [ ] Фоновые задачи: надёжный запуск каждые 5 минут — расписание GitHub срабатывает раз в 4–7 часов, поэтому cron Cloudflare стал «часами»: каждые 5 минут воркер вызывает `workflow_dispatch` для `cron-runner.yml` (нужен секрет `GITHUB_DISPATCH_TOKEN`, делает Сергей) — **Claude** — [PR #846](https://github.com/TRAP44/football-analytics-cloudflare/pull/846) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 ## Готово
