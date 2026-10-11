@@ -82,6 +82,11 @@ export function redactor(env = {}) {
   };
 }
 
+// Пропуск всего запуска из-за недоступной блокировки — это сбой, а не обычное
+// «предыдущий запуск ещё идёт» (overlap/duplicate): иначе фоновые задачи
+// молча перестанут работать при зелёном Actions.
+const FAILED_SKIP_REASONS = new Set(['lease_unavailable', 'invalid_lease_claim', 'lease_not_claimed', 'lease_renewal_failed', 'renew_not_configured', 'heartbeat_timer_failed', 'execution_lease_heartbeat_lost', 'execution_lease_completion_failed']);
+
 // Итог запуска: по каждой задаче — статус; провал — если упала хоть одна задача
 // или весь запуск.
 export function summarizeRun(settled = []) {
@@ -96,8 +101,11 @@ export function summarizeRun(settled = []) {
     for (const result of Array.isArray(entry?.value) ? entry.value : []) {
       if (!result || typeof result !== 'object') continue;
       const status = String(result.status || (result.ok === false ? 'failed' : 'ok'));
+      const reason = String(result.reason || result.skipped || '');
       if (status === 'failed') failed = true;
-      tasks.push({ task: String(result.task || ''), status, reason: String(result.reason || result.skipped || '') });
+      // Деградация всего запуска (потеря блокировки, незакрытая отметка) — тоже сбой.
+      if (String(result.task || '') === 'scheduled_execution' && (status === 'degraded' || FAILED_SKIP_REASONS.has(reason))) failed = true;
+      tasks.push({ task: String(result.task || ''), status, reason });
     }
   }
   return { failed, tasks };

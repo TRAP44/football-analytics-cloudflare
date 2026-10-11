@@ -80,3 +80,14 @@ test('background jobs run from GitHub every 5 minutes, only on main, with enviro
   const extraSecret = wf.replace('TAVILY_KEY: ${{ secrets.TAVILY_KEY }}', 'TAVILY_KEY: ${{ secrets.TAVILY_KEY }}\n      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}');
   assert.ok(auditWorkflow('.github/workflows/cron-runner.yml', extraSecret).some(row => row.type === 'unexpected_secret_reference' && row.name === 'CLOUDFLARE_API_TOKEN'));
 });
+
+test('a missing lease fails the run, an overlap with a running job does not', () => {
+  for (const reason of ['lease_unavailable', 'invalid_lease_claim', 'execution_lease_heartbeat_lost', 'execution_lease_completion_failed']) {
+    assert.equal(summarizeRun([{ status: 'fulfilled', value: [{ task: 'scheduled_execution', status: 'skipped', reason }] }]).failed, true, reason);
+  }
+  for (const reason of ['overlap', 'duplicate', 'duplicate_active', 'cooldown']) {
+    assert.equal(summarizeRun([{ status: 'fulfilled', value: [{ task: 'scheduled_execution', status: 'skipped', reason }] }]).failed, false, reason);
+  }
+  assert.equal(summarizeRun([{ status: 'fulfilled', value: [{ task: 'scheduled_execution', status: 'degraded', reason: 'lease_renewal_failed' }] }]).failed, true);
+  assert.equal(summarizeRun([{ status: 'fulfilled', value: [{ task: 'reminders', status: 'skipped', reason: 'lease_unavailable' }] }]).failed, false, 'only the whole-run lease matters');
+});
