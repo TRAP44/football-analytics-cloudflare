@@ -179,11 +179,12 @@ function runtime({ history = [{ fixture_id: 77 }], analysis = payload(), cached 
     },
     supaSelectMany: async (_cfg, table, filters) => {
       calls.selects = (calls.selects || []).concat([{ table, filters }]);
-      return serviceUsedToday ? [{ bucket_key: 'ai-explain-global:h00', window_started_at: new Date(Math.floor(Date.now() / 86400000) * 86400000).toISOString(), request_count: serviceUsedToday }] : [];
+      return serviceUsedToday ? [{ bucket_key: 'ai-explain-global:h00', window_started_at: '2026-10-11T00:00:00.000Z', request_count: serviceUsedToday }] : [];
     },
     loadRuntimeControls: async () => ({ value: controls || { analysisEnabled: true, maintenanceMode: false } }),
     recordOpsEvent: async () => {},
     bumpTelemetry: () => {},
+    clock: () => Date.parse('2026-10-11T12:30:00.000Z'),
     memory: {},
   });
   const cfg = {
@@ -214,7 +215,7 @@ test('API: AI picks the order, server builds the text and caches the selection b
   assert.deepEqual(calls.historyOptions, { strict: true });
   assert.equal(calls.rpc[0].params.p_bucket_key, 'ai-explain:user:5');
   assert.equal(calls.rpc[0].params.p_window_seconds, 3600, 'per-user limit is honestly hourly');
-  assert.match(calls.rpc[1].params.p_bucket_key, /^ai-explain-global:h\d{2}$/);
+  assert.equal(calls.rpc[1].params.p_bucket_key, 'ai-explain-global:h12');
   assert.equal(calls.rpc[1].params.p_window_seconds, 3600);
   assert.equal(calls.selects[0].table, 'provider_rate_windows');
   assert.equal(calls.selects[0].filters.bucket_key, 'like.ai-explain-global:h*');

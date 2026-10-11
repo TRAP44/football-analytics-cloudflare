@@ -2388,6 +2388,7 @@ function getMatchExplanationRuntime() {
   if (!matchExplanationRuntime) {
     matchExplanationRuntime = createMatchExplanationRuntime({
       bumpTelemetry,
+      clock: () => Date.now(),
       getCache,
       getHistory,
       getStaleCache,

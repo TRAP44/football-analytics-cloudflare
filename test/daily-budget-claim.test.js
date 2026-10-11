@@ -32,7 +32,8 @@ test('claim reads today\'s usage, stops at the cap and claims the current hour b
   assert.deepEqual(ok, { allowed: true, used: 6, reason: '' });
   assert.equal(calls[0].table, 'provider_rate_windows');
   assert.equal(calls[0].filters.bucket_key, 'like.jobs:h*');
-  assert.deepEqual(calls[1].params, { p_bucket_key: 'jobs:h12', p_limit: 6, p_window_seconds: 3600 });
+  // Лимит текущей корзины = суточный лимит − закрытые часы (5) → 1.
+  assert.deepEqual(calls[1].params, { p_bucket_key: 'jobs:h12', p_limit: 1, p_window_seconds: 3600 });
 
   calls.length = 0;
   const full = await claimDailyBudget(deps([{ bucket_key: 'jobs:h00', window_started_at: '2026-10-11T00:00:00Z', request_count: 6 }]));
@@ -48,4 +49,41 @@ test('claim fails closed on storage errors, invalid input or a denied RPC', asyn
   assert.equal((await claimDailyBudget({ ...base, supaRpc: async () => ({ allowed: false }) })).reason, 'daily_limit');
   assert.equal((await claimDailyBudget({ ...base, limit: 0 })).reason, 'disabled');
   assert.equal((await claimDailyBudget({ ...base, prefix: 'bad prefix*' })).reason, 'budget_unavailable');
+});
+
+test('concurrent claims that read the same state never exceed the daily cap', async () => {
+  // Имитация RPC: инкремент текущей корзины сериализован, пока count < p_limit.
+  const bucket = { count: 2 };
+  const rows = [
+    { bucket_key: 'jobs:h03', window_started_at: '2026-10-11T03:00:00Z', request_count: 5 },
+    { bucket_key: 'jobs:h12', window_started_at: '2026-10-11T12:00:00Z', request_count: 2 },
+  ];
+  const deps = {
+    cfg: {},
+    prefix: 'jobs',
+    limit: 10,
+    nowMs: NOW,
+    supaSelectMany: async () => rows.map(row => ({ ...row })), // все читают одно и то же
+    supaRpc: async (_cfg, _name, params) => {
+      if (bucket.count < params.p_limit) {
+        bucket.count += 1;
+        return { allowed: true };
+      }
+      return { allowed: false };
+    },
+  };
+  const results = await Promise.all(Array.from({ length: 12 }, () => claimDailyBudget(deps)));
+  const admitted = results.filter(result => result.allowed).length;
+  assert.equal(admitted, 3, '10 − 5 (closed hours) − 2 (already in this hour) = 3');
+  assert.equal(5 + bucket.count, 10);
+});
+
+test('no claim in the last seconds of an hour (the database window could already have moved)', async () => {
+  let rpc = 0;
+  const result = await claimDailyBudget({
+    cfg: {}, prefix: 'jobs', limit: 5, nowMs: Date.parse('2026-10-11T12:59:57.000Z'),
+    supaSelectMany: async () => [], supaRpc: async () => { rpc += 1; return { allowed: true }; },
+  });
+  assert.equal(result.reason, 'hour_boundary');
+  assert.equal(rpc, 0);
 });

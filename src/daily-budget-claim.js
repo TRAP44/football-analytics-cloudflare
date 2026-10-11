@@ -6,9 +6,18 @@
 // provider_rate_windows всегда не больше 24 на префикс). Использовано за
 // сутки = сумма request_count корзин, чьё окно началось сегодня (UTC).
 // Ошибка чтения или RPC — отказ (fail-closed): потолок защищает бюджет.
+//
+// Атомарность: прошлые часы сегодня уже закрыты и не меняются, поэтому
+// лимит текущей корзины = суточный лимит − сумма ПРОШЛЫХ часов. RPC сам
+// сериализует инкременты внутри текущей корзины, и параллельные запросы
+// не превысят суточный потолок, даже прочитав одинаковое состояние.
+// В последние секунды часа claim не делается: окно в БД могло бы уже
+// смениться, и корзина прошлого часа перезаписалась бы.
 
 const HOUR_SECONDS = 3600;
+const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
+const HOUR_EDGE_MS = 5_000;
 
 function plainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
@@ -19,19 +28,28 @@ export function dailyBudgetKey(prefix, nowMs = Date.now()) {
   return `${prefix}:h${hour}`;
 }
 
-export function dailyBudgetUsed(rows, prefix, nowMs = Date.now()) {
+function usage(rows, prefix, nowMs) {
   const dayStart = Math.floor(nowMs / DAY_MS) * DAY_MS;
   const dayEnd = dayStart + DAY_MS;
-  let used = 0;
+  const hourStart = Math.floor(nowMs / HOUR_MS) * HOUR_MS;
+  let previous = 0;
+  let current = 0;
   for (const row of Array.isArray(rows) ? rows : []) {
     const item = plainObject(row);
     if (!item || typeof item.bucket_key !== 'string' || !item.bucket_key.startsWith(`${prefix}:h`)) continue;
     const started = Date.parse(String(item.window_started_at || ''));
     const count = Number(item.request_count);
     if (!Number.isFinite(started) || started < dayStart || started >= dayEnd) continue;
-    if (Number.isInteger(count) && count > 0) used += count;
+    if (!Number.isInteger(count) || count <= 0) continue;
+    if (started >= hourStart) current += count;
+    else previous += count;
   }
-  return used;
+  return { previous, current };
+}
+
+export function dailyBudgetUsed(rows, prefix, nowMs = Date.now()) {
+  const { previous, current } = usage(rows, prefix, nowMs);
+  return previous + current;
 }
 
 export async function claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix, limit, nowMs = Date.now() } = {}) {
@@ -39,7 +57,9 @@ export async function claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix, l
   if (typeof supaRpc !== 'function' || typeof supaSelectMany !== 'function' || !/^[a-z0-9:-]{3,80}$/.test(String(prefix || ''))) {
     return { allowed: false, used: 0, reason: 'budget_unavailable' };
   }
+  if (HOUR_MS - (nowMs % HOUR_MS) <= HOUR_EDGE_MS) return { allowed: false, used: 0, reason: 'hour_boundary' };
   let used;
+  let previous;
   try {
     const rows = await supaSelectMany(
       cfg,
@@ -48,7 +68,9 @@ export async function claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix, l
       { select: 'bucket_key,window_started_at,request_count', limit: 30 },
     );
     if (!Array.isArray(rows)) throw new TypeError('provider_rate_windows lookup returned an invalid response.');
-    used = dailyBudgetUsed(rows, prefix, nowMs);
+    const counted = usage(rows, prefix, nowMs);
+    previous = counted.previous;
+    used = counted.previous + counted.current;
   } catch {
     return { allowed: false, used: 0, reason: 'budget_unavailable' };
   }
@@ -56,7 +78,8 @@ export async function claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix, l
   try {
     const result = plainObject(await supaRpc(cfg, 'claim_provider_request', {
       p_bucket_key: dailyBudgetKey(prefix, nowMs),
-      p_limit: limit,
+      // Только остаток после закрытых часов: так потолок атомарен (см. выше).
+      p_limit: limit - previous,
       p_window_seconds: HOUR_SECONDS,
     }, 1800));
     return result?.allowed === true

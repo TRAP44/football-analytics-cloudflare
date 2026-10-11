@@ -336,8 +336,17 @@ export function createMatchExplanationRuntime(deps = {}) {
     loadRuntimeControls,
     recordOpsEvent,
     bumpTelemetry,
+    clock,
     memory,
   } = deps;
+  const nowMs = () => {
+    try {
+      const value = typeof clock === 'function' ? Number(clock()) : Date.now();
+      return Number.isFinite(value) ? value : Date.now();
+    } catch {
+      return Date.now();
+    }
+  };
   const state = memory && typeof memory === 'object' ? memory : {};
   for (const [name, fn] of Object.entries({ json, getCache, getStaleCache, setCache, getHistory, hasSupabase, supaRpc, supaSelectMany, loadRuntimeControls })) {
     if (typeof fn !== 'function') throw new TypeError(`Match explanation requires ${name}.`);
@@ -392,7 +401,7 @@ export function createMatchExplanationRuntime(deps = {}) {
 
   async function claimServiceDay(cfg, limit) {
     if (!storageReady(cfg)) return false;
-    const claim = await claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix: 'ai-explain-global', limit });
+    const claim = await claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix: 'ai-explain-global', limit, nowMs: nowMs() });
     return claim.allowed === true;
   }
 

@@ -170,6 +170,17 @@ test('job: skips quietly without provider budget, outside the interval, when dis
   assert.equal((await noFeed.rt.processPrematchPredictions({}, at)).reason, 'feed_not_cached');
 });
 
+test('job: favorites are looked up for every team of the feed, in chunks', async () => {
+  const matches = Array.from({ length: 180 }, (_, i) => match(1000 + i, 60 + i, i === 179 ? {} : { isTop: false }));
+  const feed = { matches };
+  const lastAway = matches[179].away.id;
+  const { rt, calls } = job({ feed, favorites: [lastAway] });
+  await rt.processPrematchPredictions({ prematchPredictionsPerRun: 1 }, at);
+  const favoriteQueries = calls.selects.filter(row => row.table === 'favorites');
+  assert.equal(favoriteQueries.length, 2, '360 teams → 2 queries of up to 200 ids');
+  assert.deepEqual(calls.analyzed, [1179], 'a non-top match of a favorite team from the feed tail is still selected');
+});
+
 test('job: favorites of real users are prioritised over other main matches', async () => {
   const feed = { matches: [match(1, 120, { isTop: true, interestScore: 99 }), match(2, 180)] };
   const { rt, calls } = job({ feed, favorites: [21] });

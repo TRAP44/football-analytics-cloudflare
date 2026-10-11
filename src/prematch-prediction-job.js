@@ -143,15 +143,22 @@ export function createPrematchPredictionJob(deps = {}) {
     }
   }
 
+  // Все команды кандидатов, частями: иначе избранная команда из «хвоста» ленты
+  // потерялась бы, и её матч не попал бы в приоритет.
   async function favoriteTeams(teamIds, cfg) {
-    const ids = [...new Set(teamIds.filter(Boolean))].slice(0, 300);
-    if (!ids.length) return new Set();
-    try {
-      const rows = await supaSelectMany(cfg, 'favorites', { team_id: `in.(${ids.join(',')})` }, { limit: 1000, select: 'team_id' });
-      return new Set((Array.isArray(rows) ? rows : []).map(row => positiveId(safeRead(row, 'team_id'))).filter(Boolean));
-    } catch {
-      return new Set();
+    const ids = [...new Set(teamIds.filter(Boolean))].slice(0, 2000);
+    const found = new Set();
+    for (let index = 0; index < ids.length; index += 200) {
+      const chunk = ids.slice(index, index + 200);
+      try {
+        const rows = await supaSelectMany(cfg, 'favorites', { team_id: `in.(${chunk.join(',')})` }, { limit: 1000, select: 'team_id' });
+        for (const row of Array.isArray(rows) ? rows : []) {
+          const id = positiveId(safeRead(row, 'team_id'));
+          if (id) found.add(id);
+        }
+      } catch {}
     }
+    return found;
   }
 
   async function fixturesWithPrediction(fixtureIds, cfg) {
