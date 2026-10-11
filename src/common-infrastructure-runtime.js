@@ -65,7 +65,7 @@ export function createCommonInfrastructureRuntime(deps = {}) {
       workersAi: env.AI || null,
       aiExplanationEnabled: boolEnv(env.AI_EXPLANATION_ENABLED, true),
       aiExplanationDailyLimit: intEnv(env.AI_EXPLANATION_DAILY_LIMIT, 1000),
-      aiExplanationUserDailyLimit: intEnv(env.AI_EXPLANATION_USER_DAILY_LIMIT, 20),
+      aiExplanationUserHourlyLimit: intEnv(env.AI_EXPLANATION_USER_HOURLY_LIMIT, 6),
       // Задача 2: предматчевые вероятности для главных матчей дня (cron).
       prematchPredictionsEnabled: boolEnv(env.PREMATCH_PREDICTIONS_ENABLED, true),
       prematchPredictionsPerRun: intEnv(env.PREMATCH_PREDICTIONS_PER_RUN, 2),

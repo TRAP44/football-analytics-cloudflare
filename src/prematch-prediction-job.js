@@ -7,6 +7,8 @@
 // придумывается: первая предматчевая строка model_predictions неизменяема,
 // поэтому критерий отбора — «строки нет», а не «прогноз устарел».
 
+import { claimDailyBudget } from './daily-budget-claim.js';
+
 const DAY_SECONDS = 86400;
 const FEED_CACHE_KEY = date => `matches:${date}:v6-integrity`;
 const MIN_LEAD_MINUTES = 20;
@@ -160,19 +162,6 @@ export function createPrematchPredictionJob(deps = {}) {
     return new Set(rows.map(row => positiveId(safeRead(row, 'fixture_id'))).filter(Boolean));
   }
 
-  async function claimDailySlot(cfg, limit) {
-    try {
-      const result = plainObject(await supaRpc(cfg, 'claim_provider_request', {
-        p_bucket_key: 'prematch-predictions:daily',
-        p_limit: limit,
-        p_window_seconds: DAY_SECONDS,
-      }, 1800));
-      return safeRead(result, 'allowed') === true;
-    } catch {
-      return false;
-    }
-  }
-
   async function report(cfg, summary) {
     if (typeof recordOpsEvent !== 'function') return;
     try {
@@ -250,8 +239,11 @@ export function createPrematchPredictionJob(deps = {}) {
     if (!queue.length) return { ...summary, reason: 'all_predicted' };
 
     for (const row of queue.slice(0, settings.perRun)) {
-      if (!(await claimDailySlot(cfg, settings.dailyLimit))) {
-        summary.stopReason = 'daily_limit';
+      // Настоящий суточный потолок (24 часовые корзины, см. daily-budget-claim.js):
+      // окно claim_provider_request само по себе не длиннее часа.
+      const claim = await claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix: 'prematch-predictions', limit: settings.dailyLimit, nowMs });
+      if (!claim.allowed) {
+        summary.stopReason = claim.reason || 'daily_limit';
         break;
       }
       try {

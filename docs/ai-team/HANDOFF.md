@@ -23,6 +23,7 @@ PR: [#831](https://github.com/TRAP44/football-analytics-cloudflare/pull/831), в
 - Mini App: карточка ленты и «Главный матч» рисуют полоску из ленты, если матч ещё не разобран, с подписью «✦ Оценка модели до разбора».
 Осталось / внимание:
 - Ревизия ассетов — launch95. Настройки — `PREMATCH_PREDICTIONS_*` в `wrangler.jsonc`/`.env.example`.
+- По ревью Codex: RPC `claim_provider_request` молча режет окно до 3600 с, поэтому «суточный» лимит был часовым. Новый `src/daily-budget-claim.js` собирает сутки из 24 часовых корзин со стабильными ключами (`prefix:hHH`, ≤24 строк на префикс) и суммирует сегодняшние `request_count`. Применено к заданию (`prematch-predictions`) и к уже слитому AI-объяснению (#830): сервис — настоящие сутки (`ai-explain-global`), пользователь — честно «в час» (`AI_EXPLANATION_USER_HOURLY_LIMIT`, 6).
 
 ## 2026-10-11 — Claude — Задача 5: AI-объяснение «простыми словами»
 PR: [#830](https://github.com/TRAP44/football-analytics-cloudflare/pull/830), ветка `claude/ai-explanation`

@@ -2398,6 +2398,7 @@ function getMatchExplanationRuntime() {
       recordOpsEvent,
       setCache,
       supaRpc,
+      supaSelectMany,
     });
   }
   return matchExplanationRuntime;

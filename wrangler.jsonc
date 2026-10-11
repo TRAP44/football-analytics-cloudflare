@@ -47,7 +47,7 @@
     "API_FOOTBALL_BASE_URL": "https://nlmvhkjkpgzzlfavaohk.supabase.co/functions/v1/football-relay",
     "AI_EXPLANATION_ENABLED": "true",
     "AI_EXPLANATION_DAILY_LIMIT": "1000",
-    "AI_EXPLANATION_USER_DAILY_LIMIT": "20",
+    "AI_EXPLANATION_USER_HOURLY_LIMIT": "6",
     "PREMATCH_PREDICTIONS_ENABLED": "true",
     "PREMATCH_PREDICTIONS_PER_RUN": "2",
     "PREMATCH_PREDICTIONS_DAILY_LIMIT": "20",

@@ -71,7 +71,7 @@ function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-function job({ feed, predicted = [], snapshot = { plan: 'PRO' }, rpcAllowed = () => true, analyze, favorites = [] } = {}) {
+function job({ feed, predicted = [], snapshot = { plan: 'PRO' }, rpcAllowed = () => true, analyze, favorites = [], rateRows = [] } = {}) {
   const calls = { analyzed: [], rpc: [], events: [], selects: [] };
   const rt = createPrematchPredictionJob({
     analyzeFixtureForSystem: async (fixtureId, cfg) => {
@@ -92,6 +92,7 @@ function job({ feed, predicted = [], snapshot = { plan: 'PRO' }, rpcAllowed = ()
       calls.selects.push({ table, filters });
       if (table === 'favorites') return favorites.map(team_id => ({ team_id }));
       if (table === 'model_predictions') return predicted.map(fixture_id => ({ fixture_id }));
+      if (table === 'provider_rate_windows') return rateRows;
       return [];
     },
   });
@@ -123,8 +124,20 @@ test('job: per-run cap, daily cap and provider limits stop the run', async () =>
   const dailyResult = await daily.rt.processPrematchPredictions({}, at);
   assert.deepEqual(daily.calls.analyzed, [1]);
   assert.equal(dailyResult.stopReason, 'daily_limit');
-  assert.equal(daily.calls.rpc[0].params.p_bucket_key, 'prematch-predictions:daily');
+  // Окно RPC не длиннее часа — сутки собираются из 24 часовых корзин.
+  assert.equal(daily.calls.rpc[0].params.p_bucket_key, 'prematch-predictions:h12');
+  assert.equal(daily.calls.rpc[0].params.p_window_seconds, 3600);
   assert.equal(daily.calls.rpc[0].params.p_limit, 20);
+
+  const usedToday = job({ feed, rateRows: [
+    { bucket_key: 'prematch-predictions:h03', window_started_at: '2026-10-11T03:00:00.000Z', request_count: 12 },
+    { bucket_key: 'prematch-predictions:h09', window_started_at: '2026-10-11T09:00:00.000Z', request_count: 8 },
+    { bucket_key: 'prematch-predictions:h23', window_started_at: '2026-10-10T23:00:00.000Z', request_count: 9 },
+  ] });
+  const usedResult = await usedToday.rt.processPrematchPredictions({}, at);
+  assert.deepEqual(usedToday.calls.analyzed, [], '12 + 8 used today reaches the daily cap of 20; yesterday is not counted');
+  assert.equal(usedResult.stopReason, 'daily_limit');
+  assert.equal(usedToday.calls.rpc.length, 0);
 
   const limited = job({ feed, analyze: () => jsonResponse({ error: 'limited' }, 429) });
   const limitedResult = await limited.rt.processPrematchPredictions({}, at);
