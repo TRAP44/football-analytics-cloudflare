@@ -1,6 +1,17 @@
 import { NO_CLEAR_SIGNAL_LABEL, isBettingText, withPublicSignalLabel } from './signal-wording.js';
 // AI analysis orchestration extracted from worker.js.
 // Provider, entitlement, cache, settlement and model capabilities are injected by the composition root.
+const IN_PLAY_STATUSES=new Set(['1H','HT','2H','ET','BT','P','INT','LIVE']);
+
+// Игровая минута от источника — только для идущего матча и только настоящее
+// число (null/''/булевы значения не превращаются в 0).
+export function liveElapsedMinute(value, status='') {
+  if (!IN_PLAY_STATUSES.has(String(status || '').toUpperCase())) return null;
+  if (typeof value!=='number' && !(typeof value==='string' && /^\d{1,3}$/.test(value.trim()))) return null;
+  const minute=Number(value);
+  return Number.isSafeInteger(minute) && minute>=0 && minute<=150 ? minute : null;
+}
+
 export function createAnalysisRuntime(deps) {
   if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
     throw new TypeError('Analysis runtime dependencies are required.');
@@ -1940,8 +1951,9 @@ export function createAnalysisRuntime(deps) {
         status,
         // Минута игрового времени от источника (без перерыва): по ней снимок
         // встаёт на ось кривой вероятностей (задача 3).
-        ...(Number.isSafeInteger(Number(fixture?.fixture?.status?.elapsed)) && Number(fixture.fixture.status.elapsed)>=0 && Number(fixture.fixture.status.elapsed)<=150
-          ? {elapsed:Number(fixture.fixture.status.elapsed)}
+        // До матча источник отдаёт elapsed: null — Number(null) было бы 0-й минутой.
+        ...(liveElapsedMinute(fixture?.fixture?.status?.elapsed,status)!==null
+          ? {elapsed:liveElapsedMinute(fixture.fixture.status.elapsed,status)}
           : {}),
         venue:safeText(fixture?.fixture?.venue?.name,180),
         city:safeText(fixture?.fixture?.venue?.city,180),

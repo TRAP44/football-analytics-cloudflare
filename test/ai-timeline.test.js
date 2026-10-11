@@ -590,5 +590,17 @@ test('snapshot minute comes from the provider clock; wall-clock is used only ins
   ] });
   assert.deepEqual(timeline.points.map(p => p.minute), [20, null], 'no wall-clock minute after the first half');
   const analysis = readRepoFile('src/analysis-runtime.js');
-  assert.match(analysis, /\? \{elapsed:Number\(fixture\.fixture\.status\.elapsed\)\}/);
+  assert.match(analysis, /\? \{elapsed:liveElapsedMinute\(fixture\.fixture\.status\.elapsed,status\)\}/);
+});
+
+test('pre-match null elapsed never becomes minute 0', async () => {
+  const { liveElapsedMinute } = await import('../src/analysis-runtime.js');
+  assert.equal(liveElapsedMinute(null, 'NS'), null);
+  assert.equal(liveElapsedMinute(null, '2H'), null);
+  assert.equal(liveElapsedMinute('', '1H'), null);
+  assert.equal(liveElapsedMinute(true, '1H'), null);
+  assert.equal(liveElapsedMinute(0, 'NS'), null, 'not in play');
+  assert.equal(liveElapsedMinute(67, '2H'), 67);
+  assert.equal(liveElapsedMinute('12', '1H'), 12);
+  assert.equal(liveElapsedMinute(0, '1H'), 0);
 });
