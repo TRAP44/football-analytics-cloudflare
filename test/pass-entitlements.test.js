@@ -455,7 +455,7 @@ test('full AI preserves the resolved active Pass array and bypasses FREE quota o
   assert.match(source, /durable:safePredicate\(hasSupabase,cfg\)/);
   assert.match(source, /operationId:passOperationId/);
   assert.match(source, /ANALYSIS_PASS_RESERVATION_OUTCOME_UNKNOWN/);
-  assert.match(source, /if \(!freeRecheck && !passAccess\) \{/);
+  assert.match(source, /if \(!system && !freeRecheck && !passAccess\) \{/);
   assert.match(source, /usageReservation=objectValue\(await reserveAnalysisQuota\(userId,cfg\)\)/);
   assert.match(source, /finalizeAnalysisUsageReservation\(\{/);
   assert.match(source, /refundEntitlementUsage/);

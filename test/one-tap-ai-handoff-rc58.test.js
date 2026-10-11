@@ -83,7 +83,7 @@ test('cached Telegram brief to full Mini App still returns before quota reservat
   const cachedReturn=analysis.indexOf('return json(safeAnalysisResponsePayload(cached',cached);
   const reserve=analysis.indexOf('usageReservation=objectValue(await reserveAnalysisQuota(userId,cfg));',start);
   assert.ok(start>=0 && cached>start && cachedReturn>cached && reserve>cachedReturn);
-  assert.match(analysis,/const trackFullAi=analysisOrigin!==\'telegram_quick\'/);
+  assert.match(analysis,/const trackFullAi=!system && analysisOrigin!==\'telegram_quick\'/);
 });
 
 test('one-tap analytics keeps categorical source metadata and remains aggregated',()=> {

@@ -63,7 +63,7 @@ test('funnel separates Telegram quick AI from a full Mini App analysis',()=> {
   assert.match(telegramBotUi,/origin:'telegram_quick'/);
   assert.match(telegramBotUi,/eventName:'quick_ai'/);
   assert.match(analysisController,/origin:'miniapp'/);
-  assert.match(analysisRuntime,/trackFullAi=analysisOrigin!=='telegram_quick'/);
+  assert.match(analysisRuntime,/trackFullAi=!system && analysisOrigin!=='telegram_quick'/);
   assert.match(analysisRuntime,/eventName:'full_ai'/);
 });
 

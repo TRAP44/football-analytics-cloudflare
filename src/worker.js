@@ -37,6 +37,7 @@ import { createReleaseReadinessRuntime } from './release-readiness-runtime.js';
 import { createOddsSnapshotRuntime } from './odds-snapshot-runtime.js';
 import { createUserDataApiRuntime } from './user-data-api-runtime.js';
 import { createMatchExplanationRuntime } from './match-explanation-runtime.js';
+import { createPrematchPredictionJob } from './prematch-prediction-job.js';
 import { createBillingRuntime } from './billing-runtime.js';
 import { createBillingApiRuntime } from './billing-api-runtime.js';
 import { createClientTelemetryRuntime } from './client-telemetry-runtime.js';
@@ -1654,6 +1655,25 @@ function finishPostMatchReturnClaim(...args) { return getPostMatchReturnRuntime(
 function releasePostMatchReturnClaim(...args) { return getPostMatchReturnRuntime().releasePostMatchReturnClaim(...args); }
 function processPostMatchReturns(...args) { return getPostMatchReturnRuntime().processPostMatchReturns(...args); }
 
+let prematchPredictionJob = null;
+function getPrematchPredictionJob() {
+  if (!prematchPredictionJob) {
+    prematchPredictionJob = createPrematchPredictionJob({
+      analyzeFixtureForSystem: (...args) => getAnalysisRuntime().analyzeFixtureForSystem(...args),
+      getCache,
+      getStaleCache,
+      hasSupabase,
+      loadSharedProviderState: (...args) => loadSharedProviderState(...args),
+      providerSnapshot: (...args) => providerSnapshot(...args),
+      recordOpsEvent,
+      supaRpc,
+      supaSelectMany,
+    });
+  }
+  return prematchPredictionJob;
+}
+function processPrematchPredictions(...args) { return getPrematchPredictionJob().processPrematchPredictions(...args); }
+
 const {
   sendTelegramMessage,
   probeReminderReliabilitySchema,
@@ -2451,6 +2471,7 @@ function getProviderFixtureRuntime() {
       bumpTelemetry,
       catalogRank,
       getCache,
+      getModelProbabilities,
       getStaleCache,
       isFinishedStatus,
       isFootballRateLimitError,
@@ -3064,6 +3085,7 @@ const {
   processImportantChangeNotifications,
   processLineupNotifications,
   processPostMatchReturns,
+  processPrematchPredictions,
   processSmartNotifications,
   productionSafetySnapshot,
   providerAuditCall,

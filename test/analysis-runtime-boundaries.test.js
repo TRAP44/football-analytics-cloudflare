@@ -288,7 +288,7 @@ test('analysis wiring owns Tavily adapter and keeps boundary helpers local to th
   assert.match(runtime, /const expectedLeft=Math\.max\(0,limit-used\)/);
   assert.match(runtime, /function safeAnalysisProviderFetch\(input\)/);
   assert.match(runtime, /analysisCachePayload\(joinedCandidate,fixtureId\)/);
-  assert.match(runtime, /return Object\.freeze\(\{apiAnalyze\}\)/);
+  assert.match(runtime, /return Object\.freeze\(\{apiAnalyze,analyzeFixtureForSystem\}\)/);
 });
 
 function staleRecheckRuntime({ ownership, quota = { plan:'FREE', used:3, limit:3, left:0 } } = {}) {

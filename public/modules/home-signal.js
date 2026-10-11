@@ -188,7 +188,7 @@ export function createHomeSignalRenderer({
           <div class="mr-featured-score">${centre}</div>
           ${teamHtml(match.away,'Гости')}
         </div>
-        ${aiHistory ? aiConfidenceMeterHtml(aiHistory) : ''}
+        ${!match.live && !match.finished ? aiConfidenceMeterHtml(aiHistory, match) : ''}
         <button class="mr-featured-open" type="button" data-featured-center="${fixtureId}">Открыть штаб матча <span aria-hidden="true">→</span></button>
       </article>`;
     cardRoot.querySelector('[data-featured-center]')?.addEventListener('click',event=>openMatchCenter(fixtureId,event.currentTarget));

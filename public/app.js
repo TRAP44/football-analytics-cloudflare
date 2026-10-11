@@ -1106,10 +1106,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch94'),
+      import('./modules/match-center-view.js?v=6.120.0-launch95'),
       import('./modules/match-pulse.js?v=6.120.0-launch87'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch94'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch94'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch95'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch95'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1265,7 +1265,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch94').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch95').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -2941,7 +2941,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch94');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch95');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3289,8 +3289,23 @@ function aiProbabilityBarHtml(history) {
   return `<div class="mr-prob" role="img" aria-label="${escapeHtml(label)}">${cell('home', values[0], 0)}${cell('draw', values[1], 1)}${cell('away', values[2], 2)}</div>`;
 }
 
-function aiConfidenceMeterHtml(history) {
-  if (!history) return '';
+// Задача 2: вероятности модели из ленты для матча, который пользователь ещё не разбирал.
+// Только корректные проценты (0–100, сумма 98–102), иначе полоска не рисуется.
+function feedModelProbabilities(match) {
+  const p = match?.aiProbabilities;
+  if (!p || typeof p !== 'object') return null;
+  const values = [p.home, p.draw, p.away].map(value => (value === null || value === undefined || value === '' ? NaN : Number(value)));
+  if (!values.every(value => Number.isFinite(value) && value >= 0 && value <= 100)) return null;
+  const sum = values.reduce((total, value) => total + value, 0);
+  return sum >= 98 && sum <= 102 ? { home: values[0], draw: values[1], away: values[2] } : null;
+}
+
+function aiConfidenceMeterHtml(history, match = null) {
+  if (!history) {
+    const feed = feedModelProbabilities(match);
+    if (!feed) return '';
+    return `${aiProbabilityBarHtml({ aiProbabilities: feed })}<div class="mr-ai-strip"><span>✦ Оценка модели до разбора</span></div>`;
+  }
   const raw = Number(history.aiConfidence);
   const hasScore = history.aiConfidence !== null && history.aiConfidence !== undefined && Number.isFinite(raw);
   const score = hasScore ? Math.max(0, Math.min(100, raw)) : 0;
@@ -3342,7 +3357,7 @@ function matchCardHtml(m, { grouped = false } = {}) {
           <strong>${escapeHtml(m.away?.name || '')}</strong>
         </button>
       </div>
-      ${!m.live && !m.finished ? aiConfidenceMeterHtml(aiHistory) : ''}
+      ${!m.live && !m.finished ? aiConfidenceMeterHtml(aiHistory, m) : ''}
       <div class="match-card-actions compact-actions single">${primaryAction}</div>
       <div class="match-secondary-actions" aria-label="Дополнительные действия">
         <span>${favoriteButton(m.home)}${favoriteButton(m.away)}</span>
@@ -3388,7 +3403,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch94').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch95').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -5542,7 +5557,7 @@ async function loadAnalysisExplanation(fixtureId) {
   const root = $('matchExplanation');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch94');
+    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch95');
     const { loadMatchExplanation } = await matchExplanationModule;
     await loadMatchExplanation({
       root,
@@ -5559,7 +5574,7 @@ async function loadAnalysisExplanation(fixtureId) {
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch94');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch95');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {

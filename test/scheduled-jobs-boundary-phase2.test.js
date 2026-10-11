@@ -147,7 +147,7 @@ test('scheduled boundary preserves dependency ordering without failure propagati
   });
 
   const tasks = rt.api.buildScheduledTaskPlan({}, new Date('2026-09-28T12:05:00.000Z'));
-  assert.deepEqual(tasks.map(([name]) => name), ['reminders', 'lineup_notifications', 'important_change_notifications', 'smart_notifications', 'backtest', 'post_match_return']);
+  assert.deepEqual(tasks.map(([name]) => name), ['reminders', 'lineup_notifications', 'important_change_notifications', 'smart_notifications', 'backtest', 'post_match_return', 'prematch_predictions']);
   await Promise.resolve();
   assert.equal(postMatchStarted, false);
 
