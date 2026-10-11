@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  CRON_RUNNER_SECRET_KEYS, cronSlot, degradedWarnings, missingRequiredSecrets, redactor, runCron, runnerEnv, summarizeRun, wranglerVars,
+  CRON_RUNNER_SECRET_KEYS, cronSlot, degradedWarnings, installFetchTrace, traceEntry, missingRequiredSecrets, supabaseFormatProblem, supabaseProblem, redactor, runCron, runnerEnv, summarizeRun, wranglerVars,
 } from '../scripts/cron-runner.js';
 
 test('cron runner aligns delayed GitHub runs to the 5-minute cron slot', () => {
@@ -106,4 +106,69 @@ test('a partially failed task is a visible Actions warning, not a red run', () =
   const tasks = [{ task: 'daily_digest', status: 'degraded', reason: 'partial_failures:2' }, { task: 'reminders', status: 'ok', reason: '' }];
   assert.deepEqual(degradedWarnings(tasks), ['::warning title=Фоновая задача daily_digest::частичный сбой: partial_failures:2']);
   assert.equal(summarizeRun([{ status: 'fulfilled', value: tasks }]).failed, false);
+});
+
+const jwt = role => `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify({ role })).toString('base64url')}.sig`;
+
+test('Supabase key and URL problems are explained without printing values', async () => {
+  const ok = { SUPABASE_URL: 'https://nlmvhkjkpgzzlfavaohk.supabase.co', SUPABASE_SERVICE_ROLE_KEY: jwt('service_role') };
+  assert.equal(supabaseFormatProblem(ok), '');
+  assert.equal(supabaseFormatProblem({ ...ok, SUPABASE_SERVICE_ROLE_KEY: '', SUPABASE_SECRET_KEY: 'sb_secret_abc' }), '');
+  assert.match(supabaseFormatProblem({ ...ok, SUPABASE_URL: 'https://nlmvhkjkpgzzlfavaohk.supabase.co/rest/v1' }), /без \/rest\/v1/);
+  assert.match(supabaseFormatProblem({ ...ok, SUPABASE_SERVICE_ROLE_KEY: jwt('anon') }), /anon-ключ/);
+  assert.match(supabaseFormatProblem({ ...ok, SUPABASE_SERVICE_ROLE_KEY: 'sb_publishable_x' }), /publishable/);
+  assert.match(supabaseFormatProblem({ ...ok, SUPABASE_SERVICE_ROLE_KEY: 'eyJbroken' }), /скопирован целиком/);
+  for (const text of [supabaseFormatProblem({ ...ok, SUPABASE_SERVICE_ROLE_KEY: jwt('anon') })]) assert.doesNotMatch(text, /eyJ[A-Za-z0-9]{8}/);
+
+  const respond = status => async () => new Response('[]', { status });
+  assert.equal(await supabaseProblem(ok, respond(200)), '');
+  assert.match(await supabaseProblem(ok, respond(401)), /отклонил ключ \(HTTP 401\)[\s\S]*sb_secret_/);
+  assert.match(await supabaseProblem({ ...ok, SUPABASE_SERVICE_ROLE_KEY: '', SUPABASE_SECRET_KEY: 'sb_secret_x' }, respond(401)), /отклонил секретный ключ/);
+  assert.match(await supabaseProblem(ok, respond(404)), /404/);
+  assert.match(await supabaseProblem(ok, async () => { throw new Error('ENOTFOUND'); }), /недоступен/);
+  let seen;
+  await supabaseProblem(ok, async (url, init) => { seen = { url, init }; return new Response('[]', { status: 200 }); });
+  assert.equal(seen.url, 'https://nlmvhkjkpgzzlfavaohk.supabase.co/rest/v1/runtime_controls?select=id&limit=1');
+  assert.equal(seen.init.headers.apikey, ok.SUPABASE_SERVICE_ROLE_KEY);
+  assert.equal(Object.hasOwn(seen.init.headers, 'authorization'), false, 'same as the worker: apikey only');
+});
+
+test('request trace shows service, path and status but never tokens or query values', async () => {
+  assert.equal(traceEntry('https://x1.supabase.co/rest/v1/runtime_controls?select=*&id=eq.global', 'get', '200'), 'GET supabase /rest/v1/runtime_controls → 200');
+  assert.equal(traceEntry('https://api.telegram.org/bot123456:AAHsecret/sendMessage', 'POST', '403'), 'POST telegram /bot***/sendMessage → 403');
+  assert.equal(traceEntry('not a url', 'GET', '0'), 'GET ? 0');
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response('{}', { status: 401 });
+  const trace = installFetchTrace(2);
+  try {
+    await fetch('https://x1.supabase.co/rest/v1/a?key=1');
+    await fetch('https://x1.supabase.co/rest/v1/b');
+    await fetch(new URL('https://x1.supabase.co/rest/v1/c'), { method: 'POST' });
+  } finally {
+    trace.restore();
+    globalThis.fetch = original;
+  }
+  assert.deepEqual(trace.entries, ['GET supabase /rest/v1/b → 401', 'POST supabase /rest/v1/c → 401']);
+});
+
+test('with BACKGROUND_JOBS_EXECUTOR=github a Cloudflare cron invocation exits without touching the lease', async () => {
+  const { default: worker } = await import('../src/worker.js');
+  const original = globalThis.fetch;
+  const urls = [];
+  globalThis.fetch = async url => { urls.push(String(url)); return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } }); };
+  const base = { SUPABASE_URL: 'https://x1aaaaaaaaaa.supabase.co', SUPABASE_SECRET_KEY: 'sb_secret_x', BACKGROUND_JOBS_EXECUTOR: 'github' };
+  const pending = [];
+  const ctx = { waitUntil: p => pending.push(p), passThroughOnException() {} };
+  try {
+    await worker.scheduled({ scheduledTime: Date.now(), cron: '*/5 * * * *' }, base, ctx);
+    await Promise.allSettled(pending);
+    assert.deepEqual(urls, [], 'the ghost Cloudflare cron does nothing');
+    await worker.scheduled({ scheduledTime: Date.now(), cron: '*/5 * * * *' }, { ...base, CRON_RUNNER: 'github-actions' }, ctx);
+    await Promise.allSettled(pending);
+    assert.ok(urls.some(url => url.includes('/rest/v1/runtime_controls')), 'the GitHub runner proceeds');
+  } finally {
+    globalThis.fetch = original;
+  }
+  assert.equal(runnerEnv({}, {}).CRON_RUNNER, 'github-actions');
+  assert.match(fs.readFileSync('wrangler.jsonc', 'utf8'), /"BACKGROUND_JOBS_EXECUTOR": "github"/);
 });

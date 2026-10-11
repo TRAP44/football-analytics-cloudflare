@@ -59,6 +59,8 @@ export function runnerEnv(processEnv = {}, vars = {}, { sha = '', now = Date.now
     const value = processEnv[key];
     if (typeof value === 'string' && value.trim()) env[key] = value.trim();
   }
+  // Отметка исполнителя: воркер с BACKGROUND_JOBS_EXECUTOR=github выполняет задачи только при ней.
+  env.CRON_RUNNER = 'github-actions';
   env.CF_VERSION_METADATA = {
     id: 'github-actions-cron',
     tag: /^[0-9a-f]{7,40}$/.test(String(sha)) ? String(sha) : 'github-actions',
@@ -76,6 +78,59 @@ export function missingRequiredSecrets(env = {}) {
   if (!env.TELEGRAM_BOT_TOKEN) missing.push('TELEGRAM_BOT_TOKEN');
   if (!env.API_FOOTBALL_KEY) missing.push('API_FOOTBALL_KEY');
   return missing;
+}
+
+function jwtRole(token) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 3) return '';
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+    return typeof payload?.role === 'string' ? payload.role : '';
+  } catch {
+    return '';
+  }
+}
+
+/** Ошибка формата ключей Supabase — понятным текстом и без значений. */
+export function supabaseFormatProblem(env = {}) {
+  const url = String(env.SUPABASE_URL || '').trim();
+  if (!/^https:\/\/[a-z0-9]{10,40}\.supabase\.co\/?$/i.test(url)) {
+    return 'SUPABASE_URL должен выглядеть как https://<проект>.supabase.co — без /rest/v1, пробелов и кавычек.';
+  }
+  const key = String(env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  if (/^sb_publishable_/.test(key)) return 'вместо секретного ключа Supabase вставлен publishable-ключ; нужен secret (sb_secret_…) или service_role.';
+  if (/^sb_secret_/.test(key)) return '';
+  const role = jwtRole(key);
+  if (role === 'anon') return 'вместо service_role вставлен anon-ключ Supabase (Legacy API Keys → service_role).';
+  if (role !== 'service_role') return 'ключ Supabase не похож ни на service_role (eyJ…), ни на secret (sb_secret_…) — проверь, что скопирован целиком.';
+  return '';
+}
+
+// Пробный запрос к Supabase до запуска задач: иначе при неверном ключе
+// воркер молча уходит в защитный режим, а записать причину в базу не может.
+export async function supabaseProblem(env = {}, fetchImpl = globalThis.fetch) {
+  const format = supabaseFormatProblem(env);
+  if (format) return format;
+  const url = String(env.SUPABASE_URL).trim().replace(/\/$/, '');
+  const key = String(env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY).trim();
+  let response;
+  try {
+    response = await fetchImpl(`${url}/rest/v1/runtime_controls?select=id&limit=1`, {
+      // Так же, как воркер (src/supabase-client.js): ключ только в apikey.
+      headers: { apikey: key },
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    return 'Supabase недоступен по адресу из SUPABASE_URL (сеть или неверный адрес проекта).';
+  }
+  if (response.status === 401 || response.status === 403) {
+    return /^sb_secret_/.test(key)
+      ? `Supabase отклонил секретный ключ (HTTP ${response.status}) — проверь SUPABASE_SECRET_KEY (ключ этого проекта, не отозван).`
+      : `Supabase отклонил ключ (HTTP ${response.status}). Воркер передаёт ключ только в apikey — нужен новый секретный ключ sb_secret_… (Supabase → Project Settings → API Keys → Secret keys) в SUPABASE_SECRET_KEY.`;
+  }
+  if (response.status === 404) return 'Supabase ответил 404 — проверь адрес проекта в SUPABASE_URL.';
+  if (!response.ok) return `Supabase ответил HTTP ${response.status} на пробный запрос.`;
+  return '';
 }
 
 export function redactor(env = {}) {
@@ -160,6 +215,41 @@ export async function runCron({ worker, env, nowMs = Date.now(), timeoutMs = RUN
   }
 }
 
+// Журнал исходящих запросов для диагностики: только метод, сервис, путь без
+// query и статус. Путь Telegram содержит токен бота — он заменяется на ***.
+export function traceEntry(url, method, outcome) {
+  let parsed;
+  try {
+    parsed = new URL(String(url));
+  } catch {
+    return `${method} ? ${outcome}`;
+  }
+  const host = parsed.hostname;
+  const service = host.endsWith('.supabase.co') ? 'supabase' : host === 'api.telegram.org' ? 'telegram' : host.includes('api-sports') || host.includes('api-football') ? 'api-football' : 'other';
+  const pathname = service === 'telegram' ? parsed.pathname.replace(/\/bot[^/]+/, '/bot***') : parsed.pathname;
+  return `${String(method || 'GET').toUpperCase()} ${service} ${pathname.slice(0, 80)} → ${outcome}`;
+}
+
+export function installFetchTrace(limit = 40) {
+  const original = globalThis.fetch;
+  const entries = [];
+  globalThis.fetch = async (input, init = {}) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input?.url;
+    const method = init?.method || input?.method || 'GET';
+    try {
+      const response = await original(input, init);
+      entries.push(traceEntry(url, method, String(response.status)));
+      return response;
+    } catch (error) {
+      entries.push(traceEntry(url, method, `ошибка ${String(error?.name || 'Error').slice(0, 30)}`));
+      throw error;
+    } finally {
+      if (entries.length > limit) entries.splice(0, entries.length - limit);
+    }
+  };
+  return { entries, restore: () => { globalThis.fetch = original; } };
+}
+
 async function main() {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const vars = wranglerVars(fs.readFileSync(path.join(root, 'wrangler.jsonc'), 'utf8'));
@@ -170,6 +260,12 @@ async function main() {
     console.error(`cron-runner: в окружении background-jobs не заданы обязательные ключи: ${missing.join(', ')} — запуск невозможен.`);
     process.exit(1);
   }
+  const problem = await supabaseProblem(env);
+  if (problem) {
+    console.error(`cron-runner: ${problem}`);
+    process.exit(1);
+  }
+  const trace = installFetchTrace();
   const { default: worker } = await import(pathToFileURL(path.join(root, 'src', 'worker.js')).href);
   const result = await runCron({ worker, env });
   console.log(`cron-runner: слот ${new Date(result.scheduledTime).toISOString()}`);
@@ -183,6 +279,11 @@ async function main() {
   // Ни одной задачи — обработчик остановился раньше (нет связи с Supabase,
   // защитный режим или пауза фоновых задач). Это видно как провал запуска.
   if (!result.tasks.length) console.log('  задачи не запускались (проверь ключи Supabase и runtime controls)');
+  // При сбое — последние запросы воркера (без значений и токенов), чтобы причина была видна в Actions.
+  if (result.failed || !result.tasks.length) {
+    console.log('cron-runner: последние запросы воркера:');
+    for (const line of trace.entries) console.log(redact(`  ${line}`));
+  }
   process.exit(result.failed || !result.tasks.length ? 1 : 0);
 }
 

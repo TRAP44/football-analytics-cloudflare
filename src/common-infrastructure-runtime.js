@@ -72,6 +72,10 @@ export function createCommonInfrastructureRuntime(deps = {}) {
       matchQuestionsUserHourlyLimit: intEnv(env.MATCH_QUESTIONS_USER_HOURLY_LIMIT, 10),
       // Задача 2: предматчевые вероятности для главных матчей дня (cron).
       prematchPredictionsEnabled: boolEnv(env.PREMATCH_PREDICTIONS_ENABLED, true),
+      // Кто исполняет фоновые задачи: 'github' — только GitHub Actions (scripts/cron-runner.js);
+      // запуски cron от Cloudflare тогда сразу завершаются, не занимая блокировку.
+      backgroundJobsExecutor: String(env.BACKGROUND_JOBS_EXECUTOR || 'cloudflare').trim().toLowerCase() === 'github' ? 'github' : 'cloudflare',
+      cronRunner: String(env.CRON_RUNNER || '').trim().toLowerCase(),
       prematchPredictionsPerRun: intEnv(env.PREMATCH_PREDICTIONS_PER_RUN, 2),
       prematchPredictionsDailyLimit: intEnv(env.PREMATCH_PREDICTIONS_DAILY_LIMIT, 20),
       prematchPredictionsIntervalMinutes: intEnv(env.PREMATCH_PREDICTIONS_INTERVAL_MINUTES, 30),

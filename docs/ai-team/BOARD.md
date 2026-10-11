@@ -36,6 +36,7 @@ _Лимит Codex восстановился 10.10 вечером, очеред�
 
 ## Готово
 
+- [x] Фоновые задачи: диагностика ключей Supabase, журнал запросов, ключ как у воркера и выключение «призрачного» cron Cloudflare (`BACKGROUND_JOBS_EXECUTOR=github`) — **Claude** — [PR #840](https://github.com/TRAP44/football-analytics-cloudflare/pull/840), [#841](https://github.com/TRAP44/football-analytics-cloudflare/pull/841), [#842](https://github.com/TRAP44/football-analytics-cloudflare/pull/842) — слиты 11.10; первый полный запуск — 23:29
 - [x] Фоновые задачи через GitHub Actions вместо cron Cloudflare (Workers Free) — **Claude** — [PR #838](https://github.com/TRAP44/football-analytics-cloudflare/pull/838) — слит 11.10; ключи в окружении `background-jobs`
 - [x] Задача 6: «Спросить про матч» — **Claude** — [PR #835](https://github.com/TRAP44/football-analytics-cloudflare/pull/835) — слит 11.10
 - [x] Ревью Codex старых PR: #825 (P1 — ограниченный Weekend Pass при сбое истории тратил использование) и #806 (P2 — ставочная метка в LIVE; уже исправлено в #819, добавлен регрессионный тест) — **Claude** — [PR #837](https://github.com/TRAP44/football-analytics-cloudflare/pull/837) — Codex 👍

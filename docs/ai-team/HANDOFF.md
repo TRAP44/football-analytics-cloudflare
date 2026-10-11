@@ -24,6 +24,23 @@ PR: [#836](https://github.com/TRAP44/football-analytics-cloudflare/pull/836), в
 Осталось / внимание:
 - Периодические LIVE-снимки (по событиям и раз в несколько минут) не сделаны: нужна фоновая задача с пересчётом и бюджет API-Football; cron на Workers Free не доходит до конца (см. «Идеи»). Сейчас точки появляются, когда пользователи открывают разбор во время матча.
 - Ревизия ассетов — launch97 (совпадает с #834/#835 — кто сольётся позже, поднимет номер).
+## 2026-10-11 — Claude — Фоновые задачи: проверка ключа как у воркера
+PR: [#842](https://github.com/TRAP44/football-analytics-cloudflare/pull/842), ветка `claude/cron-runner-apikey`
+Причина (запуск №4): воркер шлёт ключ Supabase только в `apikey` (`src/supabase-client.js`, так нужно для `sb_secret_…`), а в GitHub лежал старый JWT `service_role` → 401 на все запросы; пробный запрос из #840 слал ещё и `Authorization: Bearer` и потому проходил.
+Сделано: пробный запрос отправляет ключ так же, как воркер; при 401/403 с не-`sb_secret_` ключом — подсказка завести секретный ключ в `SUPABASE_SECRET_KEY`. Журнал запросов показывает адрес и для `URL`-объектов (раньше «?»).
+Решение Сергея: для GitHub отдельный секретный ключ Supabase (`github_background_jobs`), отзывается независимо от Cloudflare.
+- «Призрачный» cron Cloudflare: расписание удалено и в `wrangler.jsonc`, и в панели, но запуски с `:46` продолжаются и занимают блокировку `cron-global`. Добавлено `BACKGROUND_JOBS_EXECUTOR=github` (wrangler vars): `scheduled()` воркера сразу выходит, если вызов не от `cron-runner` (тот ставит `CRON_RUNNER=github-actions`).
+
+## 2026-10-11 — Claude — Фоновые задачи: журнал запросов при сбое
+PR: [#841](https://github.com/TRAP44/football-analytics-cloudflare/pull/841), ветка `claude/cron-runner-trace`
+Причина: запуск №3 прошёл проверку ключей (#840), но задачи снова не запустились, а в `ops_events` нет записей — нужна видимость, что именно ответил Supabase.
+Сделано: при сбое `cron-runner` печатает последние 40 запросов воркера — метод, сервис, путь без query и HTTP-статус; токен бота в пути Telegram заменяется на `***`, значения ключей не выводятся.
+
+## 2026-10-11 — Claude — Фоновые задачи: диагностика ключей Supabase
+PR: [#840](https://github.com/TRAP44/football-analytics-cloudflare/pull/840), ветка `claude/cron-runner-diagnostics`
+Причина: первый ручной запуск Background Jobs завершился «задачи не запускались» без единой записи в `ops_events` — воркер ушёл в защитный режим, потому что Supabase не принял адрес/ключ, и записать причину в базу тоже не смог.
+Сделано: `scripts/cron-runner.js` до запуска задач проверяет формат `SUPABASE_URL` (https://<проект>.supabase.co) и ключа (anon/publishable/обрывок → понятный текст), затем делает пробный запрос к `runtime_controls` и сообщает 401/403/404/сеть. Значения ключей в выводе не появляются.
+
 ## 2026-10-11 — Claude — Задача 6: «Спросить про матч»
 PR: [#835](https://github.com/TRAP44/football-analytics-cloudflare/pull/835), ветка `claude/match-questions`
 Сделано:
