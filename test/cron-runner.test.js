@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  CRON_RUNNER_SECRET_KEYS, cronSlot, degradedWarnings, missingRequiredSecrets, supabaseFormatProblem, supabaseProblem, redactor, runCron, runnerEnv, summarizeRun, wranglerVars,
+  CRON_RUNNER_SECRET_KEYS, cronSlot, degradedWarnings, installFetchTrace, traceEntry, missingRequiredSecrets, supabaseFormatProblem, supabaseProblem, redactor, runCron, runnerEnv, summarizeRun, wranglerVars,
 } from '../scripts/cron-runner.js';
 
 test('cron runner aligns delayed GitHub runs to the 5-minute cron slot', () => {
@@ -129,4 +129,22 @@ test('Supabase key and URL problems are explained without printing values', asyn
   await supabaseProblem(ok, async (url, init) => { seen = { url, init }; return new Response('[]', { status: 200 }); });
   assert.equal(seen.url, 'https://nlmvhkjkpgzzlfavaohk.supabase.co/rest/v1/runtime_controls?select=id&limit=1');
   assert.equal(seen.init.headers.apikey, ok.SUPABASE_SERVICE_ROLE_KEY);
+});
+
+test('request trace shows service, path and status but never tokens or query values', async () => {
+  assert.equal(traceEntry('https://x1.supabase.co/rest/v1/runtime_controls?select=*&id=eq.global', 'get', '200'), 'GET supabase /rest/v1/runtime_controls → 200');
+  assert.equal(traceEntry('https://api.telegram.org/bot123456:AAHsecret/sendMessage', 'POST', '403'), 'POST telegram /bot***/sendMessage → 403');
+  assert.equal(traceEntry('not a url', 'GET', '0'), 'GET ? 0');
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response('{}', { status: 401 });
+  const trace = installFetchTrace(2);
+  try {
+    await fetch('https://x1.supabase.co/rest/v1/a?key=1');
+    await fetch('https://x1.supabase.co/rest/v1/b');
+    await fetch('https://x1.supabase.co/rest/v1/c', { method: 'POST' });
+  } finally {
+    trace.restore();
+    globalThis.fetch = original;
+  }
+  assert.deepEqual(trace.entries, ['GET supabase /rest/v1/b → 401', 'POST supabase /rest/v1/c → 401']);
 });
