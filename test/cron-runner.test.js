@@ -122,13 +122,15 @@ test('Supabase key and URL problems are explained without printing values', asyn
 
   const respond = status => async () => new Response('[]', { status });
   assert.equal(await supabaseProblem(ok, respond(200)), '');
-  assert.match(await supabaseProblem(ok, respond(401)), /отклонил ключ \(HTTP 401\)/);
+  assert.match(await supabaseProblem(ok, respond(401)), /отклонил ключ \(HTTP 401\)[\s\S]*sb_secret_/);
+  assert.match(await supabaseProblem({ ...ok, SUPABASE_SERVICE_ROLE_KEY: '', SUPABASE_SECRET_KEY: 'sb_secret_x' }, respond(401)), /отклонил секретный ключ/);
   assert.match(await supabaseProblem(ok, respond(404)), /404/);
   assert.match(await supabaseProblem(ok, async () => { throw new Error('ENOTFOUND'); }), /недоступен/);
   let seen;
   await supabaseProblem(ok, async (url, init) => { seen = { url, init }; return new Response('[]', { status: 200 }); });
   assert.equal(seen.url, 'https://nlmvhkjkpgzzlfavaohk.supabase.co/rest/v1/runtime_controls?select=id&limit=1');
   assert.equal(seen.init.headers.apikey, ok.SUPABASE_SERVICE_ROLE_KEY);
+  assert.equal(Object.hasOwn(seen.init.headers, 'authorization'), false, 'same as the worker: apikey only');
 });
 
 test('request trace shows service, path and status but never tokens or query values', async () => {
@@ -141,7 +143,7 @@ test('request trace shows service, path and status but never tokens or query val
   try {
     await fetch('https://x1.supabase.co/rest/v1/a?key=1');
     await fetch('https://x1.supabase.co/rest/v1/b');
-    await fetch('https://x1.supabase.co/rest/v1/c', { method: 'POST' });
+    await fetch(new URL('https://x1.supabase.co/rest/v1/c'), { method: 'POST' });
   } finally {
     trace.restore();
     globalThis.fetch = original;
