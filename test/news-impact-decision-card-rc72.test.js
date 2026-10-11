@@ -22,7 +22,7 @@ test('decision state controls Telegram actions instead of one generic keyboard',
   assert.match(recovery,/function newsImpactDecisionKeyboard\(/);
   assert.match(recovery,/Открыть обновлённый AI-разбор/);
   assert.match(recovery,/Проверить составы/);
-  assert.match(recovery,/Проверить рынок/);
+  assert.match(recovery,/⚠️ Риски матча/);
   assert.match(recovery,/Ещё новости/);
   assert.match(botUi,/newsImpactDecisionKeyboard\(/);
 });

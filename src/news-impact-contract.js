@@ -47,7 +47,7 @@ export const NEWS_IMPACT_ACTION_CODES = new Set(['full_ai','squads','market','re
 export const NEWS_IMPACT_ACTION_LABELS = {
   full_ai:'Полный AI',
   squads:'Составы',
-  market:'Рынок',
+  market:'Риски матча',
   recheck:'Перепроверка',
   news:'Новости',
   share:'Поделиться',

@@ -172,7 +172,7 @@ export function createAnalysisLifecycleRuntime(deps) {
       reason='Матч близко: подтверждённые стартовые составы могли появиться после последнего расчёта.';
     } else if (needsRecheck && minutesToKickoff !== null && minutesToKickoff<=30 && marketAvailable) {
       reasonCode='market_window';
-      reason='До старта мало времени: рынок и вероятности могли заметно измениться.';
+      reason='До старта мало времени: составы и вероятности могли заметно измениться.';
     } else if (needsRecheck) {
       reasonCode='age_window';
       reason=`Последнему AI-разбору ${ageMinutes} мин.; для этого этапа до матча лимит свежести ${maxAgeMinutes} мин.`;
@@ -243,7 +243,7 @@ export function createAnalysisLifecycleRuntime(deps) {
         minutesToKickoff,
         label:'Финальное окно до старта',
         actionLabel:'Перепроверить перед стартом',
-        reason:'До матча осталось мало времени: финально проверьте составы, потери и движение рынка.',
+        reason:'До матча осталось мало времени: финально проверьте составы и потери.',
       };
     }
     return {

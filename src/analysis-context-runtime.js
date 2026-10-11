@@ -861,7 +861,7 @@ export function createAnalysisContextRuntime(deps) {
       safeText(lineup?.note,360)
         || 'Проверить стартовые составы и ключевые потери ближе к началу матча.',
       movementNote
-        || 'Сверить движение коэффициентов и убедиться, что рынок не ушёл резко против сценария.',
+        || 'Проверить последние новости о составах и потерях ближе к началу матча.',
       refereeCheck,
     ].filter(Boolean).slice(0,3);
 
@@ -877,7 +877,7 @@ export function createAnalysisContextRuntime(deps) {
       checks:planChecks,
       cancel:betSignal.code==='skip'
         ? 'Рабочего сигнала нет: не форсировать решение до появления новых данных.'
-        : firstRisk || 'Если составы, рынок или доступность ключевых игроков меняют исходный баланс — пересчитать матч.',
+        : firstRisk || 'Если составы или доступность ключевых игроков меняют исходный баланс — пересчитать матч.',
       liveWatch:betSignal.code==='over25' || betSignal.code==='btts'
         ? 'В первые 15–20 минут смотреть на темп, удары из опасных зон и реальное давление обеих команд.'
         : 'После старта сверять территорию, опасные атаки и качество моментов с предматчевым сценарием.',
@@ -896,7 +896,7 @@ export function createAnalysisContextRuntime(deps) {
       matchPlan,
       riskNote:betSignal.code==='skip'
         ? 'Сильного сигнала нет — не форсируйте решение.'
-        : 'Проверяйте составы и изменения коэффициентов ближе к старту.',
+        : 'Проверяйте составы и новости ближе к старту.',
       referee:refereeName,
       refereeProfile:profile,
       refereeHistory:history,

@@ -56,7 +56,7 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     if (compared && stable) return {
       code:'stable',icon:'🟢',label:'Сценарий стабилен',
       headline:'После новости значимых изменений в AI-входах не найдено.',
-      action:'Срочного действия нет; продолжайте следить за составами и рынком.',priority:1,
+      action:'Срочного действия нет; продолжайте следить за составами и новостями.',priority:1,
     };
     if (compared) return {
       code:'detail',icon:'🟡',label:'Изменились детали',
@@ -3158,7 +3158,7 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
         startedAt:'2026-09-17T18:00:00.000Z',recoveredAt:null,firstAcknowledgedAt:'2026-09-17T19:00:00.000Z',
       },
       {
-        reason:'provider_unavailable',reasonLabel:'Провайдер недоступен',action:'market',actionLabel:'Рынок',
+        reason:'provider_unavailable',reasonLabel:'Провайдер недоступен',action:'market',actionLabel:'Риски матча',
         startedAt:'2026-09-01T00:00:00.000Z',recoveredAt:null,firstAcknowledgedAt:null,
       },
     ];
@@ -4257,7 +4257,7 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
     };
     if (decision==='material') {
       pushRow(fullAi('📊 Открыть обновлённый AI-разбор'));
-      pushRow(tracked('squads','👥 Проверить составы'),tracked('market','💹 Проверить рынок'));
+      pushRow(tracked('squads','👥 Проверить составы'),tracked('market','⚠️ Риски матча'));
     } else if (decision==='detail') {
       pushRow(fullAi('🧠 Открыть полный разбор'));
       pushRow(tracked('recheck','🔄 Перепроверить AI'));

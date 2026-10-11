@@ -257,7 +257,7 @@ export function createTelegramSearchRuntime(deps = {}) {
     const source=plainObject(parts) || {};
     if (source.intent === 'referee') return '🧑‍⚖️ Нашёл матч. В AI-разборе покажу назначенного судью и доступную историю его матчей.';
     if (source.intent === 'pick') return '🧠 Нашёл матч для разбора. Отдельно покажу идею, риск и качество исходных данных.';
-    if (source.intent === 'analysis') return '🧠 Нашёл матч. Откройте AI-разбор — там будут вероятности, сценарий, риски, составы, рынок и судья.';
+    if (source.intent === 'analysis') return '🧠 Нашёл матч. Откройте AI-разбор — там будут вероятности, сценарий, риски, составы и судья.';
     return '⚽ Нашёл подходящие матчи.';
   }
 
