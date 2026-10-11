@@ -5635,11 +5635,23 @@ function prematchDriverCard(driver, match) {
   </article>`;
 }
 
+// Старые и кешированные сценарии могли содержать «ТБ 2.5» и «обе забьют» —
+// переводим в слова; остальное ставочное прячем.
+function prematchScenarioText(value) {
+  return publicText(String(value || ''))
+    .replace(/(на\s+)?ТБ\s*2[.,]5/g, (match, on) => `${on || ''}3+ гола в матче`)
+    .replace(/(вероятность\s+)?«?обе забьют»?/gi, (match, chance) => (chance ? 'вероятность, что забьют обе команды,' : 'забьют обе команды'))
+    .replace(/\s*Это не букмекерская рекомендация, а/g, ' Это');
+}
+
 function prematchScenarioCard(scenario) {
+  const title = prematchScenarioText(scenario.title);
+  const text = prematchScenarioText(scenario.text);
+  if (SCENARIO_BETTING_TEXT.test(`${title} ${text}`)) return '';
   return `<article class="prematch-scenario ${escapeHtml(scenario.tone || 'balanced')}">
     <div class="prematch-scenario-top"><span>${escapeHtml(scenario.icon || '•')}</span><small>${escapeHtml(publicText(scenario.relevance || ''))}</small></div>
-    <h3>${escapeHtml(publicText(scenario.title || ''))}</h3>
-    <p>${escapeHtml(publicText(scenario.text || ''))}</p>
+    <h3>${escapeHtml(title)}</h3>
+    <p>${escapeHtml(text)}</p>
   </article>`;
 }
 
