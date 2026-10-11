@@ -36,6 +36,7 @@ import { createReleaseMonitorApiRuntime } from './release-monitor-api-runtime.js
 import { createReleaseReadinessRuntime } from './release-readiness-runtime.js';
 import { createOddsSnapshotRuntime } from './odds-snapshot-runtime.js';
 import { createUserDataApiRuntime } from './user-data-api-runtime.js';
+import { createMatchExplanationRuntime } from './match-explanation-runtime.js';
 import { createBillingRuntime } from './billing-runtime.js';
 import { createBillingApiRuntime } from './billing-api-runtime.js';
 import { createClientTelemetryRuntime } from './client-telemetry-runtime.js';
@@ -2361,6 +2362,27 @@ function getUserDataApiRuntime() {
 const apiMe = (...args) => getUserDataApiRuntime().apiMe(...args);
 const apiHistory = (...args) => getUserDataApiRuntime().apiHistory(...args);
 const apiHistoryAnalysis = (...args) => getUserDataApiRuntime().apiHistoryAnalysis(...args);
+
+let matchExplanationRuntime = null;
+function getMatchExplanationRuntime() {
+  if (!matchExplanationRuntime) {
+    matchExplanationRuntime = createMatchExplanationRuntime({
+      bumpTelemetry,
+      getCache,
+      getHistory,
+      getStaleCache,
+      hasSupabase,
+      json,
+      loadRuntimeControls,
+      memory,
+      recordOpsEvent,
+      setCache,
+      supaRpc,
+    });
+  }
+  return matchExplanationRuntime;
+}
+const apiMatchExplanation = (...args) => getMatchExplanationRuntime().apiMatchExplanation(...args);
 const apiFavorites = (...args) => getUserDataApiRuntime().apiFavorites(...args);
 const publicFavoritePlayer = (...args) => getUserDataApiRuntime().publicFavoritePlayer(...args);
 const resolveFavoritePlayerIdentity = (...args) => getUserDataApiRuntime().resolveFavoritePlayerIdentity(...args);
@@ -2937,6 +2959,7 @@ const {
   apiFootball,
   apiHistory,
   apiHistoryAnalysis,
+  apiMatchExplanation,
   apiLaunchFunnel,
   apiMatchCenter,
   apiMatches,
