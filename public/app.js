@@ -1106,10 +1106,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch87'),
+      import('./modules/match-center-view.js?v=6.120.0-launch88'),
       import('./modules/match-pulse.js?v=6.120.0-launch87'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch87'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch87'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch88'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch88'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1265,7 +1265,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch87').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch88').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -2941,7 +2941,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch87');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch88');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3388,7 +3388,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch87').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch88').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -4980,6 +4980,9 @@ function liveAiCoachHtml(ai, match) {
   const neutral = value => (typeof value === 'string' && !SCENARIO_BETTING_TEXT.test(value) ? value : '');
   const watch = Array.isArray(ai.watchNext) ? ai.watchNext.filter(neutral).slice(0,3) : [];
   const volatilityReason = neutral(ai.volatility?.reason) || 'Матч может быстро измениться.';
+  const summary = typeof ai.summary === 'string' && ai.summary
+    ? (neutral(ai.summary) || 'Оцениваю матч по счёту, событиям и статистике.')
+    : '';
   const prematchLabel = neutral(ai.prematch?.signal) || neutral(ai.prematch?.outcome) || 'AI-разбор';
   const confidence=Math.round(clampPercent(ai.confidence));
   const currentMinute = typeof ai.current?.minute === 'number' && Number.isFinite(ai.current.minute)
@@ -4995,7 +4998,7 @@ function liveAiCoachHtml(ai, match) {
     : '—:—';
   return `<section class="panel live-ai-coach ${tone}">
     <div class="live-ai-head"><div><span>AI В ЭФИРЕ · ${currentMinute !== null ? `${currentMinute}′` : 'сейчас'}</span><h2>${escapeHtml(publicText(ai.headline || 'Читаю матч в реальном времени'))}</h2></div><b>${confidence}%</b></div>
-    <p class="live-ai-summary">${escapeHtml(publicText(ai.summary || ''))}</p>
+    <p class="live-ai-summary">${escapeHtml(publicText(summary))}</p>
     <div class="live-ai-decision"><span>Решение AI сейчас</span><strong>${escapeHtml(publicText(ai.action?.label || 'Наблюдать'))}</strong><small>${escapeHtml(publicText(ai.action?.reason || 'Дождитесь более устойчивой картины.'))}</small></div>
     <div class="live-ai-grid">
       <div><span>Счёт</span><strong>${scoreText}</strong><small>${currentMinute !== null ? `${currentMinute} мин.` : 'Матч идёт'}</small></div>
@@ -5309,7 +5312,7 @@ function formCard(title, form) {
       <span><b>${o.ppg}</b><small>очки/матч</small></span>
       <span><b>${o.gfAvg}</b><small>забито</small></span>
       <span><b>${o.gaAvg}</b><small>пропущено</small></span>
-      <span><b>${o.over25Pct}%</b><small>ТБ 2.5</small></span>
+      <span><b>${o.over25Pct}%</b><small>3+ гола</small></span>
     </div>
     ${v?.sample ? `<p class="muted">${form.preferredVenue === 'home' ? 'Дома' : 'В гостях'}: ${v.ppg} очка/матч · выборка ${v.sample}</p>` : ''}
   </div>`;
@@ -5504,7 +5507,7 @@ function lineupBlock(title, lineup) {
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch87');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch88');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {
@@ -5612,8 +5615,8 @@ function comparisonTeamHeader(team, side, edges) {
 
 
 function prematchOutcomeName(key, match) {
-  if (key === 'home') return match.home?.name || 'П1';
-  if (key === 'away') return match.away?.name || 'П2';
+  if (key === 'home') return match.home?.name || 'Хозяева';
+  if (key === 'away') return match.away?.name || 'Гости';
   if (key === 'draw') return 'Ничья';
   return '—';
 }
@@ -5625,18 +5628,33 @@ function prematchDriverCard(driver, match) {
     <div class="prematch-driver-icon">${escapeHtml(driver.icon || '•')}</div>
     <div class="prematch-driver-body">
       <div class="prematch-driver-kicker">${sideName ? `${escapeHtml(sideName)} · ` : ''}${escapeHtml(strengthText)}</div>
-      <h3>${escapeHtml(publicText(driver.title || 'Фактор'))}</h3>
-      <p>${escapeHtml(publicText(driver.text || ''))}</p>
+      <h3>${escapeHtml(prematchScenarioText(driver.title, match) || 'Фактор')}</h3>
+      <p>${escapeHtml(prematchScenarioText(driver.text, match))}</p>
       ${Number.isFinite(Number(driver.weight)) ? `<div class="driver-weight"><span>Вес в общей модели</span><strong>${Number(driver.weight).toFixed(1)}%</strong></div>` : ''}
     </div>
   </article>`;
 }
 
-function prematchScenarioCard(scenario) {
+// Старые и кешированные сценарии могли содержать «ТБ 2.5» и «обе забьют» —
+// переводим в слова; остальное ставочное прячем.
+function prematchScenarioText(value, match = {}) {
+  return publicText(String(value || ''))
+    .replace(/(^|[^\p{L}\p{N}])П([12])(?![\p{L}\p{N}])/gu, (all, before, side) => `${before}${prematchOutcomeName(side === '1' ? 'home' : 'away', match)}`)
+    .replace(/(на\s+)?ТБ\s*2[.,]5/g, (match, on) => `${on || ''}3+ гола в матче`)
+    .replace(/(вероятность\s+)?«?обе забьют»?/gi, (match, chance) => (chance ? 'вероятность, что забьют обе команды,' : 'забьют обе команды'))
+    .replace(/\s*Это не букмекерская рекомендация, а/g, ' Это')
+    .replace(/(движение|изменение) рынка может/g, 'новые данные могут')
+    .replace(/(движение|изменение) рынка/g, 'новые данные');
+}
+
+function prematchScenarioCard(scenario, match = {}) {
+  const title = prematchScenarioText(scenario.title, match);
+  const text = prematchScenarioText(scenario.text, match);
+  if (SCENARIO_BETTING_TEXT.test(`${title} ${text}`)) return '';
   return `<article class="prematch-scenario ${escapeHtml(scenario.tone || 'balanced')}">
     <div class="prematch-scenario-top"><span>${escapeHtml(scenario.icon || '•')}</span><small>${escapeHtml(publicText(scenario.relevance || ''))}</small></div>
-    <h3>${escapeHtml(publicText(scenario.title || ''))}</h3>
-    <p>${escapeHtml(publicText(scenario.text || ''))}</p>
+    <h3>${escapeHtml(title)}</h3>
+    <p>${escapeHtml(text)}</p>
   </article>`;
 }
 
@@ -5648,7 +5666,7 @@ function prematchSourceRow(row, match) {
       <div><strong>${escapeHtml(publicText(row.label || ''))}</strong><small>Вес ${Number(row.weight || 0).toFixed(1)}%</small></div>
     </div>
     <div class="prematch-source-result">
-      <strong>${escapeHtml(row.leader || '—')}</strong>
+      <strong>${escapeHtml(['home','draw','away'].includes(row.leaderKey) ? prematchOutcomeName(row.leaderKey, match) : (row.leader || '—'))}</strong>
       <span>${Number(row.leaderProbability || 0).toFixed(1)}%</span>
     </div>
     <div class="prematch-source-status">${row.agreesWithFinal ? '✓ согласен' : '↔ расходится'}</div>
@@ -5662,27 +5680,28 @@ function prematchBriefHtml(pm, match, probabilities) {
   const uncertainty = pm.uncertainty || {};
   const leader = pm.leader || {};
   const dataScore = Number(pm.dataScore || 0);
+  const scenarioCards = (Array.isArray(pm.scenarios) ? pm.scenarios : []).map(item => prematchScenarioCard(item, match)).filter(Boolean);
   return `
     <section class="panel prematch-brief-hero">
       <div class="prematch-brief-top">
         <div>
           <span class="prematch-brief-label">🧠 ПРЕДАНАЛИЗ МАТЧА</span>
-          <h2>${escapeHtml(publicText(pm.headline || 'Преданализ матча'))}</h2>
+          <h2>${escapeHtml(prematchScenarioText(pm.headline, match) || 'Преданализ матча')}</h2>
         </div>
         <div class="prematch-data-score"><strong>${dataScore}%</strong><span>полнота данных</span></div>
       </div>
-      <p class="prematch-brief-summary">${escapeHtml(publicText(pm.summary || ''))}</p>
+      <p class="prematch-brief-summary">${escapeHtml(prematchScenarioText(pm.summary, match))}</p>
 
       <div class="prematch-brief-kpis">
-        <div><span>Главный сценарий</span><strong>${escapeHtml(leader.label || prematchOutcomeName(leader.key, match))}</strong><small>${Number(leader.probability || 0).toFixed(1)}%</small></div>
+        <div><span>Главный сценарий</span><strong>${escapeHtml(['home','draw','away'].includes(leader.key) ? prematchOutcomeName(leader.key, match) : (leader.label || '—'))}</strong><small>${Number(leader.probability || 0).toFixed(1)}%</small></div>
         <div><span>Отрыв</span><strong>${Number(leader.gap || 0).toFixed(1)} п.п.</strong><small>от второго исхода</small></div>
         <div><span>Неопределённость</span><strong>${Number(uncertainty.score || 0)}/100</strong><small>${escapeHtml(publicText(uncertainty.label || ''))}</small></div>
       </div>
 
       <div class="prematch-hero-probs">
-        <div><span>${escapeHtml(match.home?.name || 'П1')}</span><strong>${pct(probabilities?.home)}</strong></div>
+        <div><span>${escapeHtml(match.home?.name || 'Хозяева')}</span><strong>${pct(probabilities?.home)}</strong></div>
         <div><span>Ничья</span><strong>${pct(probabilities?.draw)}</strong></div>
-        <div><span>${escapeHtml(match.away?.name || 'П2')}</span><strong>${pct(probabilities?.away)}</strong></div>
+        <div><span>${escapeHtml(match.away?.name || 'Гости')}</span><strong>${pct(probabilities?.away)}</strong></div>
       </div>
       ${probabilityStrip(probabilities)}
     </section>
@@ -5694,12 +5713,12 @@ function prematchBriefHtml(pm, match, probabilities) {
 
     <section class="panel">
       <div class="prematch-section-head"><div><h2>Сценарии матча</h2><p>Не новые прогнозы, а интерпретация уже рассчитанных сигналов</p></div></div>
-      <div class="prematch-scenarios">${(pm.scenarios || []).length ? pm.scenarios.map(prematchScenarioCard).join('') : '<div class="empty compact-empty">Сценарии не сформированы из-за ограниченных данных.</div>'}</div>
+      <div class="prematch-scenarios">${scenarioCards.length ? scenarioCards.join('') : '<div class="empty compact-empty">Сценарии не сформированы из-за ограниченных данных.</div>'}</div>
     </section>
 
     <section class="panel">
       <div class="prematch-section-head"><div><h2>Что может изменить оценку до старта</h2><p>Факторы, за которыми стоит следить перед матчем</p></div></div>
-      ${(pm.watch || []).length ? `<div class="prematch-watch-list">${pm.watch.map((x,i)=>`<div><b>${i+1}</b><span>${escapeHtml(publicText(x))}</span></div>`).join('')}</div>` : '<div class="empty compact-empty">Критичных ожидаемых изменений по доступным данным нет.</div>'}
+      ${(pm.watch || []).length ? `<div class="prematch-watch-list">${pm.watch.map((x,i)=>`<div><b>${i+1}</b><span>${escapeHtml(prematchScenarioText(x, match))}</span></div>`).join('')}</div>` : '<div class="empty compact-empty">Критичных ожидаемых изменений по доступным данным нет.</div>'}
     </section>
 
     <section class="panel">
@@ -5740,7 +5759,7 @@ function providerCoverageHtml(reliability = {}) {
 // без меток сигнала («ТБ 2.5», «1X»), рынка и «решений».
 // Границы слов через Unicode-классы: \b в JS не видит кириллицу (ревью Codex #816).
 // Без просмотра назад (lookbehind): Safari до 16.4 — старые iPhone в Telegram — его не разбирает.
-const SCENARIO_BETTING_TEXT = /коэффициент|рын(ок|ка|ке|ком|очн)|ставк|букмекер|тотал|обе забьют|форсир|(^|[^\p{L}\p{N}])(1[XХ]2|ТБ|ТМ|П1|П2|1X|X2|Х2|1Х)(?![\p{L}\p{N}])/iu;
+const SCENARIO_BETTING_TEXT = /коэффициент|рын(ок|к|оч)|ставк|букмекер|тотал|обе забьют|форсир|(^|[^\p{L}\p{N}])(1[XХ]2|ТБ|ТМ|П1|П2|1X|X2|Х2|1Х)(?![\p{L}\p{N}])/iu;
 function scenarioText(value) {
   const text = publicText(String(value || ''));
   return text && !SCENARIO_BETTING_TEXT.test(text) ? text : '';
