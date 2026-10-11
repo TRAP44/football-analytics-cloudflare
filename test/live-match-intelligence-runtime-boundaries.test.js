@@ -315,3 +315,23 @@ test('worker wires numericValue into live intelligence runtime', () => {
   assert.match(source,/const scoreKnown=/);
   assert.match(source,/return Object\.freeze\(\{/);
 });
+
+// Ревью Codex #806: старый кешированный разбор с «Пропустить ставку» в LIVE
+// показывает нейтральную подпись, а не ставочную метку.
+test('live coach never passes a cached betting label through to the prematch signal', () => {
+  const live=runtime();
+  const coach=live.buildLiveAiCoach({
+    statistics:{items:[]},
+    events:[],
+    pressure:{home:50,away:50},
+    score:{home:0,away:0},
+    elapsed:20,
+    homeName:'Милан',
+    awayName:'Рома',
+    smartInsights:{available:true,dataScore:50},
+    prematch:{aiInstructor:{confidenceScore:55,betSignal:{code:'skip',label:'Пропустить ставку'},verdict:{outcome:'П1 · 52%'}}},
+  });
+  assert.equal(coach.prematch.signal,'Без уверенного вывода');
+  assert.equal(coach.prematch.outcome,'Победа Милан · 52%');
+  assert.doesNotMatch(JSON.stringify(coach.prematch),/Пропустить ставку|П1/);
+});

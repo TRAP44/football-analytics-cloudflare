@@ -283,7 +283,9 @@ export function createSharedCacheRuntime({
     try {
       await supaUpsert(cfg, 'analysis_cache', {
         cache_key: cacheKey,
-        fixture_id: Number.isSafeInteger(Number(fixtureId)) && Number(fixtureId) > 0 ? Number(fixtureId) : null,
+        // The persistent analysis_cache.fixture_id column is NOT NULL. Global catalog/
+        // quota keys use the existing database convention fixture_id = 0.
+        fixture_id: Number.isSafeInteger(Number(fixtureId)) && Number(fixtureId) > 0 ? Number(fixtureId) : 0,
         payload,
         expires_at: expiresAt,
         provider: provenance.provider,

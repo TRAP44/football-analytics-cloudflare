@@ -1106,10 +1106,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch97'),
+      import('./modules/match-center-view.js?v=6.120.0-launch98'),
       import('./modules/match-pulse.js?v=6.120.0-launch87'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch97'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch97'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch98'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch98'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1265,7 +1265,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch97').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch98').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -2941,7 +2941,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch97');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch98');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3403,7 +3403,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch97').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch98').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -5027,35 +5027,65 @@ function liveAiCoachHtml(ai, match) {
   </section>`;
 }
 
+// Сохранённые ранее разборы могли прийти с «П1/Н/П2» — показываем исход словами.
+function postMatchOutcomeText(label, key, match = {}) {
+  const raw = String(label || '').trim();
+  const outcome = String(key || '');
+  const legacy = /^(П1|П2|Н|Х|X)$/i.test(raw);
+  if (raw && raw !== '—' && !legacy && !SCENARIO_BETTING_TEXT.test(raw)) return raw;
+  const team = side => String(match?.[side]?.name || '').trim();
+  if (outcome === 'home' || /^П1$/i.test(raw)) return team('home') ? `Победа ${team('home')}` : 'Победа хозяев';
+  if (outcome === 'away' || /^П2$/i.test(raw)) return team('away') ? `Победа ${team('away')}` : 'Победа гостей';
+  if (outcome === 'draw' || legacy) return 'Ничья';
+  return '—';
+}
+
+function postMatchEvidenceHtml(review = {}) {
+  const evidence = (Array.isArray(review.evidence) ? review.evidence : []).slice(0, 3)
+    .filter(x => x && !SCENARIO_BETTING_TEXT.test(`${x.title || ''} ${x.text || ''}`));
+  if (!evidence.length) return '';
+  return `<div class="post-match-evidence"><strong>Что видно по матчу</strong>${evidence.map(x => `<div><span>${escapeHtml(x.icon || '•')}</span><p><b>${escapeHtml(x.title || '')}</b><small>${escapeHtml(publicText(x.text || ''))}</small></p></div>`).join('')}</div>`;
+}
+
 function postMatchReviewHtml(review = {}, match = {}) {
   if (!review || !Object.keys(review).length) return '';
   if (!review.available) {
+    const evidence = postMatchEvidenceHtml(review);
     return `<section class="panel post-match-review unavailable">
       <div class="post-match-review-head"><div><span>🧠 ПОСЛЕ МАТЧА</span><h2>${escapeHtml(review.headline || 'Итог AI недоступен')}</h2></div><b>архив</b></div>
       <p>${escapeHtml(publicText(review.summary || 'Для честного сравнения нужен сохранённый предматчевый снимок.'))}</p>
+      ${evidence}
+      ${evidence && review.disclaimer ? `<p class="tiny warning">${escapeHtml(publicText(review.disclaimer))}</p>` : ''}
     </section>`;
   }
   const outcome=review.outcome || {};
   const score=review.score || {};
   const hit=Boolean(outcome.correct);
   const markets=Array.isArray(review.markets)?review.markets:[];
-  const evidence=Array.isArray(review.evidence)?review.evidence.slice(0,3):[];
   const quality=review.quality || {};
+  const predictedText=postMatchOutcomeText(outcome.predictedLabel, outcome.predicted, match);
+  const actualText=postMatchOutcomeText(outcome.actualLabel, outcome.actual, match);
+  const probability=Number.isFinite(Number(outcome.probability)) ? Number(outcome.probability) : null;
+  const scoreText=`${Number(score.home)}:${Number(score.away)}`;
+  const lower=text=>text.charAt(0).toLowerCase()+text.slice(1);
+  const summary=review.summary && !SCENARIO_BETTING_TEXT.test(review.summary)
+    ? review.summary
+    : `До матча модель выше всего оценивала исход «${lower(predictedText)}»${probability===null?'':` — ${probability}%`}. Факт: ${lower(actualText)}, счёт ${scoreText}.`;
   return `<section class="panel post-match-review ${hit?'hit':'miss'}">
     <div class="post-match-review-head">
-      <div><span>🧠 POST-MATCH AI REVIEW</span><h2>${escapeHtml(review.headline || 'Разбор завершён')}</h2></div>
+      <div><span>🧠 ПОСЛЕ МАТЧА</span><h2>${escapeHtml(review.headline || 'Разбор завершён')}</h2></div>
       <b>${hit?'✓ исход':'✕ исход'}</b>
     </div>
-    <p class="post-match-summary">${escapeHtml(publicText(review.summary || ''))}</p>
+    <p class="post-match-summary">${escapeHtml(publicText(summary))}</p>
     <div class="post-match-compare">
-      <div><span>До матча</span><strong>${escapeHtml(outcome.predictedLabel || '—')}${Number.isFinite(Number(outcome.probability))?` · ${Number(outcome.probability)}%`:''}</strong><small>максимальная вероятность модели</small></div>
-      <div><span>Факт</span><strong>${escapeHtml(outcome.actualLabel || '—')} · ${Number(score.home)}:${Number(score.away)}</strong><small>финальный результат</small></div>
+      <div><span>До матча</span><strong>${escapeHtml(predictedText)}${probability===null?'':` · ${probability}%`}</strong><small>максимальная вероятность модели</small></div>
+      <div><span>Факт</span><strong>${escapeHtml(actualText)} · ${scoreText}</strong><small>финальный результат</small></div>
     </div>
     ${markets.length?`<div class="post-match-markets">${markets.map(x=>`<div class="${x.correct?'hit':'miss'}"><span>${x.correct?'✓':'✕'} ${escapeHtml(x.label || '')}</span><strong>${escapeHtml(x.predicted || '—')} → ${escapeHtml(x.actual || '—')}</strong><small>${Number.isFinite(Number(x.probability))?`до матча ${Number(x.probability)}%`:''}</small></div>`).join('')}</div>`:''}
-    ${evidence.length?`<div class="post-match-evidence"><strong>Что видно по матчу</strong>${evidence.map(x=>`<div><span>${escapeHtml(x.icon || '•')}</span><p><b>${escapeHtml(x.title || '')}</b><small>${escapeHtml(publicText(x.text || ''))}</small></p></div>`).join('')}</div>`:''}
+    ${postMatchEvidenceHtml(review)}
     <div class="post-match-calibration">
       <span>Калибровка</span>
-      <p>${escapeHtml(publicText(review.calibration?.note || ''))}</p>
+      <p>${escapeHtml(publicText(String(review.calibration?.note || '').replace('settlement ещё не завершён', 'итог ещё сверяется с источником')))}</p>
       ${Number.isFinite(Number(quality.brier))?`<small>Brier: ${Number(quality.brier).toFixed(3)} · чем меньше, тем точнее были вероятности</small>`:''}
     </div>
     <p class="tiny warning">${escapeHtml(publicText(review.disclaimer || ''))}</p>
@@ -5562,7 +5592,7 @@ async function loadAnalysisExplanation(fixtureId) {
   const root = $('matchExplanation');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch97');
+    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch98');
     const { loadMatchExplanation } = await matchExplanationModule;
     await loadMatchExplanation({
       root,
@@ -5582,7 +5612,7 @@ async function loadMatchQuestions(fixtureId) {
   const root = $('matchQuestions');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch97');
+    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch98');
     const { mountMatchQuestions } = await matchQuestionsModule;
     mountMatchQuestions({
       root,
@@ -5599,7 +5629,7 @@ async function loadMatchQuestions(fixtureId) {
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch97');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch98');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {
