@@ -181,11 +181,26 @@ export function createUserDataApiRuntime(deps) {
     });
   }
   
+  const HISTORY_UNAVAILABLE_RESPONSE=Object.freeze({
+    error:'История анализов временно недоступна. Попробуйте чуть позже.',
+    code:'HISTORY_UNAVAILABLE',
+  });
+
+  // null — хранилище истории не ответило (это не то же самое, что пустая история).
+  async function readHistoryRows(userId, cfg) {
+    try {
+      return safeRows(await getHistory(userId,cfg,{strict:true}));
+    } catch {
+      return null;
+    }
+  }
+
   async function apiHistory(request, cfg, user) {
     const userId=positiveId(user?.id);
     if (!userId) return json({error:'Сессия Telegram не подтверждена.',code:'AUTH_REQUIRED'},401);
 
-    const rows=safeRows(await getHistory(userId,cfg));
+    const rows=await readHistoryRows(userId,cfg);
+    if (!rows) return json(HISTORY_UNAVAILABLE_RESPONSE,503);
     // Optional enrichment: the first pre-match model snapshot for fixtures the user already analysed.
     // Any failure leaves the history response untouched (probabilities are null).
     let probabilitiesByFixture={};
@@ -234,7 +249,8 @@ export function createUserDataApiRuntime(deps) {
     const fixtureId=positiveId(new URL(request.url).searchParams.get('fixtureId'));
     if (!fixtureId) return json({error:'Номер матча обязателен.'},400);
   
-    const history=safeRows(await getHistory(userId,cfg));
+    const history=await readHistoryRows(userId,cfg);
+    if (!history) return json(HISTORY_UNAVAILABLE_RESPONSE,503);
     if (!history.some(row=>positiveId(row.fixture_id)===fixtureId)) {
       return json({ error: 'Этот матч отсутствует в вашей истории анализов.', code: 'HISTORY_ANALYSIS_NOT_FOUND' }, 404);
     }

@@ -235,7 +235,9 @@ export function createUserHistoryService({
     runtimeMemory.history.set(key,next);
   }
 
-  async function getHistory(userId, cfg) {
+  // strict:true — сбой хранилища пробрасывается, чтобы API честно ответил
+  // «история недоступна», а не «у вас нет анализов».
+  async function getHistory(userId, cfg, { strict=false }={}) {
     const key=positiveInteger(userId);
     if (!key) return [];
 
@@ -248,8 +250,15 @@ export function createUserHistoryService({
           {telegram_id:`eq.${key}`},
           {limit:20,order:'viewed_at.desc'},
         );
-        return Array.isArray(rows) ? rows.filter(item=>plainObject(item)) : [];
-      } catch {
+        if (!Array.isArray(rows)) throw new Error('Analysis history read returned malformed rows.');
+        return rows.filter(item=>plainObject(item));
+      } catch (error) {
+        if (strict) {
+          const unavailable=new Error('Analysis history is temporarily unavailable.');
+          unavailable.code='HISTORY_UNAVAILABLE';
+          unavailable.cause=error;
+          throw unavailable;
+        }
         return [];
       }
     }

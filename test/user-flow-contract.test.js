@@ -31,7 +31,7 @@ test('history opens cached analysis read-only without spending another analysis 
   const historySource=fs.readFileSync('src/user-data-api-runtime.js','utf8');
   const match = historySource.match(/async function apiHistoryAnalysis[\s\S]*?async function apiFavorites/);
   assert.ok(match, 'apiHistoryAnalysis must exist');
-  assert.match(match[0], /getHistory\(userId,cfg\)/);
+  assert.match(match[0], /readHistoryRows\(userId,cfg\)/);
   assert.match(match[0], /getStaleCache\(cacheKey, cfg\)/);
   assert.doesNotMatch(match[0], /incrementUsage\(/);
   assert.match(fs.readFileSync('src/router.js','utf8'), /pathname === '\/api\/history-analysis'/);
