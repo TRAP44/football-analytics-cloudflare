@@ -53,6 +53,7 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     apiHistory,
     apiHistoryAnalysis,
     apiMatchExplanation,
+    apiMatchQuestion,
     apiLaunchFunnel,
     apiMe,
     apiMediaPublisherLink,
@@ -281,6 +282,7 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
   if (method === 'GET' && pathname === '/api/history') return await apiHistory(request, cfg, user);
   if (method === 'GET' && pathname === '/api/history-analysis') return await apiHistoryAnalysis(request, cfg, user);
   if (method === 'GET' && pathname === '/api/match-explanation') return await apiMatchExplanation(request, cfg, user);
+  if (method === 'POST' && pathname === '/api/match-question') return await apiMatchQuestion(request, cfg, user);
   if (pathname === '/api/favorites') return await apiFavorites(request, cfg, user);
   if (pathname === '/api/favorite-players') return await apiFavoritePlayers(request, cfg, user);
   if (pathname === '/api/digest-settings') return await apiDigestSettings(request, cfg, user);
