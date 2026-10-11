@@ -337,8 +337,21 @@ export function createProviderFixtureRuntime(deps) {
   // Задача 2: провалидированные вероятности модели (первый предматчевый снимок
   // из model_predictions) для матчей ленты — независимо от истории пользователя.
   // Сумма 98–102 проверяется в getModelProbabilities; иначе поле не отдаётся.
+  // Обогащение необязательное: лента не ждёт его дольше FEED_PREDICTION_DEADLINE_MS
+  // (чтение Supabase может занять 7 с × 2 попытки, а клиент обрывает /api/matches
+  // через 6,5 с). Сбой или таймаут кешируется коротко, чтобы не ждать на каждом
+  // запросе, пока Supabase медленный.
   const feedPredictionCache=new Map();
   const FEED_PREDICTION_TTL_MS=60_000;
+  const FEED_PREDICTION_FAILURE_TTL_MS=15_000;
+  const FEED_PREDICTION_DEADLINE_MS=1_500;
+  function withDeadline(promise, ms) {
+    let timer=null;
+    return Promise.race([
+      Promise.resolve(promise).then(value=>({ok:true,value}),()=>({ok:false})),
+      new Promise(resolve=>{ timer=setTimeout(()=>resolve({ok:false}),ms); }),
+    ]).finally(()=>clearTimeout(timer));
+  }
   async function feedModelProbabilities(matches, cfg) {
     if (typeof getModelProbabilities !== 'function') return {};
     const ids=[...new Set(matches
@@ -350,10 +363,11 @@ export function createProviderFixtureRuntime(deps) {
     if (!ids.length) return {};
     const key=ids.join(',');
     const cached=feedPredictionCache.get(key);
-    if (cached && Date.now()-cached.at<FEED_PREDICTION_TTL_MS) return cached.value;
-    const loaded=await getModelProbabilities(ids,cfg);
-    const value=loaded && typeof loaded==='object' && !Array.isArray(loaded) ? loaded : {};
-    feedPredictionCache.set(key,{at:Date.now(),value});
+    if (cached && Date.now()-cached.at<cached.ttl) return cached.value;
+    const loaded=await withDeadline(getModelProbabilities(ids,cfg),FEED_PREDICTION_DEADLINE_MS);
+    const value=loaded.ok && loaded.value && typeof loaded.value==='object' && !Array.isArray(loaded.value) ? loaded.value : {};
+    feedPredictionCache.delete(key);
+    feedPredictionCache.set(key,{at:Date.now(),ttl:loaded.ok ? FEED_PREDICTION_TTL_MS : FEED_PREDICTION_FAILURE_TTL_MS,value});
     if (feedPredictionCache.size>20) feedPredictionCache.delete(feedPredictionCache.keys().next().value);
     return value;
   }

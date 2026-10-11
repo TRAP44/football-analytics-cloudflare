@@ -1667,6 +1667,7 @@ function getPrematchPredictionJob() {
       isTopLeague: (...args) => isTopLeague(...args),
       loadProviderFixturesForDate: (...args) => loadProviderFixturesForDate(...args),
       loadSharedProviderState: (...args) => loadSharedProviderState(...args),
+      normalizeCompetition: (...args) => normalizeCompetition(...args),
       providerSnapshot: (...args) => providerSnapshot(...args),
       recordOpsEvent,
       supaRpc,

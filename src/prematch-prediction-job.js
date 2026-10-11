@@ -130,6 +130,7 @@ export function createPrematchPredictionJob(deps = {}) {
     isTopLeague,
     loadProviderFixturesForDate,
     loadSharedProviderState,
+    normalizeCompetition,
     providerSnapshot,
     recordOpsEvent,
     supaRpc,
@@ -150,24 +151,49 @@ export function createPrematchPredictionJob(deps = {}) {
 
   // Сырые матчи дня (кеш provider-fixtures, при необходимости — один запрос
   // /fixtures?date) в форме кандидата: лента могла ещё никем не открываться.
+  // Классификация турнира — та же, что у нормализованной ленты
+  // (normalizeCompetition): молодёжные, резервные, товарищеские и низшие
+  // лиги помечаются lowPriority и не тратят бюджет. Если классификатор
+  // недоступен или упал — матч считается низкоприоритетным (fail-closed).
+  function rawCompetition(league, teams) {
+    const leagueId = positiveId(league.id);
+    const leagueName = String(league.name || '');
+    try {
+      const competition = typeof normalizeCompetition === 'function'
+        ? plainObject(normalizeCompetition(
+          leagueId,
+          leagueName,
+          String(league.country || ''),
+          String(safeRead(plainObject(teams.home), 'name') || ''),
+          String(safeRead(plainObject(teams.away), 'name') || ''),
+        ))
+        : null;
+      if (!competition) return { top: false, youth: false, lowPriority: true };
+      const youth = competition.youth === true;
+      const lowPriority = youth || competition.friendly === true || competition.lower === true;
+      let top = competition.featured === true;
+      if (!top && !lowPriority && typeof isTopLeague === 'function') top = isTopLeague(leagueId, leagueName) === true;
+      return { top: top && !lowPriority, youth, lowPriority };
+    } catch {
+      return { top: false, youth: false, lowPriority: true };
+    }
+  }
+
   function rawFixtureMatch(row) {
     const item = plainObject(row) || {};
     const fixture = plainObject(item.fixture) || {};
     const league = plainObject(item.league) || {};
     const teams = plainObject(item.teams) || {};
-    let top = false;
-    try {
-      top = typeof isTopLeague === 'function' && isTopLeague(positiveId(league.id)) === true;
-    } catch {
-      top = false;
-    }
+    const competition = rawCompetition(league, teams);
     return {
       fixtureId: positiveId(fixture.id),
       date: String(fixture.date || ''),
       status: String(safeRead(plainObject(fixture.status), 'short') || ''),
       live: false,
       finished: false,
-      isTop: top,
+      isTop: competition.top,
+      youthReserve: competition.youth,
+      lowPriority: competition.lowPriority,
       interestScore: 0,
       home: { id: positiveId(safeRead(plainObject(teams.home), 'id')) },
       away: { id: positiveId(safeRead(plainObject(teams.away), 'id')) },
