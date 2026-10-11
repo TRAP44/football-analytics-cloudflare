@@ -5686,11 +5686,11 @@ function prematchBriefHtml(pm, match, probabilities) {
       <div class="prematch-brief-top">
         <div>
           <span class="prematch-brief-label">🧠 ПРЕДАНАЛИЗ МАТЧА</span>
-          <h2>${escapeHtml(publicText(pm.headline || 'Преданализ матча'))}</h2>
+          <h2>${escapeHtml(prematchScenarioText(pm.headline, match) || 'Преданализ матча')}</h2>
         </div>
         <div class="prematch-data-score"><strong>${dataScore}%</strong><span>полнота данных</span></div>
       </div>
-      <p class="prematch-brief-summary">${escapeHtml(publicText(pm.summary || ''))}</p>
+      <p class="prematch-brief-summary">${escapeHtml(prematchScenarioText(pm.summary, match))}</p>
 
       <div class="prematch-brief-kpis">
         <div><span>Главный сценарий</span><strong>${escapeHtml(['home','draw','away'].includes(leader.key) ? prematchOutcomeName(leader.key, match) : (leader.label || '—'))}</strong><small>${Number(leader.probability || 0).toFixed(1)}%</small></div>

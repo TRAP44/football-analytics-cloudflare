@@ -65,3 +65,8 @@ test('cached pre-match goal scenarios are rewritten in words, betting-only cards
   assert.equal(card({ title: 'Ставка дня', text: 'П1 по коэффициенту 1.85' }), '');
   assert.match(app, /scenarioCards\.length \? scenarioCards\.join\(''\)/);
 });
+
+test('pre-match headline and summary pass through the same outcome-name normalization', () => {
+  assert.match(app, /<h2>\$\{escapeHtml\(prematchScenarioText\(pm\.headline, match\) \|\| 'Преданализ матча'\)\}<\/h2>/);
+  assert.match(app, /prematch-brief-summary">\$\{escapeHtml\(prematchScenarioText\(pm\.summary, match\)\)\}/);
+});
