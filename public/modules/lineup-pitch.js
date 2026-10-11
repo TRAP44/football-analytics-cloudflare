@@ -38,7 +38,9 @@ function gridOf(player) {
 export function lineupFormationRows(lineup) {
   const players = Array.isArray(lineup?.startXI) ? lineup.startXI.slice(0, 11) : [];
   const placed = players.map(player => ({ player, grid: gridOf(player) })).filter(row => row.grid);
-  if (players.length < 8 || placed.length < 8) return null;
+  // Поле — только если сетка есть у каждого опубликованного игрока старта:
+  // иначе часть состава молча пропала бы с поля.
+  if (players.length < 8 || placed.length !== players.length) return null;
   const rows = new Map();
   for (const { player, grid } of placed) {
     if (!rows.has(grid.row)) rows.set(grid.row, []);
@@ -152,7 +154,9 @@ export function lineupPitchViewHtml(lineups, match = {}, { escapeHtml, fallback 
     ...lineupPositions(awayRows, 'away').map(pos => chipHtml(pos, 'away', esc)),
     ...lineupPositions(homeRows, 'home').map(pos => chipHtml(pos, 'home', esc)),
   ].join('');
-  const missingHalf = (rows, lineup, side) => (rows ? '' : `<p class="lp-half-note ${side}">${esc(lineup?.startXI?.length ? 'Расстановка этой команды не передана' : 'Состав этой команды пока не объявлен')}</p>`);
+  const missingHalf = (rows, lineup, side) => (rows ? '' : `<p class="lp-half-note ${side}">${esc(lineup?.startXI?.length ? 'Расстановки нет — состав списком ниже' : 'Состав этой команды пока не объявлен')}</p>`);
+  // Команда со стартом, но без сетки: её 11 игроков не теряются — списком.
+  const startList = (rows, lineup, name) => (rows || !lineup?.startXI?.length ? '' : `<div class="lp-start-list"><b>${esc(name)} · стартовый состав</b><ul>${lineup.startXI.slice(0, 11).map(player => `<li><b>${esc(playerNumber(player) || '•')}</b>${esc(playerName(player))}</li>`).join('')}</ul></div>`);
   const partial = [home, away].some(lineup => lineup?.quality?.partial);
   return `<div class="lp-view">
     ${teamMetaHtml(away, awayName, 'away', esc)}
@@ -162,6 +166,7 @@ export function lineupPitchViewHtml(lineups, match = {}, { escapeHtml, fallback 
       ${missingHalf(awayRows, away, 'away')}${missingHalf(homeRows, home, 'home')}
     </figure>
     ${teamMetaHtml(home, homeName, 'home', esc)}
+    ${startList(homeRows, home, homeName)}${startList(awayRows, away, awayName)}
     ${partial ? '<p class="data-notice">⚠️ Источник передал неполный стартовый состав — он не считается подтверждённым.</p>' : ''}
     <div class="lp-benches">${benchHtml(home, homeName, esc)}${benchHtml(away, awayName, esc)}</div>
   </div>`;

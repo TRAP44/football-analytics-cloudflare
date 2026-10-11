@@ -2472,6 +2472,11 @@ html[data-theme] body.miniapp-public-shell .lp-half-note {
 html[data-theme] body.miniapp-public-shell .lp-half-note.away { top: 22%; }
 html[data-theme] body.miniapp-public-shell .lp-half-note.home { top: 70%; }
 html[data-theme] body.miniapp-public-shell .lp-benches { display: grid; gap: 8px; }
+html[data-theme] body.miniapp-public-shell .lp-start-list { border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; background: var(--surface-2); }
+html[data-theme] body.miniapp-public-shell .lp-start-list > b { font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+html[data-theme] body.miniapp-public-shell .lp-start-list ul { margin: 8px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 4px 10px; }
+html[data-theme] body.miniapp-public-shell .lp-start-list li { font-size: 12px; color: var(--text); min-width: 0; overflow-wrap: anywhere; }
+html[data-theme] body.miniapp-public-shell .lp-start-list li > b { display: inline-block; min-width: 22px; color: var(--hint); }
 html[data-theme] body.miniapp-public-shell .lp-bench { border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; background: var(--surface-2); }
 html[data-theme] body.miniapp-public-shell .lp-bench > summary { cursor: pointer; font-size: 13px; font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
 html[data-theme] body.miniapp-public-shell .lp-bench ul { margin: 8px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 4px 10px; }

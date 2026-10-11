@@ -70,3 +70,20 @@ test('match center lineups tab uses the pitch view with the list as fallback', (
   const module = fs.readFileSync('public/modules/lineup-pitch.js', 'utf8');
   assert.doesNotMatch(module, /^import|three\.js|getContext\(|<canvas/im, 'no 3D libraries or canvas');
 });
+
+// Ревью #839: стартовый состав команды без сетки не пропадает; неполная сетка — не поле.
+test('a team without grid keeps its starting XI as a list; partial grid never hides starters', () => {
+  const gridless = { ...xi('4-4-2', 'Гость'), startXI: xi('4-4-2', 'Гость').startXI.map(p => ({ ...p, grid: '' })) };
+  const html = lineupPitchViewHtml({ home: xi('4-3-3', 'Хозяин'), away: gridless }, match, { escapeHtml: esc });
+  assert.equal((html.match(/class="lp-chip home"/g) || []).length, 11);
+  assert.match(html, /Рома · стартовый состав/);
+  assert.equal((html.match(/Гость /g) || []).length, 11, 'all 11 away starters are listed');
+  assert.match(html, /Расстановки нет — состав списком ниже/);
+
+  const partialGrid = xi('4-3-3');
+  partialGrid.startXI = partialGrid.startXI.map((p, i) => (i >= 9 ? { ...p, grid: '' } : p));
+  assert.equal(lineupFormationRows(partialGrid), null, '9 of 11 grids is not enough for the pitch');
+  const both = lineupPitchViewHtml({ home: partialGrid, away: xi('4-4-2') }, match, { escapeHtml: esc });
+  assert.match(both, /Милан · стартовый состав/);
+  assert.equal((both.match(/class="lp-chip home"/g) || []).length, 0);
+});
