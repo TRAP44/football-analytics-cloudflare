@@ -699,12 +699,18 @@ export function createAnalysisRuntime(deps) {
     const shouldPerformRecheck=Boolean(needsFreshnessRecheck || newsImpactEligible);
     const recheckReasonCode=newsImpactEligible ? 'news_impact' : (previousFreshness?.reasonCode || 'fresh');
     let freeRecheck=false;
+    let recheckOwnershipUnknown=false;
     // Only freshness derived from the stored server-side snapshot can waive
     // quota. News-impact flags/timestamps arrive from the client and may request
     // a comparison, but must never mint free provider work on their own.
     if (needsFreshnessRecheck) {
-      try { freeRecheck=await userHasAnalyzedFixture(userId,fixtureId,cfg) === true; }
-      catch { freeRecheck=false; }
+      try { freeRecheck=await userHasAnalyzedFixture(userId,fixtureId,cfg,{strict:true}) === true; }
+      catch {
+        // История не прочиталась: неизвестно, бесплатна ли перепроверка.
+        // Лимит за это не списываем (см. ниже).
+        freeRecheck=false;
+        recheckOwnershipUnknown=true;
+      }
     }
     if (cached && !needsFreshnessRecheck) {
       if (!newsImpactEligible) {
@@ -735,6 +741,20 @@ export function createAnalysisRuntime(deps) {
     const passCandidate=entitlementBefore.source==='pass'
       && objectValue(entitlementBefore.access)?.expandedAi === true
       && activePasses.length>0;
+    if (recheckOwnershipUnknown && !passCandidate && staleBefore) {
+      // Сбой хранилища истории не должен превращать бесплатную перепроверку
+      // в платную: показываем сохранённый анализ без нового расчёта.
+      await recordTrackedFullAiOutcome('stale_history_unavailable');
+      return json(safeAnalysisResponsePayload(staleBefore,{
+        cached:true,
+        stale:true,
+        warning:'Перепроверка временно недоступна: не удалось проверить историю анализов. Показан последний сохранённый анализ, лимит не списан.',
+        retryAfter:30,
+        recheck:{requested:recheckRequested,performed:false,free:false,reasonCode:'history_unavailable'},
+        quota:await quotaSnapshotForResponse(userId,cfg,null),
+      }));
+    }
+
     let quotaBefore;
     try {
       quotaBefore=quotaSnapshot(await getQuota(userId,cfg),null);
