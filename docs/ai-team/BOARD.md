@@ -21,7 +21,7 @@ _пусто_
 
 ## На ревью
 
-- [ ] Задача 5: AI-объяснение «простыми словами» на Cloudflare Workers AI (каталог фактов на сервере, LLM только упорядочивает ID) — **Claude** (взял у Codex 11.10 по решению Сергея, пока у Codex лимит) — ветка `claude/ai-explanation` — ревью: Codex
+- [ ] Задача 5: AI-объяснение «простыми словами» на Cloudflare Workers AI (каталог фактов на сервере, LLM только упорядочивает ID) — **Claude** (взял у Codex 11.10 по решению Сергея, пока у Codex лимит) — [PR #830](https://github.com/TRAP44/football-analytics-cloudflare/pull/830) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 ## Ждут ревью Codex (у Codex закончился лимит)
