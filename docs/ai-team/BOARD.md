@@ -22,7 +22,7 @@ _пусто_
 
 ## На ревью
 
-- [ ] Штаб матча: счёт не вылезает за рамку блока (крупный счёт «1 : 3» был сдвинут вправо) — **Claude** — [PR #826](https://github.com/TRAP44/football-analytics-cloudflare/pull/826) — ревью: Codex
+- [ ] Аудит вёрстки 320–430px: круг «центра поля» на главной по счёту, «Мои команды» в меню целиком, плашка «против», выбор цвета — **Claude** — [PR #827](https://github.com/TRAP44/football-analytics-cloudflare/pull/827) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 ## Ждут ревью Codex (у Codex закончился лимит)
@@ -40,6 +40,7 @@ _Лимит Codex восстановился 10.10 вечером, очеред�
 
 ## Готово
 
+- [x] Штаб матча: счёт не вылезает за рамку блока (крупный счёт «1 : 3» был сдвинут вправо) — **Claude** — [PR #826](https://github.com/TRAP44/football-analytics-cloudflare/pull/826)
 - [x] Глубокая ссылка на анализ не тратит лимит при сбое истории — **Claude** — [PR #822](https://github.com/TRAP44/football-analytics-cloudflare/pull/822)
 - [x] Mini App: исходы словами вместо «П1/П2», «ТБ 2.5» (в т.ч. в сценариях преданализа) + доработки по ревью #818 — **Claude** — [PR #820](https://github.com/TRAP44/football-analytics-cloudflare/pull/820)
 - [x] Перепроверка не списывает лимит, если история анализов недоступна — **Claude** — [PR #825](https://github.com/TRAP44/football-analytics-cloudflare/pull/825)

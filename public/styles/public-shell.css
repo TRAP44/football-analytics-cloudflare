@@ -2222,6 +2222,11 @@ html {
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--line) 64%,transparent);
 }
 .miniapp-public-shell .experience-vs > span{
+  /* Подпись «против» длиннее старого «VS»: плашка по ширине текста, не фиксированный квадрат. */
+  width:auto;
+  min-width:0;
+  padding-inline:8px;
+  white-space:nowrap;
   color:var(--hint);
   font-size:9px;
   font-weight:800;
@@ -3118,7 +3123,7 @@ html {
   .miniapp-public-shell .history-logos{min-width:50px;grid-template-columns:19px 8px 19px}
   .miniapp-public-shell .history-logos img{width:19px;height:19px}
   .miniapp-public-shell .theme-options{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .miniapp-public-shell .accent-options{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .miniapp-public-shell .accent-options{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media(prefers-reduced-motion:reduce){
   .miniapp-public-shell .my-team-card,
