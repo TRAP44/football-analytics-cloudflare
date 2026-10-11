@@ -226,17 +226,20 @@ export function createMatchQuestionRuntime(deps = {}) {
   async function aiAnswer(cfg, facts, question, userId) {
     const ai = cfg?.workersAi;
     if (!ai || typeof ai.run !== 'function') return { ids: null, reason: 'no_binding' };
+    // Сначала бюджет сервиса: сбой или граница часа не должны тратить лимит
+    // пользователя, а «на сегодня закончились» — только при настоящем исчерпании.
+    const service = storageReady(cfg)
+      ? await claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix: 'ai-ask-global', limit: cfg?.matchQuestionsDailyLimit, now: nowMs })
+      : { allowed: false, reason: 'budget_unavailable' };
+    if (service.allowed !== true) {
+      const exhausted = service.reason === 'daily_limit';
+      telemetry(exhausted ? 'matchQuestionDailyLimited' : 'matchQuestionBudgetUnavailable');
+      return { ids: null, reason: exhausted ? 'daily_limit' : 'ai_unavailable' };
+    }
     const user = await claimUserHour(cfg, userId, cfg?.matchQuestionsUserHourlyLimit);
     if (!user.allowed) {
       telemetry('matchQuestionUserLimited');
       return { ids: null, reason: 'user_limit', remaining: 0 };
-    }
-    const service = storageReady(cfg)
-      ? await claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix: 'ai-ask-global', limit: cfg?.matchQuestionsDailyLimit, now: nowMs })
-      : { allowed: false };
-    if (service.allowed !== true) {
-      telemetry('matchQuestionDailyLimited');
-      return { ids: null, reason: 'daily_limit', remaining: user.remaining };
     }
     let timer;
     try {
@@ -354,7 +357,6 @@ export function createMatchQuestionRuntime(deps = {}) {
       }
     } catch {}
 
-    if (cfg?.aiExplanationEnabled === false) return json({ available: false, reason: 'disabled' });
     const selection = await aiAnswer(cfg, facts, question.text, userId);
     const remaining = Number.isInteger(selection.remaining) ? { remaining: selection.remaining } : {};
     if (!selection.ids) {

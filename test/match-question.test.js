@@ -120,8 +120,8 @@ test('a free question uses LLM selection only; "not in the data" and the user co
   assert.equal(res.body.source, 'ai');
   assert.deepEqual(res.body.items.map(item => item.id), ['form_home', 'form_away']);
   assert.equal(res.body.remaining, 7);
-  assert.equal(calls.rpc[0].params.p_bucket_key, 'ai-ask:user:5');
-  assert.equal(calls.rpc[1].params.p_bucket_key, 'ai-ask-global:h12');
+  assert.equal(calls.rpc[0].params.p_bucket_key, 'ai-ask-global:h12', 'the service budget is claimed first');
+  assert.equal(calls.rpc[1].params.p_bucket_key, 'ai-ask:user:5');
   assert.match(calls.setCache[0].key, /^ask:v1:77:4\.17\.0-starting-xi:[0-9a-f]{24}:[0-9a-f]{20}$/);
 
   const none = runtime({ ai: () => ({ response: '{"factIds":[]}' }) });
@@ -163,6 +163,20 @@ test('limits: user hour and service day stop the LLM with an explicit reason', a
   const daily = await day.rt.apiMatchQuestion(request({ fixtureId: 77, question: 'Кто опаснее в атаке?' }), day.cfg, user);
   assert.equal(daily.body.reason, 'daily_limit');
   assert.equal(day.calls.ai, 0);
+  assert.ok(!day.calls.rpc.some(call => call.params.p_bucket_key.startsWith('ai-ask:user')), 'an exhausted service day does not charge the user');
+
+  // Сбой хранилища бюджета — не «закончились на сегодня» и без списания у пользователя.
+  const down = runtime({ rpc: params => { if (params.p_bucket_key.startsWith('ai-ask-global')) throw new Error('db down'); return { allowed: true, count: 1, limit: 10 }; } });
+  const transient = await down.rt.apiMatchQuestion(request({ fixtureId: 77, question: 'Кто опаснее в атаке?' }), down.cfg, user);
+  assert.equal(transient.body.reason, 'ai_unavailable');
+  assert.ok(!down.calls.rpc.some(call => call.params.p_bucket_key.startsWith('ai-ask:user')));
+});
+
+test('the question switch is independent of the AI explanation switch', async () => {
+  const { rt, cfg, calls } = runtime();
+  const res = await rt.apiMatchQuestion(request({ fixtureId: 77, question: 'Кто сейчас в форме?' }), { ...cfg, aiExplanationEnabled: false }, user);
+  assert.equal(res.body.answer, 'facts');
+  assert.equal(calls.ai, 1);
 });
 
 test('access and input guards', async () => {
