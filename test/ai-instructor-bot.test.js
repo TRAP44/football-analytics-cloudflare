@@ -197,13 +197,16 @@ test('Telegram verdict renders skip state, referee and user-controlled text safe
     },
   });
 
-  assert.match(text, /Лучше пропустить/);
+  // Сценарии вместо ставочного вердикта: без «Лучше пропустить», «П1», «Тотал».
+  assert.match(text, /AI · сценарии матча/);
   assert.match(text, /Без уверенного вывода/);
+  assert.match(text, /Неопределённость: Высокий/);
+  assert.doesNotMatch(text, /Лучше пропустить|Пропустить ставку|П1|Тотал|Обе забьют|рынк/);
   assert.match(text, /Судья: &lt;Ref&gt;/);
   assert.match(text, /&lt;Home &amp; Co&gt;/);
   assert.match(text, /Away &gt; Team/);
   assert.doesNotMatch(text, /<Home & Co>|<Ref>/);
-  assert.match(text, /не гарантирует результат/);
+  assert.match(text, /не гарантия результата/);
 });
 
 test('Telegram hub is button-first and full analysis deep-links directly to the selected fixture', () => {

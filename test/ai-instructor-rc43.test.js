@@ -267,10 +267,19 @@ test('RC43 Telegram last verdict formats the newest saved compact snapshot', () 
 
   assert.match(text, /🧠 Последний AI-разбор/);
   assert.match(text, /Arsenal — Chelsea/);
-  assert.match(text, /1X · хозяева не проиграют/);
+  // Старая запись без кода сигнала: ставочная метка не показывается.
+  assert.match(text, /AI-разбор готов/);
+  assert.doesNotMatch(text, /1X|П1/);
   assert.match(text, /уверенность 83\/100/);
-  assert.match(text, /риск умеренный/);
-  assert.match(text, /Исход: П1 · 58%/);
+  assert.match(text, /неопределённость умеренный/);
+  assert.match(text, /Исход по модели: Победа Arsenal · 58%/);
+
+  const coded = telegram.lastAiVerdictText({
+    fixture_id: 77, home_name: 'Arsenal', away_name: 'Chelsea',
+    ai_signal_code: 'double_home', ai_signal_label: '1X · хозяева не проиграют',
+  });
+  assert.match(coded, /Arsenal скорее не проиграет/);
+  assert.doesNotMatch(coded, /1X/);
 });
 
 test('RC43 Telegram /last sends the newest history row and a history deep link', async () => {

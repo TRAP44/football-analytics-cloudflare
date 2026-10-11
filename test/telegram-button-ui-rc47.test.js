@@ -34,7 +34,9 @@ test('single match search exposes action buttons',()=> {
   assert.match(worker,/🧠 AI-вердикт/);
   assert.match(worker,/🧑‍⚖️ Судья/);
   assert.match(worker,/👥 Составы и потери/);
-  assert.match(worker,/💹 Рынок и риски/);
+  // Кнопка раздела рисков без «рынка»; callback прежний (match:market), старые кнопки в чатах работают.
+  assert.match(worker,/⚠️ Риски матча/);
+  assert.doesNotMatch(worker,/💹 Рынок и риски/);
   assert.match(worker,/📊 Полный AI-разбор/);
 });
 

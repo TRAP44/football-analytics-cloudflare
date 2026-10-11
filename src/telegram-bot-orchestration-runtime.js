@@ -1,3 +1,5 @@
+import { neutralOutcomeText, neutralReasonText, neutralSignalText, NO_CLEAR_SIGNAL_LABEL } from './signal-wording.js';
+
 const SECTION_NAMES = new Set(['verdict','referee','squads','market','review']);
 
 export function createTelegramBotOrchestrationRuntime(deps = {}) {
@@ -238,6 +240,11 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
       || plainObject(optionalCall(analysisKickoffHandoff,fallbackHandoff,root))
       || fallbackHandoff;
     const handoffLocked=handoff.locked===true;
+    // Нейтральные слова вместо ставочных меток («ТБ 2.5», «П1», «1X») и рыночных фраз.
+    const signalText=neutralSignalText(signal.code,{home:home.name,away:away.name});
+    const reasonText=[signal.reason,ai.riskNote,...(Array.isArray(ai.factors) ? ai.factors : [])]
+      .map(value=>neutralReasonText(typeof value==='string' ? value : ''))
+      .find(Boolean) || '';
     const freshIcon=freshness.needsRecheck===true?'🟠':safeText(freshness.state,32)==='started'?'⚪':'🟢';
     const recheck=plainObject(root.recheck) || {};
     const delta=recheck.performed===true ? plainObject(recheck.delta) : null;
@@ -279,17 +286,17 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
       `<b>${escapeHtml(home.name || 'Хозяева',120)} — ${escapeHtml(away.name || 'Гости',120)}</b>`,
       '',
       handoffLocked
-        ? `⏱ <b>Предматчевый сигнал зафиксирован: ${escapeHtml(signal.label || 'без сигнала',240)}</b>`
-        : `🎯 ${skip ? '<b>Сигнала нет — матч лучше пропустить</b>' : `<b>${escapeHtml(signal.label || 'Изучить матч',240)}</b>`}`,
-      `📊 Исход: ${escapeHtml(verdict.outcome || '—',240)}`,
+        ? `⏱ <b>Предматчевый вывод зафиксирован: ${escapeHtml(signalText || NO_CLEAR_SIGNAL_LABEL,240)}</b>`
+        : `🎯 ${skip ? '<b>Уверенного вывода нет — исход матча открыт</b>' : `<b>${escapeHtml(signalText || 'Изучить матч',240)}</b>`}`,
+      `📊 Исход по модели: ${escapeHtml(neutralOutcomeText(verdict.outcome,{home:home.name,away:away.name}) || '—',240)}`,
       `🧠 Уверенность: ${escapeHtml(ai.confidenceLabel || '—',120)} · ${confidence}`,
-      `⚠️ Риск: ${escapeHtml(ai.riskLabel || '—',120)}`,
+      `⚠️ Неопределённость: ${escapeHtml(ai.riskLabel || '—',120)}`,
       `🗂 Данные: ${escapeHtml(trust.label || '—',160)} · ${trustScore}`,
       `${freshIcon} Свежесть: <b>${escapeHtml(freshness.label || '—',160)}</b> · ${ageText} мин.`,
       '',
       handoffLocked
-        ? `До старта AI объяснял сигнал так: ${escapeHtml(signal.reason || ai.riskNote || 'по доступным предматчевым данным',800)}`
-        : `Почему: ${escapeHtml(signal.reason || ai.riskNote || 'Оцениваю доступные данные матча.',800)}`,
+        ? `До старта AI объяснял вывод так: ${escapeHtml(reasonText || 'по доступным предматчевым данным',800)}`
+        : `Почему: ${escapeHtml(reasonText || 'Оцениваю доступные данные матча.',800)}`,
       freshness.reason ? `Свежесть: ${escapeHtml(freshness.reason,800)}` : '',
       safeText(handoff.state,32)==='imminent' ? `⏳ ${escapeHtml(handoff.label,160)}: ${escapeHtml(handoff.reason,800)}` : '',
       handoffLocked ? `➡️ ${escapeHtml(handoff.reason,800)}` : '',
@@ -297,7 +304,7 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
       ...(deltaLines.length ? ['', '🔄 <b>Что изменилось после перепроверки</b>', ...deltaLines.map(line=>escapeHtml(line,1200))] : []),
       '',
       handoffLocked
-        ? '<i>После стартового свистка MatchRadar AI не превращает предматчевый сигнал в live-рекомендацию. Используйте центр матча для счёта, событий и статистики.</i>'
+        ? '<i>После стартового свистка MatchRadar AI не превращает предматчевый вывод в live-подсказку. Используйте центр матча для счёта, событий и статистики.</i>'
         : '<i>Полный AI-разбор откроется сразу на этом матче — повторно искать его не нужно.</i>',
     ].filter(line=>line!==null && line!==undefined).join('\n');
   }
@@ -359,30 +366,24 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
     ].join('\n');
   }
 
+  // Раздел «Риски матча» (callback прежний — match:market): без коэффициентов и движения рынка.
   function botMarketRiskText(data = {}) {
     const root=plainObject(data) || {};
     const match=plainObject(root.match) || {};
     const home=plainObject(match.home) || {};
     const away=plainObject(match.away) || {};
     const ai=plainObject(root.aiInstructor) || {};
-    const market=plainObject(root.market) || {};
-    const odds=plainObject(market.odds) || {};
-    const homeOdd=finiteNumber(odds.home);
-    const drawOdd=finiteNumber(odds.draw);
-    const awayOdd=finiteNumber(odds.away);
-    const oddsLine=homeOdd!==null && drawOdd!==null && awayOdd!==null
-      ? `П1 ${homeOdd} · X ${drawOdd} · П2 ${awayOdd}`
-      : 'актуальные 1X2 коэффициенты недоступны';
-    const risks=rowsOrEmpty(Array.isArray(ai.risks) ? ai.risks : root.risks,3);
-    const movement=safeText(ai.marketNote,800)
-      || safeText(optionalCall(marketMovementNote,'',plainObject(root.marketMovement) || {}),800);
+    const risks=rowsOrEmpty(Array.isArray(ai.risks) ? ai.risks : root.risks,6)
+      .map(item=>neutralReasonText(typeof item==='string' ? item : ''))
+      .filter(Boolean)
+      .slice(0,3);
     return [
-      `💹 <b>Рынок и риски · ${escapeHtml(home.name,120)} — ${escapeHtml(away.name,120)}</b>`,
+      `⚠️ <b>Риски матча · ${escapeHtml(home.name,120)} — ${escapeHtml(away.name,120)}</b>`,
       '',
-      `Коэффициенты: ${escapeHtml(oddsLine,300)}`,
-      `Движение: ${escapeHtml(movement || 'Достоверных данных о движении рынка пока нет.',800)}`,
-      `Риск AI: <b>${escapeHtml(ai.riskLabel || '—',120)}</b>`,
-      ...(risks.length ? ['', '<b>Что может сломать сценарий:</b>', ...risks.map(item=>`• ${escapeHtml(item,500)}`)] : []),
+      `Неопределённость модели: <b>${escapeHtml(ai.riskLabel || '—',120)}</b>`,
+      ...(risks.length
+        ? ['', '<b>Что может изменить картину:</b>', ...risks.map(item=>`• ${escapeHtml(item,500)}`)]
+        : ['', 'Явных факторов, которые меняют картину, по доступным данным не видно.']),
     ].join('\n');
   }
 
@@ -438,7 +439,7 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
     const marketLines=rowsOrEmpty(review.markets,8).map(item=>{
       const row=plainObject(item) || {};
       const probability=finiteNumber(row.probability);
-      return `${row.correct===true?'✓':'✕'} ${safeText(row.label,160,'Рынок')}: ${safeText(row.predicted,220,'—')}${probability!==null?` (${probability}%)`:''} → ${safeText(row.actual,220,'—')}`;
+      return `${row.correct===true?'✓':'✕'} ${safeText(row.label,160,'Показатель')}: ${safeText(row.predicted,220,'—')}${probability!==null?` (${probability}%)`:''} → ${safeText(row.actual,220,'—')}`;
     });
     const evidence=rowsOrEmpty(review.evidence,3).map(item=>{
       const row=plainObject(item) || {};
@@ -452,7 +453,7 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
       `${outcome.correct===true?'✅':'❌'} <b>${escapeHtml(review.headline,500)}</b>`,
       `До матча: ${escapeHtml(outcome.predictedLabel || '—',220)}${outcomeProbability!==null?` · ${outcomeProbability}%`:''}`,
       `Факт: ${escapeHtml(outcome.actualLabel || '—',220)}`,
-      ...(marketLines.length ? ['', '<b>Дополнительные рынки:</b>', ...marketLines.map(line=>escapeHtml(line,1000))] : []),
+      ...(marketLines.length ? ['', '<b>Голы:</b>', ...marketLines.map(line=>escapeHtml(line,1000))] : []),
       ...(evidence.length ? ['', '<b>Что видно по матчу:</b>', ...evidence.map(line=>escapeHtml(line,1000))] : []),
       '',
       escapeHtml(plainObject(review.calibration)?.note || '',800),

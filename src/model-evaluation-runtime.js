@@ -94,11 +94,14 @@ export function createModelEvaluationRuntime(deps = {}) {
   
     if (postMatchFiniteValue(prediction.over25_prob)!==null) {
       const overPred=Number(prediction.over25_prob)>=50;
-      markets.push({code:'over25',label:'Тотал 2.5',predicted:overPred?'ТБ 2.5':'ТМ 2.5',probability:Math.round(Number(prediction.over25_prob)*10)/10,actual:overActual?'ТБ 2.5':'ТМ 2.5',correct:overPred===overActual});
+      // Нейтральные слова вместо «ТБ/ТМ 2.5»; вероятность — того варианта, который предсказан.
+      const overProb=Math.round(Number(prediction.over25_prob)*10)/10;
+      markets.push({code:'over25',label:'3+ гола в матче',predicted:overPred?'да':'нет',probability:overPred?overProb:Math.round((100-overProb)*10)/10,actual:overActual?'да':'нет',correct:overPred===overActual});
     }
     if (postMatchFiniteValue(prediction.btts_prob)!==null) {
       const bttsPred=Number(prediction.btts_prob)>=50;
-      markets.push({code:'btts',label:'Обе забьют',predicted:bttsPred?'Да':'Нет',probability:Math.round(Number(prediction.btts_prob)*10)/10,actual:bttsActual?'Да':'Нет',correct:bttsPred===bttsActual});
+      const bttsProb=Math.round(Number(prediction.btts_prob)*10)/10;
+      markets.push({code:'btts',label:'Забьют обе команды',predicted:bttsPred?'да':'нет',probability:bttsPred?bttsProb:Math.round((100-bttsProb)*10)/10,actual:bttsActual?'да':'нет',correct:bttsPred===bttsActual});
     }
   
     const evidence=[];

@@ -506,9 +506,10 @@ test('fixture text and verdict escape untrusted HTML and reject coercive scores'
       verdict:{outcome:'<P1>'},
     },
   });
-  assert.match(verdict,/Лучше пропустить/);
+  // Метка сигнала из payload не выводится вовсе — только нейтральный вывод по коду.
+  assert.doesNotMatch(verdict,/Лучше пропустить|<Skip>|&lt;Skip&gt;|<P1>|&lt;P1&gt;/);
+  assert.match(verdict,/Без уверенного вывода/);
   assert.match(verdict,/&lt;Home&gt;/);
-  assert.match(verdict,/&lt;Skip&gt;/);
   assert.match(verdict,/· —/);
 });
 

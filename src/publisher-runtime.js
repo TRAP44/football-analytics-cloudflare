@@ -1,4 +1,4 @@
-import { publicSignalLabel } from './signal-wording.js';
+import { neutralSignalText } from './signal-wording.js';
 export function createPublisherRuntime(deps = {}) {
   if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
     throw new TypeError('Publisher runtime dependencies are required.');
@@ -144,7 +144,10 @@ export function createPublisherRuntime(deps = {}) {
       `<b>${telegramHtmlEscape(card.homeName)} — ${telegramHtmlEscape(card.awayName)}</b>`,
       telegramHtmlEscape(card.league || 'Футбол'),
       card.date ? `🗓 ${telegramHtmlEscape(botFixtureDateTime(card.date))}` : '',
-      signal.label ? `🧠 AI: <b>${telegramHtmlEscape(publicSignalLabel(signal.label))}</b>${confidence?` · ${confidence}`:''}` : '🧠 AI-разбор откроется сразу по ссылке.',
+      // Нейтральный вывод по коду сигнала вместо ставочной метки («ТБ 2.5», «П1»).
+      neutralSignalText(signal.code,{home:card.homeName,away:card.awayName})
+        ? `🧠 AI: <b>${telegramHtmlEscape(neutralSignalText(signal.code,{home:card.homeName,away:card.awayName}))}</b>${confidence?` · ${confidence}`:''}`
+        : '🧠 AI-разбор откроется сразу по ссылке.',
       '',
       '<i>Информационная аналитика, не гарантия результата.</i>',
     ].filter(Boolean).join('\n');

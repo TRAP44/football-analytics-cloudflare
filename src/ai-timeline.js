@@ -74,8 +74,8 @@ export function timelineTriggerFromDelta(delta = null) {
     return {
       category: 'odds_move',
       relation: 'correlated',
-      label: 'Движение рынка',
-      explanation: 'Изменение оценки по времени совпало с заметным движением рынка. Причинность не подтверждена.',
+      label: 'Обновление внешних данных',
+      explanation: 'Изменение оценки по времени совпало с обновлением внешних данных матча. Причинность не подтверждена.',
     };
   }
   if (codes.size) {

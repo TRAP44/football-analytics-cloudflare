@@ -26,8 +26,10 @@ test('finished Match Center settles existing prediction and builds review',()=> 
 });
 
 test('review checks outcome total and BTTS and adds observed evidence',()=> {
-  assert.match(modelEvaluation,/label:'Тотал 2\.5'/);
-  assert.match(modelEvaluation,/label:'Обе забьют'/);
+  // Нейтральные метки вместо «Тотал 2.5 / ТБ / ТМ / Обе забьют».
+  assert.match(modelEvaluation,/label:'3\+ гола в матче'/);
+  assert.match(modelEvaluation,/label:'Забьют обе команды'/);
+  assert.doesNotMatch(modelEvaluation,/'ТБ 2\.5'|'ТМ 2\.5'|label:'Тотал 2\.5'|label:'Обе забьют'/);
   assert.match(modelEvaluation,/add\('xg'/);
   assert.match(modelEvaluation,/add\('shots_on_goal'/);
   assert.match(modelEvaluation,/add\('red_card'/);
@@ -124,8 +126,11 @@ test('RC62 keeps genuine zero probabilities and quality metrics rather than drop
     fixture:null,
   });
   assert.equal(result.markets.length,2);
-  assert.equal(result.markets[0].probability,0);
-  assert.equal(result.markets[1].probability,0);
+  // Нулевая вероятность «3+ голов» не отбрасывается: прогноз «нет» получает 100%.
+  assert.equal(result.markets[0].predicted,'нет');
+  assert.equal(result.markets[0].probability,100);
+  assert.equal(result.markets[1].predicted,'нет');
+  assert.equal(result.markets[1].probability,100);
   assert.equal(result.quality.brier,0);
   assert.equal(result.quality.confidence,0);
 });

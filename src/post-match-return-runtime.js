@@ -1,4 +1,4 @@
-import { publicSignalLabel } from './signal-wording.js';
+import { neutralSignalText } from './signal-wording.js';
 export function createPostMatchReturnRuntime(deps = {}) {
   const {
     APP_VERSION,
@@ -85,7 +85,8 @@ export function createPostMatchReturnRuntime(deps = {}) {
     const actualLabel=postMatchOutcomeLabel(actual);
     const probability=postMatchPredictionProbability(prediction,predicted);
     const correct=prediction.correct===true || (predicted && predicted===actual);
-    const signal=publicSignalLabel(String(history.ai_signal_label || '').trim());
+    // Нейтральный вывод по коду сигнала, а не сохранённая ставочная метка.
+    const signal=neutralSignalText(history.ai_signal_code,{home,away});
     const text=[
       '🏁 <b>Матч завершён · MatchRadar AI</b>',
       `<b>${telegramHtmlEscape(home)} — ${telegramHtmlEscape(away)} · ${homeGoals}:${awayGoals}</b>`,
@@ -95,7 +96,7 @@ export function createPostMatchReturnRuntime(deps = {}) {
       `📊 Исход модели: <b>${telegramHtmlEscape(predictedLabel)}</b>${probability===null?'':` · ${probability}%`} → факт <b>${telegramHtmlEscape(actualLabel)}</b>`,
       correct ? '✅ Главный исход совпал.' : '❌ Главный исход не совпал.',
       '',
-      'Откройте итог AI — сверю исход, тотал, обе забьют и фактический контекст матча.',
+      'Откройте итог AI — сверю исход, голы и фактический контекст матча.',
     ].filter(Boolean).join('\n');
     return {
       text,

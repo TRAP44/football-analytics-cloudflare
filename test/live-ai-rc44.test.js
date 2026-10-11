@@ -50,7 +50,7 @@ test('RC44 builds a behavioral AI LIVE coach from trusted current-match evidence
   assert.equal(result.action.code,'avoid');
   assert.equal(
     result.action.label,
-    'Не опираться на предматчевый сигнал',
+    'Не опираться на предматчевый вывод',
   );
   assert.equal(result.current.performanceSide,'away');
   assert.equal(result.current.scoreKnown,true);

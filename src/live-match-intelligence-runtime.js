@@ -1,3 +1,5 @@
+import { neutralOutcomeText, neutralSignalText } from './signal-wording.js';
+
 // Live match intelligence helpers extracted from worker.js.
 // Numeric parsing remains injected by the composition root.
 export function createLiveMatchIntelligenceRuntime(deps) {
@@ -379,7 +381,7 @@ export function createLiveMatchIntelligenceRuntime(deps) {
     let volatilityLabel='Средний',volatilityReason='Картина матча может измениться после одного ключевого эпизода.';
     if (hred!==ared || recentCritical || Math.abs(marketShift?.delta ?? 0)>=8) {
       volatilityLabel='Высокий';
-      volatilityReason='Есть удаление, недавнее ключевое событие или резкий сдвиг рынка.';
+      volatilityReason='Есть удаление, недавнее ключевое событие или резкий поворот в оценке матча.';
     } else if (scoreKnown && minuteValue !== null && minute>=75 && Math.abs(hg-ag)<=1) {
       volatilityLabel='Высокий';
       volatilityReason='Концовка близкого матча — один эпизод может полностью изменить сценарий.';
@@ -390,7 +392,7 @@ export function createLiveMatchIntelligenceRuntime(deps) {
   
     let action={code:'watch',label:'Наблюдать',reason:'Собираю ещё несколько устойчивых сигналов по ходу матча.'};
     if (confidence<45 || dataScore<35) action={code:'wait',label:'Ждать больше данных',reason:'Покрытия пока мало для уверенного live-вывода.'};
-    else if (state==='broken') action={code:'avoid',label:'Не опираться на предматчевый сигнал',reason:'Текущий счёт и игровая картина заметно противоречат исходному сценарию.'};
+    else if (state==='broken') action={code:'avoid',label:'Не опираться на предматчевый вывод',reason:'Текущий счёт и игровая картина заметно противоречат исходному сценарию.'};
     else if (state==='weakened') action={code:'watch',label:'Сценарий под вопросом',reason:'Есть признаки против исходной идеи; важны следующие 5–10 минут.'};
     else if (state==='holds' && confidence>=62) action={code:'hold',label:'Сценарий подтверждается',reason:'Счёт и/или качество игры пока не противоречат предматчевой идее.'};
     else if (!pre) action={code:'watch',label:'Читать матч по LIVE-данным',reason:'Предматчевого AI-снимка нет, поэтому сравнение строится только по текущей игре.'};
@@ -400,7 +402,7 @@ export function createLiveMatchIntelligenceRuntime(deps) {
     if (hxg!==null && axg!==null) watch.push(`xG сейчас ${hxg.toFixed(2)}:${axg.toFixed(2)} — важно, продолжает ли расти преимущество по качеству моментов.`);
     if (hred!==ared) watch.push('Удаление меняет базовый сценарий: отдельно следите за ударами и территорией после красной карточки.');
     else if (recent?.text) watch.push(recent.text);
-    if (marketShift) { const n=marketShift.side==='home'?smartSideName('home',homeName,awayName):marketShift.side==='away'?smartSideName('away',homeName,awayName):'ничью'; watch.push(`Рынок заметно сдвинулся в сторону ${n}: ${marketShift.delta>0?'+':''}${marketShift.delta} п.п. по расчётной вероятности.`); }
+    // Сдвиг коэффициентов учитывается в волатильности, но как «что смотреть» пользователю не показывается.
     if (!watch.length) watch.push('Следите за ударами в створ, xG и первым заметным изменением давления.');
   
     const mainTeam=performanceSide==='home'
@@ -420,7 +422,7 @@ export function createLiveMatchIntelligenceRuntime(deps) {
         ? 'Часть текущих сигналов расходится с тем, что ожидалось до матча. Live-картина важнее старого прогноза.'
         : state==='holds'
           ? 'Текущие данные в целом поддерживают исходный сценарий, но красная карточка, гол или резкий сдвиг давления могут быстро его изменить.'
-          : 'AI оценивает только то, что реально видно сейчас по счёту, событиям, статистике и рынку.';
+          : 'AI оценивает только то, что реально видно сейчас по счёту, событиям и статистике.';
   
     return {
       available:Boolean(smartInsights?.available === true || pressureValue || eventRows.length),
@@ -449,8 +451,9 @@ export function createLiveMatchIntelligenceRuntime(deps) {
       },
       prematch:{
         available:Boolean(pre),
-        signal:displayText(preSignal?.label,'',160),
-        outcome:displayText(pre?.verdict?.outcome,'',160),
+        // Нейтральные слова вместо ставочной метки и «П1 · 52%».
+        signal:displayText(neutralSignalText(preSignal?.code,{home:homeName,away:awayName}),'',160),
+        outcome:displayText(neutralOutcomeText(pre?.verdict?.outcome,{home:homeName,away:awayName}),'',160),
         confidence:boundedNumber(pre?.confidenceScore,0,100) ?? 0,
         stateLabel,
       },
