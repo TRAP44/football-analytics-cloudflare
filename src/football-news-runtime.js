@@ -429,13 +429,13 @@ export function createFootballNewsRuntime(deps) {
     const linkValue=plainObject(link) || {};
     const fixture=plainObject(safeRead(linkValue,'fixture')) || {};
     if (!positiveInteger(safeRead(fixture,'fixtureId'))) return '';
-    if (code==='injury' || code==='suspension') return 'состав · глубина скамейки · баланс сил · рынок';
-    if (code==='lineup') return 'стартовый состав · роли игроков · вероятности · рынок';
+    if (code==='injury' || code==='suspension') return 'состав · глубина скамейки · баланс сил';
+    if (code==='lineup') return 'стартовый состав · роли игроков · вероятности';
     if (code==='referee') return 'карточки · фолы · пенальти · темп';
     if (code==='weather') return 'темп · качество поля · интенсивность · тоталы';
     if (code==='coach') return 'схема · стиль · неопределённость · форма';
     if (code==='transfer') return 'доступность игрока · ротация · глубина состава';
-    return 'состав · форма · рынок · AI-оценка';
+    return 'состав · форма · AI-оценка';
   }
   
   function smartNewsMatchLinkDrill() {
@@ -478,7 +478,7 @@ export function createFootballNewsRuntime(deps) {
     if (fixtureId) {
       const guide=newsFixtureChangeGuide(itemValue,fixtureLink);
       if (guide) return `Перепроверить: ${guide}.`;
-      if (code==='injury' || code==='suspension' || code==='lineup') return 'Проверить, меняет ли это состав, рынок и AI-оценку ближайшего матча.';
+      if (code==='injury' || code==='suspension' || code==='lineup') return 'Проверить, меняет ли это состав и AI-оценку ближайшего матча.';
       if (code==='referee') return 'Проверить судью, карточки и темп в AI-контексте ближайшего матча.';
       if (code==='coach') return 'Проверить, изменился ли игровой контекст и уровень неопределённости перед матчем.';
       return 'Сверить новость с данными ближайшего матча и получить короткую AI-оценку.';

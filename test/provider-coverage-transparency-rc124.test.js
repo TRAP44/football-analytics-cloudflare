@@ -7,7 +7,10 @@ const css=fs.readFileSync('public/styles.css','utf8');
 
 test('RC124 analysis explains provider feature coverage to users',()=>{
   assert.match(app,/function providerCoverageHtml\(reliability = \{\}\)/);
-  for (const label of ['Травмы','Составы','Коэффициенты','Прогноз API','Очные встречи']) assert.ok(app.includes(label));
+  for (const label of ['Травмы','Составы','Прогноз API','Очные встречи']) assert.ok(app.includes(label));
+  // Коэффициенты не показываются пользователю (решение 11.10.2026).
+  const coverage=app.slice(app.indexOf('function providerCoverageHtml('),app.indexOf('\nconst SCENARIO_BETTING_TEXT'));
+  assert.doesNotMatch(coverage,/odds:'Коэффициенты'/);
   assert.match(app,/providerCoverageHtml\(d\.providerReliability \|\| d\.dataPolicy\?\.reliability \|\| \{\}\)/);
 });
 
@@ -34,7 +37,8 @@ function renderProviderCoverageForTest(input){
   const escapeHtml=value=>String(value??'').replace(/[&<>'"]/g,ch=>({
     '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;',
   }[ch]));
-  const render=new Function('escapeHtml','publicText',app.slice(begin,end)+'\nreturn providerCoverageHtml;')(
+  const betting=app.slice(app.indexOf('const SCENARIO_BETTING_TEXT'),app.indexOf('\n',app.indexOf('const SCENARIO_BETTING_TEXT')));
+  const render=new Function('escapeHtml','publicText',betting+'\n'+app.slice(begin,end)+'\nreturn providerCoverageHtml;')(
     escapeHtml,value=>String(value??''),
   );
   return render(input);
@@ -53,13 +57,13 @@ test('RC124 shows genuine zero trust cap without promoting unavailable data to 1
 test('RC124 rejects missing, invalid and out-of-range trust caps instead of inventing confidence',()=>{
   for(const cap of [undefined,null,'0','100',NaN,Infinity,-1,101,{},[]]){
     const html=renderProviderCoverageForTest({
-      trustCap:cap,features:{odds:{state:'empty_response',available:false}},
+      trustCap:cap,features:{predictions:{state:'empty_response',available:false}},
     });
     assert.match(html,/доверие ≤ —/);
     assert.doesNotMatch(html,/NaN%|Infinity%|undefined%/);
   }
   const html=renderProviderCoverageForTest({
-    trustCap:62.5,features:{odds:{state:'available',available:true}},
+    trustCap:62.5,features:{predictions:{state:'available',available:true}},
   });
   assert.match(html,/доверие ≤ 63%/);
 });
@@ -69,7 +73,7 @@ test('RC124 ignores truthy availability strings and shows plan-limit degradation
     state:'healthy',trustCap:40,
     features:{
       injuries:{state:'plan_limited',available:'true',degraded:'false'},
-      odds:{state:'available',available:'false'},
+      predictions:{state:'available',available:'false'},
       h2h:{state:'available',available:true},
     },
   });
@@ -84,7 +88,7 @@ test('RC124 malformed provider metadata cannot inject markup, classes or false c
     state:'healthy" onclick="bad',trustCap:NaN,note:'<script>alert(1)</script>',
     features:{
       injuries:null,lineups:'false',
-      odds:{state:'<img onerror=bad>',available:true},
+      predictions:{state:'<img onerror=bad>',available:true},
       h2h:{state:'available',available:true},
       unknown_feature:{state:'available',available:true},
     },
@@ -96,4 +100,14 @@ test('RC124 malformed provider metadata cannot inject markup, classes or false c
   assert.match(html,/Статус не определён/);
   assert.equal(renderProviderCoverageForTest({features:{}}),'');
   assert.equal(renderProviderCoverageForTest(null),'');
+});
+
+test('RC124 coverage never lists odds and hides a market note from the provider',()=>{
+  const html=renderProviderCoverageForTest({
+    state:'degraded',trustCap:50,note:'Линия 1X2 не подтверждена свежим источником; рыночный сигнал исключён.',
+    features:{odds:{state:'available',available:true},h2h:{state:'available',available:true}},
+  });
+  assert.doesNotMatch(html,/Коэффициент|1X2|рыноч/);
+  assert.equal((html.match(/provider-coverage-row /g)||[]).length,1);
+  assert.match(html,/AI использует только подтверждённые сигналы/);
 });

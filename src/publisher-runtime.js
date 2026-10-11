@@ -266,7 +266,7 @@ export function createPublisherRuntime(deps = {}) {
       `⚽ ${title}`,
       meta,
       '',
-      'MatchRadar AI: составы, судья, рынок, риски и AI-разбор матча.',
+      'MatchRadar AI: составы, судья, риски и AI-разбор матча.',
       deepLink ? `Открыть матч: ${deepLink}` : '',
       '',
       'Информационная аналитика. Не гарантия результата.',

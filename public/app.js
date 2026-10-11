@@ -1106,10 +1106,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch92'),
+      import('./modules/match-center-view.js?v=6.120.0-launch93'),
       import('./modules/match-pulse.js?v=6.120.0-launch87'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch92'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch92'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch93'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch93'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1265,7 +1265,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch92').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch93').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -2941,7 +2941,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch92');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch93');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3388,7 +3388,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch92').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch93').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -5339,6 +5339,16 @@ function modelWeightsText(weights = {}) {
   return parts.length ? parts.join(' · ') : 'Недостаточно сигналов';
 }
 
+// Описание метода модели из старых разборов начиналось с «Рынок, …» — показываем без него.
+function modelMethodText(method) {
+  const text = typeof method === 'string' ? method.trim() : '';
+  if (!text) return 'Модель объединяет доступные статистические сигналы.';
+  const cleaned = text
+    .replace(/^Рынок, прогноз источника данных, недавняя форма, сила сезона и очные встречи/, 'Прогноз источника данных, недавняя форма, сила сезона, очные встречи и другие источники')
+    .replace(/сдвинуть 1[XХ]2 более/g, 'сдвинуть вероятности исходов более');
+  return SCENARIO_BETTING_TEXT.test(cleaned) ? 'Модель объединяет доступные статистические сигналы.' : cleaned;
+}
+
 // Рыночные факторы, строки и подсказки из старых/кешированных разборов не показываем.
 function isMarketPrematchItem(item = {}) {
   const type = String(item?.type || '');
@@ -5529,7 +5539,7 @@ function lineupBlock(title, lineup) {
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch92');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch93');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {
@@ -5756,7 +5766,8 @@ function prematchBriefHtml(pm, match, probabilities) {
 function providerCoverageHtml(reliability = {}) {
   const data = reliability && typeof reliability === 'object' && !Array.isArray(reliability) ? reliability : {};
   const features = data.features && typeof data.features === 'object' && !Array.isArray(data.features) ? data.features : {};
-  const labels = { injuries:'Травмы', lineups:'Составы', odds:'Коэффициенты', predictions:'Прогноз API', h2h:'Очные встречи' };
+  // Коэффициенты не показываются пользователю (решение 11.10.2026).
+  const labels = { injuries:'Травмы', lineups:'Составы', predictions:'Прогноз API', h2h:'Очные встречи' };
   const states = {
     available:['✓','Получено'], empty_response:['○','Источник вернул пустой ответ'], skipped:['○','Запрос отложен'],
     rate_limited:['!','Лимит запросов'], plan_limited:['!','Недоступно на текущем тарифе источника'],
@@ -5777,7 +5788,7 @@ function providerCoverageHtml(reliability = {}) {
   const cap = typeof data.trustCap === 'number' && Number.isFinite(data.trustCap) && data.trustCap >= 0 && data.trustCap <= 100
     ? `${Math.round(data.trustCap)}%` : '—';
   const title = state === 'healthy' ? 'Данные источника получены' : state === 'degraded' ? 'Часть данных ограничена' : 'Часть данных ещё недоступна';
-  return `<section class="provider-coverage-card ${escapeHtml(state)}"><div class="provider-coverage-head"><strong>${escapeHtml(title)}</strong><span>доверие ≤ ${cap}</span></div><div class="provider-coverage-grid">${rows}</div><p>${escapeHtml(publicText(typeof data.note === 'string' && data.note.trim() ? data.note : 'AI использует только подтверждённые сигналы.'))}</p></section>`;
+  return `<section class="provider-coverage-card ${escapeHtml(state)}"><div class="provider-coverage-head"><strong>${escapeHtml(title)}</strong><span>доверие ≤ ${cap}</span></div><div class="provider-coverage-grid">${rows}</div><p>${escapeHtml(publicText(typeof data.note === 'string' && data.note.trim() && !SCENARIO_BETTING_TEXT.test(data.note) ? data.note : 'AI использует только подтверждённые сигналы.'))}</p></section>`;
 }
 
 // «Сценарии матча» вместо ставочного «AI-инструктора»: исходы и голы словами,
@@ -5984,7 +5995,6 @@ function dataProvenanceHtml(provenance = {}) {
   const labels = {
     injuries:'Травмы и дисквалификации',
     predictions:'Прогноз источника',
-    odds:'Коэффициенты',
     h2h:'Очные встречи',
     lineups:'Стартовые составы',
   };
@@ -6288,7 +6298,7 @@ function renderAnalysis(d) {
         <summary>Подробнее о расчёте</summary>
         <div class="analysis-disclosure-body">
         <h2>🧠 Состав модели</h2>
-        <p class="muted">${escapeHtml(publicText(d.modelBreakdown?.method || 'Модель объединяет доступные статистические сигналы.'))}</p>
+        <p class="muted">${escapeHtml(publicText(modelMethodText(d.modelBreakdown?.method)))}</p>
         <div class="model-weights">${escapeHtml(modelWeightsText(d.modelBreakdown?.weights || {}))}</div>
       ${d.modelCalibration ? `<div class="analysis-calibration-card ${escapeHtml(d.modelCalibration.mode || 'baseline')}"><span>Настройка модели</span><strong>${escapeHtml(calibrationModeLabel(d.modelCalibration.mode))}</strong><small>Проверено на выборке: ${Number(d.modelCalibration.sample || 0)}</small></div>` : ''}
         <div class="model-api-card">
