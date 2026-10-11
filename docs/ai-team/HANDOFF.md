@@ -25,6 +25,16 @@ PR: [#835](https://github.com/TRAP44/football-analytics-cloudflare/pull/835), в
 - Выключатель — `MATCH_QUESTIONS_ENABLED` + общие `analysisEnabled`/`maintenanceMode` из runtime controls; отдельный флаг в `runtime_controls` требует миграции (как и для задачи 5, см. «Идеи»). Переменные только в `.env.example` (значения по умолчанию в коде), `wrangler.jsonc` не трогал.
 Осталось / внимание:
 - Ревизия ассетов — launch97 (как и в #834: кто сольётся вторым — поднимет до launch98).
+## 2026-10-11 — Claude — Фоновые задачи через GitHub Actions
+PR: [#838](https://github.com/TRAP44/football-analytics-cloudflare/pull/838), ветка `claude/cron-runner`
+Причина: на Workers Free у cron-запуска 10 мс CPU — с 9.10 ни один из 237 запусков не завершился (`scheduled_job_leases`, статус `running`); напоминания, уведомления, сводка, разбор после матча и задача 2 не работали. Оплата Workers Paid из РФ затруднена — Сергей выбрал вариант А.
+Сделано:
+- `scripts/cron-runner.js` вызывает тот же `scheduled()` из `src/worker.js` в Node 22: слот выравнивается до 5 минут (задержки GitHub), ждёт все `waitUntil`, таймаут 10 мин, выход 1 при упавшей задаче или если задачи не запускались; секреты вырезаются из вывода. В env воркера попадают только переменные из `wrangler.jsonc` и список разрешённых ключей.
+- `.github/workflows/cron-runner.yml`: раз в 5 минут + ручной запуск, только `main`, окружение `background-jobs` (секреты окружения), `permissions: contents: read`, actions по SHA.
+- `wrangler.jsonc`: `crons: []` — один исполнитель (общая блокировка `cron-global`).
+- `privileged-access-audit`: разрешённые ключи для этого workflow + обязательное окружение `background-jobs` для задач с секретами.
+Осталось / внимание:
+- До слияния Сергей создаёт окружение `background-jobs` (только `main`) и кладёт туда ключи (инструкция в PR). Без ключей запуск падает с понятной ошибкой.
 ## 2026-10-11 — Claude — Ревью Codex старых PR (#806, #817, #825)
 PR: [#837](https://github.com/TRAP44/football-analytics-cloudflare/pull/837), ветка `claude/review-fixes-806-825`
 Сделано:

@@ -1,0 +1,56 @@
+name: Background Jobs
+
+# Фоновые задачи MatchRadar (напоминания, уведомления, итоги дня, разбор после
+# матча, предматчевые прогнозы) вне Cloudflare: на Workers Free cron-запуск
+# воркера ограничен 10 мс CPU и обрывается. Тот же обработчик scheduled()
+# выполняется здесь в Node 22. Cron в wrangler.jsonc выключен (crons: []),
+# чтобы два исполнителя не делили блокировку cron-global.
+# Ключи — только секреты окружения background-jobs (Settings → Environments),
+# доступного лишь ветке main: ветки PR до них не дотягиваются.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # GitHub запускает расписание с задержкой; скрипт сам относит запуск к
+    # 5-минутному слоту, а общая блокировка не даёт задачам выполниться дважды.
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: background-jobs
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: background-jobs
+    timeout-minutes: 12
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_PUBLISHER_BOT_TOKEN: ${{ secrets.TELEGRAM_PUBLISHER_BOT_TOKEN }}
+      ADMIN_TELEGRAM_IDS: ${{ secrets.ADMIN_TELEGRAM_IDS }}
+      BETA_TELEGRAM_IDS: ${{ secrets.BETA_TELEGRAM_IDS }}
+      BETA_ACCESS_ENABLED: ${{ secrets.BETA_ACCESS_ENABLED }}
+      API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+      FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+      TAVILY_KEY: ${{ secrets.TAVILY_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Run scheduled tasks
+        run: node scripts/cron-runner.js
