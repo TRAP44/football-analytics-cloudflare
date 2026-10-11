@@ -120,6 +120,7 @@ test('audit: every operator-managed Worker env variable is declared by docs or p
   );
   const platformBindings=new Set([
     wranglerConfig?.version_metadata?.binding,
+    wranglerConfig?.ai?.binding,
     ...((wranglerConfig?.ratelimits || []).map(item=>item?.name)),
   ].filter(Boolean));
   const configuredVars=new Set(Object.keys(wranglerConfig?.vars || {}));
@@ -133,6 +134,8 @@ test('audit: every operator-managed Worker env variable is declared by docs or p
     [],
   );
   assert.ok(platformBindings.has('CF_VERSION_METADATA'));
+  // Задача 5: Workers AI подключается биндингом, без ключей.
+  assert.ok(platformBindings.has('AI'));
   assert.ok(platformBindings.has('EDGE_ANALYZE_RATE_LIMIT'));
   assert.ok(platformBindings.has('EDGE_SENSITIVE_RATE_LIMIT'));
   assert.ok(platformBindings.has('EDGE_WEBHOOK_RATE_LIMIT'));

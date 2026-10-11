@@ -60,6 +60,12 @@ export function createCommonInfrastructureRuntime(deps = {}) {
       supabaseUrl: String(env.SUPABASE_URL || '').replace(/\/$/, ''),
       supabaseKey: env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || '',
       cfVersionMetadata: env.CF_VERSION_METADATA || null,
+      // Задача 5: Cloudflare Workers AI через биндинг AI, без ключей и секретов.
+      // Без биндинга, при выключении или исчерпании лимита — порядок фактов по умолчанию.
+      workersAi: env.AI || null,
+      aiExplanationEnabled: boolEnv(env.AI_EXPLANATION_ENABLED, true),
+      aiExplanationDailyLimit: intEnv(env.AI_EXPLANATION_DAILY_LIMIT, 1000),
+      aiExplanationUserDailyLimit: intEnv(env.AI_EXPLANATION_USER_DAILY_LIMIT, 20),
       cacheMinutes: intEnv(env.CACHE_MINUTES, 20),
       liveOddsEnabled: boolEnv(env.ENABLE_LIVE_ODDS, true),
       // Монетизацию сознательно держим выключенной до финального этапа проекта.
