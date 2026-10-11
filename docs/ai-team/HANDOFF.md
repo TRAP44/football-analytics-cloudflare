@@ -14,6 +14,19 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-12 — Claude — Фоновые задачи: cron Cloudflare запускает GitHub Actions
+PR: ветка `claude/cron-dispatch`
+Сделано:
+- Расписание GitHub (`schedule`) в этом репозитории срабатывает раз в 4–7 часов (почасовой «External Production Monitor» — 4–5 раз в сутки), поэтому `*/5` из #838 фактически не работает: после ручного запуска 11.10 20:29 UTC задач не было.
+- Cron Cloudflare снова включён (`*/5 * * * *`), но задач не выполняет: при `BACKGROUND_JOBS_EXECUTOR=github` воркер делает один запрос `workflow_dispatch` к `cron-runner.yml` на `main` (`src/github-dispatch-runtime.js`) — укладывается в 10 мс CPU Workers Free. Сам запуск из GitHub (`CRON_RUNNER=github-actions`) никого не вызывает.
+- Нет токена — ничего не делает (как сейчас). Ошибка запроса — `ops_events` `BACKGROUND_JOBS_DISPATCH_FAILED` не чаще раза в час на изолят, без токена в тексте.
+Решения:
+- Токен — fine-grained, только этот репозиторий, «Actions: Read and write» (запуск workflow, код не меняет), только секрет Cloudflare `GITHUB_DISPATCH_TOKEN`. Альтернативы (cron-job.org, pg_cron) требуют токен в ещё одном сервисе.
+- Расписание GitHub оставлено запасным. Лишние запуски безопасны: блокировка `cron-global` и `concurrency: background-jobs`.
+Осталось / внимание:
+- Сергей: создать токен и добавить секрет в Cloudflare (шаги — в PR). Правка секрета создаёт версию без отметки CI — следующий деплой пропустит только #844, поэтому #844 сливать раньше.
+- Проверка после включения: `scheduled_job_leases` — `cron:<время>` со статусом `done` каждые 5 минут.
+
 ## 2026-10-12 — Claude — Доска: итог 11.10
 PR: [#843](https://github.com/TRAP44/football-analytics-cloudflare/pull/843), ветка `claude/board-cleanup`
 Сделано: задача 4 (#839) — в «Готово»; раздел «Ждут ревью Codex» убран — вся очередь проверена (#815 → #817, #825/#806 → #837).
