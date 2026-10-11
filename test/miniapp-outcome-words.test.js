@@ -70,3 +70,12 @@ test('pre-match headline and summary pass through the same outcome-name normaliz
   assert.match(app, /<h2>\$\{escapeHtml\(prematchScenarioText\(pm\.headline, match\) \|\| 'Преданализ матча'\)\}<\/h2>/);
   assert.match(app, /prematch-brief-summary">\$\{escapeHtml\(prematchScenarioText\(pm\.summary, match\)\)\}/);
 });
+
+test('every pre-match text block (drivers, watch list) uses the outcome-name normalization', () => {
+  const start = app.indexOf('function prematchDriverCard(');
+  const driver = app.slice(start, app.indexOf('\n}\n', start));
+  assert.match(driver, /prematchScenarioText\(driver\.title, match\)/);
+  assert.match(driver, /prematchScenarioText\(driver\.text, match\)/);
+  assert.doesNotMatch(driver, /publicText\(driver\.(title|text)/);
+  assert.match(app, /pm\.watch\.map\(\(x,i\)=>`<div><b>\$\{i\+1\}<\/b><span>\$\{escapeHtml\(prematchScenarioText\(x, match\)\)\}/);
+});

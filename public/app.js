@@ -5628,8 +5628,8 @@ function prematchDriverCard(driver, match) {
     <div class="prematch-driver-icon">${escapeHtml(driver.icon || '•')}</div>
     <div class="prematch-driver-body">
       <div class="prematch-driver-kicker">${sideName ? `${escapeHtml(sideName)} · ` : ''}${escapeHtml(strengthText)}</div>
-      <h3>${escapeHtml(publicText(driver.title || 'Фактор'))}</h3>
-      <p>${escapeHtml(publicText(driver.text || ''))}</p>
+      <h3>${escapeHtml(prematchScenarioText(driver.title, match) || 'Фактор')}</h3>
+      <p>${escapeHtml(prematchScenarioText(driver.text, match))}</p>
       ${Number.isFinite(Number(driver.weight)) ? `<div class="driver-weight"><span>Вес в общей модели</span><strong>${Number(driver.weight).toFixed(1)}%</strong></div>` : ''}
     </div>
   </article>`;
@@ -5718,7 +5718,7 @@ function prematchBriefHtml(pm, match, probabilities) {
 
     <section class="panel">
       <div class="prematch-section-head"><div><h2>Что может изменить оценку до старта</h2><p>Факторы, за которыми стоит следить перед матчем</p></div></div>
-      ${(pm.watch || []).length ? `<div class="prematch-watch-list">${pm.watch.map((x,i)=>`<div><b>${i+1}</b><span>${escapeHtml(publicText(x))}</span></div>`).join('')}</div>` : '<div class="empty compact-empty">Критичных ожидаемых изменений по доступным данным нет.</div>'}
+      ${(pm.watch || []).length ? `<div class="prematch-watch-list">${pm.watch.map((x,i)=>`<div><b>${i+1}</b><span>${escapeHtml(prematchScenarioText(x, match))}</span></div>`).join('')}</div>` : '<div class="empty compact-empty">Критичных ожидаемых изменений по доступным данным нет.</div>'}
     </section>
 
     <section class="panel">
