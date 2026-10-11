@@ -183,10 +183,17 @@ function qualityHtml(point={}) {
   return bits.length ? `<small class="ai-timeline-quality">${bits.map(escapeHtml).join(' · ')}</small>` : '';
 }
 
+// Сохранённые точки с причиной «движение рынка» показываем нейтрально:
+// Mini App не выводит рыночные данные.
+const MARKET_TRIGGER_CATEGORIES=new Set(['odds_move','market']);
+
 function triggerHtml(point={}) {
   const relation=relationClass(point.trigger?.relation);
-  const label=point.trigger?.label || relationLabel(relation);
-  const explanation=point.trigger?.explanation || (relation==='model_driven'?'Модель переоценила матч после обновления входных данных.':'');
+  const market=MARKET_TRIGGER_CATEGORIES.has(point.trigger?.category);
+  const label=market ? 'Обновление внешних данных' : (point.trigger?.label || relationLabel(relation));
+  const explanation=market
+    ? 'Оценка изменилась вместе с обновлением внешних данных матча. Причинность не подтверждена.'
+    : point.trigger?.explanation || (relation==='model_driven'?'Модель переоценила матч после обновления входных данных.':'');
   return `<div class="ai-timeline-reason"><span class="${relation}">${escapeHtml(relationLabel(relation))}</span><strong>${escapeHtml(label)}</strong>${explanation?`<p>${escapeHtml(explanation)}</p>`:''}</div>`;
 }
 
@@ -291,21 +298,6 @@ function pointHtml(point,index,points,match) {
   </article>`;
 }
 
-function marketContextHtml(rows=[],match={}) {
-  if (!rows.length) return '';
-  const recent=rows.slice(-4);
-  return `<div class="ai-timeline-market-context">
-    <strong>Рыночный контекст</strong>
-    <p>Это сохранённые рыночные вероятности, а не точки AI-модели.</p>
-    <div>${recent.map(row=>{
-      const probs=normalizeProbabilities(row?.probabilities || {});
-      if (!probs) return '';
-      const leader=leaderFor(probs);
-      return `<span><b>${escapeHtml(pointTime({capturedAt:row.capturedAt},match))}</b> ${escapeHtml(outcomeLabel(leader.key,match))} ${Number(leader.probability).toFixed(1)}%</span>`;
-    }).join('')}</div>
-  </div>`;
-}
-
 export function renderAiTimelineDetails(timeline = {}, match = {}) {
   const model=normalizeAiTimeline(timeline,match);
   if (!model.available) return '';
@@ -314,7 +306,6 @@ export function renderAiTimelineDetails(timeline = {}, match = {}) {
     <div class="ai-timeline-details-body">
       <p class="ai-timeline-method">Показываются только реально сохранённые состояния модели. «Совпало по времени» не означает, что событие вызвало изменение вероятности.</p>
       <div class="ai-timeline-list">${model.points.map((point,index)=>pointHtml(point,index,model.points,match)).join('')}</div>
-      ${marketContextHtml(model.marketContext,match)}
       ${model.note?`<p class="tiny warning">${escapeHtml(model.note)}</p>`:''}
     </div>
   </details>`;

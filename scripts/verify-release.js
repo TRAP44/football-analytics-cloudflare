@@ -339,8 +339,18 @@ if (!fs.existsSync('test/match-center-controller-issue459.test.js')) failures.pu
 if (!app.includes("import('./modules/match-center-controller.js')") || !matchCenterController.includes('export function createMatchCenterController')) failures.push('Match Center controller lazy extraction contract is missing');
 if (!app.includes('async function ensureMatchCenterController()') || !app.includes('createMatchCenterController({') || !app.includes('suspendLiveRefresh();') || !app.includes('resumeLiveRefresh();')) failures.push('Match Center request/live lifecycle dependencies must remain explicitly wired from composition root');
 if (app.includes('matchCenterInFlight:') || app.includes('matchCenterRequestSeq:') || app.includes('liveRefreshTimer:') || app.includes('liveRefreshWasActive:')) failures.push('Match Center mutable timer/inflight ownership leaked back into shared app state');
-const matchCenterRequestWrapper = app.slice(app.indexOf('async function requestMatchCenter('), app.indexOf('function signedPp', app.indexOf('async function requestMatchCenter(')));
-const matchCenterOpenWrapper = app.slice(app.indexOf('async function openMatchCenter('), app.indexOf('function syncAnalysisBusyUi', app.indexOf('async function openMatchCenter(')));
+// Срез между маркерами; пропавший маркер — явная ошибка, а не скан всего файла.
+function sliceBetweenMarkers(source, start, end, label) {
+  const from = source.indexOf(start);
+  const to = from >= 0 ? source.indexOf(end, from + start.length) : -1;
+  if (from < 0 || to < 0) {
+    failures.push(`${label}: verifier markers not found (${start} … ${end})`);
+    return '';
+  }
+  return source.slice(from, to);
+}
+const matchCenterRequestWrapper = sliceBetweenMarkers(app, 'async function requestMatchCenter(', 'function startLiveRefresh(', 'Match Center request wrapper');
+const matchCenterOpenWrapper = sliceBetweenMarkers(app, 'async function openMatchCenter(', 'function syncAnalysisBusyUi', 'Match Center open wrapper');
 if (!matchCenterRequestWrapper.includes('ensureMatchCenterController()') || matchCenterRequestWrapper.includes('/api/match-center')) failures.push('Match Center request wrapper must delegate without owning network implementation');
 if (!matchCenterOpenWrapper.includes('ensureMatchCenterController()') || matchCenterOpenWrapper.includes("showView('analysisView')")) failures.push('Match Center open wrapper must delegate without owning navigation implementation');
 if (app.includes('function scheduleLiveRefresh(')) failures.push('Match Center live scheduler leaked back into shared app root');

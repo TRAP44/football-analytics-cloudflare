@@ -172,12 +172,8 @@ test('Match Center keeps partial provider blocks independent and renderable',()=
   assert.match(render,/centerAllStatsHtml\(d\.statistics\)/);
   assert.match(render,/lineupLiveHtml\(d\.lineups, m\)/);
   assert.match(render,/centerPlayersHtml\(d\.playerLeaders, m\)/);
-  assert.match(render,/centerMarketHtml\(d\)/);
+  assert.doesNotMatch(render,/centerMarketHtml|Рыночные данные/);
   assert.match(render,/d\.cached \? 'Данные из сохранённой версии' : 'Свежие данные источника'/);
-
-  const market=block(app,'function centerMarketHtml','function centerAbsenceSummary');
-  assert.match(market,/if \(!d\.liveOdds\) return/);
-  assert.match(market,/Коэффициенты П1 \/ Н \/ П2 в реальном времени сейчас недоступны/);
 
   const lineups=block(app,'function lineupLiveHtml','async function requestMatchCenter');
   assert.match(lineups,/if \(!home && !away\) return/);

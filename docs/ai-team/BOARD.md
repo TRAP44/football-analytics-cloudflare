@@ -22,11 +22,12 @@ _пусто_
 
 ## На ревью
 
-- [ ] Ревью Codex #815: после сбоя обновления «Отзывы» помечаются как устаревшие — **Claude** — [PR #817](https://github.com/TRAP44/football-analytics-cloudflare/pull/817) — ревью: Codex
-- [ ] «Сценарии матча» вместо ставочного «AI-инструктора» в полном разборе; вкладка «Рынок» → «Модель» без коэффициентов — **Claude** — [PR #816](https://github.com/TRAP44/football-analytics-cloudflare/pull/816) — ревью: Codex
+- [ ] Штаб матча без коэффициентов: убрать «Рыночные данные», «Рынок» из пульса, покрытия и «Что изменилось» — **Claude** — [PR #818](https://github.com/TRAP44/football-analytics-cloudflare/pull/818) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 ## Ждут ревью Codex (у Codex закончился лимит)
+
+_Ночь 10→11.10: решение Сергея — Claude работает дальше без разрешений, каждый шаг в PR и до зелёного + ревью Codex; **не мержит**, утром мержит Сергей. Если у Codex кончится лимит — PR ставится сюда, работа продолжается._
 
 _Лимит Codex восстановился 10.10 вечером, очередь #810–#815 проверена. Решение Сергея: такие PR можно мержить, но Codex обязан проверить их, когда лимит восстановится. В PR (даже уже слитый) пишется `@codex review`; замечания исправляет автор отдельным PR._
 
@@ -39,6 +40,8 @@ _Лимит Codex восстановился 10.10 вечером, очеред�
 
 ## Готово
 
+- [x] Ревью Codex #815: «Отзывы» после сбоя обновления помечаются как устаревшие — **Claude** — [PR #817](https://github.com/TRAP44/football-analytics-cloudflare/pull/817)
+- [x] «Сценарии матча» вместо ставочного «AI-инструктора»; вкладка «Рынок» → «Модель» — **Claude** — [PR #816](https://github.com/TRAP44/football-analytics-cloudflare/pull/816)
 - [x] Отзывы: уведомление админу в бот (без дублей) + раздел «Отзывы» в админке — **Claude** — [PR #815](https://github.com/TRAP44/football-analytics-cloudflare/pull/815)
 - [x] Обратная связь для всех пользователей — **Claude** — [PR #814](https://github.com/TRAP44/football-analytics-cloudflare/pull/814) (слит без ревью Codex — лимит)
 - [x] «Поделиться матчем»: нейтральный текст для друзей, кнопка в штабе матча — **Claude** — [PR #813](https://github.com/TRAP44/football-analytics-cloudflare/pull/813) (слит без ревью Codex — лимит)

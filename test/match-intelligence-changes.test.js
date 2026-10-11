@@ -124,7 +124,7 @@ test('current pressure is described as state, not invented temporal change', () 
   assert.doesNotMatch(html,/<h2>Что изменилось<\/h2>/);
 });
 
-test('market movement rejects coercive or incoherent probability deltas', () => {
+test('market movement is never shown, even when the odds history is coherent', () => {
   const render=narrativeRenderer();
   const base={
     mode:'live',
@@ -162,8 +162,8 @@ test('market movement rejects coercive or incoherent probability deltas', () => 
     },
   },match);
 
-  assert.match(valid,/Изменилась оценка: Home/);
-  assert.match(valid,/\+4\.0 п\.п\./);
+  // Движение коэффициентов (рыночная вероятность) — ставочная информация, пользователю не показывается.
+  assert.equal(valid,'');
 });
 
 test('upcoming absences require trusted freshness and are not mislabeled as a detected change', () => {
@@ -211,7 +211,7 @@ test('change narrative keeps strict signal boundaries in source', () => {
   assert.match(source,/provenanceState/);
   assert.match(source,/Number\.isSafeInteger\(minute\)/);
   assert.match(source,/Math\.abs\(home \+ away - 100\) <= 2/);
-  assert.match(source,/rows\.reduce\(\(sum,row\)=>sum\+row\.value,0\)/);
+  assert.doesNotMatch(source,/oddsMovement|рыночн/);
   assert.doesNotMatch(source,/Math\.random/);
   assert.doesNotMatch(source,/homeProbability|drawProbability|awayProbability/);
 });
@@ -234,7 +234,7 @@ test('Match Intelligence assets use the current frontend revision', () => {
   const revision=index.match(
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
-  assert.equal(revision,'6.120.0-launch86');
+  assert.equal(revision,'6.120.0-launch87');
   for (const asset of [
     'styles.css',
     'styles/public-shell.css',

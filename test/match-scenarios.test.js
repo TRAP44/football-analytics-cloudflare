@@ -109,3 +109,32 @@ test('the betting filter catches standalone Cyrillic labels but keeps ordinary w
 test('public app source avoids regex lookbehind (unsupported by older Telegram iOS webviews)',()=>{
   assert.doesNotMatch(app,/\(\?<[!=]/);
 });
+
+test('betting filter catches the full 1X2 token and «рыночная» wording',()=>{
+  const regex=new Function(`${block('const SCENARIO_BETTING_TEXT','\n')}\nreturn SCENARIO_BETTING_TEXT;`)();
+  for (const text of ['Нет доступной линии 1X2 от источника','Расчётная рыночная вероятность','Рынок заметно сдвинулся']) {
+    assert.ok(regex.test(text),text);
+  }
+  for (const text of ['Милан сильнее дома','Рома опасна на контратаках','3+ гола']) {
+    assert.ok(!regex.test(text),text);
+  }
+});
+
+test('live AI coach hides market-derived watch items, volatility reason and prematch label',()=>{
+  const coach=block('function liveAiCoachHtml(','\nfunction postMatchReviewHtml');
+  const betting=block('const SCENARIO_BETTING_TEXT','\n');
+  const renderCoach=new Function('escapeHtml','publicText','clampPercent',`${betting}\n${coach}\nreturn liveAiCoachHtml;`)(escapeHtml,value=>String(value ?? ''),clampPercent);
+  const html=renderCoach({
+    available:true,
+    state:'holds',
+    confidence:61,
+    current:{minute:55},
+    watchNext:['Рынок заметно сдвинулся в сторону хозяев: +6 п.п.','Следить за заменами хозяев'],
+    volatility:{label:'Высокий',reason:'Поздний гол или резкое движение рынка может сломать сценарий.'},
+    prematch:{available:true,signal:'ТБ 2.5',outcome:'Победа Милан · 52%',stateLabel:'держится'},
+  },{});
+  assert.match(html,/Следить за заменами хозяев/);
+  assert.match(html,/Победа Милан · 52%/);
+  assert.match(html,/Матч может быстро измениться\./);
+  assert.doesNotMatch(html,/Рынок|рынка|ТБ 2\.5/);
+});
