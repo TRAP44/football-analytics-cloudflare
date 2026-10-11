@@ -345,3 +345,16 @@ test('pre-match goal scenarios describe goals in words, without betting shorthan
   assert.doesNotMatch(text,/ТБ|обе забьют|букмекер|П1|П2/);
   assert.equal(brief.leader?.label,'Хозяева');
 });
+
+test('close-match pre-match scenario and summary do not mention the market', () => {
+  const runtime=createModelIntelligenceRuntime(deps());
+  const brief=runtime.buildPreMatchIntelligence({
+    probabilities:{home:36,draw:30,away:34},
+    market:null,h2h:null,modelBreakdown:{signals:[]},homeForm:null,awayForm:null,
+    absences:null,lineups:null,goalModel:null,comparison:null,
+    confidence:{score:55,disagreement:4},homeName:'Милан',awayName:'Рома',
+    minutesToKickoff:600,news:null,completeness:{score:8,max:10},
+  });
+  assert.ok(brief.scenarios.length>0);
+  assert.doesNotMatch(JSON.stringify(brief.scenarios)+brief.summary,/рын(ок|к|оч)/i);
+});
