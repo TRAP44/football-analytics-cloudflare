@@ -22,7 +22,7 @@ _пусто_
 
 ## На ревью
 
-- [ ] Штаб матча: счёт не вылезает за рамку блока (крупный счёт «1 : 3» был сдвинут вправо) — **Claude** — ветка `claude/center-score-fit` — ревью: Codex
+- [ ] Штаб матча: счёт не вылезает за рамку блока (крупный счёт «1 : 3» был сдвинут вправо) — **Claude** — [PR #826](https://github.com/TRAP44/football-analytics-cloudflare/pull/826) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 ## Ждут ревью Codex (у Codex закончился лимит)
