@@ -14,6 +14,13 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-11 — Claude — Лимит не тратится при сбое истории
+PR: [#822](https://github.com/TRAP44/football-analytics-cloudflare/pull/822), ветка `claude/launch-history-gate`
+Сделано:
+- `openLaunchFixture(id, 'analysis')`: если `/api/history` не загрузился (`state.historyLoadError`), вместо нового анализа открывается штаб матча с тостом — дневной лимит не тратится. Работает вместе со слитым #821 (сбой хранилища → 503).
+Осталось / внимание:
+- Ревизия ассетов — launch89; мержить после #820.
+
 ## 2026-10-11 — Claude — Перепроверка не списывает лимит при сбое истории
 PR: [#825](https://github.com/TRAP44/football-analytics-cloudflare/pull/825), ветка `claude/recheck-history-outage`
 Сделано:
