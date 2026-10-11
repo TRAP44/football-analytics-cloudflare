@@ -784,10 +784,8 @@ export function createModelIntelligenceRuntime(deps) {
     if (Number.isFinite(hp) && Number.isFinite(ap) && Math.abs(hp - ap) >= 0.35) {
       factors.push(`${hp > ap ? homeName : awayName} лучше по форме последних матчей: ${Math.max(hp, ap).toFixed(1)} против ${Math.min(hp, ap).toFixed(1)} очка за игру.`);
     }
-    if (marketProbabilities) {
-      const leader=outcomeName(marketProbabilities,homeName,awayName);
-      factors.push(`Коэффициенты П1 / Н / П2 сильнее всего оценивают вариант «${leader}».`);
-    }
+    // Решение Сергея (11.10.2026): рынок и коэффициенты не показываются пользователю —
+    // котировки остаются входом модели, но не попадают в тексты факторов и рисков.
     if (model?.winner) factors.push(`Прогноз API-Football указывает: ${model.winner}.`);
     const homeAbs = absences?.home?.length || 0, awayAbs = absences?.away?.length || 0;
     const homeSuspensions = Number(absences?.summary?.home?.suspension || 0);
@@ -810,7 +808,6 @@ export function createModelIntelligenceRuntime(deps) {
         factors.push('Оба подтверждённых стартовых состава близки к сезонному ядру команд; сильной поправки по XI не требуется.');
       }
     }
-    if (!marketProbabilities) risks.push('Нет доступной линии 1X2 — итог сильнее зависит от статистических источников.');
     if (!model?.probabilities) risks.push('API-Football не вернул процентный прогноз для этого матча.');
     if ((homeForm?.overall?.sample || 0) < 4 || (awayForm?.overall?.sample || 0) < 4) risks.push('Небольшая выборка недавних матчей одной из команд.');
     if (confidence?.disagreement >= 10) risks.push('Источники заметно расходятся между собой — уверенность модели снижена.');
@@ -873,6 +870,8 @@ export function createModelIntelligenceRuntime(deps) {
         return {...signal,probabilities:signalProbabilities,weight};
       })
       .filter(Boolean);
+    // Рыночный сигнал участвует в расчёте, но не показывается в факторах и таблице источников.
+    const visibleSignals=modelSignals.filter(signal=>signal.name!=='market');
     const ranking=probabilityRanking(probabilities,homeName,awayName);
     const top = ranking[0] || { key: '', label: 'Недостаточно данных', value: 0 };
     const second = ranking[1] || { value: 0 };
@@ -896,7 +895,7 @@ export function createModelIntelligenceRuntime(deps) {
     const drivers = [];
     const finalLeaderKey = top.key;
   
-    for (const signal of modelSignals.slice().sort((a,b)=>b.weight-a.weight)) {
+    for (const signal of visibleSignals.slice().sort((a,b)=>b.weight-a.weight)) {
       const sr = probabilityRanking(signal.probabilities, homeName, awayName);
       const sTop = sr[0];
       if (!sTop) continue;
@@ -992,33 +991,6 @@ export function createModelIntelligenceRuntime(deps) {
       }));
     }
 
-    if (marketProbabilities && probabilities) {
-      const marketRanking=probabilityRanking(marketProbabilities,homeName,awayName);
-      const marketTop = marketRanking[0];
-      const finalTop = ranking[0];
-      if (marketTop && finalTop && marketTop.key !== finalTop.key) {
-        drivers.unshift(preMatchDriver({
-          type: 'market_divergence',
-          icon: '↔️',
-          side: 'neutral',
-          title: 'Рынок и модель расходятся',
-          text: `Рынок первым ставит «${marketTop.label}» (${round1(marketTop.value)}%), а объединённая модель — «${finalTop.label}» (${round1(finalTop.value)}%). Это повышает неопределённость.`,
-          strength: 'high',
-          source: 'market',
-        }));
-      } else if (marketTop && finalTop && Math.abs(Number(marketTop.value) - Number(finalTop.value)) >= 7) {
-        drivers.push(preMatchDriver({
-          type: 'market_strength_gap',
-          icon: '💹',
-          side: finalTop.key === 'home' ? 'home' : finalTop.key === 'away' ? 'away' : 'neutral',
-          title: 'Сила сигнала отличается от рынка',
-          text: `Направление рынка и модели совпадает, но уверенность различается: рынок ${round1(marketTop.value)}%, модель ${round1(finalTop.value)}%.`,
-          strength: 'medium',
-          source: 'market',
-        }));
-      }
-    }
-  
     const scenarios = [];
     if (probabilities) {
       if (closeMatch) {
@@ -1099,11 +1071,6 @@ export function createModelIntelligenceRuntime(deps) {
     if (Math.abs(homeAbs - awayAbs) >= 2) {
       watch.push('Статус травмированных/дисквалифицированных: разница по потерям сейчас заметная.');
     }
-    if (!marketProbabilities) {
-      watch.push('Линия 1X2 отсутствует: пока нет рыночного якоря для сравнения с моделью.');
-    } else if (drivers.some(x => x.type === 'market_divergence')) {
-      watch.push('Движение рынка: рынок и итоговая модель сейчас выбирают разные основные сценарии.');
-    }
     if ((homeForm?.overall?.sample || 0) < 4 || (awayForm?.overall?.sample || 0) < 4) {
       watch.push('Размер выборки формы: у одной из команд меньше четырёх недавних матчей в расчёте.');
     }
@@ -1132,7 +1099,7 @@ export function createModelIntelligenceRuntime(deps) {
     const completenessMax=Math.max(1,finiteNumber(completeness?.max) ?? 10);
     const dataScore=Math.round(clamp(completenessScore/completenessMax*100,0,100));
   
-    const sourceRows=modelSignals.map(signal => {
+    const sourceRows=visibleSignals.map(signal => {
       const sr = probabilityRanking(signal.probabilities, homeName, awayName);
       const lead = sr[0] || {};
       return {
