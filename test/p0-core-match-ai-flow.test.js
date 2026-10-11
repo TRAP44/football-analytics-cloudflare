@@ -312,7 +312,7 @@ test('P0 AI optional availability data fails soft instead of dereferencing null'
   const analyze=sourceBlock(
     analysisRuntime,
     'async function apiAnalyze',
-    '  return Object.freeze({apiAnalyze});',
+    '  return Object.freeze({apiAnalyze,analyzeFixtureForSystem});',
   );
 
   assert.match(

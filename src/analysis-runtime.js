@@ -471,6 +471,8 @@ export function createAnalysisRuntime(deps) {
   }
 
   async function quotaSnapshotForResponse(userId, cfg, fallback = null) {
+    // Системный расчёт (cron) идёт без пользователя — квоту не читаем.
+    if (positiveSafeInteger(userId) === null) return fallback;
     try {
       return quotaSnapshot(await getQuota(userId,cfg),fallback);
     } catch {
@@ -561,7 +563,20 @@ export function createAnalysisRuntime(deps) {
     try {
       body=objectValue(await request?.json?.()) || {};
     } catch {}
+    return await runAnalysis(body, cfg, user, {system:false});
+  }
 
+  // Задача 2: системный вход для фонового задания (cron). Тот же конвейер анализа,
+  // блокировка матча (distributed-analysis-lock) и бюджет провайдера, но без квоты
+  // пользователя, прав и pass, истории анализов и событий роста. Режим данных — как
+  // у бесплатного пользователя; результат пишется в общий кеш и model_predictions.
+  async function analyzeFixtureForSystem(fixtureId, cfg) {
+    const id=positiveSafeInteger(fixtureId);
+    if (id === null) return json({error:'Некорректный номер матча.'},400);
+    return await runAnalysis({fixtureId:id}, cfg, null, {system:true});
+  }
+
+  async function runAnalysis(body, cfg, user, {system=false}={}) {
     const fixtureId=positiveSafeInteger(body.fixtureId);
     const userId=positiveSafeInteger(user?.id);
     const requestedOrigin=safeText(body.origin,30);
@@ -579,9 +594,9 @@ export function createAnalysisRuntime(deps) {
     try { newsImpactRecoveryCode=safeText(cleanNewsImpactRecoveryCode(body.newsImpactRecoveryCode),80); } catch {}
     try { newsImpactRecoveryFrom=safeText(cleanNewsImpactActionCode(body.newsImpactRecoveryFrom),80); } catch {}
 
-    const trackFullAi=analysisOrigin!=='telegram_quick';
+    const trackFullAi=!system && analysisOrigin!=='telegram_quick';
     if (fixtureId === null) return json({error:'Некорректный номер матча.'},400);
-    if (userId === null) return json({error:'Пользователь не авторизован.'},401);
+    if (!system && userId === null) return json({error:'Пользователь не авторизован.'},401);
 
     const fireAndForget=(fn,...args)=>{
       try {
@@ -590,6 +605,7 @@ export function createAnalysisRuntime(deps) {
       } catch {}
     };
     const safeRecordHistory=async payload=>{
+      if (system) return;
       try { await recordHistory(userId,payload,cfg); } catch {}
     };
     const recordTrackedFullAiOutcome=async (delivery='analysis')=>{
@@ -713,6 +729,11 @@ export function createAnalysisRuntime(deps) {
       }
     }
     if (cached && !needsFreshnessRecheck) {
+      if (system) {
+        // Свежий анализ уже есть — достаточно зафиксировать первый предматчевый снимок.
+        await optionalAsync(captureModelPrediction,cached,cfg);
+        return json({ok:true,cached:true,fixtureId});
+      }
       if (!newsImpactEligible) {
         await safeRecordHistory(cached);
         if (trackFullAi) fireAndForget(recordGrowthEvent,cfg,{userId,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,freshness:safeText(previousFreshness?.state,40) || 'fresh'}});
@@ -732,9 +753,9 @@ export function createAnalysisRuntime(deps) {
       }
     }
   
-    const entitlementBefore=objectValue(
+    const entitlementBefore=(system ? null : objectValue(
       await optionalAsync(resolveUserEntitlements,userId,fixtureId,cfg),
-    ) || {source:'free',access:{},passes:{}};
+    )) || {source:'free',access:{},passes:{}};
     const activePasses=Array.isArray(objectValue(entitlementBefore.passes)?.active)
       ? entitlementBefore.passes.active
       : [];
@@ -755,7 +776,8 @@ export function createAnalysisRuntime(deps) {
       }));
     }
 
-    let quotaBefore;
+    let quotaBefore=null;
+    if (!system) {
     try {
       quotaBefore=quotaSnapshot(await getQuota(userId,cfg),null);
     } catch {
@@ -773,6 +795,7 @@ export function createAnalysisRuntime(deps) {
         code:'ANALYSIS_QUOTA_EXHAUSTED',
         quota:quotaBefore,
       },429,'quota_exhausted');
+    }
     }
   
     const analysisLock=objectValue(
@@ -855,7 +878,7 @@ export function createAnalysisRuntime(deps) {
       }
       passAccess=passUsageReservation?.allowed === true;
     }
-    if (!freeRecheck && !passAccess) {
+    if (!system && !freeRecheck && !passAccess) {
       usageReservation=objectValue(await reserveAnalysisQuota(userId,cfg));
       if (!usageReservation) {
         return await trackedFullAiFailureResponse({
@@ -2341,5 +2364,5 @@ export function createAnalysisRuntime(deps) {
     }
   }
 
-  return Object.freeze({apiAnalyze});
+  return Object.freeze({apiAnalyze,analyzeFixtureForSystem});
 }

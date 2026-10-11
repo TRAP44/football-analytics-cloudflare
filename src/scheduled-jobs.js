@@ -192,6 +192,7 @@ export function createScheduledJobsRuntime({
   processImportantChangeNotifications,
   processSmartNotifications,
   processPostMatchReturns,
+  processPrematchPredictions,
   runProductionMonitor,
   processDailyDigests,
   cleanupOpsEvents,
@@ -464,6 +465,8 @@ export function createScheduledJobsRuntime({
       ['smart_notifications', smartNotificationsTask],
       ['backtest', backtestTask],
       ['post_match_return', postMatchPrerequisite.then(() => run('post_match_return', () => processPostMatchReturns(cfg)))],
+      // Задача 2: вероятности модели заранее для главных матчей дня (сама держит интервал и потолки).
+      ['prematch_predictions', remindersTask.then(() => run('prematch_predictions', () => processPrematchPredictions(cfg, scheduledAt)))],
     ];
 
     if (scheduledAt.getUTCMinutes() % 15 === 0) {

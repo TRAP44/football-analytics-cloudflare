@@ -158,7 +158,7 @@ function json(body, status = 200) {
   return { status, body };
 }
 
-function runtime({ history = [{ fixture_id: 77 }], analysis = payload(), cached = null, ai, rpc, controls } = {}) {
+function runtime({ history = [{ fixture_id: 77 }], analysis = payload(), cached = null, ai, rpc, controls, serviceUsedToday = 0 } = {}) {
   const calls = { ai: 0, rpc: [], setCache: [], historyOptions: null };
   const cache = new Map();
   if (analysis) cache.set(EXPLANATION_ANALYSIS_CACHE_KEY(77), analysis);
@@ -177,9 +177,14 @@ function runtime({ history = [{ fixture_id: 77 }], analysis = payload(), cached 
       calls.rpc.push({ name, params });
       return rpc ? rpc(params) : { allowed: true };
     },
+    supaSelectMany: async (_cfg, table, filters) => {
+      calls.selects = (calls.selects || []).concat([{ table, filters }]);
+      return serviceUsedToday ? [{ bucket_key: 'ai-explain-global:h00', window_started_at: '2026-10-11T00:00:00.000Z', request_count: serviceUsedToday }] : [];
+    },
     loadRuntimeControls: async () => ({ value: controls || { analysisEnabled: true, maintenanceMode: false } }),
     recordOpsEvent: async () => {},
     bumpTelemetry: () => {},
+    clock: () => Date.parse('2026-10-11T12:30:00.000Z'),
     memory: {},
   });
   const cfg = {
@@ -193,7 +198,7 @@ function runtime({ history = [{ fixture_id: 77 }], analysis = payload(), cached 
     },
     aiExplanationEnabled: true,
     aiExplanationDailyLimit: 1000,
-    aiExplanationUserDailyLimit: 20,
+    aiExplanationUserHourlyLimit: 6,
   };
   const call = (fixtureId = 77, user = { id: 5 }) => rt.apiMatchExplanation(new Request(`https://x.test/api/match-explanation?fixtureId=${fixtureId}`), cfg, user);
   return { call, calls, cfg };
@@ -208,7 +213,12 @@ test('API: AI picks the order, server builds the text and caches the selection b
   assert.equal(res.body.items[1].connector, 'Это подкрепляет:');
   assert.equal(calls.model, EXPLANATION_MODEL);
   assert.deepEqual(calls.historyOptions, { strict: true });
-  assert.deepEqual(calls.rpc.map(r => r.params.p_bucket_key), ['ai-explain:user:5', 'ai-explain:global']);
+  assert.equal(calls.rpc[0].params.p_bucket_key, 'ai-explain:user:5');
+  assert.equal(calls.rpc[0].params.p_window_seconds, 3600, 'per-user limit is honestly hourly');
+  assert.equal(calls.rpc[1].params.p_bucket_key, 'ai-explain-global:h12');
+  assert.equal(calls.rpc[1].params.p_window_seconds, 3600);
+  assert.equal(calls.selects[0].table, 'provider_rate_windows');
+  assert.equal(calls.selects[0].filters.bucket_key, 'like.ai-explain-global:h*');
   assert.equal(calls.setCache.length, 1);
   assert.match(calls.setCache[0].key, /^explain:v1:77:4\.17\.0-starting-xi:[0-9a-f]{24}$/);
   assert.deepEqual(calls.setCache[0].value.factIds, ['model_lead', 'absences_away', 'form_home']);
@@ -229,7 +239,8 @@ test('API: invalid model answer, errors, limits or missing binding fall back to 
     [{ ai: () => { throw new Error('quota exceeded'); } }, 'ai_error'],
     [{ ai: null }, 'no_binding'],
     [{ rpc: params => ({ allowed: !params.p_bucket_key.includes(':user:') }) }, 'user_limit'],
-    [{ rpc: params => ({ allowed: !params.p_bucket_key.endsWith(':global') }) }, 'daily_limit'],
+    [{ rpc: params => ({ allowed: !params.p_bucket_key.startsWith('ai-explain-global') }) }, 'daily_limit'],
+    [{ serviceUsedToday: 1000 }, 'daily_limit'],
   ];
   for (const [options, reason] of cases) {
     const { call, calls } = runtime(options);

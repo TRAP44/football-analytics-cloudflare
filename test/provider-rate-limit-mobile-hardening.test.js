@@ -59,7 +59,7 @@ test('fixtures are reused from persistent shared caches before provider calls',(
   const matchCenter=block(matchCenterRuntime,'async function apiMatchCenter','  return Object.freeze({apiMatchCenter});');
   assert.match(matchCenter,/loadProviderFixture\(fixtureId,cfg\)/);
 
-  const analyze=block(analysisRuntime,'async function apiAnalyze','  return Object.freeze({apiAnalyze});');
+  const analyze=block(analysisRuntime,'async function apiAnalyze','  return Object.freeze({apiAnalyze,analyzeFixtureForSystem});');
   assert.match(analyze,/loadProviderFixture\(fixtureId,cfg\)/);
 });
 
@@ -80,7 +80,7 @@ test('FREE AI avoids optional network fan-out and reuses cached feature data',()
   assert.match(providerFetch,/source:'cache'/);
   assert.match(providerFetch,/source:'stale'/);
 
-  const analyze=block(analysisRuntime,'async function apiAnalyze','  return Object.freeze({apiAnalyze});');
+  const analyze=block(analysisRuntime,'async function apiAnalyze','  return Object.freeze({apiAnalyze,analyzeFixtureForSystem});');
   assert.match(analyze,/const canFetchLineups = detailedCoverage && paid/);
   assert.match(analyze,/const canFetchFreshForm = detailedCoverage && paid/);
   assert.match(analyze,/const canFetchH2H = detailedCoverage && paid/);

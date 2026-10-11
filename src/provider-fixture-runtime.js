@@ -9,6 +9,7 @@ export function createProviderFixtureRuntime(deps) {
     bumpTelemetry,
     catalogRank,
     getCache,
+    getModelProbabilities,
     getStaleCache,
     isFinishedStatus,
     isFootballRateLimitError,
@@ -333,6 +334,66 @@ export function createProviderFixtureRuntime(deps) {
     return cacheMinutes(cfg?.cacheMinutes,10);
   }
   
+  // Задача 2: провалидированные вероятности модели (первый предматчевый снимок
+  // из model_predictions) для матчей ленты — независимо от истории пользователя.
+  // Сумма 98–102 проверяется в getModelProbabilities; иначе поле не отдаётся.
+  // Обогащение необязательное: лента не ждёт его дольше FEED_PREDICTION_DEADLINE_MS
+  // (чтение Supabase может занять 7 с × 2 попытки, а клиент обрывает /api/matches
+  // через 6,5 с). Сбой или таймаут кешируется коротко, чтобы не ждать на каждом
+  // запросе, пока Supabase медленный.
+  const feedPredictionCache=new Map();
+  const FEED_PREDICTION_TTL_MS=60_000;
+  const FEED_PREDICTION_FAILURE_TTL_MS=15_000;
+  const FEED_PREDICTION_DEADLINE_MS=1_500;
+  function withDeadline(promise, ms) {
+    let timer=null;
+    return Promise.race([
+      Promise.resolve(promise).then(value=>({ok:true,value}),()=>({ok:false})),
+      new Promise(resolve=>{ timer=setTimeout(()=>resolve({ok:false}),ms); }),
+    ]).finally(()=>clearTimeout(timer));
+  }
+  async function feedModelProbabilities(matches, cfg) {
+    if (typeof getModelProbabilities !== 'function') return {};
+    const ids=[...new Set(matches
+      .filter(match=>match && match.finished!==true)
+      .map(match=>Number(match.fixtureId))
+      .filter(id=>Number.isSafeInteger(id) && id>0))]
+      .sort((a,b)=>a-b)
+      .slice(0,200);
+    if (!ids.length) return {};
+    const key=ids.join(',');
+    const cached=feedPredictionCache.get(key);
+    if (cached && Date.now()-cached.at<cached.ttl) return cached.value;
+    const loaded=await withDeadline(getModelProbabilities(ids,cfg),FEED_PREDICTION_DEADLINE_MS);
+    const value=loaded.ok && loaded.value && typeof loaded.value==='object' && !Array.isArray(loaded.value) ? loaded.value : {};
+    feedPredictionCache.delete(key);
+    feedPredictionCache.set(key,{at:Date.now(),ttl:loaded.ok ? FEED_PREDICTION_TTL_MS : FEED_PREDICTION_FAILURE_TTL_MS,value});
+    if (feedPredictionCache.size>20) feedPredictionCache.delete(feedPredictionCache.keys().next().value);
+    return value;
+  }
+
+  async function respondWithPredictions(cfg, body, ...rest) {
+    if (!body || typeof body !== 'object' || !Array.isArray(body.matches) || !body.matches.length) return json(body, ...rest);
+    let probabilities={};
+    try {
+      probabilities=await feedModelProbabilities(body.matches,cfg);
+    } catch {
+      probabilities={};
+    }
+    const matches=body.matches.map(match=>{
+      const value=match && match.finished!==true ? probabilities[Number(match.fixtureId)] : null;
+      if (!value) {
+        if (match && Object.hasOwn(match,'aiProbabilities')) {
+          const {aiProbabilities:_ignored,...other}=match;
+          return other;
+        }
+        return match;
+      }
+      return {...match,aiProbabilities:{home:value.home,draw:value.draw,away:value.away}};
+    });
+    return json({...body,matches},...rest);
+  }
+
   async function apiMatches(request, cfg) {
     const url = new URL(request.url);
     const requested=url.searchParams.get('date') || '';
@@ -345,7 +406,7 @@ export function createProviderFixtureRuntime(deps) {
     const cacheKey=`matches:${date}:v6-integrity`;
   
     const cached=matchFeedCachePayload(await getCache(cacheKey,cfg).catch(()=>null),date);
-    if (cached) return json({ ...cached, sourceMeta: markCachedSourceMeta(cached.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' })), cached: true, stale: false });
+    if (cached) return await respondWithPredictions(cfg,{ ...cached, sourceMeta: markCachedSourceMeta(cached.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' })), cached: true, stale: false });
     const previousPayload=matchFeedCachePayload(await getStaleCache(cacheKey,cfg).catch(()=>null),date);
 
     // API-Football FREE exposes a short date window (UTC yesterday/today/tomorrow).
@@ -355,7 +416,7 @@ export function createProviderFixtureRuntime(deps) {
     const outsideFreeWindow=date<utcDateShift(today,-1) || date>utcDateShift(today,1);
     if (outsideFreeWindow && planProfile?.paid !== true) {
       if (previousPayload) {
-        return json({
+        return await respondWithPredictions(cfg,{
           ...previousPayload,
           cached:true,
           stale:true,
@@ -366,7 +427,7 @@ export function createProviderFixtureRuntime(deps) {
           ),
         });
       }
-      return json({
+      return await respondWithPredictions(cfg,{
         date,
         matches:[],
         catalog:{featured:0,live:0,major:0,cups:0,international:0,hiddenLowPriority:0},
@@ -408,7 +469,7 @@ export function createProviderFixtureRuntime(deps) {
         ? 'Показаны последние сохранённые данные: источник матчей временно ограничил обновления.'
         : 'Показаны последние сохранённые данные: источник матчей временно недоступен.';
       if (stale && recoverable) {
-        return json({
+        return await respondWithPredictions(cfg,{
           ...stale,
           cached:true,
           stale:true,
@@ -523,7 +584,7 @@ export function createProviderFixtureRuntime(deps) {
       provider: publicDataCapabilities(),
     };
     if (providerFallback) {
-      return json({
+      return await respondWithPredictions(cfg,{
         ...payload,
         cached:true,
         stale:true,
@@ -536,7 +597,7 @@ export function createProviderFixtureRuntime(deps) {
     const nearCurrentDate=isToday || date===utcDateShift(today,1);
     const ttl=nearCurrentDate ? (paid ? 1 : 20) : isYesterday ? 720 : cacheMinutes(cfg?.cacheMinutes,10);
     await setCache(cacheKey,0,payload,cfg,ttl).catch(()=>null);
-    return json({ ...payload, cached:false, stale:false });
+    return await respondWithPredictions(cfg,{ ...payload, cached:false, stale:false });
   }
   
   

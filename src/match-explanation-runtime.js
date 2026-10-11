@@ -8,6 +8,8 @@
 //   Любой другой ответ отбрасывается целиком → порядок по умолчанию (без LLM).
 // - Итоговый текст собирается детерминированно: связка по роли + формулировка факта.
 
+import { claimDailyBudget } from './daily-budget-claim.js';
+
 export const EXPLANATION_MODEL = '@cf/meta/llama-3.1-8b-instruct-fp8-fast';
 export const EXPLANATION_VERSION = 'v1';
 export const EXPLANATION_ANALYSIS_CACHE_KEY = fixtureId => `fixture:${fixtureId}:v17-starting-xi-rc146`;
@@ -23,7 +25,7 @@ const MIN_ITEMS = 3;
 const MAX_ITEMS = 5;
 const AI_TIMEOUT_MS = 4000;
 const SELECTION_CACHE_MINUTES = 24 * 60;
-const DAY_SECONDS = 86400;
+const HOUR_SECONDS = 3600;
 
 function plainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
@@ -330,13 +332,23 @@ export function createMatchExplanationRuntime(deps = {}) {
     getHistory,
     hasSupabase,
     supaRpc,
+    supaSelectMany,
     loadRuntimeControls,
     recordOpsEvent,
     bumpTelemetry,
+    clock,
     memory,
   } = deps;
+  const nowMs = () => {
+    try {
+      const value = typeof clock === 'function' ? Number(clock()) : Date.now();
+      return Number.isFinite(value) ? value : Date.now();
+    } catch {
+      return Date.now();
+    }
+  };
   const state = memory && typeof memory === 'object' ? memory : {};
-  for (const [name, fn] of Object.entries({ json, getCache, getStaleCache, setCache, getHistory, hasSupabase, supaRpc, loadRuntimeControls })) {
+  for (const [name, fn] of Object.entries({ json, getCache, getStaleCache, setCache, getHistory, hasSupabase, supaRpc, supaSelectMany, loadRuntimeControls })) {
     if (typeof fn !== 'function') throw new TypeError(`Match explanation requires ${name}.`);
   }
 
@@ -363,20 +375,23 @@ export function createMatchExplanationRuntime(deps = {}) {
     } catch {}
   }
 
-  async function claimBucket(cfg, key, limit) {
-    if (!limit || limit <= 0) return false;
-    let configured = false;
+  function storageReady(cfg) {
     try {
-      configured = hasSupabase(cfg) === true;
+      return hasSupabase(cfg) === true;
     } catch {
-      configured = false;
+      return false;
     }
-    if (!configured) return false;
+  }
+
+  // Окно claim_provider_request не длиннее часа: на пользователя — часовой лимит,
+  // на сервис — настоящий суточный (24 часовые корзины, daily-budget-claim.js).
+  async function claimUserHour(cfg, userId, limit) {
+    if (!Number.isInteger(limit) || limit <= 0 || !storageReady(cfg)) return false;
     try {
       const result = plainObject(await supaRpc(cfg, 'claim_provider_request', {
-        p_bucket_key: key,
+        p_bucket_key: `ai-explain:user:${userId}`,
         p_limit: limit,
-        p_window_seconds: DAY_SECONDS,
+        p_window_seconds: HOUR_SECONDS,
       }, 1800));
       return safeRead(result, 'allowed') === true;
     } catch {
@@ -384,15 +399,21 @@ export function createMatchExplanationRuntime(deps = {}) {
     }
   }
 
+  async function claimServiceDay(cfg, limit) {
+    if (!storageReady(cfg)) return false;
+    const claim = await claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix: 'ai-explain-global', limit, now: nowMs });
+    return claim.allowed === true;
+  }
+
   async function aiSelection(cfg, facts, userId) {
     const ai = cfg?.workersAi;
     if (cfg?.aiExplanationEnabled === false) return { ids: null, reason: 'disabled' };
     if (!ai || typeof ai.run !== 'function') return { ids: null, reason: 'no_binding' };
-    if (!(await claimBucket(cfg, `ai-explain:user:${userId}`, cfg?.aiExplanationUserDailyLimit))) {
+    if (!(await claimUserHour(cfg, userId, cfg?.aiExplanationUserHourlyLimit))) {
       telemetry('aiExplanationUserLimited');
       return { ids: null, reason: 'user_limit' };
     }
-    if (!(await claimBucket(cfg, 'ai-explain:global', cfg?.aiExplanationDailyLimit))) {
+    if (!(await claimServiceDay(cfg, cfg?.aiExplanationDailyLimit))) {
       telemetry('aiExplanationDailyLimited');
       return { ids: null, reason: 'daily_limit' };
     }

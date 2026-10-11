@@ -225,7 +225,7 @@ test('free freshness rechecks bypass quota only after server-side history verifi
   );
   assert.match(
     analysisRuntime,
-    /if \(!freeRecheck && !passAccess\) \{\s*usageReservation=objectValue\(await reserveAnalysisQuota\(userId,cfg\)\)/,
+    /if \(!system && !freeRecheck && !passAccess\) \{\s*usageReservation=objectValue\(await reserveAnalysisQuota\(userId,cfg\)\)/,
   );
   assert.match(
     analysisRuntime,
