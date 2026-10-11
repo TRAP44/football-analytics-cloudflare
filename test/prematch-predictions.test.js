@@ -78,6 +78,7 @@ function job({ feed, predicted = [], snapshot = { plan: 'PRO' }, rpcAllowed = ()
       calls.analyzed.push(fixtureId);
       return analyze ? analyze(fixtureId, cfg) : jsonResponse({ cached: false, match: { fixtureId } });
     },
+    clock: () => NOW,
     getCache: async key => (key === 'matches:2026-10-11:v6-integrity' ? feed : null),
     getStaleCache: async () => null,
     hasSupabase: () => true,
@@ -327,4 +328,74 @@ test('feed: /api/matches adds validated model probabilities for unfinished match
   const fallback = await failing.client.apiMatches(new Request('https://x.test/api/matches?date=2026-10-10'), {});
   assert.equal(fallback.body.matches.length, 3, 'feed still works when predictions are unavailable');
   assert.ok(fallback.body.matches.every(m => !Object.hasOwn(m, 'aiProbabilities')));
+});
+
+test('settings: the interval follows the 5-minute cron cadence', () => {
+  assert.equal(prematchPredictionSettings({ prematchPredictionsIntervalMinutes: 7 }).intervalMinutes, 5);
+  assert.equal(prematchPredictionSettings({ prematchPredictionsIntervalMinutes: 31 }).intervalMinutes, 30);
+  assert.equal(prematchPredictionSettings({ prematchPredictionsIntervalMinutes: 33 }).intervalMinutes, 35);
+  assert.equal(prematchPredictionSettings({ prematchPredictionsIntervalMinutes: 5 }).intervalMinutes, 5);
+});
+
+test('job: favorites lookup skips duplicate rows of a popular team by team_id keyset', async () => {
+  const feed = { matches: [match(1, 120), match(2, 180)] };
+  const popular = feed.matches[0].home.id; // 11
+  const rare = feed.matches[1].away.id; // 22
+  const queries = [];
+  const rt = createPrematchPredictionJob({
+    analyzeFixtureForSystem: async () => jsonResponse({ cached: false }),
+    clock: () => NOW,
+    getCache: async key => (key === 'matches:2026-10-11:v6-integrity' ? feed : null),
+    getStaleCache: async () => null,
+    hasSupabase: () => true,
+    isTopLeague: () => false,
+    loadProviderFixturesForDate: async () => [],
+    loadSharedProviderState: async () => {},
+    providerSnapshot: () => ({ plan: 'PRO' }),
+    recordOpsEvent: async () => {},
+    supaRpc: async () => ({ allowed: true }),
+    supaSelectMany: async (_cfg, table, filters, options) => {
+      if (table === 'favorites') {
+        queries.push({ filters, options });
+        const after = Number(/team_id\.gt\.(\d+)/.exec(filters.and)[1]);
+        if (after < popular) return Array.from({ length: 1000 }, () => ({ team_id: popular })); // 1000+ fans
+        if (after < rare) return [{ team_id: rare }];
+        return [];
+      }
+      if (table === 'model_predictions') return [];
+      return [];
+    },
+  });
+  await rt.processPrematchPredictions({ prematchPredictionsPerRun: 2 }, new Date(NOW));
+  assert.equal(queries.length, 2);
+  assert.match(queries[0].filters.and, /^\(team_id\.in\.\(11,12,21,22\),team_id\.gt\.0\)$/);
+  assert.equal(queries[0].options.order, 'team_id.asc');
+  assert.match(queries[1].filters.and, /team_id\.gt\.11\)$/);
+});
+
+test('job: a cold match feed falls back to the raw fixtures of the day', async () => {
+  const raw = [
+    { fixture: { id: 501, date: iso(120), status: { short: 'NS' } }, league: { id: 39 }, teams: { home: { id: 1 }, away: { id: 2 } } },
+    { fixture: { id: 502, date: iso(150), status: { short: 'NS' } }, league: { id: 999 }, teams: { home: { id: 3 }, away: { id: 4 } } },
+  ];
+  const analyzed = [];
+  const asked = [];
+  const rt = createPrematchPredictionJob({
+    analyzeFixtureForSystem: async id => { analyzed.push(id); return jsonResponse({ cached: false }); },
+    clock: () => NOW,
+    getCache: async () => null,
+    getStaleCache: async () => null,
+    hasSupabase: () => true,
+    isTopLeague: leagueId => leagueId === 39,
+    loadProviderFixturesForDate: async (date, _cfg, options) => { asked.push({ date, options }); return date === '2026-10-11' ? raw : []; },
+    loadSharedProviderState: async () => {},
+    providerSnapshot: () => ({ plan: 'PRO' }),
+    recordOpsEvent: async () => {},
+    supaRpc: async () => ({ allowed: true }),
+    supaSelectMany: async () => [],
+  });
+  const result = await rt.processPrematchPredictions({}, new Date(NOW));
+  assert.deepEqual(asked.map(row => row.date), ['2026-10-11', '2026-10-12']);
+  assert.deepEqual(analyzed, [501], 'only the top-league match of the raw day list');
+  assert.equal(result.computed, 1);
 });

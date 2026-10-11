@@ -1660,9 +1660,12 @@ function getPrematchPredictionJob() {
   if (!prematchPredictionJob) {
     prematchPredictionJob = createPrematchPredictionJob({
       analyzeFixtureForSystem: (...args) => getAnalysisRuntime().analyzeFixtureForSystem(...args),
+      clock: () => Date.now(),
       getCache,
       getStaleCache,
       hasSupabase,
+      isTopLeague: (...args) => isTopLeague(...args),
+      loadProviderFixturesForDate: (...args) => loadProviderFixturesForDate(...args),
       loadSharedProviderState: (...args) => loadSharedProviderState(...args),
       providerSnapshot: (...args) => providerSnapshot(...args),
       recordOpsEvent,

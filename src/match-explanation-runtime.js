@@ -401,7 +401,7 @@ export function createMatchExplanationRuntime(deps = {}) {
 
   async function claimServiceDay(cfg, limit) {
     if (!storageReady(cfg)) return false;
-    const claim = await claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix: 'ai-explain-global', limit, nowMs: nowMs() });
+    const claim = await claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix: 'ai-explain-global', limit, now: nowMs });
     return claim.allowed === true;
   }
 

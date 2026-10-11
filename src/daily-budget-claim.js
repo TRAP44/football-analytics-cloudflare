@@ -12,7 +12,8 @@
 // сериализует инкременты внутри текущей корзины, и параллельные запросы
 // не превысят суточный потолок, даже прочитав одинаковое состояние.
 // В последние секунды часа claim не делается: окно в БД могло бы уже
-// смениться, и корзина прошлого часа перезаписалась бы.
+// смениться, и корзина прошлого часа перезаписалась бы. Часы проверяются
+// дважды — до чтения и сразу перед claim (чтение может длиться секунды).
 
 const HOUR_SECONDS = 3600;
 const HOUR_MS = 3_600_000;
@@ -52,12 +53,18 @@ export function dailyBudgetUsed(rows, prefix, nowMs = Date.now()) {
   return previous + current;
 }
 
-export async function claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix, limit, nowMs = Date.now() } = {}) {
+export async function claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix, limit, now = Date.now } = {}) {
+  const clock = () => {
+    const value = Number(typeof now === 'function' ? now() : now);
+    return Number.isFinite(value) ? value : Date.now();
+  };
+  const nearHourEnd = ms => HOUR_MS - (ms % HOUR_MS) <= HOUR_EDGE_MS;
   if (!Number.isInteger(limit) || limit <= 0) return { allowed: false, used: 0, reason: 'disabled' };
   if (typeof supaRpc !== 'function' || typeof supaSelectMany !== 'function' || !/^[a-z0-9:-]{3,80}$/.test(String(prefix || ''))) {
     return { allowed: false, used: 0, reason: 'budget_unavailable' };
   }
-  if (HOUR_MS - (nowMs % HOUR_MS) <= HOUR_EDGE_MS) return { allowed: false, used: 0, reason: 'hour_boundary' };
+  const nowMs = clock();
+  if (nearHourEnd(nowMs)) return { allowed: false, used: 0, reason: 'hour_boundary' };
   let used;
   let previous;
   try {
@@ -75,6 +82,10 @@ export async function claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix, l
     return { allowed: false, used: 0, reason: 'budget_unavailable' };
   }
   if (used >= limit) return { allowed: false, used, reason: 'daily_limit' };
+  const claimMs = clock();
+  if (Math.floor(claimMs / HOUR_MS) !== Math.floor(nowMs / HOUR_MS) || nearHourEnd(claimMs)) {
+    return { allowed: false, used, reason: 'hour_boundary' };
+  }
   try {
     const result = plainObject(await supaRpc(cfg, 'claim_provider_request', {
       p_bucket_key: dailyBudgetKey(prefix, nowMs),

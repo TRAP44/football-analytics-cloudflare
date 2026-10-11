@@ -24,7 +24,7 @@ test('claim reads today\'s usage, stops at the cap and claims the current hour b
     cfg: {},
     prefix: 'jobs',
     limit: 6,
-    nowMs: NOW,
+    now: NOW,
     supaSelectMany: async (_cfg, table, filters, options) => { calls.push({ table, filters, options }); return rows; },
     supaRpc: async (_cfg, name, params) => { calls.push({ name, params }); return { allowed: true }; },
   });
@@ -42,7 +42,7 @@ test('claim reads today\'s usage, stops at the cap and claims the current hour b
 });
 
 test('claim fails closed on storage errors, invalid input or a denied RPC', async () => {
-  const base = { cfg: {}, prefix: 'jobs', limit: 5, nowMs: NOW, supaSelectMany: async () => [], supaRpc: async () => ({ allowed: true }) };
+  const base = { cfg: {}, prefix: 'jobs', limit: 5, now: NOW, supaSelectMany: async () => [], supaRpc: async () => ({ allowed: true }) };
   assert.equal((await claimDailyBudget({ ...base, supaSelectMany: async () => { throw new Error('down'); } })).reason, 'budget_unavailable');
   assert.equal((await claimDailyBudget({ ...base, supaSelectMany: async () => ({}) })).reason, 'budget_unavailable');
   assert.equal((await claimDailyBudget({ ...base, supaRpc: async () => { throw new Error('rpc'); } })).reason, 'budget_unavailable');
@@ -62,7 +62,7 @@ test('concurrent claims that read the same state never exceed the daily cap', as
     cfg: {},
     prefix: 'jobs',
     limit: 10,
-    nowMs: NOW,
+    now: NOW,
     supaSelectMany: async () => rows.map(row => ({ ...row })), // все читают одно и то же
     supaRpc: async (_cfg, _name, params) => {
       if (bucket.count < params.p_limit) {
@@ -81,7 +81,18 @@ test('concurrent claims that read the same state never exceed the daily cap', as
 test('no claim in the last seconds of an hour (the database window could already have moved)', async () => {
   let rpc = 0;
   const result = await claimDailyBudget({
-    cfg: {}, prefix: 'jobs', limit: 5, nowMs: Date.parse('2026-10-11T12:59:57.000Z'),
+    cfg: {}, prefix: 'jobs', limit: 5, now: Date.parse('2026-10-11T12:59:57.000Z'),
+    supaSelectMany: async () => [], supaRpc: async () => { rpc += 1; return { allowed: true }; },
+  });
+  assert.equal(result.reason, 'hour_boundary');
+  assert.equal(rpc, 0);
+});
+
+test('the hour is rechecked right before the claim (a slow read can cross the hour)', async () => {
+  const times = [Date.parse('2026-10-11T12:59:50.000Z'), Date.parse('2026-10-11T13:00:01.000Z')];
+  let rpc = 0;
+  const result = await claimDailyBudget({
+    cfg: {}, prefix: 'jobs', limit: 5, now: () => times.shift() ?? Date.parse('2026-10-11T13:00:02.000Z'),
     supaSelectMany: async () => [], supaRpc: async () => { rpc += 1; return { allowed: true }; },
   });
   assert.equal(result.reason, 'hour_boundary');

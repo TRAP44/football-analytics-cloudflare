@@ -42,11 +42,13 @@ function utcDate(ms) {
 }
 
 export function prematchPredictionSettings(cfg = {}) {
+  // Cron вызывает воркер раз в 5 минут — интервал округляется до кратного 5.
+  const interval = boundedInt(safeRead(cfg, 'prematchPredictionsIntervalMinutes'), 5, 720, 30);
   return {
     enabled: safeRead(cfg, 'prematchPredictionsEnabled') !== false,
     perRun: boundedInt(safeRead(cfg, 'prematchPredictionsPerRun'), 1, 10, 2),
     dailyLimit: boundedInt(safeRead(cfg, 'prematchPredictionsDailyLimit'), 1, 500, 20),
-    intervalMinutes: boundedInt(safeRead(cfg, 'prematchPredictionsIntervalMinutes'), 5, 720, 30),
+    intervalMinutes: Math.max(5, Math.round(interval / 5) * 5),
     freeDailyReserve: boundedInt(safeRead(cfg, 'prematchPredictionsFreeReserve'), 0, 100000, 60),
   };
 }
@@ -121,9 +123,12 @@ export function prematchCandidates(feeds = [], favoriteTeamIds = new Set(), nowM
 export function createPrematchPredictionJob(deps = {}) {
   const {
     analyzeFixtureForSystem,
+    clock,
     getCache,
     getStaleCache,
     hasSupabase,
+    isTopLeague,
+    loadProviderFixturesForDate,
     loadSharedProviderState,
     providerSnapshot,
     recordOpsEvent,
@@ -134,29 +139,86 @@ export function createPrematchPredictionJob(deps = {}) {
     if (typeof fn !== 'function') throw new TypeError(`Prematch prediction job requires ${name}.`);
   }
 
+  const realNow = () => {
+    try {
+      const value = typeof clock === 'function' ? Number(clock()) : Date.now();
+      return Number.isFinite(value) ? value : Date.now();
+    } catch {
+      return Date.now();
+    }
+  };
+
+  // Сырые матчи дня (кеш provider-fixtures, при необходимости — один запрос
+  // /fixtures?date) в форме кандидата: лента могла ещё никем не открываться.
+  function rawFixtureMatch(row) {
+    const item = plainObject(row) || {};
+    const fixture = plainObject(item.fixture) || {};
+    const league = plainObject(item.league) || {};
+    const teams = plainObject(item.teams) || {};
+    let top = false;
+    try {
+      top = typeof isTopLeague === 'function' && isTopLeague(positiveId(league.id)) === true;
+    } catch {
+      top = false;
+    }
+    return {
+      fixtureId: positiveId(fixture.id),
+      date: String(fixture.date || ''),
+      status: String(safeRead(plainObject(fixture.status), 'short') || ''),
+      live: false,
+      finished: false,
+      isTop: top,
+      interestScore: 0,
+      home: { id: positiveId(safeRead(plainObject(teams.home), 'id')) },
+      away: { id: positiveId(safeRead(plainObject(teams.away), 'id')) },
+    };
+  }
+
   async function loadFeed(date, cfg) {
     const key = FEED_CACHE_KEY(date);
     try {
-      return plainObject(await getCache(key, cfg)) || plainObject(await getStaleCache(key, cfg));
+      const feed = plainObject(await getCache(key, cfg)) || plainObject(await getStaleCache(key, cfg));
+      if (feed) return feed;
+    } catch {}
+    if (typeof loadProviderFixturesForDate !== 'function') return null;
+    try {
+      const rows = await loadProviderFixturesForDate(date, cfg, { allowNetwork: true });
+      const matches = (Array.isArray(rows) ? rows : []).slice(0, 2000).map(rawFixtureMatch).filter(row => row.fixtureId);
+      return matches.length ? { matches, source: 'provider-fixtures' } : null;
     } catch {
       return null;
     }
   }
 
-  // Все команды кандидатов, частями: иначе избранная команда из «хвоста» ленты
-  // потерялась бы, и её матч не попал бы в приоритет.
+  // Все команды кандидатов, частями по 200. Строка favorites — это пара
+  // (пользователь, команда), поэтому популярная команда может занять всю
+  // страницу: пагинация по ключу team_id (gt) перескакивает её дубли, число
+  // страниц ограничено числом различных команд, а не числом пользователей.
   async function favoriteTeams(teamIds, cfg) {
-    const ids = [...new Set(teamIds.filter(Boolean))].slice(0, 2000);
+    const ids = [...new Set(teamIds.filter(Boolean))].sort((a, b) => a - b).slice(0, 2000);
     const found = new Set();
     for (let index = 0; index < ids.length; index += 200) {
       const chunk = ids.slice(index, index + 200);
-      try {
-        const rows = await supaSelectMany(cfg, 'favorites', { team_id: `in.(${chunk.join(',')})` }, { limit: 1000, select: 'team_id' });
-        for (const row of Array.isArray(rows) ? rows : []) {
-          const id = positiveId(safeRead(row, 'team_id'));
-          if (id) found.add(id);
+      let after = 0;
+      for (let page = 0; page <= chunk.length; page += 1) {
+        let rows;
+        try {
+          rows = await supaSelectMany(
+            cfg,
+            'favorites',
+            { and: `(team_id.in.(${chunk.join(',')}),team_id.gt.${after})` },
+            { limit: 1000, select: 'team_id', order: 'team_id.asc' },
+          );
+        } catch {
+          break;
         }
-      } catch {}
+        const list = (Array.isArray(rows) ? rows : []).map(row => positiveId(safeRead(row, 'team_id'))).filter(Boolean);
+        for (const id of list) found.add(id);
+        if (list.length < 1000) break;
+        const last = Math.max(...list);
+        if (!(last > after)) break;
+        after = last;
+      }
     }
     return found;
   }
@@ -248,7 +310,7 @@ export function createPrematchPredictionJob(deps = {}) {
     for (const row of queue.slice(0, settings.perRun)) {
       // Настоящий суточный потолок (24 часовые корзины, см. daily-budget-claim.js):
       // окно claim_provider_request само по себе не длиннее часа.
-      const claim = await claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix: 'prematch-predictions', limit: settings.dailyLimit, nowMs });
+      const claim = await claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix: 'prematch-predictions', limit: settings.dailyLimit, now: realNow });
       if (!claim.allowed) {
         summary.stopReason = claim.reason || 'daily_limit';
         break;
