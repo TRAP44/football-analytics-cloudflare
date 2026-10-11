@@ -223,9 +223,39 @@ export function createMatchQuestionRuntime(deps = {}) {
     }
   }
 
+  // Проверка часового лимита пользователя без списания: исчерпавший лимит
+  // пользователь не должен расходовать общий суточный бюджет сервиса.
+  // Окно RPC выровнено по часу (to_timestamp(floor(epoch/3600)*3600)).
+  async function userHourExhausted(cfg, userId, limit) {
+    if (!Number.isInteger(limit) || limit <= 0) return true;
+    const rows = await supaSelectMany(
+      cfg,
+      'provider_rate_windows',
+      { bucket_key: `eq.ai-ask:user:${userId}` },
+      { select: 'window_started_at,request_count', limit: 1 },
+    );
+    if (!Array.isArray(rows)) throw new TypeError('provider_rate_windows lookup returned an invalid response.');
+    const row = plainObject(rows[0]);
+    if (!row) return false;
+    const hourStart = Math.floor(nowMs() / 3_600_000) * 3_600_000;
+    const started = Date.parse(String(row.window_started_at || ''));
+    const count = Number(row.request_count);
+    return Number.isFinite(started) && started >= hourStart && Number.isInteger(count) && count >= limit;
+  }
+
   async function aiAnswer(cfg, facts, question, userId) {
     const ai = cfg?.workersAi;
     if (!ai || typeof ai.run !== 'function') return { ids: null, reason: 'no_binding' };
+    let exhausted;
+    try {
+      exhausted = await userHourExhausted(cfg, userId, cfg?.matchQuestionsUserHourlyLimit);
+    } catch {
+      return { ids: null, reason: 'ai_unavailable' };
+    }
+    if (exhausted) {
+      telemetry('matchQuestionUserLimited');
+      return { ids: null, reason: 'user_limit', remaining: 0 };
+    }
     // Сначала бюджет сервиса: сбой или граница часа не должны тратить лимит
     // пользователя, а «на сегодня закончились» — только при настоящем исчерпании.
     const service = storageReady(cfg)

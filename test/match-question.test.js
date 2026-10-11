@@ -32,7 +32,7 @@ function payload(overrides = {}) {
 const json = (body, status = 200) => ({ status, body });
 const request = body => new Request('https://x.test/api/match-question', { method: 'POST', body: typeof body === 'string' ? body : JSON.stringify(body) });
 
-function runtime({ history = [{ fixture_id: 77 }], analysis = payload(), cached = null, ai, rpc, controls } = {}) {
+function runtime({ history = [{ fixture_id: 77 }], analysis = payload(), cached = null, ai, rpc, controls, userWindow = null } = {}) {
   const calls = { ai: 0, rpc: [], setCache: [], historyOptions: null };
   const cache = new Map();
   if (analysis) cache.set(EXPLANATION_ANALYSIS_CACHE_KEY(77), analysis);
@@ -44,7 +44,10 @@ function runtime({ history = [{ fixture_id: 77 }], analysis = payload(), cached 
     getHistory: async (_u, _c, options) => { calls.historyOptions = options; if (history instanceof Error) throw history; return history; },
     hasSupabase: () => true,
     supaRpc: async (_cfg, name, params) => { calls.rpc.push({ name, params }); return rpc ? rpc(params) : { allowed: true, count: 3, limit: params.p_limit }; },
-    supaSelectMany: async () => [],
+    supaSelectMany: async (_cfg, table, filters) => {
+      calls.selects = (calls.selects || []).concat([{ table, filters }]);
+      return userWindow && String(filters?.bucket_key || '').startsWith('eq.ai-ask:user:') ? [userWindow] : [];
+    },
     loadRuntimeControls: async () => ({ value: controls || { analysisEnabled: true, maintenanceMode: false } }),
     recordOpsEvent: async () => {},
     bumpTelemetry: () => {},
@@ -204,4 +207,17 @@ test('route, config, rate limit and env docs are wired', () => {
   assert.match(config, /matchQuestionsEnabled: boolEnv\(env\.MATCH_QUESTIONS_ENABLED, true\)/);
   const env = fs.readFileSync('.env.example', 'utf8');
   for (const key of ['MATCH_QUESTIONS_ENABLED', 'MATCH_QUESTIONS_DAILY_LIMIT', 'MATCH_QUESTIONS_USER_HOURLY_LIMIT']) assert.match(env, new RegExp(`^${key}=`, 'm'));
+});
+
+test('a user who exhausted the hour never spends the shared daily budget', async () => {
+  const exhausted = runtime({ userWindow: { window_started_at: '2026-10-11T12:00:00.000Z', request_count: 10 } });
+  const res = await exhausted.rt.apiMatchQuestion(request({ fixtureId: 77, question: 'Кто опаснее в атаке?' }), exhausted.cfg, user);
+  assert.deepEqual([res.body.available, res.body.reason], [false, 'user_limit']);
+  assert.equal(exhausted.calls.rpc.length, 0, 'neither the service nor the user bucket is incremented');
+  assert.equal(exhausted.calls.ai, 0);
+
+  // Прошлый час не считается.
+  const lastHour = runtime({ userWindow: { window_started_at: '2026-10-11T11:00:00.000Z', request_count: 10 } });
+  const ok = await lastHour.rt.apiMatchQuestion(request({ fixtureId: 77, question: 'Кто опаснее в атаке?' }), lastHour.cfg, user);
+  assert.equal(ok.body.answer, 'facts');
 });
