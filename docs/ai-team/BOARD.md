@@ -16,24 +16,12 @@ _пусто_
 
 ## На ревью
 
-- [ ] Задача 4: экран составов — 2.5D поле в «Штабе матча» (обе команды, расстановка по сетке источника, роли для скринридера, запасные, честные пустые состояния; макета нет — дизайн Claude по решению Сергея) — **Claude** — [PR #839](https://github.com/TRAP44/football-analytics-cloudflare/pull/839) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
-
-## Ждут ревью Codex (у Codex закончился лимит)
-
-_Ночь 10→11.10: решение Сергея — Claude работает дальше без разрешений, каждый шаг в PR и до зелёного + ревью Codex; **не мержит**, утром мержит Сергей. Если у Codex кончится лимит — PR ставится сюда, работа продолжается._
-
-_Лимит Codex восстановился 10.10 вечером, очередь #810–#815 проверена. Решение Сергея: такие PR можно мержить, но Codex обязан проверить их, когда лимит восстановится. В PR (даже уже слитый) пишется `@codex review`; замечания исправляет автор отдельным PR._
-
-- [x] [PR #810](https://github.com/TRAP44/football-analytics-cloudflare/pull/810) — личные экраны (уже в `main`) — Codex: замечаний нет
-- [x] [PR #811](https://github.com/TRAP44/football-analytics-cloudflare/pull/811) — главная без повторов (уже в `main`) — Codex: замечаний нет
-- [x] [PR #812](https://github.com/TRAP44/football-analytics-cloudflare/pull/812) — удалить скрытый AI-центр (уже в `main`) — Codex: замечаний нет
-- [x] [PR #813](https://github.com/TRAP44/football-analytics-cloudflare/pull/813) — «Поделиться матчем» (уже в `main`) — Codex: замечаний нет
-- [x] [PR #814](https://github.com/TRAP44/football-analytics-cloudflare/pull/814) — обратная связь для всех (уже в `main`; серверная авторизация — проверить особенно) — Codex: замечаний нет
-- [ ] [PR #815](https://github.com/TRAP44/football-analytics-cloudflare/pull/815) — отзывы: уведомление и админка (проверить дубли уведомлений) — Codex: 1 замечание (P2, устаревший список после сбоя обновления) → исправление [PR #817](https://github.com/TRAP44/football-analytics-cloudflare/pull/817)
 
 ## Готово
 
+- [x] Очередь «Ждут ревью Codex» (#810–#815, #806, #817, #825) — Codex проверил 11.10; #815 → исправлено в #817, #825/#806 → #837 — **Claude**
+- [x] Задача 4: экран составов — 2.5D поле в «Штабе матча» (обе команды, расстановка по сетке источника, роли для скринридера, запасные, честные пустые состояния; макета нет — дизайн Claude по решению Сергея) — **Claude** — [PR #839](https://github.com/TRAP44/football-analytics-cloudflare/pull/839) — слит 12.10
 - [x] Задача 3 (часть 1): кривая 1/X/2 в Штабе матча для LIVE и завершённых — ось минут, точка «до матча», отметки голов и красных карточек, пустое состояние «Кривая появится по ходу матча»; периодические LIVE-снимки ждут рабочих фоновых задач — **Claude** (по решению Сергея) — [PR #836](https://github.com/TRAP44/football-analytics-cloudflare/pull/836) — слит 11.10
 - [x] Фоновые задачи: диагностика ключей Supabase, журнал запросов, ключ как у воркера и выключение «призрачного» cron Cloudflare (`BACKGROUND_JOBS_EXECUTOR=github`) — **Claude** — [PR #840](https://github.com/TRAP44/football-analytics-cloudflare/pull/840), [#841](https://github.com/TRAP44/football-analytics-cloudflare/pull/841), [#842](https://github.com/TRAP44/football-analytics-cloudflare/pull/842) — слиты 11.10; первый полный запуск — 23:29
 - [x] Фоновые задачи через GitHub Actions вместо cron Cloudflare (Workers Free) — **Claude** — [PR #838](https://github.com/TRAP44/football-analytics-cloudflare/pull/838) — слит 11.10; ключи в окружении `background-jobs`
