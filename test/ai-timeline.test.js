@@ -13,6 +13,7 @@ import {
   renderAiTimelineCompact,
   renderAiTimelineDetails,
   renderAiProbabilityChart,
+  renderAiProbabilityHistoryChart,
 } from '../public/modules/ai-timeline.js';
 
 function readRepoFile(relativePath) {
@@ -76,7 +77,7 @@ const shellCss=readRepoFile('public/styles/public-shell.css');
 
 
 test('Intelligence 2.0 chart draws only genuine chronological 1X2 snapshots',()=>{
-  const html=renderAiProbabilityChart({points:[
+  const html=renderAiProbabilityHistoryChart({points:[
     {capturedAt:'2026-10-01T17:00:00Z',probabilities:{home:61,draw:23,away:16}},
     {capturedAt:'2026-10-01T12:00:00Z',probabilities:{home:52,draw:27,away:21}},
     {capturedAt:'2026-10-01T15:00:00Z',probabilities:{home:57,draw:25,away:18}},
@@ -95,7 +96,7 @@ test('Intelligence 2.0 chart draws only genuine chronological 1X2 snapshots',()=
 });
 
 test('Intelligence 2.0 does not invent chart points for missing, invalid or stale history',()=>{
-  const t=(points)=>renderAiProbabilityChart({points},match);
+  const t=(points)=>renderAiProbabilityHistoryChart({points},match);
   const valid={capturedAt:'2026-10-01T12:00:00Z',
     probabilities:{home:52,draw:27,away:21}};
   const later={capturedAt:'2026-10-01T17:00:00Z',
@@ -502,7 +503,7 @@ test('AI Timeline wiring captures fresh analyses and loads timeline into Match C
 });
 
 test('AI Timeline UI remains lazy-loaded after Match Pulse and supports narrow mobile widths', () => {
-  assert.match(appSource,/import\('\.\/modules\/ai-timeline\.js\?v=6\.120\.0-launch96'\)/);
+  assert.match(appSource,/import\('\.\/modules\/ai-timeline\.js\?v=6\.120\.0-launch97'\)/);
   const pulse=appSource.indexOf("matchCenterExtraHtml('renderMatchPulse'");
   const timeline=appSource.indexOf("'renderAiTimelineCompact',",appSource.indexOf('const matchPulseHtml'));
   assert.ok(pulse>=0 && timeline>pulse,'AI Timeline must be rendered after existing Match Pulse');
@@ -521,4 +522,44 @@ test('AI Timeline: server note and leader labels carry no market or betting word
   });
   assert.doesNotMatch(timeline.note,/рын(ок|к|оч)/i);
   assert.doesNotMatch(JSON.stringify(timeline.points.map(item=>item.leader)),/П1|П2/);
+});
+
+// Задача 3: кривая по ходу матча — ось минут, события, честные пустые состояния.
+test('live curve: minute axis, one pre-match start point, event markers and accessible summary', () => {
+  const kickoff = { ...match, date: '2026-10-01T18:00:00Z', home: { name: 'Милан' }, away: { name: 'Рома' } };
+  const html = renderAiProbabilityChart({ points: [
+    { capturedAt: '2026-10-01T12:00:00Z', probabilities: { home: 50, draw: 28, away: 22 } },
+    { capturedAt: '2026-10-01T17:00:00Z', probabilities: { home: 52, draw: 27, away: 21 } },
+    { capturedAt: '2026-10-01T18:30:00Z', minute: 30, probabilities: { home: 68, draw: 20, away: 12 } },
+    { capturedAt: '2026-10-01T19:10:00Z', minute: 64, probabilities: { home: 80, draw: 14, away: 6 }, stale: true },
+  ] }, kickoff, [
+    { minute: 27, type: 'Goal', detail: 'Normal Goal', teamName: 'Милан' },
+    { minute: 40, type: 'Goal', detail: 'Missed Penalty', teamName: 'Рома' },
+    { time: { elapsed: 90, extra: 3 }, type: 'Card', detail: 'Red Card', teamName: 'Рома' },
+    { minute: 50, type: 'Card', detail: 'Yellow Card' },
+  ]);
+  assert.match(html, /Вероятности исходов по ходу матча/);
+  assert.match(html, /2 сохранённых оценок/, 'only the latest pre-match point and real in-match points; stale is dropped');
+  assert.match(html, />до<\/text>/);
+  assert.match(html, />45′<\/text>/);
+  assert.equal((html.match(/class="ai-prob-event goal"/g) || []).length, 1, 'a missed penalty is not a goal');
+  assert.equal((html.match(/class="ai-prob-event red"/g) || []).length, 1);
+  assert.doesNotMatch(html, /Yellow|🟨/);
+  assert.match(html, /aria-label="Кривая вероятностей по ходу матча, 2 сохранённых оценок модели\. до матча: Милан 52\.0%, Ничья 27\.0%, Рома 21\.0%; 30-я минута: Милан 68\.0%/);
+  assert.match(html, /События: 27′ гол \(Милан\), 90\+3′ красная карточка \(Рома\)\./);
+  assert.match(html, /между точками измерений нет/);
+});
+
+test('live curve: fewer than two real points gives an honest empty state, never a one-point chart', () => {
+  const one = { points: [{ capturedAt: '2026-10-01T18:30:00Z', minute: 30, probabilities: { home: 60, draw: 25, away: 15 } }] };
+  assert.match(renderAiProbabilityChart(one, { ...match, live: true }), /Кривая появится по ходу матча/);
+  assert.match(renderAiProbabilityChart({ points: [] }, { ...match, finished: true }), /меньше двух оценок модели/);
+  assert.doesNotMatch(renderAiProbabilityChart(one, match), /<svg/);
+});
+
+test('match center shows the curve for live and finished matches only', () => {
+  const view = readRepoFile('public/modules/match-center-view.js');
+  assert.match(view, /const aiProbabilityChartHtml=\(live \|\| finished\)\s*\? matchCenterExtraHtml\('renderAiProbabilityChart', d\.aiTimeline \|\| \{\}, \{\.\.\.m,live,finished\}, eventRows\)/);
+  assert.match(view, /<section class="\$\{aiProbabilityChartHtml\.startsWith\('<figure'\) \? '' : 'panel '\}ai-prob-panel">\$\{aiProbabilityChartHtml\}<\/section>/);
+  assert.match(readRepoFile('public/app.js'), /renderAiProbabilityChart: t\.renderAiProbabilityChart,/);
 });
