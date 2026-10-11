@@ -7,7 +7,7 @@
 // Готовые подсказки отвечаются детерминированно, без LLM и без расхода лимита.
 // Вопросы про ставки отклоняются до LLM.
 
-import { claimDailyBudget } from './daily-budget-claim.js';
+import { claimDailyBudget, peekDailyBudget } from './daily-budget-claim.js';
 import {
   EXPLANATION_ANALYSIS_CACHE_KEY,
   EXPLANATION_MODEL,
@@ -223,46 +223,22 @@ export function createMatchQuestionRuntime(deps = {}) {
     }
   }
 
-  // Проверка часового лимита пользователя без списания: исчерпавший лимит
-  // пользователь не должен расходовать общий суточный бюджет сервиса.
-  // Окно RPC выровнено по часу (to_timestamp(floor(epoch/3600)*3600)).
-  async function userHourExhausted(cfg, userId, limit) {
-    if (!Number.isInteger(limit) || limit <= 0) return true;
-    const rows = await supaSelectMany(
-      cfg,
-      'provider_rate_windows',
-      { bucket_key: `eq.ai-ask:user:${userId}` },
-      { select: 'window_started_at,request_count', limit: 1 },
-    );
-    if (!Array.isArray(rows)) throw new TypeError('provider_rate_windows lookup returned an invalid response.');
-    const row = plainObject(rows[0]);
-    if (!row) return false;
-    const hourStart = Math.floor(nowMs() / 3_600_000) * 3_600_000;
-    const started = Date.parse(String(row.window_started_at || ''));
-    const count = Number(row.request_count);
-    return Number.isFinite(started) && started >= hourStart && Number.isInteger(count) && count >= limit;
-  }
-
+  // Порядок списаний (ревью #835):
+  // 1) бюджет сервиса — только чтение: исчерпан или недоступен → отказ без списаний;
+  // 2) атомарный часовой claim пользователя: исчерпавший лимит не трогает общий бюджет;
+  // 3) атомарный claim сервиса. Каждый слот сервиса требует слота пользователя,
+  //    поэтому один пользователь не израсходует больше своего часового лимита.
+  //    Редкий проигрыш гонки на шаге 3 (бюджет кончился между 1 и 3 или сбой)
+  //    стоит пользователю одного вопроса — это осознанный компромисс без новой миграции.
   async function aiAnswer(cfg, facts, question, userId) {
     const ai = cfg?.workersAi;
     if (!ai || typeof ai.run !== 'function') return { ids: null, reason: 'no_binding' };
-    let exhausted;
-    try {
-      exhausted = await userHourExhausted(cfg, userId, cfg?.matchQuestionsUserHourlyLimit);
-    } catch {
-      return { ids: null, reason: 'ai_unavailable' };
-    }
-    if (exhausted) {
-      telemetry('matchQuestionUserLimited');
-      return { ids: null, reason: 'user_limit', remaining: 0 };
-    }
-    // Сначала бюджет сервиса: сбой или граница часа не должны тратить лимит
-    // пользователя, а «на сегодня закончились» — только при настоящем исчерпании.
-    const service = storageReady(cfg)
-      ? await claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix: 'ai-ask-global', limit: cfg?.matchQuestionsDailyLimit, now: nowMs })
-      : { allowed: false, reason: 'budget_unavailable' };
-    if (service.allowed !== true) {
-      const exhausted = service.reason === 'daily_limit';
+    const serviceLimit = cfg?.matchQuestionsDailyLimit;
+    const peek = storageReady(cfg)
+      ? await peekDailyBudget({ cfg, supaSelectMany, prefix: 'ai-ask-global', limit: serviceLimit, now: nowMs })
+      : { available: false, reason: 'budget_unavailable' };
+    if (peek.available !== true) {
+      const exhausted = peek.reason === 'daily_limit';
       telemetry(exhausted ? 'matchQuestionDailyLimited' : 'matchQuestionBudgetUnavailable');
       return { ids: null, reason: exhausted ? 'daily_limit' : 'ai_unavailable' };
     }
@@ -270,6 +246,12 @@ export function createMatchQuestionRuntime(deps = {}) {
     if (!user.allowed) {
       telemetry('matchQuestionUserLimited');
       return { ids: null, reason: 'user_limit', remaining: 0 };
+    }
+    const service = await claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix: 'ai-ask-global', limit: serviceLimit, now: nowMs });
+    if (service.allowed !== true) {
+      const exhausted = service.reason === 'daily_limit';
+      telemetry(exhausted ? 'matchQuestionDailyLimited' : 'matchQuestionBudgetUnavailable');
+      return { ids: null, reason: exhausted ? 'daily_limit' : 'ai_unavailable', remaining: user.remaining };
     }
     let timer;
     try {

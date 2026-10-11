@@ -32,7 +32,7 @@ function payload(overrides = {}) {
 const json = (body, status = 200) => ({ status, body });
 const request = body => new Request('https://x.test/api/match-question', { method: 'POST', body: typeof body === 'string' ? body : JSON.stringify(body) });
 
-function runtime({ history = [{ fixture_id: 77 }], analysis = payload(), cached = null, ai, rpc, controls, userWindow = null } = {}) {
+function runtime({ history = [{ fixture_id: 77 }], analysis = payload(), cached = null, ai, rpc, controls, serviceRows = [] } = {}) {
   const calls = { ai: 0, rpc: [], setCache: [], historyOptions: null };
   const cache = new Map();
   if (analysis) cache.set(EXPLANATION_ANALYSIS_CACHE_KEY(77), analysis);
@@ -46,7 +46,11 @@ function runtime({ history = [{ fixture_id: 77 }], analysis = payload(), cached 
     supaRpc: async (_cfg, name, params) => { calls.rpc.push({ name, params }); return rpc ? rpc(params) : { allowed: true, count: 3, limit: params.p_limit }; },
     supaSelectMany: async (_cfg, table, filters) => {
       calls.selects = (calls.selects || []).concat([{ table, filters }]);
-      return userWindow && String(filters?.bucket_key || '').startsWith('eq.ai-ask:user:') ? [userWindow] : [];
+      if (String(filters?.bucket_key || '').startsWith('like.ai-ask-global')) {
+        if (serviceRows instanceof Error) throw serviceRows;
+        return serviceRows;
+      }
+      return [];
     },
     loadRuntimeControls: async () => ({ value: controls || { analysisEnabled: true, maintenanceMode: false } }),
     recordOpsEvent: async () => {},
@@ -123,8 +127,8 @@ test('a free question uses LLM selection only; "not in the data" and the user co
   assert.equal(res.body.source, 'ai');
   assert.deepEqual(res.body.items.map(item => item.id), ['form_home', 'form_away']);
   assert.equal(res.body.remaining, 7);
-  assert.equal(calls.rpc[0].params.p_bucket_key, 'ai-ask-global:h12', 'the service budget is claimed first');
-  assert.equal(calls.rpc[1].params.p_bucket_key, 'ai-ask:user:5');
+  assert.equal(calls.rpc[0].params.p_bucket_key, 'ai-ask:user:5', 'the user slot is claimed before the shared budget');
+  assert.equal(calls.rpc[1].params.p_bucket_key, 'ai-ask-global:h12');
   assert.match(calls.setCache[0].key, /^ask:v1:77:4\.17\.0-starting-xi:[0-9a-f]{24}:[0-9a-f]{20}$/);
 
   const none = runtime({ ai: () => ({ response: '{"factIds":[]}' }) });
@@ -162,17 +166,18 @@ test('limits: user hour and service day stop the LLM with an explicit reason', a
   assert.deepEqual([limited.body.available, limited.body.reason, limited.body.remaining], [false, 'user_limit', 0]);
   assert.equal(user1.calls.ai, 0);
 
-  const day = runtime({ rpc: params => (params.p_bucket_key.startsWith('ai-ask-global') ? { allowed: false } : { allowed: true, count: 1, limit: 10 }) });
+  // Суточный бюджет исчерпан (видно при чтении) — без списаний у пользователя.
+  const day = runtime({ serviceRows: [{ bucket_key: 'ai-ask-global:h03', window_started_at: '2026-10-11T03:00:00.000Z', request_count: 500 }] });
   const daily = await day.rt.apiMatchQuestion(request({ fixtureId: 77, question: 'Кто опаснее в атаке?' }), day.cfg, user);
   assert.equal(daily.body.reason, 'daily_limit');
   assert.equal(day.calls.ai, 0);
-  assert.ok(!day.calls.rpc.some(call => call.params.p_bucket_key.startsWith('ai-ask:user')), 'an exhausted service day does not charge the user');
+  assert.equal(day.calls.rpc.length, 0, 'an exhausted service day charges nobody');
 
-  // Сбой хранилища бюджета — не «закончились на сегодня» и без списания у пользователя.
-  const down = runtime({ rpc: params => { if (params.p_bucket_key.startsWith('ai-ask-global')) throw new Error('db down'); return { allowed: true, count: 1, limit: 10 }; } });
+  // Сбой чтения бюджета — не «закончились на сегодня» и без списаний.
+  const down = runtime({ serviceRows: new Error('db down') });
   const transient = await down.rt.apiMatchQuestion(request({ fixtureId: 77, question: 'Кто опаснее в атаке?' }), down.cfg, user);
   assert.equal(transient.body.reason, 'ai_unavailable');
-  assert.ok(!down.calls.rpc.some(call => call.params.p_bucket_key.startsWith('ai-ask:user')));
+  assert.equal(down.calls.rpc.length, 0);
 });
 
 test('the question switch is independent of the AI explanation switch', async () => {
@@ -210,14 +215,20 @@ test('route, config, rate limit and env docs are wired', () => {
 });
 
 test('a user who exhausted the hour never spends the shared daily budget', async () => {
-  const exhausted = runtime({ userWindow: { window_started_at: '2026-10-11T12:00:00.000Z', request_count: 10 } });
+  const exhausted = runtime({ rpc: params => (params.p_bucket_key.startsWith('ai-ask:user') ? { allowed: false, count: 10, limit: 10 } : { allowed: true }) });
   const res = await exhausted.rt.apiMatchQuestion(request({ fixtureId: 77, question: 'Кто опаснее в атаке?' }), exhausted.cfg, user);
   assert.deepEqual([res.body.available, res.body.reason], [false, 'user_limit']);
-  assert.equal(exhausted.calls.rpc.length, 0, 'neither the service nor the user bucket is incremented');
+  assert.deepEqual(exhausted.calls.rpc.map(call => call.params.p_bucket_key), ['ai-ask:user:5'], 'the shared budget is never claimed');
   assert.equal(exhausted.calls.ai, 0);
 
-  // Прошлый час не считается.
-  const lastHour = runtime({ userWindow: { window_started_at: '2026-10-11T11:00:00.000Z', request_count: 10 } });
-  const ok = await lastHour.rt.apiMatchQuestion(request({ fixtureId: 77, question: 'Кто опаснее в атаке?' }), lastHour.cfg, user);
-  assert.equal(ok.body.answer, 'facts');
+  // Бурст 12 запросов при одном оставшемся слоте: общий бюджет тратится ровно один раз.
+  let used = 9;
+  let service = 0;
+  const burst = runtime({ rpc: params => {
+    if (params.p_bucket_key.startsWith('ai-ask:user')) { used += 1; return used <= 10 ? { allowed: true, count: used, limit: 10 } : { allowed: false, count: 10, limit: 10 }; }
+    service += 1;
+    return { allowed: true };
+  } });
+  await Promise.all(Array.from({ length: 12 }, (_, i) => burst.rt.apiMatchQuestion(request({ fixtureId: 77, question: `Вопрос номер ${i}` }), burst.cfg, user)));
+  assert.equal(service, 1);
 });
