@@ -1053,7 +1053,7 @@ export function createModelIntelligenceRuntime(deps) {
           icon: '🔥',
           tone: 'open',
           title: 'Голевой сценарий: более открытая игра',
-          text: `Модель Пуассона даёт ${goalModel.totalExpected} ожидаемых гола суммарно и ${round1(goalModel.over25)}% на ТБ 2.5. Это вспомогательная модель по недавней результативности.`,
+          text: `Модель Пуассона даёт ${goalModel.totalExpected} ожидаемых гола суммарно и ${round1(goalModel.over25)}% на 3+ гола в матче. Это вспомогательная модель по недавней результативности.`,
           relevance: 'Дополнительный',
         });
       } else if (total > 0 && total <= 2.2) {
@@ -1072,7 +1072,7 @@ export function createModelIntelligenceRuntime(deps) {
           icon: '⚽',
           tone: 'open',
           title: 'Обе команды способны забить',
-          text: `Эвристическая вероятность «обе забьют» — ${round1(goalModel.btts)}%. Это не букмекерская рекомендация, а производная от недавних голов команд.`,
+          text: `Эвристическая вероятность, что забьют обе команды, — ${round1(goalModel.btts)}%. Это производная от недавних голов команд.`,
           relevance: 'Дополнительный',
         });
       }
