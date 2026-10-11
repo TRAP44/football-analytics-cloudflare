@@ -68,7 +68,7 @@ test('match center lineups tab uses the pitch view with the list as fallback', (
   assert.match(view, /import \{ lineupPitchViewHtml \} from '\.\/lineup-pitch\.js';/);
   assert.match(view, /lineupPitchViewHtml\(d\.lineups, \{\.\.\.m,live,finished\}, \{ escapeHtml, fallback: lineupLiveHtml \}\)/);
   const module = fs.readFileSync('public/modules/lineup-pitch.js', 'utf8');
-  assert.doesNotMatch(module, /^import|three\.js|getContext\(|<canvas/im, 'no 3D libraries or canvas');
+  assert.doesNotMatch(module, /(?:^import|three\.js|getContext\(|<canvas)/im, 'no 3D libraries or canvas');
 });
 
 // Ревью #839: стартовый состав команды без сетки не пропадает; неполная сетка — не поле.
