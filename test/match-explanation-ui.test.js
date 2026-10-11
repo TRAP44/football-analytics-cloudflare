@@ -57,6 +57,6 @@ test('analysis view loads the explanation lazily above the key points', () => {
   const app = fs.readFileSync('public/app.js', 'utf8');
   // Блок виден сразу, над «Что важно перед матчем», а не внутри свёрнутых «Подробных данных».
   assert.match(app, /<section class="panel match-explanation" id="matchExplanation" data-fixture="\$\{Number\(m\.fixtureId\) \|\| 0\}" aria-live="polite" hidden><\/section>\s*\$\{analysisGlanceHtml\(d\)\}/);
-  assert.match(app, /import\('\.\/modules\/match-explanation\.js\?v=6\.120\.0-launch96'\)/);
+  assert.match(app, /import\('\.\/modules\/match-explanation\.js\?v=6\.120\.0-launch97'\)/);
   assert.match(app, /void loadAnalysisExplanation\(Number\(m\.fixtureId\)\);/);
 });
