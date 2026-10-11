@@ -500,3 +500,12 @@ test('AI Timeline UI remains lazy-loaded after Match Pulse and supports narrow m
     assert.match(section,new RegExp('@media\\(max-width:'+width+'px\\)'));
   }
 });
+
+test('AI Timeline: server note and leader labels carry no market or betting wording', () => {
+  const timeline=buildAiTimeline({
+    snapshotRows:[point('2026-10-01T12:00:00Z',{home:52,draw:27,away:21})],
+    match,
+  });
+  assert.doesNotMatch(timeline.note,/рын(ок|к|оч)/i);
+  assert.doesNotMatch(JSON.stringify(timeline.points.map(item=>item.leader)),/П1|П2/);
+});

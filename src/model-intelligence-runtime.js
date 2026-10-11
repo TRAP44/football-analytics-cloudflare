@@ -827,9 +827,9 @@ export function createModelIntelligenceRuntime(deps) {
     const p=probabilityObject(probabilities);
     if (!p) return [];
     return [
-      {key:'home',label:homeName || 'П1',value:p.home},
+      {key:'home',label:homeName || 'Хозяева',value:p.home},
       {key:'draw',label:'Ничья',value:p.draw},
-      {key:'away',label:awayName || 'П2',value:p.away},
+      {key:'away',label:awayName || 'Гости',value:p.away},
     ].sort((a,b)=>b.value-a.value);
   }
   

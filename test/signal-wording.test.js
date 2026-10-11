@@ -82,3 +82,9 @@ test('signal codes and outcomes turn into neutral words', () => {
   assert.equal(neutralOutcomeText('ТБ 2.5 · 61%', teams), '');
   assert.equal(neutralOutcomeText('Нет данных', teams), '');
 });
+
+test('betting filter catches every form of «рынок»', () => {
+  for (const text of ['оцениваю по счёту и рынку', 'вместе с рынком', 'рыночная вероятность', 'движение рынка']) {
+    assert.equal(isBettingText(text), true, text);
+  }
+});
