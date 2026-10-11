@@ -563,3 +563,16 @@ test('match center shows the curve for live and finished matches only', () => {
   assert.match(view, /<section class="\$\{aiProbabilityChartHtml\.startsWith\('<figure'\) \? '' : 'panel '\}ai-prob-panel">\$\{aiProbabilityChartHtml\}<\/section>/);
   assert.match(readRepoFile('public/app.js'), /renderAiProbabilityChart: t\.renderAiProbabilityChart,/);
 });
+
+test('live curve: stoppage-time events sit before the next regulation minute', () => {
+  const kickoff = { ...match, date: '2026-10-01T18:00:00Z' };
+  const html = renderAiProbabilityChart({ points: [
+    { capturedAt: '2026-10-01T18:40:00Z', minute: 40, probabilities: { home: 50, draw: 30, away: 20 } },
+    { capturedAt: '2026-10-01T19:05:00Z', minute: 46, probabilities: { home: 40, draw: 32, away: 28 } },
+  ] }, kickoff, [{ minute: 45, extra: 5, type: 'Goal', detail: 'Normal Goal', teamName: 'Гости' }]);
+  const eventX = Number(/class="ai-prob-event goal"><line x1="([\d.]+)"/.exec(html)[1]);
+  const dotsX = [...html.matchAll(/class="ai-prob-dot home" cx="([\d.]+)"/g)].map(m => Number(m[1]));
+  assert.ok(eventX < dotsX[1], 'the 45+5 goal is drawn left of the minute-46 snapshot');
+  assert.ok(eventX > dotsX[0]);
+  assert.match(html, /45\+5′ гол/);
+});

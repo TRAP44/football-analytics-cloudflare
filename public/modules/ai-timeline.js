@@ -299,7 +299,10 @@ function chartEventMarkers(events = []) {
     const goal=text.includes('goal') && !text.includes('missed');
     const red=text.includes('red card') || text.includes('second yellow') || String(raw.label || '').includes('🟥');
     if (!goal && !red) continue;
-    rows.push({ minute:Math.min(130,minute+extra), label:`${Math.round(minute)}${extra?`+${Math.round(extra)}`:''}′`, kind:goal?'goal':'red', team:String(raw.teamName || '').slice(0,60) });
+    // Добавленное время стоит между минутой и следующей: 45+5 — до 46-й минуты
+    // второго тайма, 90+4 — после 90-й (подпись остаётся «45+5′»).
+    const position=minute+Math.min(extra,30)/(Math.min(extra,30)+1)*0.9;
+    rows.push({ minute:Math.min(130,position), label:`${Math.round(minute)}${extra?`+${Math.round(extra)}`:''}′`, kind:goal?'goal':'red', team:String(raw.teamName || '').slice(0,60) });
   }
   return rows.sort((a,b)=>a.minute-b.minute).slice(0,24);
 }
