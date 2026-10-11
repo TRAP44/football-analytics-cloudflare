@@ -148,7 +148,12 @@ export function lineupPitchViewHtml(lineups, match = {}, { escapeHtml, fallback 
   }
   const homeRows = lineupFormationRows(home);
   const awayRows = lineupFormationRows(away);
-  if (!homeRows && !awayRows) return typeof fallback === 'function' ? fallback(lineups, match) : '';
+  const hasGrid = lineup => (Array.isArray(lineup?.startXI) ? lineup.startXI : []).some(player => gridOf(player));
+  // Прежний список-«поле» достраивает позиции, поэтому он — только для данных
+  // совсем без сетки. Частичная сетка у обеих команд — просто списки.
+  if (!homeRows && !awayRows && !hasGrid(home) && !hasGrid(away)) {
+    return typeof fallback === 'function' ? fallback(lineups, match) : '';
+  }
 
   const chips = [
     ...lineupPositions(awayRows, 'away').map(pos => chipHtml(pos, 'away', esc)),
@@ -158,6 +163,15 @@ export function lineupPitchViewHtml(lineups, match = {}, { escapeHtml, fallback 
   // Команда со стартом, но без сетки: её 11 игроков не теряются — списком.
   const startList = (rows, lineup, name) => (rows || !lineup?.startXI?.length ? '' : `<div class="lp-start-list"><b>${esc(name)} · стартовый состав</b><ul>${lineup.startXI.slice(0, 11).map(player => `<li><b>${esc(playerNumber(player) || '•')}</b>${esc(playerName(player))}</li>`).join('')}</ul></div>`);
   const partial = [home, away].some(lineup => lineup?.quality?.partial);
+  if (!homeRows && !awayRows) {
+    return `<div class="lp-view">
+    ${teamMetaHtml(home, homeName, 'home', esc)}${teamMetaHtml(away, awayName, 'away', esc)}
+    <p class="data-notice">Источник передал расстановку не для всех игроков — составы показаны списком.</p>
+    ${startList(homeRows, home, homeName)}${startList(awayRows, away, awayName)}
+    ${partial ? '<p class="data-notice">⚠️ Источник передал неполный стартовый состав — он не считается подтверждённым.</p>' : ''}
+    <div class="lp-benches">${benchHtml(home, homeName, esc)}${benchHtml(away, awayName, esc)}</div>
+  </div>`;
+  }
   return `<div class="lp-view">
     ${teamMetaHtml(away, awayName, 'away', esc)}
     <figure class="lp-pitch" aria-label="${esc(`Расстановка: ${awayName} сверху, ${homeName} снизу`)}">

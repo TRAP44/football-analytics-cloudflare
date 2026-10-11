@@ -87,3 +87,20 @@ test('a team without grid keeps its starting XI as a list; partial grid never hi
   assert.match(both, /Милан · стартовый состав/);
   assert.equal((both.match(/class="lp-chip home"/g) || []).length, 0);
 });
+
+// Ревью #839: частичная сетка у обеих команд — списки, без прежнего «поля» с достроенными позициями.
+test('partial grids on both sides render lists and never the legacy synthesized pitch', () => {
+  const partial = prefix => {
+    const lineup = xi('4-3-3', prefix);
+    lineup.startXI = lineup.startXI.map((p, i) => (i >= 9 ? { ...p, grid: '' } : p));
+    return lineup;
+  };
+  let fallbackCalls = 0;
+  const html = lineupPitchViewHtml({ home: partial('Хозяин'), away: partial('Гость') }, match, { escapeHtml: esc, fallback: () => { fallbackCalls += 1; return 'LEGACY'; } });
+  assert.equal(fallbackCalls, 0);
+  assert.doesNotMatch(html, /lp-chip|LEGACY/);
+  assert.match(html, /расстановку не для всех игроков/);
+  assert.match(html, /Милан · стартовый состав/);
+  assert.match(html, /Рома · стартовый состав/);
+  assert.equal((html.match(/Хозяин /g) || []).length, 11);
+});
