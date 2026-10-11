@@ -45,7 +45,8 @@ test('post-match drill is deterministic',()=> {
 
 test('Mini App shows a compact post-match review in finished Match Center',()=> {
   assert.match(app,/function postMatchReviewHtml\(/);
-  assert.match(app,/POST-MATCH AI REVIEW/);
+  assert.match(app,/🧠 ПОСЛЕ МАТЧА/);
+  assert.doesNotMatch(app,/POST-MATCH AI REVIEW/);
   assert.match(app,/finished \? postMatchReviewHtml\(d\.postMatchReview/);
   assert.match(css,/\.post-match-review/);
   assert.match(css,/\.post-match-calibration/);

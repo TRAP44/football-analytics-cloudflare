@@ -22,10 +22,10 @@
       "/cgi-bin/*"
     ]
   },
+  // Фоновые задачи запускает GitHub Actions (.github/workflows/cron-runner.yml):
+  // на Workers Free cron-запуск ограничен 10 мс CPU и обрывается.
   "triggers": {
-    "crons": [
-      "*/5 * * * *"
-    ]
+    "crons": []
   },
   "version_metadata": {
     "binding": "CF_VERSION_METADATA"
@@ -49,6 +49,7 @@
     "AI_EXPLANATION_DAILY_LIMIT": "1000",
     "AI_EXPLANATION_USER_HOURLY_LIMIT": "6",
     "PREMATCH_PREDICTIONS_ENABLED": "true",
+    "BACKGROUND_JOBS_EXECUTOR": "github",
     "PREMATCH_PREDICTIONS_PER_RUN": "2",
     "PREMATCH_PREDICTIONS_DAILY_LIMIT": "20",
     "PREMATCH_PREDICTIONS_INTERVAL_MINUTES": "30",

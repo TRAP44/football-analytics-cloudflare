@@ -729,6 +729,12 @@ export function createWorkerBootstrapRuntime(deps = {}) {
         return undefined;
       }
 
+      // Фоновые задачи исполняет GitHub Actions: «призрачный» cron Cloudflare
+      // (расписание удалено, но срабатывает) завершается сразу, без блокировки.
+      if (cfg.backgroundJobsExecutor === 'github' && cfg.cronRunner !== 'github-actions') {
+        return undefined;
+      }
+
       const timestamp=validScheduledTimestamp(controller);
       if (timestamp === null) {
         await safeRecord(cfg,{

@@ -4282,6 +4282,12 @@ html {
 .ai-prob-dot.home{fill:var(--accent)}
 .ai-prob-dot.draw{fill:#a7b0bf}
 .ai-prob-dot.away{fill:#60a5fa}
+/* Задача 3: кривая по ходу матча — старт матча и события (гол, красная). */
+.ai-prob-kickoff{stroke:var(--hint);stroke-width:1;opacity:.45;vector-effect:non-scaling-stroke}
+.ai-prob-event line{stroke:var(--accent);stroke-width:1;stroke-dasharray:2 4;opacity:.7;vector-effect:non-scaling-stroke}
+.ai-prob-event.red line{stroke:#f87171}
+.ai-prob-event text{font-size:11px}
+.ai-prob-panel .ai-prob-chart-unavailable{margin:0;font-size:13px;line-height:1.45;color:var(--hint)}
 .ai-prob-legend{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .ai-prob-legend-item{
   display:flex;

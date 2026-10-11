@@ -7,6 +7,19 @@ export const WORKFLOW_SECRET_ALLOWLIST = Object.freeze({
   '.github/workflows/deploy-production.yml': new Set(['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','SUPABASE_ACCESS_TOKEN']),
   '.github/workflows/verify-production-migration.yml': new Set(['SUPABASE_ACCESS_TOKEN']),
   '.github/workflows/rollback-production.yml': new Set(['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID']),
+  // Фоновые задачи вне Cloudflare (Workers Free обрывает cron): ключи только из
+  // окружения background-jobs, доступного лишь ветке main (см. проверку ниже).
+  '.github/workflows/cron-runner.yml': new Set([
+    'SUPABASE_URL','SUPABASE_SECRET_KEY','SUPABASE_SERVICE_ROLE_KEY',
+    'TELEGRAM_BOT_TOKEN','TELEGRAM_PUBLISHER_BOT_TOKEN','ADMIN_TELEGRAM_IDS',
+    'BETA_TELEGRAM_IDS','BETA_ACCESS_ENABLED','API_FOOTBALL_KEY','FOOTBALL_DATA_TOKEN','TAVILY_KEY',
+  ]),
+});
+
+// Workflow с боевыми ключами приложения: каждая задача, читающая секреты,
+// обязана работать в своём окружении GitHub (секреты окружения + ограничение веток).
+const WORKFLOW_REQUIRED_ENVIRONMENT = Object.freeze({
+  '.github/workflows/cron-runner.yml': 'background-jobs',
 });
 
 const SECRET_NAME_PATTERN = /(TOKEN|SECRET|PASSWORD|PASSPHRASE|PRIVATE|SERVICE_ROLE|DB_URL|API_KEY)/i;
@@ -125,6 +138,14 @@ function productionEnvironmentProtected(text='') {
   return sensitive.every(job=>/^    environment:\s*production\s*$/m.test(job.lines.join('\n')));
 }
 
+function secretJobsUseEnvironment(text='', environment='') {
+  const jobs=workflowJobs(text);
+  const sensitive=jobs.filter(job=>workflowSecretRefs(job.lines.join('\n')).length>0);
+  if (!sensitive.length) return false;
+  const pattern=new RegExp(`^    environment:\\s*${environment}\\s*$`,'m');
+  return sensitive.every(job=>pattern.test(job.lines.join('\n')));
+}
+
 export function auditWorkflow(pathName, text='') {
   const findings=[];
   const source=String(text);
@@ -161,6 +182,10 @@ export function auditWorkflow(pathName, text='') {
   if (['.github/workflows/backup-supabase.yml','.github/workflows/deploy-production.yml','.github/workflows/rollback-production.yml','.github/workflows/verify-production-migration.yml'].includes(pathName)
       && !productionEnvironmentProtected(source)) {
     findings.push({path:pathName,type:'production_environment_missing'});
+  }
+  const requiredEnvironment=WORKFLOW_REQUIRED_ENVIRONMENT[pathName];
+  if (requiredEnvironment && !secretJobsUseEnvironment(source,requiredEnvironment)) {
+    findings.push({path:pathName,type:'secret_environment_missing',name:requiredEnvironment});
   }
 
   return findings;

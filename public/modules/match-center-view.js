@@ -89,6 +89,10 @@ export function renderMatchCenterView(d, deps) {
   });
   const aiTimelineCompactHtml=matchCenterExtraHtml('renderAiTimelineCompact', d.aiTimeline || {}, m);
   const aiTimelineDetailsHtml=matchCenterExtraHtml('renderAiTimelineDetails', d.aiTimeline || {}, m);
+  // Задача 3: кривая вероятностей — для LIVE и завершённых матчей, только по реальным снимкам.
+  const aiProbabilityChartHtml=(live || finished)
+    ? matchCenterExtraHtml('renderAiProbabilityChart', d.aiTimeline || {}, {...m,live,finished}, eventRows)
+    : '';
   const hasAbsences=Boolean(d.availabilityQuality?.observed || d.absences?.home?.length || d.absences?.away?.length);
   const history=analysisHistoryForFixture(m.fixtureId);
   const fixtureId=Number(m.fixtureId || 0);
@@ -170,6 +174,7 @@ export function renderMatchCenterView(d, deps) {
       ${matchCenterTrackRecordHtml(state, escapeHtml)}
       ${matchChangeNarrativeHtml(d, m)}
       ${aiTimelineCompactHtml}
+      ${aiProbabilityChartHtml ? `<section class="${aiProbabilityChartHtml.startsWith('<figure') ? '' : 'panel '}ai-prob-panel">${aiProbabilityChartHtml}</section>` : ''}
       ${aiTimelineDetailsHtml}
       ${live ? liveAiCoachHtml(d.liveAiCoach, m) : ''}
       ${smartInsightsHeroHtml(d.smartInsights, m)}
