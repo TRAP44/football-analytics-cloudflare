@@ -24,6 +24,12 @@ PR: [#838](https://github.com/TRAP44/football-analytics-cloudflare/pull/838), в
 - `privileged-access-audit`: разрешённые ключи для этого workflow + обязательное окружение `background-jobs` для задач с секретами.
 Осталось / внимание:
 - До слияния Сергей создаёт окружение `background-jobs` (только `main`) и кладёт туда ключи (инструкция в PR). Без ключей запуск падает с понятной ошибкой.
+## 2026-10-11 — Claude — Ревью Codex старых PR (#806, #817, #825)
+PR: [#837](https://github.com/TRAP44/football-analytics-cloudflare/pull/837), ветка `claude/review-fixes-806-825`
+Сделано:
+- #825, P1: при сбое истории анализов пользователь с ограниченным Weekend Pass проходил мимо защиты и тратил использование Pass на перепроверку. Теперь мимо защиты проходит только безлимитный Pass (`usageLimit == null`, как и в `reserveEntitlementUsage`); ограниченный получает сохранённый анализ без списания.
+- #806, P2: метка «Пропустить ставку» из старого кеша в LIVE — уже исправлено в #819 (`neutralSignalText` по коду сигнала); добавлен регрессионный тест.
+- #817 — замечаний нет.
 
 ## 2026-10-11 — Claude — Задача 7: пробелы разбора после матча
 PR: [#834](https://github.com/TRAP44/football-analytics-cloudflare/pull/834), ветка `claude/post-match-review-gaps`
