@@ -2260,9 +2260,19 @@ html[data-theme] body.miniapp-public-shell .mr-hq-hero .center-competition {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--hint);
 }
-html[data-theme] body.miniapp-public-shell .mr-hq-hero .center-score-core strong {
-  font-size: 44px; font-weight: 900; letter-spacing: -.02em; font-variant-numeric: tabular-nums; text-shadow: 0 0 24px var(--mr-glow);
+/* Блок счёта подстраивается под ширину счёта: колонка auto вместо фиксированных
+   70–78px из узких медиазапросов, иначе крупный счёт «1 : 3» вылезал вправо. */
+html[data-theme] body.miniapp-public-shell .mr-hq-hero .center-scoreboard {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
 }
+html[data-theme] body.miniapp-public-shell .mr-hq-hero .center-score-core {
+  min-width: 0; width: max-content; max-width: 100%; justify-self: center; padding-inline: 10px;
+}
+html[data-theme] body.miniapp-public-shell .mr-hq-hero .center-score-core strong {
+  font-size: clamp(30px, 10.5vw, 44px); font-weight: 900; letter-spacing: -.02em; font-variant-numeric: tabular-nums; text-shadow: 0 0 24px var(--mr-glow);
+  white-space: nowrap;
+}
+html[data-theme] body.miniapp-public-shell .mr-hq-hero .center-score-core > span { max-width: 140px; }
 
 html[data-theme] body.miniapp-public-shell .mr-hq-tabs-wrap {
   /* Под липкой верхней шапкой (z-index 18), как у остальных вкладок приложения. */

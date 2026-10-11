@@ -137,7 +137,7 @@ test('frontend asset revision is consistent after Match Center presentation chan
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
 
-  assert.equal(revision,'6.120.0-launch89');
+  assert.equal(revision,'6.120.0-launch90');
   for(const asset of [
     'styles.css',
     'styles/public-shell.css',
@@ -150,4 +150,11 @@ test('frontend asset revision is consistent after Match Center presentation chan
     );
   }
   assert.doesNotMatch(html,/6\.120\.0-launch49/);
+});
+
+test('HQ scoreboard sizes the score block to the score instead of a fixed narrow column', () => {
+  const premium = fs.readFileSync('public/styles/premium-ui.css', 'utf8');
+  assert.match(premium, /\.mr-hq-hero \.center-scoreboard \{\s*grid-template-columns: minmax\(0, 1fr\) auto minmax\(0, 1fr\);/);
+  assert.match(premium, /\.mr-hq-hero \.center-score-core \{\s*min-width: 0; width: max-content; max-width: 100%; justify-self: center;/);
+  assert.match(premium, /font-size: clamp\(30px, 10\.5vw, 44px\);[^}]*white-space: nowrap;/);
 });
