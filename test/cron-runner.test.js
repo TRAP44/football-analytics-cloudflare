@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  CRON_RUNNER_SECRET_KEYS, cronSlot, redactor, runCron, runnerEnv, summarizeRun, wranglerVars,
+  CRON_RUNNER_SECRET_KEYS, cronSlot, missingRequiredSecrets, redactor, runCron, runnerEnv, summarizeRun, wranglerVars,
 } from '../scripts/cron-runner.js';
 
 test('cron runner aligns delayed GitHub runs to the 5-minute cron slot', () => {
@@ -90,4 +90,14 @@ test('a missing lease fails the run, an overlap with a running job does not', ()
   }
   assert.equal(summarizeRun([{ status: 'fulfilled', value: [{ task: 'scheduled_execution', status: 'degraded', reason: 'lease_renewal_failed' }] }]).failed, true);
   assert.equal(summarizeRun([{ status: 'fulfilled', value: [{ task: 'reminders', status: 'skipped', reason: 'lease_unavailable' }] }]).failed, false, 'only the whole-run lease matters');
+});
+
+test('the run refuses to start without the mandatory job secrets', () => {
+  const full = { SUPABASE_URL: 'u', SUPABASE_SERVICE_ROLE_KEY: 'k', TELEGRAM_BOT_TOKEN: 't', API_FOOTBALL_KEY: 'a' };
+  assert.deepEqual(missingRequiredSecrets(full), []);
+  assert.deepEqual(missingRequiredSecrets({ ...full, SUPABASE_SERVICE_ROLE_KEY: '', SUPABASE_SECRET_KEY: 's' }), []);
+  assert.deepEqual(missingRequiredSecrets({ ...full, TELEGRAM_BOT_TOKEN: '' }), ['TELEGRAM_BOT_TOKEN']);
+  assert.deepEqual(missingRequiredSecrets({ ...full, API_FOOTBALL_KEY: undefined }), ['API_FOOTBALL_KEY']);
+  assert.equal(missingRequiredSecrets({}).length, 4);
+  assert.match(fs.readFileSync('scripts/cron-runner.js', 'utf8'), /const missing = missingRequiredSecrets\(env\);\n  if \(missing\.length\) \{/);
 });

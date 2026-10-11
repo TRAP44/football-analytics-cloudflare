@@ -67,6 +67,17 @@ export function runnerEnv(processEnv = {}, vars = {}, { sha = '', now = Date.now
   return env;
 }
 
+// Без этих ключей задачи «успешно» ничего не делают (уведомления без бота,
+// расчёты без провайдера) — такой запуск должен быть красным, а не зелёным.
+export function missingRequiredSecrets(env = {}) {
+  const missing = [];
+  if (!env.SUPABASE_URL) missing.push('SUPABASE_URL');
+  if (!env.SUPABASE_SECRET_KEY && !env.SUPABASE_SERVICE_ROLE_KEY) missing.push('SUPABASE_SECRET_KEY или SUPABASE_SERVICE_ROLE_KEY');
+  if (!env.TELEGRAM_BOT_TOKEN) missing.push('TELEGRAM_BOT_TOKEN');
+  if (!env.API_FOOTBALL_KEY) missing.push('API_FOOTBALL_KEY');
+  return missing;
+}
+
 export function redactor(env = {}) {
   const secrets = CRON_RUNNER_SECRET_KEYS
     .map(key => env[key])
@@ -148,8 +159,9 @@ async function main() {
   const vars = wranglerVars(fs.readFileSync(path.join(root, 'wrangler.jsonc'), 'utf8'));
   const env = runnerEnv(process.env, vars, { sha: process.env.GITHUB_SHA || '' });
   const redact = redactor(env);
-  if (!env.SUPABASE_URL || !(env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY)) {
-    console.error('cron-runner: SUPABASE_URL и ключ Supabase не заданы в GitHub Secrets — запуск невозможен.');
+  const missing = missingRequiredSecrets(env);
+  if (missing.length) {
+    console.error(`cron-runner: в окружении background-jobs не заданы обязательные ключи: ${missing.join(', ')} — запуск невозможен.`);
     process.exit(1);
   }
   const { default: worker } = await import(pathToFileURL(path.join(root, 'src', 'worker.js')).href);
