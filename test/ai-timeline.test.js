@@ -576,3 +576,19 @@ test('live curve: stoppage-time events sit before the next regulation minute', (
   assert.ok(eventX > dotsX[0]);
   assert.match(html, /45\+5′ гол/);
 });
+
+// Ревью #836: минута снимка — игровая (от источника), а не по часам с перерывом.
+test('snapshot minute comes from the provider clock; wall-clock is used only inside the first half', () => {
+  const base = { generatedAt: '2026-10-01T19:25:00Z', probabilities: { home: 60, draw: 25, away: 15 }, match: { fixtureId: 7, date: '2026-10-01T18:00:00Z' } };
+  assert.equal(analysisTimelineSnapshotRow({ ...base, match: { ...base.match, status: '2H', elapsed: 67 } }).match_minute, 67);
+  assert.equal(analysisTimelineSnapshotRow({ ...base, match: { ...base.match, status: '2H' } }).match_minute, null, 'second half without elapsed is unknown, not 85');
+  const firstHalf = { ...base, generatedAt: '2026-10-01T18:30:00Z', match: { ...base.match, status: '1H' } };
+  assert.equal(analysisTimelineSnapshotRow(firstHalf).match_minute, 30);
+  const timeline = buildAiTimeline({ match: { fixtureId: 42, date: '2026-10-01T18:00:00Z' }, snapshotRows: [
+    point('2026-10-01T18:20:00Z', { home: 55, draw: 27, away: 18 }),
+    point('2026-10-01T19:25:00Z', { home: 60, draw: 25, away: 15 }),
+  ] });
+  assert.deepEqual(timeline.points.map(p => p.minute), [20, null], 'no wall-clock minute after the first half');
+  const analysis = readRepoFile('src/analysis-runtime.js');
+  assert.match(analysis, /\? \{elapsed:Number\(fixture\.fixture\.status\.elapsed\)\}/);
+});

@@ -1938,6 +1938,11 @@ export function createAnalysisRuntime(deps) {
         fixtureId,
         date:kickoffRaw,
         status,
+        // Минута игрового времени от источника (без перерыва): по ней снимок
+        // встаёт на ось кривой вероятностей (задача 3).
+        ...(Number.isSafeInteger(Number(fixture?.fixture?.status?.elapsed)) && Number(fixture.fixture.status.elapsed)>=0 && Number(fixture.fixture.status.elapsed)<=150
+          ? {elapsed:Number(fixture.fixture.status.elapsed)}
+          : {}),
         venue:safeText(fixture?.fixture?.venue?.name,180),
         city:safeText(fixture?.fixture?.venue?.city,180),
         referee:safeText(fixture?.fixture?.referee,180),
