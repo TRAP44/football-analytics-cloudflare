@@ -38,7 +38,7 @@ export const QUESTION_PRESETS = Object.freeze({
 
 // Просьбы о ставке, прогнозе на деньги или «верном» исходе — отказ до LLM.
 // \b не работает с кириллицей — границы слова через (^|не-буква) и (?!буква).
-const BETTING_QUESTION = /ставк|ставить на|на\s+(кого|что)\s+(лучше\s+)?ставить|поставить|ставлю|кэф|коэф|букмекер|экспресс|тотал|котиров|заработ|верняк|договорн|(^|[^\p{L}\p{N}])(п1|п2|1[xх]2|фор[аыу])(?![\p{L}\p{N}])/iu;
+const BETTING_QUESTION = /ставк|ставить на|на\s+(кого|что)\s+(лучше\s+)?ставить|поставить\s+(на|деньги|\d)|ставлю\s+на|кэф|коэф|букмекер|экспресс|тотал|котиров|заработ|верняк|договорн|(^|[^\p{L}\p{N}])(п1|п2|1[xх]2|фор[аыу])(?![\p{L}\p{N}])/iu;
 
 function plainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
@@ -219,7 +219,8 @@ export function createMatchQuestionRuntime(deps = {}) {
       const remaining = Number.isInteger(count) ? Math.max(0, limit - count) : 0;
       return { allowed: safeRead(result, 'allowed') === true, remaining };
     } catch {
-      return { allowed: false, remaining: 0 };
+      // Сбой RPC — не «лимит исчерпан»: пользователю честно скажем, что AI недоступен.
+      return { allowed: false, remaining: 0, error: true };
     }
   }
 
@@ -243,6 +244,7 @@ export function createMatchQuestionRuntime(deps = {}) {
       return { ids: null, reason: exhausted ? 'daily_limit' : 'ai_unavailable' };
     }
     const user = await claimUserHour(cfg, userId, cfg?.matchQuestionsUserHourlyLimit);
+    if (user.error) return { ids: null, reason: 'ai_unavailable' };
     if (!user.allowed) {
       telemetry('matchQuestionUserLimited');
       return { ids: null, reason: 'user_limit', remaining: 0 };

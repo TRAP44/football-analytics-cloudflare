@@ -75,7 +75,8 @@ test('questions are normalized and bounded; betting requests are recognised', ()
   assert.equal(normalizeQuestion('а'.repeat(201)), null);
   assert.equal(normalizeQuestion(42), null);
   for (const q of ['На кого ставить?', 'какой кэф на Милан', 'фора -1 зайдёт?', 'П1 или П2?', 'Можно заработать на этом матче?', 'тотал больше?']) assert.equal(isBettingQuestion(q), true, q);
-  for (const q of ['Кто в форме?', 'Тренер будет ставить Леао в старт?', 'Линия обороны Ромы держит?', 'Почему такой прогноз?']) assert.equal(isBettingQuestion(q), false, q);
+  for (const q of ['Кто в форме?', 'Тренер будет ставить Леао в старт?', 'Линия обороны Ромы держит?', 'Почему такой прогноз?', 'Стоит ли поставить Леао в стартовый состав?', 'Кого поставят в защиту?']) assert.equal(isBettingQuestion(q), false, q);
+  for (const q of ['Стоит поставить на Милан?', 'поставить 1000 на ничью', 'ставлю на Рому']) assert.equal(isBettingQuestion(q), true, q);
 });
 
 test('LLM output is accepted only as {"factIds":[...]} with 0–3 known unique ids', () => {
@@ -231,4 +232,11 @@ test('a user who exhausted the hour never spends the shared daily budget', async
   } });
   await Promise.all(Array.from({ length: 12 }, (_, i) => burst.rt.apiMatchQuestion(request({ fixtureId: 77, question: `Вопрос номер ${i}` }), burst.cfg, user)));
   assert.equal(service, 1);
+});
+
+test('a quota RPC failure is "AI unavailable", not "your limit is exhausted"', async () => {
+  const flaky = runtime({ rpc: params => { if (params.p_bucket_key.startsWith('ai-ask:user')) throw new Error('timeout'); return { allowed: true }; } });
+  const res = await flaky.rt.apiMatchQuestion(request({ fixtureId: 77, question: 'Кто опаснее в атаке?' }), flaky.cfg, user);
+  assert.equal(res.body.reason, 'ai_unavailable');
+  assert.ok(!flaky.calls.rpc.some(call => call.params.p_bucket_key.startsWith('ai-ask-global')), 'no shared budget spent');
 });
