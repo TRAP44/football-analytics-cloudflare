@@ -104,3 +104,9 @@ test('partial grids on both sides render lists and never the legacy synthesized 
   assert.match(html, /Рома · стартовый состав/);
   assert.equal((html.match(/Хозяин /g) || []).length, 11);
 });
+
+test('without an escapeHtml dependency the view still escapes text', () => {
+  const html = lineupPitchViewHtml({ home: xi('4-3-3', '<b>x</b>') }, { home: { name: '<i>Милан</i>' }, away: { name: 'Рома' } });
+  assert.doesNotMatch(html, /<b>x<\/b>|<i>Милан<\/i>/);
+  assert.match(html, /&lt;i&gt;Милан/);
+});

@@ -8,6 +8,11 @@ const ROLE_LABELS = Object.freeze({ G: 'вратарь', D: 'защитник', 
 const NEAR_WIDTH = 1;
 const FAR_WIDTH = 0.8;
 
+// Запасной экранировщик, если вызывающий код не передал свой: текст никогда не идёт в HTML как есть.
+function escapeText(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+}
+
 function finite(value) {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
@@ -138,7 +143,7 @@ function emptyText(match = {}) {
  * команд нет расстановки по сетке.
  */
 export function lineupPitchViewHtml(lineups, match = {}, { escapeHtml, fallback } = {}) {
-  const esc = typeof escapeHtml === 'function' ? escapeHtml : value => String(value);
+  const esc = typeof escapeHtml === 'function' ? escapeHtml : escapeText;
   const home = lineups?.home && typeof lineups.home === 'object' ? lineups.home : null;
   const away = lineups?.away && typeof lineups.away === 'object' ? lineups.away : null;
   const homeName = String(match?.home?.name || 'Хозяева');
