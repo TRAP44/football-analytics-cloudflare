@@ -18,6 +18,7 @@ _пусто_
 
 ## На ревью
 
+- [ ] Фоновые задачи: журнал запросов воркера при сбое (без значений ключей) — **Claude** — [PR #841](https://github.com/TRAP44/football-analytics-cloudflare/pull/841) — ревью: Codex
 - [ ] Фоновые задачи: понятная причина, если Supabase не принимает адрес или ключ (проверка формата и пробный запрос до запуска) — **Claude** — [PR #840](https://github.com/TRAP44/football-analytics-cloudflare/pull/840) — ревью: Codex
 - [ ] Задача 6: «Спросить про матч» — 4 готовые подсказки (без LLM и лимита) + свой вопрос: Workers AI выбирает 0–3 факта из того же каталога, иначе «в данных этого нет»; ставки — отказ до LLM; лимиты на пользователя в час и сервис в сутки — **Claude** (по решению Сергея) — [PR #835](https://github.com/TRAP44/football-analytics-cloudflare/pull/835) — ревью: Codex
 - [ ] Фоновые задачи через GitHub Actions: cron Cloudflare на Workers Free обрывается с 9.10 (10 мс CPU) — запуск `scheduled()` воркера из Node раз в 5 минут, ключи в окружении `background-jobs` (только `main`), cron в `wrangler.jsonc` выключен (вариант А, решение Сергея 11.10) — **Claude** — [PR #838](https://github.com/TRAP44/football-analytics-cloudflare/pull/838) — ревью: Codex
