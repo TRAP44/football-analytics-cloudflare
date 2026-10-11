@@ -175,10 +175,14 @@ export function createProviderDataRuntime(deps) {
     const warnings = [];
     const featureLabels = {
       events:'События матча', statistics:'Статистика матча', players:'Статистика игроков',
-      lineups:'Стартовые составы', injuries:'Потери состава', liveOdds:'Live-коэффициенты',
-      odds:'Линия 1X2', predictions:'Процентный прогноз', h2h:'Очные встречи', match:'Статус матча',
+      lineups:'Стартовые составы', injuries:'Потери состава',
+      predictions:'Процентный прогноз', h2h:'Очные встречи', match:'Статус матча',
     };
+    // Рыночные блоки (odds, liveOdds) не входят в расчёт и не упоминаются в
+    // пользовательских предупреждениях: они попадают в «пропущено» и «риски».
+    const marketFeatures = new Set(['odds', 'liveOdds']);
     for (const entry of entries) {
+      if (marketFeatures.has(entry.feature)) continue;
       const label = featureLabels[entry.feature] || entry.feature;
       if (entry.observed && entry.stale) warnings.push(`${label}: данные устарели и исключены из доверенных сигналов.`);
       else if (entry.observed && entry.provenanceState === 'unknown') warnings.push(`${label}: источник не подтверждён, поэтому блок исключён из доверенных сигналов.`);
@@ -194,7 +198,6 @@ export function createProviderDataRuntime(deps) {
     } else if (byFeature.lineups && !byFeature.lineups.confidenceBearing && minutesToKickoff !== null && minutesToKickoff <= 120) {
       warnings.push('Стартовые составы не подтверждены свежим атрибутированным источником; они исключены из модельного сигнала.');
     }
-    if (byFeature.odds && !byFeature.odds.confidenceBearing) warnings.push('Линия 1X2 не подтверждена свежим источником; рыночный сигнал исключён из расчёта.');
     if (byFeature.predictions && !byFeature.predictions.confidenceBearing) warnings.push('Процентный прогноз API-Football недоступен или не прошёл проверку свежести; этот сигнал исключён из расчёта.');
   
     return {

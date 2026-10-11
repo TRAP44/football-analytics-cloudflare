@@ -86,7 +86,10 @@ test('RC104 stale, degraded and unattributed data never increases provider trust
   assert.equal(r.state,'degraded');
   assert.equal(r.available,0);
   assert.equal(r.trustCap,60);
-  assert.ok(r.warnings.some(x=>x.includes('устарели')));
+  // Устаревшая линия не называется пользователю (рыночные формулировки скрыты),
+  // но доверие всё равно не растёт; остальные блоки предупреждают как раньше.
+  assert.ok(r.warnings.some(x=>x.includes('источник не подтверждён')));
+  assert.ok(r.warnings.every(x=>!/1X2|коэффициент|рыноч/.test(x)));
 });
 
 test('RC104 missing age metadata is not interpreted as instant freshness',()=>{

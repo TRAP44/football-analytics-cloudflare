@@ -14,6 +14,15 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-11 — Claude — Ревью #829: без рынка в «пропущено» и «рисках»
+PR: [#832](https://github.com/TRAP44/football-analytics-cloudflare/pull/832), ветка `claude/hide-odds-warnings` (поверх #831)
+Сделано:
+- `providerDataReliabilitySummary` (`src/provider-data-runtime.js`) больше не пишет предупреждений про `odds`/`liveOdds` («Линия 1X2 …», «Live-коэффициенты: …»); метаданные этих блоков остаются, доверие они по-прежнему не повышают.
+- `analysis-runtime.js`: предупреждения надёжности фильтруются `isBettingText` до `dataPolicy.skipped` и `risks`.
+- Mini App: `neutralTextList` скрывает рыночные строки в уже сохранённых разборах — «Что было пропущено», «Основные риски» и факторы краткой сводки.
+Осталось / внимание:
+- Ревизия ассетов — launch96. Если #831 сольют первым — PR перенацелится на `main` без конфликтов.
+
 ## 2026-10-11 — Claude — Задача 2: вероятности на карточках главных матчей дня
 PR: [#831](https://github.com/TRAP44/football-analytics-cloudflare/pull/831), ветка `claude/precompute-probabilities`
 Сделано:
