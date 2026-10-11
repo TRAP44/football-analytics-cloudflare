@@ -369,3 +369,31 @@ test('Mini App exposes instructor/referee UI and current capability flags', () =
     assert.match(appCapabilities, new RegExp(`${flag}:true`), flag);
   }
 });
+
+test('Telegram verdict does not promote a main scenario when AI has no confident conclusion', () => {
+  const bot = createBotUi();
+  const base = {
+    match: { home: { name: 'Милан' }, away: { name: 'Рома' } },
+    probabilities: { home: 48, draw: 27, away: 25 },
+  };
+  const gated = bot.botAiVerdictText({
+    ...base,
+    aiInstructor: {
+      betSignal: { code: 'skip', reason: 'Надёжность входных данных ниже рабочего порога.' },
+      qualityGate: { allowSignal: false },
+      confidenceScore: 41,
+      riskLabel: 'Высокий',
+    },
+  });
+  assert.doesNotMatch(gated, /Основной сценарий|Альтернатива/);
+  assert.match(gated, /Вывод: <b>Без уверенного вывода<\/b>/);
+  assert.match(gated, /Оценка модели: Победа Милан 48% · Ничья 27% · Победа Рома 25%/);
+  assert.match(gated, /Уверенного вывода нет/);
+
+  const confident = bot.botAiVerdictText({
+    ...base,
+    aiInstructor: { betSignal: { code: 'home', reason: 'Милан сильнее дома.' }, confidenceScore: 70 },
+  });
+  assert.match(confident, /Основной сценарий: <b>Победа Милан<\/b> · 48%/);
+  assert.match(confident, /Альтернатива: Ничья · 27%/);
+});

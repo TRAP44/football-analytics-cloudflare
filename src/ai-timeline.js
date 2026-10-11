@@ -44,7 +44,7 @@ function outcomeKey(probabilities = {}) {
 }
 
 function outcomeLabel(key = '') {
-  return key === 'home' ? 'П1' : key === 'draw' ? 'Н' : key === 'away' ? 'П2' : '—';
+  return key === 'home' ? 'Хозяева' : key === 'draw' ? 'Ничья' : key === 'away' ? 'Гости' : '—';
 }
 
 function round1(value) {
@@ -400,7 +400,7 @@ export function buildAiTimeline({
       marketSnapshots: marketContext.length,
     },
     note: points.length
-      ? 'AI Timeline использует только реально сохранённые снимки. События и движение рынка помечаются как совпадение во времени, если причинность не подтверждена.'
+      ? 'AI Timeline использует только реально сохранённые снимки. События помечаются как совпадение во времени, если причинность не подтверждена.'
       : 'Сохранённых AI-снимков для этого матча пока нет.',
   };
 }

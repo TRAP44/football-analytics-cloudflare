@@ -827,9 +827,9 @@ export function createModelIntelligenceRuntime(deps) {
     const p=probabilityObject(probabilities);
     if (!p) return [];
     return [
-      {key:'home',label:homeName || 'П1',value:p.home},
+      {key:'home',label:homeName || 'Хозяева',value:p.home},
       {key:'draw',label:'Ничья',value:p.draw},
-      {key:'away',label:awayName || 'П2',value:p.away},
+      {key:'away',label:awayName || 'Гости',value:p.away},
     ].sort((a,b)=>b.value-a.value);
   }
   
@@ -886,7 +886,7 @@ export function createModelIntelligenceRuntime(deps) {
     if (probabilities && clearEdge) headline = `Модель выделяет вариант «${top.label}»`;
     else if (probabilities && !closeMatch) headline = `Небольшой перевес у варианта «${top.label}»`;
   
-    let summary = 'Доступные источники дают близкие оценки, поэтому небольшие новости по составам или движение рынка могут заметно изменить итоговые проценты.';
+    let summary = 'Доступные источники дают близкие оценки, поэтому небольшие новости по составам или новые данные могут заметно изменить итоговые проценты.';
     if (probabilities && clearEdge) {
       summary = `Расчётная вероятность лидирующего варианта — ${round1(top.value)}%, отрыв от второго сценария — ${gap} п.п. Это преимущество модели, а не гарантия результата.`;
     } else if (probabilities && !closeMatch) {
@@ -1027,7 +1027,7 @@ export function createModelIntelligenceRuntime(deps) {
           icon: '⚖️',
           tone: 'balanced',
           title: 'Базовый сценарий: близкий матч',
-          text: `Разрыв между двумя наиболее вероятными исходами — всего ${gap} п.п. Небольшой игровой эпизод, состав или изменение рынка может перевернуть порядок вероятностей.`,
+          text: `Разрыв между двумя наиболее вероятными исходами — всего ${gap} п.п. Небольшой игровой эпизод, состав или новые данные могут перевернуть порядок вероятностей.`,
           relevance: 'Основной',
         });
       } else {
@@ -1053,7 +1053,7 @@ export function createModelIntelligenceRuntime(deps) {
           icon: '🔥',
           tone: 'open',
           title: 'Голевой сценарий: более открытая игра',
-          text: `Модель Пуассона даёт ${goalModel.totalExpected} ожидаемых гола суммарно и ${round1(goalModel.over25)}% на ТБ 2.5. Это вспомогательная модель по недавней результативности.`,
+          text: `Модель Пуассона даёт ${goalModel.totalExpected} ожидаемых гола суммарно и ${round1(goalModel.over25)}% на 3+ гола в матче. Это вспомогательная модель по недавней результативности.`,
           relevance: 'Дополнительный',
         });
       } else if (total > 0 && total <= 2.2) {
@@ -1072,7 +1072,7 @@ export function createModelIntelligenceRuntime(deps) {
           icon: '⚽',
           tone: 'open',
           title: 'Обе команды способны забить',
-          text: `Эвристическая вероятность «обе забьют» — ${round1(goalModel.btts)}%. Это не букмекерская рекомендация, а производная от недавних голов команд.`,
+          text: `Эвристическая вероятность, что забьют обе команды, — ${round1(goalModel.btts)}%. Это производная от недавних голов команд.`,
           relevance: 'Дополнительный',
         });
       }

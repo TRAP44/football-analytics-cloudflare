@@ -1154,12 +1154,20 @@ export function createTelegramBotUiRuntime(deps = {}) {
     const validOutcomes=outcomes.every(row=>row.value!==null && row.value>=0 && row.value<=100)
       && Math.abs(outcomes.reduce((sum,row)=>sum+row.value,0)-100)<=3;
     const sorted=validOutcomes ? [...outcomes].sort((a,b)=>b.value-a.value) : [];
-    const scenarioLines=sorted.length
+    // Без уверенного вывода (мало данных, низкая уверенность, не пройдена проверка
+    // качества) команда не выдвигается в «Основной сценарий»: только вывод и
+    // нейтральная раскладка вероятностей в исходном порядке.
+    const scenarioLines=sorted.length && !skip
       ? [
           `📊 Основной сценарий: <b>${escapeHtml(sorted[0].value-sorted[1].value<1 ? 'нет явного фаворита' : sorted[0].label,160)}</b> · ${Math.round(sorted[0].value)}%`,
           `↔️ Альтернатива: ${escapeHtml(sorted[1].label,160)} · ${Math.round(sorted[1].value)}%`,
         ]
-      : [`🎯 Вывод: <b>${escapeHtml(neutralSignalText(signal.code,{home:homeName,away:awayName}) || NO_CLEAR_SIGNAL_LABEL,180)}</b>`];
+      : [
+          `🎯 Вывод: <b>${escapeHtml(neutralSignalText(signal.code,{home:homeName,away:awayName}) || NO_CLEAR_SIGNAL_LABEL,180)}</b>`,
+          ...(sorted.length
+            ? [`📊 Оценка модели: ${outcomes.map(row=>`${escapeHtml(row.label,160)} ${Math.round(row.value)}%`).join(' · ')}`]
+            : []),
+        ];
 
     const goal=objectValue(source.goalModel) || {};
     const over=finiteNumber(goal.over25);
@@ -1191,7 +1199,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
       '',
       `Почему: ${escapeHtml(reasons[0],900) || 'Оцениваю доступные данные матча.'}`,
       skip
-        ? 'Сильного перевеса нет — исход матча открыт.'
+        ? 'Уверенного вывода нет — исход матча открыт.'
         : 'Перед стартом стоит проверить стартовые составы.',
       '',
       '<i>Сценарии — оценка модели по данным матча, а не гарантия результата.</i>',

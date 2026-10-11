@@ -318,3 +318,43 @@ test('worker passes MODEL_BASE_WEIGHTS into model intelligence runtime', () => {
   assert.match(runtime,/FOOTBALL_INVALID_RESPONSE/);
   assert.match(runtime,/return Object\.freeze\(\{/);
 });
+
+test('pre-match goal scenarios describe goals in words, without betting shorthand', () => {
+  const runtime=createModelIntelligenceRuntime(deps());
+  const brief=runtime.buildPreMatchIntelligence({
+    probabilities:{home:48,draw:27,away:25},
+    market:null,
+    h2h:null,
+    modelBreakdown:{signals:[]},
+    homeForm:null,
+    awayForm:null,
+    absences:null,
+    lineups:null,
+    goalModel:{totalExpected:3.1,over25:64,btts:66},
+    comparison:null,
+    confidence:{score:70,disagreement:5},
+    homeName:'',
+    awayName:'',
+    minutesToKickoff:600,
+    news:null,
+    completeness:{score:8,max:10},
+  });
+  const text=JSON.stringify(brief.scenarios);
+  assert.match(text,/3\+ гола в матче/);
+  assert.match(text,/забьют обе команды/);
+  assert.doesNotMatch(text,/ТБ|обе забьют|букмекер|П1|П2/);
+  assert.equal(brief.leader?.label,'Хозяева');
+});
+
+test('close-match pre-match scenario and summary do not mention the market', () => {
+  const runtime=createModelIntelligenceRuntime(deps());
+  const brief=runtime.buildPreMatchIntelligence({
+    probabilities:{home:36,draw:30,away:34},
+    market:null,h2h:null,modelBreakdown:{signals:[]},homeForm:null,awayForm:null,
+    absences:null,lineups:null,goalModel:null,comparison:null,
+    confidence:{score:55,disagreement:4},homeName:'Милан',awayName:'Рома',
+    minutesToKickoff:600,news:null,completeness:{score:8,max:10},
+  });
+  assert.ok(brief.scenarios.length>0);
+  assert.doesNotMatch(JSON.stringify(brief.scenarios)+brief.summary,/рын(ок|к|оч)/i);
+});

@@ -22,6 +22,7 @@ _пусто_
 
 ## На ревью
 
+- [ ] Сервер: бот без «основного сценария» без вывода; тексты преданализа, AI Timeline и фильтр без рынка, «ТБ 2.5» и П1/П2 (ревью #818–#820) — **Claude** — [PR #823](https://github.com/TRAP44/football-analytics-cloudflare/pull/823) — ревью: Codex
 - [ ] Штаб матча без коэффициентов: убрать «Рыночные данные», «Рынок» из пульса, покрытия и «Что изменилось» — **Claude** — [PR #818](https://github.com/TRAP44/football-analytics-cloudflare/pull/818) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
