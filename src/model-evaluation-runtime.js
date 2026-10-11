@@ -35,9 +35,63 @@ export function createModelEvaluationRuntime(deps = {}) {
     return memory.modelPredictions.get(id) || null;
   }
   
-  function postMatchOutcomeLabel(value = '') {
+  // Исходы словами, без «П1/Н/П2»: «Победа Арсенала» → «Победа Arsenal», «Ничья».
+  function postMatchOutcomeLabel(value = '', homeName = '', awayName = '') {
     const key=String(value || '');
-    return key==='home'?'П1':key==='draw'?'Н':key==='away'?'П2':'—';
+    const name=(raw,fallback)=>String(raw || '').replace(/\s+/g,' ').trim().slice(0,80) || fallback;
+    if (key==='home') return `Победа ${name(homeName,'хозяев')}`;
+    if (key==='away') return `Победа ${name(awayName,'гостей')}`;
+    if (key==='draw') return 'Ничья';
+    return '—';
+  }
+
+  // Наблюдаемые факторы матча. Не зависят от предматчевого снимка: даже без
+  // него разбор показывает, что видно по статистике и событиям.
+  function postMatchEvidence({statistics,events,homeName='',awayName='',score=null}) {
+    const evidence=[];
+    const add=(code,icon,title,text,importance='medium')=>evidence.push({code,icon,title,text,importance});
+    const rows=Array.isArray(events) ? events : [];
+    const hred=postMatchStatValue(statistics,'Red Cards','home') || 0;
+    const ared=postMatchStatValue(statistics,'Red Cards','away') || 0;
+    // Вторая жёлтая — тоже удаление.
+    const redEvents=rows.filter(x=>{
+      const detail=String(x?.detail || '').toLowerCase();
+      return detail.includes('red') || detail.includes('second yellow') || String(x?.label || '').includes('🟥');
+    });
+    if (hred+ared>0 || redEvents.length) {
+      const redSide=hred>ared?homeName:ared>hred?awayName:(redEvents[0]?.teamName || 'одной из команд');
+      add('red_card','🟥','Удаление в матче',`У ${redSide || 'одной из команд'} была красная карточка. Такое событие могло заметно изменить игровой сценарий.`,'high');
+    }
+
+    const hxg=postMatchStatValue(statistics,'expected_goals','home');
+    const axg=postMatchStatValue(statistics,'expected_goals','away');
+    if (hxg!==null && axg!==null && Math.abs(hxg-axg)>=0.45) {
+      const side=hxg>axg?(homeName || 'Хозяева'):(awayName || 'Гости');
+      add('xg','📈','Разница по xG',`${side} создал больше качества моментов по доступному xG: ${hxg.toFixed(2)} — ${axg.toFixed(2)}.`,Math.abs(hxg-axg)>=1?'high':'medium');
+    }
+
+    const hso=postMatchStatValue(statistics,'Shots on Goal','home');
+    const aso=postMatchStatValue(statistics,'Shots on Goal','away');
+    if (hso!==null && aso!==null && Math.abs(hso-aso)>=2) {
+      const side=hso>aso?(homeName || 'Хозяева'):(awayName || 'Гости');
+      add('shots_on_goal','🎯','Удары в створ',`${side} имел заметный перевес по ударам в створ: ${hso} — ${aso}.`,'medium');
+    }
+
+    // Незабитый пенальти приходит как событие типа Goal (detail «Missed Penalty») — это не гол.
+    const earlyGoal=rows.find(x=>String(x?.type || '').toLowerCase()==='goal'
+      && !String(x?.detail || '').toLowerCase().includes('missed')
+      && Number(x?.minute || 0)>0 && Number(x.minute)<=20);
+    if (earlyGoal) add('early_goal','⚽','Ранний гол',`Гол на ${Number(earlyGoal.minute)}-й минуте мог изменить исходный план команд и дальнейший рисунок игры.`,'medium');
+
+    const hpos=postMatchStatValue(statistics,'Ball Possession','home');
+    const apos=postMatchStatValue(statistics,'Ball Possession','away');
+    if (hpos!==null && apos!==null && Math.abs(hpos-apos)>=15) {
+      const side=hpos>apos?(homeName || 'Хозяева'):(awayName || 'Гости');
+      add('possession','🧭','Контроль мяча',`${side} заметно больше контролировал мяч: ${Math.round(hpos)}% — ${Math.round(apos)}%.`,'low');
+    }
+
+    if (!evidence.length && score) add('scoreline','📌','Итоговый счёт',`Матч завершился ${score.home}:${score.away}. Детальных событий или статистики недостаточно для более глубокого объяснения.`,'low');
+    return evidence.slice(0,3);
   }
   
   function postMatchPredictionProbability(row = {}, outcome = '') {
@@ -69,7 +123,18 @@ export function createModelEvaluationRuntime(deps = {}) {
 
   function buildPostMatchReview({prediction,fixture,statistics,events,homeName='',awayName=''}) {
     if (!prediction?.fixture_id) {
-      return {available:false,state:'no_snapshot',headline:'Нет сохранённого предматчевого снимка',summary:'Этот матч можно изучить по фактической статистике, но честно сравнить его с AI-прогнозом нельзя: до старта снимок модели не был сохранён.',evidence:[],markets:[],calibration:{included:false}};
+      const finalScore=regulationScore(fixture);
+      return {
+        available:false,
+        state:'no_snapshot',
+        headline:'Нет сохранённого предматчевого снимка',
+        summary:'Честно сравнить матч с AI-прогнозом нельзя: до старта снимок модели не был сохранён. Ниже — что видно по фактической статистике.',
+        ...(finalScore ? {score:{home:Number(finalScore.home),away:Number(finalScore.away)}} : {}),
+        evidence:finalScore ? postMatchEvidence({statistics,events,homeName,awayName,score:finalScore}) : [],
+        markets:[],
+        calibration:{included:false},
+        disclaimer:'Факторы описывают наблюдаемую статистику и события матча; они не доказывают причинность результата.',
+      };
     }
     const fallbackHome=postMatchResultGoal(prediction.actual_home_goals);
     const fallbackAway=postMatchResultGoal(prediction.actual_away_goals);
@@ -104,45 +169,12 @@ export function createModelEvaluationRuntime(deps = {}) {
       markets.push({code:'btts',label:'Забьют обе команды',predicted:bttsPred?'да':'нет',probability:bttsPred?bttsProb:Math.round((100-bttsProb)*10)/10,actual:bttsActual?'да':'нет',correct:bttsPred===bttsActual});
     }
   
-    const evidence=[];
-    const add=(code,icon,title,text,importance='medium')=>evidence.push({code,icon,title,text,importance});
-    const hred=postMatchStatValue(statistics,'Red Cards','home') || 0;
-    const ared=postMatchStatValue(statistics,'Red Cards','away') || 0;
-    const redEvents=(events || []).filter(x=>String(x?.detail || '').toLowerCase().includes('red') || String(x?.label || '').includes('🟥'));
-    if (hred+ared>0 || redEvents.length) {
-      const redSide=hred>ared?homeName:ared>hred?awayName:(redEvents[0]?.teamName || 'одной из команд');
-      add('red_card','🟥','Удаление в матче',`У ${redSide || 'одной из команд'} была красная карточка. Такое событие могло заметно изменить игровой сценарий.`,'high');
-    }
-  
-    const hxg=postMatchStatValue(statistics,'expected_goals','home');
-    const axg=postMatchStatValue(statistics,'expected_goals','away');
-    if (hxg!==null && axg!==null && Math.abs(hxg-axg)>=0.45) {
-      const side=hxg>axg?(homeName || 'Хозяева'):(awayName || 'Гости');
-      add('xg','📈','Разница по xG',`${side} создал больше качества моментов по доступному xG: ${hxg.toFixed(2)} — ${axg.toFixed(2)}.`,Math.abs(hxg-axg)>=1?'high':'medium');
-    }
-  
-    const hso=postMatchStatValue(statistics,'Shots on Goal','home');
-    const aso=postMatchStatValue(statistics,'Shots on Goal','away');
-    if (hso!==null && aso!==null && Math.abs(hso-aso)>=2) {
-      const side=hso>aso?(homeName || 'Хозяева'):(awayName || 'Гости');
-      add('shots_on_goal','🎯','Удары в створ',`${side} имел заметный перевес по ударам в створ: ${hso} — ${aso}.`,'medium');
-    }
-  
-    const earlyGoal=(events || []).find(x=>String(x?.type || '').toLowerCase()==='goal' && Number(x?.minute || 0)>0 && Number(x.minute)<=20);
-    if (earlyGoal) add('early_goal','⚽','Ранний гол',`Гол на ${Number(earlyGoal.minute)}-й минуте мог изменить исходный план команд и дальнейший рисунок игры.`,'medium');
-  
-    const hpos=postMatchStatValue(statistics,'Ball Possession','home');
-    const apos=postMatchStatValue(statistics,'Ball Possession','away');
-    if (hpos!==null && apos!==null && Math.abs(hpos-apos)>=15) {
-      const side=hpos>apos?(homeName || 'Хозяева'):(awayName || 'Гости');
-      add('possession','🧭','Контроль мяча',`${side} заметно больше контролировал мяч: ${Math.round(hpos)}% — ${Math.round(apos)}%.`,'low');
-    }
-  
-    if (!evidence.length) add('scoreline','📌','Итоговый счёт',`Матч завершился ${score.home}:${score.away}. Детальных событий или статистики недостаточно для более глубокого объяснения.`,'low');
-  
-    const predictedLabel=postMatchOutcomeLabel(predictedOutcome);
-    const actualLabel=postMatchOutcomeLabel(actualOutcome);
-    const summary=`До матча максимальная вероятность была у ${predictedLabel}${predictedProbability===null?'':` — ${predictedProbability}%`}. Факт: ${actualLabel}, счёт ${score.home}:${score.away}.`;
+    const evidence=postMatchEvidence({statistics,events,homeName,awayName,score});
+
+    const predictedLabel=postMatchOutcomeLabel(predictedOutcome,homeName,awayName);
+    const actualLabel=postMatchOutcomeLabel(actualOutcome,homeName,awayName);
+    const lower=text=>text.charAt(0).toLowerCase()+text.slice(1);
+    const summary=`До матча модель выше всего оценивала исход «${lower(predictedLabel)}»${predictedProbability===null?'':` — ${predictedProbability}%`}. Факт: ${lower(actualLabel)}, счёт ${score.home}:${score.away}.`;
     const brier=postMatchFiniteValue(prediction.brier_score)===null ? null : Math.round(Number(prediction.brier_score)*1000)/1000;
     return {
       available:true,
@@ -152,7 +184,7 @@ export function createModelEvaluationRuntime(deps = {}) {
       score:{home:Number(score.home),away:Number(score.away)},
       outcome:{predicted:predictedOutcome,predictedLabel,probability:predictedProbability,actual:actualOutcome,actualLabel,correct:outcomeCorrect},
       markets,
-      evidence:evidence.slice(0,3),
+      evidence,
       quality:{
         brier,
         confidence:postMatchFiniteValue(prediction.confidence_score)===null?null:Math.round(Number(prediction.confidence_score)),
@@ -164,7 +196,7 @@ export function createModelEvaluationRuntime(deps = {}) {
         verificationState:String(prediction.settlement_verification_state || ''),
         note:settled
           ? 'Результат сохранён в журнале калибровки. Один матч не перенастраивает модель — изменения принимаются только по накопленной выборке.'
-          : 'Предматчевый снимок сохранён, но settlement ещё не завершён.',
+          : 'Предматчевый снимок сохранён; итог ещё сверяется с источником и пока не попал в журнал калибровки.',
       },
       disclaimer:'Факторы ниже описывают наблюдаемую статистику и события матча; они не доказывают причинность результата.',
     };
