@@ -20,6 +20,7 @@ _пусто_
 
 ## На ревью
 
+- [ ] Ревью Codex старых PR: #825 (P1 — ограниченный Weekend Pass при сбое истории тратил использование) и #806 (P2 — ставочная метка в LIVE; уже исправлено в #819, добавлен регрессионный тест) — **Claude** — [PR #837](https://github.com/TRAP44/football-analytics-cloudflare/pull/837) — ревью: Codex
 - [ ] Ревью Codex #829: «Линия 1X2», «Live-коэффициенты» и «рыночный сигнал» больше не попадают в «Что было пропущено» и «Риски» (сервер + фильтр сохранённых разборов) — **Claude** — [PR #833](https://github.com/TRAP44/football-analytics-cloudflare/pull/833) (перенос #832, который слили в ветку #831, а не в `main`) — ревью: Codex 👍 на #832
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
