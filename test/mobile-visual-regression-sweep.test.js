@@ -9,7 +9,7 @@ test('rendered mobile regression sweep covers the release viewport matrix', () =
   for (const width of [320, 360, 375, 390, 430]) {
     assert.ok(smoke.includes(String(width)), `missing ${width}px rendered coverage`);
   }
-  assert.match(smoke, /for \(const theme of \['dark','light','ocean'\]\)/);
+  assert.match(smoke, /for \(const theme of \['dark','light'\]\)/);
 });
 
 test('rendered mobile regression sweep includes all critical public surfaces', () => {

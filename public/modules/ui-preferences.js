@@ -37,17 +37,7 @@ export function createInterfacePreferencesController({
   }
 
   function advancedAppearanceLabel(prefs = state.uiPreferences || DEFAULT_UI_PREFERENCES) {
-    const parts = [];
-    if (prefs.theme === 'ocean') parts.push('Океан');
-    const accentLabels = {
-      green: 'Зелёный акцент',
-      blue: 'Синий акцент',
-      violet: 'Фиолетовый акцент',
-      amber: 'Янтарный акцент',
-    };
-    if (prefs.accent !== 'system' && accentLabels[prefs.accent]) parts.push(accentLabels[prefs.accent]);
-    if (prefs.buttonStyle === 'compact') parts.push('Строгие кнопки');
-    return parts.length ? parts.join(' · ') : 'По умолчанию';
+    return prefs.buttonStyle === 'compact' ? 'Строгие кнопки' : 'По умолчанию';
   }
 
   function applyInterfacePreferences({ announce = false, persisted = true } = {}) {
@@ -64,11 +54,6 @@ export function createInterfacePreferencesController({
     });
     document.querySelectorAll('[data-button-style-choice]').forEach(button => {
       const active = button.dataset.buttonStyleChoice === prefs.buttonStyle;
-      button.classList.toggle('active', active);
-      button.setAttribute('aria-pressed', active ? 'true' : 'false');
-    });
-    document.querySelectorAll('[data-accent-choice]').forEach(button => {
-      const active = button.dataset.accentChoice === prefs.accent;
       button.classList.toggle('active', active);
       button.setAttribute('aria-pressed', active ? 'true' : 'false');
     });

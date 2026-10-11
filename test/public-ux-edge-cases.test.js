@@ -54,7 +54,7 @@ test('render smoke exercises edge cases across mobile widths and themes',()=>{
   assert.match(smoke,/function assertEdgeCaseFixture/);
   assert.match(smoke,/function inspectEdgeCaseFixture/);
   for(const width of [320,360,375,390,430]) assert.match(smoke,new RegExp(String(width)));
-  for(const theme of ['dark','light','ocean']) assert.ok(smoke.includes(`'${theme}'`),theme);
+  for(const theme of ['dark','light']) assert.ok(smoke.includes(`'${theme}'`),theme);
   assert.match(smoke,/touch target is only/);
   assert.match(smoke,/long text exceeds two lines/);
   assert.match(smoke,/EXPECTED_ASSET_REVISION/);

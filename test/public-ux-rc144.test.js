@@ -56,9 +56,8 @@ test('profile keeps common appearance choices visible and moves rare styling beh
   for (const theme of ['system', 'dark', 'light']) {
     assert.match(primary, new RegExp(`data-theme-choice="${theme}"`));
   }
-  assert.doesNotMatch(primary, /data-theme-choice="ocean"/);
-  assert.match(advanced, /data-theme-choice="ocean"/);
-  assert.match(advanced, /data-accent-choice="green"/);
+  assert.doesNotMatch(panel, /data-theme-choice="ocean"/);
+  assert.doesNotMatch(panel, /data-accent-choice=/);
   assert.match(advanced, /data-button-style-choice="compact"/);
   assert.match(panel, /Матчи и уведомления/);
   assert.match(uiPreferences, /advancedAppearanceLabel/);
