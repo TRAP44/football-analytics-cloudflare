@@ -378,6 +378,8 @@ export function createAnalysisController({
         && currentView()==='analysisView';
 
       if (ownsAnalysisView) safeCall(renderResult,data);
+      // Успешный ответ может нести предупреждение (показан сохранённый анализ и т.п.).
+      if (ownsAnalysisView) toastSafe(safeRead(data,'warning'));
       safeCall(rememberHistory,data);
       safeCall(productAction,'ai_complete',sourceView);
       safeCall(timing,'ai',timingStartedAt,sourceView);

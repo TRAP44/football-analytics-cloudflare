@@ -1106,10 +1106,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch88'),
+      import('./modules/match-center-view.js?v=6.120.0-launch89'),
       import('./modules/match-pulse.js?v=6.120.0-launch87'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch88'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch88'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch89'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch89'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1265,7 +1265,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch88').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch89').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -2941,7 +2941,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch88');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch89');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3388,7 +3388,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch88').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch89').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -5189,21 +5189,28 @@ function rerenderOpenMatchCenter() {
   if (state.currentCenter && !state.currentAnalysis && activeViewId() === 'analysisView') renderMatchCenter(state.currentCenter);
 }
 
+// Результат именно этого запроса (true — история с сервера получена и применена),
+// а не общее поле ошибки: его может перезаписать параллельная загрузка.
+let historyLoadInFlight = null;
 async function loadHistory(showLoader = true) {
-  if (state.historyLoading) return;
+  if (state.historyLoading) return historyLoadInFlight || false;
+  let settle = () => {};
+  historyLoadInFlight = new Promise(resolve => { settle = resolve; });
+  let ok = false;
   const revisionAtStart = state.historyRevision;
   state.historyLoading = true;
   state.historyLoadError = '';
   if (showLoader || !state.historyLoaded) renderHistory();
   try {
     const data = await api('/api/history');
-    if (revisionAtStart !== state.historyRevision) return;
+    if (revisionAtStart !== state.historyRevision) return false;
     state.history = collectionItems(data);
     state.historyLoaded = true;
     state.historyLoadError = '';
+    ok = true;
     if (Array.isArray(state.matches) && state.matches.length) renderMatches();
   } catch (e) {
-    if (revisionAtStart !== state.historyRevision) return;
+    if (revisionAtStart !== state.historyRevision) return false;
     state.historyLoadError = uiErrorMessage(
       e,
       'Не удалось загрузить историю.',
@@ -5211,10 +5218,13 @@ async function loadHistory(showLoader = true) {
     sendActionError('history', e, 'historyView');
   } finally {
     state.historyLoading = false;
+    historyLoadInFlight = null;
+    settle(ok);
     renderHistory();
     // Карточка «Вывод AI» в открытом штабе зависит от истории — обновляем её после загрузки.
     rerenderOpenMatchCenter();
   }
+  return ok;
 }
 
 async function openHistoryAnalysis(fixtureId, btn) {
@@ -5507,7 +5517,7 @@ function lineupBlock(title, lineup) {
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch88');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch89');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {
@@ -5860,8 +5870,14 @@ async function openLaunchFixture(fixtureId, action, tab = '', handoff = false, n
       await Promise.allSettled([loadFavorites(), loadReminders()]);
       return analyzeMatch(id, null, { recheck:true, newsImpactDecision, newsImpactAction, newsImpactRecoveryCode, newsImpactRecoveryFrom });
     }
-    await loadHistory(false);
+    const historyVerified = (await loadHistory(false)) === true;
     if (analysisHistoryForFixture(id)) return openHistoryAnalysis(id, null);
+    // История не подтверждена этим запросом — нельзя считать, что анализа нет:
+    // новый анализ мог бы потратить дневной лимит. Открываем штаб матча.
+    if (!historyVerified) {
+      toast('История анализов временно недоступна — открываю штаб матча.');
+      return openMatchCenter(id, null);
+    }
     return analyzeMatch(id, null);
   }
 }
@@ -5914,7 +5930,10 @@ function analysisFreshnessHtml(freshness = {}, recheck = {}) {
   const mins=Number(freshness.ageMinutes || 0);
   const kickoff=Number.isFinite(Number(freshness.minutesToKickoff)) ? Number(freshness.minutesToKickoff) : null;
   const kickoffText=kickoff===null?'':kickoff>0?` · до старта ${kickoff} мин.`:' · матч уже начался';
-  const action=freshness.needsRecheck ? '<button id="analysisRecheckBtn" class="freshness-recheck-btn" type="button">↻ Перепроверить AI сейчас</button>' : '';
+  // Сервер не смог проверить историю — повторная перепроверка сейчас ничего не даст.
+  const historyUnavailable=recheck?.reasonCode==='history_unavailable';
+  const action=freshness.needsRecheck && !historyUnavailable ? '<button id="analysisRecheckBtn" class="freshness-recheck-btn" type="button">↻ Перепроверить AI сейчас</button>' : '';
+  const unavailable=historyUnavailable ? '<small class="freshness-recheck-meta">Перепроверка временно недоступна: не удалось проверить историю анализов. Показан сохранённый анализ, лимит не списан — попробуйте чуть позже.</small>' : '';
   const rechecked=recheck?.performed ? `<small class="freshness-recheck-meta">${recheck.free ? 'Перепроверено без повторного списания лимита' : 'Выполнена свежая перепроверка'}</small>` : '';
   const delta=recheck?.performed ? recheck?.delta : null;
   const deltaItems=Array.isArray(delta?.items) ? delta.items.slice(0,6) : [];
@@ -5926,7 +5945,7 @@ function analysisFreshnessHtml(freshness = {}, recheck = {}) {
   return `<section class="panel analysis-freshness ${escapeHtml(state)}">
     <div><span>${icon}</span><div><strong>${escapeHtml(freshness.label)}</strong><small>Расчёту ${mins} мин.${escapeHtml(kickoffText)}</small></div></div>
     <p>${escapeHtml(publicText(freshness.reason || ''))}</p>
-    ${rechecked}${deltaHtml}${action}
+    ${rechecked}${unavailable}${deltaHtml}${action}
   </section>`;
 }
 

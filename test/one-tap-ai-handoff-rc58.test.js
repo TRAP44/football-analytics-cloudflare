@@ -73,7 +73,7 @@ test('Mini App handoff validates fixture identity and records full AI through an
 
   const handoffIndex=app.indexOf('if (handoff) {');
   const analyzeIndex=app.indexOf('return analyzeMatch(id, null, { recheck:true',handoffIndex);
-  const historyIndex=app.indexOf('await loadHistory(false);',handoffIndex);
+  const historyIndex=app.indexOf('await loadHistory(false)',handoffIndex);
   assert.ok(handoffIndex>=0 && analyzeIndex>handoffIndex && historyIndex>analyzeIndex);
 });
 
