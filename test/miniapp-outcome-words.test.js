@@ -47,5 +47,11 @@ test('cached pre-match goal scenarios are rewritten in words, betting-only cards
   });
   assert.match(btts, /вероятность, что забьют обе команды, — 66%\. Это производная/);
   assert.doesNotMatch(btts, /букмекер|обе забьют/);
+  const close = card({
+    title: 'Базовый сценарий: равная игра',
+    text: 'Разрыв между двумя наиболее вероятными исходами — всего 3 п.п. Небольшой игровой эпизод, состав или изменение рынка может перевернуть порядок вероятностей.',
+  });
+  assert.match(close, /состав или новые данные могут перевернуть/);
+  assert.doesNotMatch(close, /рынка/);
   assert.equal(card({ title: 'Ставка дня', text: 'П1 по коэффициенту 1.85' }), '');
 });

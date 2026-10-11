@@ -5641,7 +5641,9 @@ function prematchScenarioText(value) {
   return publicText(String(value || ''))
     .replace(/(на\s+)?ТБ\s*2[.,]5/g, (match, on) => `${on || ''}3+ гола в матче`)
     .replace(/(вероятность\s+)?«?обе забьют»?/gi, (match, chance) => (chance ? 'вероятность, что забьют обе команды,' : 'забьют обе команды'))
-    .replace(/\s*Это не букмекерская рекомендация, а/g, ' Это');
+    .replace(/\s*Это не букмекерская рекомендация, а/g, ' Это')
+    .replace(/(движение|изменение) рынка может/g, 'новые данные могут')
+    .replace(/(движение|изменение) рынка/g, 'новые данные');
 }
 
 function prematchScenarioCard(scenario) {
