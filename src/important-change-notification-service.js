@@ -482,6 +482,12 @@ export function createImportantChangeNotificationService({
   }
 
   async function processImportantChangeNotifications(cfg) {
+    // Решение Сергея (11.10.2026): MatchRadar не показывает рынок и коэффициенты,
+    // поэтому уведомления о движении рыночной вероятности не отправляются.
+    // Включаются только явным флагом конфигурации (используется в тестах сервиса).
+    if (safeRead(cfg,'marketChangeNotificationsEnabled')!==true) {
+      return emptySummary({reason:'market_notifications_disabled'});
+    }
     let storageAvailable=false;
     try {
       storageAvailable=hasSupabase(cfg)===true;

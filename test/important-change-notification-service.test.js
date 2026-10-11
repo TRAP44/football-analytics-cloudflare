@@ -327,6 +327,7 @@ test('threshold, fixture cap and candidate clock reject malformed/coercive confi
 
   const result=await service.processImportantChangeNotifications({
     botToken:'token',
+    marketChangeNotificationsEnabled:true,
   });
   assert.equal(result.fixturesChecked,3);
   assert.deepEqual(reads,[100,200,300]);
@@ -340,7 +341,7 @@ test('threshold, fixture cap and candidate clock reject malformed/coercive confi
     null,
   );
   const failed=await invalidClock.service
-    .processImportantChangeNotifications({botToken:'token'});
+    .processImportantChangeNotifications({botToken:'token',marketChangeNotificationsEnabled:true});
   assert.equal(failed.ok,false);
   assert.equal(failed.reason,'invalid_clock');
 });
@@ -364,7 +365,7 @@ test('scheduler reads stored odds once per fixture and fans out through atomic c
   });
 
   const result=await service
-    .processImportantChangeNotifications({botToken:'token'});
+    .processImportantChangeNotifications({botToken:'token',marketChangeNotificationsEnabled:true});
 
   assert.deepEqual(reads,[100,200]);
   assert.equal(deliveries.length,2);
@@ -409,7 +410,7 @@ test('recipient authorization is per user and is expanded back to all of that us
   });
 
   const result=await service
-    .processImportantChangeNotifications({botToken:'token'});
+    .processImportantChangeNotifications({botToken:'token',marketChangeNotificationsEnabled:true});
 
   assert.deepEqual(reads,[100,200]);
   assert.deepEqual(
@@ -442,6 +443,7 @@ test('recipient filter cannot inject identities outside the source reminder page
     const result=await service
       .processImportantChangeNotifications({
         botToken:'token',
+        marketChangeNotificationsEnabled:true,
       });
 
     assert.deepEqual(reads,[]);
@@ -475,7 +477,7 @@ test('scheduler locally validates enabled, notification and kickoff evidence ret
   });
 
   const result=await service
-    .processImportantChangeNotifications({botToken:'token'});
+    .processImportantChangeNotifications({botToken:'token',marketChangeNotificationsEnabled:true});
 
   assert.deepEqual(reads,[100]);
   assert.equal(result.checked,rows.length);
@@ -491,7 +493,7 @@ test('malformed reminder page and malformed audience fail closed',async()=>{
     }),
   });
   const pageResult=await malformedPage.service
-    .processImportantChangeNotifications({botToken:'token'});
+    .processImportantChangeNotifications({botToken:'token',marketChangeNotificationsEnabled:true});
   assert.equal(pageResult.ok,false);
   assert.equal(pageResult.reason,'reminder_read_invalid');
   assert.equal(
@@ -506,7 +508,7 @@ test('malformed reminder page and malformed audience fail closed',async()=>{
     }),
   });
   const audienceResult=await malformedAudience.service
-    .processImportantChangeNotifications({botToken:'token'});
+    .processImportantChangeNotifications({botToken:'token',marketChangeNotificationsEnabled:true});
   assert.equal(audienceResult.ok,false);
   assert.equal(
     audienceResult.reason,
@@ -526,7 +528,7 @@ test('scheduler fails closed for unavailable or malformed runtime controls',asyn
     },
   });
   const failed=await unavailable.service
-    .processImportantChangeNotifications({botToken:'token'});
+    .processImportantChangeNotifications({botToken:'token',marketChangeNotificationsEnabled:true});
   assert.equal(failed.ok,false);
   assert.equal(
     failed.reason,
@@ -549,6 +551,7 @@ test('scheduler fails closed for unavailable or malformed runtime controls',asyn
     const result=await malformed.service
       .processImportantChangeNotifications({
         botToken:'token',
+        marketChangeNotificationsEnabled:true,
       });
     assert.equal(result.ok,false);
     assert.equal(
@@ -567,7 +570,7 @@ test('storage availability and bot token boundaries do not throw or start work',
     },
   });
   const result=await unavailable.service
-    .processImportantChangeNotifications({botToken:'token'});
+    .processImportantChangeNotifications({botToken:'token',marketChangeNotificationsEnabled:true});
   assert.equal(result.ok,false);
   assert.equal(
     result.reason,
@@ -632,7 +635,7 @@ test('odds snapshot failures are isolated per fixture and hostile error getters 
   });
 
   const result=await custom
-    .processImportantChangeNotifications({botToken:'token'});
+    .processImportantChangeNotifications({botToken:'token',marketChangeNotificationsEnabled:true});
 
   assert.deepEqual(reads2,[100,200]);
   assert.equal(result.failed,1);
@@ -673,6 +676,7 @@ test('delivery outcomes preserve atomic claim ambiguity instead of treating it a
     const result=await h.service
       .processImportantChangeNotifications({
         botToken:'token',
+        marketChangeNotificationsEnabled:true,
       });
     assert.equal(result.sent,sent,state);
     assert.equal(result.failed,failed,state);
@@ -721,4 +725,13 @@ test('message is informational, bounded and does not coerce hostile display fiel
       coerciveMovement,
     ),
   );
+});
+
+test('market change notifications are off by product decision unless explicitly enabled', async () => {
+  const {service,reads}=runtime({rows:[reminder(1,100)],byFixture:{100:snapshots()}});
+  const result=await service.processImportantChangeNotifications({botToken:'token'});
+  assert.equal(result.ok,true);
+  assert.equal(result.sent,0);
+  assert.equal(result.reason,'market_notifications_disabled');
+  assert.deepEqual(reads,[]);
 });

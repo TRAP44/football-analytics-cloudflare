@@ -77,5 +77,5 @@ test('every pre-match text block (drivers, watch list) uses the outcome-name nor
   assert.match(driver, /prematchScenarioText\(driver\.title, match\)/);
   assert.match(driver, /prematchScenarioText\(driver\.text, match\)/);
   assert.doesNotMatch(driver, /publicText\(driver\.(title|text)/);
-  assert.match(app, /pm\.watch\.map\(\(x,i\)=>`<div><b>\$\{i\+1\}<\/b><span>\$\{escapeHtml\(prematchScenarioText\(x, match\)\)\}/);
+  assert.match(app, /const watch = \(Array\.isArray\(pm\.watch\) \? pm\.watch : \[\]\)\.map\(item => prematchScenarioText\(item, match\)\)/);
 });

@@ -301,9 +301,37 @@ test('pre-match intelligence drops malformed market, H2H and signal context', ()
       awayState:'unavailable',
     },
   );
-  assert.ok(
-    brief.watch.some(item=>item.includes('Линия 1X2 отсутствует')),
-  );
+  // Рынок не показывается пользователю (решение 11.10.2026): без подсказок про линию 1X2.
+  assert.ok(brief.watch.every(item=>!/1X2|рын(ок|к|оч)/i.test(item)));
+});
+
+test('market signal stays in the calculation but is hidden from pre-match drivers, sources and texts', () => {
+  const runtime=createModelIntelligenceRuntime(deps());
+  const brief=runtime.buildPreMatchIntelligence({
+    probabilities:{home:48,draw:27,away:25},
+    market:{probabilities:{home:30,draw:30,away:40}},
+    h2h:null,
+    modelBreakdown:{
+      signals:[
+        {name:'market',probabilities:{home:30,draw:30,away:40},weight:40},
+        {name:'recentForm',probabilities:{home:55,draw:25,away:20},weight:30},
+      ],
+    },
+    homeForm:null,awayForm:null,absences:null,lineups:null,goalModel:null,comparison:null,
+    confidence:{score:60,disagreement:12},homeName:'Милан',awayName:'Рома',
+    minutesToKickoff:600,news:null,completeness:{score:8,max:10},
+  });
+  assert.deepEqual(brief.sourceRows.map(row=>row.key),['recentForm']);
+  assert.equal(brief.drivers.some(driver=>/market/.test(driver.type) || driver.source==='market'),false);
+  const text=JSON.stringify({drivers:brief.drivers,watch:brief.watch,scenarios:brief.scenarios,summary:brief.summary,headline:brief.headline});
+  assert.doesNotMatch(text,/рын(ок|к|оч)|Рын(ок|к)|Коэффициент|1X2|П1|П2/);
+
+  const notes=runtime.buildAnalysisNotes({
+    probabilities:{home:48,draw:27,away:25},market:{probabilities:{home:30,draw:30,away:40}},model:null,
+    homeForm:null,awayForm:null,h2h:null,absences:null,lineups:null,news:null,
+    homeName:'Милан',awayName:'Рома',minutesToKickoff:600,confidence:{disagreement:2},
+  });
+  assert.doesNotMatch(JSON.stringify(notes),/Коэффициент|1X2|П1|П2|рын(ок|к|оч)/i);
 });
 
 test('worker passes MODEL_BASE_WEIGHTS into model intelligence runtime', () => {

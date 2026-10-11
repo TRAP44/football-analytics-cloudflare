@@ -1106,10 +1106,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch91'),
+      import('./modules/match-center-view.js?v=6.120.0-launch92'),
       import('./modules/match-pulse.js?v=6.120.0-launch87'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch91'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch91'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch92'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch92'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1265,7 +1265,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch91').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch92').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -2941,7 +2941,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch91');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch92');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3388,7 +3388,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch91').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch92').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -5329,14 +5329,26 @@ function formCard(title, form) {
 }
 
 function modelWeightsText(weights = {}) {
-  const names = { market: 'рынок', apiPrediction: 'прогноз источника', recentForm: 'форма', seasonStrength: 'сила сезона', h2h: 'очные встречи' };
-  const parts = Object.entries(weights).filter(([,v]) => Number(v) > 0).map(([k,v]) => `${names[k] || k} ${Number(v).toFixed(0)}%`);
+  // Рынок участвует в расчёте, но в интерфейсе не называется (решение 11.10.2026):
+  // его доля показывается как «прочие источники», чтобы сумма весов оставалась честной.
+  const names = { apiPrediction: 'прогноз источника', recentForm: 'форма', seasonStrength: 'сила сезона', h2h: 'очные встречи' };
+  const entries = Object.entries(weights).filter(([,v]) => Number(v) > 0);
+  const parts = entries.filter(([k]) => names[k]).map(([k,v]) => `${names[k]} ${Number(v).toFixed(0)}%`);
+  const other = entries.filter(([k]) => !names[k]).reduce((sum, [,v]) => sum + Number(v), 0);
+  if (other > 0) parts.push(`прочие источники ${other.toFixed(0)}%`);
   return parts.length ? parts.join(' · ') : 'Недостаточно сигналов';
 }
 
+// Рыночные факторы, строки и подсказки из старых/кешированных разборов не показываем.
+function isMarketPrematchItem(item = {}) {
+  const type = String(item?.type || '');
+  return item?.source === 'market' || item?.key === 'market' || type === 'signal_market' || type.startsWith('market_');
+}
+
 function bullets(items = [], empty = 'Нет существенных факторов.') {
-  if (!items?.length) return `<p class="muted">${escapeHtml(publicText(empty))}</p>`;
-  return `<ul class="list analysis-list">${items.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul>`;
+  const visible = (Array.isArray(items) ? items : []).filter(x => !SCENARIO_BETTING_TEXT.test(publicText(String(x ?? ''))));
+  if (!visible.length) return `<p class="muted">${escapeHtml(publicText(empty))}</p>`;
+  return `<ul class="list analysis-list">${visible.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul>`;
 }
 
 function reminderFor(fixtureId) {
@@ -5517,7 +5529,7 @@ function lineupBlock(title, lineup) {
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch91');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch92');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {
@@ -5691,6 +5703,9 @@ function prematchBriefHtml(pm, match, probabilities) {
   const leader = pm.leader || {};
   const dataScore = Number(pm.dataScore || 0);
   const scenarioCards = (Array.isArray(pm.scenarios) ? pm.scenarios : []).map(item => prematchScenarioCard(item, match)).filter(Boolean);
+  const drivers = (Array.isArray(pm.drivers) ? pm.drivers : []).filter(item => !isMarketPrematchItem(item));
+  const sourceRows = (Array.isArray(pm.sourceRows) ? pm.sourceRows : []).filter(item => !isMarketPrematchItem(item));
+  const watch = (Array.isArray(pm.watch) ? pm.watch : []).map(item => prematchScenarioText(item, match)).filter(text => text && !SCENARIO_BETTING_TEXT.test(text));
   return `
     <section class="panel prematch-brief-hero">
       <div class="prematch-brief-top">
@@ -5717,8 +5732,8 @@ function prematchBriefHtml(pm, match, probabilities) {
     </section>
 
     <section class="panel">
-      <div class="prematch-section-head"><div><h2>Почему модель пришла к этим процентам</h2><p>Факторы отсортированы по полезности и весу источников</p></div><span>${(pm.drivers || []).length} факторов</span></div>
-      <div class="prematch-driver-list">${(pm.drivers || []).length ? pm.drivers.map(x => prematchDriverCard(x, match)).join('') : '<div class="empty compact-empty">Сильных факторов пока недостаточно.</div>'}</div>
+      <div class="prematch-section-head"><div><h2>Почему модель пришла к этим процентам</h2><p>Факторы отсортированы по полезности и весу источников</p></div><span>${drivers.length} факторов</span></div>
+      <div class="prematch-driver-list">${drivers.length ? drivers.map(x => prematchDriverCard(x, match)).join('') : '<div class="empty compact-empty">Сильных факторов пока недостаточно.</div>'}</div>
     </section>
 
     <section class="panel">
@@ -5728,12 +5743,12 @@ function prematchBriefHtml(pm, match, probabilities) {
 
     <section class="panel">
       <div class="prematch-section-head"><div><h2>Что может изменить оценку до старта</h2><p>Факторы, за которыми стоит следить перед матчем</p></div></div>
-      ${(pm.watch || []).length ? `<div class="prematch-watch-list">${pm.watch.map((x,i)=>`<div><b>${i+1}</b><span>${escapeHtml(prematchScenarioText(x, match))}</span></div>`).join('')}</div>` : '<div class="empty compact-empty">Критичных ожидаемых изменений по доступным данным нет.</div>'}
+      ${watch.length ? `<div class="prematch-watch-list">${watch.map((x,i)=>`<div><b>${i+1}</b><span>${escapeHtml(x)}</span></div>`).join('')}</div>` : '<div class="empty compact-empty">Критичных ожидаемых изменений по доступным данным нет.</div>'}
     </section>
 
     <section class="panel">
       <div class="prematch-section-head"><div><h2>Как голосуют источники</h2><p>Каждый источник имеет собственную оценку и вес в объединении</p></div></div>
-      <div class="prematch-source-table">${(pm.sourceRows || []).length ? pm.sourceRows.map(x => prematchSourceRow(x, match)).join('') : '<div class="empty compact-empty">Детальные данные по отдельным сигналам пока недоступны.</div>'}</div>
+      <div class="prematch-source-table">${sourceRows.length ? sourceRows.map(x => prematchSourceRow(x, match)).join('') : '<div class="empty compact-empty">Детальные данные по отдельным сигналам пока недоступны.</div>'}</div>
       <p class="tiny warning">${escapeHtml(publicText(pm.methodology || ''))}</p>
     </section>`;
 }
