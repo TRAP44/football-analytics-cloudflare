@@ -1,4 +1,4 @@
-import { NO_CLEAR_SIGNAL_LABEL, withPublicSignalLabel } from './signal-wording.js';
+import { NO_CLEAR_SIGNAL_LABEL, isBettingText, withPublicSignalLabel } from './signal-wording.js';
 // AI analysis orchestration extracted from worker.js.
 // Provider, entitlement, cache, settlement and model capabilities are injected by the composition root.
 export function createAnalysisRuntime(deps) {
@@ -1300,7 +1300,7 @@ export function createAnalysisRuntime(deps) {
       || analysisFeatureMeta;
     providerReliability.warnings=rowsOrEmpty(providerReliability.warnings,30)
       .map(value=>safeText(value,360))
-      .filter(Boolean);
+      .filter(value=>value && !isBettingText(value));
     skipped.push(...providerReliability.warnings);
 
     const webPromise=tavilySearch(
