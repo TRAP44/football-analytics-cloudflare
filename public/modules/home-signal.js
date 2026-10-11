@@ -170,7 +170,7 @@ export function createHomeSignalRenderer({
         ? '<span class="mr-featured-status">Завершён</span>'
         : `<span class="mr-featured-status">${escapeHtml(timeOf(match.date))}</span>`;
     const centre=match.live || match.finished
-      ? `<strong>${escapeHtml(homeMatchScoreLabel(match))}</strong><small>${escapeHtml(match.live ? [phase,minute].filter(Boolean).join(' · ') || 'Идёт матч' : 'Итоговый счёт')}</small>`
+      ? `<strong>${escapeHtml(homeMatchScoreLabel(match))}</strong><small>${escapeHtml(match.live ? phase || 'Идёт матч' : 'Итоговый счёт')}</small>`
       : `<strong class="is-time">${escapeHtml(timeOf(match.date))}</strong><small>Начало</small>`;
     const meta=[match.league || 'Турнир',match.roundLabel || ''].filter(Boolean).join(' · ');
     const aiHistory=!match.live && !match.finished ? analysisHistoryForFixture(fixtureId) : null;

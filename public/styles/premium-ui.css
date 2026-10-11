@@ -2005,6 +2005,16 @@ html[data-theme] body.miniapp-public-shell .bottom-nav .nav-item {
 html[data-theme] body.miniapp-public-shell .bottom-nav .nav-item small {
   font-size: 12px; font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* «Мои команды» целиком на узких телефонах (360–390px), без многоточия. */
+@media (max-width: 390px) {
+  html[data-theme] body.miniapp-public-shell .bottom-nav .nav-item small { font-size: 11px; letter-spacing: -.01em; }
+}
+@media (max-width: 360px) {
+  html[data-theme] body.miniapp-public-shell .bottom-nav .nav-item small { font-size: 10.5px; }
+}
+@media (max-width: 340px) {
+  html[data-theme] body.miniapp-public-shell .bottom-nav .nav-item small { font-size: 9.5px; letter-spacing: -.02em; }
+}
 html[data-theme] body.miniapp-public-shell .bottom-nav .nav-item.active { background: var(--mr-glow-soft); color: var(--accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent); }
 html[data-theme] body.miniapp-public-shell .bottom-nav .nav-item.active svg { color: var(--accent); filter: drop-shadow(0 0 6px var(--mr-glow)); }
 
@@ -2109,7 +2119,6 @@ html[data-theme] body.miniapp-public-shell .mr-featured-card {
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
   background:
     radial-gradient(260px 200px at 50% 38%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%),
-    radial-gradient(circle at 50% 46%, transparent 0 54px, color-mix(in srgb, var(--text) 6%, transparent) 55px 56px, transparent 57px),
     linear-gradient(90deg, transparent calc(50% - .5px), color-mix(in srgb, var(--text) 5%, transparent) calc(50% - .5px) calc(50% + .5px), transparent calc(50% + .5px)),
     linear-gradient(180deg, var(--surface-2), var(--surface));
   box-shadow: 0 0 40px -18px var(--mr-glow), 0 22px 44px -28px rgba(0,0,0,.75);
@@ -2158,6 +2167,14 @@ html[data-theme] body.miniapp-public-shell .mr-featured-team strong {
 html[data-theme] body.miniapp-public-shell .mr-featured-team small { font-size: 11px; color: var(--hint); }
 html[data-theme] body.miniapp-public-shell .mr-featured-score {
   display: grid; justify-items: center; align-content: center; gap: 6px; min-width: 96px; padding-top: 8px;
+  position: relative; isolation: isolate;
+}
+/* Круг «центра поля» привязан к самому счёту, а не к высоте карточки:
+   раньше он стоял на 46% высоты и счёт оказывался в его верхней части. */
+html[data-theme] body.miniapp-public-shell .mr-featured-score::before {
+  content: ""; position: absolute; left: 50%; top: calc(50% + 4px); z-index: -1; pointer-events: none;
+  width: 112px; height: 112px; transform: translate(-50%, -50%); border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--text) 6%, transparent);
 }
 html[data-theme] body.miniapp-public-shell .mr-featured-score strong {
   font-size: 44px; line-height: 1; font-weight: 900; letter-spacing: -.02em; white-space: nowrap;
@@ -2273,6 +2290,8 @@ html[data-theme] body.miniapp-public-shell .mr-hq-hero .center-score-core strong
   white-space: nowrap;
 }
 html[data-theme] body.miniapp-public-shell .mr-hq-hero .center-score-core > span { max-width: 140px; }
+/* Длинные названия («Вулверхэмптон Уондерерс») переносим по слогам, где браузер умеет. */
+html[data-theme] body.miniapp-public-shell .mr-hq-hero .center-team-card strong { -webkit-hyphens: auto; hyphens: auto; }
 
 html[data-theme] body.miniapp-public-shell .mr-hq-tabs-wrap {
   /* Под липкой верхней шапкой (z-index 18), как у остальных вкладок приложения. */
