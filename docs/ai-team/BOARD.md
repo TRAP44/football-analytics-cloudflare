@@ -23,7 +23,6 @@ _пусто_
 ## На ревью
 
 - [ ] Глубокая ссылка на анализ не тратит лимит при сбое истории — **Claude** — [PR #822](https://github.com/TRAP44/football-analytics-cloudflare/pull/822) (после #820) — ревью: Codex
-- [ ] Mini App: исходы словами вместо «П1/П2», «ТБ 2.5» (в т.ч. в сценариях преданализа) + доработки по ревью #818 — **Claude** — [PR #820](https://github.com/TRAP44/football-analytics-cloudflare/pull/820) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 ## Ждут ревью Codex (у Codex закончился лимит)
@@ -41,6 +40,7 @@ _Лимит Codex восстановился 10.10 вечером, очеред�
 
 ## Готово
 
+- [x] Mini App: исходы словами вместо «П1/П2», «ТБ 2.5» (в т.ч. в сценариях преданализа) + доработки по ревью #818 — **Claude** — [PR #820](https://github.com/TRAP44/football-analytics-cloudflare/pull/820)
 - [x] Перепроверка не списывает лимит, если история анализов недоступна — **Claude** — [PR #825](https://github.com/TRAP44/football-analytics-cloudflare/pull/825)
 - [x] Сервер: бот без «основного сценария» без вывода; тексты преданализа, AI Timeline и фильтр без рынка, «ТБ 2.5» и П1/П2 (ревью #818–#820) — **Claude** — [PR #823](https://github.com/TRAP44/football-analytics-cloudflare/pull/823)
 - [x] Честная история: сбой хранилища → 503 «история недоступна», а не пустой список — **Claude** — [PR #821](https://github.com/TRAP44/football-analytics-cloudflare/pull/821)
