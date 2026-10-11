@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-12 — Claude — Задача 0: деплой после правки секрета в панели Cloudflare
-PR: ветка `claude/deploy-gate-dashboard-versions`
+PR: [#844](https://github.com/TRAP44/football-analytics-cloudflare/pull/844), ветка `claude/deploy-gate-dashboard-versions`
 Сделано:
 - Правка секрета в панели (или `wrangler secret put`) создаёт версию без отметки CI (`workers/triggered_by: secret`) — раньше «Deploy Production» на ней останавливался («release identity mismatch»). Теперь, если отметки нет, шаг «Detect pending production artifact changes» идёт по `wrangler deployments list` назад через версии «после правки секрета» до версии с отметкой CI (`scripts/verify-production-release-postcondition.js`, `--print-settings-base-version-id` / `--print-settings-rollback-target`).
 - Доказательство «код тот же» — `resources.script.etag` (хеш кода) активной версии равен хешу версии CI. Нет хеша, другой хеш, смешанный трафик, загрузка без отметки, дыра в истории — деплой по-прежнему блокируется.
