@@ -298,6 +298,15 @@ function pointHtml(point,index,points,match) {
   </article>`;
 }
 
+// Пояснение с сервера может упоминать рынок (старые ответы) — заменяем нейтральным.
+const MARKET_NOTE=/рын(ок|к|оч)|коэффициент/i;
+function timelineNote(note='') {
+  if (!note) return '';
+  return MARKET_NOTE.test(note)
+    ? 'AI Timeline использует только реально сохранённые снимки. События помечаются как совпадение во времени, если причинность не подтверждена.'
+    : note;
+}
+
 export function renderAiTimelineDetails(timeline = {}, match = {}) {
   const model=normalizeAiTimeline(timeline,match);
   if (!model.available) return '';
@@ -306,7 +315,7 @@ export function renderAiTimelineDetails(timeline = {}, match = {}) {
     <div class="ai-timeline-details-body">
       <p class="ai-timeline-method">Показываются только реально сохранённые состояния модели. «Совпало по времени» не означает, что событие вызвало изменение вероятности.</p>
       <div class="ai-timeline-list">${model.points.map((point,index)=>pointHtml(point,index,model.points,match)).join('')}</div>
-      ${model.note?`<p class="tiny warning">${escapeHtml(model.note)}</p>`:''}
+      ${timelineNote(model.note)?`<p class="tiny warning">${escapeHtml(timelineNote(model.note))}</p>`:''}
     </div>
   </details>`;
 }

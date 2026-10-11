@@ -18,3 +18,13 @@ test('team form card names the goals metric without betting label', () => {
   assert.doesNotMatch(app, /<small>ТБ 2\.5<\/small>/);
   assert.match(app, /<small>3\+ гола<\/small>/);
 });
+
+test('prematch scenario and source table derive names from the outcome key, not stored П1/П2 labels', () => {
+  assert.match(app, /\['home','draw','away'\]\.includes\(row\.leaderKey\) \? prematchOutcomeName\(row\.leaderKey, match\)/);
+  assert.match(app, /\['home','draw','away'\]\.includes\(leader\.key\) \? prematchOutcomeName\(leader\.key, match\)/);
+  const start = app.indexOf('function prematchOutcomeName(');
+  const fn = new Function(`${app.slice(start, app.indexOf('\n}\n', start) + 2)}\nreturn prematchOutcomeName;`)();
+  assert.equal(fn('home', { home: {}, away: {} }), 'Хозяева');
+  assert.equal(fn('away', { home: {}, away: { name: 'Рома' } }), 'Рома');
+  assert.equal(fn('draw', {}), 'Ничья');
+});

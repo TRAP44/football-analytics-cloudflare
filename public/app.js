@@ -4980,6 +4980,9 @@ function liveAiCoachHtml(ai, match) {
   const neutral = value => (typeof value === 'string' && !SCENARIO_BETTING_TEXT.test(value) ? value : '');
   const watch = Array.isArray(ai.watchNext) ? ai.watchNext.filter(neutral).slice(0,3) : [];
   const volatilityReason = neutral(ai.volatility?.reason) || 'Матч может быстро измениться.';
+  const summary = typeof ai.summary === 'string' && ai.summary
+    ? (neutral(ai.summary) || 'Оцениваю матч по счёту, событиям и статистике.')
+    : '';
   const prematchLabel = neutral(ai.prematch?.signal) || neutral(ai.prematch?.outcome) || 'AI-разбор';
   const confidence=Math.round(clampPercent(ai.confidence));
   const currentMinute = typeof ai.current?.minute === 'number' && Number.isFinite(ai.current.minute)
@@ -4995,7 +4998,7 @@ function liveAiCoachHtml(ai, match) {
     : '—:—';
   return `<section class="panel live-ai-coach ${tone}">
     <div class="live-ai-head"><div><span>AI В ЭФИРЕ · ${currentMinute !== null ? `${currentMinute}′` : 'сейчас'}</span><h2>${escapeHtml(publicText(ai.headline || 'Читаю матч в реальном времени'))}</h2></div><b>${confidence}%</b></div>
-    <p class="live-ai-summary">${escapeHtml(publicText(ai.summary || ''))}</p>
+    <p class="live-ai-summary">${escapeHtml(publicText(summary))}</p>
     <div class="live-ai-decision"><span>Решение AI сейчас</span><strong>${escapeHtml(publicText(ai.action?.label || 'Наблюдать'))}</strong><small>${escapeHtml(publicText(ai.action?.reason || 'Дождитесь более устойчивой картины.'))}</small></div>
     <div class="live-ai-grid">
       <div><span>Счёт</span><strong>${scoreText}</strong><small>${currentMinute !== null ? `${currentMinute} мин.` : 'Матч идёт'}</small></div>
@@ -5648,7 +5651,7 @@ function prematchSourceRow(row, match) {
       <div><strong>${escapeHtml(publicText(row.label || ''))}</strong><small>Вес ${Number(row.weight || 0).toFixed(1)}%</small></div>
     </div>
     <div class="prematch-source-result">
-      <strong>${escapeHtml(row.leader || '—')}</strong>
+      <strong>${escapeHtml(['home','draw','away'].includes(row.leaderKey) ? prematchOutcomeName(row.leaderKey, match) : (row.leader || '—'))}</strong>
       <span>${Number(row.leaderProbability || 0).toFixed(1)}%</span>
     </div>
     <div class="prematch-source-status">${row.agreesWithFinal ? '✓ согласен' : '↔ расходится'}</div>
@@ -5674,7 +5677,7 @@ function prematchBriefHtml(pm, match, probabilities) {
       <p class="prematch-brief-summary">${escapeHtml(publicText(pm.summary || ''))}</p>
 
       <div class="prematch-brief-kpis">
-        <div><span>Главный сценарий</span><strong>${escapeHtml(leader.label || prematchOutcomeName(leader.key, match))}</strong><small>${Number(leader.probability || 0).toFixed(1)}%</small></div>
+        <div><span>Главный сценарий</span><strong>${escapeHtml(['home','draw','away'].includes(leader.key) ? prematchOutcomeName(leader.key, match) : (leader.label || '—'))}</strong><small>${Number(leader.probability || 0).toFixed(1)}%</small></div>
         <div><span>Отрыв</span><strong>${Number(leader.gap || 0).toFixed(1)} п.п.</strong><small>от второго исхода</small></div>
         <div><span>Неопределённость</span><strong>${Number(uncertainty.score || 0)}/100</strong><small>${escapeHtml(publicText(uncertainty.label || ''))}</small></div>
       </div>
@@ -5740,7 +5743,7 @@ function providerCoverageHtml(reliability = {}) {
 // без меток сигнала («ТБ 2.5», «1X»), рынка и «решений».
 // Границы слов через Unicode-классы: \b в JS не видит кириллицу (ревью Codex #816).
 // Без просмотра назад (lookbehind): Safari до 16.4 — старые iPhone в Telegram — его не разбирает.
-const SCENARIO_BETTING_TEXT = /коэффициент|рын(ок|ка|ке|ком|очн)|ставк|букмекер|тотал|обе забьют|форсир|(^|[^\p{L}\p{N}])(1[XХ]2|ТБ|ТМ|П1|П2|1X|X2|Х2|1Х)(?![\p{L}\p{N}])/iu;
+const SCENARIO_BETTING_TEXT = /коэффициент|рын(ок|к|оч)|ставк|букмекер|тотал|обе забьют|форсир|(^|[^\p{L}\p{N}])(1[XХ]2|ТБ|ТМ|П1|П2|1X|X2|Х2|1Х)(?![\p{L}\p{N}])/iu;
 function scenarioText(value) {
   const text = publicText(String(value || ''));
   return text && !SCENARIO_BETTING_TEXT.test(text) ? text : '';
