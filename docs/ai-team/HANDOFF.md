@@ -14,6 +14,13 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-11 — Claude — Фоновые задачи: проверка ключа как у воркера
+PR: [#842](https://github.com/TRAP44/football-analytics-cloudflare/pull/842), ветка `claude/cron-runner-apikey`
+Причина (запуск №4): воркер шлёт ключ Supabase только в `apikey` (`src/supabase-client.js`, так нужно для `sb_secret_…`), а в GitHub лежал старый JWT `service_role` → 401 на все запросы; пробный запрос из #840 слал ещё и `Authorization: Bearer` и потому проходил.
+Сделано: пробный запрос отправляет ключ так же, как воркер; при 401/403 с не-`sb_secret_` ключом — подсказка завести секретный ключ в `SUPABASE_SECRET_KEY`. Журнал запросов показывает адрес и для `URL`-объектов (раньше «?»).
+Решение Сергея: для GitHub отдельный секретный ключ Supabase (`github_background_jobs`), отзывается независимо от Cloudflare.
+- «Призрачный» cron Cloudflare: расписание удалено и в `wrangler.jsonc`, и в панели, но запуски с `:46` продолжаются и занимают блокировку `cron-global`. Добавлено `BACKGROUND_JOBS_EXECUTOR=github` (wrangler vars): `scheduled()` воркера сразу выходит, если вызов не от `cron-runner` (тот ставит `CRON_RUNNER=github-actions`).
+
 ## 2026-10-11 — Claude — Фоновые задачи: журнал запросов при сбое
 PR: [#841](https://github.com/TRAP44/football-analytics-cloudflare/pull/841), ветка `claude/cron-runner-trace`
 Причина: запуск №3 прошёл проверку ключей (#840), но задачи снова не запустились, а в `ops_events` нет записей — нужна видимость, что именно ответил Supabase.

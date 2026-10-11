@@ -59,6 +59,8 @@ export function runnerEnv(processEnv = {}, vars = {}, { sha = '', now = Date.now
     const value = processEnv[key];
     if (typeof value === 'string' && value.trim()) env[key] = value.trim();
   }
+  // Отметка исполнителя: воркер с BACKGROUND_JOBS_EXECUTOR=github выполняет задачи только при ней.
+  env.CRON_RUNNER = 'github-actions';
   env.CF_VERSION_METADATA = {
     id: 'github-actions-cron',
     tag: /^[0-9a-f]{7,40}$/.test(String(sha)) ? String(sha) : 'github-actions',
@@ -114,13 +116,18 @@ export async function supabaseProblem(env = {}, fetchImpl = globalThis.fetch) {
   let response;
   try {
     response = await fetchImpl(`${url}/rest/v1/runtime_controls?select=id&limit=1`, {
-      headers: { apikey: key, authorization: `Bearer ${key}` },
+      // Так же, как воркер (src/supabase-client.js): ключ только в apikey.
+      headers: { apikey: key },
       signal: AbortSignal.timeout(10_000),
     });
   } catch {
     return 'Supabase недоступен по адресу из SUPABASE_URL (сеть или неверный адрес проекта).';
   }
-  if (response.status === 401 || response.status === 403) return `Supabase отклонил ключ (HTTP ${response.status}) — значение SUPABASE_SERVICE_ROLE_KEY/SUPABASE_SECRET_KEY не подходит к этому проекту.`;
+  if (response.status === 401 || response.status === 403) {
+    return /^sb_secret_/.test(key)
+      ? `Supabase отклонил секретный ключ (HTTP ${response.status}) — проверь SUPABASE_SECRET_KEY (ключ этого проекта, не отозван).`
+      : `Supabase отклонил ключ (HTTP ${response.status}). Воркер передаёт ключ только в apikey — нужен новый секретный ключ sb_secret_… (Supabase → Project Settings → API Keys → Secret keys) в SUPABASE_SECRET_KEY.`;
+  }
   if (response.status === 404) return 'Supabase ответил 404 — проверь адрес проекта в SUPABASE_URL.';
   if (!response.ok) return `Supabase ответил HTTP ${response.status} на пробный запрос.`;
   return '';
@@ -227,7 +234,7 @@ export function installFetchTrace(limit = 40) {
   const original = globalThis.fetch;
   const entries = [];
   globalThis.fetch = async (input, init = {}) => {
-    const url = typeof input === 'string' ? input : input?.url;
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input?.url;
     const method = init?.method || input?.method || 'GET';
     try {
       const response = await original(input, init);
