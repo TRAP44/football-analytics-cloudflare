@@ -37,6 +37,7 @@ import { createReleaseReadinessRuntime } from './release-readiness-runtime.js';
 import { createOddsSnapshotRuntime } from './odds-snapshot-runtime.js';
 import { createUserDataApiRuntime } from './user-data-api-runtime.js';
 import { createMatchExplanationRuntime } from './match-explanation-runtime.js';
+import { createMatchQuestionRuntime } from './match-question-runtime.js';
 import { createPrematchPredictionJob } from './prematch-prediction-job.js';
 import { createBillingRuntime } from './billing-runtime.js';
 import { createBillingApiRuntime } from './billing-api-runtime.js';
@@ -2409,6 +2410,29 @@ function getMatchExplanationRuntime() {
   return matchExplanationRuntime;
 }
 const apiMatchExplanation = (...args) => getMatchExplanationRuntime().apiMatchExplanation(...args);
+
+let matchQuestionRuntime = null;
+function getMatchQuestionRuntime() {
+  if (!matchQuestionRuntime) {
+    matchQuestionRuntime = createMatchQuestionRuntime({
+      bumpTelemetry,
+      clock: () => Date.now(),
+      getCache,
+      getHistory,
+      getStaleCache,
+      hasSupabase,
+      json,
+      loadRuntimeControls,
+      memory,
+      recordOpsEvent,
+      setCache,
+      supaRpc,
+      supaSelectMany,
+    });
+  }
+  return matchQuestionRuntime;
+}
+const apiMatchQuestion = (...args) => getMatchQuestionRuntime().apiMatchQuestion(...args);
 const apiFavorites = (...args) => getUserDataApiRuntime().apiFavorites(...args);
 const publicFavoritePlayer = (...args) => getUserDataApiRuntime().publicFavoritePlayer(...args);
 const resolveFavoritePlayerIdentity = (...args) => getUserDataApiRuntime().resolveFavoritePlayerIdentity(...args);
@@ -2987,6 +3011,7 @@ const {
   apiHistory,
   apiHistoryAnalysis,
   apiMatchExplanation,
+  apiMatchQuestion,
   apiLaunchFunnel,
   apiMatchCenter,
   apiMatches,

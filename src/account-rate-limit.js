@@ -4,6 +4,7 @@ const PUBLIC_ACCOUNT_POLICIES = Object.freeze([
   Object.freeze({ test:(p,m)=>p==='/api/analyze', limit:6, windowSeconds:60, label:'analysis' }),
   Object.freeze({ test:(p,m)=>p==='/api/match-center', limit:48, windowSeconds:60, label:'match-center' }),
   Object.freeze({ test:(p,m)=>p==='/api/match-explanation', limit:20, windowSeconds:60, label:'match-explanation' }),
+  Object.freeze({ test:(p,m)=>p==='/api/match-question', limit:12, windowSeconds:60, label:'match-question' }),
   Object.freeze({ test:(p,m)=>p==='/api/search', limit:60, windowSeconds:60, label:'search' }),
   Object.freeze({ test:(p,m)=>p==='/api/tournament', limit:48, windowSeconds:60, label:'tournament' }),
   Object.freeze({ test:(p,m)=>p==='/api/team' || p.startsWith('/api/team/'), limit:60, windowSeconds:60, label:'team' }),

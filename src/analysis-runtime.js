@@ -773,7 +773,11 @@ export function createAnalysisRuntime(deps) {
     const passCandidate=entitlementBefore.source==='pass'
       && objectValue(entitlementBefore.access)?.expandedAi === true
       && activePasses.length>0;
-    if (recheckOwnershipUnknown && !passCandidate && staleBefore) {
+    // Безлимитный Pass ничего не списывает; ограниченный (Weekend) тратит
+    // использование — при сбое истории он защищён так же, как обычный лимит.
+    const unlimitedPassCandidate=passCandidate
+      && activePasses.some(item=>objectValue(item) && objectValue(item).usageLimit==null);
+    if (recheckOwnershipUnknown && !unlimitedPassCandidate && staleBefore) {
       // Сбой хранилища истории не должен превращать бесплатную перепроверку
       // в платную: показываем сохранённый анализ без нового расчёта.
       await recordTrackedFullAiOutcome('stale_history_unavailable');

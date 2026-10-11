@@ -2430,3 +2430,28 @@ html[data-theme] body.miniapp-public-shell .match-explanation-list > li.is-lead 
 html[data-theme] body.miniapp-public-shell .match-explanation-list > li.is-risk > b { color: var(--mr-live, #f87171); }
 html[data-theme] body.miniapp-public-shell .match-explanation-list > li.is-caveat > b { color: var(--hint); }
 html[data-theme] body.miniapp-public-shell .match-explanation-note { margin: 10px 0 0; font-size: 11px; line-height: 1.4; color: var(--hint); }
+
+/* Задача 6: «Спросить про матч». */
+html[data-theme] body.miniapp-public-shell .match-question-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+html[data-theme] body.miniapp-public-shell .match-question-chip {
+  max-width: 100%; padding: 7px 11px; border-radius: 999px; white-space: normal; text-align: left;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); background: color-mix(in srgb, var(--accent) 8%, var(--surface-2));
+  color: var(--text); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+html[data-theme] body.miniapp-public-shell .match-question-chip:active { transform: translateY(1px); }
+html[data-theme] body.miniapp-public-shell .match-question-form { display: flex; gap: 8px; min-width: 0; }
+html[data-theme] body.miniapp-public-shell .match-question-form input {
+  flex: 1 1 0; width: 0; min-width: 0; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--surface-2); color: var(--text); font: inherit; font-size: 14px;
+}
+html[data-theme] body.miniapp-public-shell .match-question-form input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 1px; }
+html[data-theme] body.miniapp-public-shell .match-question-submit {
+  flex: 0 0 auto; padding: 10px 14px; border-radius: 12px; border: 0; cursor: pointer;
+  background: var(--accent); color: var(--accent-text, #111); font: inherit; font-size: 14px; font-weight: 800;
+}
+html[data-theme] body.miniapp-public-shell .match-questions[aria-busy="true"] .match-question-chip,
+html[data-theme] body.miniapp-public-shell .match-questions[aria-busy="true"] .match-question-submit { opacity: .55; pointer-events: none; }
+html[data-theme] body.miniapp-public-shell .match-question-answer:not(:empty) { margin-top: 10px; display: grid; gap: 8px; }
+html[data-theme] body.miniapp-public-shell .match-question-asked { margin: 0; font-size: 13px; font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
+html[data-theme] body.miniapp-public-shell .match-question-empty { margin: 0; font-size: 14px; line-height: 1.45; color: var(--hint); }
+html[data-theme] body.miniapp-public-shell .match-question-remaining { font-size: 11px; color: var(--hint); }
