@@ -119,15 +119,20 @@ function compactProvenance(payload = {}) {
   };
 }
 
+const FIRST_HALF_WALL_CLOCK_MINUTES = 47;
+
 function matchMinuteForSnapshot(payload = {}, capturedAt = '') {
   const explicit = matchMinute(payload?.match?.elapsed);
   if (explicit !== null) return explicit;
+  // Без минуты от источника оцениваем по часам только первый тайм: после
+  // перерыва настенное время уходит от игрового на 15+ минут.
   const status = String(payload?.match?.status || '').toUpperCase();
-  if (!['1H','HT','2H','ET','BT','P','INT','LIVE'].includes(status)) return null;
+  if (status !== '1H') return null;
   const kickoff = Date.parse(String(payload?.match?.date || ''));
   const captured = Date.parse(String(capturedAt || ''));
   if (!Number.isFinite(kickoff) || !Number.isFinite(captured) || captured < kickoff) return null;
-  return Math.max(0, Math.min(180, Math.round((captured - kickoff) / 60000)));
+  const minute = Math.round((captured - kickoff) / 60000);
+  return minute <= FIRST_HALF_WALL_CLOCK_MINUTES ? Math.max(0, minute) : null;
 }
 
 export function analysisTimelineSnapshotRow(payload = {}, { delta = null } = {}) {
@@ -361,8 +366,10 @@ export function buildAiTimeline({
 
   for (const [index, point] of points.entries()) {
     if (point.minute === null && Number.isFinite(kickoffMs)) {
+      // По часам — только в пределах первого тайма (дальше мешает перерыв).
       const capturedMs = Date.parse(point.capturedAt);
-      if (capturedMs >= kickoffMs) point.minute = Math.max(0, Math.min(180, Math.round((capturedMs - kickoffMs) / 60000)));
+      const wallMinute = Math.round((capturedMs - kickoffMs) / 60000);
+      if (capturedMs >= kickoffMs && wallMinute <= FIRST_HALF_WALL_CLOCK_MINUTES) point.minute = Math.max(0, wallMinute);
     }
 
     const leaderKey = outcomeKey(point.probabilities);

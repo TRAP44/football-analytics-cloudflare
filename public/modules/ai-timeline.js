@@ -211,14 +211,15 @@ export function renderAiTimelineCompact(timeline = {}, match = {}) {
       <span>${escapeHtml(pointTime(point,match))}</span>
       <strong>${probabilityLine(point,previous,match)}</strong>
     </div>
-    ${chartFromModel(model,match)}
+    ${timeChartFromModel(model,match)}
     ${triggerHtml(point)}
     ${qualityHtml(point)}
   </section>`;
 }
 
 
-function chartFromModel(model, match = {}) {
+// Компактная история (до матча и между разборами): ось — время сохранения.
+function timeChartFromModel(model, match = {}) {
   // Render only real, non-stale snapshots with coherent 1X2 probability totals.
   // The renderer never interpolates or invents stored model measurements.
   const snapshots=model.points.filter(point=>{
@@ -280,8 +281,119 @@ function chartFromModel(model, match = {}) {
     +'</figure>';
 }
 
-export function renderAiProbabilityChart(timeline = {}, match = {}) {
-  return chartFromModel(normalizeAiTimeline(timeline,match),match);
+// Задача 3: кривая 1/X/2 по реальным снимкам. Ось — минуты матча; снимок до
+// старта (последний) стоит в зоне «до». Отметки голов и красных карточек — из
+// событий матча. Между снимками измерений нет — линии их только соединяют.
+const PRE_MATCH_MINUTE=-8;
+
+function chartEventMarkers(events = []) {
+  const rows=[];
+  for (const raw of Array.isArray(events) ? events.slice(0,400) : []) {
+    if (!raw || typeof raw!=='object') continue;
+    const nested=raw.time && typeof raw.time==='object' ? raw.time : {};
+    const minute=finiteNumber(nested.elapsed ?? raw.elapsed ?? raw.minute);
+    if (minute===null || minute<0 || minute>130) continue;
+    const extra=Math.max(0,finiteNumber(nested.extra ?? raw.extra) || 0);
+    const text=`${raw.type || ''} ${raw.detail || ''} ${raw.label || ''}`.toLowerCase();
+    // Незабитый пенальти приходит как событие Goal — это не гол.
+    const goal=text.includes('goal') && !text.includes('missed');
+    const red=text.includes('red card') || text.includes('second yellow') || String(raw.label || '').includes('🟥');
+    if (!goal && !red) continue;
+    // Добавленное время стоит между минутой и следующей: 45+5 — до 46-й минуты
+    // второго тайма, 90+4 — после 90-й (подпись остаётся «45+5′»).
+    const position=minute+Math.min(extra,30)/(Math.min(extra,30)+1)*0.9;
+    rows.push({ minute:Math.min(130,position), label:`${Math.round(minute)}${extra?`+${Math.round(extra)}`:''}′`, kind:goal?'goal':'red', team:String(raw.teamName || '').slice(0,60) });
+  }
+  return rows.sort((a,b)=>a.minute-b.minute).slice(0,24);
+}
+
+function chartPoints(model, match = {}) {
+  const valid=model.points.filter(point=>{
+    if (point.stale) return false;
+    const values=['home','draw','away'].map(key=>finiteNumber(point.probabilities?.[key]));
+    return values.every(value=>value!==null && value>=0 && value<=100)
+      && Math.abs(values.reduce((sum,value)=>sum+value,0)-100)<=1.2;
+  });
+  const kickoffMs=Date.parse(match?.date || '');
+  const inMatch=[];
+  let preMatch=null;
+  for (const point of valid) {
+    const minute=finiteNumber(point.minute);
+    const capturedMs=Date.parse(point.capturedAt);
+    const beforeKickoff=minute===null && Number.isFinite(kickoffMs) && Number.isFinite(capturedMs) && capturedMs<kickoffMs;
+    if (beforeKickoff) preMatch=point;
+    else if (minute!==null && minute>=0 && minute<=130) inMatch.push({...point,minute});
+  }
+  // Один снимок до старта (последний) — отправная точка кривой.
+  return [...(preMatch ? [{...preMatch,minute:PRE_MATCH_MINUTE,preMatch:true}] : []), ...inMatch.sort((a,b)=>a.minute-b.minute)];
+}
+
+function minuteChartFromModel(model, match = {}, events = []) {
+  const snapshots=chartPoints(model,match);
+  if (snapshots.length<2) {
+    const text=match?.finished
+      ? 'Для этого матча сохранено меньше двух оценок модели — кривую не построить.'
+      : 'Кривая появится по ходу матча — по мере того как сохраняются оценки модели.';
+    return '<p class="ai-prob-chart-unavailable">'+escapeHtml(text)+'</p>';
+  }
+  const markers=chartEventMarkers(events);
+  const lastMinute=Math.max(90,...snapshots.map(point=>point.minute),...markers.map(item=>item.minute));
+  const left=38;
+  const right=625;
+  const x=minute=>left+(minute-PRE_MATCH_MINUTE)/(lastMinute-PRE_MATCH_MINUTE)*(right-left);
+  const y=value=>148-value/100*132;
+  const coordinate=value=>Number(value).toFixed(2);
+  const keys=[
+    {key:'home',css:'home',label:String(match?.home?.name || 'Хозяева')},
+    {key:'draw',css:'draw',label:'Ничья'},
+    {key:'away',css:'away',label:String(match?.away?.name || 'Гости')},
+  ];
+  const grid=[0,50,100].map(value=>'<line class="ai-prob-grid" x1="'+left+'" y1="'
+    +coordinate(y(value))+'" x2="'+right+'" y2="'+coordinate(y(value))+'"/>'
+    +'<text class="ai-prob-axis" x="31" y="'+coordinate(y(value)+3)
+    +'" text-anchor="end">'+value+'</text>').join('');
+  const ticks=[[PRE_MATCH_MINUTE,'до'],[0,'0′'],[45,'45′'],[90,'90′'],...(lastMinute>95?[[lastMinute,Math.round(lastMinute)+'′']]:[])]
+    .map(([minute,label])=>'<text class="ai-prob-axis" x="'+coordinate(x(minute))+'" y="170" text-anchor="middle">'+escapeHtml(label)+'</text>').join('')
+    +'<line class="ai-prob-kickoff" x1="'+coordinate(x(0))+'" y1="14" x2="'+coordinate(x(0))+'" y2="148"/>';
+  const eventLines=markers.map(item=>'<g class="ai-prob-event '+item.kind+'"><line x1="'+coordinate(x(item.minute))+'" y1="14" x2="'
+    +coordinate(x(item.minute))+'" y2="148"/><text x="'+coordinate(x(item.minute))+'" y="11" text-anchor="middle">'
+    +(item.kind==='goal'?'⚽':'🟥')+'</text></g>').join('');
+  const paths=keys.map(item=>{
+    const path=snapshots.map((point,index)=>
+      (index===0?'M':'L')+coordinate(x(point.minute))+' '+coordinate(y(point.probabilities[item.key]))
+    ).join(' ');
+    const dots=snapshots.map(point=>'<circle class="ai-prob-dot '+item.css+'" cx="'+coordinate(x(point.minute))
+      +'" cy="'+coordinate(y(point.probabilities[item.key]))+'" r="'+(point===snapshots.at(-1)?'3.5':'2.2')+'" />').join('');
+    return '<path class="ai-prob-line '+item.css+'" d="'+path+'" />'+dots;
+  }).join('');
+  const latest=snapshots.at(-1).probabilities;
+  const legend=keys.map(item=>'<div class="ai-prob-legend-item '+item.css+'">'
+    +'<i aria-hidden="true"></i><span>'+escapeHtml(item.label)
+    +'</span><strong>'+Number(latest[item.key]).toFixed(1)+'%</strong></div>').join('');
+  const momentText=point=>point.preMatch ? 'до матча' : Math.round(point.minute)+'-я минута';
+  const accessible='Кривая вероятностей по ходу матча, '+snapshots.length+' сохранённых оценок модели. '
+    +snapshots.map(point=>momentText(point)+': '+keys.map(item=>item.label+' '+Number(point.probabilities[item.key]).toFixed(1)+'%').join(', ')).join('; ')
+    +(markers.length?'. События: '+markers.map(item=>item.label+' '+(item.kind==='goal'?'гол':'красная карточка')+(item.team?' ('+item.team+')':'')).join(', '):'')
+    +'.';
+  return '<figure class="ai-prob-chart">'
+    +'<div class="ai-prob-chart-heading"><strong>Вероятности исходов по ходу матча</strong>'
+    +'<small>'+snapshots.length+' сохранённых оценок</small></div>'
+    +'<svg viewBox="0 0 640 176" class="ai-prob-chart-svg" role="img" aria-label="'+escapeHtml(accessible)+'">'
+    +grid+ticks+eventLines+paths
+    +'</svg>'
+    +'<div class="ai-prob-legend" aria-label="Последняя сохранённая оценка">'+legend+'</div>'
+    +'<figcaption>Точки — фактически сохранённые оценки модели, линии их только соединяют: между точками измерений нет. '
+    +'⚽ и 🟥 — события матча; они совпадают по времени, но не обязательно вызвали изменение.</figcaption>'
+    +'</figure>';
+}
+
+// История оценок по времени сохранения (до матча и между разборами).
+export function renderAiProbabilityHistoryChart(timeline = {}, match = {}) {
+  return timeChartFromModel(normalizeAiTimeline(timeline,match),match);
+}
+
+export function renderAiProbabilityChart(timeline = {}, match = {}, events = []) {
+  return minuteChartFromModel(normalizeAiTimeline(timeline,match),match,events);
 }
 
 function pointHtml(point,index,points,match) {
