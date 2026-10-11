@@ -5,6 +5,7 @@ import {
   RELEASE_IDENTITY_CODES,
   validateReleaseIdentity,
 } from '../src/release-identity.js';
+import { assertSameScriptContent, settingsOnlyVersion } from './cloudflare-settings-version.js';
 
 const RELEASE_VERSION_RE = /^[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$/i;
 const RELEASE_MESSAGE_RE = /^release=([0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+) sha=([0-9a-f]{40})$/i;
@@ -14,7 +15,7 @@ function legacyAllowed(value) {
   return value === true || (typeof value === 'string' && value.toLowerCase() === 'true');
 }
 
-export function verifyRollbackTarget(version, expectedVersion, expectedId, allowLegacyUnverified = false, legacyConfirmation = '', expectedSha = '') {
+export function verifyRollbackTarget(version, expectedVersion, expectedId, allowLegacyUnverified = false, legacyConfirmation = '', expectedSha = '', settingsBase = null) {
   if (typeof expectedVersion !== 'string' || !RELEASE_VERSION_RE.test(expectedVersion)) {
     throw new Error('Expected rollback release must use <version>-rc<number> format.');
   }
@@ -26,6 +27,27 @@ export function verifyRollbackTarget(version, expectedVersion, expectedId, allow
   }
   if (version.id.toLowerCase() !== expectedId.toLowerCase()) {
     throw new Error(`Cloudflare resolved version ID ${version.id || 'unknown'} instead of requested ${expectedId}.`);
+  }
+
+  // Задача 0: цель отката — версия «после правки секрета» в панели. Она не
+  // несёт отметки CI, поэтому релиз и SHA доказываются версией CI, из кода
+  // которой она создана (тот же хеш кода). Откат на неё сохраняет секреты.
+  if (settingsBase !== null && settingsBase !== undefined) {
+    if (!settingsOnlyVersion(version)) {
+      throw new Error('Settings-only rollback target must be an unstamped version created by a secret change.');
+    }
+    if (typeof expectedSha !== 'string' || !SHA_RE.test(expectedSha)) {
+      throw new Error('Settings-only rollback target requires the expected deploy SHA of its CI-stamped base.');
+    }
+    if (!settingsBase || typeof settingsBase !== 'object' || Array.isArray(settingsBase) || !cloudflareVersionIdValid(settingsBase.id)) {
+      throw new Error('Settings-only rollback target requires CI-stamped base version metadata.');
+    }
+    if (settingsBase.id.toLowerCase() === version.id.toLowerCase()) {
+      throw new Error('Settings-only rollback target cannot be its own CI-stamped base.');
+    }
+    const base = verifyRollbackTarget(settingsBase, expectedVersion, settingsBase.id, false, '', expectedSha);
+    assertSameScriptContent(version, settingsBase);
+    return { mode: 'settings-only', releaseVersion: base.releaseVersion, deploySha: base.deploySha, baseVersionId: settingsBase.id };
   }
 
   const message = version.annotations?.['workers/message'];
@@ -78,16 +100,19 @@ export function verifyRollbackTarget(version, expectedVersion, expectedId, allow
 }
 
 function main() {
-  const [metadataPath, expectedVersion, expectedId, allowLegacyUnverified = 'false', legacyConfirmation = '', expectedSha = ''] = process.argv.slice(2);
+  const [metadataPath, expectedVersion, expectedId, allowLegacyUnverified = 'false', legacyConfirmation = '', expectedSha = '', settingsBasePath = ''] = process.argv.slice(2);
   if (!metadataPath || !expectedVersion || !expectedId) {
     throw new Error(
-      'Usage: node scripts/verify-rollback-target.js <metadata-json> <expected-version> <version-id> [allow-legacy-unverified] [legacy-confirmation] [expected-sha]'
+      'Usage: node scripts/verify-rollback-target.js <metadata-json> <expected-version> <version-id> [allow-legacy-unverified] [legacy-confirmation] [expected-sha] [settings-base-json]'
     );
   }
 
   const version = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-  const result = verifyRollbackTarget(version, expectedVersion, expectedId, allowLegacyUnverified, legacyConfirmation, expectedSha);
-  if (result.mode === 'stamped') {
+  const settingsBase = settingsBasePath ? JSON.parse(fs.readFileSync(settingsBasePath, 'utf8')) : null;
+  const result = verifyRollbackTarget(version, expectedVersion, expectedId, allowLegacyUnverified, legacyConfirmation, expectedSha, settingsBase);
+  if (result.mode === 'settings-only') {
+    console.log(`Verified settings-only rollback target: same script as CI-stamped ${result.baseVersionId} release=${result.releaseVersion} sha=${result.deploySha}.`);
+  } else if (result.mode === 'stamped') {
     console.log(`Verified rollback target release=${result.releaseVersion} sha=${result.deploySha}.`);
   } else {
     console.log('Legacy rollback target accepted only because the explicit unverified override is enabled.');
