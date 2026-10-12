@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-12 — Claude — «Обыграй AI»
-PR: ветка `claude/beat-the-ai`
+PR: [#864](https://github.com/TRAP44/football-analytics-cloudflare/pull/864), ветка `claude/beat-the-ai`
 Сделано:
 - Миграция `supabase_migration_v6_29_16.sql`: таблица `match_picks` (telegram_id, fixture_id, pick home/draw/away, kickoff_at; PK пользователь+матч), RLS, доступ только service_role (select/insert/update). `backend_schema_fingerprint()` (v1) исключает таблицу — legacy-отпечатки не меняются.
 - `src/match-picks-runtime.js`: `GET/POST /api/match-pick` — прогноз только в матчах с предматчевым снимком модели и только до `model_predictions.kickoff_at`, менять можно до начала; `GET /api/picks-leaderboard` — 30 дней, топ-10, «вы против AI на тех же матчах», ожидающие итога. Очки считаются из `model_predictions` (`status = settled`, `actual_outcome`), AI = `predicted_outcome`. В таблице — только `first_name` (без @username, фамилии, ссылок). Лимиты: запись 20/мин, таблица 20/мин.
