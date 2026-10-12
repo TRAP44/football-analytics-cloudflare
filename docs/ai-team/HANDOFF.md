@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-12 — Claude — Оценка по ходу матча в уведомлениях о голе
-PR: ветка `claude/goal-alert-live-estimate`
+PR: [#859](https://github.com/TRAP44/football-analytics-cloudflare/pull/859), ветка `claude/goal-alert-live-estimate`
 Сделано:
 - `src/scheduled-jobs.js`: `in_play_timeline` запускается раньше `smart_notifications` (`Promise.all([importantChangeTask, inPlayTimelineTask])`) — к моменту уведомления точка уже со свежим счётом.
 - `src/smart-notification-service.js`: `inPlayEstimateLine` — строка «📊 Оценка модели сейчас (1:0, 61′): Спартак 77% · Ничья 17% · Зенит 6%» в уведомлении о голе / красной карточке. Только если точка не старше 10 минут, сумма 98–102 и сумма голов в точке равна числу голов в событиях уведомления (иначе строки нет — не показываем оценку со старым счётом). Точку грузит `getLatestInPlayEstimate` (worker) один раз на матч и только если в событиях есть гол или удаление.
