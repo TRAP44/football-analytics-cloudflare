@@ -23,6 +23,14 @@ PR: [#863](https://github.com/TRAP44/football-analytics-cloudflare/pull/863), в
 - Контракт: v2-отпечаток прода после миграции `c7164151…` (посчитан на проде тем же запросом с добавленной колонкой), чистой установки — `13c5b940…` (из аннотации CI); прежние `f3d899…`/`d0ec…` остаются совместимыми. CI чистой установки теперь пишет фактические отпечатки в аннотацию проверки.
 Решения: порядок выката — миграция с именем `supabase_migration_v6_29_15` применяется до деплоя (шлюз миграций в deploy-production); до деплоя старый Worker видит новый отпечаток как дрейф — окно короткое, функции не выключаются.
 Осталось / внимание: применить миграцию в прод перед слиянием (Claude через Supabase MCP после одобрения Сергея).
+## 2026-10-12 — Claude — Фоновые задания сами узнают тариф API-Football
+PR: [#862](https://github.com/TRAP44/football-analytics-cloudflare/pull/862), ветка `claude/provider-status-probe`
+Сделано:
+- Причина «0 предматчевых прогнозов»: в процессе cron-runner нет своей памяти о квоте, а общий снимок `provider-state:api-football:quota:v1` живёт 30 минут после последнего запроса к провайдеру. Без трафика пользователей снимок истекал, тариф становился UNKNOWN, и `providerBudgetDecision` всегда отвечал `provider_daily_reserve`; кривая по ходу матча тоже не могла запросить ленту.
+- Новый `src/provider-status-probe.js`: `ensureProviderSnapshot` — загрузить общий снимок, и если тариф не подтверждён (UNKNOWN или устаревший FREE), один раз спросить `/status`. Подключён в `prematch-prediction-job.js` и `in-play-timeline-job.js` вместо прямого `loadSharedProviderState`.
+- `createProviderStatusProbe` (там же, подключён в `src/worker.js`): `apiFootball('/status')` (без повторов, 5 с), не чаще раза в минуту на процесс; задание, пришедшее во время запроса, ждёт тот же запрос. Снимок обновляется по заголовкам через общий шлюз, а если заголовков нет — по телу ответа (`requests.limit_day` / `requests.current`).
+Решения: `/status` по документации API-Football не расходует дневную квоту; во время cooldown запрос не делается.
+Осталось / внимание: после слияния проверить в `ops_events` событие задания предматчевых прогнозов с `computed > 0`.
 
 ## 2026-10-12 — Claude — Оценка по ходу матча на карточках главной
 PR: [#858](https://github.com/TRAP44/football-analytics-cloudflare/pull/858), ветка `claude/live-cards-in-play`
