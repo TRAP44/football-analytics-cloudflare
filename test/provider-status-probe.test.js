@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { ensureProviderSnapshot, providerSnapshotNeedsProbe, quotaFromStatusBody } from '../src/provider-status-probe.js';
+import { createProviderStatusProbe, ensureProviderSnapshot, providerSnapshotNeedsProbe, quotaFromStatusBody } from '../src/provider-status-probe.js';
 import { createPrematchPredictionJob } from '../src/prematch-prediction-job.js';
 import { createInPlayTimelineJob } from '../src/in-play-timeline-job.js';
 
@@ -93,10 +93,62 @@ test('in-play job: after the probe the live feed may be fetched from the provide
   assert.ok((await run(true)).some(call => call.network === true), 'plan confirmed by /status: feed is fetched');
 });
 
+test('status probe: one request per minute, concurrent jobs wait for it, body fills a missing header snapshot', async () => {
+  let clock = NOW;
+  const memory = { provider: { plan: 'UNKNOWN' } };
+  const requests = [];
+  let release;
+  const probe = createProviderStatusProbe({
+    apiFootball: async (path, params, _cfg, options) => {
+      requests.push({ path, options });
+      await new Promise(resolve => { release = resolve; });
+      return { requests: { current: 7, limit_day: 7500 } };
+    },
+    inferPlan,
+    memory,
+    clock: () => clock,
+  });
+  const first = probe({});
+  const second = probe({});
+  let secondDone = false;
+  second.then(() => { secondDone = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(secondDone, false, 'the second job waits for the in-flight request');
+  release();
+  await Promise.all([first, second]);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].path, '/status');
+  assert.deepEqual(requests[0].options, { responseType: 'any', transportRetries: 0, timeoutMs: 5000 });
+  assert.equal(memory.provider.plan, 'PRO');
+  assert.equal(memory.provider.dailyRemaining, 7493);
+
+  clock += 61_000;
+  const again = probe({});
+  await new Promise(resolve => setImmediate(resolve));
+  release();
+  await again;
+  assert.equal(requests.length, 2, 'a minute later a new request is allowed');
+});
+
+test('status probe: headers win over the body, errors are swallowed', async () => {
+  const memory = { provider: { plan: 'UNKNOWN' } };
+  const probe = createProviderStatusProbe({
+    apiFootball: async () => {
+      memory.provider = { plan: 'PRO', dailyRemaining: 7000, updatedAt: new Date(Date.now() + 1000).toISOString() };
+      return { requests: { current: 7, limit_day: 100 } };
+    },
+    inferPlan,
+    memory,
+  });
+  await probe({});
+  assert.equal(memory.provider.plan, 'PRO', 'fresh header snapshot is kept');
+  const failing = createProviderStatusProbe({ apiFootball: async () => { throw new Error('net'); }, inferPlan, memory: {} });
+  await assert.doesNotReject(failing({}));
+  assert.throws(() => createProviderStatusProbe({}), TypeError);
+});
+
 test('worker wires the /status probe into both background jobs', () => {
   const worker = fs.readFileSync('src/worker.js', 'utf8');
   assert.equal(worker.match(/probeProviderStatus: \(\.\.\.args\) => probeProviderStatus\(\.\.\.args\)/g)?.length, 2);
-  assert.match(worker, /apiFootball\('\/status', \{\}, cfg, \{ responseType: 'any', transportRetries: 0, timeoutMs: 5000 \}\)/);
-  assert.match(worker, /memory\.providerStatusProbeAt/);
-  assert.match(worker, /quotaFromStatusBody\(body, inferFootballPlan\)/);
+  assert.match(worker, /createProviderStatusProbe\(\{\n      apiFootball: \(\.\.\.args\) => apiFootball\(\.\.\.args\),\n      inferPlan: \(\.\.\.args\) => inferFootballPlan\(\.\.\.args\),\n      memory,/);
 });

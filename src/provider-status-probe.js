@@ -77,3 +77,32 @@ export async function ensureProviderSnapshot({ cfg, loadSharedProviderState, pro
     return { probed: true, ok: false };
   }
 }
+
+/**
+ * Запрос /status (не расходует дневную квоту API-Football). Не чаще раза в
+ * минуту на процесс; задание, пришедшее во время запроса, ждёт тот же запрос
+ * (ревью Codex #862). Шлюз обновляет снимок по заголовкам ответа; если их не
+ * было — снимок берётся из тела ответа.
+ */
+export function createProviderStatusProbe({ apiFootball, inferPlan, memory, clock = () => Date.now() } = {}) {
+  if (typeof apiFootball !== 'function' || !memory || typeof memory !== 'object') {
+    throw new TypeError('Provider status probe requires apiFootball and memory.');
+  }
+  let last = null;
+  return async function probeProviderStatus(cfg) {
+    const startedMs = Number(clock());
+    if (last && startedMs - last.at < 60_000) {
+      await last.promise;
+      return;
+    }
+    const promise = (async () => {
+      const body = await apiFootball('/status', {}, cfg, { responseType: 'any', transportRetries: 0, timeoutMs: 5000 });
+      const refreshedMs = Date.parse(String(memory.provider?.updatedAt || ''));
+      if (Number.isFinite(refreshedMs) && refreshedMs >= startedMs) return;
+      const quota = quotaFromStatusBody(body, inferPlan);
+      if (quota) memory.provider = { ...(memory.provider || {}), name: 'API-Football', ...quota, updatedAt: new Date(Number(clock())).toISOString() };
+    })().catch(() => {});
+    last = { at: startedMs, promise };
+    await promise;
+  };
+}
