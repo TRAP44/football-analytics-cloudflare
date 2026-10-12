@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import { createChannelDailyPostJob, dailyPostCandidateIds, dailyPostMatches, dailyPostText, previewParts } from '../src/channel-daily-post-job.js';
 
 const NOW = Date.parse('2026-10-12T08:05:00.000Z');
+// recordOpsEvent возвращает строку с невидимым _persistenceStatus.
+const persisted = (event, status = 'persistent') => Object.defineProperty({ ...event }, '_persistenceStatus', { value: status, enumerable: false });
 const row = (id, date, home, away, { status = 'NS', league = 'Premier League', leagueId = 39 } = {}) => ({
   fixture: { id, date, status: { short: status } },
   league: { id: leagueId, name: league },
@@ -67,7 +69,7 @@ test('model snapshots are requested in chunks, main matches first, so a main mat
       return Object.fromEntries(ids.filter(id => id === mainId || id < 1003).map(id => [id, { home: 50, draw: 25, away: 25 }]));
     },
     isMainFixture: item => item.fixture.id === mainId,
-    recordOpsEvent: async () => {},
+    recordOpsEvent: async event => persisted(event),
     setCache: async () => {},
   });
   const ranked = dailyPostCandidateIds(fixtures, NOW, { isMain: item => item.fixture.id === mainId });
@@ -83,7 +85,7 @@ test('model snapshots are requested in chunks, main matches first, so a main mat
     clock: () => NOW,
     getCache: async key => (key.startsWith('provider-fixtures:') ? { fixtures } : null),
     getModelProbabilities: async ids => { quick.push(ids.length); return Object.fromEntries(ids.map(id => [id, { home: 50, draw: 25, away: 25 }])); },
-    recordOpsEvent: async () => {},
+    recordOpsEvent: async event => persisted(event),
     setCache: async () => {},
   });
   assert.equal((await full.processChannelDailyPost({}, new Date(NOW))).matches, 5);
@@ -101,7 +103,7 @@ function harness({ enabled = false, published = [], previewCached = false } = {}
     getCache: async key => (key.startsWith('provider-fixtures:') ? { date: '2026-10-12', fixtures: rows } : cache.get(key) || null),
     getModelProbabilities: async () => predictions,
     loadProviderFixturesForDate: async () => rows,
-    recordOpsEvent: async (_cfg, event) => { ops.push(event); },
+    recordOpsEvent: async (_cfg, event) => { ops.push(event); return persisted(event); },
     releaseIdempotency: async () => {},
     setCache: async (key, _id, value) => { cache.set(key, value); },
   });
@@ -117,6 +119,26 @@ test('while disabled the job only records a preview, once a day, inside the 11:0
   assert.match(ops[0].message, /Матчи дня/);
   assert.ok(cache.has('channel-daily-preview:2026-10-12:v1'));
   assert.equal((await job.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_already_recorded');
+});
+
+test('the preview marker is written only when every part reached the journal', async () => {
+  const cache = new Map();
+  let failFirst = true;
+  const job = createChannelDailyPostJob({
+    clock: () => NOW,
+    getCache: async key => (key.startsWith('provider-fixtures:') ? { fixtures: rows } : cache.get(key) || null),
+    getModelProbabilities: async () => predictions,
+    recordOpsEvent: async event => {
+      const status = failFirst ? 'failed' : 'persistent';
+      failFirst = false;
+      return persisted(event, status);
+    },
+    setCache: async (key, _id, value) => { cache.set(key, value); },
+  });
+  assert.equal((await job.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_not_persisted');
+  assert.equal(cache.has('channel-daily-preview:2026-10-12:v1'), false, 'next run retries');
+  assert.equal((await job.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_recorded');
+  assert.ok(cache.has('channel-daily-preview:2026-10-12:v1'));
 });
 
 test('a long post is previewed in parts under the 500-character journal limit, without losing text', async () => {
@@ -135,7 +157,7 @@ test('a long post is previewed in parts under the 500-character journal limit, w
     clock: () => NOW,
     getCache: async key => (key.startsWith('provider-fixtures:') ? { fixtures: many } : cache.get(key) || null),
     getModelProbabilities: async () => est,
-    recordOpsEvent: async (_cfg, event) => { ops.push(event); },
+    recordOpsEvent: async (_cfg, event) => { ops.push(event); return persisted(event); },
     setCache: async (key, _id, value) => { cache.set(key, value); },
   });
   await job.processChannelDailyPost({}, new Date(NOW));

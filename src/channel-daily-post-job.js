@@ -185,9 +185,15 @@ export function createChannelDailyPostJob(deps = {}) {
     }
   }
 
+  // true — событие сохранено в Supabase (а не только в памяти изолята).
   async function record(cfg, event) {
-    if (typeof recordOpsEvent !== 'function') return;
-    try { await recordOpsEvent(cfg, event); } catch {}
+    if (typeof recordOpsEvent !== 'function') return false;
+    try {
+      const row = await recordOpsEvent(cfg, event);
+      return row?._persistenceStatus === 'persistent';
+    } catch {
+      return false;
+    }
   }
 
   async function processChannelDailyPost(cfg, scheduledAt = new Date(now())) {
@@ -227,8 +233,9 @@ export function createChannelDailyPostJob(deps = {}) {
 
     if (!enabled) {
       const parts = previewParts(text);
+      let persisted = 0;
       for (let index = 0; index < parts.length; index += 1) {
-        await record(cfg, {
+        if (await record(cfg, {
           severity: 'info',
           source: 'channel_publisher',
           eventType: 'channel_daily_post_preview',
@@ -236,8 +243,11 @@ export function createChannelDailyPostJob(deps = {}) {
           message: parts[index],
           endpoint: 'cron:channel-daily-post',
           meta: { date, matches: matches.length, enabled: false, part: index + 1, parts: parts.length },
-        });
+        })) persisted += 1;
       }
+      // Метка «предпросмотр записан» — только если в журнале все части
+      // (ревью Codex #860); иначе следующий запуск в окне повторит запись.
+      if (persisted !== parts.length) return { ok: false, reason: 'preview_not_persisted', matches: matches.length };
       // Полный текст — ещё и в кеше предпросмотра (на сутки).
       try { await setCache(PREVIEW_CACHE_KEY(date), 0, { date, recordedAt: new Date(now()).toISOString(), text }, cfg, 1440); } catch {}
       return { ok: true, reason: 'preview_recorded', matches: matches.length };
