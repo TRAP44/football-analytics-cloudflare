@@ -2,6 +2,8 @@
 // и таблица лидеров за 30 дней (Профиль). Все цифры — только из ответа сервера.
 // Без денег и ставочных слов: очки — за угаданный исход.
 
+import { aiGuessedCardModel, shareAiGuessedCard } from './ai-guessed-card.js';
+
 const OUTCOMES = ['home', 'draw', 'away'];
 
 function outcome(value) {
@@ -36,9 +38,12 @@ export function matchPickHtml(data, match, escapeHtml) {
     const user = pick
       ? `Вы: ${label(pick)} · <b>${pointText(result.userPoint)}</b>`
       : 'Вы не сделали прогноз';
+    const card = aiGuessedCardModel(data);
+    const cardButton = card ? `<button type="button" class="match-question-chip beat-ai-card-btn" data-beat-card>📸 Карточка «${escapeHtml(card.headline)}»</button>` : '';
     return `${head}<p class="beat-ai-line">Итог: <b>${label(result.actual)}</b></p>
       <p class="beat-ai-line">${user}</p>
       <p class="beat-ai-line">AI: ${label(ai)} · <b>${pointText(result.aiPoint)}</b></p>
+      ${cardButton}
       <p class="match-explanation-note">Таблица лидеров — в Профиле.</p>`;
   }
   if (data.verifying === true) {
@@ -65,7 +70,7 @@ const PICK_ERRORS = Object.freeze({
   NO_MODEL_PREDICTION: 'В этом матче AI не делал прогноз — сыграть не получится.',
 });
 
-export function mountMatchPick({ root, fixtureId, match = {}, api, escapeHtml, isCurrent = () => true } = {}) {
+export function mountMatchPick({ root, fixtureId, match = {}, api, escapeHtml, isCurrent = () => true, toast = () => {} } = {}) {
   const id = Number(fixtureId);
   if (!root || !Number.isSafeInteger(id) || id <= 0 || typeof api !== 'function') return false;
   let busy = false;
@@ -82,6 +87,11 @@ export function mountMatchPick({ root, fixtureId, match = {}, api, escapeHtml, i
     root.hidden = false;
     root.querySelectorAll('[data-beat-pick]').forEach(button => {
       button.addEventListener('click', () => save(button.dataset.beatPick, data));
+    });
+    root.querySelector('[data-beat-card]')?.addEventListener('click', event => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      shareAiGuessedCard(data, { toast }).finally(() => { button.disabled = false; });
     });
   }
 
