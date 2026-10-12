@@ -264,7 +264,13 @@ export function createInPlayTimelineJob(deps = {}) {
         const rows = await apiFootball('/fixtures', { ids: ids.slice(index, index + 20).join('-') }, cfg);
         for (const row of Array.isArray(rows) ? rows : []) {
           const value = redCardsFromFixtureRow(row);
-          if (value) result.set(value.fixtureId, value);
+          // Строка по id свежее пакета матчей дня: из неё же берём счёт, минуту
+          // и статус (ревью Codex: иначе удаление накладывалось на старый счёт).
+          if (value) {
+            const fresh = liveFixtureState(row);
+            const code = String(safeRead(plainObject(safeRead(plainObject(safeRead(row, 'fixture')), 'status')), 'short') || '').toUpperCase();
+            result.set(value.fixtureId, { ...value, fresh, finalized: !fresh && Boolean(code) && !LIVE_STATUSES.has(code) });
+          }
         }
       } catch {
         break;
@@ -338,8 +344,17 @@ export function createInPlayTimelineJob(deps = {}) {
       // (удалений не становится меньше), иначе — без удалений.
       const known = reds.get(state.fixtureId);
       const prior = plainObject(safeRead((previous.get(state.fixtureId) || {}).latest, 'reds'));
-      if (known) Object.assign(state, { homeReds: known.home, awayReds: known.away, redsSource: 'events' });
-      else if (prior) Object.assign(state, { homeReds: Number(prior.home) || 0, awayReds: Number(prior.away) || 0, redsSource: 'previous' });
+      // Матч уже не в основном времени по свежим данным — точку не пишем.
+      if (known?.finalized) {
+        summary.unchanged += 1;
+        continue;
+      }
+      if (known?.fresh) Object.assign(state, known.fresh);
+      const priorHome = Number(prior?.home) || 0;
+      const priorAway = Number(prior?.away) || 0;
+      // Удалений не становится меньше: неполный список событий не отменяет прошлые.
+      if (known) Object.assign(state, { homeReds: Math.max(known.home, priorHome), awayReds: Math.max(known.away, priorAway), redsSource: 'events' });
+      else if (prior) Object.assign(state, { homeReds: priorHome, awayReds: priorAway, redsSource: 'previous' });
       else Object.assign(state, { homeReds: 0, awayReds: 0, redsSource: 'none' });
       const probabilities = inPlayProbabilities({ prematch: prematch[state.fixtureId], ...state });
       if (!probabilities) continue;

@@ -336,6 +336,20 @@ function isInPlayPoint(point = {}) {
   return point?.provenance?.source === 'in_play_model';
 }
 
+// Подпись по версиям показанных точек: удаления учитывает только v2 (12.10).
+function inPlayMethodText(points = []) {
+  const withReds = point => String(point?.analysisVersion || point?.analysis_version || '') === 'in-play-poisson-v2';
+  const reds = '(после красной карточки ожидаемые голы команды ×0.75, соперника ×1.9 — по средним оценкам исследований)';
+  if (points.length && points.every(withReds)) {
+    return 'Во время матча оценка пересчитывается от предматчевого прогноза по счёту, оставшемуся времени и удалениям '+reds+'; ход игры она не учитывает. ';
+  }
+  if (points.some(withReds)) {
+    return 'Во время матча оценка пересчитывается от предматчевого прогноза по счёту и оставшемуся времени; удаления '+reds
+      +' учтены только в части точек — более ранние посчитаны без них. Ход игры не учитывается. ';
+  }
+  return 'Во время матча оценка пересчитывается от предматчевого прогноза по счёту и оставшемуся времени; красные карточки и ход игры она не учитывает. ';
+}
+
 function minuteChartFromModel(model, match = {}, events = []) {
   const snapshots=chartPoints(model,match);
   if (snapshots.length<2) {
@@ -392,8 +406,7 @@ function minuteChartFromModel(model, match = {}, events = []) {
     +'<div class="ai-prob-legend" aria-label="Последняя сохранённая оценка">'+legend+'</div>'
     +'<figcaption>Точки — фактически сохранённые оценки модели, линии их только соединяют: между точками измерений нет. '
     +(snapshots.some(isInPlayPoint)
-      ? 'Во время матча оценка пересчитывается от предматчевого прогноза по счёту, оставшемуся времени и удалениям '
-        +'(после красной карточки ожидаемые голы команды ×0.75, соперника ×1.9 — по средним оценкам исследований); ход игры она не учитывает. '
+      ? inPlayMethodText(snapshots.filter(isInPlayPoint))
         +'⚽ и 🟥 — события матча.'
       : '⚽ и 🟥 — события матча; они совпадают по времени, но не обязательно вызвали изменение.')
     +'</figcaption>'
