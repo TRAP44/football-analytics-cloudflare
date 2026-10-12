@@ -276,6 +276,11 @@ jobs:
               if [[ -s "$SETTINGS_ERROR" ]]; then
                 echo "Settings-only resolver: $(tail -n 1 "$SETTINGS_ERROR")" >> "$GITHUB_STEP_SUMMARY"
               fi
+              # Annotations only (no binding values): helps tell why the version was not accepted.
+              echo "Active version: $(node scripts/verify-production-release-postcondition.js "$VERSIONS_JSON" --describe-version 2>/dev/null || echo unavailable)" >> "$GITHUB_STEP_SUMMARY"
+              if [[ -s "$BASE_VERSION_JSON" ]]; then
+                echo "CI-stamped base: $(node scripts/verify-production-release-postcondition.js "$BASE_VERSION_JSON" --describe-version 2>/dev/null || echo unavailable)" >> "$GITHUB_STEP_SUMMARY"
+              fi
               exit 1
             fi
           fi

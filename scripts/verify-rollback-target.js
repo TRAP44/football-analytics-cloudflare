@@ -34,7 +34,7 @@ export function verifyRollbackTarget(version, expectedVersion, expectedId, allow
   // которой она создана (тот же хеш кода). Откат на неё сохраняет секреты.
   if (settingsBase !== null && settingsBase !== undefined) {
     if (!settingsOnlyVersion(version)) {
-      throw new Error('Settings-only rollback target must be an unstamped version created by a secret change.');
+      throw new Error('Settings-only rollback target must be a version without a CI release stamp.');
     }
     if (typeof expectedSha !== 'string' || !SHA_RE.test(expectedSha)) {
       throw new Error('Settings-only rollback target requires the expected deploy SHA of its CI-stamped base.');
