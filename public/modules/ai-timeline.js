@@ -315,7 +315,7 @@ function chartPoints(model, match = {}) {
       && Math.abs(values.reduce((sum,value)=>sum+value,0)-100)<=1.2;
   });
   const kickoffMs=Date.parse(match?.date || '');
-  const inMatch=[];
+  let inMatch=[];
   let preMatch=null;
   for (const point of valid) {
     const minute=finiteNumber(point.minute);
@@ -324,8 +324,16 @@ function chartPoints(model, match = {}) {
     if (beforeKickoff) preMatch=point;
     else if (minute!==null && minute>=0 && minute<=130) inMatch.push({...point,minute});
   }
+  // Задача 3 (часть 2): если есть оценки по ходу матча (счёт и минута), во время
+  // матча показываются только они — разбор, открытый в эфире, счёт не учитывает.
+  const inPlay=inMatch.filter(isInPlayPoint);
+  if (inPlay.length) inMatch=inPlay;
   // Один снимок до старта (последний) — отправная точка кривой.
   return [...(preMatch ? [{...preMatch,minute:PRE_MATCH_MINUTE,preMatch:true}] : []), ...inMatch.sort((a,b)=>a.minute-b.minute)];
+}
+
+function isInPlayPoint(point = {}) {
+  return point?.provenance?.source === 'in_play_model';
 }
 
 function minuteChartFromModel(model, match = {}, events = []) {
@@ -383,7 +391,11 @@ function minuteChartFromModel(model, match = {}, events = []) {
     +'</svg>'
     +'<div class="ai-prob-legend" aria-label="Последняя сохранённая оценка">'+legend+'</div>'
     +'<figcaption>Точки — фактически сохранённые оценки модели, линии их только соединяют: между точками измерений нет. '
-    +'⚽ и 🟥 — события матча; они совпадают по времени, но не обязательно вызвали изменение.</figcaption>'
+    +(snapshots.some(isInPlayPoint)
+      ? 'Во время матча оценка пересчитывается по счёту и оставшемуся времени от предматчевого прогноза; красные карточки и ход игры она не учитывает. '
+        +'⚽ и 🟥 — события матча.'
+      : '⚽ и 🟥 — события матча; они совпадают по времени, но не обязательно вызвали изменение.')
+    +'</figcaption>'
     +'</figure>';
 }
 
