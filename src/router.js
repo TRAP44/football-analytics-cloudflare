@@ -54,6 +54,7 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     apiHistoryAnalysis,
     apiMatchExplanation,
     apiMatchQuestion,
+    apiReferral,
     apiMatchPickGet,
     apiMatchPickSave,
     apiPicksLeaderboard,
@@ -293,6 +294,8 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     return methodNotAllowed(['GET','POST']);
   }
   if (method === 'GET' && pathname === '/api/picks-leaderboard') return await apiPicksLeaderboard(request, cfg, user);
+  // Приглашение друга: ссылка и бонусные разборы.
+  if (method === 'GET' && pathname === '/api/referral') return await apiReferral(request, cfg, user);
   if (pathname === '/api/favorites') return await apiFavorites(request, cfg, user);
   if (pathname === '/api/favorite-players') return await apiFavoritePlayers(request, cfg, user);
   if (pathname === '/api/digest-settings') return await apiDigestSettings(request, cfg, user);

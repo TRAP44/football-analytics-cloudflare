@@ -20,6 +20,17 @@ PR: [#867](https://github.com/TRAP44/football-analytics-cloudflare/pull/867), в
 Решения: Сергей 12.10 — «умеренно ×≈2»; Day Pass стал ≈ трети PRO.
 Ревью Codex: уже одобренный до деплоя платёж и автопродление по старой цене принимаются — `successful_payment` сверяется с текущей ценой и с ценой по умолчанию из кода (`passAcceptedStars`, `acceptedStars` в `billing-runtime.js`); в записи Pass — фактически оплаченная сумма. Pre-checkout и новые счета — только по текущей цене.
 Осталось / внимание: при следующей смене цен — см. «Идеи» (список прежних цен).
+
+## 2026-10-12 — Claude — Приглашения с наградой
+PR: [#868](https://github.com/TRAP44/football-analytics-cloudflare/pull/868), ветка `claude/referral-rewards`
+Сделано:
+- Атрибуция приглашений уже была (`growth-referral.js`: код в ссылках «Поделиться матчем», `referred_first_open` на /start). Добавлены награды: миграция `supabase_migration_v6_29_17.sql` — таблица `referral_rewards` (RLS, только service_role) и функции `grant_referral_rewards` (атомарно: атрибуция есть, приглашающий по коду, не сам себя, пользователь новый — зарегистрирован не раньше чем за час до атрибуции, одна награда на приглашённого, у приглашающего ≤ 10 за 30 дней под advisory-lock), `reserve_referral_bonus`/`refund_referral_bonus` (по operation_id). Legacy v1-отпечаток исключает таблицу и функции.
+- `src/referral-rewards-runtime.js`: начисление после успешного разбора (cached/shared/fresh, в фоне через waitUntil, один вызов базы на пользователя в изоляте), сообщение пригласившему в бота, `GET /api/referral` (ссылка `t.me/<бот>?start=ref__invite__profile__r<код>`, бонусы, приглашено за 30 дней). Лимит запросов 20/мин.
+- `analysis-runtime.js`: если дневной лимит исчерпан и бонус есть (`hasReferralBonus`) — `reserveReferralBonus`; в finally: разбор выдан — `commitReferralBonus`, нет — `refundReferralBonus`. Жизненный цикл без новой схемы: резерв = `status used` + `operation_id`, commit очищает `operation_id`; незакоммиченный резерв старше 15 минут возвращается сам (`releaseStaleReservations` перед проверкой/резервом/сводкой) — бонус не теряется при потерянном ответе базы, сбое возврата или падении воркера.
+- Профиль: «🎁 Пригласить друга» (`public/modules/referral-invite.js`) — Telegram share composer. Ревизия — launch111.
+- SQL функций прогнан на локальном Postgres 16: новый пользователь, повтор, старый пользователь, сам себя, не приглашён, лимит 10, резерв/возврат с чужим и своим operation_id, права anon/service_role.
+Решения (Сергей 12.10): награда «1 матч» сделана как +1 бонусный разбор любого матча, не Match Pass (Match Pass привязан к матчу и учитывается как покупка за звёзды); засчитывается после первого разбора друга; другу тоже +1.
+Осталось / внимание: миграция v6.29.17 применена в прод 12.10 (после «да» Сергея); прод v2 `af06ba7b6d944750f312e5cbfd4b5f20`, чистая установка `0169ec29ea39da9d085040ed825057a6`. До деплоя старый воркер показывает в мониторе «schema drift» — проходит после слияния. Бонус тратится только когда дневной лимит исчерпан; Pass/подписка не затрагиваются.
 ## 2026-10-12 — Claude — Карточка «AI угадал»
 PR: [#866](https://github.com/TRAP44/football-analytics-cloudflare/pull/866), ветка `claude/ai-guessed-card`
 Сделано:

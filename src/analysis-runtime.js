@@ -99,9 +99,14 @@ export function createAnalysisRuntime(deps) {
     refereeProfile,
     refundAnalysisQuota,
     refundEntitlementUsage,
+    grantReferralRewards,
+    hasReferralBonus,
+    commitReferralBonus,
+    refundReferralBonus,
     releaseDistributedAnalysisLock,
     reserveAnalysisQuota,
     reserveEntitlementUsage,
+    reserveReferralBonus,
     resolveUserEntitlements,
     sanitizeAvailabilityRows,
     saveOddsSnapshot,
@@ -615,6 +620,17 @@ export function createAnalysisRuntime(deps) {
         if (pending && typeof pending.catch==='function') void pending.catch(()=>null);
       } catch {}
     };
+    // Приглашённый пользователь открыл разбор — проверить награду (в фоне).
+    const scheduleReferralReward=()=>{
+      if (system || userId === null || typeof grantReferralRewards !== 'function') return;
+      let task=null;
+      try { task=grantReferralRewards(userId,cfg); } catch { return; }
+      if (!task || typeof task.catch !== 'function') return;
+      const guarded=task.catch(()=>null);
+      try {
+        if (typeof cfg?.waitUntil === 'function') cfg.waitUntil(guarded);
+      } catch {}
+    };
     const safeRecordHistory=async payload=>{
       if (system) return;
       try { await recordHistory(userId,payload,cfg); } catch {}
@@ -760,6 +776,7 @@ export function createAnalysisRuntime(deps) {
           },
         );
         await recordTrackedFullAiOutcome('cached');
+        scheduleReferralReward();
         return json(safeAnalysisResponsePayload(cached,{cached:true,stale:false,recheck:{requested:recheckRequested,performed:false,free:false,reasonCode:recheckReasonCode},newsImpact,quota:await quotaSnapshotForResponse(userId,cfg,null)}));
       }
     }
@@ -805,11 +822,22 @@ export function createAnalysisRuntime(deps) {
       },503,'quota_unavailable',{'retry-after':'30'});
     }
     if (!freeRecheck && !passCandidate && quotaBefore.left<=0) {
-      return await trackedFullAiFailureResponse({
-        error:`Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`,
-        code:'ANALYSIS_QUOTA_EXHAUSTED',
-        quota:quotaBefore,
-      },429,'quota_exhausted');
+      // Дневной лимит исчерпан, но есть бонус за приглашение — идём к резерву.
+      let referralBonusPending=false;
+      if (typeof hasReferralBonus === 'function') {
+        try {
+          referralBonusPending=(await hasReferralBonus(userId,cfg)) === true;
+        } catch {
+          referralBonusPending=false;
+        }
+      }
+      if (!referralBonusPending) {
+        return await trackedFullAiFailureResponse({
+          error:`Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`,
+          code:'ANALYSIS_QUOTA_EXHAUSTED',
+          quota:quotaBefore,
+        },429,'quota_exhausted');
+      }
     }
     }
   
@@ -848,6 +876,7 @@ export function createAnalysisRuntime(deps) {
           });
         }
         await recordTrackedFullAiOutcome('shared');
+        scheduleReferralReward();
         return json(safeAnalysisResponsePayload(joined,{cached:true,stale:false,sharedJoin:true,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_shared' : (previousFreshness?.reasonCode || 'shared_compute')},quota:await quotaSnapshotForResponse(userId,cfg,quotaBefore)}));
       }
       if (staleBefore) {
@@ -860,6 +889,7 @@ export function createAnalysisRuntime(deps) {
   
     let usageReservation=null;
     let passUsageReservation=null;
+    let bonusReservation=null;
     let usageCommitted=false;
     try {
     let passAccess=false;
@@ -902,7 +932,23 @@ export function createAnalysisRuntime(deps) {
           quota:quotaBefore,
         },503,'quota_reservation_invalid',{'retry-after':'30'});
       }
-      if (usageReservation.allowed !== true) {
+      // Дневной лимит исчерпан — бонусный разбор за приглашение, если есть.
+      if (usageReservation.allowed !== true && typeof reserveReferralBonus === 'function') {
+        try {
+          bonusReservation=objectValue(await reserveReferralBonus(userId,cfg));
+        } catch (error) {
+          bonusReservation=null;
+          await recordOpsEvent(cfg,{
+            severity:'warning',
+            source:'quota',
+            eventType:'analysis_usage_reservation',
+            code:'REFERRAL_BONUS_RESERVATION_FAILED',
+            message:'Referral bonus reservation failed; the daily limit response is returned.',
+            meta:{error:safeText(error?.message || error,180) || 'unknown_error'},
+          }).catch(()=>null);
+        }
+      }
+      if (usageReservation.allowed !== true && bonusReservation?.allowed !== true) {
         const rejectedQuota=quotaSnapshot(usageReservation,quotaBefore) || quotaBefore;
         return await trackedFullAiFailureResponse({
           error:`Лимит исчерпан: ${rejectedQuota.used}/${rejectedQuota.limit} анализов сегодня.`,
@@ -2208,6 +2254,7 @@ export function createAnalysisRuntime(deps) {
     }
 
     await recordTrackedFullAiOutcome('fresh');
+    scheduleReferralReward();
     const responseQuotaFallback=reservationQuotaSnapshot(
       usageReservation,
       quotaBefore,
@@ -2290,6 +2337,34 @@ export function createAnalysisRuntime(deps) {
               },
             }).catch(()=>null);
           }
+        }
+      }
+
+      // Бонус за приглашение: разбор выдан — commit, иначе — возврат. Если
+      // ни то ни другое не подтвердилось, незакоммиченный резерв вернётся сам
+      // через 15 минут (referral-rewards-runtime, releaseStaleReservations).
+      if (bonusReservation?.reserved && usageCommitted && typeof commitReferralBonus === 'function') {
+        try {
+          const commit=objectValue(await commitReferralBonus(userId,bonusReservation,cfg));
+          if (commit?.committed !== true) throw new Error(safeText(commit?.reason,120) || 'referral_bonus_commit_not_confirmed');
+        } catch (error) {
+          await logFinalizationFailure(
+            'REFERRAL_BONUS_COMMIT_FAILED',
+            error,
+            {rewardId:positiveSafeInteger(bonusReservation.rewardId)},
+          );
+        }
+      }
+      if (bonusReservation?.reserved && !usageCommitted && typeof refundReferralBonus === 'function') {
+        try {
+          const refund=objectValue(await refundReferralBonus(userId,bonusReservation,cfg));
+          if (refund?.refunded !== true) throw new Error(safeText(refund?.reason,120) || 'referral_bonus_refund_not_confirmed');
+        } catch (error) {
+          await logFinalizationFailure(
+            'REFERRAL_BONUS_REFUND_FAILED',
+            error,
+            {rewardId:positiveSafeInteger(bonusReservation.rewardId)},
+          );
         }
       }
 
