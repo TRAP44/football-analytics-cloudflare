@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-12 — Claude — Чистка стилей после «только янтарь»
-PR: ветка `claude/css-cleanup-ocean-accents`
+PR: [#855](https://github.com/TRAP44/football-analytics-cloudflare/pull/855), ветка `claude/css-cleanup-ocean-accents`
 Сделано:
 - `public/styles.css`, `public/styles/premium-ui.css`, `public/styles/public-shell.css`: удалены `:root[data-theme="ocean"]`, `html[data-theme="ocean"] .miniapp-public-shell`, `.theme-preview.ocean`, все `.accent-option(s)` / `.accent-swatch` и неиспользуемый `.appearance-help`. Разметки и JS эти стили после #845 не касались.
 - Тесты, которые проверяли наличие этих стилей, переписаны на их отсутствие. Ревизия — launch106.
