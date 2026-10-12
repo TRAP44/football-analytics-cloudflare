@@ -16,6 +16,9 @@ const LIVE_STATUSES = new Set(['1H', 'HT', '2H']);
 const MAX_LIVE_FIXTURES = 60;
 const MAX_SNAPSHOTS_PER_FIXTURE = 60;
 const MIN_SHIFT_POINTS = 1;
+const LATE_WINDOW_HOURS = 4;
+const LATE_WINDOW_MS = LATE_WINDOW_HOURS * 3600_000;
+const LATE_FINAL_STATUSES = new Set(['FT', 'AET', 'PEN', 'PST', 'CANC', 'ABD', 'AWD', 'WO']);
 export const IN_PLAY_SNAPSHOT_PREFIX = 'in-play:';
 export const IN_PLAY_PROVENANCE_SOURCE = 'in_play_model';
 
@@ -130,18 +133,55 @@ export function createInPlayTimelineJob(deps = {}) {
 
   // Пакет матчей дня: свежий кеш; если устарел и бюджет источника позволяет —
   // один запрос /fixtures?date (он же обновит кеш для приложения).
-  async function liveFixtures(date, cfg, allowNetwork) {
-    let rows = [];
+  async function dayRows(date, cfg, allowNetwork) {
     try {
       const cached = plainObject(await getCache(RAW_FIXTURES_CACHE_KEY(date), cfg));
-      if (cached && Array.isArray(cached.fixtures) && (!cached.date || cached.date === date)) rows = cached.fixtures;
-      else if (allowNetwork) rows = await loadProviderFixturesForDate(date, cfg, { allowNetwork: true });
+      if (cached && Array.isArray(cached.fixtures) && (!cached.date || cached.date === date)) return cached.fixtures;
+      if (allowNetwork) {
+        const rows = await loadProviderFixturesForDate(date, cfg, { allowNetwork: true });
+        return Array.isArray(rows) ? rows : [];
+      }
+    } catch {}
+    return [];
+  }
+
+  // Матч, начавшийся до полуночи UTC, лежит в пакете вчерашнего дня, а его кеш
+  // живёт до 12 часов — счёт там устаревает. В первые часы суток UTC, если во
+  // вчерашнем пакете есть недоигранный матч, начавшийся за последние 4 часа,
+  // пакет обновляется одним запросом (только при доступном бюджете).
+  async function lateRows(date, cfg, allowNetwork, nowMs) {
+    if (!allowNetwork) return [];
+    let cached = [];
+    try {
+      const value = plainObject(await getCache(RAW_FIXTURES_CACHE_KEY(date), cfg));
+      cached = value && Array.isArray(value.fixtures) ? value.fixtures : [];
     } catch {
-      rows = [];
+      cached = [];
+    }
+    const pending = cached.some(row => {
+      const fixture = plainObject(safeRead(row, 'fixture')) || {};
+      const code = String(safeRead(plainObject(fixture.status), 'short') || '').toUpperCase();
+      const kickoff = Date.parse(String(fixture.date || ''));
+      return !LATE_FINAL_STATUSES.has(code) && Number.isFinite(kickoff) && kickoff <= nowMs && nowMs - kickoff <= LATE_WINDOW_MS;
+    });
+    if (!pending) return [];
+    try {
+      const rows = await loadProviderFixturesForDate(date, cfg, { allowNetwork: true, forceRefresh: true });
+      return Array.isArray(rows) ? rows : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async function liveFixtures(nowMs, cfg, allowNetwork) {
+    const today = new Date(nowMs).toISOString().slice(0, 10);
+    const rows = [...await dayRows(today, cfg, allowNetwork)];
+    if (new Date(nowMs).getUTCHours() < LATE_WINDOW_HOURS) {
+      rows.push(...await lateRows(new Date(nowMs - 86400_000).toISOString().slice(0, 10), cfg, allowNetwork, nowMs));
     }
     const seen = new Set();
     const result = [];
-    for (const row of Array.isArray(rows) ? rows : []) {
+    for (const row of rows) {
       const state = liveFixtureState(row);
       if (!state || seen.has(state.fixtureId)) continue;
       seen.add(state.fixtureId);
@@ -216,7 +256,7 @@ export function createInPlayTimelineJob(deps = {}) {
     } catch {
       budget = { allowed: false };
     }
-    const live = await liveFixtures(new Date(at.getTime()).toISOString().slice(0, 10), cfg, budget.allowed === true);
+    const live = await liveFixtures(at.getTime(), cfg, budget.allowed === true);
     summary.live = live.length;
     if (!live.length) return { ...summary, reason: 'no_live_matches' };
 

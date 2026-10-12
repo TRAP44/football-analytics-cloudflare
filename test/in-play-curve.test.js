@@ -165,3 +165,46 @@ test('the in-play task runs with the other background tasks', () => {
   const worker = fs.readFileSync('src/worker.js', 'utf8');
   assert.match(worker, /createInPlayTimelineJob\(\{/);
 });
+
+test('codex #847: first-half stoppage time does not eat into the second half', () => {
+  const stoppage = inPlayProbabilities({ prematch: pre, homeGoals: 0, awayGoals: 0, minute: matchMinuteFromFixture('1H', 45, 5), status: '1H' });
+  assert.deepEqual(stoppage, at(0, 0, 45, 'HT'));
+  assert.notDeepEqual(stoppage, at(0, 0, 50, '2H'));
+});
+
+test('codex #847: a match that kicked off before midnight UTC keeps getting points', async () => {
+  const yesterday = '2026-10-11';
+  const lateKickoff = { ...liveRow(11, 1, 1, 80), fixture: { id: 11, date: '2026-10-11T23:00:00.000Z', status: { short: '2H', elapsed: 80 } } };
+  const staleLate = { ...lateKickoff, goals: { home: 0, away: 0 }, fixture: { ...lateKickoff.fixture, status: { short: '1H', elapsed: 20 } } };
+  const refreshed = [];
+  const inserted = [];
+  const job = createInPlayTimelineJob({
+    clock: () => Date.parse('2026-10-12T00:25:00.000Z'),
+    getCache: async key => (key.includes(yesterday) ? { date: yesterday, fixtures: [staleLate] } : { date: '2026-10-12', fixtures: [] }),
+    getModelProbabilities: async ids => Object.fromEntries(ids.map(id => [id, pre])),
+    hasSupabase: () => true,
+    loadProviderFixturesForDate: async (date, _cfg, options) => { refreshed.push({ date, ...options }); return [lateKickoff]; },
+    providerSnapshot: () => ({ plan: 'PRO' }),
+    supaInsertIgnore: async (_cfg, _table, row) => { inserted.push(row); },
+    supaSelectMany: async () => [],
+  });
+  const result = await job.processInPlayTimeline({}, new Date('2026-10-12T00:25:00.000Z'));
+  assert.deepEqual(refreshed, [{ date: yesterday, allowNetwork: true, forceRefresh: true }]);
+  assert.equal(result.written, 1);
+  assert.equal(inserted[0].match_minute, 80, 'fresh score and minute, not the stale cache');
+
+  // Днём вчерашний пакет не трогается.
+  refreshed.length = 0;
+  const daytime = createInPlayTimelineJob({
+    clock: () => Date.parse('2026-10-12T15:00:00.000Z'),
+    getCache: async () => ({ date: '2026-10-12', fixtures: [] }),
+    getModelProbabilities: async () => ({}),
+    hasSupabase: () => true,
+    loadProviderFixturesForDate: async (date) => { refreshed.push(date); return []; },
+    providerSnapshot: () => ({ plan: 'PRO' }),
+    supaInsertIgnore: async () => {},
+    supaSelectMany: async () => [],
+  });
+  await daytime.processInPlayTimeline({}, new Date('2026-10-12T15:00:00.000Z'));
+  assert.deepEqual(refreshed, []);
+});

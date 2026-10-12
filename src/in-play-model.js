@@ -11,6 +11,7 @@
 // Для дополнительного времени и серии пенальти оценка не строится.
 
 const REGULATION_MINUTES = 90;
+const HALF_MINUTES = 45;
 const MAX_GOALS = 12;
 const LAMBDA_MIN = 0.02;
 const LAMBDA_MAX = 6;
@@ -145,7 +146,10 @@ export function inPlayProbabilities({ prematch, homeGoals, awayGoals, minute, st
     if (!(kickoff[key] > 0.001)) return null;
     weights[key] = Math.min(3, Math.max(1 / 3, pre[key] / kickoff[key]));
   }
-  const remaining = Math.max(MIN_REMAINING_MINUTES, REGULATION_MINUTES - Math.min(played, REGULATION_MINUTES));
+  // Добавленное время первого тайма не съедает второй тайм: в 1H прогресс
+  // основного времени — не больше 45 минут.
+  const progress = code === '1H' ? Math.min(played, HALF_MINUTES) : code === 'HT' ? HALF_MINUTES : played;
+  const remaining = Math.max(MIN_REMAINING_MINUTES, REGULATION_MINUTES - Math.min(progress, REGULATION_MINUTES));
   const share = remaining / REGULATION_MINUTES;
   const raw = outcomeProbabilities(lambdas.home * share, lambdas.away * share, goalsHome, goalsAway);
   return percentSet({
