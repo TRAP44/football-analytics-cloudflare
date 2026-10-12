@@ -16,7 +16,7 @@ _пусто_
 
 ## На ревью
 
-- [ ] «Перелом матча» (решение Сергея 13.10): фаворит до матча потерял ≥ 25 п. п. по ходу игры, а лидером оценки стал соперник → личное сообщение (напоминание на матч — `match.swing`, любимая команда — `team.swing`, один раз на матч) и пост в канал (главные турниры, ≤ 3 в день МСК). Канал выключен (`CHANNEL_SWING_POST_ENABLED=false`) — пока предпросмотр `CHANNEL_SWING_POST_PREVIEW` в `ops_events` — **Claude** — PR: ветка `claude/match-swing` — ревью: Codex
+- [ ] «Перелом матча» (решение Сергея 13.10): фаворит до матча потерял ≥ 25 п. п. по ходу игры, а лидером оценки стал соперник → личное сообщение (напоминание на матч — `match.swing`, любимая команда — `team.swing`, один раз на матч) и пост в канал (главные турниры, ≤ 3 в день МСК). Канал выключен (`CHANNEL_SWING_POST_ENABLED=false`) — пока предпросмотр `CHANNEL_SWING_POST_PREVIEW` в `ops_events` — **Claude** — [PR #869](https://github.com/TRAP44/football-analytics-cloudflare/pull/869) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 ## Готово
