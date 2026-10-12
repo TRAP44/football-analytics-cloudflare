@@ -16,6 +16,7 @@ _пусто_
 
 ## На ревью
 
+- [ ] Монитор прода: ложная тревога «schema_fingerprint» — сверял замороженный отпечаток v1 с ожидаемым v2; теперь проверяет `backend_schema_contract_v2` по списку совместимых отпечатков — **Claude** — [PR #851](https://github.com/TRAP44/football-analytics-cloudflare/pull/851) — ревью: Codex
 - [ ] Исправления по повторному ревью Codex #836 и #839: снимок NS после задержки старта остаётся «до матча»; неподтверждённый состав помечен на поле; запасные видны без стартовых составов — **Claude** — [PR #848](https://github.com/TRAP44/football-analytics-cloudflare/pull/848) — ревью: Codex
 - [ ] Оформление: только фирменный янтарный акцент и темы «Тёмная» / «Светлая» (или как в Telegram) — выбор акцента и тема «Океан» убраны, старые сохранённые выборы сбрасываются к янтарю — **Claude** (решение Сергея 12.10) — [PR #845](https://github.com/TRAP44/football-analytics-cloudflare/pull/845) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
