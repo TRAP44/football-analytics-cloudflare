@@ -2053,6 +2053,7 @@ function getSupabaseSchemaRuntime() {
   if (!supabaseSchemaRuntime) {
     supabaseSchemaRuntime = createSupabaseSchemaRuntime({
       EXPECTED_SCHEMA_FINGERPRINT,
+      COMPATIBLE_SCHEMA_FINGERPRINTS,
       PERSONAL_WRITE_LIMITS,
       bumpTelemetry,
       fetchWithTimeout,

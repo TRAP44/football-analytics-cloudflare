@@ -22,6 +22,32 @@ PR: [#854](https://github.com/TRAP44/football-analytics-cloudflare/pull/854), в
 - Подпись кривой: «…по счёту, оставшемуся времени и удалениям (после красной карточки ожидаемые голы команды ×0.75, соперника ×1.9 — по средним оценкам исследований); ход игры она не учитывает.» Ревизия — launch105 (launch104 у #853).
 Осталось / внимание:
 - Параметр `ids` у `/fixtures` через ретранслятор Supabase в проде ещё не вызывался; при ошибке модель просто работает без новых удалений (последние известные сохраняются). Проверить вечером `provenance.reds.source = events` у точек.
+## 2026-10-12 — Claude — Оценка по ходу матча в Штабе матча
+PR: [#853](https://github.com/TRAP44/football-analytics-cloudflare/pull/853), ветка `claude/live-estimate-match-center`
+Сделано:
+- `public/modules/match-center-view.js`: `latestInPlayEstimate(timeline)` берёт самую новую точку кривой с `provenance.source = in_play_model` (сумма 100 ± 1.2), `inPlayEstimateHtml` — карточка «Сейчас по ходу матча» (минута, счёт, 1/X/2, полоска в цветах кривой, подпись о том, что учитывается). Только для LIVE, во вкладке AI над «Честностью модели». Новых цифр не считает — только показывает сохранённую сервером точку.
+- `public/app.js`: в полном разборе во время матча под «Наиболее вероятный исход» — «Оценка по данным до матча — счёт её не меняет. Оценка по ходу матча — в Штабе матча.»
+- Ревизия — launch104.
+Решения:
+- Вероятности в самом разборе не подменял: это сохранённый разбор пользователя, его цифры остаются как были, но честно подписаны.
+Осталось / внимание:
+- Карточки на главной во время матча по-прежнему показывают предматчевые вероятности (`aiProbabilities` из `model_predictions`) — можно так же подписать или заменить последней точкой, если Сергей захочет.
+## 2026-10-12 — Claude — Больше предматчевых прогнозов
+PR: [#852](https://github.com/TRAP44/football-analytics-cloudflare/pull/852), ветка `claude/prematch-limit-60`
+Сделано:
+- `wrangler.jsonc` (их же читает запуск фоновых задач в GitHub) и `.env.example`: `PREMATCH_PREDICTIONS_DAILY_LIMIT` 20 → 60, `PREMATCH_PREDICTIONS_PER_RUN` 2 → 3 (интервал прежний — 30 минут). Значения по умолчанию в коде не менял.
+Решения:
+- На 12.10 в `model_predictions` всего 5 строк: фоновые задачи почти не работали с 9.10, а потолок 20 в сутки мал для ленты. Тариф Pro — 7500 запросов в сутки; системный разбор матча тратит порядка десятка запросов (часть данных из кеша), то есть до ~600–900 в сутки на прогнозы — в пределах. Бюджет по-прежнему стерегут `providerBudgetDecision` и суточный потолок (`claimDailyBudget`).
+Осталось / внимание:
+- Через сутки посмотреть `ops_events` `PREMATCH_PREDICTIONS_RUN`: сколько посчитано и не упираемся ли в лимит источника.
+## 2026-10-12 — Claude — Монитор прода: ложная тревога о схеме
+PR: [#851](https://github.com/TRAP44/football-analytics-cloudflare/pull/851), ветка `claude/monitor-schema-fingerprint`
+Сделано:
+- Как только фоновые задачи снова пошли (GitHub, 12.10), монитор каждые 15 минут поднимал `PRODUCTION_MONITOR_INCIDENT` (critical): `schemaMissing: ["schema_fingerprint"]`, при `releaseScore: 100`.
+- Причина: `readSupabaseSchemaFingerprint` вызывал `backend_schema_fingerprint()` — замороженную функцию совместимости v1 (в проде 2557…, это `legacyFingerprint` из `release-contract.json`), а сравнивал с `EXPECTED_SCHEMA_FINGERPRINT` — отпечатком контракта v2 (f3d899…). Схема в порядке: `backend_schema_contract_v2()` в проде = f3d899…, миграции — до v6_29_14. До 9.10 тревоги не было видно, потому что cron не доходил до монитора.
+- Теперь монитор вызывает `backend_schema_contract_v2()` и принимает отпечатки из `COMPATIBLE_SCHEMA_FINGERPRINTS` (как готовность `/health`). Тест `test/monitor-schema-fingerprint-v2.test.js`.
+Осталось / внимание:
+- `DAILY_DIGEST_SLO_MISSING_RUN` 12.10 — следствие простоя фоновых задач; проверить вечером, что итоги дня пошли.
 
 ## 2026-10-12 — Claude — Исправления по повторному ревью Codex #836 и #839
 PR: [#848](https://github.com/TRAP44/football-analytics-cloudflare/pull/848), ветка `claude/codex-fixes-836-839`

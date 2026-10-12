@@ -2513,3 +2513,15 @@ html[data-theme] body.miniapp-public-shell .lp-bench p { margin: 6px 0 0; font-s
   html[data-theme] body.miniapp-public-shell .lp-pitch { aspect-ratio: 4 / 4.2; }
   html[data-theme] body.miniapp-public-shell .lp-benches { grid-template-columns: 1fr 1fr; }
 }
+
+/* Задача 3 (часть 2): оценка по ходу матча в Штабе матча. Цвета — как у кривой. */
+html[data-theme] body.miniapp-public-shell .mr-inplay-values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 10px 0 8px; }
+html[data-theme] body.miniapp-public-shell .mr-inplay-values > div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+html[data-theme] body.miniapp-public-shell .mr-inplay-values span { font-size: 12px; color: var(--hint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-theme] body.miniapp-public-shell .mr-inplay-values strong { font-size: 18px; color: var(--text); font-variant-numeric: tabular-nums; }
+html[data-theme] body.miniapp-public-shell .mr-inplay-bar { display: flex; gap: 3px; height: 8px; border-radius: 999px; overflow: hidden; }
+html[data-theme] body.miniapp-public-shell .mr-inplay-bar i { display: block; min-width: 0; flex-basis: 0; }
+html[data-theme] body.miniapp-public-shell .mr-inplay-bar .home { background: var(--accent); }
+html[data-theme] body.miniapp-public-shell .mr-inplay-bar .draw { background: #a7b0bf; }
+html[data-theme] body.miniapp-public-shell .mr-inplay-bar .away { background: #60a5fa; }
+html[data-theme] body.miniapp-public-shell .experience-prematch-note { display: block; margin-top: 4px; font-size: 12px; color: var(--hint); }

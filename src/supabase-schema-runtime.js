@@ -6,6 +6,7 @@ export function createSupabaseSchemaRuntime(deps) {
   }
   const {
     EXPECTED_SCHEMA_FINGERPRINT,
+    COMPATIBLE_SCHEMA_FINGERPRINTS,
     PERSONAL_WRITE_LIMITS,
     bumpTelemetry,
     fetchWithTimeout,
@@ -16,6 +17,10 @@ export function createSupabaseSchemaRuntime(deps) {
     supaHeaders,
     supaRpc,
   } = deps;
+
+  const compatibleFingerprints=Array.isArray(COMPATIBLE_SCHEMA_FINGERPRINTS) && COMPATIBLE_SCHEMA_FINGERPRINTS.length
+    ? COMPATIBLE_SCHEMA_FINGERPRINTS.map(String)
+    : [String(EXPECTED_SCHEMA_FINGERPRINT || '')];
 
   async function probeOptionalTable(cfg, table) {
     if (!hasSupabase(cfg)) return { ok: false, status: 'not_configured' };
@@ -66,11 +71,16 @@ export function createSupabaseSchemaRuntime(deps) {
   async function readSupabaseSchemaFingerprint(cfg) {
     if (!hasSupabase(cfg)) return { ok:false, status:'not_configured', fingerprint:'', expected:EXPECTED_SCHEMA_FINGERPRINT };
     try {
-      const raw=await supaRpc(cfg,'backend_schema_fingerprint',{},4000);
+      // EXPECTED_SCHEMA_FINGERPRINT — отпечаток контракта v2. Старая функция
+      // backend_schema_fingerprint() заморожена как совместимость v1 и считает
+      // другой отпечаток, поэтому сравнивать её с ожидаемым v2 нельзя: монитор
+      // поднимал ложную тревогу «schema_fingerprint» при здоровой схеме.
+      const raw=await supaRpc(cfg,'backend_schema_contract_v2',{},4000);
       const fingerprint=String(raw?.fingerprint || '');
+      const known=compatibleFingerprints.includes(fingerprint);
       return {
-        ok:raw?.ok === true && fingerprint===EXPECTED_SCHEMA_FINGERPRINT,
-        status:fingerprint===EXPECTED_SCHEMA_FINGERPRINT ? (raw?.ok === true ? 'ok' : 'fingerprint_unconfirmed') : 'fingerprint_mismatch',
+        ok:raw?.ok === true && known,
+        status:known ? (raw?.ok === true ? 'ok' : 'fingerprint_unconfirmed') : 'fingerprint_mismatch',
         fingerprint,
         expected:EXPECTED_SCHEMA_FINGERPRINT,
         parts:Number(raw?.parts || 0),
