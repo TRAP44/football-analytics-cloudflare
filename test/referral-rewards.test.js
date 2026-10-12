@@ -171,3 +171,49 @@ test('migration: private table, atomic grant with new-user check and monthly cap
   const rewardsPart = sql.slice(0, sql.indexOf('create or replace function public.backend_schema_fingerprint()'));
   assert.doesNotMatch(rewardsPart, /stars_amount|user_entitlements|billing_payments/, 'rewards are not purchases');
 });
+
+// Ревью Codex #868: потерянный ответ резерва не оставляет бонус списанным.
+test('a lost reservation response is recovered by operation id and the bonus is returned', async () => {
+  const make = ({ lookup }) => {
+    const calls = [];
+    const ops = [];
+    const rt = createReferralRewardsRuntime({
+      ensureReferralCode: async () => CODE,
+      hasSupabase: () => true,
+      json,
+      memory: {},
+      recordGrowthEvent: async () => {},
+      recordOpsEvent: async (_cfg, event) => { ops.push(event); },
+      supaRpc: async (_cfg, name, params) => {
+        calls.push({ name, params });
+        if (name === 'reserve_referral_bonus') throw new Error('timeout after commit');
+        return { refunded: true, reason: 'refunded' };
+      },
+      supaSelectMany: async (_cfg, _table, filters) => {
+        calls.push({ name: 'select', filters });
+        return lookup(filters);
+      },
+      telegramBotUsername: async () => 'MatchRadarBot',
+    });
+    return { rt, calls, ops };
+  };
+
+  const committed = make({ lookup: () => [{ id: 31 }] });
+  const result = await committed.rt.reserveReferralBonus(5, {});
+  assert.equal(result.allowed, false);
+  assert.equal(result.reason, 'rpc_failed');
+  const operationId = committed.calls[0].params.p_operation_id;
+  assert.equal(committed.calls[1].filters.operation_id, `eq.${operationId}`);
+  assert.deepEqual(committed.calls[2], { name: 'refund_referral_bonus', params: { p_telegram_id: 5, p_reward_id: 31, p_operation_id: operationId } });
+  assert.equal(committed.ops[0].code, 'REFERRAL_BONUS_RESERVATION_RECOVERED');
+
+  const notCommitted = make({ lookup: () => [] });
+  await notCommitted.rt.reserveReferralBonus(5, {});
+  assert.equal(notCommitted.calls.filter(call => call.name === 'refund_referral_bonus').length, 0);
+  assert.equal(notCommitted.ops[0].code, 'REFERRAL_BONUS_RESERVATION_RECOVERED');
+
+  const unreachable = make({ lookup: () => { throw new Error('down'); } });
+  await unreachable.rt.reserveReferralBonus(5, {});
+  assert.equal(unreachable.ops[0].code, 'REFERRAL_BONUS_RESERVATION_OUTCOME_UNKNOWN');
+  assert.equal(unreachable.ops[0].meta.operationId, unreachable.calls[0].params.p_operation_id);
+});

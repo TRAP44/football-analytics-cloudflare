@@ -121,12 +121,48 @@ export function createReferralRewardsRuntime(deps = {}) {
     return { granted: true, referrerGranted };
   }
 
+  async function reportOps(cfg, event) {
+    if (typeof recordOpsEvent !== 'function') return;
+    await Promise.resolve()
+      .then(() => recordOpsEvent(cfg, { source: 'quota', eventType: 'referral_bonus_reservation', ...event }))
+      .catch(() => null);
+  }
+
+  // true — зафиксированного резерва с этим operation_id нет или он возвращён.
+  async function recoverAmbiguousReservation(id, operationId, cfg) {
+    try {
+      const rows = await supaSelectMany(cfg, 'referral_rewards', { telegram_id: `eq.${id}`, operation_id: `eq.${operationId}`, status: 'eq.used' }, { limit: 1, select: 'id' });
+      if (!Array.isArray(rows)) return false;
+      const rewardId = positiveId(safeRead(rows[0], 'id'));
+      if (!rewardId) return true;
+      const refund = plainObject(await supaRpc(cfg, 'refund_referral_bonus', { p_telegram_id: id, p_reward_id: rewardId, p_operation_id: operationId }));
+      return safeRead(refund, 'refunded') === true;
+    } catch {
+      return false;
+    }
+  }
+
   /** Бонусный разбор, когда дневной лимит исчерпан. */
   async function reserveReferralBonus(userId, cfg) {
     const id = positiveId(userId);
     if (!id || !storageReady(cfg)) return { reserved: false, allowed: false, kind: 'bonus', reason: 'unavailable' };
     const operationId = crypto.randomUUID();
-    const result = plainObject(await supaRpc(cfg, 'reserve_referral_bonus', { p_telegram_id: id, p_operation_id: operationId }));
+    let result;
+    try {
+      result = plainObject(await supaRpc(cfg, 'reserve_referral_bonus', { p_telegram_id: id, p_operation_id: operationId }));
+    } catch (error) {
+      // Ответ потерян: резерв мог зафиксироваться. Ищем его по operation_id и возвращаем.
+      const recovered = await recoverAmbiguousReservation(id, operationId, cfg);
+      await reportOps(cfg, {
+        severity: recovered ? 'warning' : 'error',
+        code: recovered ? 'REFERRAL_BONUS_RESERVATION_RECOVERED' : 'REFERRAL_BONUS_RESERVATION_OUTCOME_UNKNOWN',
+        message: recovered
+          ? 'Referral bonus reservation response was lost; the committed reservation was found by operation id and returned.'
+          : 'Referral bonus reservation response was lost and the reservation could not be checked; reconcile by operation id.',
+        meta: { telegramId: id, operationId, error: String(error?.message || error || 'unknown_error').slice(0, 180) },
+      });
+      return { reserved: false, allowed: false, kind: 'bonus', rewardId: null, operationId: null, remaining: 0, reason: 'rpc_failed' };
+    }
     const rewardId = positiveId(safeRead(result, 'rewardId'));
     const allowed = safeRead(result, 'allowed') === true && rewardId > 0;
     return {
