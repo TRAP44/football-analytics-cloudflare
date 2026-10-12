@@ -93,7 +93,15 @@ test('a settled match shows the result and the points of the user and of AI', as
   const settled = { ...upcoming, status: 'settled', actual_outcome: 'draw', settlement_verification_state: 'confirmed' };
   const { rt } = harness({ predictions: { 7: settled }, picks: [{ telegram_id: 5, fixture_id: 7, pick: 'draw' }] });
   const res = await rt.apiMatchPickGet(get(7), {}, user);
-  assert.deepEqual(res.body.result, { actual: 'draw', userPoint: 1, aiPoint: 0 });
+  assert.deepEqual(res.body.result, { actual: 'draw', userPoint: 1, aiPoint: 0, score: null, aiProbability: null, homeName: '', awayName: '', league: '' });
+  // Данные для карточки «AI угадал» — из того же проверенного снимка.
+  const full = harness({ predictions: { 7: { ...settled, actual_outcome: 'home', home_name: 'Спартак', away_name: 'Зенит', league_name: 'Премьер-лига', home_prob: 57.6, draw_prob: 24.1, away_prob: 18.3, actual_home_goals: 2, actual_away_goals: 1 } } });
+  const card = (await full.rt.apiMatchPickGet(get(7), {}, user)).body.result;
+  assert.deepEqual(card, { actual: 'home', userPoint: null, aiPoint: 1, score: { home: 2, away: 1 }, aiProbability: 58, homeName: 'Спартак', awayName: 'Зенит', league: 'Премьер-лига' });
+  const broken = harness({ predictions: { 7: { ...settled, home_prob: 90, draw_prob: 30, away_prob: 20, actual_home_goals: -1, actual_away_goals: 'x' } } });
+  const bad = (await broken.rt.apiMatchPickGet(get(7), {}, user)).body.result;
+  assert.equal(bad.aiProbability, null, 'broken sum — no number');
+  assert.equal(bad.score, null);
   assert.equal(res.body.open, false);
   // Итог ещё не прошёл проверку финальности — очков нет, «итог проверяется».
   for (const state of ['unverified', 'drift', null]) {
