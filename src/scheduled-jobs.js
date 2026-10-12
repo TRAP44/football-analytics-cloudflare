@@ -452,7 +452,12 @@ export function createScheduledJobsRuntime({
       .then(() => run('lineup_notifications', () => processLineupNotifications(cfg)));
     const importantChangeTask = lineupNotificationsTask
       .then(() => run('important_change_notifications', () => processImportantChangeNotifications(cfg)));
-    const smartNotificationsTask = importantChangeTask
+    // Задача 3 (часть 2): точки кривой по ходу матча — до уведомлений о голах,
+    // чтобы в уведомлении была оценка уже с новым счётом.
+    const inPlayTimelineTask = typeof processInPlayTimeline === 'function'
+      ? run('in_play_timeline', () => processInPlayTimeline(cfg, scheduledAt))
+      : null;
+    const smartNotificationsTask = Promise.all([importantChangeTask, inPlayTimelineTask])
       .then(() => run('smart_notifications', () => processSmartNotifications(cfg)));
     const digestWindow = isDailyDigestExecutionWindow(scheduledAt);
     const dailyDigestTask = digestWindow
@@ -469,10 +474,7 @@ export function createScheduledJobsRuntime({
       // Задача 2: вероятности модели заранее для главных матчей дня (сама держит интервал и потолки).
       ['prematch_predictions', remindersTask.then(() => run('prematch_predictions', () => processPrematchPredictions(cfg, scheduledAt)))],
     ];
-    // Задача 3 (часть 2): точки кривой 1/X/2 по ходу идущих матчей (счёт и минута).
-    if (typeof processInPlayTimeline === 'function') {
-      tasks.push(['in_play_timeline', run('in_play_timeline', () => processInPlayTimeline(cfg, scheduledAt))]);
-    }
+    if (inPlayTimelineTask) tasks.push(['in_play_timeline', inPlayTimelineTask]);
 
     if (scheduledAt.getUTCMinutes() % 15 === 0) {
       const monitorAfterReminders = remindersTask
