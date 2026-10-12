@@ -86,7 +86,7 @@ const PREDICTION = (fixtureId, over = {}) => ({
   home_name: 'Арсенал', away_name: 'Челси', home_prob: 58, draw_prob: 34, away_prob: 8, ...over,
 });
 
-function harness({ points = [POINT(1)], predictions = [PREDICTION(1)], reminders = [{ telegram_id: 5 }], favorites = [{ telegram_id: 5 }, { telegram_id: 6 }], top = true, remindersEnabled = true } = {}) {
+function harness({ points = [POINT(1)], predictions = [PREDICTION(1)], reminders = [{ telegram_id: 5 }], favorites = [{ telegram_id: 5 }, { telegram_id: 6 }], deliveries = [], truncated = [], top = true, remindersEnabled = true } = {}) {
   const store = claimStore();
   const delivered = [];
   const filtered = [];
@@ -107,9 +107,12 @@ function harness({ points = [POINT(1)], predictions = [PREDICTION(1)], reminders
       queries.push({ table, filters });
       if (table === 'analysis_timeline_snapshots') return points;
       if (table === 'model_predictions') return predictions;
-      if (table === 'match_reminders') return reminders;
-      if (table === 'favorites') return favorites;
       return [];
+    },
+    supaSelectPaged: async (_cfg, table, filters, options) => {
+      queries.push({ table, filters, options });
+      const rows = { match_reminders: reminders, favorites, smart_notification_deliveries: deliveries }[table] || [];
+      return { rows, truncated: truncated.includes(table) };
     },
   });
   return { job, store, delivered, filtered, ops, queries };
@@ -129,6 +132,8 @@ test('personal: reminder holders get match.swing, fans of either team team.swing
   assert.equal(points.filters.snapshot_key, 'like.in-play:*');
   assert.equal(points.filters.captured_at, `gte.${new Date(NOW - MATCH_SWING_POLICY.maxPointAgeMs).toISOString()}`);
   assert.equal(queries.find(query => query.table === 'favorites').filters.team_id, 'in.(10,20)');
+  assert.equal(queries.find(query => query.table === 'favorites').options.maxRows, MATCH_SWING_POLICY.maxRecipientsPerFixture);
+  assert.deepEqual(queries.find(query => query.table === 'smart_notification_deliveries').filters, { fixture_id: 'eq.1', event_type: 'in.("match.swing","team.swing")' });
 
   const off = harness({ remindersEnabled: false });
   await off.job.processMatchSwings({}, new Date(NOW));
@@ -195,4 +200,31 @@ test('wiring: channel posts off by default, job runs after the in-play points ar
   assert.match(jobs, /tasks\.push\(\['match_swing', inPlayTimelineTask\.then\(\(\) => run\('match_swing', \(\) => processMatchSwings\(cfg, scheduledAt\)\)\)\]\);/);
   const worker = fs.readFileSync('src/worker.js', 'utf8');
   assert.match(worker, /deliverSmartNotification: \(\.\.\.args\) => deliverSmartNotification\(\.\.\.args\),/);
+});
+
+// Ревью Codex #869: одно сообщение о переломе на человека и матч — в любом из двух поводов.
+test('personal: a swing already delivered for one reason is not repeated for the other', async () => {
+  // 5 получил по напоминанию, потом снял его (остался болельщиком); 6 получил как болельщик, потом поставил напоминание.
+  const { job, delivered } = harness({
+    reminders: [{ telegram_id: 6 }, { telegram_id: 7 }],
+    favorites: [{ telegram_id: 5 }, { telegram_id: 8 }],
+    deliveries: [{ telegram_id: 5, event_type: 'match.swing' }, { telegram_id: 6, event_type: 'team.swing' }],
+  });
+  await job.processMatchSwings({}, new Date(NOW));
+  assert.deepEqual(delivered.map(item => [item.row.telegram_id, item.eventType]), [[7, 'match.swing'], [8, 'team.swing']]);
+
+  // Повтор того же повода (например, retry_pending) не отсекается — его решает дедупликация доставки.
+  const retry = harness({ reminders: [{ telegram_id: 5 }], favorites: [], deliveries: [{ telegram_id: 5, event_type: 'match.swing' }] });
+  await retry.job.processMatchSwings({}, new Date(NOW));
+  assert.deepEqual(retry.delivered.map(item => item.row.telegram_id), [5]);
+});
+
+test('personal: a truncated audience is reported, not silently dropped', async () => {
+  const { job, ops } = harness({ truncated: ['favorites'] });
+  const summary = await job.processMatchSwings({}, new Date(NOW));
+  assert.equal(summary.truncated, 1);
+  assert.equal(summary.ok, false);
+  const run = ops.find(event => event.eventType === 'match_swing_run');
+  assert.equal(run.code, 'MATCH_SWING_RUN_DEGRADED');
+  assert.match(run.message, /список получателей обрезан \(1\)/);
 });

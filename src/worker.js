@@ -1762,6 +1762,7 @@ function getMatchSwingJob() {
       recordOpsEvent,
       releaseIdempotency: (...args) => releaseChannelPublishIdempotency(...args),
       supaSelectMany,
+      supaSelectPaged,
     });
   }
   return matchSwingJob;

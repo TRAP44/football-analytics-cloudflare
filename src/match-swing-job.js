@@ -23,7 +23,7 @@ export const MATCH_SWING_POLICY = Object.freeze({
   maxPointAgeMs: 10 * 60_000,
   maxSwingsPerRun: 10,
   channelDailyCap: 3,
-  maxRecipientsPerFixture: 500,
+  maxRecipientsPerFixture: 10000,
 });
 
 const LIVE_STATUSES = new Set(['1H', 'HT', '2H']);
@@ -149,8 +149,9 @@ export function createMatchSwingJob(deps = {}) {
     recordOpsEvent,
     releaseIdempotency,
     supaSelectMany,
+    supaSelectPaged,
   } = deps;
-  for (const [name, fn] of Object.entries({ claimIdempotency, completeIdempotency, deliverSmartNotification, getCache, hasSupabase, releaseIdempotency, supaSelectMany })) {
+  for (const [name, fn] of Object.entries({ claimIdempotency, completeIdempotency, deliverSmartNotification, getCache, hasSupabase, releaseIdempotency, supaSelectMany, supaSelectPaged })) {
     if (typeof fn !== 'function') throw new TypeError(`Match swing job requires ${name}.`);
   }
 
@@ -226,32 +227,54 @@ export function createMatchSwingJob(deps = {}) {
     return result;
   }
 
+  // Все строки постранично (ревью Codex #869): без молчаливого обрезания.
+  async function allRows(cfg, table, params, summary) {
+    const page = await supaSelectPaged(cfg, table, params, {
+      pageSize: 1000,
+      maxRows: MATCH_SWING_POLICY.maxRecipientsPerFixture,
+      order: 'telegram_id.asc',
+    });
+    if (page?.truncated) summary.truncated += 1;
+    return Array.isArray(page?.rows) ? page.rows : [];
+  }
+
+  function userIds(rows) {
+    const ids = new Set();
+    for (const row of rows) {
+      const id = positiveId(safeRead(row, 'telegram_id'));
+      if (id) ids.add(id);
+    }
+    return ids;
+  }
+
   // Получатели: напоминание на матч (match.swing) и любимая команда (team.swing).
-  // Человек с тем и другим получает одно сообщение — по напоминанию.
-  async function personalAudience(match, cfg) {
-    const limit = MATCH_SWING_POLICY.maxRecipientsPerFixture;
+  // Один перелом — одно сообщение человеку на матч (ревью Codex #869): человек
+  // с тем и другим получает его по напоминанию, а тот, кому сообщение уже
+  // ушло по одному поводу, не получает его по другому (например, снял
+  // напоминание во время матча, но команда осталась любимой).
+  async function personalAudience(match, cfg, summary) {
     const base = { fixture_id: match.fixtureId, home_name: cleanName(match.homeName, 'Хозяева'), away_name: cleanName(match.awayName, 'Гости') };
-    const reminders = await supaSelectMany(cfg, 'match_reminders', { fixture_id: `eq.${match.fixtureId}`, enabled: 'eq.true' }, { limit, select: 'telegram_id' });
+    const reminders = userIds(await allRows(cfg, 'match_reminders', { fixture_id: `eq.${match.fixtureId}`, enabled: 'eq.true' }, summary));
     const teamIds = [match.homeId, match.awayId].filter(Boolean);
     const fans = teamIds.length
-      ? await supaSelectMany(cfg, 'favorites', { team_id: `in.(${teamIds.join(',')})` }, { limit, select: 'telegram_id' })
-      : [];
-    const byReminder = new Set();
-    const reminderRows = [];
-    for (const row of Array.isArray(reminders) ? reminders : []) {
-      const id = positiveId(safeRead(row, 'telegram_id'));
-      if (!id || byReminder.has(id)) continue;
-      byReminder.add(id);
-      reminderRows.push({ ...base, telegram_id: id });
-    }
-    const fanRows = [];
-    const seenFans = new Set();
-    for (const row of Array.isArray(fans) ? fans : []) {
-      const id = positiveId(safeRead(row, 'telegram_id'));
-      if (!id || byReminder.has(id) || seenFans.has(id)) continue;
-      seenFans.add(id);
-      fanRows.push({ ...base, telegram_id: id });
-    }
+      ? userIds(await allRows(cfg, 'favorites', { team_id: `in.(${teamIds.join(',')})` }, summary))
+      : new Set();
+    const delivered = await allRows(cfg, 'smart_notification_deliveries', {
+      fixture_id: `eq.${match.fixtureId}`,
+      event_type: 'in.("match.swing","team.swing")',
+    }, summary);
+    const deliveredAs = type => new Set(delivered
+      .filter(row => String(safeRead(row, 'event_type') || '') === type)
+      .map(row => positiveId(safeRead(row, 'telegram_id')))
+      .filter(Boolean));
+    const viaTeam = deliveredAs('team.swing');
+    const viaMatch = deliveredAs('match.swing');
+    const reminderRows = [...reminders]
+      .filter(id => !viaTeam.has(id))
+      .map(id => ({ ...base, telegram_id: id }));
+    const fanRows = [...fans]
+      .filter(id => !reminders.has(id) && !viaMatch.has(id))
+      .map(id => ({ ...base, telegram_id: id }));
     return [
       { eventType: 'match.swing', category: 'match', rows: reminderRows },
       { eventType: 'team.swing', category: 'teams', rows: fanRows },
@@ -261,7 +284,7 @@ export function createMatchSwingJob(deps = {}) {
   async function notifyPersonal(match, swing, cfg, summary) {
     let groups;
     try {
-      groups = await personalAudience(match, cfg);
+      groups = await personalAudience(match, cfg, summary);
     } catch {
       summary.failed += 1;
       return;
@@ -392,7 +415,7 @@ export function createMatchSwingJob(deps = {}) {
   }
 
   async function processMatchSwings(cfg, scheduledAt = new Date(now())) {
-    const summary = { ok: true, checked: 0, swings: 0, sent: 0, duplicate: 0, previews: 0, channelPosted: 0, channelCapped: 0, failed: 0 };
+    const summary = { ok: true, checked: 0, swings: 0, sent: 0, duplicate: 0, previews: 0, channelPosted: 0, channelCapped: 0, truncated: 0, failed: 0 };
     let storage = false;
     try {
       storage = hasSupabase(cfg) === true;
@@ -441,14 +464,14 @@ export function createMatchSwingJob(deps = {}) {
       await postToChannel(match, swing, cfg, at, summary);
     }
 
-    summary.ok = summary.failed === 0;
-    if (summary.sent || summary.failed || summary.channelPosted || summary.previews) {
+    summary.ok = summary.failed === 0 && summary.truncated === 0;
+    if (summary.sent || summary.failed || summary.truncated || summary.channelPosted || summary.previews) {
       await record(cfg, {
         severity: summary.ok ? 'info' : 'warning',
         source: 'smart_notifications',
         eventType: 'match_swing_run',
         code: summary.ok ? 'MATCH_SWING_RUN' : 'MATCH_SWING_RUN_DEGRADED',
-        message: `Перелом матча: переломов ${summary.swings}, личных сообщений ${summary.sent}, постов ${summary.channelPosted}, предпросмотров ${summary.previews}, ошибок ${summary.failed}.`,
+        message: `Перелом матча: переломов ${summary.swings}, личных сообщений ${summary.sent}, постов ${summary.channelPosted}, предпросмотров ${summary.previews}, ошибок ${summary.failed}${summary.truncated ? `, список получателей обрезан (${summary.truncated})` : ''}.`,
         endpoint: 'cron:match-swing',
         meta: summary,
       });
