@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-12 — Claude — Фоновые задания сами узнают тариф API-Football
-PR: ветка `claude/provider-status-probe`
+PR: [#862](https://github.com/TRAP44/football-analytics-cloudflare/pull/862), ветка `claude/provider-status-probe`
 Сделано:
 - Причина «0 предматчевых прогнозов»: в процессе cron-runner нет своей памяти о квоте, а общий снимок `provider-state:api-football:quota:v1` живёт 30 минут после последнего запроса к провайдеру. Без трафика пользователей снимок истекал, тариф становился UNKNOWN, и `providerBudgetDecision` всегда отвечал `provider_daily_reserve`; кривая по ходу матча тоже не могла запросить ленту.
 - Новый `src/provider-status-probe.js`: `ensureProviderSnapshot` — загрузить общий снимок, и если тариф не подтверждён (UNKNOWN или устаревший FREE), один раз спросить `/status`. Подключён в `prematch-prediction-job.js` и `in-play-timeline-job.js` вместо прямого `loadSharedProviderState`.
