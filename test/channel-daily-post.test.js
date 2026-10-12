@@ -1,0 +1,102 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { createChannelDailyPostJob, dailyPostMatches, dailyPostText } from '../src/channel-daily-post-job.js';
+
+const NOW = Date.parse('2026-10-12T08:05:00.000Z');
+const row = (id, date, home, away, { status = 'NS', league = 'Premier League', leagueId = 39 } = {}) => ({
+  fixture: { id, date, status: { short: status } },
+  league: { id: leagueId, name: league },
+  teams: { home: { name: home }, away: { name: away } },
+});
+const rows = [
+  row(1, '2026-10-12T18:45:00.000Z', 'Спартак', 'Зенит', { league: 'Премьер-лига', leagueId: 235 }),
+  row(2, '2026-10-12T16:00:00.000Z', 'Arsenal', 'Chelsea'),
+  row(3, '2026-10-12T08:20:00.000Z', 'Soon FC', 'Late FC'), // меньше 30 минут до начала
+  row(4, '2026-10-12T19:00:00.000Z', 'No Model', 'FC'),
+  row(5, '2026-10-12T07:00:00.000Z', 'Live', 'FC', { status: '1H' }),
+];
+const predictions = {
+  1: { home: 48, draw: 27, away: 25 },
+  2: { home: 61.2, draw: 22.1, away: 16.7 },
+  3: { home: 40, draw: 30, away: 30 },
+  5: { home: 40, draw: 30, away: 30 },
+};
+
+test('the post lists only upcoming matches with a valid pre-match estimate, in kickoff order', () => {
+  const matches = dailyPostMatches(rows, predictions, NOW);
+  assert.deepEqual(matches.map(m => m.fixtureId), [2, 1]);
+  const text = dailyPostText(matches, NOW);
+  assert.match(text, /^⚽ Матчи дня по версии модели MatchRadar — 12 октября/);
+  assert.match(text, /19:00 МСК · Arsenal — Chelsea \(Premier League\)\nArsenal 61% · Ничья 22% · Chelsea 17%/);
+  assert.match(text, /21:45 МСК · Спартак — Зенит/);
+  assert.match(text, /Это аналитика, а не рекомендация/);
+  assert.doesNotMatch(text, /ставк|коэф|кэф|букмекер/i);
+  assert.equal(dailyPostText([], NOW), '');
+});
+
+test('main matches win the five slots; broken estimates are dropped', () => {
+  const many = Array.from({ length: 8 }, (_, i) => row(100 + i, `2026-10-12T1${i}:30:00.000Z`, `H${i}`, `A${i}`));
+  const est = Object.fromEntries(many.map((_, i) => [100 + i, { home: 50, draw: 25, away: 25 }]));
+  est[107] = { home: 90, draw: 30, away: 20 };
+  const picked = dailyPostMatches(many, est, NOW, { isMain: item => item.fixture.id >= 104 });
+  assert.equal(picked.length, 5);
+  // Главные (104–106; 107 с битой суммой) берутся всегда, оставшиеся места — ближайшим.
+  assert.deepEqual(picked.map(m => m.fixtureId), [100, 101, 104, 105, 106]);
+});
+
+function harness({ enabled = false, published = [], previewCached = false } = {}) {
+  const ops = [];
+  const cache = new Map(previewCached ? [['channel-daily-preview:2026-10-12:v1', { date: '2026-10-12' }]] : []);
+  const job = createChannelDailyPostJob({
+    claimIdempotency: async key => { published.push(['claim', key]); return { claimed: true, claimId: 'claim-1' }; },
+    clock: () => NOW,
+    completeIdempotency: async () => {},
+    fixtureTelegramDeepLink: async (_cfg, id) => ({ url: `https://t.me/MatchRadarBot?startapp=f${id}` }),
+    getCache: async key => (key.startsWith('provider-fixtures:') ? { date: '2026-10-12', fixtures: rows } : cache.get(key) || null),
+    getModelProbabilities: async () => predictions,
+    loadProviderFixturesForDate: async () => rows,
+    recordOpsEvent: async (_cfg, event) => { ops.push(event); },
+    releaseIdempotency: async () => {},
+    setCache: async (key, _id, value) => { cache.set(key, value); },
+  });
+  return { job, ops, cache };
+}
+
+test('while disabled the job only records a preview, once a day, inside the 11:00 MSK window', async () => {
+  const { job, ops, cache } = harness();
+  assert.equal((await job.processChannelDailyPost({}, new Date('2026-10-12T12:00:00.000Z'))).reason, 'outside_window');
+  const first = await job.processChannelDailyPost({ channelDailyPostEnabled: false }, new Date(NOW));
+  assert.equal(first.reason, 'preview_recorded');
+  assert.equal(ops[0].code, 'CHANNEL_DAILY_POST_PREVIEW');
+  assert.match(ops[0].message, /Матчи дня/);
+  assert.ok(cache.has('channel-daily-preview:2026-10-12:v1'));
+  assert.equal((await job.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_already_recorded');
+});
+
+test('when enabled it publishes with a per-day idempotency key and a deep link to the first match', async () => {
+  const published = [];
+  const { job } = harness({ enabled: true, published });
+  const cfg = { channelDailyPostEnabled: true, publisherBotToken: 'publisher-token', botToken: 'main-token', telegramChannelId: '@MatchRadarFootball' };
+  const original = globalThis.fetch;
+  const sent = [];
+  globalThis.fetch = async (url, init) => { sent.push({ url: String(url), body: JSON.parse(init.body) }); return new Response(JSON.stringify({ ok: true, result: { message_id: 77 } }), { status: 200, headers: { 'content-type': 'application/json' } }); };
+  try {
+    const result = await job.processChannelDailyPost(cfg, new Date(NOW));
+    assert.equal(result.reason, 'published');
+  } finally {
+    globalThis.fetch = original;
+  }
+  assert.match(published[0][1], /key:channel-daily:2026-10-12$/);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].body.chat_id, '@MatchRadarFootball');
+  assert.match(sent[0].body.text, /Матчи дня по версии модели/);
+  assert.equal(sent[0].body.reply_markup.inline_keyboard[0][0].url, 'https://t.me/MatchRadarBot?startapp=f2');
+});
+
+test('wiring: off by default, task only in the 11:00 MSK window', () => {
+  const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
+  assert.match(wrangler, /"CHANNEL_DAILY_POST_ENABLED": "false"/);
+  const jobs = fs.readFileSync('src/scheduled-jobs.js', 'utf8');
+  assert.match(jobs, /scheduledAt\.getUTCHours\(\) === 8 && scheduledAt\.getUTCMinutes\(\) < 15\) \{\n\s+tasks\.push\(\['channel_daily_post'/);
+});

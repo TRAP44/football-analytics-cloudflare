@@ -50,6 +50,8 @@ export function createCommonInfrastructureRuntime(deps = {}) {
       botToken: env.TELEGRAM_BOT_TOKEN || '',
       publisherBotToken: env.TELEGRAM_PUBLISHER_BOT_TOKEN || '',
       telegramChannelId: env.TELEGRAM_CHANNEL_ID || '',
+      // Ежедневный пост «Матчи дня» в канал: выключен, пока Сергей не одобрит текст.
+      channelDailyPostEnabled: boolEnv(env.CHANNEL_DAILY_POST_ENABLED, false),
       webhookSecret: env.TELEGRAM_WEBHOOK_SECRET || '',
       adminTelegramIds: telegramIdList(env.ADMIN_TELEGRAM_IDS),
       betaTelegramIds: telegramIdList(env.BETA_TELEGRAM_IDS),
