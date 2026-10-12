@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-12 — Claude — Монитор прода: ложная тревога о схеме
-PR: ветка `claude/monitor-schema-fingerprint`
+PR: [#851](https://github.com/TRAP44/football-analytics-cloudflare/pull/851), ветка `claude/monitor-schema-fingerprint`
 Сделано:
 - Как только фоновые задачи снова пошли (GitHub, 12.10), монитор каждые 15 минут поднимал `PRODUCTION_MONITOR_INCIDENT` (critical): `schemaMissing: ["schema_fingerprint"]`, при `releaseScore: 100`.
 - Причина: `readSupabaseSchemaFingerprint` вызывал `backend_schema_fingerprint()` — замороженную функцию совместимости v1 (в проде 2557…, это `legacyFingerprint` из `release-contract.json`), а сравнивал с `EXPECTED_SCHEMA_FINGERPRINT` — отпечатком контракта v2 (f3d899…). Схема в порядке: `backend_schema_contract_v2()` в проде = f3d899…, миграции — до v6_29_14. До 9.10 тревоги не было видно, потому что cron не доходил до монитора.
