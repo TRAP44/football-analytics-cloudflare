@@ -100,7 +100,7 @@ export function inPlayEstimateHtml(estimate, match = {}, escapeHtml = value => S
     <div class="mr-ai-card-head"><span class="mr-kicker">Сейчас по ходу матча</span>${when ? `<span class="mr-ai-card-conf">${escapeHtml(when)}</span>` : ''}</div>
     <div class="mr-inplay-values">${rows.map(([key, label]) => `<div class="${key}"><span>${escapeHtml(label)}</span><strong>${estimate[key].toFixed(1)}%</strong></div>`).join('')}</div>
     <div class="mr-inplay-bar" role="img" aria-label="${escapeHtml(rows.map(([key, label]) => `${label} ${estimate[key].toFixed(1)}%`).join(', '))}">${rows.map(([key]) => `<i class="${key}" style="flex-grow:${estimate[key]}"></i>`).join('')}</div>
-    <p class="mr-ai-card-note">Предматчевый прогноз модели, пересчитанный по счёту и оставшемуся времени. Красные карточки и ход игры не учитываются; обновляется раз в несколько минут.</p>
+    <p class="mr-ai-card-note">Предматчевый прогноз модели, пересчитанный по ходу матча; что именно учитывается — в подписи к кривой ниже. Обновляется раз в несколько минут.</p>
   </section>`;
 }
 

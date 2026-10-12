@@ -18,7 +18,7 @@ test('the newest saved in-play point is shown, nothing else is computed', () => 
   assert.match(html, /61′, счёт 1:0/);
   assert.match(html, /76\.6%/);
   assert.match(html, /Милан &lt;b&gt;/);
-  assert.match(html, /Красные карточки и ход игры не учитываются/);
+  assert.match(html, /что именно учитывается — в подписи к кривой ниже/);
 });
 
 test('no in-play points or broken values — no card', () => {
