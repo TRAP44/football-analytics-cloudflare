@@ -13,7 +13,8 @@ const RAW_FIXTURES_CACHE_KEY = date => `provider-fixtures:${date}:v1`;
 const PREVIEW_CACHE_KEY = date => `channel-daily-preview:${date}:v1`;
 // Метка «предпросмотр за день записан» — строка в журнале идемпотентности
 // публикаций (общая база), ставится после сохранения всех частей. Даже если
-// метку не увидят, повторная запись частей не создаёт дублей (transitionKey).
+// метку не увидят, повторная запись тех же частей не создаёт дублей
+// (transitionKey с версией текста).
 const PREVIEW_CLAIM_KEY = date => `telegram:channel-publish:v1:daily-preview:${date}`;
 const POST_HOUR_UTC = 8; // 11:00 МСК
 const POST_WINDOW_MINUTES = 15;
@@ -154,6 +155,12 @@ export function previewParts(text = '') {
   return parts.slice(0, MAX_PREVIEW_PARTS);
 }
 
+/** Короткая версия текста поста: первые 12 hex SHA-256. */
+export async function textVersion(text = '') {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(text)));
+  return [...new Uint8Array(digest)].slice(0, 6).map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
 export function createChannelDailyPostJob(deps = {}) {
   const {
     claimIdempotency,
@@ -237,6 +244,11 @@ export function createChannelDailyPostJob(deps = {}) {
 
     if (!enabled) {
       const parts = previewParts(text);
+      // Версия текста (ревью Codex #860): ключ части включает хеш всего текста.
+      // Повтор того же текста попадает в те же строки журнала (без дублей), а
+      // изменившийся текст пишется полным новым набором — части разных версий
+      // не смешиваются, и сохранённое сообщение всегда совпадает с текстом.
+      const version = await textVersion(text);
       let persisted = 0;
       for (let index = 0; index < parts.length; index += 1) {
         if (await record(cfg, {
@@ -244,12 +256,10 @@ export function createChannelDailyPostJob(deps = {}) {
           source: 'channel_publisher',
           eventType: 'channel_daily_post_preview',
           code: 'CHANNEL_DAILY_POST_PREVIEW',
-          // Ключ части (ревью Codex #860): повторная запись той же части — та же
-          // строка журнала, без дублей, даже если прошлый запуск сохранил не всё.
-          transitionKey: `channel-daily-preview:${date}:${index + 1}/${parts.length}`,
+          transitionKey: `channel-daily-preview:${date}:${version}:${index + 1}/${parts.length}`,
           message: parts[index],
           endpoint: 'cron:channel-daily-post',
-          meta: { date, matches: matches.length, enabled: false, part: index + 1, parts: parts.length },
+          meta: { date, matches: matches.length, enabled: false, version, part: index + 1, parts: parts.length },
         })) persisted += 1;
       }
       // Не все части в журнале — метку не ставим, следующий запуск в окне

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { createChannelDailyPostJob, dailyPostCandidateIds, dailyPostMatches, dailyPostText, previewParts } from '../src/channel-daily-post-job.js';
+import { createChannelDailyPostJob, dailyPostCandidateIds, dailyPostMatches, dailyPostText, previewParts, textVersion } from '../src/channel-daily-post-job.js';
 
 const NOW = Date.parse('2026-10-12T08:05:00.000Z');
 // recordOpsEvent возвращает строку с невидимым _persistenceStatus.
@@ -178,7 +178,7 @@ test('the day marker is a durable claim set after all parts: another isolate doe
   const second = createChannelDailyPostJob(sharedDeps(store, journal));
   assert.equal((await first.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_recorded');
   const keys = [...journal.rows.keys()];
-  assert.ok(keys.every(key => /^channel-daily-preview:2026-10-12:\d+\/\d+$/.test(key)));
+  assert.ok(keys.every(key => /^channel-daily-preview:2026-10-12:[0-9a-f]{12}:\d+\/\d+$/.test(key)));
   assert.equal(store.claims.get('telegram:channel-publish:v1:daily-preview:2026-10-12').state, 'sent');
   assert.equal((await second.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_already_recorded');
   assert.equal(journal.rows.size, keys.length);
@@ -206,6 +206,23 @@ test('a partly saved preview is completed on the next run without duplicate part
   const parts = previewParts(dailyPostText(dailyPostMatches(many, est, NOW), NOW));
   assert.equal(journal.rows.size, parts.length, 'each part is stored exactly once');
   assert.equal([...journal.rows.values()].sort((a, b) => a.meta.part - b.meta.part).map(event => event.message).join('\n'), parts.join('\n'));
+});
+
+test('a changed text on retry is written as a complete new version, never mixed with the old parts', async () => {
+  const store = claimStore();
+  let failAll = true;
+  const journal = opsJournal(() => failAll && (failAll = false, true));
+  let current = predictions;
+  const job = createChannelDailyPostJob(sharedDeps(store, journal, { getModelProbabilities: async () => current }));
+  assert.equal((await job.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_not_persisted');
+  const firstKeys = new Set(journal.rows.keys());
+  current = { ...predictions, 1: { home: 40, draw: 30, away: 30 } };
+  assert.equal((await job.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_recorded');
+  const text = dailyPostText(dailyPostMatches(rows, current, NOW), NOW);
+  const version = await textVersion(text);
+  const latest = [...journal.rows.values()].filter(event => event.meta.version === version).sort((a, b) => a.meta.part - b.meta.part);
+  assert.equal(latest.map(event => event.message).join('\n'), text, 'the complete set of the latest version equals the text');
+  assert.ok([...firstKeys].every(key => !key.includes(`:${version}:`)), 'old partial version is not mixed into the new one');
 });
 
 test('without the claim journal the preview is still written once per part', async () => {
