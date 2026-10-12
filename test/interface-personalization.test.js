@@ -291,3 +291,11 @@ test('admin opens with an owner dashboard while rare validation and model tools 
   assert.doesNotMatch(profileOpen, /loadBetaDashboard\(false\)/);
   assert.doesNotMatch(profileOpen, /loadModelQuality\(false\)/);
 });
+
+test('codex #845: the amber accent also applies on the admin page', () => {
+  const shell = readFileSync(new URL('../public/styles/public-shell.css', import.meta.url), 'utf8');
+  assert.match(adminHtml, /href="\/styles\/public-shell\.css\?v=/);
+  assert.match(shell, /html\[data-accent="system"\] \{ --accent: #fbbf24; --accent-text: #1a1203; \}/);
+  assert.match(shell, /html\[data-accent="system"\]\[data-theme="light"\] \{ --accent: #b45309; --accent-text: #ffffff; \}/);
+  assert.match(shell, /html\[data-accent="system"\]\[data-theme="dark"\] \{ --accent: #fbbf24; --accent-text: #1a1203; \}/);
+});
