@@ -322,7 +322,7 @@ const RC_NAME = 'RC144';
 const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: примените миграции до v6.29.17, включая награды за приглашения.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_CONTRACT_VERSION = 2;
-const EXPECTED_SCHEMA_FINGERPRINT = '11111111111111111111111111111111';
+const EXPECTED_SCHEMA_FINGERPRINT = 'af06ba7b6d944750f312e5cbfd4b5f20';
 const FRESH_INSTALL_SCHEMA_FINGERPRINT = '0169ec29ea39da9d085040ed825057a6';
 // The prior v2 contract (before v6.29.17) remains accepted for a safe phased rollout.
 const COMPATIBLE_SCHEMA_FINGERPRINTS = Object.freeze([

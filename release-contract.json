@@ -20,10 +20,10 @@
   "databaseContract": {
     "version": 2,
     "rpc": "backend_readiness_contract_v2",
-    "fingerprint": "11111111111111111111111111111111",
+    "fingerprint": "af06ba7b6d944750f312e5cbfd4b5f20",
     "freshInstallFingerprint": "0169ec29ea39da9d085040ed825057a6",
     "compatibleFingerprints": [
-      "11111111111111111111111111111111",
+      "af06ba7b6d944750f312e5cbfd4b5f20",
       "0169ec29ea39da9d085040ed825057a6",
       "449654e62c352ffcbd618dfccabbda7d",
       "d87de7ad518d55bd0669334a7ce863ce"

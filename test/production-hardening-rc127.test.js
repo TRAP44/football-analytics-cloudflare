@@ -63,7 +63,7 @@ test('RC127 uses atomic daily digest delivery claims',()=>{
 
 test('RC127 uses full schema fingerprint plus selected compatibility probes',()=>{
   assert.match(migration,/create or replace function public\.backend_schema_fingerprint/);
-  assert.match(worker,/const EXPECTED_SCHEMA_FINGERPRINT = '11111111111111111111111111111111'/);
+  assert.match(worker,/const EXPECTED_SCHEMA_FINGERPRINT = 'af06ba7b6d944750f312e5cbfd4b5f20'/);
   assert.match(worker,/const EXPECTED_SCHEMA_CONTRACT_VERSION = 2/);
   assert.match(worker,/readinessRpc = 'backend_readiness_contract_v2'/);
   assert.match(worker,/async function readSupabaseSchemaFingerprint/);
