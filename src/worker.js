@@ -320,8 +320,8 @@ const RC_NAME = 'RC144';
 const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: примените миграции до v6.29.16, включая прогнозы «Обыграй AI».';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_CONTRACT_VERSION = 2;
-const EXPECTED_SCHEMA_FINGERPRINT = '56dd52b9fe72c7a4c644668a35b84804';
-const FRESH_INSTALL_SCHEMA_FINGERPRINT = 'c2ee068e1173872e2f6739ff6a541db9';
+const EXPECTED_SCHEMA_FINGERPRINT = '449654e62c352ffcbd618dfccabbda7d';
+const FRESH_INSTALL_SCHEMA_FINGERPRINT = '00000000000000000000000000000000';
 // The prior v2 contract (before v6.29.16) remains accepted for a safe phased rollout.
 const COMPATIBLE_SCHEMA_FINGERPRINTS = Object.freeze([
   EXPECTED_SCHEMA_FINGERPRINT,

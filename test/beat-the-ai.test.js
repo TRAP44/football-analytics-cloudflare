@@ -228,7 +228,7 @@ test('wiring: routes, rate limits, UI mount points and the private table migrati
   assert.match(sql, /primary key \(telegram_id, fixture_id\)/);
   assert.match(sql, /alter table public\.match_picks enable row level security;/);
   assert.match(sql, /revoke all on table public\.match_picks from public, anon, authenticated, service_role;/);
-  assert.match(sql, /grant select, insert, update on table public\.match_picks to service_role;/);
+  assert.match(sql, /grant select, insert, update, delete on table public\.match_picks to service_role;/);
   assert.equal(sql.match(/'sensitive_mutation_idempotency',\n {6}'match_picks'\n {4}\)/g)?.length, 3, 'legacy v1 fingerprint excludes the table');
   assert.doesNotMatch(sql, /drop /i);
 });

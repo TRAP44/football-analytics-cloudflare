@@ -23,7 +23,8 @@ create index if not exists match_picks_kickoff_idx
   on public.match_picks(kickoff_at desc);
 alter table public.match_picks enable row level security;
 revoke all on table public.match_picks from public, anon, authenticated, service_role;
-grant select, insert, update on table public.match_picks to service_role;
+-- Same service_role privileges as every other public table (restore contract).
+grant select, insert, update, delete on table public.match_picks to service_role;
 
 -- Freeze the historical v1 fingerprint: the new table is excluded.
 create or replace function public.backend_schema_fingerprint()

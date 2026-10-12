@@ -210,7 +210,7 @@
     },
     {
       "path": "migrations/supabase_migration_v6_29_16.sql",
-      "gitBlobSha": "d9eb3d77fb847b4f7f37e3e3da850ca61813feb6"
+      "gitBlobSha": "64c903a3f0675d9fedc3c8574443d537b9e09f00"
     }
   ],
   "notes": [
