@@ -42,7 +42,7 @@ test('premium UI explicitly supports Telegram mobile widths and reduced motion',
 
 test('premium UI preserves theme modes and keeps admin visually separated', () => {
   assert.match(css, /data-theme="dark"/);
-  assert.match(css, /data-theme="ocean"/);
+  assert.doesNotMatch(css, /data-theme="ocean"/, 'тема «Океан» убрана 12.10');
   assert.match(css, /data-theme="light"/);
   assert.match(css, /content: "ADMIN"/);
 });

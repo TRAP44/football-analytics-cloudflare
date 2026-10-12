@@ -14,6 +14,13 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-12 — Claude — Чистка стилей после «только янтарь»
+PR: [#855](https://github.com/TRAP44/football-analytics-cloudflare/pull/855), ветка `claude/css-cleanup-ocean-accents`
+Сделано:
+- `public/styles.css`, `public/styles/premium-ui.css`, `public/styles/public-shell.css`: удалены `:root[data-theme="ocean"]`, `html[data-theme="ocean"] .miniapp-public-shell`, `.theme-preview.ocean`, все `.accent-option(s)` / `.accent-swatch` и неиспользуемый `.appearance-help`. Разметки и JS эти стили после #845 не касались.
+- Тесты, которые проверяли наличие этих стилей, переписаны на их отсутствие. Ревизия — launch106.
+Осталось / внимание:
+- `ACCENT_PALETTES` (пустой) и ветка `applyAccentPreference` в JS оставлены — на них опираются тесты модуля настроек; поведение не меняют.
 ## 2026-10-12 — Claude — Красные карточки в модели по ходу матча
 PR: [#854](https://github.com/TRAP44/football-analytics-cloudflare/pull/854), ветка `claude/in-play-red-cards`
 Сделано:

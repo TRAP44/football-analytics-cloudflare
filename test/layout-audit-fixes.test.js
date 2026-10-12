@@ -22,8 +22,9 @@ test('bottom navigation labels shrink on narrow phones instead of being cut', ()
   assert.match(premium, /@media \(max-width: 360px\) \{\s*html\[data-theme\] body\.miniapp-public-shell \.bottom-nav \.nav-item small \{ font-size: 10\.5px; \}/);
 });
 
-test('«против» chip fits its text and accent options use two columns at 360px', () => {
+test('«против» chip fits its text; accent options are gone (amber only, 12.10)', () => {
   assert.match(shell, /\.miniapp-public-shell \.experience-vs > span\{[^}]*width:auto;[^}]*padding-inline:8px;[^}]*white-space:nowrap;/);
   const narrow = shell.slice(shell.indexOf('@media(max-width:360px){', shell.indexOf('.miniapp-public-shell .ai-track-card{padding:14px}') - 400));
-  assert.match(narrow.slice(0, 1200), /\.miniapp-public-shell \.accent-options\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/);
+  assert.match(narrow.slice(0, 1200), /\.miniapp-public-shell \.theme-options\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/);
+  assert.doesNotMatch(shell, /accent-option|accent-swatch/);
 });
