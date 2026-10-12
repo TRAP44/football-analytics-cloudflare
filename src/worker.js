@@ -315,17 +315,17 @@ const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
 const RELEASE_CHANNEL = 'rc144';
 const RC_NAME = 'RC144';
-const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: примените миграции до v6.29.14, включая проверенные LIVE-снимки давления.';
+const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: примените миграции до v6.29.15, включая переключатель AI в настройках функций.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_CONTRACT_VERSION = 2;
-const EXPECTED_SCHEMA_FINGERPRINT = 'f3d899ff05789e6cfb257abe011872d2';
-const FRESH_INSTALL_SCHEMA_FINGERPRINT = 'd0ecfedbd63abc305ad7f57aa298cabd';
-// The prior v2 contract remains accepted briefly for a safe phased rollout.
+const EXPECTED_SCHEMA_FINGERPRINT = 'c7164151f40be1a7af4271789f5d2c1c';
+const FRESH_INSTALL_SCHEMA_FINGERPRINT = '00000000000000000000000000000000';
+// The prior v2 contract (before v6.29.15) remains accepted for a safe phased rollout.
 const COMPATIBLE_SCHEMA_FINGERPRINTS = Object.freeze([
   EXPECTED_SCHEMA_FINGERPRINT,
   FRESH_INSTALL_SCHEMA_FINGERPRINT,
-  '4e7b6afc69b45ab3e5eecc4685d75c73',
-  '289d4be4a3546443d48ff5f0b8bd6dcb',
+  'f3d899ff05789e6cfb257abe011872d2',
+  'd0ecfedbd63abc305ad7f57aa298cabd',
 ]);
 
 const { json, adminForbidden, publicRouteError } = createHttpRuntime({
@@ -344,6 +344,7 @@ const DEFAULT_RUNTIME_CONTROLS = Object.freeze({
   remindersEnabled: true,
   expandedDataEnabled: true,
   autoSettlementRecoveryEnabled: false,
+  aiEnabled: true,
   message: '',
   revision: 1,
   updatedAt: null,

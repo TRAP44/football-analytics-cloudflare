@@ -124,8 +124,8 @@ test('Issue #438 CI contract proves complete v2 drift detection and rollout comp
   assert.deepEqual(
     [...dbContract.compatibleFingerprints].sort(),
     [dbContract.fingerprint, dbContract.freshInstallFingerprint,
-      '4e7b6afc69b45ab3e5eecc4685d75c73',
-      '289d4be4a3546443d48ff5f0b8bd6dcb'].sort(),
+      'f3d899ff05789e6cfb257abe011872d2',
+      'd0ecfedbd63abc305ad7f57aa298cabd'].sort(),
   );
   assert.equal(new Set(dbContract.compatibleFingerprints).size, 4);
 

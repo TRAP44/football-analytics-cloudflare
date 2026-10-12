@@ -405,9 +405,11 @@ export function createMatchExplanationRuntime(deps = {}) {
     return claim.allowed === true;
   }
 
-  async function aiSelection(cfg, facts, userId) {
+  async function aiSelection(cfg, facts, userId, { aiEnabled = true } = {}) {
     const ai = cfg?.workersAi;
     if (cfg?.aiExplanationEnabled === false) return { ids: null, reason: 'disabled' };
+    // Переключатель AI в админке: объяснение строится без LLM, по порядку фактов.
+    if (aiEnabled === false) return { ids: null, reason: 'ai_disabled' };
     if (!ai || typeof ai.run !== 'function') return { ids: null, reason: 'no_binding' };
     if (!(await claimUserHour(cfg, userId, cfg?.aiExplanationUserHourlyLimit))) {
       telemetry('aiExplanationUserLimited');
@@ -452,11 +454,13 @@ export function createMatchExplanationRuntime(deps = {}) {
     }
     if (!fixtureId) return json({ error: 'Номер матча обязателен.', code: 'FIXTURE_REQUIRED' }, 400);
 
+    let aiEnabled = true;
     try {
       const runtime = plainObject(safeRead(plainObject(await loadRuntimeControls(cfg)), 'value')) || {};
       if (runtime.maintenanceMode === true || runtime.analysisEnabled === false) {
         return json({ available: false, reason: 'analysis_disabled' });
       }
+      aiEnabled = runtime.aiEnabled !== false;
     } catch {
       return json({ available: false, reason: 'analysis_disabled' });
     }
@@ -506,7 +510,7 @@ export function createMatchExplanationRuntime(deps = {}) {
     } catch {}
 
     if (!ids) {
-      const selection = await aiSelection(cfg, facts, userId);
+      const selection = await aiSelection(cfg, facts, userId, { aiEnabled });
       if (selection.ids) {
         ids = selection.ids;
         source = 'ai';
