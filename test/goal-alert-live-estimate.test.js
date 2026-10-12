@@ -24,13 +24,18 @@ test('no line when the estimate is stale, before the goal or broken', () => {
   assert.equal(inPlayEstimateLine(row, { ...estimate, score: { home: 0, away: 0 } }, [{ type: 'Goal', detail: 'Missed Penalty' }], NOW).startsWith('📊'), true);
 });
 
-test('a red-card alert needs an estimate that already counts the dismissal', () => {
-  const red = { type: 'Card', detail: 'Red Card' };
-  const before = { ...estimate, reds: { home: 0, away: 0, source: 'events' } };
-  const after = { ...estimate, reds: { home: 0, away: 1, source: 'events' } };
+test('a red-card alert needs an estimate that already counts the dismissal for the same team', () => {
+  const red = { type: 'Card', detail: 'Red Card', teamId: 20 };
+  const teams = { home: 10, away: 20 };
+  const before = { ...estimate, teams, reds: { home: 0, away: 0, source: 'events' } };
+  const after = { ...estimate, teams, reds: { home: 0, away: 1, source: 'events' } };
+  const wrongSide = { ...estimate, teams, reds: { home: 1, away: 0, source: 'events' } };
   assert.equal(inPlayEstimateLine(row, before, [goal, red], NOW), '', 'estimate made before the red card');
-  assert.equal(inPlayEstimateLine(row, { ...estimate, reds: null }, [goal, red], NOW), '', 'reds unknown');
+  assert.equal(inPlayEstimateLine(row, { ...after, reds: null }, [goal, red], NOW), '', 'reds unknown');
   assert.equal(inPlayEstimateLine(row, after, [goal, red], NOW).startsWith('📊'), true);
+  assert.equal(inPlayEstimateLine(row, wrongSide, [goal, red], NOW), '', 'dismissal applied to the other side');
+  assert.equal(inPlayEstimateLine(row, { ...after, teams: null }, [goal, red], NOW), '', 'team ids unknown');
+  assert.equal(inPlayEstimateLine(row, after, [goal, { ...red, teamId: 99 }], NOW), '', 'card of an unknown team');
   assert.equal(inPlayEstimateLine(row, after, [goal], NOW), '', 'estimate counts a red card the alert does not see');
   assert.equal(inPlayEstimateLine(row, { ...estimate, reds: { home: 'x', away: 0 } }, [goal], NOW), '');
 });
@@ -44,4 +49,5 @@ test('the alert asks for the estimate once per fixture and only when there is a 
   assert.match(wiring, /loadLatestInPlayEstimate: getLatestInPlayEstimate/);
   const worker = fs.readFileSync('src/worker.js', 'utf8');
   assert.match(worker, /reds: row\.provenance && typeof row\.provenance === 'object' \? row\.provenance\.reds : null/);
+  assert.match(worker, /teams: row\.provenance && typeof row\.provenance === 'object' \? row\.provenance\.teams : null/);
 });

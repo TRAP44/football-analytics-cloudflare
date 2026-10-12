@@ -58,7 +58,12 @@ export function liveFixtureState(row) {
   const awayGoals = goals(score.away);
   const minute = matchMinuteFromFixture(code, status.elapsed, status.extra);
   if (!fixtureId || homeGoals === null || awayGoals === null || minute === null) return null;
-  return { fixtureId, status: code, minute, homeGoals, awayGoals };
+  // Id команд — чтобы уведомление об удалении могло сверить карточки по сторонам.
+  const teams = plainObject(item.teams) || {};
+  const homeTeamId = positiveId(safeRead(plainObject(teams.home), 'id'));
+  const awayTeamId = positiveId(safeRead(plainObject(teams.away), 'id'));
+  const teamIds = homeTeamId && awayTeamId && homeTeamId !== awayTeamId ? { teams: { home: homeTeamId, away: awayTeamId } } : {};
+  return { fixtureId, status: code, minute, homeGoals, awayGoals, ...teamIds };
 }
 
 function maxShift(a, b) {
@@ -133,6 +138,7 @@ export function inPlaySnapshotRow(state, probabilities, previous, capturedAt) {
       basis: 'model_predictions',
       score: { home: state.homeGoals, away: state.awayGoals },
       reds: { home: state.homeReds || 0, away: state.awayReds || 0, source: state.redsSource || 'none' },
+      ...(plainObject(state.teams) ? { teams: { home: state.teams.home, away: state.teams.away } } : {}),
     },
     analysis_version: IN_PLAY_MODEL_VERSION,
   };

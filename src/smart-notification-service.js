@@ -301,13 +301,27 @@ export function inPlayEstimateLine(row, estimate, events = [], now = Date.now())
   if (scoreHome === null || scoreAway === null) return '';
   const goals = asRows(events).filter(isGoal).length;
   if (scoreHome + scoreAway !== goals) return '';
-  // Удаления тоже должны быть уже учтены (ревью Codex #859): иначе после
-  // красной карточки в сообщение попала бы оценка, посчитанная до неё.
+  // Удаления тоже должны быть уже учтены, и у той же команды (ревью Codex #859):
+  // иначе в сообщение попала бы оценка, посчитанная до карточки или с
+  // удалением не у той стороны.
   const redHome = estimate.reds ? integerCandidate(estimate.reds.home ?? 0) : 0;
   const redAway = estimate.reds ? integerCandidate(estimate.reds.away ?? 0) : 0;
   if (redHome === null || redAway === null) return '';
-  const redEvents = asRows(events).filter(isRedCard).length;
-  if (redHome + redAway !== redEvents) return '';
+  const redEvents = asRows(events).filter(isRedCard);
+  if (redEvents.length) {
+    const homeTeam = positiveSafeInteger(estimate.teams?.home);
+    const awayTeam = positiveSafeInteger(estimate.teams?.away);
+    if (!homeTeam || !awayTeam) return '';
+    let home = 0;
+    let away = 0;
+    for (const event of redEvents) {
+      const team = positiveSafeInteger(event?.teamId ?? event?.team_id);
+      if (team === homeTeam) home += 1;
+      else if (team === awayTeam) away += 1;
+      else return '';
+    }
+    if (redHome !== Math.min(3, home) || redAway !== Math.min(3, away)) return '';
+  } else if (redHome + redAway !== 0) return '';
   const minute = integerCandidate(estimate.minute);
   const percent = value => `${Math.round(value)}%`;
   return `📊 Оценка модели сейчас (${scoreHome}:${scoreAway}${minute !== null ? `, ${minute}′` : ''}): `

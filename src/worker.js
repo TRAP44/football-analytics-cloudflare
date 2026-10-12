@@ -2390,6 +2390,7 @@ async function getLatestInPlayEstimate(fixtureId, cfg) {
     capturedAt: row.captured_at,
     score: row.provenance && typeof row.provenance === 'object' ? row.provenance.score : null,
     reds: row.provenance && typeof row.provenance === 'object' ? row.provenance.reds : null,
+    teams: row.provenance && typeof row.provenance === 'object' ? row.provenance.teams : null,
   };
 }
 
