@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-12 — Claude — Задача 0: срочное исправление гейта деплоя
-PR: ветка `claude/deploy-gate-hotfix`
+PR: [#849](https://github.com/TRAP44/football-analytics-cloudflare/pull/849), ветка `claude/deploy-gate-hotfix`
 Сделано:
 - Живая проверка 12.10: Сергей добавил `GITHUB_DISPATCH_TOKEN` в панели Cloudflare, деплой #845 (run 2518) остановился: «Active production version fcfe1aac-… has no CI release stamp and was not created by a secret change» — версия из панели помечена не `workers/triggered_by: secret`.
 - `scripts/cloudflare-settings-version.js`: версия «после правки настроек» — любая версия без действительной отметки CI (сообщение `release=… sha=…` и тег, равный SHA). Пометка триггера больше не решает; решает доказательство: история деплоев ведёт к версии CI, и хеш кода (`resources.script.etag`) совпадает. Чужой код (загрузка в панели, ручной `wrangler deploy`) по-прежнему отклоняется — хеш другой.
