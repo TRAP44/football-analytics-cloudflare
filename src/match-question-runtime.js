@@ -361,6 +361,9 @@ export function createMatchQuestionRuntime(deps = {}) {
     }
     if (!facts.length) return answer(base, 'not_in_data', facts, [], { source: 'rule' });
 
+    // Переключатель AI в админке: готовые подсказки работают, свой вопрос — нет,
+    // в том числе из кеша прежних ответов AI (ревью Codex #863).
+    if (!aiEnabled) return json({ available: false, reason: 'ai_disabled' });
     const hash = await explanationCatalogHash(facts);
     const analysisVersion = String(safeRead(payload, 'analysisVersion') || 'unknown').replace(/[^\w.-]/g, '').slice(0, 40) || 'unknown';
     const cacheKey = `ask:${QUESTION_VERSION}:${fixtureId}:${analysisVersion}:${hash}:${await sha256Short(question.normalized)}`;
@@ -373,8 +376,6 @@ export function createMatchQuestionRuntime(deps = {}) {
       }
     } catch {}
 
-    // Переключатель AI в админке: готовые подсказки работают, свой вопрос — нет.
-    if (!aiEnabled) return json({ available: false, reason: 'ai_disabled' });
     const selection = await aiAnswer(cfg, facts, question.text, userId);
     const remaining = Number.isInteger(selection.remaining) ? { remaining: selection.remaining } : {};
     if (!selection.ids) {

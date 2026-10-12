@@ -498,7 +498,10 @@ export function createMatchExplanationRuntime(deps = {}) {
     let ids = null;
     let source = 'default';
     let reason = '';
-    try {
+    // AI выключен в админке — и порядок из кеша прежних ответов AI не берётся
+    // (ревью Codex #863): объяснение строится по порядку фактов.
+    if (!aiEnabled) reason = 'ai_disabled';
+    else try {
       const cached = plainObject(await getCache(selectionKey, cfg));
       const cachedIds = parseExplanationSelection(JSON.stringify({ factIds: cached?.factIds }), facts);
       if (cachedIds) {
@@ -509,7 +512,7 @@ export function createMatchExplanationRuntime(deps = {}) {
       }
     } catch {}
 
-    if (!ids) {
+    if (!ids && aiEnabled) {
       const selection = await aiSelection(cfg, facts, userId, { aiEnabled });
       if (selection.ids) {
         ids = selection.ids;

@@ -152,9 +152,13 @@ test('Workers AI calls respect the switch; presets and the plain explanation kee
   assert.match(explanation, /if \(aiEnabled === false\) return \{ ids: null, reason: 'ai_disabled' \};/);
   assert.match(explanation, /aiEnabled = runtime\.aiEnabled !== false;/);
   assert.match(explanation, /aiSelection\(cfg, facts, userId, \{ aiEnabled \}\)/);
+  // Кеш прежних ответов AI при выключенном AI не используется.
+  assert.ok(explanation.indexOf("if (!aiEnabled) reason = 'ai_disabled';") < explanation.indexOf('await getCache(selectionKey, cfg)'));
+  assert.match(explanation, /if \(!ids && aiEnabled\) \{/);
   const question = fs.readFileSync('src/match-question-runtime.js', 'utf8');
   const gate = question.indexOf("if (!aiEnabled) return json({ available: false, reason: 'ai_disabled' });");
   assert.ok(gate > question.indexOf('if (preset) {'), 'presets are answered before the AI gate');
+  assert.ok(gate < question.indexOf('await getCache(cacheKey, cfg)'), 'cached AI answers are not served when AI is off');
   assert.ok(gate < question.indexOf('await aiAnswer('), 'no Workers AI call when AI is off');
   const ui = fs.readFileSync('public/modules/match-questions.js', 'utf8');
   assert.match(ui, /ai_disabled: 'Свои вопросы к AI временно выключены\. Готовые подсказки работают\.'/);
