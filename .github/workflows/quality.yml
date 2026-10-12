@@ -133,6 +133,11 @@ jobs:
 
           psql "$DB_URL" -X -v ON_ERROR_STOP=1 -c \
             "select public.backend_schema_fingerprint() as legacy_schema_contract, public.backend_schema_contract_v2() as schema_contract_v2;"
+          # Фактические отпечатки чистой установки — в аннотации проверки, чтобы
+          # при новой миграции их можно было сверить с release-contract.json.
+          FRESH_ACTUAL_FPS="$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+            "select (public.backend_schema_fingerprint()->>'fingerprint') || ' / ' || (public.backend_schema_contract_v2()->>'fingerprint');")"
+          echo "::notice title=Fresh install schema fingerprints (legacy / v2)::$FRESH_ACTUAL_FPS"
           psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
             -f "$GITHUB_WORKSPACE/scripts/schema-contract-v2-diagnostics.sql"
 

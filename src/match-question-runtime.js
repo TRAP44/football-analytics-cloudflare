@@ -314,11 +314,13 @@ export function createMatchQuestionRuntime(deps = {}) {
     }
 
     if (cfg?.matchQuestionsEnabled === false) return json({ available: false, reason: 'disabled' });
+    let aiEnabled = true;
     try {
       const runtime = plainObject(safeRead(plainObject(await loadRuntimeControls(cfg)), 'value')) || {};
       if (runtime.maintenanceMode === true || runtime.analysisEnabled === false) {
         return json({ available: false, reason: 'analysis_disabled' });
       }
+      aiEnabled = runtime.aiEnabled !== false;
     } catch {
       return json({ available: false, reason: 'analysis_disabled' });
     }
@@ -359,6 +361,9 @@ export function createMatchQuestionRuntime(deps = {}) {
     }
     if (!facts.length) return answer(base, 'not_in_data', facts, [], { source: 'rule' });
 
+    // Переключатель AI в админке: готовые подсказки работают, свой вопрос — нет,
+    // в том числе из кеша прежних ответов AI (ревью Codex #863).
+    if (!aiEnabled) return json({ available: false, reason: 'ai_disabled' });
     const hash = await explanationCatalogHash(facts);
     const analysisVersion = String(safeRead(payload, 'analysisVersion') || 'unknown').replace(/[^\w.-]/g, '').slice(0, 40) || 'unknown';
     const cacheKey = `ask:${QUESTION_VERSION}:${fixtureId}:${analysisVersion}:${hash}:${await sha256Short(question.normalized)}`;

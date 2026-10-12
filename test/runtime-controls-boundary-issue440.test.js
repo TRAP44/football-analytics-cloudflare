@@ -65,6 +65,7 @@ test('runtime-controls reject JavaScript boolean and revision coercion',async()=
   });
   assert.deepEqual(normalized,{
     ...DEFAULT_RUNTIME_CONTROLS,
+    aiEnabled:true,
     liveEnabled:true,
     remindersEnabled:true,
     expandedDataEnabled:true,
@@ -142,6 +143,7 @@ test('runtime-controls domain normalizes database rows and exposes only public c
     remindersEnabled: true,
     expandedDataEnabled: false,
     autoSettlementRecoveryEnabled: true,
+    aiEnabled: true,
     securityLockdown: false,
     controlPlaneFailClosed: false,
     message: 'maintenance',

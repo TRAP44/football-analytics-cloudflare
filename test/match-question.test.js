@@ -240,3 +240,15 @@ test('a quota RPC failure is "AI unavailable", not "your limit is exhausted"', a
   assert.equal(res.body.reason, 'ai_unavailable');
   assert.ok(!flaky.calls.rpc.some(call => call.params.p_bucket_key.startsWith('ai-ask-global')), 'no shared budget spent');
 });
+
+test('AI switch off: presets still work, free-text questions are refused even from the cache', async () => {
+  const controls = { analysisEnabled: true, maintenanceMode: false, aiEnabled: false };
+  const { rt, cfg, calls } = runtime({ controls, cached: { factIds: ['form_home'] } });
+  const preset = await rt.apiMatchQuestion(request({ fixtureId: 77, preset: 'form' }), cfg, user);
+  assert.equal(preset.body.source, 'preset');
+  const own = await rt.apiMatchQuestion(request({ fixtureId: 77, question: 'Кто опаснее в атаке?' }), cfg, user);
+  assert.equal(own.body.available, false);
+  assert.equal(own.body.reason, 'ai_disabled');
+  assert.equal(calls.ai, 0);
+  assert.equal(calls.rpc.length, 0);
+});

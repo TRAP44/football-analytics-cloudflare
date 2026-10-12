@@ -32,6 +32,7 @@ export function createAdminRuntimeControlsModule(deps) {
     if (controls.liveEnabled === false) disabled.push('матч в реальном времени');
     if (controls.remindersEnabled === false) disabled.push('уведомления');
     if (controls.expandedDataEnabled === false) disabled.push('расширенные данные');
+    if (controls.aiEnabled === false) disabled.push('AI (Workers AI)');
     const auto = controls.autoSettlementRecoveryEnabled ? ' · автовосстановление включено' : ' · автовосстановление: наблюдение';
     return disabled.length ? `Ограничения: ${disabled.join(', ')}${auto}` : `Основные функции включены${auto}`;
   }
@@ -195,11 +196,13 @@ export function createAdminRuntimeControlsModule(deps) {
       ['runtimeRemindersToggle', 'remindersEnabled'],
       ['runtimeExpandedToggle', 'expandedDataEnabled'],
       ['runtimeAutoSettlementRecoveryToggle', 'autoSettlementRecoveryEnabled'],
+      ['runtimeAiToggle', 'aiEnabled'],
     ];
     for (const [id, key] of map) {
       const el = $(id);
       if (!el) continue;
-      el.checked = Boolean(c[key]);
+      // aiEnabled отсутствует до миграции v6.29.15 — значит, AI включён.
+      el.checked = key === 'aiEnabled' ? c[key] !== false : Boolean(c[key]);
       el.disabled = securityLockdown;
     }
     if ($('runtimeMessage')) $('runtimeMessage').value = c.message || '';
@@ -246,6 +249,7 @@ export function createAdminRuntimeControlsModule(deps) {
         remindersEnabled: false,
         expandedDataEnabled: false,
         autoSettlementRecoveryEnabled: false,
+        aiEnabled: false,
         message: String($('runtimeMessage')?.value || '').trim().slice(0, 280),
         reason: typedReason || 'Аварийный Security Lockdown включён администратором.',
         action: wasSecurityLockdown ? 'update' : 'lockdown',
@@ -262,6 +266,7 @@ export function createAdminRuntimeControlsModule(deps) {
         remindersEnabled: true,
         expandedDataEnabled: true,
         autoSettlementRecoveryEnabled: false,
+        aiEnabled: true,
         message: '',
         reason: typedReason || 'Аварийный Security Lockdown снят администратором.',
         action: 'lockdown_release',
@@ -277,6 +282,7 @@ export function createAdminRuntimeControlsModule(deps) {
       remindersEnabled: runtimeControlsFormValue('runtimeRemindersToggle', true),
       expandedDataEnabled: runtimeControlsFormValue('runtimeExpandedToggle', true),
       autoSettlementRecoveryEnabled: runtimeControlsFormValue('runtimeAutoSettlementRecoveryToggle', false),
+      aiEnabled: runtimeControlsFormValue('runtimeAiToggle', true),
       message: String($('runtimeMessage')?.value || '').trim().slice(0, 280),
       reason: typedReason,
       action: 'update',
@@ -291,7 +297,7 @@ export function createAdminRuntimeControlsModule(deps) {
       return;
     }
   
-    const disabling = body.maintenanceMode || !body.analysisEnabled || !body.searchEnabled || !body.liveEnabled || !body.remindersEnabled || !body.expandedDataEnabled;
+    const disabling = body.maintenanceMode || !body.analysisEnabled || !body.searchEnabled || !body.liveEnabled || !body.remindersEnabled || !body.expandedDataEnabled || body.aiEnabled === false;
     const enablingAutoRecovery = Boolean(body.autoSettlementRecoveryEnabled) && !Boolean(state.runtimeControlsAdmin?.controls?.autoSettlementRecoveryEnabled);
     if (!options.skipConfirm) {
       const message = body.action === 'lockdown'
@@ -353,6 +359,7 @@ export function createAdminRuntimeControlsModule(deps) {
       remindersEnabled: true,
       expandedDataEnabled: true,
       autoSettlementRecoveryEnabled: false,
+      aiEnabled: true,
       message: '',
       reason: 'Администратор восстановил безопасные настройки.',
       action: 'defaults',
