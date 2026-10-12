@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { createChannelDailyPostJob, dailyPostMatches, dailyPostText } from '../src/channel-daily-post-job.js';
+import { createChannelDailyPostJob, dailyPostCandidateIds, dailyPostMatches, dailyPostText } from '../src/channel-daily-post-job.js';
 
 const NOW = Date.parse('2026-10-12T08:05:00.000Z');
 const row = (id, date, home, away, { status = 'NS', league = 'Premier League', leagueId = 39 } = {}) => ({
@@ -43,6 +43,51 @@ test('main matches win the five slots; broken estimates are dropped', () => {
   assert.equal(picked.length, 5);
   // Главные (104–106; 107 с битой суммой) берутся всегда, оставшиеся места — ближайшим.
   assert.deepEqual(picked.map(m => m.fixtureId), [100, 101, 104, 105, 106]);
+});
+
+test('a match after 21:00 UTC belongs to the next Moscow day and is not in today\'s post', () => {
+  const late = [
+    row(201, '2026-10-12T20:30:00.000Z', 'Вечер', 'FC'),
+    row(202, '2026-10-12T22:30:00.000Z', 'Ночь', 'FC'),
+  ];
+  const est = { 201: { home: 50, draw: 25, away: 25 }, 202: { home: 50, draw: 25, away: 25 } };
+  assert.deepEqual(dailyPostMatches(late, est, NOW).map(m => m.fixtureId), [201]);
+  assert.deepEqual(dailyPostCandidateIds(late, NOW).map(entry => entry.id), [201]);
+});
+
+test('model snapshots are requested in chunks, main matches first, so a main match past row 200 is kept', async () => {
+  const fixtures = Array.from({ length: 450 }, (_, i) => row(1000 + i, `2026-10-12T${String(10 + Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}:00.000Z`, `H${i}`, `A${i}`));
+  const mainId = 1000 + 430;
+  const calls = [];
+  const job = createChannelDailyPostJob({
+    clock: () => NOW,
+    getCache: async key => (key.startsWith('provider-fixtures:') ? { fixtures } : null),
+    getModelProbabilities: async ids => {
+      calls.push(ids.length);
+      return Object.fromEntries(ids.filter(id => id === mainId || id < 1003).map(id => [id, { home: 50, draw: 25, away: 25 }]));
+    },
+    isMainFixture: item => item.fixture.id === mainId,
+    recordOpsEvent: async () => {},
+    setCache: async () => {},
+  });
+  const ranked = dailyPostCandidateIds(fixtures, NOW, { isMain: item => item.fixture.id === mainId });
+  assert.equal(ranked[0].id, mainId);
+  const result = await job.processChannelDailyPost({}, new Date(NOW));
+  assert.equal(result.reason, 'preview_recorded');
+  assert.equal(result.matches, 4);
+  assert.ok(calls.every(n => n <= 200));
+  assert.equal(calls.length, 3, 'only 4 snapshots exist, so all chunks are read');
+
+  const quick = [];
+  const full = createChannelDailyPostJob({
+    clock: () => NOW,
+    getCache: async key => (key.startsWith('provider-fixtures:') ? { fixtures } : null),
+    getModelProbabilities: async ids => { quick.push(ids.length); return Object.fromEntries(ids.map(id => [id, { home: 50, draw: 25, away: 25 }])); },
+    recordOpsEvent: async () => {},
+    setCache: async () => {},
+  });
+  assert.equal((await full.processChannelDailyPost({}, new Date(NOW))).matches, 5);
+  assert.deepEqual(quick, [200], 'five snapshots found in the first chunk — no more requests');
 });
 
 function harness({ enabled = false, published = [], previewCached = false } = {}) {

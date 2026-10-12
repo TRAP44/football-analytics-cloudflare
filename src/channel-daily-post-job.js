@@ -17,6 +17,8 @@ const MAX_MATCHES = 5;
 const MIN_LEAD_MINUTES = 30;
 const UPCOMING = new Set(['NS', 'TBD']);
 const MSK_OFFSET_MS = 3 * 3600_000;
+const PREDICTION_CHUNK = 200;
+const MAX_PREDICTION_CHUNKS = 5;
 const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 
 function plainObject(value) {
@@ -40,6 +42,45 @@ function mskParts(ms) {
   };
 }
 
+// Календарный день по Москве: матч в 22:30 UTC — это уже следующий день МСК
+// (ревью Codex #860), в пост «на сегодня» он не попадает.
+function mskDateKey(ms) {
+  return new Date(ms + MSK_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+function upcomingToday(item, nowMs) {
+  const fixture = plainObject(item.fixture) || {};
+  const status = String(plainObject(fixture.status)?.short || '').toUpperCase();
+  const kickoff = Date.parse(String(fixture.date || ''));
+  if (!UPCOMING.has(status) || !Number.isFinite(kickoff) || kickoff - nowMs < MIN_LEAD_MINUTES * 60_000) return null;
+  return mskDateKey(kickoff) === mskDateKey(nowMs) ? kickoff : null;
+}
+
+function safeMain(isMain, item) {
+  try { return isMain(item) === true; } catch { return false; }
+}
+
+/**
+ * Id подходящих матчей для запроса снимков модели: сначала главные, потом по
+ * времени начала — чтобы лимит запроса не отрезал главные матчи дня.
+ */
+export function dailyPostCandidateIds(rows = [], nowMs = Date.now(), { isMain = () => true } = {}) {
+  const seen = new Set();
+  const result = [];
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const item = plainObject(row) || {};
+    const id = positiveId(plainObject(item.fixture)?.id);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const kickoff = upcomingToday(item, nowMs);
+    if (kickoff === null) continue;
+    result.push({ id, kickoff, main: safeMain(isMain, item) });
+  }
+  return result
+    .sort((a, b) => Number(b.main) - Number(a.main) || a.kickoff - b.kickoff)
+    .map(entry => ({ id: entry.id, main: entry.main }));
+}
+
 /** Кандидаты: сегодняшние предстоящие матчи с валидным предматчевым снимком. */
 export function dailyPostMatches(rows = [], predictions = {}, nowMs = Date.now(), { isMain = () => true } = {}) {
   const seen = new Set();
@@ -50,9 +91,8 @@ export function dailyPostMatches(rows = [], predictions = {}, nowMs = Date.now()
     const id = positiveId(fixture.id);
     if (!id || seen.has(id)) continue;
     seen.add(id);
-    const status = String(plainObject(fixture.status)?.short || '').toUpperCase();
-    const kickoff = Date.parse(String(fixture.date || ''));
-    if (!UPCOMING.has(status) || !Number.isFinite(kickoff) || kickoff - nowMs < MIN_LEAD_MINUTES * 60_000) continue;
+    const kickoff = upcomingToday(item, nowMs);
+    if (kickoff === null) continue;
     const p = plainObject(predictions[id]);
     if (!p) continue;
     const values = [p.home, p.draw, p.away].map(Number);
@@ -62,8 +102,7 @@ export function dailyPostMatches(rows = [], predictions = {}, nowMs = Date.now()
     const home = cleanName(plainObject(teams.home)?.name);
     const away = cleanName(plainObject(teams.away)?.name);
     if (!home || !away) continue;
-    let main = false;
-    try { main = isMain(item) === true; } catch { main = false; }
+    const main = safeMain(isMain, item);
     result.push({ fixtureId: id, kickoff, home, away, league: cleanName(plainObject(item.league)?.name), probabilities: { home: values[0], draw: values[1], away: values[2] }, main });
   }
   // Сначала главные матчи, потом по времени начала.
@@ -140,12 +179,22 @@ export function createChannelDailyPostJob(deps = {}) {
     }
 
     const rows = await todayRows(date, cfg);
-    const ids = rows.map(row => positiveId(plainObject(plainObject(row)?.fixture)?.id)).filter(Boolean).slice(0, 200);
-    let predictions = {};
-    try {
-      predictions = plainObject(await getModelProbabilities(ids, cfg)) || {};
-    } catch {
-      return { ok: false, reason: 'predictions_lookup_failed' };
+    // Снимки модели запрашиваются частями по 200 id, главные матчи — первыми
+    // (ревью Codex #860): в насыщенный день главный матч не теряется за лимитом.
+    const candidates = dailyPostCandidateIds(rows, at.getTime(), { isMain: isMainFixture });
+    const predictions = {};
+    // Порядок кандидатов совпадает с порядком отбора в пост, поэтому, когда
+    // снимки найдены для MAX_MATCHES кандидатов, следующие части уже ничего не меняют.
+    let found = 0;
+    for (let chunk = 0; chunk < MAX_PREDICTION_CHUNKS && found < MAX_MATCHES; chunk += 1) {
+      const part = candidates.slice(chunk * PREDICTION_CHUNK, (chunk + 1) * PREDICTION_CHUNK);
+      if (!part.length) break;
+      try {
+        Object.assign(predictions, plainObject(await getModelProbabilities(part.map(entry => entry.id), cfg)) || {});
+      } catch {
+        return { ok: false, reason: 'predictions_lookup_failed' };
+      }
+      found = candidates.filter(entry => predictions[entry.id]).length;
     }
     const matches = dailyPostMatches(rows, predictions, at.getTime(), { isMain: isMainFixture });
     const text = dailyPostText(matches, at.getTime());
