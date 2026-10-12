@@ -1,13 +1,11 @@
-// Задача 0: версии Cloudflare, созданные правкой секрета в панели или
-// `wrangler secret put`. Cloudflare создаёт такую версию из кода, который был в
-// проде, но без отметки CI (`release=… sha=…` и тега), и сразу переводит на неё
-// 100% трафика. Здесь — только проверки формы версии; доказательство «код тот
-// же» строится по истории деплоев и хешу кода (`resources.script.etag`).
+// Задача 0: версии Cloudflare, созданные правкой секрета или переменной в панели
+// или `wrangler secret put`. Cloudflare создаёт такую версию из кода, который был
+// в проде, но без отметки CI (`release=… sha=…` и тега), и сразу переводит на неё
+// 100% трафика. Пометка триггера у таких версий разная (у правки в панели —
+// не `secret`), поэтому решает не она, а доказательство «код тот же»: история
+// деплоев ведёт к версии CI, и хеш кода (`resources.script.etag`) совпадает.
 
-const RELEASE_MESSAGE_RE = /^release=\S+ sha=[0-9a-f]{40}$/i;
-
-// Единственный триггер, который принимаем: «Secret Change» в терминах wrangler.
-export const SETTINGS_ONLY_TRIGGER = 'secret';
+const RELEASE_MESSAGE_RE = /^release=\S+ sha=([0-9a-f]{40})$/i;
 
 function annotation(version, key) {
   const value = version?.annotations?.[key];
@@ -18,18 +16,31 @@ export function versionTrigger(version) {
   return annotation(version, 'workers/triggered_by').toLowerCase();
 }
 
+// Отметка CI: сообщение `release=… sha=…` и тег, равный этому SHA.
 export function versionHasReleaseStamp(version) {
-  return RELEASE_MESSAGE_RE.test(annotation(version, 'workers/message'))
-    && annotation(version, 'workers/tag') !== '';
+  const message = RELEASE_MESSAGE_RE.exec(annotation(version, 'workers/message'));
+  return Boolean(message) && annotation(version, 'workers/tag').toLowerCase() === message[1].toLowerCase();
 }
 
-// Версия без отметки CI, созданная только правкой секрета. Любая другая версия
-// без отметки (загрузка из панели, ручной `wrangler deploy`) сюда не попадает.
+// Версия без отметки CI — кандидат «после правки настроек». Принимается только
+// вместе с доказательством того же кода (assertSameScriptContent).
 export function settingsOnlyVersion(version) {
   if (!version || typeof version !== 'object' || Array.isArray(version)) return false;
-  return versionTrigger(version) === SETTINGS_ONLY_TRIGGER
-    && annotation(version, 'workers/tag') === ''
-    && !RELEASE_MESSAGE_RE.test(annotation(version, 'workers/message'));
+  return !versionHasReleaseStamp(version);
+}
+
+// Для диагностики в Summary деплоя: только пометки и наличие хеша, без значений.
+export function describeVersion(version) {
+  const value = version && typeof version === 'object' ? version : {};
+  const show = text => (text ? text.slice(0, 40).replace(/[^\w .:=+-]/g, '?') : '—');
+  return [
+    `id=${show(String(value.id || ''))}`,
+    `trigger=${show(versionTrigger(value))}`,
+    `source=${show(String(value.metadata?.source || ''))}`,
+    `message=${annotation(value, 'workers/message') ? (RELEASE_MESSAGE_RE.test(annotation(value, 'workers/message')) ? 'release' : 'other') : 'none'}`,
+    `tag=${annotation(value, 'workers/tag') ? 'present' : 'none'}`,
+    `etag=${scriptContentEtag(value) ? 'present' : 'none'}`,
+  ].join(' ');
 }
 
 export function scriptContentEtag(version) {

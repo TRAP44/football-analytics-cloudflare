@@ -56,7 +56,10 @@ const history = [
 test('a version created by a secret change has no CI stamp, so the old gate refuses it', () => {
   assert.equal(settingsOnlyVersion(secretVersion()), true);
   assert.equal(settingsOnlyVersion(stamped()), false);
-  assert.equal(settingsOnlyVersion(secretVersion({ trigger: 'upload' })), false);
+  // Пометка триггера у правки в панели не «secret» (проверено вживую 12.10) —
+  // решает отсутствие отметки CI плюс доказательство того же кода.
+  assert.equal(settingsOnlyVersion(secretVersion({ trigger: 'upload' })), true);
+  assert.equal(settingsOnlyVersion({ ...stamped(), annotations: { 'workers/tag': sha } }), true, 'a copied tag without the release message is not a stamp');
   assert.throws(() => resolveActiveProductionReleaseIdentity(status, secretVersion()), /release identity mismatch/);
 });
 
@@ -93,13 +96,19 @@ test('the gate stays closed when the code cannot be proven identical', () => {
 });
 
 test('the gate stays closed for unstamped uploads, gaps and split traffic', () => {
-  // Code uploaded from the dashboard or a local `wrangler deploy` without a stamp.
-  assert.throws(() => resolveSettingsBaseVersionId(status, secretVersion({ trigger: 'upload' }), history, [stamped()]), /not created by a secret change/);
-  const uploadedHistory = [deploymentOf(previewId, '2026-10-10T10:00:01.000Z'), history[1]];
+  // Code uploaded from the dashboard or a local `wrangler deploy` without a stamp:
+  // its script hash differs from the CI version, so it is refused.
+  const dashboardCode = secretVersion({ trigger: 'upload', scriptEtag: 'etag-dashboard-edit-9' });
+  assert.throws(() => resolveSettingsOnlyProductionIdentity(status, dashboardCode, history, [stamped()], stamped()), /different script content/);
+  // A settings edit made on top of such an upload keeps that code — also refused.
+  const uploadedHistory = [history[0], deploymentOf(previewId, '2026-10-10T12:00:01.000Z'), deploymentOf(secretId, '2026-10-11T10:00:01.000Z')];
+  const onUpload = secretVersion({ scriptEtag: 'etag-dashboard-edit-9' });
   assert.throws(
-    () => resolveSettingsBaseVersionId(status, secretVersion(), uploadedHistory, [secretVersion({ id: previewId, trigger: 'upload' })]),
-    /not created by a secret change/,
+    () => resolveSettingsOnlyProductionIdentity(status, onUpload, uploadedHistory, [secretVersion({ id: previewId, trigger: 'upload', scriptEtag: 'etag-dashboard-edit-9' }), stamped()], stamped()),
+    /different script content/,
   );
+  // A dashboard settings edit (any trigger) with the CI code is accepted.
+  assert.equal(resolveSettingsOnlyProductionIdentity(status, secretVersion({ trigger: 'upload' }), history, [stamped()], stamped()).baseVersionId, baseId);
   assert.throws(() => resolveSettingsBaseVersionId(status, secretVersion(), history, []), /missing from the Cloudflare versions list/);
   assert.throws(() => resolveSettingsBaseVersionId(status, secretVersion(), [history[1]], [stamped()]), /No CI-stamped version/);
   const split = { ...history[0], versions: [{ version_id: baseId, percentage: 50 }, { version_id: previewId, percentage: 50 }] };
@@ -114,7 +123,7 @@ test('rollback target stays the secret-change version and is verified through it
   assert.throws(() => verifyRollbackTarget(secretVersion(), release, secretId, false, '', 'b'.repeat(40), stamped()), /deploy SHA mismatch/);
   assert.throws(() => verifyRollbackTarget(secretVersion(), release, secretId, false, '', '', stamped()), /requires the expected deploy SHA/);
   assert.throws(() => verifyRollbackTarget(secretVersion({ scriptEtag: 'etag-other-content-02' }), release, secretId, false, '', sha, stamped()), /different script content/);
-  assert.throws(() => verifyRollbackTarget(secretVersion({ trigger: 'upload' }), release, secretId, false, '', sha, stamped()), /created by a secret change/);
+  assert.throws(() => verifyRollbackTarget(stamped({ id: secretId }), release, secretId, false, '', sha, stamped()), /without a CI release stamp/);
   // Without a base the old rule holds: an unstamped target is refused.
   assert.throws(() => verifyRollbackTarget(secretVersion(), release, secretId, false, '', sha), /no RC116 release identity metadata/);
 });
@@ -178,4 +187,11 @@ test('codex #844: every version from deployment history is fetched by its ID', (
   assert.doesNotMatch(detect, /wrangler versions list --json/);
   assert.match(detect, /history_versions\(\) \{[\s\S]*?--print-history-version-ids[\s\S]*?wrangler versions view "\$id" --json[\s\S]*?jq -s '\.'/);
   assert.match(detect, /deployments list --json > "\$DEPLOYMENTS_JSON" \\\n\s+&& history_versions \\/);
+});
+
+test('hotfix 12.10: a blocked deploy describes the versions without exposing values', async () => {
+  const { describeVersion } = await import('../scripts/cloudflare-settings-version.js');
+  assert.equal(describeVersion(secretVersion({ trigger: 'upload' })), `id=${secretId} trigger=upload source=dash message=none tag=none etag=present`);
+  assert.equal(describeVersion(stamped()), `id=${baseId} trigger=upload source=wrangler message=release tag=present etag=present`);
+  assert.match(workflow, /--describe-version 2>\/dev\/null \|\| echo unavailable\)" >> "\$GITHUB_STEP_SUMMARY"/);
 });
