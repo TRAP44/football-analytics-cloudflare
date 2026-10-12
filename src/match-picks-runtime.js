@@ -40,6 +40,29 @@ function outcome(value) {
   return PICK_OUTCOMES.includes(value) ? value : null;
 }
 
+function goals(value) {
+  if (value === null || value === undefined || value === '' || typeof value === 'boolean') return null;
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 && number <= 30 ? number : null;
+}
+
+function label(value, max = 60) {
+  return typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : '';
+}
+
+/** Вероятность выбранного AI исхода из того же предматчевого снимка (сумма 98–102), иначе null. */
+export function aiPickProbability(model, ai) {
+  const values = ['home_prob', 'draw_prob', 'away_prob'].map(key => {
+    const raw = safeRead(model, key);
+    return raw === null || raw === undefined || raw === '' || typeof raw === 'boolean' ? NaN : Number(raw);
+  });
+  if (!values.every(value => Number.isFinite(value) && value >= 0 && value <= 100)) return null;
+  const sum = values[0] + values[1] + values[2];
+  if (sum < 98 || sum > 102) return null;
+  const index = PICK_OUTCOMES.indexOf(ai);
+  return index >= 0 ? Math.round(values[index]) : null;
+}
+
 /** Имя для таблицы: только first_name, без управляющих символов и ссылок. */
 export function publicPlayerName(value) {
   const text = String(value || '')
@@ -107,7 +130,8 @@ export function createMatchPicksRuntime(deps = {}) {
   async function prediction(fixtureId, cfg) {
     const rows = await supaSelectMany(cfg, 'model_predictions', { fixture_id: `eq.${fixtureId}` }, {
       limit: 1,
-      select: 'fixture_id,kickoff_at,status,predicted_outcome,actual_outcome,settlement_verification_state',
+      select: 'fixture_id,kickoff_at,status,predicted_outcome,actual_outcome,settlement_verification_state,'
+        + 'home_name,away_name,league_name,home_prob,draw_prob,away_prob,actual_home_goals,actual_away_goals',
     });
     return plainObject(Array.isArray(rows) ? rows[0] : null);
   }
@@ -134,6 +158,14 @@ export function createMatchPicksRuntime(deps = {}) {
         actual,
         userPoint: pick ? (pick === actual ? 1 : 0) : null,
         aiPoint: ai === actual ? 1 : 0,
+        // Для карточки «AI угадал» — только проверенные данные того же снимка.
+        score: goals(safeRead(model, 'actual_home_goals')) !== null && goals(safeRead(model, 'actual_away_goals')) !== null
+          ? { home: goals(safeRead(model, 'actual_home_goals')), away: goals(safeRead(model, 'actual_away_goals')) }
+          : null,
+        aiProbability: aiPickProbability(model, ai),
+        homeName: label(safeRead(model, 'home_name')),
+        awayName: label(safeRead(model, 'away_name')),
+        league: label(safeRead(model, 'league_name'), 80),
       } : null,
     };
   }
