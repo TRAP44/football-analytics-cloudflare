@@ -16,6 +16,8 @@ test('probe is needed when the plan is unknown or a FREE snapshot is stale', () 
   assert.equal(providerSnapshotNeedsProbe({ plan: 'FREE', updatedAt: new Date(NOW - 45 * 60_000).toISOString() }, NOW), true);
   assert.equal(providerSnapshotNeedsProbe({ plan: 'FREE', updatedAt: '2026-10-11T23:59:00.000Z' }, Date.parse('2026-10-12T00:05:00.000Z')), true, 'new UTC day');
   assert.equal(providerSnapshotNeedsProbe({ plan: 'UNKNOWN', cooldownActive: true }, NOW), false, 'no probe during a cooldown');
+  assert.equal(providerSnapshotNeedsProbe({ plan: 'PRO', health: 'critical', cooldownActive: false }, NOW), true, 'stale rate-limit error after the cooldown');
+  assert.equal(providerSnapshotNeedsProbe({ plan: 'PRO', health: 'critical', cooldownActive: true }, NOW), false);
   assert.equal(providerSnapshotNeedsProbe(null, NOW), true);
 });
 

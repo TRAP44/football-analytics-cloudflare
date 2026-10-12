@@ -24,6 +24,10 @@ function utcDate(ms) {
 export function providerSnapshotNeedsProbe(snapshot, nowMs = Date.now()) {
   const snap = plainObject(snapshot) || {};
   if (snap.cooldownActive === true) return false;
+  // Cooldown закончился, но в памяти осталась ошибка лимита (health critical):
+  // успешный /status её снимает — иначе задания стояли бы и на платном тарифе
+  // (ревью Codex #862).
+  if (snap.health === 'critical') return true;
   const plan = String(snap.plan || 'UNKNOWN').toUpperCase();
   if (['PRO', 'ULTRA', 'MEGA'].includes(plan)) return false;
   if (plan !== 'FREE') return true;
