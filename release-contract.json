@@ -21,10 +21,10 @@
     "version": 2,
     "rpc": "backend_readiness_contract_v2",
     "fingerprint": "449654e62c352ffcbd618dfccabbda7d",
-    "freshInstallFingerprint": "00000000000000000000000000000000",
+    "freshInstallFingerprint": "d87de7ad518d55bd0669334a7ce863ce",
     "compatibleFingerprints": [
       "449654e62c352ffcbd618dfccabbda7d",
-      "00000000000000000000000000000000",
+      "d87de7ad518d55bd0669334a7ce863ce",
       "c7164151f40be1a7af4271789f5d2c1c",
       "13c5b940bcc5d0d0496b7d4107a6c31c"
     ],
