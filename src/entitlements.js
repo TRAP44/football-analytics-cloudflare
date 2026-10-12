@@ -59,6 +59,17 @@ export function normalizePassType(value) {
   return Object.hasOwn(DEFAULT_PASS_PRODUCTS, type) ? type : '';
 }
 
+/**
+ * Суммы, с которыми принимается уже совершённая оплата Pass: текущая цена и
+ * цена по умолчанию из кода (до смены цен 12.10 — 39/89/149). Pre-checkout
+ * по-прежнему пропускает только текущую цену; старая принимается лишь для
+ * платежа, который Telegram уже одобрил до деплоя (ревью Codex #867).
+ */
+export function passAcceptedStars(product) {
+  const base = DEFAULT_PASS_PRODUCTS[product?.key];
+  return new Set([positiveInt(product?.stars, null), positiveInt(base?.stars, null)].filter(value => value !== null));
+}
+
 export function passProductConfig(type, cfg = {}) {
   const key = normalizePassType(type);
   if (!key) return null;
@@ -327,7 +338,7 @@ export function createEntitlementService({
     if (
       uid === null
       || !product || !product.saleReady || fid === null
-      || paidStars === null || paidStars !== product.stars
+      || paidStars === null || !passAcceptedStars(product).has(paidStars)
       || !chargeId || chargeId.length > 240
       || !payload || payload.length > 512
       || !window
@@ -343,7 +354,7 @@ export function createEntitlementService({
         p_starts_at: window.startsAt,
         p_expires_at: window.expiresAt,
         p_usage_limit: product.usageLimit,
-        p_stars_amount: Number(product.stars),
+        p_stars_amount: paidStars,
         p_payment_charge_id: chargeId,
         p_invoice_payload: payload,
       }, 5000);
@@ -364,7 +375,7 @@ export function createEntitlementService({
         && existing.entitlement_type === product.key
         && nonNegativeInt(existing.fixture_id ?? 0,Number.NaN) === fid
         && existingUsageLimit === product.usageLimit
-        && positiveInt(existing.stars_amount,null) === product.stars
+        && positiveInt(existing.stars_amount,null) === paidStars
         && String(existing.invoice_payload || '') === payload;
       return { activated: false, duplicate: same, reason: same ? 'duplicate' : 'payment_charge_conflict', entitlementId: existing.id };
     }
@@ -378,7 +389,7 @@ export function createEntitlementService({
       expires_at: window.expiresAt,
       usage_limit: product.usageLimit,
       usage_count: 0,
-      stars_amount:product.stars,
+      stars_amount:paidStars,
       payment_charge_id: chargeId,
       invoice_payload: payload,
       status: 'active',

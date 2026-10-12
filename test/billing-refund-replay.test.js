@@ -542,3 +542,62 @@ test('already-refunded internal charges skip Telegram and still reconcile access
   assert.equal(telegramCalls, 0);
   assert.deepEqual(reconcileCalls, [{ userId, chargeId }]);
 });
+
+test('price change cutover: payments at the previous default price still activate and sync', async () => {
+  const userId = 505;
+  const now = Math.floor(Date.now() / 1000);
+  const pages = [[]];
+  const history = telegramHistoryFetch(pages);
+  let passActivations = 0;
+  const harness = baseBillingHarness({
+    fetchWithTimeout: history.fetchWithTimeout,
+    // Текущая цена Match Pass — 75, прежняя (по умолчанию в коде) — 39.
+    passProductConfig: type => type === 'MATCH_PASS' ? { key: 'MATCH_PASS', stars: 75, saleReady: true } : null,
+    parsePassInvoicePayload: async payload => (payload === 'pass-legacy' || payload === 'pass-wrong')
+      ? { userId, passType: 'MATCH_PASS', fixtureId: 91 }
+      : null,
+    activatePassPurchase: async () => {
+      passActivations += 1;
+      return { activated: true, duplicate: false };
+    },
+  });
+  const cfg = {
+    botToken: 'bot-token',
+    // Текущая цена PRO выше прежней (в BILLING_PLANS — 100).
+    starsPrices: { PRO: 499 },
+    limits: { PRO: BILLING_PLANS.PRO.dailyLimit },
+  };
+
+  assert.equal(await harness.runtime.applySuccessfulPayment(userId, {
+    currency: 'XTR', total_amount: 39, invoice_payload: 'pass-legacy', telegram_payment_charge_id: 'pass-legacy-1',
+  }, cfg), true);
+  assert.equal(await harness.runtime.applySuccessfulPayment(userId, {
+    currency: 'XTR', total_amount: 60, invoice_payload: 'pass-wrong', telegram_payment_charge_id: 'pass-wrong-1',
+  }, cfg), false);
+  assert.equal(passActivations, 1);
+
+  const subscriptionPayload = await harness.runtime.makeInvoicePayload(userId, 'PRO', 'bot-token');
+  pages[0] = [
+    {
+      id: 'pass-legacy-sync', amount: 39, date: now,
+      source: { type: 'user', transaction_type: 'invoice_payment', user: { id: userId }, invoice_payload: 'pass-legacy' },
+    },
+    {
+      id: 'pass-wrong-sync', amount: 60, date: now,
+      source: { type: 'user', transaction_type: 'invoice_payment', user: { id: userId }, invoice_payload: 'pass-wrong' },
+    },
+    {
+      id: 'subscription-legacy-sync', amount: BILLING_PLANS.PRO.stars, date: now,
+      source: {
+        type: 'user', transaction_type: 'invoice_payment', user: { id: userId },
+        invoice_payload: subscriptionPayload, subscription_period: SUBSCRIPTION_PERIOD_SECONDS,
+      },
+    },
+  ];
+  const result = await harness.runtime.syncBillingFromStars(userId, cfg);
+  assert.equal(result.passVerified, 1);
+  assert.equal(result.subscriptionSynced, true);
+  assert.equal(passActivations, 2);
+  assert.equal(harness.memory.users.get(userId)?.plan, 'PRO');
+  assert.equal(harness.memory.billingPayments.get('subscription-legacy-sync')?.stars_amount, BILLING_PLANS.PRO.stars);
+});
