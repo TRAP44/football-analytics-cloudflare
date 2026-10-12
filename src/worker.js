@@ -2367,6 +2367,37 @@ async function getModelProbabilities(fixtureIds, cfg) {
   return result;
 }
 
+// Задача 3 (часть 2): последняя оценка по ходу матча (точка кривой in_play_model)
+// для идущих матчей ленты. Только свежие точки (последние 30 минут) с корректной
+// суммой; минута и счёт — из той же точки.
+const LIVE_ESTIMATE_WINDOW_MS = 30 * 60_000;
+async function getLatestInPlayProbabilities(fixtureIds, cfg) {
+  const ids = [...new Set((Array.isArray(fixtureIds) ? fixtureIds : []).map(Number).filter(id => Number.isSafeInteger(id) && id > 0))].slice(0, 60);
+  if (!ids.length || !hasSupabase(cfg)) return {};
+  const since = new Date(Date.now() - LIVE_ESTIMATE_WINDOW_MS).toISOString();
+  const rows = await supaSelectMany(cfg, 'analysis_timeline_snapshots', {
+    fixture_id: `in.(${ids.join(',')})`,
+    snapshot_key: 'like.in-play:*',
+    captured_at: `gte.${since}`,
+  }, {
+    limit: ids.length * 8,
+    order: 'captured_at.desc',
+    select: 'fixture_id,home_prob,draw_prob,away_prob,match_minute,match_status,captured_at',
+  });
+  const result = {};
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const id = Number(row?.fixture_id);
+    if (!Number.isSafeInteger(id) || id <= 0 || result[id]) continue;
+    const values = [row?.home_prob, row?.draw_prob, row?.away_prob].map(Number);
+    const sum = values.reduce((total, value) => total + value, 0);
+    if (!values.every(value => Number.isFinite(value) && value >= 0 && value <= 100) || sum < 98 || sum > 102) continue;
+    const minute = Number(row?.match_minute);
+    const [home, draw, away] = values.map(value => Math.round(value * 10) / 10);
+    result[id] = { home, draw, away, minute: Number.isInteger(minute) && minute >= 0 && minute <= 130 ? minute : null };
+  }
+  return result;
+}
+
 let userDataApiRuntime = null;
 function getUserDataApiRuntime() {
   if (!userDataApiRuntime) {
@@ -2524,6 +2555,7 @@ function getProviderFixtureRuntime() {
       bumpTelemetry,
       catalogRank,
       getCache,
+      getLatestInPlayProbabilities,
       getModelProbabilities,
       getStaleCache,
       isFinishedStatus,

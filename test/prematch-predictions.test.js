@@ -288,7 +288,8 @@ test('wiring: cron task, feed enrichment and card fallback', () => {
   const api = feed.slice(feed.indexOf('async function apiMatches('), feed.indexOf('\n  }\n', feed.indexOf('async function apiMatches(')));
   assert.doesNotMatch(api, /return json\(/, 'every feed response passes through respondWithPredictions');
   const app = fs.readFileSync('public/app.js', 'utf8');
-  assert.match(app, /\$\{!m\.live && !m\.finished \? aiConfidenceMeterHtml\(aiHistory, m\) : ''\}/);
+  // Идущий матч тоже проходит через aiConfidenceMeterHtml: там только оценка по ходу матча.
+  assert.match(app, /\$\{!m\.finished \? aiConfidenceMeterHtml\(aiHistory, m\) : ''\}/);
   assert.match(fs.readFileSync('public/modules/home-signal.js', 'utf8'), /aiConfidenceMeterHtml\(aiHistory, match\)/);
   const wrangler = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8').replace(/^\s*\/\/.*$/gm, ''));
   assert.equal(wrangler.vars.PREMATCH_PREDICTIONS_DAILY_LIMIT, '60');
@@ -309,12 +310,23 @@ test('Mini App card draws feed probabilities only when they are valid', () => {
     assert.equal(meter(null, { aiProbabilities: bad }), '');
   }
   assert.match(meter({ aiConfidence: 70, aiProbabilities: { home: 50, draw: 30, away: 20 } }, null), /AI-разбор готов/);
+
+  // Идущий матч: только оценка по ходу матча, предматчевые цифры (и из разбора) не показываются.
+  const live = { live: true, aiProbabilities: { home: 52.3, draw: 26.1, away: 21.6 }, aiLiveProbabilities: { home: 76.6, draw: 17.3, away: 6.1, minute: 61 } };
+  const liveHtml = meter({ aiConfidence: 70, aiProbabilities: { home: 50, draw: 30, away: 20 } }, live);
+  assert.match(liveHtml, /77%/);
+  assert.match(liveHtml, /Сейчас по ходу матча · 61′/);
+  assert.doesNotMatch(liveHtml, /52%|50%|AI-разбор готов|до разбора/);
+  assert.equal(meter(null, { live: true, aiProbabilities: { home: 52.3, draw: 26.1, away: 21.6 } }), '', 'no in-play estimate — nothing');
+  assert.equal(meter(null, { live: true, aiLiveProbabilities: { home: 80, draw: 30, away: 20 } }), '');
 });
 
 
-function feedRuntime({ stale, probabilities }) {
+function feedRuntime({ stale, probabilities, live = null }) {
   const asked = [];
+  const askedLive = [];
   const methods = {
+    ...(live ? { getLatestInPlayProbabilities: async ids => { askedLive.push(ids); if (live instanceof Error) throw live; return live; } } : {}),
     apiFootball: async () => [],
     bumpTelemetry: () => {},
     catalogRank: () => 0,
@@ -344,8 +356,36 @@ function feedRuntime({ stale, probabilities }) {
     statusLabel: () => '',
     todayUtc: () => '2026-10-08',
   };
-  return { client: createProviderFixtureRuntime(methods), asked };
+  return { client: createProviderFixtureRuntime(methods), asked, askedLive };
 }
+
+test('feed: live matches get the latest in-play estimate, others never do', async () => {
+  const stale = {
+    date: '2026-10-10',
+    sourceMeta: { provider: 'api-football' },
+    matches: [
+      { fixtureId: 301, live: true, status: '2H', home: { name: 'A' }, away: { name: 'B' } },
+      { fixtureId: 302, home: { name: 'C' }, away: { name: 'D' }, aiLiveProbabilities: { home: 90, draw: 5, away: 5 } },
+      { fixtureId: 303, live: true, status: '1H', home: { name: 'E' }, away: { name: 'F' } },
+      // Овертайм и пенальти модель не считает (ревью Codex #858).
+      { fixtureId: 304, live: true, status: 'ET', home: { name: 'G' }, away: { name: 'H' } },
+      { fixtureId: 305, live: true, status: 'P', home: { name: 'I' }, away: { name: 'J' } },
+    ],
+  };
+  const { client, askedLive } = feedRuntime({ stale, probabilities: {}, live: { 301: { home: 76.6, draw: 17.3, away: 6.1, minute: 61 }, 304: { home: 90, draw: 5, away: 5, minute: 89 } } });
+  const res = await client.apiMatches(new Request('https://x.test/api/matches?date=2026-10-10'), {});
+  const byId = Object.fromEntries(res.body.matches.map(m => [m.fixtureId, m]));
+  assert.deepEqual(askedLive, [[301, 303]], 'only live matches are looked up');
+  assert.deepEqual(byId[301].aiLiveProbabilities, { home: 76.6, draw: 17.3, away: 6.1, minute: 61 });
+  assert.equal(Object.hasOwn(byId[302], 'aiLiveProbabilities'), false, 'never passed through from the cached feed');
+  assert.equal(Object.hasOwn(byId[303], 'aiLiveProbabilities'), false);
+  assert.equal(Object.hasOwn(byId[304], 'aiLiveProbabilities'), false, 'no regulation estimate in extra time');
+
+  const failing = feedRuntime({ stale, probabilities: {}, live: new Error('db down') });
+  const fallback = await failing.client.apiMatches(new Request('https://x.test/api/matches?date=2026-10-10'), {});
+  assert.equal(fallback.body.matches.length, 5);
+  assert.ok(fallback.body.matches.every(m => !Object.hasOwn(m, 'aiLiveProbabilities')));
+});
 
 test('feed: /api/matches adds validated model probabilities for unfinished matches, independent of user history', async () => {
   const stale = {
