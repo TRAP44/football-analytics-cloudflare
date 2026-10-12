@@ -120,7 +120,7 @@ function harness({ enabled = false, published = [], previewCached = false } = {}
     clock: () => NOW,
     completeIdempotency: store.completeIdempotency,
     fixtureTelegramDeepLink: async (_cfg, id) => ({ url: `https://t.me/MatchRadarBot?startapp=f${id}` }),
-    getCache: async key => (key.startsWith('provider-fixtures:') ? { date: '2026-10-12', fixtures: rows } : cache.get(key) || null),
+    getCache: async key => (key.startsWith('provider-fixtures:') ? { date: '2026-10-12', fixtures: rows } : cache.get(key) || store.claims.get(key) || null),
     getModelProbabilities: async () => predictions,
     loadProviderFixturesForDate: async () => rows,
     recordOpsEvent: async (_cfg, event) => { ops.push(event); return persisted(event); },
@@ -142,59 +142,79 @@ test('while disabled the job only records a preview, once a day, inside the 11:0
   assert.equal(ops.length, previewParts(ops.map(event => event.message).join('\n')).length, 'no duplicate parts');
 });
 
-test('the preview marker is a durable claim: another isolate with an empty cache does not duplicate it', async () => {
-  const shared = claimStore();
-  const make = () => {
-    const ops = [];
-    const job = createChannelDailyPostJob({
-      ...shared,
-      clock: () => NOW,
-      getCache: async key => (key.startsWith('provider-fixtures:') ? { fixtures: rows } : null),
-      getModelProbabilities: async () => predictions,
-      recordOpsEvent: async event => { ops.push(event); return persisted(event); },
-      setCache: async () => {},
-    });
-    return { job, ops };
+// Журнал ops_events: одна строка на transitionKey (как record_ops_event_occurrence).
+function opsJournal(fail = () => false) {
+  const rows = new Map();
+  const plain = [];
+  return {
+    rows,
+    plain,
+    recordOpsEvent: async (_cfg, event) => {
+      if (fail(event)) return persisted(event, 'failed');
+      if (event.transitionKey) rows.set(event.transitionKey, event);
+      else plain.push(event);
+      return persisted(event);
+    },
   };
-  const first = make();
-  const second = make();
-  assert.equal((await first.job.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_recorded');
-  assert.equal((await second.job.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_already_recorded');
-  assert.equal(second.ops.length, 0);
-  assert.equal(shared.claims.get('telegram:channel-publish:v1:daily-preview:2026-10-12').state, 'sent');
-  // Журнал заявок недоступен — предпросмотр не пишется вовсе (без дублей).
-  const down = createChannelDailyPostJob({
+}
+
+// Общий кеш видит строку заявки (заявка и кеш — одна таблица analysis_cache).
+function sharedDeps(store, journal, extra = {}) {
+  return {
+    ...store,
+    ...journal,
     clock: () => NOW,
-    claimIdempotency: async () => ({ claimed: false, unavailable: true }),
-    getCache: async key => (key.startsWith('provider-fixtures:') ? { fixtures: rows } : null),
+    getCache: async key => (key.startsWith('provider-fixtures:') ? { fixtures: rows } : store.claims.get(key) || null),
     getModelProbabilities: async () => predictions,
-    recordOpsEvent: async event => persisted(event),
     setCache: async () => {},
-  });
-  assert.equal((await down.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_claim_unavailable');
+    ...extra,
+  };
+}
+
+test('the day marker is a durable claim set after all parts: another isolate does not repeat the preview', async () => {
+  const store = claimStore();
+  const journal = opsJournal();
+  const first = createChannelDailyPostJob(sharedDeps(store, journal));
+  const second = createChannelDailyPostJob(sharedDeps(store, journal));
+  assert.equal((await first.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_recorded');
+  const keys = [...journal.rows.keys()];
+  assert.ok(keys.every(key => /^channel-daily-preview:2026-10-12:\d+\/\d+$/.test(key)));
+  assert.equal(store.claims.get('telegram:channel-publish:v1:daily-preview:2026-10-12').state, 'sent');
+  assert.equal((await second.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_already_recorded');
+  assert.equal(journal.rows.size, keys.length);
 });
 
-test('the preview marker is written only when every part reached the journal', async () => {
-  const cache = new Map();
+test('a partly saved preview is completed on the next run without duplicate parts', async () => {
   const store = claimStore();
-  let failFirst = true;
-  const job = createChannelDailyPostJob({
-    ...store,
-    clock: () => NOW,
-    getCache: async key => (key.startsWith('provider-fixtures:') ? { fixtures: rows } : cache.get(key) || null),
-    getModelProbabilities: async () => predictions,
-    recordOpsEvent: async event => {
-      const status = failFirst ? 'failed' : 'persistent';
-      failFirst = false;
-      return persisted(event, status);
-    },
-    setCache: async (key, _id, value) => { cache.set(key, value); },
+  let failSecond = true;
+  const journal = opsJournal(event => {
+    if (failSecond && event.meta.part === 2) { failSecond = false; return true; }
+    return false;
   });
+  const many = Array.from({ length: 5 }, (_, i) => row(300 + i, `2026-10-12T1${i}:30:00.000Z`, `Очень длинное название клуба ${i}`, `Ещё одно длинное название ${i}`, { league: 'Лига чемпионов УЕФА' }));
+  const est = Object.fromEntries(many.map((_, i) => [300 + i, { home: 50, draw: 25, away: 25 }]));
+  const deps = sharedDeps(store, journal, {
+    getCache: async key => (key.startsWith('provider-fixtures:') ? { fixtures: many } : store.claims.get(key) || null),
+    getModelProbabilities: async () => est,
+  });
+  const job = createChannelDailyPostJob(deps);
   assert.equal((await job.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_not_persisted');
-  assert.equal(cache.has('channel-daily-preview:2026-10-12:v1'), false);
-  assert.equal(store.claims.size, 0, 'claim released — next run retries');
+  assert.equal(store.claims.size, 0, 'no marker — the next run retries');
+  const savedFirst = journal.rows.size;
+  assert.ok(savedFirst >= 1);
   assert.equal((await job.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_recorded');
-  assert.ok(cache.has('channel-daily-preview:2026-10-12:v1'));
+  const parts = previewParts(dailyPostText(dailyPostMatches(many, est, NOW), NOW));
+  assert.equal(journal.rows.size, parts.length, 'each part is stored exactly once');
+  assert.equal([...journal.rows.values()].sort((a, b) => a.meta.part - b.meta.part).map(event => event.message).join('\n'), parts.join('\n'));
+});
+
+test('without the claim journal the preview is still written once per part', async () => {
+  const journal = opsJournal();
+  const job = createChannelDailyPostJob(sharedDeps({ claims: new Map(), claimIdempotency: async () => ({ claimed: false, unavailable: true }), completeIdempotency: async () => {}, releaseIdempotency: async () => {} }, journal));
+  assert.equal((await job.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_recorded');
+  const size = journal.rows.size;
+  assert.equal((await job.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_recorded');
+  assert.equal(journal.rows.size, size, 'repeated run updates the same rows');
 });
 
 test('a long post is previewed in parts under the 500-character journal limit, without losing text', async () => {
