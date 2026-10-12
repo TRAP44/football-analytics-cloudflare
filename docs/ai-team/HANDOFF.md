@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-12 — Claude — Оценка по ходу матча в Штабе матча
-PR: ветка `claude/live-estimate-match-center`
+PR: [#853](https://github.com/TRAP44/football-analytics-cloudflare/pull/853), ветка `claude/live-estimate-match-center`
 Сделано:
 - `public/modules/match-center-view.js`: `latestInPlayEstimate(timeline)` берёт самую новую точку кривой с `provenance.source = in_play_model` (сумма 100 ± 1.2), `inPlayEstimateHtml` — карточка «Сейчас по ходу матча» (минута, счёт, 1/X/2, полоска в цветах кривой, подпись о том, что учитывается). Только для LIVE, во вкладке AI над «Честностью модели». Новых цифр не считает — только показывает сохранённую сервером точку.
 - `public/app.js`: в полном разборе во время матча под «Наиболее вероятный исход» — «Оценка по данным до матча — счёт её не меняет. Оценка по ходу матча — в Штабе матча.»
