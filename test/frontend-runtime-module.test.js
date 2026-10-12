@@ -117,13 +117,25 @@ test('runtime preference defaults are immutable and palette entries are frozen',
 
 test('UI preferences accept only explicit supported string values',()=>{
   const good=storageWith(JSON.stringify({
+    theme:'light',
+    accent:'system',
+    buttonStyle:'compact',
+  }));
+  assert.deepEqual(readUiPreferences(good),{
+    theme:'light',
+    accent:'system',
+    buttonStyle:'compact',
+  });
+
+  // Решение Сергея 12.10: старые выборы (тема «Океан», цветной акцент) сбрасываются.
+  const retired=storageWith(JSON.stringify({
     theme:'ocean',
     accent:'violet',
     buttonStyle:'compact',
   }));
-  assert.deepEqual(readUiPreferences(good),{
-    theme:'ocean',
-    accent:'violet',
+  assert.deepEqual(readUiPreferences(retired),{
+    theme:'system',
+    accent:'system',
     buttonStyle:'compact',
   });
 

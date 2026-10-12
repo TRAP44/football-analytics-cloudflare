@@ -1,3 +1,5 @@
+import { dispatchBackgroundJobs } from './github-dispatch-runtime.js';
+
 export function createWorkerBootstrapRuntime(deps = {}) {
   if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
     throw new TypeError('Worker bootstrap dependencies are required.');
@@ -729,9 +731,27 @@ export function createWorkerBootstrapRuntime(deps = {}) {
         return undefined;
       }
 
-      // Фоновые задачи исполняет GitHub Actions: «призрачный» cron Cloudflare
-      // (расписание удалено, но срабатывает) завершается сразу, без блокировки.
+      // Фоновые задачи исполняет GitHub Actions. Cron Cloudflare здесь — только
+      // часы: просит GitHub запустить workflow (один запрос, укладывается в
+      // 10 мс CPU Workers Free) и завершается, не занимая блокировку задач.
       if (cfg.backgroundJobsExecutor === 'github' && cfg.cronRunner !== 'github-actions') {
+        const result=await dispatchBackgroundJobs(cfg);
+        if (!result.dispatched && result.reason !== 'token_missing') {
+          const now=Date.now();
+          const previous=scheduledTimestamp({scheduledTime:safeRead(memory,'backgroundJobsDispatchWarningAt')}) || 0;
+          if (now-previous>=60*60_000) {
+            try { memory.backgroundJobsDispatchWarningAt=now; } catch {}
+            await safeRecord(cfg,{
+              severity:'warning',
+              source:'cron',
+              eventType:'background_jobs_dispatch',
+              code:'BACKGROUND_JOBS_DISPATCH_FAILED',
+              message:'Cloudflare cron could not ask GitHub Actions to run background jobs.',
+              status:result.status || 0,
+              meta:{reason:result.reason},
+            }).catch(() => {});
+          }
+        }
         return undefined;
       }
 

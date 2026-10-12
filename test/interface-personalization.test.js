@@ -46,10 +46,8 @@ function preferenceButton(dataset) {
 }
 
 function createPreferenceHarness({ storageFailure = false } = {}) {
-  const themeButtons = ['system', 'dark', 'light', 'ocean']
+  const themeButtons = ['system', 'dark', 'light']
     .map(themeChoice => preferenceButton({ themeChoice }));
-  const accentButtons = ['system', 'green', 'blue', 'violet', 'amber']
-    .map(accentChoice => preferenceButton({ accentChoice }));
   const styleButtons = ['soft', 'compact']
     .map(buttonStyleChoice => preferenceButton({ buttonStyleChoice }));
   const rootStyle = new Map();
@@ -84,7 +82,6 @@ function createPreferenceHarness({ storageFailure = false } = {}) {
     documentElement: root,
     querySelectorAll(selector) {
       if (selector === '[data-theme-choice]') return themeButtons;
-      if (selector === '[data-accent-choice]') return accentButtons;
       if (selector === '[data-button-style-choice]') return styleButtons;
       return [];
     },
@@ -141,7 +138,6 @@ function createPreferenceHarness({ storageFailure = false } = {}) {
     toasts,
     telegramColors,
     themeButtons,
-    accentButtons,
     styleButtons,
   };
 }
@@ -158,9 +154,10 @@ test('stored interface preferences are normalized before entering runtime state'
     },
   };
 
+  // Цветные акценты убраны (решение Сергея 12.10): старый выбор сбрасывается к янтарю.
   assert.deepEqual(readUiPreferences(storage), {
     theme: 'system',
-    accent: 'blue',
+    accent: 'system',
     buttonStyle: 'compact',
   });
 });
@@ -168,23 +165,23 @@ test('stored interface preferences are normalized before entering runtime state'
 test('interface preference mutations persist validated state and update visible controls', () => {
   const harness = createPreferenceHarness();
 
-  assert.equal(harness.controller.saveInterfacePreference('accent', 'violet'), true);
-  assert.equal(harness.controller.saveInterfacePreference('theme', 'ocean'), true);
+  assert.equal(harness.controller.saveInterfacePreference('theme', 'light'), true);
   assert.equal(harness.controller.saveInterfacePreference('buttonStyle', 'compact'), true);
 
   assert.deepEqual(harness.state.uiPreferences, {
-    theme: 'ocean',
-    accent: 'violet',
+    theme: 'light',
+    accent: 'system',
     buttonStyle: 'compact',
   });
-  assert.equal(harness.root.dataset.theme, 'ocean');
-  assert.equal(harness.root.dataset.accent, 'violet');
+  assert.equal(harness.root.dataset.theme, 'light');
+  // Акцент всегда фирменный: data-accent="system", цвет задаёт CSS (янтарь).
+  assert.equal(harness.root.dataset.accent, 'system');
+  assert.equal(harness.rootStyle.has('--accent'), false);
   assert.equal(harness.root.dataset.buttonStyle, 'compact');
-  assert.equal(harness.rootStyle.get('--accent'), '#c084fc');
-  assert.equal(harness.summary.textContent, 'Океан · Фиолетовый акцент · Строгие кнопки');
+  assert.equal(harness.summary.textContent, 'Строгие кнопки');
   assert.equal(harness.meta.content, '#07111f');
   assert.equal(
-    harness.accentButtons.find(button => button.dataset.accentChoice === 'violet')
+    harness.themeButtons.find(button => button.dataset.themeChoice === 'light')
       .getAttribute('aria-pressed'),
     'true',
   );
@@ -206,7 +203,9 @@ test('interface preference mutations fail closed on unknown keys and values', ()
 
   for (const [key, value] of [
     ['theme', 'javascript:alert(1)'],
+    ['theme', 'ocean'],
     ['accent', 'red'],
+    ['accent', 'green'],
     ['buttonStyle', 'huge'],
     ['unknown', 'dark'],
   ]) {
@@ -222,10 +221,9 @@ test('interface preference mutations fail closed on unknown keys and values', ()
 test('storage failure keeps the safe session preference without claiming persistence', () => {
   const harness = createPreferenceHarness({ storageFailure: true });
 
-  assert.equal(harness.controller.saveInterfacePreference('accent', 'green'), false);
-  assert.equal(harness.state.uiPreferences.accent, 'green');
-  assert.equal(harness.root.dataset.accent, 'green');
-  assert.equal(harness.rootStyle.get('--accent'), '#57e389');
+  assert.equal(harness.controller.saveInterfacePreference('theme', 'dark'), false);
+  assert.equal(harness.state.uiPreferences.theme, 'dark');
+  assert.equal(harness.root.dataset.theme, 'dark');
   assert.equal(
     harness.toasts.at(-1),
     'Оформление применено до закрытия приложения',
@@ -233,16 +231,19 @@ test('storage failure keeps the safe session preference without claiming persist
 });
 
 test('advanced appearance stays progressively disclosed in the interface', () => {
-  for (const theme of ['system', 'dark', 'light', 'ocean']) {
+  for (const theme of ['system', 'dark', 'light']) {
     assert.match(html, new RegExp(`data-theme-choice="${theme}"`));
+  }
+  // Решение Сергея 12.10: только тёмная/светлая тема и один янтарный акцент.
+  for (const page of [html, adminHtml]) {
+    assert.doesNotMatch(page, /data-theme-choice="ocean"/);
+    assert.doesNotMatch(page, /data-accent-choice=/);
   }
   assert.match(html, /id="advancedAppearance"/);
   assert.match(html, /id="advancedAppearanceSummary">По умолчанию/);
   assert.match(html, /class="theme-options theme-options-primary"/);
-  assert.match(html, /class="theme-options theme-options-extra"/);
   assert.match(css, /:root\[data-theme="light"\]/);
   assert.match(css, /:root\[data-theme="dark"\]/);
-  assert.match(css, /:root\[data-theme="ocean"\]/);
   assert.match(css, /:root\[data-button-style="compact"\]/);
 });
 
@@ -289,4 +290,12 @@ test('admin opens with an owner dashboard while rare validation and model tools 
   assert.match(profileOpen, /loadReminderHealth\(false\)/);
   assert.doesNotMatch(profileOpen, /loadBetaDashboard\(false\)/);
   assert.doesNotMatch(profileOpen, /loadModelQuality\(false\)/);
+});
+
+test('codex #845: the amber accent also applies on the admin page', () => {
+  const shell = readFileSync(new URL('../public/styles/public-shell.css', import.meta.url), 'utf8');
+  assert.match(adminHtml, /href="\/styles\/public-shell\.css\?v=/);
+  assert.match(shell, /html\[data-accent="system"\] \{ --accent: #fbbf24; --accent-text: #1a1203; \}/);
+  assert.match(shell, /html\[data-accent="system"\]\[data-theme="light"\] \{ --accent: #b45309; --accent-text: #ffffff; \}/);
+  assert.match(shell, /html\[data-accent="system"\]\[data-theme="dark"\] \{ --accent: #fbbf24; --accent-text: #1a1203; \}/);
 });
