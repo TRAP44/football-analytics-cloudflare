@@ -26,6 +26,18 @@ PR: [#846](https://github.com/TRAP44/football-analytics-cloudflare/pull/846), в
 Осталось / внимание:
 - Сергей: создать токен и добавить секрет в Cloudflare (шаги — в PR). Правка секрета создаёт версию без отметки CI — следующий деплой пропустит только #844, поэтому #844 сливать раньше.
 - Проверка после включения: `scheduled_job_leases` — `cron:<время>` со статусом `done` каждые 5 минут.
+## 2026-10-12 — Claude — Задача 0: деплой после правки секрета в панели Cloudflare
+PR: [#844](https://github.com/TRAP44/football-analytics-cloudflare/pull/844), ветка `claude/deploy-gate-dashboard-versions`
+Сделано:
+- Правка секрета в панели (или `wrangler secret put`) создаёт версию без отметки CI (`workers/triggered_by: secret`) — раньше «Deploy Production» на ней останавливался («release identity mismatch»). Теперь, если отметки нет, шаг «Detect pending production artifact changes» идёт по `wrangler deployments list` назад через версии «после правки секрета» до версии с отметкой CI (`scripts/verify-production-release-postcondition.js`, `--print-settings-base-version-id` / `--print-settings-rollback-target`).
+- Доказательство «код тот же» — `resources.script.etag` (хеш кода) активной версии равен хешу версии CI. Нет хеша, другой хеш, смешанный трафик, загрузка без отметки, дыра в истории — деплой по-прежнему блокируется.
+- Цель отката — сама активная версия «после правки секрета», а не версия CI: откат не откатит секреты. `scripts/verify-rollback-target.js` принимает её только с JSON версии-основы (7-й аргумент); preflight и автоматический откат передают основу. Деплой в этом случае обязателен (`changed=true`) — новая версия снова с отметкой CI.
+Решения:
+- Ревью Codex (P2): `wrangler versions list` хранит только 10 последних версий — загрузки без деплоя могли вытеснить основу. Теперь каждая версия из истории деплоев загружается по ID (`--print-history-version-ids` → `wrangler versions view`), список собирается `jq -s`.
+- Принимаем только триггер `secret` (в wrangler: «Secret Change»). Правка переменных в панели, если Cloudflare помечает её иначе, останется заблокированной — тогда расширим список по факту.
+- В TASKS было «откат на последнюю версию с отметкой CI»; выбрана активная версия, доказанно с тем же кодом — так откат не теряет секреты.
+Осталось / внимание:
+- Проверено локально на поддельных JSON Cloudflare; на живой правке секрета ещё не проверялось. `npm ci` локально недоступен (нет доступа к registry), `verify:worker` и `npm audit` проверит CI.
 
 ## 2026-10-12 — Claude — Доска: итог 11.10
 PR: [#843](https://github.com/TRAP44/football-analytics-cloudflare/pull/843), ветка `claude/board-cleanup`
