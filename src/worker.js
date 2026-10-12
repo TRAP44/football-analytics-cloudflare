@@ -38,6 +38,7 @@ import { createOddsSnapshotRuntime } from './odds-snapshot-runtime.js';
 import { createUserDataApiRuntime } from './user-data-api-runtime.js';
 import { createMatchExplanationRuntime } from './match-explanation-runtime.js';
 import { createMatchQuestionRuntime } from './match-question-runtime.js';
+import { createMatchPicksRuntime } from './match-picks-runtime.js';
 import { createPrematchPredictionJob } from './prematch-prediction-job.js';
 import { createProviderStatusProbe } from './provider-status-probe.js';
 import { createInPlayTimelineJob } from './in-play-timeline-job.js';
@@ -317,17 +318,17 @@ const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
 const RELEASE_CHANNEL = 'rc144';
 const RC_NAME = 'RC144';
-const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: примените миграции до v6.29.15, включая переключатель AI в настройках функций.';
+const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: примените миграции до v6.29.16, включая прогнозы «Обыграй AI».';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_CONTRACT_VERSION = 2;
-const EXPECTED_SCHEMA_FINGERPRINT = 'c7164151f40be1a7af4271789f5d2c1c';
-const FRESH_INSTALL_SCHEMA_FINGERPRINT = '13c5b940bcc5d0d0496b7d4107a6c31c';
-// The prior v2 contract (before v6.29.15) remains accepted for a safe phased rollout.
+const EXPECTED_SCHEMA_FINGERPRINT = '449654e62c352ffcbd618dfccabbda7d';
+const FRESH_INSTALL_SCHEMA_FINGERPRINT = 'd87de7ad518d55bd0669334a7ce863ce';
+// The prior v2 contract (before v6.29.16) remains accepted for a safe phased rollout.
 const COMPATIBLE_SCHEMA_FINGERPRINTS = Object.freeze([
   EXPECTED_SCHEMA_FINGERPRINT,
   FRESH_INSTALL_SCHEMA_FINGERPRINT,
-  'f3d899ff05789e6cfb257abe011872d2',
-  'd0ecfedbd63abc305ad7f57aa298cabd',
+  'c7164151f40be1a7af4271789f5d2c1c',
+  '13c5b940bcc5d0d0496b7d4107a6c31c',
 ]);
 
 const { json, adminForbidden, publicRouteError } = createHttpRuntime({
@@ -2554,6 +2555,23 @@ function getMatchQuestionRuntime() {
   return matchQuestionRuntime;
 }
 const apiMatchQuestion = (...args) => getMatchQuestionRuntime().apiMatchQuestion(...args);
+
+let matchPicksRuntime = null;
+function getMatchPicksRuntime() {
+  if (!matchPicksRuntime) {
+    matchPicksRuntime = createMatchPicksRuntime({
+      clock: () => Date.now(),
+      hasSupabase,
+      json,
+      supaSelectMany,
+      supaUpsert,
+    });
+  }
+  return matchPicksRuntime;
+}
+const apiMatchPickGet = (...args) => getMatchPicksRuntime().apiMatchPickGet(...args);
+const apiMatchPickSave = (...args) => getMatchPicksRuntime().apiMatchPickSave(...args);
+const apiPicksLeaderboard = (...args) => getMatchPicksRuntime().apiPicksLeaderboard(...args);
 const apiFavorites = (...args) => getUserDataApiRuntime().apiFavorites(...args);
 const publicFavoritePlayer = (...args) => getUserDataApiRuntime().publicFavoritePlayer(...args);
 const resolveFavoritePlayerIdentity = (...args) => getUserDataApiRuntime().resolveFavoritePlayerIdentity(...args);
@@ -3134,6 +3152,9 @@ const {
   apiHistoryAnalysis,
   apiMatchExplanation,
   apiMatchQuestion,
+  apiMatchPickGet,
+  apiMatchPickSave,
+  apiPicksLeaderboard,
   apiLaunchFunnel,
   apiMatchCenter,
   apiMatches,

@@ -119,7 +119,7 @@ export function renderMatchCenterView(d, deps) {
     bindMatchCenterTabs, setMatchCenterTab, openPlayerFromMatch, openTeam, toggleMatchWatch,
     syncQuickReminderButton, toggleReminder, analyzeMatch, loadHistory, openHistoryAnalysis, openPassStoreForFixture,
     runProviderCoverageAudit, openProfileView, runProviderE2E, requestMatchCenter, renderMatchCenter, toast,
-    startLiveRefresh, stopLiveRefresh, shareMatchCard,
+    startLiveRefresh, stopLiveRefresh, shareMatchCard, mountBeatAi,
   } = deps;
 
   const m = d.match || {};
@@ -220,6 +220,7 @@ export function renderMatchCenterView(d, deps) {
         <div class="mr-ai-card-head"><span class="mr-kicker">✦ Вывод AI</span>${history?.aiConfidence ? `<span class="mr-ai-card-conf">уверенность ${Math.round(Number(history.aiConfidence))}/100</span>` : ''}</div>
         ${aiCardBody}
       </section>
+      <section class="panel match-explanation beat-ai" id="beatAiPick" data-fixture="${Number(m.fixtureId) || 0}" aria-live="polite" hidden></section>
       ${live && IN_PLAY_STATUSES.has(String(m.status || '').toUpperCase()) ? inPlayEstimateHtml(latestInPlayEstimate(d.aiTimeline || {}), m, escapeHtml) : ''}
       ${matchCenterTrackRecordHtml(state, escapeHtml)}
       ${matchChangeNarrativeHtml(d, m)}
@@ -361,6 +362,7 @@ export function renderMatchCenterView(d, deps) {
     }
   });
 
+  if (typeof mountBeatAi === 'function') mountBeatAi(m);
   if (live) startLiveRefresh(m.fixtureId); else stopLiveRefresh();
 }
 // end renderMatchCenterView
