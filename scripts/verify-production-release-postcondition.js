@@ -136,6 +136,21 @@ function settingsOnlyActiveVersion(deployment, activeVersion) {
 // секрета»: идём по истории деплоев назад, пока перед нами версии, созданные
 // только правкой секрета. Первая версия с отметкой CI — основа. Всё прочее
 // (смешанный трафик, загрузка без отметки, пропуск в истории) — отказ.
+// ID версий из истории деплоев (новые первыми, без активной), каждую workflow
+// загружает через `wrangler versions view`: список `versions list` хранит только
+// 10 последних версий и может не содержать развёрнутые раньше.
+export function settingsHistoryVersionIds(deployment, deployments) {
+  const activeVersionId = activeProductionVersion(deployment);
+  const history = deploymentHistory(deployments);
+  const ids = [];
+  for (let index = 1; index < history.length && index <= MAX_SETTINGS_CHAIN; index += 1) {
+    const id = activeProductionVersion(history[index]);
+    if (sameId(id, activeVersionId) || ids.some(item => sameId(item, id))) continue;
+    ids.push(id);
+  }
+  return ids;
+}
+
 export function resolveSettingsBaseVersionId(deployment, activeVersion, deployments, versionList) {
   const activeVersionId = settingsOnlyActiveVersion(deployment, activeVersion);
   const history = deploymentHistory(deployments);
@@ -214,6 +229,12 @@ function main() {
     throw new Error('Usage: node scripts/verify-production-release-postcondition.js <deployment-json> <versions-json> <release> <sha>');
   }
   const deployment = JSON.parse(fs.readFileSync(deploymentPath, 'utf8'));
+  if (versionsPath === '--print-history-version-ids') {
+    const deploymentsPath = process.argv[4];
+    if (!deploymentsPath) throw new Error('Usage: node scripts/verify-production-release-postcondition.js <deployment-json> --print-history-version-ids <deployments-json>');
+    for (const id of settingsHistoryVersionIds(deployment, JSON.parse(fs.readFileSync(deploymentsPath, 'utf8')))) console.log(id);
+    return;
+  }
   if (versionsPath === '--print-settings-base-version-id' || versionsPath === '--print-settings-rollback-target') {
     const [activePath, deploymentsPath, versionListPath, basePath] = process.argv.slice(4);
     const readJson = path => JSON.parse(fs.readFileSync(path, 'utf8'));

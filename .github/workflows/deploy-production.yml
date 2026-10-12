@@ -230,8 +230,27 @@ jobs:
             VERSION_LIST_JSON="$RUNNER_TEMP/production-version-list.json"
             BASE_VERSION_JSON="$RUNNER_TEMP/settings-only-base-version.json"
             SETTINGS_IDENTITY=""
+            # `wrangler versions list` keeps only the 10 newest versions; undeployed
+            # uploads can push older deployed ones out. Fetch every version from the
+            # deployment history by its exact ID instead.
+            history_versions() {
+              local ids id index=0
+              local files=()
+              ids="$(node scripts/verify-production-release-postcondition.js "$DEPLOYMENT_STATUS_JSON" --print-history-version-ids "$DEPLOYMENTS_JSON" 2>"$SETTINGS_ERROR")" || return 1
+              for id in $ids; do
+                [[ "$id" =~ ^[0-9a-fA-F-]{36}$ ]] || return 1
+                index=$((index + 1))
+                npx wrangler versions view "$id" --json > "$RUNNER_TEMP/history-version-$index.json" || return 1
+                files+=("$RUNNER_TEMP/history-version-$index.json")
+              done
+              if (( ${#files[@]} == 0 )); then
+                echo '[]' > "$VERSION_LIST_JSON"
+              else
+                jq -s '.' "${files[@]}" > "$VERSION_LIST_JSON" || return 1
+              fi
+            }
             if npx wrangler deployments list --json > "$DEPLOYMENTS_JSON" \
-              && npx wrangler versions list --json > "$VERSION_LIST_JSON" \
+              && history_versions \
               && BASE_VERSION_ID="$(node scripts/verify-production-release-postcondition.js "$DEPLOYMENT_STATUS_JSON" --print-settings-base-version-id "$VERSIONS_JSON" "$DEPLOYMENTS_JSON" "$VERSION_LIST_JSON" 2>"$SETTINGS_ERROR")" \
               && [[ "$BASE_VERSION_ID" =~ ^[0-9a-fA-F-]{36}$ ]] \
               && npx wrangler versions view "$BASE_VERSION_ID" --json > "$BASE_VERSION_JSON" \

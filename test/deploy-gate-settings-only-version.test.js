@@ -10,6 +10,7 @@ import {
   resolveActiveProductionReleaseIdentity,
   resolveSettingsBaseVersionId,
   resolveSettingsOnlyProductionIdentity,
+  settingsHistoryVersionIds,
 } from '../scripts/verify-production-release-postcondition.js';
 import { verifyRollbackTarget } from '../scripts/verify-rollback-target.js';
 import { settingsOnlyVersion } from '../scripts/cloudflare-settings-version.js';
@@ -160,4 +161,21 @@ test('workflow: settings-only path is a fallback that forces a stamped redeploy 
   }
   assert.match(preflight, /rollback-smoke\.js "\$SMOKE_URL" "\$PREVIOUS_RELEASE"/);
   assert.match(rollback, /verify-rollback-deployment\.js "\$DEPLOYMENT_STATUS_JSON" "\$PREVIOUS_VERSION_ID"/);
+});
+
+test('codex #844: every version from deployment history is fetched by its ID', () => {
+  const chain = [...history, deploymentOf(secondSecretId, '2026-10-11T11:00:01.000Z'), deploymentOf(secondSecretId, '2026-10-11T12:00:01.000Z', 'dep-repeat')];
+  const chainStatus = deploymentOf(secondSecretId, '2026-10-11T12:00:01.000Z', 'dep-repeat');
+  // Newest first, without the active version and without duplicates.
+  assert.deepEqual(settingsHistoryVersionIds(chainStatus, chain), [secretId, baseId]);
+  const split = { ...history[0], versions: [{ version_id: baseId, percentage: 50 }, { version_id: previewId, percentage: 50 }] };
+  assert.throws(() => settingsHistoryVersionIds(status, [split, history[1]]), /one version at 100% traffic/);
+
+  const detect = workflow.slice(
+    workflow.indexOf('- name: Detect pending production artifact changes'),
+    workflow.indexOf('- name: Preflight previous-known-good rollback target'),
+  );
+  assert.doesNotMatch(detect, /wrangler versions list --json/);
+  assert.match(detect, /history_versions\(\) \{[\s\S]*?--print-history-version-ids[\s\S]*?wrangler versions view "\$id" --json[\s\S]*?jq -s '\.'/);
+  assert.match(detect, /deployments list --json > "\$DEPLOYMENTS_JSON" \\\n\s+&& history_versions \\/);
 });

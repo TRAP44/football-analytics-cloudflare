@@ -207,14 +207,13 @@ test('Production gate pins the active version and keeps rollback preflight manda
   const detection = workflow.slice(start, end);
   assert.match(detection, /--print-active-version-id/);
   assert.match(detection, /wrangler versions view "\$ACTIVE_VERSION_ID" --json/);
-  // The recent-version list may omit the active version: identity always comes
-  // from `versions view`. The list is read only for the settings-only history
-  // walk (Task 0), and the base version is again fetched with `versions view`.
+  // The recent-version list may omit the active version (and older deployed
+  // ones): identity and the Task 0 history walk always use `versions view`.
+  assert.doesNotMatch(detection, /wrangler versions list --json/);
   assert.match(detection, /--print-active-rollback-target 2>"\$IDENTITY_ERROR"/);
   assert.match(detection, /"\$DEPLOYMENT_STATUS_JSON" "\$VERSIONS_JSON" --print-active-rollback-target/);
-  for (const line of detection.split('\n').filter(item => /wrangler versions list --json/.test(item))) {
-    assert.match(line, /> "\$VERSION_LIST_JSON"/);
-  }
+  assert.match(detection, /--print-history-version-ids "\$DEPLOYMENTS_JSON"/);
+  assert.match(detection, /npx wrangler versions view "\$id" --json > "\$RUNNER_TEMP\/history-version-\$index\.json"/);
   assert.match(detection, /wrangler versions view "\$BASE_VERSION_ID" --json > "\$BASE_VERSION_JSON"/);
   assert.match(detection, /Safe production deployment blocked/);
 });
