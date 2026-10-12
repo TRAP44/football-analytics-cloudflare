@@ -1,3 +1,9 @@
+/* Фирменный янтарный акцент (решение Сергея 12.10: выбора акцента нет).
+   Здесь, а не только в premium-ui.css: admin.html грузит styles.css и этот файл. */
+html[data-accent="system"] { --accent: #fbbf24; --accent-text: #1a1203; }
+html[data-accent="system"][data-theme="light"] { --accent: #b45309; --accent-text: #ffffff; }
+html[data-accent="system"][data-theme="dark"] { --accent: #fbbf24; --accent-text: #1a1203; }
+
 /* Compact Telegram-first public flow */
 html {
   scroll-padding-top: calc(12px + env(safe-area-inset-top));

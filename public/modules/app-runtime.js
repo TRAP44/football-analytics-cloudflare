@@ -1,7 +1,7 @@
 export const CLIENT_VERSION = '6.120.0-rc144';
 export const CLIENT_API_CONTRACT = 5;
 export const CLIENT_RELEASE_CHANNEL = 'rc144';
-export const FRONTEND_ASSET_REVISION = '6.120.0-launch100';
+export const FRONTEND_ASSET_REVISION = '6.120.0-launch101';
 export const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.19 + миграции до v6.29.14)';
 
 export const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
@@ -14,27 +14,14 @@ export const DEFAULT_UI_PREFERENCES = Object.freeze({
   buttonStyle: 'soft',
 });
 
-export const ACCENT_PALETTES = Object.freeze({
-  green: Object.freeze({
-    dark: Object.freeze({ accent: '#57e389', text: '#041009' }),
-    light: Object.freeze({ accent: '#147a3d', text: '#ffffff' }),
-  }),
-  blue: Object.freeze({
-    dark: Object.freeze({ accent: '#60a5fa', text: '#07111f' }),
-    light: Object.freeze({ accent: '#1d4ed8', text: '#ffffff' }),
-  }),
-  violet: Object.freeze({
-    dark: Object.freeze({ accent: '#c084fc', text: '#160624' }),
-    light: Object.freeze({ accent: '#6d28d9', text: '#ffffff' }),
-  }),
-  amber: Object.freeze({
-    dark: Object.freeze({ accent: '#fbbf24', text: '#1c1200' }),
-    light: Object.freeze({ accent: '#92400e', text: '#ffffff' }),
-  }),
-});
+// Решение Сергея 12.10: акцент один — фирменный янтарный (его задаёт CSS для
+// data-accent="system"), темы — только тёмная и светлая (или как в Telegram).
+// Старые сохранённые выборы (зелёный/синий/фиолетовый акцент, тема «Океан»)
+// при чтении сбрасываются к значениям по умолчанию.
+export const ACCENT_PALETTES = Object.freeze({});
 
-const UI_THEME_VALUES=Object.freeze(['system','dark','light','ocean']);
-const UI_ACCENT_VALUES=Object.freeze(['system','green','blue','violet','amber']);
+const UI_THEME_VALUES=Object.freeze(['system','dark','light']);
+const UI_ACCENT_VALUES=Object.freeze(['system']);
 const UI_BUTTON_STYLE_VALUES=Object.freeze(['soft','compact']);
 
 function plainObject(value) {

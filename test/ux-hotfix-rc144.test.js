@@ -88,24 +88,19 @@ test('startup hides release identifiers while About shows the public app version
   assert.doesNotMatch(profileSummary, /profilePlanLabel/);
 });
 
-test('custom accent persists independently and shipped pairs keep WCAG-safe contrast', () => {
-  for (const choice of ['system', 'green', 'blue', 'violet', 'amber']) {
-    assert.ok(html.includes('data-accent-choice="' + choice + '"'), choice);
-  }
+test('single amber brand accent keeps WCAG-safe contrast in dark and light themes', () => {
+  // Решение Сергея 12.10: выбор акцента убран, акцент — фирменный янтарный.
+  assert.doesNotMatch(html, /data-accent-choice=/);
+  assert.doesNotMatch(app, /saveInterfacePreference\('accent'/);
   assert.match(uiPreferences, /function applyAccentPreference/);
-  assert.match(app, /saveInterfacePreference\('accent'/);
+  assert.match(css, /html\[data-accent="system"\] \{ --accent: #fbbf24; --accent-text: #1a1203; \}/);
+  assert.match(css, /html\[data-accent="system"\]\[data-theme="light"\] \{ --accent: #b45309; --accent-text: #ffffff; \}/);
+  assert.match(css, /html\[data-accent="system"\]\[data-theme="dark"\] \{ --accent: #fbbf24; --accent-text: #1a1203; \}/);
   const pairs = [
-    ['#57e389', '#041009', '#050607'],
-    ['#147a3d', '#ffffff', '#f3f6f8'],
-    ['#60a5fa', '#07111f', '#050607'],
-    ['#1d4ed8', '#ffffff', '#f3f6f8'],
-    ['#c084fc', '#160624', '#050607'],
-    ['#6d28d9', '#ffffff', '#f3f6f8'],
-    ['#fbbf24', '#1c1200', '#050607'],
-    ['#92400e', '#ffffff', '#f3f6f8'],
+    ['#fbbf24', '#1a1203', '#050607'],
+    ['#b45309', '#ffffff', '#f3f6f8'],
   ];
   for (const [accent, text, background] of pairs) {
-    assert.ok(runtime.includes(accent) && runtime.includes(text));
     assert.ok(contrast(accent, text) >= 4.5, accent + ' button contrast');
     assert.ok(contrast(accent, background) >= 4.5, accent + ' surface contrast');
   }
