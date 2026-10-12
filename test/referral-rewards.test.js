@@ -110,6 +110,10 @@ test('bonus reservation and refund carry the same operation id', async () => {
   assert.deepEqual(await rt.refundReferralBonus(5, reservation, {}), { refunded: true, reason: 'refunded' });
   assert.equal(calls[1].params.p_operation_id, reservation.operationId);
 
+  assert.equal(await harness({ rows: { available: [{ id: 12 }] } }).rt.hasReferralBonus(5, {}), true);
+  assert.equal(await harness({ rows: { available: [] } }).rt.hasReferralBonus(5, {}), false);
+  assert.equal(await harness().rt.hasReferralBonus(0, {}), false);
+
   const none = harness({ rpc: { reserve_referral_bonus: { allowed: false, reason: 'no_bonus' } } });
   const empty = await none.rt.reserveReferralBonus(5, {});
   assert.equal(empty.allowed, false);
@@ -127,6 +131,7 @@ test('analysis: the bonus is used only after the daily limit and returned if the
   assert.equal(source.match(/scheduleReferralReward\(\);/g)?.length, 3, 'reward check after cached, shared and fresh analysis');
   const worker = fs.readFileSync('src/worker.js', 'utf8');
   assert.match(worker, /reserveReferralBonus: \(\.\.\.args\) => reserveReferralBonus\(\.\.\.args\),/);
+  assert.match(worker, /hasReferralBonus: \(\.\.\.args\) => hasReferralBonus\(\.\.\.args\),/);
 });
 
 test('profile panel: share via Telegram composer, numbers only from the server, no money words', () => {

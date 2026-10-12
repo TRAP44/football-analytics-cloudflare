@@ -140,6 +140,14 @@ export function createReferralRewardsRuntime(deps = {}) {
     };
   }
 
+  /** Есть ли неиспользованный бонус (дешёвая проверка до резерва). */
+  async function hasReferralBonus(userId, cfg) {
+    const id = positiveId(userId);
+    if (!id || !storageReady(cfg)) return false;
+    const rows = await supaSelectMany(cfg, 'referral_rewards', { telegram_id: `eq.${id}`, status: 'eq.available' }, { limit: 1, select: 'id' });
+    return Array.isArray(rows) && rows.length > 0;
+  }
+
   async function refundReferralBonus(userId, reservation, cfg) {
     const id = positiveId(userId);
     const rewardId = positiveId(safeRead(reservation, 'rewardId'));
@@ -187,5 +195,5 @@ export function createReferralRewardsRuntime(deps = {}) {
     }
   }
 
-  return Object.freeze({ apiReferral, grantReferralRewards, reserveReferralBonus, refundReferralBonus, referralSummary });
+  return Object.freeze({ apiReferral, grantReferralRewards, hasReferralBonus, reserveReferralBonus, refundReferralBonus, referralSummary });
 }

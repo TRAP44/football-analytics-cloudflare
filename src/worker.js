@@ -2594,6 +2594,7 @@ function getReferralRewardsRuntime() {
 }
 const apiReferral = (...args) => getReferralRewardsRuntime().apiReferral(...args);
 const grantReferralRewards = (...args) => getReferralRewardsRuntime().grantReferralRewards(...args);
+const hasReferralBonus = (...args) => getReferralRewardsRuntime().hasReferralBonus(...args);
 const reserveReferralBonus = (...args) => getReferralRewardsRuntime().reserveReferralBonus(...args);
 const refundReferralBonus = (...args) => getReferralRewardsRuntime().refundReferralBonus(...args);
 const apiFavorites = (...args) => getUserDataApiRuntime().apiFavorites(...args);
@@ -3088,6 +3089,7 @@ function getAnalysisRuntime() {
       releaseDistributedAnalysisLock,
       reserveAnalysisQuota,
       grantReferralRewards: (...args) => grantReferralRewards(...args),
+      hasReferralBonus: (...args) => hasReferralBonus(...args),
       reserveReferralBonus: (...args) => reserveReferralBonus(...args),
       refundReferralBonus: (...args) => refundReferralBonus(...args),
       reserveEntitlementUsage,

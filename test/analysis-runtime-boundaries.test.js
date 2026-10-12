@@ -353,3 +353,38 @@ test('history outage protects a usage-limited Pass like the quota; only an unlim
   assert.match(source, /const unlimitedPassCandidate=passCandidate\s*&& activePasses\.some\(item=>objectValue\(item\) && objectValue\(item\)\.usageLimit==null\);/);
   assert.match(source, /if \(recheckOwnershipUnknown && !unlimitedPassCandidate && staleBefore\)/);
 });
+
+// Ревью Codex #868: исчерпанный дневной лимит не отсекает того, у кого есть бонус за приглашение.
+test('exhausted daily quota still reaches the referral bonus reservation when a bonus exists', async () => {
+  const run = async hasBonus => {
+    const calls = { quota:0, bonus:0, check:0 };
+    const runtime = createAnalysisRuntime({
+      ...baseDeps(),
+      getCache: async () => null,
+      getStaleCache: async () => null,
+      resolveUserEntitlements: async () => ({ source:'free', access:{} }),
+      getQuota: async () => ({ plan:'FREE', used:3, limit:3, left:0 }),
+      hasReferralBonus: async () => { calls.check += 1; return hasBonus(); },
+      claimDistributedAnalysisLock: async () => ({ claimed:true }),
+      releaseDistributedAnalysisLock: async () => true,
+      reserveAnalysisQuota: async () => { calls.quota += 1; return { allowed:false, plan:'FREE', used:3, limit:3, left:0 }; },
+      reserveReferralBonus: async () => { calls.bonus += 1; return { allowed:false, reserved:false, reason:'no_bonus' }; },
+    });
+    const response = await runtime.apiAnalyze({ json: async () => ({ fixtureId:123 }) }, {}, { id:456 });
+    return { response, calls };
+  };
+
+  const withBonus = await run(() => true);
+  assert.equal(withBonus.calls.check, 1);
+  assert.equal(withBonus.calls.quota, 1, 'the guard lets the request through to the reservation');
+  assert.equal(withBonus.calls.bonus, 1, 'the bonus reservation is attempted');
+  assert.equal(withBonus.response.status, 429, 'a lost race for the bonus still ends with the limit response');
+
+  for (const hasBonus of [() => false, () => { throw new Error('storage down'); }]) {
+    const { response, calls } = await run(hasBonus);
+    assert.equal(response.status, 429);
+    assert.equal(response.body.code, 'ANALYSIS_QUOTA_EXHAUSTED');
+    assert.equal(calls.quota, 0);
+    assert.equal(calls.bonus, 0);
+  }
+});

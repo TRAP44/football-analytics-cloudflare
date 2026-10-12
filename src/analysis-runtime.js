@@ -100,6 +100,7 @@ export function createAnalysisRuntime(deps) {
     refundAnalysisQuota,
     refundEntitlementUsage,
     grantReferralRewards,
+    hasReferralBonus,
     refundReferralBonus,
     releaseDistributedAnalysisLock,
     reserveAnalysisQuota,
@@ -820,11 +821,22 @@ export function createAnalysisRuntime(deps) {
       },503,'quota_unavailable',{'retry-after':'30'});
     }
     if (!freeRecheck && !passCandidate && quotaBefore.left<=0) {
-      return await trackedFullAiFailureResponse({
-        error:`Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`,
-        code:'ANALYSIS_QUOTA_EXHAUSTED',
-        quota:quotaBefore,
-      },429,'quota_exhausted');
+      // Дневной лимит исчерпан, но есть бонус за приглашение — идём к резерву.
+      let referralBonusPending=false;
+      if (typeof hasReferralBonus === 'function') {
+        try {
+          referralBonusPending=(await hasReferralBonus(userId,cfg)) === true;
+        } catch {
+          referralBonusPending=false;
+        }
+      }
+      if (!referralBonusPending) {
+        return await trackedFullAiFailureResponse({
+          error:`Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`,
+          code:'ANALYSIS_QUOTA_EXHAUSTED',
+          quota:quotaBefore,
+        },429,'quota_exhausted');
+      }
     }
     }
   
