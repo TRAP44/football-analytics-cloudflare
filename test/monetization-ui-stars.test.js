@@ -60,7 +60,8 @@ test('billing keeps plan previews readable and purchases fail-closed while MONET
 
 test('subscription and Pass payment truth remains server-side and XTR validated', () => {
   assert.match(billingRuntime, /payment\.currency !== 'XTR'/);
-  assert.match(billingRuntime, /amount!==positiveInt\(planCfg\.stars\)/);
+  assert.match(billingRuntime, /const acceptedStars=new Set\(\[positiveInt\(planCfg\?\.stars\), positiveInt\(BILLING_PLANS\[planCfg\?\.key\]\?\.stars\)\]\.filter\(Boolean\)\);/);
+  assert.match(billingRuntime, /if \(!planCfg \|\| !acceptedStars\.has\(amount\)\) return false;/);
   assert.match(billingRuntime, /parseInvoicePayload\(payment\.invoice_payload, cfg\.botToken\)/);
   assert.match(billingRuntime, /parsePassInvoicePayload\(payment\.invoice_payload, cfg\.botToken\)/);
   assert.match(billingRuntime, /activatePassPurchase\(\{/);

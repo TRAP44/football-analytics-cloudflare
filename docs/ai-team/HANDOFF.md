@@ -18,7 +18,8 @@ PR: ссылка или ветка
 PR: [#867](https://github.com/TRAP44/football-analytics-cloudflare/pull/867), ветка `claude/prices-x2`
 Сделано: в `wrangler.jsonc` заданы `PRO_STARS_PRICE=499`, `PREMIUM_STARS_PRICE=999`, `MATCH_PASS_STARS_PRICE=75`, `DAY_PASS_STARS_PRICE=150`, `WEEKEND_PASS_STARS_PRICE=299` (раньше — значения по умолчанию в коде 199/399/39/89/149); `.env.example` обновлён. Код не менялся: цены читаются из переменных, Mini App берёт их из `/api/billing/plans`.
 Решения: Сергей 12.10 — «умеренно ×≈2»; Day Pass стал ≈ трети PRO.
-Осталось / внимание: старые неоплаченные счета после деплоя отклоняются на этапе pre-checkout (сумма не совпадает) — списания не будет. Активных подписок нет; про продления после смены цены — запись в «Идеи».
+Ревью Codex: уже одобренный до деплоя платёж и автопродление по старой цене принимаются — `successful_payment` сверяется с текущей ценой и с ценой по умолчанию из кода (`passAcceptedStars`, `acceptedStars` в `billing-runtime.js`); в записи Pass — фактически оплаченная сумма. Pre-checkout и новые счета — только по текущей цене.
+Осталось / внимание: при следующей смене цен — см. «Идеи» (список прежних цен).
 
 ## 2026-10-12 — Claude — Ежедневный пост в канал «Матчи дня»
 PR: [#860](https://github.com/TRAP44/football-analytics-cloudflare/pull/860), ветка `claude/channel-daily-post`

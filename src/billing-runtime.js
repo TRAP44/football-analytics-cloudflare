@@ -320,7 +320,12 @@ export function createBillingRuntime(deps = {}) {
     if (subscription) {
       if (positiveInt(subscription.userId)!==uid) return false;
       const planCfg = billingPlanConfig(subscription.plan, cfg);
-      if (!planCfg || amount!==positiveInt(planCfg.stars)) return false;
+      // Уже совершённая оплата и автопродление принимаются и по цене по
+      // умолчанию из кода (до смены цен 12.10 — 199/399): Telegram мог одобрить
+      // платёж до деплоя, а продление идёт по цене исходной подписки (ревью
+      // Codex #867). Новые счета и pre-checkout — только по текущей цене.
+      const acceptedStars=new Set([positiveInt(planCfg?.stars), positiveInt(BILLING_PLANS[planCfg?.key]?.stars)].filter(Boolean));
+      if (!planCfg || !acceptedStars.has(amount)) return false;
   
       const expiresUnix=unixSeconds(payment.subscription_expiration_date,null)
         ?? (paidAt+SUBSCRIPTION_PERIOD_SECONDS);
