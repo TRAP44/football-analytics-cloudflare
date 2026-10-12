@@ -39,6 +39,7 @@ import { createUserDataApiRuntime } from './user-data-api-runtime.js';
 import { createMatchExplanationRuntime } from './match-explanation-runtime.js';
 import { createMatchQuestionRuntime } from './match-question-runtime.js';
 import { createMatchPicksRuntime } from './match-picks-runtime.js';
+import { createReferralRewardsRuntime } from './referral-rewards-runtime.js';
 import { createPrematchPredictionJob } from './prematch-prediction-job.js';
 import { createProviderStatusProbe } from './provider-status-probe.js';
 import { createInPlayTimelineJob } from './in-play-timeline-job.js';
@@ -318,17 +319,17 @@ const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
 const RELEASE_CHANNEL = 'rc144';
 const RC_NAME = 'RC144';
-const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: примените миграции до v6.29.16, включая прогнозы «Обыграй AI».';
+const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: примените миграции до v6.29.17, включая награды за приглашения.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_CONTRACT_VERSION = 2;
-const EXPECTED_SCHEMA_FINGERPRINT = '449654e62c352ffcbd618dfccabbda7d';
-const FRESH_INSTALL_SCHEMA_FINGERPRINT = 'd87de7ad518d55bd0669334a7ce863ce';
-// The prior v2 contract (before v6.29.16) remains accepted for a safe phased rollout.
+const EXPECTED_SCHEMA_FINGERPRINT = '11111111111111111111111111111111';
+const FRESH_INSTALL_SCHEMA_FINGERPRINT = '00000000000000000000000000000000';
+// The prior v2 contract (before v6.29.17) remains accepted for a safe phased rollout.
 const COMPATIBLE_SCHEMA_FINGERPRINTS = Object.freeze([
   EXPECTED_SCHEMA_FINGERPRINT,
   FRESH_INSTALL_SCHEMA_FINGERPRINT,
-  'c7164151f40be1a7af4271789f5d2c1c',
-  '13c5b940bcc5d0d0496b7d4107a6c31c',
+  '449654e62c352ffcbd618dfccabbda7d',
+  'd87de7ad518d55bd0669334a7ce863ce',
 ]);
 
 const { json, adminForbidden, publicRouteError } = createHttpRuntime({
@@ -2572,6 +2573,29 @@ function getMatchPicksRuntime() {
 const apiMatchPickGet = (...args) => getMatchPicksRuntime().apiMatchPickGet(...args);
 const apiMatchPickSave = (...args) => getMatchPicksRuntime().apiMatchPickSave(...args);
 const apiPicksLeaderboard = (...args) => getMatchPicksRuntime().apiPicksLeaderboard(...args);
+
+let referralRewardsRuntime = null;
+function getReferralRewardsRuntime() {
+  if (!referralRewardsRuntime) {
+    referralRewardsRuntime = createReferralRewardsRuntime({
+      ensureReferralCode: (...args) => ensureReferralCode(...args),
+      hasSupabase,
+      json,
+      memory,
+      recordGrowthEvent: (...args) => recordGrowthEvent(...args),
+      recordOpsEvent,
+      supaRpc,
+      supaSelectMany,
+      telegramApi: (...args) => telegramApi(...args),
+      telegramBotUsername: (...args) => telegramBotUsername(...args),
+    });
+  }
+  return referralRewardsRuntime;
+}
+const apiReferral = (...args) => getReferralRewardsRuntime().apiReferral(...args);
+const grantReferralRewards = (...args) => getReferralRewardsRuntime().grantReferralRewards(...args);
+const reserveReferralBonus = (...args) => getReferralRewardsRuntime().reserveReferralBonus(...args);
+const refundReferralBonus = (...args) => getReferralRewardsRuntime().refundReferralBonus(...args);
 const apiFavorites = (...args) => getUserDataApiRuntime().apiFavorites(...args);
 const publicFavoritePlayer = (...args) => getUserDataApiRuntime().publicFavoritePlayer(...args);
 const resolveFavoritePlayerIdentity = (...args) => getUserDataApiRuntime().resolveFavoritePlayerIdentity(...args);
@@ -3063,6 +3087,9 @@ function getAnalysisRuntime() {
       refundEntitlementUsage,
       releaseDistributedAnalysisLock,
       reserveAnalysisQuota,
+      grantReferralRewards: (...args) => grantReferralRewards(...args),
+      reserveReferralBonus: (...args) => reserveReferralBonus(...args),
+      refundReferralBonus: (...args) => refundReferralBonus(...args),
       reserveEntitlementUsage,
       resolveUserEntitlements,
       sanitizeAvailabilityRows,
@@ -3152,6 +3179,7 @@ const {
   apiHistoryAnalysis,
   apiMatchExplanation,
   apiMatchQuestion,
+  apiReferral,
   apiMatchPickGet,
   apiMatchPickSave,
   apiPicksLeaderboard,
