@@ -41,6 +41,11 @@ export function matchPickHtml(data, match, escapeHtml) {
       <p class="beat-ai-line">AI: ${label(ai)} · <b>${pointText(result.aiPoint)}</b></p>
       <p class="match-explanation-note">Таблица лидеров — в Профиле.</p>`;
   }
+  if (data.verifying === true) {
+    return `${head}<p class="beat-ai-line">Матч завершён — итог проверяется, очки появятся после проверки.</p>
+      <p class="beat-ai-line">${pick ? `Ваш прогноз: <b>${label(pick)}</b>` : 'Вы не сделали прогноз.'}</p>
+      <p class="beat-ai-line">AI: <b>${label(ai)}</b></p>`;
+  }
   if (!data.open) {
     return `${head}<p class="beat-ai-line">Матч начался — прогнозы закрыты, ждём итог.</p>
       <p class="beat-ai-line">${pick ? `Ваш прогноз: <b>${label(pick)}</b>` : 'Вы не сделали прогноз.'}</p>
@@ -130,7 +135,8 @@ export function picksLeaderboardHtml(data, escapeHtml) {
   const table = rows
     ? `<ol class="beat-ai-board-list" aria-label="Таблица лидеров">${rows}</ol>`
     : '<p class="beat-ai-line">Пока нет завершённых матчей с прогнозами.</p>';
-  return `${head}${mine}${waiting}${table}<p class="match-explanation-note">Очко — за угаданный исход. AI играет своим прогнозом до матча. В таблице — только имя из Telegram.</p>`;
+  const partial = data.truncated === true ? '<p class="beat-ai-line">Прогнозов очень много — таблица посчитана по части из них.</p>' : '';
+  return `${head}${mine}${waiting}${table}${partial}<p class="match-explanation-note">Очко — за угаданный исход. AI играет своим прогнозом до матча. В таблице — только имя из Telegram.</p>`;
 }
 
 export async function loadPicksLeaderboard({ root, api, escapeHtml } = {}) {

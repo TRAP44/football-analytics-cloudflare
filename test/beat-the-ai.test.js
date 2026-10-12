@@ -23,7 +23,8 @@ function harness({ predictions = {}, picks = [], users = [], clock = NOW } = {})
           return row ? [row] : [];
         }
         const ids = filters.fixture_id.slice(4, -1).split(',').map(Number);
-        return ids.map(id => predictions[id]).filter(row => row && row.status === 'settled');
+        assert.equal(filters.settlement_verification_state, 'in.(confirmed,adjudicated)');
+        return ids.map(id => predictions[id]).filter(row => row && row.status === 'settled' && ['confirmed', 'adjudicated'].includes(row.settlement_verification_state));
       }
       if (table === 'match_picks') {
         if (filters.telegram_id) {
@@ -31,7 +32,8 @@ function harness({ predictions = {}, picks = [], users = [], clock = NOW } = {})
           const fixture = Number(filters.fixture_id.slice(3));
           return picks.filter(row => row.telegram_id === user && row.fixture_id === fixture).map(row => ({ pick: row.pick }));
         }
-        return picks;
+        const offset = Number(filters.offset || 0);
+        return picks.slice(offset, offset + options.limit);
       }
       if (table === 'users') {
         const ids = filters.telegram_id.slice(4, -1).split(',').map(Number);
@@ -88,11 +90,19 @@ test('input is validated and the Telegram session is required', async () => {
 });
 
 test('a settled match shows the result and the points of the user and of AI', async () => {
-  const settled = { ...upcoming, status: 'settled', actual_outcome: 'draw' };
+  const settled = { ...upcoming, status: 'settled', actual_outcome: 'draw', settlement_verification_state: 'confirmed' };
   const { rt } = harness({ predictions: { 7: settled }, picks: [{ telegram_id: 5, fixture_id: 7, pick: 'draw' }] });
   const res = await rt.apiMatchPickGet(get(7), {}, user);
   assert.deepEqual(res.body.result, { actual: 'draw', userPoint: 1, aiPoint: 0 });
   assert.equal(res.body.open, false);
+  // Итог ещё не прошёл проверку финальности — очков нет, «итог проверяется».
+  for (const state of ['unverified', 'drift', null]) {
+    const pending = harness({ predictions: { 7: { ...settled, settlement_verification_state: state } } });
+    const body = (await pending.rt.apiMatchPickGet(get(7), {}, user)).body;
+    assert.equal(body.result, null, String(state));
+    assert.equal(body.verifying, true);
+    assert.equal(body.open, false);
+  }
 });
 
 test('scoring: 1 point per correct outcome, AI scored on the same matches, ties by fewer matches', () => {
@@ -111,9 +121,10 @@ test('scoring: 1 point per correct outcome, AI scored on the same matches, ties 
 
 test('leaderboard: top by points, only the first name, my rank, AI on the same matches and pending picks', async () => {
   const predictions = {
-    1: { fixture_id: 1, status: 'settled', predicted_outcome: 'home', actual_outcome: 'home' },
-    2: { fixture_id: 2, status: 'settled', predicted_outcome: 'away', actual_outcome: 'draw' },
+    1: { fixture_id: 1, status: 'settled', predicted_outcome: 'home', actual_outcome: 'home', settlement_verification_state: 'confirmed' },
+    2: { fixture_id: 2, status: 'settled', predicted_outcome: 'away', actual_outcome: 'draw', settlement_verification_state: 'adjudicated' },
     3: { fixture_id: 3, status: 'pending', predicted_outcome: 'home', actual_outcome: null },
+    4: { fixture_id: 4, status: 'settled', predicted_outcome: 'home', actual_outcome: 'home', settlement_verification_state: 'drift' },
   };
   const picks = [
     { telegram_id: 5, fixture_id: 1, pick: 'away' },
@@ -121,6 +132,7 @@ test('leaderboard: top by points, only the first name, my rank, AI on the same m
     { telegram_id: 5, fixture_id: 3, pick: 'home' },
     { telegram_id: 6, fixture_id: 1, pick: 'home' },
     { telegram_id: 6, fixture_id: 2, pick: 'draw' },
+    { telegram_id: 6, fixture_id: 4, pick: 'home' },
   ];
   const users = [
     { telegram_id: 5, first_name: 'Сергей' },
@@ -132,10 +144,21 @@ test('leaderboard: top by points, only the first name, my rank, AI on the same m
   assert.deepEqual(res.body.top.map(row => [row.rank, row.points, row.played, row.me]), [[1, 2, 2, false], [2, 1, 2, true]]);
   assert.equal(res.body.top[0].name, '<b>Анна</b>');
   assert.deepEqual(res.body.me, { rank: 2, points: 1, played: 2, aiPoints: 1, pending: 1 });
+  assert.equal(res.body.truncated, false);
   const userSelect = selects.find(row => row.table === 'users');
   assert.equal(userSelect.options.select, 'telegram_id,first_name', 'never username or last name');
   const picksSelect = selects.find(row => row.table === 'match_picks');
   assert.equal(picksSelect.filters.kickoff_at, 'gte.2026-09-12T12:00:00.000Z');
+});
+
+test('leaderboard reads every pick of the window page by page', async () => {
+  const predictions = { 1: { fixture_id: 1, status: 'settled', predicted_outcome: 'home', actual_outcome: 'home', settlement_verification_state: 'confirmed' } };
+  const picks = Array.from({ length: 2500 }, (_, i) => ({ telegram_id: 100 + i, fixture_id: 1, pick: i === 2499 ? 'home' : 'away' }));
+  const { rt, selects } = harness({ predictions, picks, users: [{ telegram_id: 2599, first_name: 'Последний' }] });
+  const res = await rt.apiPicksLeaderboard(new Request('https://x.test/api/picks-leaderboard'), {}, user);
+  assert.equal(selects.filter(row => row.table === 'match_picks').length, 3);
+  assert.deepEqual(res.body.top[0], { rank: 1, name: 'Последний', points: 1, played: 1, me: false }, 'the last page is counted');
+  assert.equal(res.body.truncated, false);
 });
 
 test('player names: first name only, no links, handles or control characters', () => {
@@ -163,6 +186,9 @@ test('match card: pick buttons before kickoff, AI pick, closed state and result 
   assert.match(result, /Вы: Зенит · <b>0<\/b>/);
   assert.match(result, /AI: Спартак · <b>\+1<\/b>/);
   assert.equal(matchPickHtml({ available: false }, match, escapeHtml), '');
+  const verifying = matchPickHtml({ available: true, open: false, verifying: true, pick: 'home', ai: 'home', result: null }, match, escapeHtml);
+  assert.match(verifying, /итог проверяется/);
+  assert.doesNotMatch(verifying, /\+1/);
   for (const html of [open, picked, closed, result]) assert.doesNotMatch(html, /ставк|коэф|букмекер|выигрыш|деньг(и|ах) на/i);
   assert.match(matchPickHtml({ available: true, open: true, ai: 'home' }, { homeName: '<img src=x>' }, escapeHtml), /&lt;img src=x&gt;/);
 });
@@ -179,6 +205,7 @@ test('leaderboard card escapes names and shows the user against AI', () => {
   assert.match(html, /<li class="is-me">/);
   assert.match(picksLeaderboardHtml({ available: true, top: [], me: {} }, escapeHtml), /Сделайте прогноз в Штабе матча/);
   assert.match(picksLeaderboardHtml(null, escapeHtml), /временно недоступна/);
+  assert.match(picksLeaderboardHtml({ available: true, truncated: true, top: [], me: {} }, escapeHtml), /по части из них/);
 });
 
 test('wiring: routes, rate limits, UI mount points and the private table migration', () => {

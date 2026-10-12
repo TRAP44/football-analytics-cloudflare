@@ -9,7 +9,11 @@
 export const PICK_OUTCOMES = Object.freeze(['home', 'draw', 'away']);
 export const LEADERBOARD_DAYS = 30;
 const LEADERBOARD_TOP = 10;
-const MAX_PICKS_SCAN = 1000;
+const PICKS_PAGE = 1000;
+const MAX_PICKS_SCAN = 20000;
+// Итог засчитывается только после проверки финальности (ревью Codex #864):
+// первичный settled может быть «unverified» или «drift».
+const TRUSTED_SETTLEMENT = Object.freeze(['confirmed', 'adjudicated']);
 const PREDICTION_CHUNK = 200;
 const MAX_BODY_CHARS = 500;
 const NAME_MAX = 32;
@@ -103,15 +107,18 @@ export function createMatchPicksRuntime(deps = {}) {
   async function prediction(fixtureId, cfg) {
     const rows = await supaSelectMany(cfg, 'model_predictions', { fixture_id: `eq.${fixtureId}` }, {
       limit: 1,
-      select: 'fixture_id,kickoff_at,status,predicted_outcome,actual_outcome,home_name,away_name',
+      select: 'fixture_id,kickoff_at,status,predicted_outcome,actual_outcome,settlement_verification_state',
     });
     return plainObject(Array.isArray(rows) ? rows[0] : null);
   }
 
   function pickState(model, pickRow, nowMs) {
     const kickoffMs = Date.parse(String(safeRead(model, 'kickoff_at') || ''));
-    const settled = safeRead(model, 'status') === 'settled' && outcome(safeRead(model, 'actual_outcome'));
-    const open = !settled && Number.isFinite(kickoffMs) && kickoffMs > nowMs;
+    const finished = safeRead(model, 'status') === 'settled';
+    const settled = finished
+      && TRUSTED_SETTLEMENT.includes(safeRead(model, 'settlement_verification_state'))
+      && outcome(safeRead(model, 'actual_outcome'));
+    const open = !finished && Number.isFinite(kickoffMs) && kickoffMs > nowMs;
     const pick = outcome(safeRead(pickRow, 'pick'));
     const ai = outcome(safeRead(model, 'predicted_outcome'));
     const actual = settled ? outcome(safeRead(model, 'actual_outcome')) : null;
@@ -122,6 +129,7 @@ export function createMatchPicksRuntime(deps = {}) {
       kickoffAt: Number.isFinite(kickoffMs) ? new Date(kickoffMs).toISOString() : null,
       pick,
       ai,
+      verifying: finished && !actual,
       result: actual ? {
         actual,
         userPoint: pick ? (pick === actual ? 1 : 0) : null,
@@ -192,7 +200,11 @@ export function createMatchPicksRuntime(deps = {}) {
     const ids = [...new Set(fixtureIds.map(positiveId).filter(Boolean))];
     for (let index = 0; index < ids.length; index += PREDICTION_CHUNK) {
       const part = ids.slice(index, index + PREDICTION_CHUNK);
-      const rows = await supaSelectMany(cfg, 'model_predictions', { fixture_id: `in.(${part.join(',')})`, status: 'eq.settled' }, {
+      const rows = await supaSelectMany(cfg, 'model_predictions', {
+        fixture_id: `in.(${part.join(',')})`,
+        status: 'eq.settled',
+        settlement_verification_state: `in.(${TRUSTED_SETTLEMENT.join(',')})`,
+      }, {
         limit: part.length,
         select: 'fixture_id,predicted_outcome,actual_outcome',
       });
@@ -213,12 +225,21 @@ export function createMatchPicksRuntime(deps = {}) {
     if (!storageReady(cfg)) return json({ available: false, reason: 'storage_unavailable' });
     try {
       const since = new Date(now() - LEADERBOARD_DAYS * 86400_000).toISOString();
-      const picks = await supaSelectMany(cfg, 'match_picks', { kickoff_at: `gte.${since}` }, {
-        limit: MAX_PICKS_SCAN,
-        order: 'kickoff_at.desc',
-        select: 'telegram_id,fixture_id,pick',
-      });
-      const rows = Array.isArray(picks) ? picks : [];
+      // Все прогнозы окна, страницами (ревью Codex #864): без молчаливого
+      // обрезания старых прогнозов. Порядок стабильный — по первичному ключу.
+      const rows = [];
+      let truncated = false;
+      for (let offset = 0; ; offset += PICKS_PAGE) {
+        if (offset >= MAX_PICKS_SCAN) { truncated = true; break; }
+        const page = await supaSelectMany(cfg, 'match_picks', { kickoff_at: `gte.${since}`, offset: String(offset) }, {
+          limit: PICKS_PAGE,
+          order: 'telegram_id.asc,fixture_id.asc',
+          select: 'telegram_id,fixture_id,pick',
+        });
+        const list = Array.isArray(page) ? page : [];
+        rows.push(...list);
+        if (list.length < PICKS_PAGE) break;
+      }
       const settled = await settledFor(rows.map(row => safeRead(row, 'fixture_id')), cfg);
       const ranking = scorePicks(rows, settled);
       const top = ranking.slice(0, LEADERBOARD_TOP);
@@ -238,7 +259,7 @@ export function createMatchPicksRuntime(deps = {}) {
       return json({
         available: true,
         periodDays: LEADERBOARD_DAYS,
-        truncated: rows.length >= MAX_PICKS_SCAN,
+        truncated,
         top: top.map((entry, index) => ({
           rank: index + 1,
           name: names.get(entry.userId) || 'Игрок',
