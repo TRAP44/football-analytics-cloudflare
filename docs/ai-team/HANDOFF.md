@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-12 — Claude — Переключатель AI в админке
-PR: ветка `claude/admin-ai-switch`
+PR: [#863](https://github.com/TRAP44/football-analytics-cloudflare/pull/863), ветка `claude/admin-ai-switch`
 Сделано:
 - Миграция `supabase_migration_v6_29_15.sql`: `runtime_controls.ai_enabled boolean not null default true`; правило журнала `runtime_controls_atomic_history` пересоздано с `aiEnabled` в снимке (откат восстанавливает переключатель); `backend_schema_fingerprint()` (v1) исключает новую колонку — legacy-отпечатки не меняются. Определение Security Lockdown в журнале прежнее.
 - `src/runtime-controls.js`: `aiEnabled` — необязательное поле (до миграции и в старых точках журнала = включён; неверный тип — fail-closed). Запись `ai_enabled` — только если колонка есть; выключить AI до миграции нельзя (`RUNTIME_CONTROLS_AI_SCHEMA`). Старая панель без `aiEnabled` не меняет значение. Lockdown выключает AI, снятие — включает.

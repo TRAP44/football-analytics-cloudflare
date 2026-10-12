@@ -16,7 +16,7 @@ _пусто_
 
 ## На ревью
 
-- [ ] Переключатель AI в админке: «AI (Workers AI)» в настройках функций — выключает объяснение через AI и свои вопросы без деплоя; миграция Supabase v6.29.15 (`runtime_controls.ai_enabled`) — **Claude** — PR: ветка `claude/admin-ai-switch` — ревью: Codex
+- [ ] Переключатель AI в админке: «AI (Workers AI)» в настройках функций — выключает объяснение через AI и свои вопросы без деплоя; миграция Supabase v6.29.15 (`runtime_controls.ai_enabled`) — **Claude** — [PR #863](https://github.com/TRAP44/football-analytics-cloudflare/pull/863) — ревью: Codex
 - [ ] Карточки на главной во время матча: вместо скрытой полоски — последняя оценка по ходу матча («Сейчас по ходу матча · 61′»); предматчевые цифры во время игры не показываются — **Claude** — [PR #858](https://github.com/TRAP44/football-analytics-cloudflare/pull/858) — ревью: Codex
 - [ ] Исправления по повторному ревью Codex #836 и #839: снимок NS после задержки старта остаётся «до матча»; неподтверждённый состав помечен на поле; запасные видны без стартовых составов — **Claude** — [PR #848](https://github.com/TRAP44/football-analytics-cloudflare/pull/848) — ревью: Codex
 - [ ] Оформление: только фирменный янтарный акцент и темы «Тёмная» / «Светлая» (или как в Telegram) — выбор акцента и тема «Океан» убраны, старые сохранённые выборы сбрасываются к янтарю — **Claude** (решение Сергея 12.10) — [PR #845](https://github.com/TRAP44/football-analytics-cloudflare/pull/845) — ревью: Codex
