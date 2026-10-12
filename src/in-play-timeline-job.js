@@ -379,5 +379,29 @@ export function createInPlayTimelineJob(deps = {}) {
     return summary;
   }
 
-  return Object.freeze({ processInPlayTimeline });
+  // Свежая оценка по ходу матча для уведомления о голе или удалении: одна строка
+  // /fixtures?id (счёт, минута, события) и предматчевый снимок модели. Только при
+  // доступном бюджете источника; любая неудача — null (уведомление уйдёт без оценки).
+  async function estimateForFixture(fixtureId, cfg) {
+    const id = positiveId(fixtureId);
+    if (!id || typeof apiFootball !== 'function') return null;
+    try {
+      if (typeof loadSharedProviderState === 'function') await loadSharedProviderState(cfg).catch(() => {});
+      const budget = providerBudgetDecision(providerSnapshot(), { freeDailyReserve: 60 }, now());
+      if (!budget.allowed) return null;
+      const prematch = plainObject(safeRead(plainObject(await getModelProbabilities([id], cfg)), id));
+      if (!prematch) return null;
+      const rows = await apiFootball('/fixtures', { id }, cfg);
+      const row = (Array.isArray(rows) ? rows : []).find(item => positiveId(safeRead(plainObject(safeRead(item, 'fixture')), 'id')) === id);
+      const state = liveFixtureState(row);
+      if (!state) return null;
+      const reds = redCardsFromFixtureRow(row) || { home: 0, away: 0 };
+      const probabilities = inPlayProbabilities({ prematch, ...state, homeReds: reds.home, awayReds: reds.away });
+      return probabilities ? { ...probabilities, minute: Math.round(state.minute), score: `${state.homeGoals}:${state.awayGoals}` } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  return Object.freeze({ processInPlayTimeline, estimateForFixture });
 }

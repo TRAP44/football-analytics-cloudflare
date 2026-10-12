@@ -285,19 +285,34 @@ function minuteLabel(event = {}) {
   return extra !== null && extra > 0 ? `${minute}+${extra}′` : `${minute}′`;
 }
 
-function matchEventMessage(row, event, eventType) {
+// Оценка по ходу матча (src/in-play-model.js) — только корректная, иначе строки нет.
+export function inPlayEstimateLine(row, estimate) {
+  const values = ['home', 'draw', 'away'].map(key => Number(estimate?.[key]));
+  if (!values.every(value => Number.isFinite(value) && value >= 0 && value <= 100)) return '';
+  const sum = values[0] + values[1] + values[2];
+  if (sum < 98 || sum > 102) return '';
+  const minute = Number(estimate?.minute);
+  const score = /^\d{1,2}:\d{1,2}$/.test(String(estimate?.score || '')) ? String(estimate.score) : '';
+  const when = [Number.isInteger(minute) && minute >= 0 ? `${minute}′` : '', score].filter(Boolean).join(', ');
+  return `📈 Оценка по ходу матча${when ? ` (${when})` : ''}: ${row?.home_name || 'Хозяева'} ${Math.round(values[0])}% · ничья ${Math.round(values[1])}% · ${row?.away_name || 'Гости'} ${Math.round(values[2])}%`;
+}
+
+function matchEventMessage(row, event, eventType, estimate = null) {
   const title = eventType === 'match.goal' ? '⚽ Гол' : '🟥 Красная карточка';
   const actor = String(event.playerName || event.player || '').trim();
   const team = String(event.teamName || '').trim();
+  const estimateLine = inPlayEstimateLine(row, estimate);
   return [
     title,
     '',
     `${row?.home_name || 'Хозяева'} — ${row?.away_name || 'Гости'}`,
     [minuteLabel(event), team].filter(Boolean).join(' · '),
     actor,
+    estimateLine ? '' : null,
+    estimateLine,
     '',
     'Откройте MatchRadar, чтобы увидеть обновлённый контекст матча.',
-  ].filter(Boolean).join('\n');
+  ].filter(line => line !== null && line !== undefined && line !== false).join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
 function playerEventMessage(row, event, eventType, favorite) {
@@ -412,6 +427,7 @@ export function createSmartNotificationService({
   filterRecipients,
   loadFavoritePlayersByUser,
   loadLiveNotificationSnapshot,
+  loadInPlayEstimate,
   loadLineupSnapshot,
   getAnalysisTimelineSnapshots,
   deliverSmartNotification,
@@ -574,6 +590,32 @@ export function createSmartNotificationService({
       }
     };
 
+    async function hasUndeliveredMatchEvents(fixtureId, snapshot, elapsed, goalAudience, recipients, cfg) {
+      const keys = [];
+      let expected = 0;
+      for (const event of notificationEventsFromSnapshot(snapshot, { elapsed })) {
+        const basicType = matchEventType(event);
+        if (!basicType) continue;
+        const audience = basicType === 'match.goal' ? goalAudience : await safeAudience(recipients, basicType);
+        if (!audience.length) continue;
+        keys.push(smartNotificationDedupeKey({ fixtureId, eventType: basicType, eventKey: normalizedEventKey(event) }));
+        expected += audience.length;
+      }
+      if (!keys.length) return false;
+      if (typeof supaSelectPaged !== 'function') return true;
+      try {
+        const page = await supaSelectPaged(cfg, 'smart_notification_deliveries', {
+          fixture_id: `eq.${fixtureId}`,
+          dedupe_key: `in.(${keys.map(key => `"${String(key).replace(/"/g, '')}"`).join(',')})`,
+        }, { pageSize: 500, maxRows: Math.min(5000, expected + 10) });
+        const rows = Array.isArray(page) ? page : page?.rows;
+        if (!Array.isArray(rows)) return false;
+        return rows.length < expected;
+      } catch {
+        return false;
+      }
+    }
+
     for (const [fixtureId, recipients] of groups) {
       const fixtureDate = Date.parse(recipients[0]?.fixture_date || '');
       const minutesToKickoff = Number.isFinite(fixtureDate) ? (fixtureDate - now) / 60000 : null;
@@ -601,6 +643,18 @@ export function createSmartNotificationService({
 
         if (snapshot?.trusted === true && snapshot?.stale !== true) {
           const elapsed = minutesToKickoff < 0 ? Math.max(0, Math.floor(-minutesToKickoff)) : 0;
+          // Оценка по ходу матча — запрос к источнику только если по событиям этого
+          // матча есть ещё не отправленные уведомления (уже отправленные события
+          // приходят в каждом запуске), и не больше одного раза на матч за запуск.
+          let estimate;
+          const estimateOnce = async () => {
+            if (estimate !== undefined) return estimate;
+            estimate = null;
+            if (typeof loadInPlayEstimate !== 'function') return estimate;
+            if (!(await hasUndeliveredMatchEvents(fixtureId, snapshot, elapsed, matchGoalAudience, recipients, cfg))) return estimate;
+            try { estimate = await loadInPlayEstimate(fixtureId, cfg); } catch { estimate = null; }
+            return estimate;
+          };
           for (const event of notificationEventsFromSnapshot(snapshot, { elapsed })) {
             const basicType = matchEventType(event);
             if (basicType) {
@@ -617,7 +671,7 @@ export function createSmartNotificationService({
                   row,
                   eventType: basicType,
                   category: notificationCategory(basicType),
-                  text: matchEventMessage(row, event, basicType),
+                  text: matchEventMessage(row, event, basicType, eligible.length ? await estimateOnce() : null),
                   dedupeKey,
                 });
               }

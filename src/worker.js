@@ -611,6 +611,7 @@ const {
   enforceTelegramBurst,
 } = createServiceWiringRuntime({
   SMART_NOTIFICATION_POLICY,
+  loadInPlayEstimate: (...args) => getInPlayTimelineJob().estimateForFixture(...args),
   bumpTelemetry: (...args) => bumpTelemetry(...args),
   bytesToHex,
   createEntitlementService,

@@ -13,7 +13,7 @@ import {
   smartNotificationDedupeKey,
 } from '../src/smart-notification-policy.js';
 import { createSmartNotificationDeliveryService } from '../src/smart-notification-delivery.js';
-import { aiProbabilityMovement, createSmartNotificationService, radarStrongSignalState } from '../src/smart-notification-service.js';
+import { aiProbabilityMovement, createSmartNotificationService, inPlayEstimateLine, radarStrongSignalState } from '../src/smart-notification-service.js';
 import { createSmartNotificationsModule, normalizeSmartNotificationPayload } from '../public/modules/smart-notifications.js';
 
 test('notification policy rejects entitlement and event coercion',()=>{
@@ -486,4 +486,60 @@ test('capability snapshots are frozen and enforce FREE versus paid categories',(
     eventType:'player.goal',plan:'PRO',
     preferences:{enabled:false,players:true},
   }).reason,'preference_master_disabled');
+});
+
+test('goal alerts carry the in-play estimate, fetched once and only for undelivered events', async () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse('2026-10-01T12:20:00.000Z');
+  try {
+    const rows = [
+      { telegram_id:1, fixture_id:100, fixture_date:'2026-10-01T12:00:00.000Z', home_name:'Alpha', away_name:'Beta', enabled:true },
+      { telegram_id:2, fixture_id:100, fixture_date:'2026-10-01T12:00:00.000Z', home_name:'Alpha', away_name:'Beta', enabled:true },
+    ];
+    const make = ({ delivered = [], estimate = { home:76.6, draw:17.3, away:6.1, minute:20, score:'1:0' } } = {}) => {
+      const deliveries = [];
+      const estimateCalls = [];
+      const service = createSmartNotificationService({
+        hasSupabase:()=>true,
+        loadRuntimeControls:async()=>({value:{remindersEnabled:true}}),
+        supaSelectPaged:async(_cfg, table)=>(table === 'smart_notification_deliveries' ? { rows: delivered, truncated:false } : { rows, truncated:false }),
+        filterRecipients:async(input)=>({rows:input,blockedByPreference:0,blockedByEntitlement:0}),
+        loadFavoritePlayersByUser:async()=>new Map(),
+        loadLiveNotificationSnapshot:async()=>({ trusted:true, stale:false,
+          events:[{minute:20,extra:0,type:'Goal',detail:'Normal Goal',teamId:11,teamName:'Alpha',playerId:10,playerName:'Forward',eventKey:'20:goal:10'}] }),
+        loadInPlayEstimate:async(id)=>{ estimateCalls.push(id); return estimate; },
+        loadLineupSnapshot:async()=>({confirmed:false}),
+        getAnalysisTimelineSnapshots:async()=>[],
+        deliverSmartNotification:async(input)=>{ deliveries.push(input); return {state:'sent'}; },
+        recordOpsEvent:async()=>{},
+        maxFixturesPerRun:3,
+      });
+      return { service, deliveries, estimateCalls };
+    };
+
+    const fresh = make();
+    await fresh.service.processSmartNotifications({botToken:'token'});
+    assert.deepEqual(fresh.estimateCalls, [100], 'one lookup per match per run');
+    assert.equal(fresh.deliveries.length, 2);
+    for (const item of fresh.deliveries) assert.match(item.text, /📈 Оценка по ходу матча \(20′, 1:0\): Alpha 77% · ничья 17% · Beta 6%/);
+
+    // Всё уже отправлено в прошлых запусках — к источнику не ходим.
+    const done = make({ delivered: [{ dedupe_key:'a' }, { dedupe_key:'b' }] });
+    await done.service.processSmartNotifications({botToken:'token'});
+    assert.deepEqual(done.estimateCalls, []);
+
+    // Оценки нет — уведомление уходит как раньше, без строки.
+    const none = make({ estimate: null });
+    await none.service.processSmartNotifications({botToken:'token'});
+    assert.ok(none.deliveries.every(item => !/Оценка по ходу матча/.test(item.text)));
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test('in-play estimate line refuses broken numbers', () => {
+  const row = { home_name:'Alpha', away_name:'Beta' };
+  assert.equal(inPlayEstimateLine(row, { home:80, draw:30, away:20 }), '');
+  assert.equal(inPlayEstimateLine(row, null), '');
+  assert.equal(inPlayEstimateLine(row, { home:50, draw:30, away:20, minute:61, score:'<b>' }), '📈 Оценка по ходу матча (61′): Alpha 50% · ничья 30% · Beta 20%');
 });

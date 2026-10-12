@@ -301,3 +301,26 @@ test('codex #854: the fresh fixture row replaces the cached score, dismissals ne
   assert.deepEqual(inserted[0].provenance.score, { home: 1, away: 0 });
   assert.deepEqual(inserted[0].provenance.reds, { home: 1, away: 0, source: 'events' });
 });
+
+test('a fresh estimate for a goal alert: one fixture row, pre-match basis, budget respected', async () => {
+  const make = (overrides = {}) => createInPlayTimelineJob({
+    apiFootball: async (path, params) => { calls.push([path, params]); return [{ fixture: { id: 7, status: { short: '2H', elapsed: 61 } }, goals: { home: 1, away: 0 }, teams: { home: { id: 1 }, away: { id: 2 } }, events: [] }]; },
+    clock: () => Date.parse('2026-10-12T18:00:00.000Z'),
+    getCache: async () => null,
+    getModelProbabilities: async () => ({ 7: pre }),
+    hasSupabase: () => true,
+    loadProviderFixturesForDate: async () => [],
+    providerSnapshot: () => ({ plan: 'PRO' }),
+    supaInsertIgnore: async () => {},
+    supaSelectMany: async () => [],
+    ...overrides,
+  });
+  let calls = [];
+  const estimate = await make().estimateForFixture(7, {});
+  assert.deepEqual(calls, [['/fixtures', { id: 7 }]]);
+  assert.deepEqual(estimate, { ...at(1, 0, 61), minute: 61, score: '1:0' });
+  calls = [];
+  assert.equal(await make({ providerSnapshot: () => ({ cooldownActive: true }) }).estimateForFixture(7, {}), null);
+  assert.deepEqual(calls, [], 'no provider request during cooldown');
+  assert.equal(await make({ getModelProbabilities: async () => ({}) }).estimateForFixture(7, {}), null, 'no pre-match basis — no estimate');
+});
