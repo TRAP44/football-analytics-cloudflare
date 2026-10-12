@@ -62,6 +62,7 @@ test('model snapshots are requested in chunks, main matches first, so a main mat
   const mainId = 1000 + 430;
   const calls = [];
   const job = createChannelDailyPostJob({
+    ...claimStore(),
     clock: () => NOW,
     getCache: async key => (key.startsWith('provider-fixtures:') ? { fixtures } : null),
     getModelProbabilities: async ids => {
@@ -82,6 +83,7 @@ test('model snapshots are requested in chunks, main matches first, so a main mat
 
   const quick = [];
   const full = createChannelDailyPostJob({
+    ...claimStore(),
     clock: () => NOW,
     getCache: async key => (key.startsWith('provider-fixtures:') ? { fixtures } : null),
     getModelProbabilities: async ids => { quick.push(ids.length); return Object.fromEntries(ids.map(id => [id, { home: 50, draw: 25, away: 25 }])); },
@@ -92,22 +94,40 @@ test('model snapshots are requested in chunks, main matches first, so a main mat
   assert.deepEqual(quick, [200], 'five snapshots found in the first chunk — no more requests');
 });
 
+// Заявки идемпотентности как в общей базе: вставка только если ключа ещё нет.
+function claimStore() {
+  const claims = new Map();
+  let next = 0;
+  return {
+    claims,
+    claimIdempotency: async key => {
+      if (claims.has(key)) return { claimed: false, duplicate: true };
+      const claimId = `claim-${++next}`;
+      claims.set(key, { state: 'publishing', claimId });
+      return { claimed: true, claimId };
+    },
+    completeIdempotency: async (key, meta) => { claims.set(key, { state: 'sent', claimId: meta.claimId }); },
+    releaseIdempotency: async (key, meta) => { if (claims.get(key)?.claimId === meta.claimId) claims.delete(key); },
+  };
+}
+
 function harness({ enabled = false, published = [], previewCached = false } = {}) {
   const ops = [];
   const cache = new Map(previewCached ? [['channel-daily-preview:2026-10-12:v1', { date: '2026-10-12' }]] : []);
+  const store = claimStore();
   const job = createChannelDailyPostJob({
-    claimIdempotency: async key => { published.push(['claim', key]); return { claimed: true, claimId: 'claim-1' }; },
+    claimIdempotency: async (key, meta) => { published.push(['claim', key]); return store.claimIdempotency(key, meta); },
     clock: () => NOW,
-    completeIdempotency: async () => {},
+    completeIdempotency: store.completeIdempotency,
     fixtureTelegramDeepLink: async (_cfg, id) => ({ url: `https://t.me/MatchRadarBot?startapp=f${id}` }),
     getCache: async key => (key.startsWith('provider-fixtures:') ? { date: '2026-10-12', fixtures: rows } : cache.get(key) || null),
     getModelProbabilities: async () => predictions,
     loadProviderFixturesForDate: async () => rows,
     recordOpsEvent: async (_cfg, event) => { ops.push(event); return persisted(event); },
-    releaseIdempotency: async () => {},
+    releaseIdempotency: store.releaseIdempotency,
     setCache: async (key, _id, value) => { cache.set(key, value); },
   });
-  return { job, ops, cache };
+  return { job, ops, cache, store };
 }
 
 test('while disabled the job only records a preview, once a day, inside the 11:00 MSK window', async () => {
@@ -119,12 +139,47 @@ test('while disabled the job only records a preview, once a day, inside the 11:0
   assert.match(ops[0].message, /Матчи дня/);
   assert.ok(cache.has('channel-daily-preview:2026-10-12:v1'));
   assert.equal((await job.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_already_recorded');
+  assert.equal(ops.length, previewParts(ops.map(event => event.message).join('\n')).length, 'no duplicate parts');
+});
+
+test('the preview marker is a durable claim: another isolate with an empty cache does not duplicate it', async () => {
+  const shared = claimStore();
+  const make = () => {
+    const ops = [];
+    const job = createChannelDailyPostJob({
+      ...shared,
+      clock: () => NOW,
+      getCache: async key => (key.startsWith('provider-fixtures:') ? { fixtures: rows } : null),
+      getModelProbabilities: async () => predictions,
+      recordOpsEvent: async event => { ops.push(event); return persisted(event); },
+      setCache: async () => {},
+    });
+    return { job, ops };
+  };
+  const first = make();
+  const second = make();
+  assert.equal((await first.job.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_recorded');
+  assert.equal((await second.job.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_already_recorded');
+  assert.equal(second.ops.length, 0);
+  assert.equal(shared.claims.get('telegram:channel-publish:v1:daily-preview:2026-10-12').state, 'sent');
+  // Журнал заявок недоступен — предпросмотр не пишется вовсе (без дублей).
+  const down = createChannelDailyPostJob({
+    clock: () => NOW,
+    claimIdempotency: async () => ({ claimed: false, unavailable: true }),
+    getCache: async key => (key.startsWith('provider-fixtures:') ? { fixtures: rows } : null),
+    getModelProbabilities: async () => predictions,
+    recordOpsEvent: async event => persisted(event),
+    setCache: async () => {},
+  });
+  assert.equal((await down.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_claim_unavailable');
 });
 
 test('the preview marker is written only when every part reached the journal', async () => {
   const cache = new Map();
+  const store = claimStore();
   let failFirst = true;
   const job = createChannelDailyPostJob({
+    ...store,
     clock: () => NOW,
     getCache: async key => (key.startsWith('provider-fixtures:') ? { fixtures: rows } : cache.get(key) || null),
     getModelProbabilities: async () => predictions,
@@ -136,7 +191,8 @@ test('the preview marker is written only when every part reached the journal', a
     setCache: async (key, _id, value) => { cache.set(key, value); },
   });
   assert.equal((await job.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_not_persisted');
-  assert.equal(cache.has('channel-daily-preview:2026-10-12:v1'), false, 'next run retries');
+  assert.equal(cache.has('channel-daily-preview:2026-10-12:v1'), false);
+  assert.equal(store.claims.size, 0, 'claim released — next run retries');
   assert.equal((await job.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_recorded');
   assert.ok(cache.has('channel-daily-preview:2026-10-12:v1'));
 });
@@ -154,6 +210,7 @@ test('a long post is previewed in parts under the 500-character journal limit, w
   const ops = [];
   const cache = new Map();
   const job = createChannelDailyPostJob({
+    ...claimStore(),
     clock: () => NOW,
     getCache: async key => (key.startsWith('provider-fixtures:') ? { fixtures: many } : cache.get(key) || null),
     getModelProbabilities: async () => est,

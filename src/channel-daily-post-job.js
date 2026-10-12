@@ -11,6 +11,10 @@ import { publishChannelMessage } from './channel-publisher.js';
 
 const RAW_FIXTURES_CACHE_KEY = date => `provider-fixtures:${date}:v1`;
 const PREVIEW_CACHE_KEY = date => `channel-daily-preview:${date}:v1`;
+// Метка «предпросмотр за день записан» — через тот же журнал идемпотентности,
+// что и публикации: заявка вставляется в общую базу атомарно (ревью Codex #860),
+// поэтому другой изолят или следующий запуск cron-runner не продублирует части.
+const PREVIEW_CLAIM_KEY = date => `telegram:channel-publish:v1:daily-preview:${date}`;
 const POST_HOUR_UTC = 8; // 11:00 МСК
 const POST_WINDOW_MINUTES = 15;
 const MAX_MATCHES = 5;
@@ -202,13 +206,6 @@ export function createChannelDailyPostJob(deps = {}) {
     const date = at.toISOString().slice(0, 10);
     const enabled = cfg?.channelDailyPostEnabled === true;
 
-    if (!enabled) {
-      // Предпросмотр — один раз за день.
-      try {
-        if (await getCache(PREVIEW_CACHE_KEY(date), cfg)) return { ok: true, reason: 'preview_already_recorded' };
-      } catch {}
-    }
-
     const rows = await todayRows(date, cfg);
     // Снимки модели запрашиваются частями по 200 id, главные матчи — первыми
     // (ревью Codex #860): в насыщенный день главный матч не теряется за лимитом.
@@ -232,6 +229,15 @@ export function createChannelDailyPostJob(deps = {}) {
     if (!text) return { ok: true, reason: 'no_matches' };
 
     if (!enabled) {
+      // Предпросмотр — один раз за день: сначала заявка в общей базе.
+      let claim;
+      try {
+        claim = await claimIdempotency(PREVIEW_CLAIM_KEY(date), { fixtureId: 0 }, cfg);
+      } catch {
+        claim = { unavailable: true };
+      }
+      if (claim?.unavailable === true) return { ok: false, reason: 'preview_claim_unavailable' };
+      if (claim?.claimed !== true) return { ok: true, reason: 'preview_already_recorded' };
       const parts = previewParts(text);
       let persisted = 0;
       for (let index = 0; index < parts.length; index += 1) {
@@ -247,8 +253,13 @@ export function createChannelDailyPostJob(deps = {}) {
       }
       // Метка «предпросмотр записан» — только если в журнале все части
       // (ревью Codex #860); иначе следующий запуск в окне повторит запись.
-      if (persisted !== parts.length) return { ok: false, reason: 'preview_not_persisted', matches: matches.length };
-      // Полный текст — ещё и в кеше предпросмотра (на сутки).
+      if (persisted !== parts.length) {
+        // Заявка снимается — следующий запуск в окне запишет предпросмотр заново.
+        try { await releaseIdempotency(PREVIEW_CLAIM_KEY(date), { claimId: claim.claimId }, cfg); } catch {}
+        return { ok: false, reason: 'preview_not_persisted', matches: matches.length };
+      }
+      try { await completeIdempotency(PREVIEW_CLAIM_KEY(date), { claimId: claim.claimId, fixtureId: 0 }, cfg); } catch {}
+      // Полный текст — ещё и в кеше предпросмотра (на сутки), для удобства.
       try { await setCache(PREVIEW_CACHE_KEY(date), 0, { date, recordedAt: new Date(now()).toISOString(), text }, cfg, 1440); } catch {}
       return { ok: true, reason: 'preview_recorded', matches: matches.length };
     }
