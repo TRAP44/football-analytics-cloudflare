@@ -29,7 +29,10 @@ test('no in-play points or broken values — no card', () => {
 
 test('the card is rendered only for live matches; the full analysis says its numbers are pre-match', () => {
   const view = fs.readFileSync('public/modules/match-center-view.js', 'utf8');
-  assert.match(view, /\$\{live \? inPlayEstimateHtml\(latestInPlayEstimate\(d\.aiTimeline \|\| \{\}\), m, escapeHtml\) : ''\}/);
+  assert.match(view, /\$\{live && IN_PLAY_STATUSES\.has\(String\(m\.status \|\| ''\)\.toUpperCase\(\)\) \? inPlayEstimateHtml/);
+  assert.match(view, /const IN_PLAY_STATUSES = new Set\(\['1H', 'HT', '2H'\]\);/);
   const app = fs.readFileSync('public/app.js', 'utf8');
   assert.match(app, /Оценка по данным до матча — счёт её не меняет/);
+  // Разбор — снимок до матча: «идёт ли матч» берётся из текущей ленты (ревью Codex #853).
+  assert.match(app, /function analysisMatchIsLive\(m = \{\}\) \{[\s\S]*?state\.matches\.some\(item => Number\(item\?\.fixtureId\) === id && item\?\.live === true\)/);
 });

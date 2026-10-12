@@ -6211,6 +6211,14 @@ function analysisGlanceHtml(d = {}) {
   </section>`;
 }
 
+// Сохранённый разбор — снимок до матча (его status обычно NS), поэтому идёт ли
+// матч сейчас, берём из текущей ленты матчей.
+function analysisMatchIsLive(m = {}) {
+  if (['1H','HT','2H','ET','BT','P','INT','LIVE'].includes(String(m.status || '').toUpperCase())) return true;
+  const id = Number(m.fixtureId || 0);
+  return Boolean(id) && Array.isArray(state.matches) && state.matches.some(item => Number(item?.fixtureId) === id && item?.live === true);
+}
+
 function renderAnalysis(d) {
   $('analysis')?.setAttribute('aria-busy', 'false');
   if (!d) return;
@@ -6264,7 +6272,7 @@ function renderAnalysis(d) {
       <div class="experience-callout">
         <span>Наиболее вероятный исход</span>
         <strong>${escapeHtml(likelyOutcomeDisplay(p, d.likelyOutcome))}</strong>
-        ${['1H','HT','2H','ET','BT','P','LIVE'].includes(String(m.status || '').toUpperCase()) ? '<small class="experience-prematch-note">Оценка по данным до матча — счёт её не меняет. Оценка по ходу матча — в Штабе матча.</small>' : ''}
+        ${analysisMatchIsLive(m) ? '<small class="experience-prematch-note">Оценка по данным до матча — счёт её не меняет. Оценка по ходу матча — в Штабе матча.</small>' : ''}
       </div>
 
       <div class="experience-prob-labels">

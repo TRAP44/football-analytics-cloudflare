@@ -63,6 +63,10 @@ export function matchCenterTrackRecordHtml(state, escapeHtml) {
 // Задача 3 (часть 2): последняя оценка по ходу матча (счёт и минута) — из точек
 // кривой с provenance.source = in_play_model. Новых цифр не считает: только
 // показывает сохранённую сервером точку.
+// Оценка строится только для основного времени: в овертайме и серии пенальти
+// последняя точка второго тайма уже не описывает текущий матч.
+const IN_PLAY_STATUSES = new Set(['1H', 'HT', '2H']);
+
 export function latestInPlayEstimate(timeline = {}) {
   const points = Array.isArray(timeline?.points) ? timeline.points : [];
   let latest = null;
@@ -216,7 +220,7 @@ export function renderMatchCenterView(d, deps) {
         <div class="mr-ai-card-head"><span class="mr-kicker">✦ Вывод AI</span>${history?.aiConfidence ? `<span class="mr-ai-card-conf">уверенность ${Math.round(Number(history.aiConfidence))}/100</span>` : ''}</div>
         ${aiCardBody}
       </section>
-      ${live ? inPlayEstimateHtml(latestInPlayEstimate(d.aiTimeline || {}), m, escapeHtml) : ''}
+      ${live && IN_PLAY_STATUSES.has(String(m.status || '').toUpperCase()) ? inPlayEstimateHtml(latestInPlayEstimate(d.aiTimeline || {}), m, escapeHtml) : ''}
       ${matchCenterTrackRecordHtml(state, escapeHtml)}
       ${matchChangeNarrativeHtml(d, m)}
       ${aiTimelineCompactHtml}
