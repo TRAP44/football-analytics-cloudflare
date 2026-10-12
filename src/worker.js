@@ -39,6 +39,7 @@ import { createUserDataApiRuntime } from './user-data-api-runtime.js';
 import { createMatchExplanationRuntime } from './match-explanation-runtime.js';
 import { createMatchQuestionRuntime } from './match-question-runtime.js';
 import { createPrematchPredictionJob } from './prematch-prediction-job.js';
+import { quotaFromStatusBody } from './provider-status-probe.js';
 import { createInPlayTimelineJob } from './in-play-timeline-job.js';
 import { createBillingRuntime } from './billing-runtime.js';
 import { createBillingApiRuntime } from './billing-api-runtime.js';
@@ -1657,6 +1658,21 @@ function finishPostMatchReturnClaim(...args) { return getPostMatchReturnRuntime(
 function releasePostMatchReturnClaim(...args) { return getPostMatchReturnRuntime().releasePostMatchReturnClaim(...args); }
 function processPostMatchReturns(...args) { return getPostMatchReturnRuntime().processPostMatchReturns(...args); }
 
+// Запрос /status для фоновых заданий, когда общий снимок квоты истёк (не
+// расходует дневную квоту API-Football). Один запрос в минуту на процесс: оба
+// задания одного запуска делят результат.
+async function probeProviderStatus(cfg) {
+  const nowMs = Date.now();
+  if (nowMs - Number(memory.providerStatusProbeAt || 0) < 60_000) return;
+  memory.providerStatusProbeAt = nowMs;
+  const body = await apiFootball('/status', {}, cfg, { responseType: 'any', transportRetries: 0, timeoutMs: 5000 });
+  // Шлюз обновляет снимок по заголовкам; если их не было — по телу ответа.
+  const refreshedMs = Date.parse(String(memory.provider?.updatedAt || ''));
+  if (Number.isFinite(refreshedMs) && refreshedMs >= nowMs) return;
+  const quota = quotaFromStatusBody(body, inferFootballPlan);
+  if (quota) memory.provider = { ...memory.provider, name: 'API-Football', ...quota, updatedAt: new Date().toISOString() };
+}
+
 let prematchPredictionJob = null;
 function getPrematchPredictionJob() {
   if (!prematchPredictionJob) {
@@ -1670,6 +1686,7 @@ function getPrematchPredictionJob() {
       loadProviderFixturesForDate: (...args) => loadProviderFixturesForDate(...args),
       loadSharedProviderState: (...args) => loadSharedProviderState(...args),
       normalizeCompetition: (...args) => normalizeCompetition(...args),
+      probeProviderStatus: (...args) => probeProviderStatus(...args),
       providerSnapshot: (...args) => providerSnapshot(...args),
       recordOpsEvent,
       supaRpc,
@@ -1691,6 +1708,7 @@ function getInPlayTimelineJob() {
       hasSupabase,
       loadProviderFixturesForDate: (...args) => loadProviderFixturesForDate(...args),
       loadSharedProviderState: (...args) => loadSharedProviderState(...args),
+      probeProviderStatus: (...args) => probeProviderStatus(...args),
       providerSnapshot: (...args) => providerSnapshot(...args),
       recordOpsEvent,
       supaInsertIgnore,
@@ -1705,6 +1723,7 @@ const {
   sendTelegramMessage,
   probeReminderReliabilitySchema,
   PROVIDER_FEATURE_TTLS,
+  inferFootballPlan,
   loadSharedProviderState,
   providerSnapshot,
   liveRefreshSeconds,

@@ -10,6 +10,7 @@
 
 import { inPlayProbabilities, matchMinuteFromFixture, IN_PLAY_MODEL_VERSION } from './in-play-model.js';
 import { providerBudgetDecision } from './prematch-prediction-job.js';
+import { ensureProviderSnapshot } from './provider-status-probe.js';
 
 const RAW_FIXTURES_CACHE_KEY = date => `provider-fixtures:${date}:v1`;
 const LIVE_STATUSES = new Set(['1H', 'HT', '2H']);
@@ -147,6 +148,7 @@ export function createInPlayTimelineJob(deps = {}) {
     hasSupabase,
     loadProviderFixturesForDate,
     loadSharedProviderState,
+    probeProviderStatus,
     providerSnapshot,
     recordOpsEvent,
     supaInsertIgnore,
@@ -305,11 +307,7 @@ export function createInPlayTimelineJob(deps = {}) {
     if (!storage) return { ...summary, reason: 'storage_unavailable' };
 
     const at = scheduledAt instanceof Date && Number.isFinite(scheduledAt.getTime()) ? scheduledAt : new Date(now());
-    if (typeof loadSharedProviderState === 'function') {
-      try {
-        await loadSharedProviderState(cfg);
-      } catch {}
-    }
+    await ensureProviderSnapshot({ cfg, loadSharedProviderState, providerSnapshot, probeProviderStatus, nowMs: at.getTime() });
     let budget;
     try {
       budget = providerBudgetDecision(providerSnapshot(), { freeDailyReserve: 60 }, at.getTime());
