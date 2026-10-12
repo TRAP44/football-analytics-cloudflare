@@ -2462,6 +2462,14 @@ html[data-theme] body.miniapp-public-shell .beat-ai-board-list > li.is-me { bord
 html[data-theme] body.miniapp-public-shell .beat-ai-rank { font-weight: 800; color: var(--accent); text-align: center; }
 html[data-theme] body.miniapp-public-shell .beat-ai-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 html[data-theme] body.miniapp-public-shell .beat-ai-points { font-weight: 700; color: var(--hint); white-space: nowrap; }
+/* Карточка «AI угадал». */
+html[data-theme] body.miniapp-public-shell .beat-ai-card-btn { margin-top: 10px; }
+html[data-theme] body.miniapp-public-shell .ai-guessed-overlay {
+  position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  padding: 16px; background: rgba(5, 7, 10, .88);
+}
+html[data-theme] body.miniapp-public-shell .ai-guessed-overlay img { width: min(100%, 520px); height: auto; border-radius: 16px; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+html[data-theme] body.miniapp-public-shell .ai-guessed-overlay p { margin: 0; max-width: 520px; text-align: center; font-size: 14px; color: #e5e7eb; }
 /* Задача 4: экран составов — 2.5D поле (перспектива расчётом координат). */
 html[data-theme] body.miniapp-public-shell .lp-view { display: grid; gap: 10px; }
 html[data-theme] body.miniapp-public-shell .lp-team { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
