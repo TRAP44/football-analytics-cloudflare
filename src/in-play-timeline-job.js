@@ -70,7 +70,34 @@ export function shouldCaptureInPlay(previous, state, probabilities) {
   if (!previous) return true;
   const score = plainObject(safeRead(previous, 'score'));
   if (!score || score.home !== state.homeGoals || score.away !== state.awayGoals) return true;
+  const reds = plainObject(safeRead(previous, 'reds')) || { home: 0, away: 0 };
+  if ((reds.home || 0) !== (state.homeReds || 0) || (reds.away || 0) !== (state.awayReds || 0)) return true;
   return maxShift(previous.probabilities, probabilities) >= MIN_SHIFT_POINTS;
+}
+
+const RED_EVENT = event => {
+  const type = String(safeRead(event, 'type') || '').toLowerCase();
+  const detail = String(safeRead(event, 'detail') || '').toLowerCase();
+  return type === 'card' && (detail.includes('red') || detail.includes('second yellow'));
+};
+
+/** Красные карточки по событиям из /fixtures?ids=… (вторая жёлтая — тоже удаление). */
+export function redCardsFromFixtureRow(row) {
+  const item = plainObject(row) || {};
+  const fixtureId = positiveId(safeRead(plainObject(item.fixture), 'id'));
+  const teams = plainObject(item.teams) || {};
+  const homeId = positiveId(safeRead(plainObject(teams.home), 'id'));
+  const awayId = positiveId(safeRead(plainObject(teams.away), 'id'));
+  if (!fixtureId || !homeId || !awayId || !Array.isArray(item.events)) return null;
+  let home = 0;
+  let away = 0;
+  for (const event of item.events.slice(0, 300)) {
+    if (!RED_EVENT(event)) continue;
+    const teamId = positiveId(safeRead(plainObject(safeRead(event, 'team')), 'id'));
+    if (teamId === homeId) home += 1;
+    else if (teamId === awayId) away += 1;
+  }
+  return { fixtureId, home: Math.min(3, home), away: Math.min(3, away) };
 }
 
 export function inPlaySnapshotRow(state, probabilities, previous, capturedAt) {
@@ -78,6 +105,9 @@ export function inPlaySnapshotRow(state, probabilities, previous, capturedAt) {
     safeRead(previous.score, 'home') !== state.homeGoals || safeRead(previous.score, 'away') !== state.awayGoals
   );
   const scoreText = `${state.homeGoals}:${state.awayGoals}`;
+  const previousReds = plainObject(safeRead(previous, 'reds')) || { home: 0, away: 0 };
+  const redChanged = Boolean(previous) && ((previousReds.home || 0) !== (state.homeReds || 0) || (previousReds.away || 0) !== (state.awayReds || 0));
+  const redText = state.homeReds || state.awayReds ? `, удаления ${state.homeReds || 0}:${state.awayReds || 0}` : '';
   return {
     snapshot_key: `${IN_PLAY_SNAPSHOT_PREFIX}${state.fixtureId}:${capturedAt}`,
     fixture_id: state.fixtureId,
@@ -90,16 +120,19 @@ export function inPlaySnapshotRow(state, probabilities, previous, capturedAt) {
     confidence_score: null,
     completeness_score: null,
     completeness_max: null,
-    trigger_category: scoreChanged ? 'event' : 'model_update',
-    causal_relation: scoreChanged ? 'confirmed' : 'model_driven',
+    trigger_category: scoreChanged || redChanged ? 'event' : 'model_update',
+    causal_relation: scoreChanged || redChanged ? 'confirmed' : 'model_driven',
     explanation: scoreChanged
-      ? `Счёт изменился на ${scoreText} — оценка пересчитана по счёту и оставшемуся времени.`
-      : `Оценка по счёту ${scoreText} и оставшемуся времени.`,
+      ? `Счёт изменился на ${scoreText}${redText} — оценка пересчитана по счёту и оставшемуся времени.`
+      : redChanged
+        ? `Удаление (${state.homeReds || 0}:${state.awayReds || 0}) — оценка пересчитана при счёте ${scoreText}.`
+        : `Оценка по счёту ${scoreText}${redText} и оставшемуся времени.`,
     provenance: {
       source: IN_PLAY_PROVENANCE_SOURCE,
       stale: false,
       basis: 'model_predictions',
       score: { home: state.homeGoals, away: state.awayGoals },
+      reds: { home: state.homeReds || 0, away: state.awayReds || 0, source: state.redsSource || 'none' },
     },
     analysis_version: IN_PLAY_MODEL_VERSION,
   };
@@ -107,6 +140,7 @@ export function inPlaySnapshotRow(state, probabilities, previous, capturedAt) {
 
 export function createInPlayTimelineJob(deps = {}) {
   const {
+    apiFootball,
     clock,
     getCache,
     getModelProbabilities,
@@ -212,9 +246,29 @@ export function createInPlayTimelineJob(deps = {}) {
         entry.latest = {
           probabilities: { home: Number(row.home_prob), draw: Number(row.draw_prob), away: Number(row.away_prob) },
           score: plainObject(safeRead(plainObject(row.provenance), 'score')),
+          reds: plainObject(safeRead(plainObject(row.provenance), 'reds')),
         };
       }
       result.set(id, entry);
+    }
+    return result;
+  }
+
+  // События идущих матчей с предматчевой оценкой: один запрос /fixtures?ids=…
+  // на 20 матчей (не больше трёх за запуск), только при доступном бюджете.
+  async function redCards(ids, cfg, allowNetwork) {
+    const result = new Map();
+    if (!allowNetwork || typeof apiFootball !== 'function' || !ids.length) return result;
+    for (let index = 0; index < Math.min(ids.length, 60); index += 20) {
+      try {
+        const rows = await apiFootball('/fixtures', { ids: ids.slice(index, index + 20).join('-') }, cfg);
+        for (const row of Array.isArray(rows) ? rows : []) {
+          const value = redCardsFromFixtureRow(row);
+          if (value) result.set(value.fixtureId, value);
+        }
+      } catch {
+        break;
+      }
     }
     return result;
   }
@@ -277,8 +331,16 @@ export function createInPlayTimelineJob(deps = {}) {
       return { ...summary, ok: false, reason: 'snapshots_lookup_failed' };
     }
 
+    const reds = await redCards(eligible.map(state => state.fixtureId), cfg, budget.allowed === true);
     const capturedAt = new Date(now()).toISOString();
     for (const state of eligible) {
+      // Удаления: свежие события; если запрос не удался — последние известные
+      // (удалений не становится меньше), иначе — без удалений.
+      const known = reds.get(state.fixtureId);
+      const prior = plainObject(safeRead((previous.get(state.fixtureId) || {}).latest, 'reds'));
+      if (known) Object.assign(state, { homeReds: known.home, awayReds: known.away, redsSource: 'events' });
+      else if (prior) Object.assign(state, { homeReds: Number(prior.home) || 0, awayReds: Number(prior.away) || 0, redsSource: 'previous' });
+      else Object.assign(state, { homeReds: 0, awayReds: 0, redsSource: 'none' });
       const probabilities = inPlayProbabilities({ prematch: prematch[state.fixtureId], ...state });
       if (!probabilities) continue;
       const entry = previous.get(state.fixtureId) || { count: 0, latest: null };

@@ -6,9 +6,15 @@
 // текущем счёте и оставшемся времени. На 0-й минуте при 0:0 оценка в точности
 // равна предматчевой (поправочные множители), к концу матча — сходится к счёту.
 //
-// Чего модель НЕ учитывает (честно показывается в интерфейсе): красные
-// карточки, добавленное время, ход игры (удары, владение), овертайм и пенальти.
-// Для дополнительного времени и серии пенальти оценка не строится.
+// Красные карточки (решение Сергея 12.10): после удаления ожидаемые голы
+// команды до конца матча ×0.75, соперника ×1.9 — середина диапазона оценок
+// исследований (Ridder, Cramer, Hopstaken 1994: соперник +88%, удалённая
+// команда без изменений; Červený, van Ours, van Tuijl 2016: соперник ≈ +120%,
+// удалённая команда ≈ −47%). Это допущение модели, оно написано под графиком.
+//
+// Чего модель НЕ учитывает: добавленное время, ход игры (удары, владение),
+// овертайм и пенальти. Для дополнительного времени и серии пенальти оценка не
+// строится.
 
 const REGULATION_MINUTES = 90;
 const HALF_MINUTES = 45;
@@ -19,7 +25,16 @@ const LAMBDA_MAX = 6;
 // становится окончательной до финального свистка.
 const MIN_REMAINING_MINUTES = 0.5;
 const IN_PLAY_STATUSES = new Set(['1H', 'HT', '2H']);
-export const IN_PLAY_MODEL_VERSION = 'in-play-poisson-v1';
+export const IN_PLAY_MODEL_VERSION = 'in-play-poisson-v2';
+export const RED_CARD_OWN_FACTOR = 0.75;
+export const RED_CARD_OPPONENT_FACTOR = 1.9;
+const MAX_RED_CARDS = 3;
+
+function redCount(value) {
+  if (value === null || value === undefined || value === '') return 0;
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? Math.min(MAX_RED_CARDS, number) : 0;
+}
 
 function finite(value) {
   if (value === null || value === undefined || value === '' || typeof value === 'boolean') return null;
@@ -121,7 +136,7 @@ export function matchMinuteFromFixture(status, elapsed, extra = 0) {
  * prematch — предматчевые проценты модели (сумма 98–102); score — текущий счёт.
  * Возвращает null, если оценку строить нельзя (нет данных, овертайм, пенальти).
  */
-export function inPlayProbabilities({ prematch, homeGoals, awayGoals, minute, status } = {}) {
+export function inPlayProbabilities({ prematch, homeGoals, awayGoals, minute, status, homeReds = 0, awayReds = 0 } = {}) {
   const code = String(status || '').toUpperCase();
   if (!IN_PLAY_STATUSES.has(code)) return null;
   const values = ['home', 'draw', 'away'].map(key => finite(prematch?.[key]));
@@ -151,7 +166,10 @@ export function inPlayProbabilities({ prematch, homeGoals, awayGoals, minute, st
   const progress = code === '1H' ? Math.min(played, HALF_MINUTES) : code === 'HT' ? HALF_MINUTES : played;
   const remaining = Math.max(MIN_REMAINING_MINUTES, REGULATION_MINUTES - Math.min(progress, REGULATION_MINUTES));
   const share = remaining / REGULATION_MINUTES;
-  const raw = outcomeProbabilities(lambdas.home * share, lambdas.away * share, goalsHome, goalsAway);
+  const reds = { home: redCount(homeReds), away: redCount(awayReds) };
+  const homeRate = lambdas.home * share * RED_CARD_OWN_FACTOR ** reds.home * RED_CARD_OPPONENT_FACTOR ** reds.away;
+  const awayRate = lambdas.away * share * RED_CARD_OWN_FACTOR ** reds.away * RED_CARD_OPPONENT_FACTOR ** reds.home;
+  const raw = outcomeProbabilities(homeRate, awayRate, goalsHome, goalsAway);
   return percentSet({
     home: raw.home * weights.home,
     draw: raw.draw * weights.draw,

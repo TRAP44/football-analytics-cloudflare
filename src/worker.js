@@ -1684,6 +1684,7 @@ let inPlayTimelineJob = null;
 function getInPlayTimelineJob() {
   if (!inPlayTimelineJob) {
     inPlayTimelineJob = createInPlayTimelineJob({
+      apiFootball: (...args) => apiFootball(...args),
       clock: () => Date.now(),
       getCache,
       getModelProbabilities: (...args) => getModelProbabilities(...args),
