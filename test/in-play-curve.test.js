@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import { fitExpectedGoals, inPlayProbabilities, matchMinuteFromFixture, outcomeProbabilities } from '../src/in-play-model.js';
 import {
   createInPlayTimelineJob,
+  redCardsFromFixtureRow,
   inPlaySnapshotRow,
   liveFixtureState,
   shouldCaptureInPlay,
@@ -137,8 +138,8 @@ test('the job skips unchanged matches, respects the cap and the provider budget'
 
 test('the chart shows in-play points during the match and says what they account for', () => {
   const match = { fixtureId: 9, date: '2026-10-12T17:00:00.000Z', home: { name: 'Хозяева' }, away: { name: 'Гости' } };
-  const point = (capturedAt, minute, probabilities, source = '') => ({
-    capturedAt, minute, probabilities, provenance: source ? { source } : {},
+  const point = (capturedAt, minute, probabilities, source = '', analysisVersion = 'in-play-poisson-v2') => ({
+    capturedAt, minute, probabilities, provenance: source ? { source } : {}, analysisVersion,
   });
   const timeline = {
     points: [
@@ -152,11 +153,18 @@ test('the chart shows in-play points during the match and says what they account
   const html = renderAiProbabilityChart(timeline, match, []);
   assert.match(html, /3 сохранённых оценок/);
   assert.doesNotMatch(html, /38-я минута/);
-  assert.match(html, /по счёту и оставшемуся времени/);
-  assert.match(html, /красные карточки и ход игры она не учитывает/);
+  assert.match(html, /по счёту, оставшемуся времени и удалениям/);
+  assert.match(html, /×0\.75, соперника ×1\.9/);
+  assert.match(html, /ход игры она не учитывает/);
   const without = renderAiProbabilityChart({ points: timeline.points.slice(0, 2) }, match, []);
   assert.match(without, /38-я минута/);
-  assert.doesNotMatch(without, /по счёту и оставшемуся времени/);
+  assert.doesNotMatch(without, /по счёту, оставшемуся времени и удалениям/);
+
+  // Ревью Codex #854: точки v1 удаления не учитывали — подпись это говорит.
+  const v1 = { points: timeline.points.map(item => ({ ...item, analysisVersion: 'in-play-poisson-v1' })) };
+  assert.match(renderAiProbabilityChart(v1, match, []), /красные карточки и ход игры она не учитывает/);
+  const mixed = { points: [...timeline.points.slice(0, 3).map(item => ({ ...item, analysisVersion: 'in-play-poisson-v1' })), timeline.points[3]] };
+  assert.match(renderAiProbabilityChart(mixed, match, []), /учтены только в части точек/);
 });
 
 test('the in-play task runs with the other background tasks', () => {
@@ -207,4 +215,89 @@ test('codex #847: a match that kicked off before midnight UTC keeps getting poin
   });
   await daytime.processInPlayTimeline({}, new Date('2026-10-12T15:00:00.000Z'));
   assert.deepEqual(refreshed, []);
+});
+
+test('red cards: the sanctioned side loses, the opponent gains, nothing changes without one', () => {
+  const base = at(0, 0, 30);
+  const homeRed = inPlayProbabilities({ prematch: pre, homeGoals: 0, awayGoals: 0, minute: 30, status: '1H', homeReds: 1 });
+  const awayRed = inPlayProbabilities({ prematch: pre, homeGoals: 0, awayGoals: 0, minute: 30, status: '1H', awayReds: 1 });
+  assert.ok(homeRed.home < base.home && homeRed.away > base.away);
+  assert.ok(awayRed.away < base.away && awayRed.home > base.home);
+  assert.deepEqual(inPlayProbabilities({ prematch: pre, homeGoals: 0, awayGoals: 0, minute: 30, status: '1H', homeReds: 0, awayReds: null }), base);
+  // Чем меньше осталось играть, тем меньше влияние удаления.
+  const late = inPlayProbabilities({ prematch: pre, homeGoals: 0, awayGoals: 0, minute: 85, status: '2H', homeReds: 1 });
+  assert.ok(Math.abs(late.home - at(0, 0, 85).home) < Math.abs(homeRed.home - base.home));
+  for (const value of [homeRed, awayRed, late]) assert.equal(sum(value), 100);
+});
+
+test('red cards are read from fixture events, a second yellow counts', () => {
+  const row = {
+    fixture: { id: 7 },
+    teams: { home: { id: 1 }, away: { id: 2 } },
+    events: [
+      { type: 'Card', detail: 'Red Card', team: { id: 1 } },
+      { type: 'Card', detail: 'Second Yellow card', team: { id: 2 } },
+      { type: 'Card', detail: 'Yellow Card', team: { id: 2 } },
+      { type: 'Goal', detail: 'Normal Goal', team: { id: 1 } },
+    ],
+  };
+  assert.deepEqual(redCardsFromFixtureRow(row), { fixtureId: 7, home: 1, away: 1 });
+  assert.equal(redCardsFromFixtureRow({ fixture: { id: 7 }, teams: row.teams }), null, 'no events — unknown, not zero');
+});
+
+test('the job asks for events once per 20 matches and keeps the last known red cards on failure', async () => {
+  const fixtures = [liveRow(1, 0, 0, 30, '1H')];
+  const calls = [];
+  const inserted = [];
+  const make = (apiFootball, previous = []) => createInPlayTimelineJob({
+    apiFootball,
+    clock: () => Date.parse('2026-10-12T18:00:00.000Z'),
+    getCache: async () => ({ date: '2026-10-12', fixtures }),
+    getModelProbabilities: async () => ({ 1: pre }),
+    hasSupabase: () => true,
+    loadProviderFixturesForDate: async () => fixtures,
+    providerSnapshot: () => ({ plan: 'PRO' }),
+    supaInsertIgnore: async (_cfg, _table, row) => { inserted.push(row); },
+    supaSelectMany: async () => previous,
+  });
+  await make(async (path, params) => {
+    calls.push([path, params]);
+    return [{ fixture: { id: 1 }, teams: { home: { id: 10 }, away: { id: 20 } }, events: [{ type: 'Card', detail: 'Red Card', team: { id: 10 } }] }];
+  }).processInPlayTimeline({});
+  assert.deepEqual(calls, [['/fixtures', { ids: '1' }]]);
+  assert.deepEqual(inserted[0].provenance.reds, { home: 1, away: 0, source: 'events' });
+  assert.match(inserted[0].explanation, /удаления 1:0/);
+
+  inserted.length = 0;
+  const known = { fixture_id: 1, home_prob: 10, draw_prob: 10, away_prob: 80, provenance: { score: { home: 0, away: 0 }, reds: { home: 1, away: 0 } } };
+  await make(async () => { throw new Error('limit'); }, [known]).processInPlayTimeline({});
+  assert.deepEqual(inserted[0].provenance.reds, { home: 1, away: 0, source: 'previous' });
+});
+
+test('codex #854: the fresh fixture row replaces the cached score, dismissals never decrease, finished matches stop', async () => {
+  const cached = [liveRow(1, 0, 0, 30, '1H'), liveRow(2, 0, 0, 30, '1H')];
+  const inserted = [];
+  const previous = [{ fixture_id: 1, home_prob: 10, draw_prob: 10, away_prob: 80, provenance: { score: { home: 0, away: 0 }, reds: { home: 1, away: 0 } } }];
+  const job = createInPlayTimelineJob({
+    apiFootball: async () => [
+      // Свежее: 40′, 1:0, а в событиях (временно) нет прошлого удаления.
+      { fixture: { id: 1, status: { short: '1H', elapsed: 40 } }, goals: { home: 1, away: 0 }, teams: { home: { id: 10 }, away: { id: 20 } }, events: [] },
+      // Матч 2 уже закончился.
+      { fixture: { id: 2, status: { short: 'FT', elapsed: 90 } }, goals: { home: 0, away: 0 }, teams: { home: { id: 30 }, away: { id: 40 } }, events: [] },
+    ],
+    clock: () => Date.parse('2026-10-12T18:00:00.000Z'),
+    getCache: async () => ({ date: '2026-10-12', fixtures: cached }),
+    getModelProbabilities: async () => ({ 1: pre, 2: pre }),
+    hasSupabase: () => true,
+    loadProviderFixturesForDate: async () => cached,
+    providerSnapshot: () => ({ plan: 'PRO' }),
+    supaInsertIgnore: async (_cfg, _table, row) => { inserted.push(row); },
+    supaSelectMany: async () => previous,
+  });
+  await job.processInPlayTimeline({});
+  assert.equal(inserted.length, 1, 'no point for the finished match');
+  assert.equal(inserted[0].fixture_id, 1);
+  assert.equal(inserted[0].match_minute, 40);
+  assert.deepEqual(inserted[0].provenance.score, { home: 1, away: 0 });
+  assert.deepEqual(inserted[0].provenance.reds, { home: 1, away: 0, source: 'events' });
 });

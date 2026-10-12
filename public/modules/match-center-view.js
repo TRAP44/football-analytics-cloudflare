@@ -6,7 +6,8 @@ import { lineupPitchViewHtml } from './lineup-pitch.js';
 // экран грузится вместе с остальными модулями штаба (ensureMatchCenterExtras).
 // Вкладки: ✦ AI (по умолчанию) · Обзор · Игра · Составы.
 // Вероятности показываются только из сохранённого AI-разбора пользователя,
-// никогда из d.probabilities payload штаба — так было и раньше.
+// никогда из d.probabilities payload штаба — так было и раньше. Во время матча —
+// ещё последняя сохранённая сервером оценка по ходу матча (точка кривой).
 
 export const MATCH_CENTER_TABS = Object.freeze(['ai', 'summary', 'game', 'lineups']);
 export const DEFAULT_MATCH_CENTER_TAB = 'ai';
@@ -56,6 +57,54 @@ export function matchCenterTrackRecordHtml(state, escapeHtml) {
     <p class="mr-ai-proof-note">За ${days} дней, только прогнозы, сделанные до матча. ${small ? 'Выборка пока маленькая — цифры будут меняться.' : 'Прошлые результаты не гарантируют будущие.'}</p>
     ${state.aiTrackRecordError ? '<p class="mr-ai-proof-stale">Не удалось обновить протокол — показана последняя загруженная версия.</p>' : ''}
     <button class="text-btn mr-ai-proof-link" type="button" data-center-track-record>Вся проверенная история модели →</button>
+  </section>`;
+}
+
+// Задача 3 (часть 2): последняя оценка по ходу матча (счёт и минута) — из точек
+// кривой с provenance.source = in_play_model. Новых цифр не считает: только
+// показывает сохранённую сервером точку.
+// Оценка строится только для основного времени: в овертайме и серии пенальти
+// последняя точка второго тайма уже не описывает текущий матч.
+const IN_PLAY_STATUSES = new Set(['1H', 'HT', '2H']);
+
+export function latestInPlayEstimate(timeline = {}) {
+  const points = Array.isArray(timeline?.points) ? timeline.points : [];
+  let latest = null;
+  for (const point of points) {
+    if (point?.provenance?.source !== 'in_play_model') continue;
+    const values = ['home', 'draw', 'away'].map(key => Number(point?.probabilities?.[key]));
+    if (!values.every(value => Number.isFinite(value) && value >= 0 && value <= 100)) continue;
+    if (Math.abs(values[0] + values[1] + values[2] - 100) > 1.2) continue;
+    const at = Date.parse(point.capturedAt || '');
+    if (!Number.isFinite(at)) continue;
+    if (!latest || at > latest.at) latest = { at, point, values };
+  }
+  if (!latest) return null;
+  const minute = Number(latest.point.minute);
+  const score = latest.point.provenance?.score;
+  const goals = value => (Number.isInteger(value) && value >= 0 ? value : null);
+  return {
+    home: latest.values[0],
+    draw: latest.values[1],
+    away: latest.values[2],
+    minute: Number.isFinite(minute) && minute >= 0 ? Math.round(minute) : null,
+    score: score && goals(score.home) !== null && goals(score.away) !== null ? `${score.home}:${score.away}` : '',
+  };
+}
+
+export function inPlayEstimateHtml(estimate, match = {}, escapeHtml = value => String(value)) {
+  if (!estimate) return '';
+  const rows = [
+    ['home', String(match?.home?.name || 'Хозяева')],
+    ['draw', 'Ничья'],
+    ['away', String(match?.away?.name || 'Гости')],
+  ];
+  const when = [estimate.minute !== null ? `${estimate.minute}′` : '', estimate.score ? `счёт ${estimate.score}` : ''].filter(Boolean).join(', ');
+  return `<section class="panel mr-inplay-now" aria-label="Оценка по ходу матча">
+    <div class="mr-ai-card-head"><span class="mr-kicker">Сейчас по ходу матча</span>${when ? `<span class="mr-ai-card-conf">${escapeHtml(when)}</span>` : ''}</div>
+    <div class="mr-inplay-values">${rows.map(([key, label]) => `<div class="${key}"><span>${escapeHtml(label)}</span><strong>${estimate[key].toFixed(1)}%</strong></div>`).join('')}</div>
+    <div class="mr-inplay-bar" role="img" aria-label="${escapeHtml(rows.map(([key, label]) => `${label} ${estimate[key].toFixed(1)}%`).join(', '))}">${rows.map(([key]) => `<i class="${key}" style="flex-grow:${estimate[key]}"></i>`).join('')}</div>
+    <p class="mr-ai-card-note">Предматчевый прогноз модели, пересчитанный по ходу матча; что именно учитывается — в подписи к кривой ниже. Обновляется раз в несколько минут.</p>
   </section>`;
 }
 
@@ -171,6 +220,7 @@ export function renderMatchCenterView(d, deps) {
         <div class="mr-ai-card-head"><span class="mr-kicker">✦ Вывод AI</span>${history?.aiConfidence ? `<span class="mr-ai-card-conf">уверенность ${Math.round(Number(history.aiConfidence))}/100</span>` : ''}</div>
         ${aiCardBody}
       </section>
+      ${live && IN_PLAY_STATUSES.has(String(m.status || '').toUpperCase()) ? inPlayEstimateHtml(latestInPlayEstimate(d.aiTimeline || {}), m, escapeHtml) : ''}
       ${matchCenterTrackRecordHtml(state, escapeHtml)}
       ${matchChangeNarrativeHtml(d, m)}
       ${aiTimelineCompactHtml}
