@@ -6666,9 +6666,6 @@ $('homePersonalMatchBtn')?.addEventListener('click', event => {
 document.querySelectorAll('[data-theme-choice]').forEach(button => {
   button.addEventListener('click', () => saveInterfacePreference('theme', button.dataset.themeChoice || 'system'));
 });
-document.querySelectorAll('[data-accent-choice]').forEach(button => {
-  button.addEventListener('click', () => saveInterfacePreference('accent', button.dataset.accentChoice || 'system'));
-});
 document.querySelectorAll('[data-button-style-choice]').forEach(button => {
   button.addEventListener('click', () => saveInterfacePreference('buttonStyle', button.dataset.buttonStyleChoice || 'soft'));
 });

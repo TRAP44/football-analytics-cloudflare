@@ -39,6 +39,7 @@ import { createUserDataApiRuntime } from './user-data-api-runtime.js';
 import { createMatchExplanationRuntime } from './match-explanation-runtime.js';
 import { createMatchQuestionRuntime } from './match-question-runtime.js';
 import { createPrematchPredictionJob } from './prematch-prediction-job.js';
+import { createInPlayTimelineJob } from './in-play-timeline-job.js';
 import { createBillingRuntime } from './billing-runtime.js';
 import { createBillingApiRuntime } from './billing-api-runtime.js';
 import { createClientTelemetryRuntime } from './client-telemetry-runtime.js';
@@ -1679,6 +1680,26 @@ function getPrematchPredictionJob() {
 }
 function processPrematchPredictions(...args) { return getPrematchPredictionJob().processPrematchPredictions(...args); }
 
+let inPlayTimelineJob = null;
+function getInPlayTimelineJob() {
+  if (!inPlayTimelineJob) {
+    inPlayTimelineJob = createInPlayTimelineJob({
+      clock: () => Date.now(),
+      getCache,
+      getModelProbabilities: (...args) => getModelProbabilities(...args),
+      hasSupabase,
+      loadProviderFixturesForDate: (...args) => loadProviderFixturesForDate(...args),
+      loadSharedProviderState: (...args) => loadSharedProviderState(...args),
+      providerSnapshot: (...args) => providerSnapshot(...args),
+      recordOpsEvent,
+      supaInsertIgnore,
+      supaSelectMany,
+    });
+  }
+  return inPlayTimelineJob;
+}
+function processInPlayTimeline(...args) { return getInPlayTimelineJob().processInPlayTimeline(...args); }
+
 const {
   sendTelegramMessage,
   probeReminderReliabilitySchema,
@@ -3117,6 +3138,7 @@ const {
   processLineupNotifications,
   processPostMatchReturns,
   processPrematchPredictions,
+  processInPlayTimeline,
   processSmartNotifications,
   productionSafetySnapshot,
   providerAuditCall,

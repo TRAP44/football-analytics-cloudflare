@@ -219,13 +219,70 @@ jobs:
               echo "Runtime changes exist between active production SHA $ACTIVE_SHA and deploy SHA $DEPLOY_SHA; automatic rollback target $ACTIVE_VERSION_ID is pinned before cutover." >> "$GITHUB_STEP_SUMMARY"
             fi
           else
-            echo "rollback_ready=false" >> "$GITHUB_OUTPUT"
-            echo "### Safe production deployment blocked" >> "$GITHUB_STEP_SUMMARY"
-            echo "The active production version could not be resolved to an exact version ID, release and SHA. No production mutation was attempted because an automatic rollback target cannot be proven." >> "$GITHUB_STEP_SUMMARY"
-            if [[ -s "$IDENTITY_ERROR" ]]; then
-              echo "Identity resolver: $(tail -n 1 "$IDENTITY_ERROR")" >> "$GITHUB_STEP_SUMMARY"
+            # Task 0: a secret edited in the Cloudflare dashboard (or via
+            # `wrangler secret put`) creates an unstamped version from the live
+            # code. Accept it only when deployment history leads back to a
+            # CI-stamped version with the same script content hash; that
+            # settings-only version itself stays the rollback target, so an
+            # automatic rollback keeps the edited secrets.
+            SETTINGS_ERROR="$RUNNER_TEMP/settings-only-identity.err"
+            DEPLOYMENTS_JSON="$RUNNER_TEMP/production-deployment-history.json"
+            VERSION_LIST_JSON="$RUNNER_TEMP/production-version-list.json"
+            BASE_VERSION_JSON="$RUNNER_TEMP/settings-only-base-version.json"
+            SETTINGS_IDENTITY=""
+            # `wrangler versions list` keeps only the 10 newest versions; undeployed
+            # uploads can push older deployed ones out. Fetch every version from the
+            # deployment history by its exact ID instead.
+            history_versions() {
+              local ids id index=0
+              local files=()
+              ids="$(node scripts/verify-production-release-postcondition.js "$DEPLOYMENT_STATUS_JSON" --print-history-version-ids "$DEPLOYMENTS_JSON" 2>"$SETTINGS_ERROR")" || return 1
+              for id in $ids; do
+                [[ "$id" =~ ^[0-9a-fA-F-]{36}$ ]] || return 1
+                index=$((index + 1))
+                npx wrangler versions view "$id" --json > "$RUNNER_TEMP/history-version-$index.json" || return 1
+                files+=("$RUNNER_TEMP/history-version-$index.json")
+              done
+              if (( ${#files[@]} == 0 )); then
+                echo '[]' > "$VERSION_LIST_JSON"
+              else
+                jq -s '.' "${files[@]}" > "$VERSION_LIST_JSON" || return 1
+              fi
+            }
+            if npx wrangler deployments list --json > "$DEPLOYMENTS_JSON" \
+              && history_versions \
+              && BASE_VERSION_ID="$(node scripts/verify-production-release-postcondition.js "$DEPLOYMENT_STATUS_JSON" --print-settings-base-version-id "$VERSIONS_JSON" "$DEPLOYMENTS_JSON" "$VERSION_LIST_JSON" 2>"$SETTINGS_ERROR")" \
+              && [[ "$BASE_VERSION_ID" =~ ^[0-9a-fA-F-]{36}$ ]] \
+              && npx wrangler versions view "$BASE_VERSION_ID" --json > "$BASE_VERSION_JSON" \
+              && SETTINGS_IDENTITY="$(node scripts/verify-production-release-postcondition.js "$DEPLOYMENT_STATUS_JSON" --print-settings-rollback-target "$VERSIONS_JSON" "$DEPLOYMENTS_JSON" "$VERSION_LIST_JSON" "$BASE_VERSION_JSON" 2>"$SETTINGS_ERROR")"; then
+              read -r ACTIVE_VERSION_ID ACTIVE_RELEASE ACTIVE_SHA BASE_VERSION_ID <<< "$SETTINGS_IDENTITY"
+              echo "active_sha=$ACTIVE_SHA" >> "$GITHUB_OUTPUT"
+              echo "previous_version_id=$ACTIVE_VERSION_ID" >> "$GITHUB_OUTPUT"
+              echo "previous_release=$ACTIVE_RELEASE" >> "$GITHUB_OUTPUT"
+              echo "previous_sha=$ACTIVE_SHA" >> "$GITHUB_OUTPUT"
+              echo "previous_base_version_id=$BASE_VERSION_ID" >> "$GITHUB_OUTPUT"
+              echo "rollback_ready=true" >> "$GITHUB_OUTPUT"
+              # Always redeploy: the new version carries the CI stamp again.
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "### Active production version comes from a secret change" >> "$GITHUB_STEP_SUMMARY"
+              echo "Version $ACTIVE_VERSION_ID was created by a secret change from CI-stamped version $BASE_VERSION_ID (release $ACTIVE_RELEASE, sha $ACTIVE_SHA, same script content). Redeploying current main; rollback target stays $ACTIVE_VERSION_ID so secrets are preserved." >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "rollback_ready=false" >> "$GITHUB_OUTPUT"
+              echo "### Safe production deployment blocked" >> "$GITHUB_STEP_SUMMARY"
+              echo "The active production version could not be resolved to an exact version ID, release and SHA. No production mutation was attempted because an automatic rollback target cannot be proven." >> "$GITHUB_STEP_SUMMARY"
+              if [[ -s "$IDENTITY_ERROR" ]]; then
+                echo "Identity resolver: $(tail -n 1 "$IDENTITY_ERROR")" >> "$GITHUB_STEP_SUMMARY"
+              fi
+              if [[ -s "$SETTINGS_ERROR" ]]; then
+                echo "Settings-only resolver: $(tail -n 1 "$SETTINGS_ERROR")" >> "$GITHUB_STEP_SUMMARY"
+              fi
+              # Annotations only (no binding values): helps tell why the version was not accepted.
+              echo "Active version: $(node scripts/verify-production-release-postcondition.js "$VERSIONS_JSON" --describe-version 2>/dev/null || echo unavailable)" >> "$GITHUB_STEP_SUMMARY"
+              if [[ -s "$BASE_VERSION_JSON" ]]; then
+                echo "CI-stamped base: $(node scripts/verify-production-release-postcondition.js "$BASE_VERSION_JSON" --describe-version 2>/dev/null || echo unavailable)" >> "$GITHUB_STEP_SUMMARY"
+              fi
+              exit 1
             fi
-            exit 1
           fi
 
       - name: Preflight previous-known-good rollback target
@@ -237,6 +294,7 @@ jobs:
           PREVIOUS_VERSION_ID: ${{ steps.production_changes.outputs.previous_version_id }}
           PREVIOUS_RELEASE: ${{ steps.production_changes.outputs.previous_release }}
           PREVIOUS_SHA: ${{ steps.production_changes.outputs.previous_sha }}
+          PREVIOUS_BASE_VERSION_ID: ${{ steps.production_changes.outputs.previous_base_version_id }}
           CONFIGURED_URL: ${{ vars.CLOUDFLARE_WORKER_URL }}
         shell: bash
         run: |
@@ -246,7 +304,16 @@ jobs:
             exit 1
           fi
           npx wrangler versions view "$PREVIOUS_VERSION_ID" --json > "$RUNNER_TEMP/automatic-rollback-target.json"
-          node scripts/verify-rollback-target.js "$RUNNER_TEMP/automatic-rollback-target.json" "$PREVIOUS_RELEASE" "$PREVIOUS_VERSION_ID" false "" "$PREVIOUS_SHA"
+          SETTINGS_BASE_ARGS=()
+          if [[ -n "$PREVIOUS_BASE_VERSION_ID" ]]; then
+            if [[ ! "$PREVIOUS_BASE_VERSION_ID" =~ ^[0-9a-fA-F-]{36}$ ]]; then
+              echo "Settings-only rollback base version ID is invalid." >&2
+              exit 1
+            fi
+            npx wrangler versions view "$PREVIOUS_BASE_VERSION_ID" --json > "$RUNNER_TEMP/automatic-rollback-base.json"
+            SETTINGS_BASE_ARGS=("$RUNNER_TEMP/automatic-rollback-base.json")
+          fi
+          node scripts/verify-rollback-target.js "$RUNNER_TEMP/automatic-rollback-target.json" "$PREVIOUS_RELEASE" "$PREVIOUS_VERSION_ID" false "" "$PREVIOUS_SHA" "${SETTINGS_BASE_ARGS[@]}"
           SMOKE_URL="${CONFIGURED_URL:-$PRODUCTION_URL}"
           if node scripts/rollback-smoke.js "$SMOKE_URL" "$PREVIOUS_RELEASE"; then
             echo "recovery_mode=false" >> "$GITHUB_OUTPUT"
@@ -389,6 +456,7 @@ jobs:
           PREVIOUS_VERSION_ID: ${{ steps.production_changes.outputs.previous_version_id }}
           PREVIOUS_RELEASE: ${{ steps.production_changes.outputs.previous_release }}
           PREVIOUS_SHA: ${{ steps.production_changes.outputs.previous_sha }}
+          PREVIOUS_BASE_VERSION_ID: ${{ steps.production_changes.outputs.previous_base_version_id }}
           CONFIGURED_URL: ${{ vars.CLOUDFLARE_WORKER_URL }}
         shell: bash
         run: |
@@ -400,7 +468,16 @@ jobs:
 
           TARGET_JSON="$RUNNER_TEMP/automatic-rollback-target-recheck.json"
           npx wrangler versions view "$PREVIOUS_VERSION_ID" --json > "$TARGET_JSON"
-          node scripts/verify-rollback-target.js "$TARGET_JSON" "$PREVIOUS_RELEASE" "$PREVIOUS_VERSION_ID" false "" "$PREVIOUS_SHA"
+          SETTINGS_BASE_ARGS=()
+          if [[ -n "$PREVIOUS_BASE_VERSION_ID" ]]; then
+            if [[ ! "$PREVIOUS_BASE_VERSION_ID" =~ ^[0-9a-fA-F-]{36}$ ]]; then
+              echo "Settings-only rollback base version ID is invalid; manual recovery is required." >&2
+              exit 1
+            fi
+            npx wrangler versions view "$PREVIOUS_BASE_VERSION_ID" --json > "$RUNNER_TEMP/automatic-rollback-base-recheck.json"
+            SETTINGS_BASE_ARGS=("$RUNNER_TEMP/automatic-rollback-base-recheck.json")
+          fi
+          node scripts/verify-rollback-target.js "$TARGET_JSON" "$PREVIOUS_RELEASE" "$PREVIOUS_VERSION_ID" false "" "$PREVIOUS_SHA" "${SETTINGS_BASE_ARGS[@]}"
 
           echo "### Production verification failed; starting automatic rollback" >> "$GITHUB_STEP_SUMMARY"
           echo "Restoring previously verified release $PREVIOUS_RELEASE on Cloudflare version $PREVIOUS_VERSION_ID." >> "$GITHUB_STEP_SUMMARY"
@@ -413,7 +490,7 @@ jobs:
             if npx wrangler deployments status --json > "$DEPLOYMENT_STATUS_JSON" \
               && npx wrangler versions view "$PREVIOUS_VERSION_ID" --json > "$ROLLBACK_VERSION_JSON" \
               && node scripts/verify-rollback-deployment.js "$DEPLOYMENT_STATUS_JSON" "$PREVIOUS_VERSION_ID" \
-              && node scripts/verify-rollback-target.js "$ROLLBACK_VERSION_JSON" "$PREVIOUS_RELEASE" "$PREVIOUS_VERSION_ID" false "" "$PREVIOUS_SHA"; then
+              && node scripts/verify-rollback-target.js "$ROLLBACK_VERSION_JSON" "$PREVIOUS_RELEASE" "$PREVIOUS_VERSION_ID" false "" "$PREVIOUS_SHA" "${SETTINGS_BASE_ARGS[@]}"; then
               verified=true
               break
             fi

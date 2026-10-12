@@ -884,7 +884,7 @@ async function main() {
       assertLayout(width, snapshot);
       await assertMobileFilterDrawer(cdp,width);
       console.log(`Bottom nav and expanded filters fit ${width}px: 4 nav buttons, scrollable tournament rail, no page overflow.`);
-      for (const theme of ['dark','light','ocean']) {
+      for (const theme of ['dark','light']) {
         const qaSnapshot = await inspectEdgeCaseFixture(cdp, width, theme);
         assertEdgeCaseFixture(width, theme, qaSnapshot);
         console.log(`Public UI edge cases rendered correctly at ${width}px in ${theme} theme; all launch-critical public surfaces have no horizontal overflow.`);
