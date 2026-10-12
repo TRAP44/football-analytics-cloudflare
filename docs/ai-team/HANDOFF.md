@@ -14,6 +14,14 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-12 — Claude — Чистка стилей после «только янтарь»
+PR: ветка `claude/css-cleanup-ocean-accents`
+Сделано:
+- `public/styles.css`, `public/styles/premium-ui.css`, `public/styles/public-shell.css`: удалены `:root[data-theme="ocean"]`, `html[data-theme="ocean"] .miniapp-public-shell`, `.theme-preview.ocean`, все `.accent-option(s)` / `.accent-swatch` и неиспользуемый `.appearance-help`. Разметки и JS эти стили после #845 не касались.
+- Тесты, которые проверяли наличие этих стилей, переписаны на их отсутствие. Ревизия — launch106.
+Осталось / внимание:
+- `ACCENT_PALETTES` (пустой) и ветка `applyAccentPreference` в JS оставлены — на них опираются тесты модуля настроек; поведение не меняют.
+
 ## 2026-10-12 — Claude — Исправления по повторному ревью Codex #836 и #839
 PR: [#848](https://github.com/TRAP44/football-analytics-cloudflare/pull/848), ветка `claude/codex-fixes-836-839`
 Сделано:

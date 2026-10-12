@@ -36,14 +36,6 @@ html[data-theme="dark"] .miniapp-public-shell {
   --hint: #8c9bad;
   --line: rgba(148,163,184,.12);
 }
-html[data-theme="ocean"] .miniapp-public-shell {
-  --bg: #06111a;
-  --surface: #0a1824;
-  --surface-2: #0f2231;
-  --text: #f3f8fb;
-  --hint: #86a0b2;
-  --line: rgba(125,170,192,.14);
-}
 html[data-theme="light"] .miniapp-public-shell {
   --bg: #f4f7fb;
   --surface: #ffffff;
@@ -794,13 +786,11 @@ html[data-theme="light"] .miniapp-public-shell {
   border-radius: var(--mr-radius-sm);
 }
 .miniapp-public-shell .theme-option,
-.miniapp-public-shell .accent-option,
 .miniapp-public-shell .button-style-options button {
   border-color: var(--mr-line-soft);
   background: color-mix(in srgb, var(--surface-2) 40%, var(--surface));
 }
 .miniapp-public-shell .theme-option.active,
-.miniapp-public-shell .accent-option.active,
 .miniapp-public-shell .button-style-options button.active {
   border-color: var(--mr-accent-line);
   background: var(--mr-accent-soft);
@@ -2046,7 +2036,7 @@ html[data-theme] body.miniapp-public-shell .mr-prob-seg.away.lead { box-shadow: 
    MatchRadar SIGNAL — главная в духе прототипа SIGNAL V2 (PR 781), но в янтаре «Стадиона».
    Редакционная шапка, «Главный матч», компактные строки в ленте.
    Цвета только из токенов темы (--accent, --surface, --text…), поэтому
-   работают светлая/тёмная/ocean темы и выбранный пользователем акцент.
+   работают светлая и тёмная темы с фирменным янтарным акцентом.
    -------------------------------------------------------------------------- */
 html[data-theme] body.miniapp-public-shell .mr-kicker {
   margin: 0 0 6px; font-size: 11px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase;

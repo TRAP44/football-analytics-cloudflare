@@ -354,50 +354,6 @@ html {
   font-weight: 900;
   letter-spacing: .14em;
 }
-.accent-options {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 7px;
-}
-.accent-option {
-  min-width: 0;
-  min-height: 48px;
-  display: grid;
-  gap: 6px;
-  justify-items: center;
-  align-content: center;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 8px 4px;
-  background: rgba(148,163,184,.035);
-  color: var(--hint);
-  font-size: 9px;
-}
-.accent-option.active {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
-  color: var(--text);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
-}
-.accent-swatch {
-  width: 25px;
-  height: 25px;
-  border-radius: 50%;
-  border: 1px solid rgba(127,127,127,.24);
-  box-shadow: inset 0 0 0 4px rgba(255,255,255,.12);
-}
-.accent-swatch.system { background: linear-gradient(135deg, #57e389 25%, #60a5fa 25% 50%, #c084fc 50% 75%, #fbbf24 75%); }
-.accent-swatch.green { background: #57e389; }
-.accent-swatch.blue { background: #60a5fa; }
-.accent-swatch.violet { background: #c084fc; }
-.accent-swatch.amber { background: #fbbf24; }
-.appearance-help {
-  display: block;
-  margin-top: 8px;
-  color: var(--hint);
-  font-size: 9px;
-  line-height: 1.4;
-}
 .miniapp-public-shell #searchRecentWrap,
 .miniapp-public-shell #searchFavoritesWrap,
 .miniapp-public-shell #searchCompetitionsWrap {
@@ -410,11 +366,7 @@ html {
 }
 
 @media (max-width: 560px) {
-  .accent-options { grid-template-columns: repeat(3, minmax(0,1fr)); }
   .admin-system-overview { grid-template-columns: repeat(2, minmax(0,1fr)); }
-}
-@media (max-width: 390px) {
-  .accent-options { grid-template-columns: repeat(2, minmax(0,1fr)); }
 }
 
 
@@ -3010,12 +2962,10 @@ html {
   font-weight:800;
 }
 .miniapp-public-shell .theme-options,
-.miniapp-public-shell .accent-options,
 .miniapp-public-shell .button-style-options{
   gap:6px;
 }
 .miniapp-public-shell .theme-option,
-.miniapp-public-shell .accent-option,
 .miniapp-public-shell .button-style-options button{
   min-height:48px;
   border-radius:12px;
@@ -3129,7 +3079,6 @@ html {
   .miniapp-public-shell .history-logos{min-width:50px;grid-template-columns:19px 8px 19px}
   .miniapp-public-shell .history-logos img{width:19px;height:19px}
   .miniapp-public-shell .theme-options{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .miniapp-public-shell .accent-options{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media(prefers-reduced-motion:reduce){
   .miniapp-public-shell .my-team-card,
