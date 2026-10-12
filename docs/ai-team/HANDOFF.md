@@ -22,6 +22,14 @@ PR: [#860](https://github.com/TRAP44/football-analytics-cloudflare/pull/860), в
 - Выключено по умолчанию (`CHANNEL_DAILY_POST_ENABLED=false` в `wrangler.jsonc`): пока выключено, раз в сутки в `ops_events` пишется `CHANNEL_DAILY_POST_PREVIEW` с текстом поста — частями до 480 символов (`meta.part`/`meta.parts`, журнал режет сообщения до 500), полный текст ещё и в кеше `channel-daily-preview:<дата>:v1`. Метка «предпросмотр записан» ставится, только если все части сохранились в Supabase, иначе следующий запуск в окне повторяет запись. В пост попадают только матчи текущего дня по Москве.
 Осталось / внимание:
 - Сергей: посмотреть предпросмотр (Claude пришлёт текст) и решить, включать ли — тогда `CHANNEL_DAILY_POST_ENABLED` → `"true"` отдельным PR. Нужен `TELEGRAM_PUBLISHER_BOT_TOKEN` (в Cloudflare и в окружении `background-jobs` GitHub), бот-публикатор — администратор канала.
+## 2026-10-12 — Claude — Фоновые задания сами узнают тариф API-Football
+PR: [#862](https://github.com/TRAP44/football-analytics-cloudflare/pull/862), ветка `claude/provider-status-probe`
+Сделано:
+- Причина «0 предматчевых прогнозов»: в процессе cron-runner нет своей памяти о квоте, а общий снимок `provider-state:api-football:quota:v1` живёт 30 минут после последнего запроса к провайдеру. Без трафика пользователей снимок истекал, тариф становился UNKNOWN, и `providerBudgetDecision` всегда отвечал `provider_daily_reserve`; кривая по ходу матча тоже не могла запросить ленту.
+- Новый `src/provider-status-probe.js`: `ensureProviderSnapshot` — загрузить общий снимок, и если тариф не подтверждён (UNKNOWN или устаревший FREE), один раз спросить `/status`. Подключён в `prematch-prediction-job.js` и `in-play-timeline-job.js` вместо прямого `loadSharedProviderState`.
+- `createProviderStatusProbe` (там же, подключён в `src/worker.js`): `apiFootball('/status')` (без повторов, 5 с), не чаще раза в минуту на процесс; задание, пришедшее во время запроса, ждёт тот же запрос. Снимок обновляется по заголовкам через общий шлюз, а если заголовков нет — по телу ответа (`requests.limit_day` / `requests.current`).
+Решения: `/status` по документации API-Football не расходует дневную квоту; во время cooldown запрос не делается.
+Осталось / внимание: после слияния проверить в `ops_events` событие задания предматчевых прогнозов с `computed > 0`.
 
 ## 2026-10-12 — Claude — Оценка по ходу матча на карточках главной
 PR: [#858](https://github.com/TRAP44/football-analytics-cloudflare/pull/858), ветка `claude/live-cards-in-play`

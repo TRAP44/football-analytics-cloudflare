@@ -8,6 +8,7 @@
 // поэтому критерий отбора — «строки нет», а не «прогноз устарел».
 
 import { claimDailyBudget, peekDailyBudget } from './daily-budget-claim.js';
+import { ensureProviderSnapshot } from './provider-status-probe.js';
 
 const DAY_SECONDS = 86400;
 const FEED_CACHE_KEY = date => `matches:${date}:v6-integrity`;
@@ -136,6 +137,7 @@ export function createPrematchPredictionJob(deps = {}) {
     loadProviderFixturesForDate,
     loadSharedProviderState,
     normalizeCompetition,
+    probeProviderStatus,
     providerSnapshot,
     recordOpsEvent,
     supaRpc,
@@ -337,12 +339,8 @@ export function createPrematchPredictionJob(deps = {}) {
     if (minuteOfDay % settings.intervalMinutes !== 0) return { ...summary, reason: 'interval' };
 
     // Состояние квоты провайдера общее для всех изолятов (Supabase); в cron-изоляте
-    // своей памяти о нём может не быть.
-    if (typeof loadSharedProviderState === 'function') {
-      try {
-        await loadSharedProviderState(cfg);
-      } catch {}
-    }
+    // своей памяти о нём может не быть. Истёкший снимок обновляется запросом /status.
+    await ensureProviderSnapshot({ cfg, loadSharedProviderState, providerSnapshot, probeProviderStatus, nowMs: at.getTime() });
     let budget;
     try {
       budget = providerBudgetDecision(providerSnapshot(), settings, at.getTime());
