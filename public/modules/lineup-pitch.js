@@ -113,10 +113,23 @@ function chipHtml({ player, x, y, scale }, side, escapeHtml) {
   </li>`;
 }
 
+// Статус состава, как в прежнем списке: подтверждён / неполный / не подтверждён.
+// Сервер понижает quality.confirmed для устаревшего кеша и неподтверждённого
+// источника — такой состав не должен выглядеть как подтверждённый.
+export function lineupStatusLabel(lineup) {
+  if (!lineup?.startXI?.length) return '';
+  const quality = lineup?.quality && typeof lineup.quality === 'object' ? lineup.quality : {};
+  if (quality.confirmed === true) return 'состав подтверждён';
+  if (quality.partial) return 'неполный состав';
+  return 'состав не подтверждён';
+}
+
 function teamMetaHtml(lineup, name, side, escapeHtml) {
   const formation = String(lineup?.formation || '').trim();
   const coach = String(lineup?.coach || '').trim();
-  return `<div class="lp-team ${side}"><i aria-hidden="true"></i><b>${escapeHtml(name)}</b><span>${escapeHtml([formation || 'схема —', coach ? `тренер ${coach}` : ''].filter(Boolean).join(' · '))}</span></div>`;
+  const status = lineupStatusLabel(lineup);
+  const unconfirmed = status && status !== 'состав подтверждён';
+  return `<div class="lp-team ${side}"><i aria-hidden="true"></i><b>${escapeHtml(name)}</b><span>${escapeHtml([formation || 'схема —', coach ? `тренер ${coach}` : ''].filter(Boolean).join(' · '))}</span>${status ? `<small class="lp-status${unconfirmed ? ' is-unconfirmed' : ''}">${escapeHtml(status)}</small>` : ''}</div>`;
 }
 
 function benchHtml(lineup, name, escapeHtml) {
@@ -149,7 +162,12 @@ export function lineupPitchViewHtml(lineups, match = {}, { escapeHtml, fallback 
   const homeName = String(match?.home?.name || 'Хозяева');
   const awayName = String(match?.away?.name || 'Гости');
   if (!home?.startXI?.length && !away?.startXI?.length) {
-    return `<div class="empty compact-empty lp-empty">${esc(emptyText(match))}</div>`;
+    // Запасные могут прийти и без стартовых — их не теряем.
+    const hasBench = [home, away].some(lineup => Array.isArray(lineup?.substitutes) && lineup.substitutes.length);
+    const empty = `<div class="empty compact-empty lp-empty">${esc(emptyText(match))}</div>`;
+    return hasBench
+      ? `<div class="lp-view">${empty}<div class="lp-benches">${benchHtml(home, homeName, esc)}${benchHtml(away, awayName, esc)}</div></div>`
+      : empty;
   }
   const homeRows = lineupFormationRows(home);
   const awayRows = lineupFormationRows(away);
@@ -168,12 +186,13 @@ export function lineupPitchViewHtml(lineups, match = {}, { escapeHtml, fallback 
   // Команда со стартом, но без сетки: её 11 игроков не теряются — списком.
   const startList = (rows, lineup, name) => (rows || !lineup?.startXI?.length ? '' : `<div class="lp-start-list"><b>${esc(name)} · стартовый состав</b><ul>${lineup.startXI.slice(0, 11).map(player => `<li><b>${esc(playerNumber(player) || '•')}</b>${esc(playerName(player))}</li>`).join('')}</ul></div>`);
   const partial = [home, away].some(lineup => lineup?.quality?.partial);
+  const unconfirmed = [home, away].some(lineup => lineupStatusLabel(lineup) === 'состав не подтверждён');
   if (!homeRows && !awayRows) {
     return `<div class="lp-view">
     ${teamMetaHtml(home, homeName, 'home', esc)}${teamMetaHtml(away, awayName, 'away', esc)}
     <p class="data-notice">Источник передал расстановку не для всех игроков — составы показаны списком.</p>
     ${startList(homeRows, home, homeName)}${startList(awayRows, away, awayName)}
-    ${partial ? '<p class="data-notice">⚠️ Источник передал неполный стартовый состав — он не считается подтверждённым.</p>' : ''}
+    ${partial ? '<p class="data-notice">⚠️ Источник передал неполный стартовый состав — он не считается подтверждённым.</p>' : unconfirmed ? '<p class="data-notice">⚠️ Состав не подтверждён источником — показан как есть.</p>' : ''}
     <div class="lp-benches">${benchHtml(home, homeName, esc)}${benchHtml(away, awayName, esc)}</div>
   </div>`;
   }
@@ -186,7 +205,7 @@ export function lineupPitchViewHtml(lineups, match = {}, { escapeHtml, fallback 
     </figure>
     ${teamMetaHtml(home, homeName, 'home', esc)}
     ${startList(homeRows, home, homeName)}${startList(awayRows, away, awayName)}
-    ${partial ? '<p class="data-notice">⚠️ Источник передал неполный стартовый состав — он не считается подтверждённым.</p>' : ''}
+    ${partial ? '<p class="data-notice">⚠️ Источник передал неполный стартовый состав — он не считается подтверждённым.</p>' : unconfirmed ? '<p class="data-notice">⚠️ Состав не подтверждён источником — показан как есть.</p>' : ''}
     <div class="lp-benches">${benchHtml(home, homeName, esc)}${benchHtml(away, awayName, esc)}</div>
   </div>`;
 }

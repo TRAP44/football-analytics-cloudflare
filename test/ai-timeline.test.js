@@ -503,7 +503,7 @@ test('AI Timeline wiring captures fresh analyses and loads timeline into Match C
 });
 
 test('AI Timeline UI remains lazy-loaded after Match Pulse and supports narrow mobile widths', () => {
-  assert.match(appSource,/import\('\.\/modules\/ai-timeline\.js\?v=6\.120\.0-launch102'\)/);
+  assert.match(appSource,/import\('\.\/modules\/ai-timeline\.js\?v=6\.120\.0-launch103'\)/);
   const pulse=appSource.indexOf("matchCenterExtraHtml('renderMatchPulse'");
   const timeline=appSource.indexOf("'renderAiTimelineCompact',",appSource.indexOf('const matchPulseHtml'));
   assert.ok(pulse>=0 && timeline>pulse,'AI Timeline must be rendered after existing Match Pulse');
@@ -585,8 +585,8 @@ test('snapshot minute comes from the provider clock; wall-clock is used only ins
   const firstHalf = { ...base, generatedAt: '2026-10-01T18:30:00Z', match: { ...base.match, status: '1H' } };
   assert.equal(analysisTimelineSnapshotRow(firstHalf).match_minute, 30);
   const timeline = buildAiTimeline({ match: { fixtureId: 42, date: '2026-10-01T18:00:00Z' }, snapshotRows: [
-    point('2026-10-01T18:20:00Z', { home: 55, draw: 27, away: 18 }),
-    point('2026-10-01T19:25:00Z', { home: 60, draw: 25, away: 15 }),
+    { ...point('2026-10-01T18:20:00Z', { home: 55, draw: 27, away: 18 }), match_status: '1H' },
+    { ...point('2026-10-01T19:25:00Z', { home: 60, draw: 25, away: 15 }), match_status: '2H' },
   ] });
   assert.deepEqual(timeline.points.map(p => p.minute), [20, null], 'no wall-clock minute after the first half');
   const analysis = readRepoFile('src/analysis-runtime.js');
@@ -603,4 +603,18 @@ test('pre-match null elapsed never becomes minute 0', async () => {
   assert.equal(liveElapsedMinute(67, '2H'), 67);
   assert.equal(liveElapsedMinute('12', '1H'), 12);
   assert.equal(liveElapsedMinute(0, '1H'), 0);
+});
+
+test('codex #836: a pre-match snapshot saved after a delayed kickoff stays before the match', () => {
+  const match = { fixtureId: 5, date: '2026-10-12T18:00:00.000Z' };
+  const timeline = buildAiTimeline({
+    match,
+    snapshotRows: [
+      { snapshot_key: 'a', fixture_id: 5, captured_at: '2026-10-12T18:10:00.000Z', match_status: 'NS', match_minute: null, home_prob: 50, draw_prob: 25, away_prob: 25 },
+      { snapshot_key: 'b', fixture_id: 5, captured_at: '2026-10-12T18:20:00.000Z', match_status: '1H', match_minute: null, home_prob: 52, draw_prob: 24, away_prob: 24 },
+    ],
+  });
+  const byKey = Object.fromEntries(timeline.points.map(point => [point.id, point.minute]));
+  assert.equal(byKey.a, null, 'NS stays a pre-match point');
+  assert.equal(byKey.b, 20, 'a first-half point still gets its wall-clock minute');
 });

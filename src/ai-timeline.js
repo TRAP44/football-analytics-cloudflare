@@ -365,8 +365,9 @@ export function buildAiTimeline({
   const kickoffMs = Date.parse(kickoffAt || '');
 
   for (const [index, point] of points.entries()) {
-    if (point.minute === null && Number.isFinite(kickoffMs)) {
-      // По часам — только в пределах первого тайма (дальше мешает перерыв).
+    if (point.minute === null && Number.isFinite(kickoffMs) && point.status.toUpperCase() === '1H') {
+      // По часам — только снимки первого тайма (дальше мешает перерыв). Снимок
+      // NS после назначенного времени (задержка старта) остаётся «до матча».
       const capturedMs = Date.parse(point.capturedAt);
       const wallMinute = Math.round((capturedMs - kickoffMs) / 60000);
       if (capturedMs >= kickoffMs && wallMinute <= FIRST_HALF_WALL_CLOCK_MINUTES) point.minute = Math.max(0, wallMinute);

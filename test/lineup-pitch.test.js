@@ -110,3 +110,23 @@ test('without an escapeHtml dependency the view still escapes text', () => {
   assert.doesNotMatch(html, /<b>x<\/b>|<i>Милан<\/i>/);
   assert.match(html, /&lt;i&gt;Милан/);
 });
+
+test('codex #839: an XI the server downgraded to unconfirmed is labelled as such', () => {
+  const home = { ...xi('4-3-3'), formation: '4-3-3', quality: { confirmed: false, partial: false } };
+  const away = { ...xi('4-4-2', 'Гость'), formation: '4-4-2', quality: { confirmed: true, partial: false, startCount: 11 } };
+  const html = lineupPitchViewHtml({ home, away }, match, { escapeHtml: esc });
+  assert.match(html, /lp-status is-unconfirmed">состав не подтверждён/);
+  assert.match(html, /lp-status">состав подтверждён/);
+  assert.match(html, /Состав не подтверждён источником — показан как есть/);
+  const confirmed = lineupPitchViewHtml({ home: { ...home, quality: { confirmed: true } }, away }, match, { escapeHtml: esc });
+  assert.doesNotMatch(confirmed, /is-unconfirmed|Состав не подтверждён источником/);
+});
+
+test('codex #839: substitutes stay visible when no starting XI is published', () => {
+  const lineups = { home: { startXI: [], substitutes: [{ name: 'Запасной Один', number: 12 }] }, away: { startXI: [], substitutes: [] } };
+  const html = lineupPitchViewHtml(lineups, match, { escapeHtml: esc });
+  assert.match(html, /lp-empty/);
+  assert.match(html, /Милан · запасные · 1/);
+  assert.match(html, /Запасной Один/);
+  assert.doesNotMatch(lineupPitchViewHtml({ home: { startXI: [] }, away: { startXI: [] } }, match, { escapeHtml: esc }), /lp-benches/);
+});
