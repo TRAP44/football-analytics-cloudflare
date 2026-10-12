@@ -8,6 +8,7 @@
 // идемпотентности `channel-daily:<дата>` в существующем журнале публикаций.
 
 import { publishChannelMessage } from './channel-publisher.js';
+import { isBettingText } from './signal-wording.js';
 
 const RAW_FIXTURES_CACHE_KEY = date => `provider-fixtures:${date}:v1`;
 const PREVIEW_CACHE_KEY = date => `channel-daily-preview:${date}:v1`;
@@ -37,6 +38,20 @@ function positiveId(value) {
 
 function cleanName(value) {
   return String(value || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+}
+
+// Названия от провайдера могут содержать спонсора-букмекера (ревью Codex #860):
+// такой турнир публикуется без названия, а матч с такой командой не попадает в пост.
+const BOOKMAKER_BRANDING = new RegExp([
+  '\\b(?:1x\\s?bet|bet365|betway|betclic|betano|betboom|betcity|bwin|unibet|parimatch|pin-?up',
+  'marathon\\s?bet|olimp\\s?bet|leon\\s?bet|fonbet|winline|liga\\s+stavok|superbet|tipsport',
+  'fortuna\\s+liga|sportingbet|coolbet|mozzart|meridian\\s?bet|betsson|betfair|william\\s+hill|ladbrokes)\\b',
+  'фонбет|винлайн|лига\\s+ставок|бетбум|париматч|олимп\\s?бет|марафон\\s?бет|1хбет|бетсити|букмекер',
+].join('|'), 'iu');
+
+export function bettingFree(name = '') {
+  const text = String(name || '');
+  return text && !BOOKMAKER_BRANDING.test(text) && !isBettingText(text) ? text : '';
 }
 
 function mskParts(ms) {
@@ -107,8 +122,9 @@ export function dailyPostMatches(rows = [], predictions = {}, nowMs = Date.now()
     const home = cleanName(plainObject(teams.home)?.name);
     const away = cleanName(plainObject(teams.away)?.name);
     if (!home || !away) continue;
+    if (!bettingFree(home) || !bettingFree(away)) continue;
     const main = safeMain(isMain, item);
-    result.push({ fixtureId: id, kickoff, home, away, league: cleanName(plainObject(item.league)?.name), probabilities: { home: values[0], draw: values[1], away: values[2] }, main });
+    result.push({ fixtureId: id, kickoff, home, away, league: bettingFree(cleanName(plainObject(item.league)?.name)), probabilities: { home: values[0], draw: values[1], away: values[2] }, main });
   }
   // Сначала главные матчи, потом по времени начала.
   return result

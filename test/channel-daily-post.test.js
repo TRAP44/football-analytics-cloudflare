@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { createChannelDailyPostJob, dailyPostCandidateIds, dailyPostMatches, dailyPostText, previewParts, textVersion } from '../src/channel-daily-post-job.js';
+import { bettingFree, createChannelDailyPostJob, dailyPostCandidateIds, dailyPostMatches, dailyPostText, previewParts, textVersion } from '../src/channel-daily-post-job.js';
 
 const NOW = Date.parse('2026-10-12T08:05:00.000Z');
 // recordOpsEvent возвращает строку с невидимым _persistenceStatus.
@@ -35,6 +35,23 @@ test('the post lists only upcoming matches with a valid pre-match estimate, in k
   assert.match(text, /Это аналитика, а не рекомендация/);
   assert.doesNotMatch(text, /ставк|коэф|кэф|букмекер/i);
   assert.equal(dailyPostText([], NOW), '');
+});
+
+test('bookmaker branding never reaches the post: league label dropped, branded team skipped', () => {
+  for (const name of ['Fonbet Кубок России', 'Liga Portugal Betclic', 'Fortuna Liga', 'Лига Ставок', 'Марафонбет Лига', 'Bet365 Cup']) {
+    assert.equal(bettingFree(name), '', name);
+  }
+  for (const name of ['Premier League', 'Real Betis', 'Olimpija Ljubljana', 'Кубок России']) assert.equal(bettingFree(name), name);
+  const branded = [
+    row(401, '2026-10-12T15:00:00.000Z', 'Спартак', 'Зенит', { league: 'Fonbet Кубок России' }),
+    row(402, '2026-10-12T16:00:00.000Z', 'Winline Team', 'FC'),
+  ];
+  const est = { 401: { home: 50, draw: 25, away: 25 }, 402: { home: 50, draw: 25, away: 25 } };
+  const matches = dailyPostMatches(branded, est, NOW);
+  assert.deepEqual(matches.map(m => m.fixtureId), [401]);
+  const text = dailyPostText(matches, NOW);
+  assert.match(text, /18:00 МСК · Спартак — Зенит\n/);
+  assert.doesNotMatch(text, /fonbet|winline/i);
 });
 
 test('main matches win the five slots; broken estimates are dropped', () => {
