@@ -38,7 +38,7 @@ test('the post lists only upcoming matches with a valid pre-match estimate, in k
 });
 
 test('bookmaker branding never reaches the post: league label dropped, branded team skipped', () => {
-  for (const name of ['Fonbet Кубок России', 'Liga Portugal Betclic', 'Fortuna Liga', 'Лига Ставок', 'Марафонбет Лига', 'Bet365 Cup']) {
+  for (const name of ['Fonbet Кубок России', 'Liga Portugal Betclic', 'Fortuna Liga', 'Лига Ставок', 'Марафонбет Лига', 'Bet365 Cup', 'Betting League', 'Bookmaker Cup', 'Casino FC', 'Odds United']) {
     assert.equal(bettingFree(name), '', name);
   }
   for (const name of ['Premier League', 'Real Betis', 'Olimpija Ljubljana', 'Кубок России']) assert.equal(bettingFree(name), name);
@@ -52,6 +52,33 @@ test('bookmaker branding never reaches the post: league label dropped, branded t
   const text = dailyPostText(matches, NOW);
   assert.match(text, /18:00 МСК · Спартак — Зенит\n/);
   assert.doesNotMatch(text, /fonbet|winline/i);
+});
+
+test('pagination stops only after five publishable matches: branded teams and broken snapshots do not count', async () => {
+  const fixtures = Array.from({ length: 450 }, (_, i) => row(2000 + i, `2026-10-12T${String(10 + Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}:00.000Z`, i < 5 ? `Casino ${i}` : `H${i}`, `A${i}`));
+  const calls = [];
+  const job = createChannelDailyPostJob({
+    ...claimStore(),
+    clock: () => NOW,
+    getCache: async key => (key.startsWith('provider-fixtures:') ? { fixtures } : null),
+    getModelProbabilities: async ids => {
+      calls.push(ids);
+      const result = {};
+      for (const id of ids) {
+        const index = id - 2000;
+        if (index < 5) result[id] = { home: 50, draw: 25, away: 25 }; // команды с брендом
+        else if (index < 10) result[id] = { home: 90, draw: 30, away: 20 }; // битая сумма
+        else if (index >= 300 && index < 305) result[id] = { home: 50, draw: 25, away: 25 };
+      }
+      return result;
+    },
+    recordOpsEvent: async event => persisted(event),
+    setCache: async () => {},
+  });
+  const result = await job.processChannelDailyPost({}, new Date(NOW));
+  assert.equal(result.matches, 5);
+  assert.ok(calls.every(ids => ids.every(id => id - 2000 >= 5)), 'branded teams are not even requested');
+  assert.equal(calls.length, 2, 'the second chunk is read because the first had no publishable match');
 });
 
 test('main matches win the five slots; broken estimates are dropped', () => {

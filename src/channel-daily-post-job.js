@@ -46,6 +46,8 @@ const BOOKMAKER_BRANDING = new RegExp([
   '\\b(?:1x\\s?bet|bet365|betway|betclic|betano|betboom|betcity|bwin|unibet|parimatch|pin-?up',
   'marathon\\s?bet|olimp\\s?bet|leon\\s?bet|fonbet|winline|liga\\s+stavok|superbet|tipsport',
   'fortuna\\s+liga|sportingbet|coolbet|mozzart|meridian\\s?bet|betsson|betfair|william\\s+hill|ladbrokes)\\b',
+  // Общие английские слова о ставках — целыми словами (Real Betis не задевается).
+  '\\b(?:bet|bets|betting|bookmakers?|bookies?|sportsbooks?|casinos?|gambling|wagers?|odds|lottery|poker)\\b',
   'фонбет|винлайн|лига\\s+ставок|бетбум|париматч|олимп\\s?бет|марафон\\s?бет|1хбет|бетсити|букмекер',
 ].join('|'), 'iu');
 
@@ -94,6 +96,12 @@ export function dailyPostCandidateIds(rows = [], nowMs = Date.now(), { isMain = 
     seen.add(id);
     const kickoff = upcomingToday(item, nowMs);
     if (kickoff === null) continue;
+    // Сразу отбрасываем матчи, которые всё равно не попадут в пост (ревью
+    // Codex #860): иначе они занимали бы места при подсчёте найденных снимков.
+    const teams = plainObject(item.teams) || {};
+    const home = cleanName(plainObject(teams.home)?.name);
+    const away = cleanName(plainObject(teams.away)?.name);
+    if (!bettingFree(home) || !bettingFree(away)) continue;
     result.push({ id, kickoff, main: safeMain(isMain, item) });
   }
   return result
@@ -252,7 +260,8 @@ export function createChannelDailyPostJob(deps = {}) {
       } catch {
         return { ok: false, reason: 'predictions_lookup_failed' };
       }
-      found = candidates.filter(entry => predictions[entry.id]).length;
+      // Считаем только то, что реально войдёт в пост (те же проверки, что при отборе).
+      found = dailyPostMatches(rows, predictions, at.getTime(), { isMain: isMainFixture }).length;
     }
     const matches = dailyPostMatches(rows, predictions, at.getTime(), { isMain: isMainFixture });
     const text = dailyPostText(matches, at.getTime());
