@@ -3,9 +3,11 @@
 -- Cloudflare Workers AI (match explanation ordering and free-text questions)
 -- without a deploy. Security lockdown turns it off together with the rest.
 --
--- Rollout order: deploy the Worker that accepts the new v2 fingerprint first,
--- then apply this migration. Until the column exists the Worker treats AI as
--- enabled and does not write ai_enabled.
+-- Rollout order: apply this migration first (the production deploy gate
+-- requires it), then deploy the Worker that accepts the new v2 fingerprint.
+-- The previous Worker ignores the column (AI stays enabled by default); the new
+-- Worker also works before the migration: it treats AI as enabled and does not
+-- write ai_enabled until the column exists.
 --
 -- Legacy v1 fingerprint stays frozen: backend_schema_fingerprint() excludes the
 -- new column, as earlier additive columns were excluded. The atomic history
