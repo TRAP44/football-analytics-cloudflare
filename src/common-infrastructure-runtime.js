@@ -76,6 +76,10 @@ export function createCommonInfrastructureRuntime(deps = {}) {
       // запуски cron от Cloudflare тогда сразу завершаются, не занимая блокировку.
       backgroundJobsExecutor: String(env.BACKGROUND_JOBS_EXECUTOR || 'cloudflare').trim().toLowerCase() === 'github' ? 'github' : 'cloudflare',
       cronRunner: String(env.CRON_RUNNER || '').trim().toLowerCase(),
+      // Cron Cloudflare просит GitHub запустить фоновые задачи (src/github-dispatch-runtime.js).
+      // Токен — секрет Cloudflare: fine-grained, только этот репозиторий, «Actions: Read and write».
+      githubDispatchToken: String(env.GITHUB_DISPATCH_TOKEN || '').trim(),
+      githubDispatchRepository: String(env.GITHUB_DISPATCH_REPOSITORY || '').trim(),
       prematchPredictionsPerRun: intEnv(env.PREMATCH_PREDICTIONS_PER_RUN, 2),
       prematchPredictionsDailyLimit: intEnv(env.PREMATCH_PREDICTIONS_DAILY_LIMIT, 20),
       prematchPredictionsIntervalMinutes: intEnv(env.PREMATCH_PREDICTIONS_INTERVAL_MINUTES, 30),
