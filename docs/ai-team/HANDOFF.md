@@ -22,6 +22,14 @@ PR: [#852](https://github.com/TRAP44/football-analytics-cloudflare/pull/852), в
 - На 12.10 в `model_predictions` всего 5 строк: фоновые задачи почти не работали с 9.10, а потолок 20 в сутки мал для ленты. Тариф Pro — 7500 запросов в сутки; системный разбор матча тратит порядка десятка запросов (часть данных из кеша), то есть до ~600–900 в сутки на прогнозы — в пределах. Бюджет по-прежнему стерегут `providerBudgetDecision` и суточный потолок (`claimDailyBudget`).
 Осталось / внимание:
 - Через сутки посмотреть `ops_events` `PREMATCH_PREDICTIONS_RUN`: сколько посчитано и не упираемся ли в лимит источника.
+## 2026-10-12 — Claude — Монитор прода: ложная тревога о схеме
+PR: [#851](https://github.com/TRAP44/football-analytics-cloudflare/pull/851), ветка `claude/monitor-schema-fingerprint`
+Сделано:
+- Как только фоновые задачи снова пошли (GitHub, 12.10), монитор каждые 15 минут поднимал `PRODUCTION_MONITOR_INCIDENT` (critical): `schemaMissing: ["schema_fingerprint"]`, при `releaseScore: 100`.
+- Причина: `readSupabaseSchemaFingerprint` вызывал `backend_schema_fingerprint()` — замороженную функцию совместимости v1 (в проде 2557…, это `legacyFingerprint` из `release-contract.json`), а сравнивал с `EXPECTED_SCHEMA_FINGERPRINT` — отпечатком контракта v2 (f3d899…). Схема в порядке: `backend_schema_contract_v2()` в проде = f3d899…, миграции — до v6_29_14. До 9.10 тревоги не было видно, потому что cron не доходил до монитора.
+- Теперь монитор вызывает `backend_schema_contract_v2()` и принимает отпечатки из `COMPATIBLE_SCHEMA_FINGERPRINTS` (как готовность `/health`). Тест `test/monitor-schema-fingerprint-v2.test.js`.
+Осталось / внимание:
+- `DAILY_DIGEST_SLO_MISSING_RUN` 12.10 — следствие простоя фоновых задач; проверить вечером, что итоги дня пошли.
 
 ## 2026-10-12 — Claude — Исправления по повторному ревью Codex #836 и #839
 PR: [#848](https://github.com/TRAP44/football-analytics-cloudflare/pull/848), ветка `claude/codex-fixes-836-839`
