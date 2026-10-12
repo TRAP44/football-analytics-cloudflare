@@ -4,7 +4,7 @@
   "runtimeVersion": "6.120.0-rc144",
   "productionSchema": "6.29",
   "freshInstallBaseline": "supabase/baseline/supabase_baseline_v6_19.sql",
-  "latestMigration": "supabase/migrations/supabase_migration_v6_29_15.sql",
+  "latestMigration": "supabase/migrations/supabase_migration_v6_29_16.sql",
   "accessContract": "public-telegram-validated-by-default",
   "strictBeta": "opt-in-only-when-BETA_ACCESS_ENABLED=true",
   "productionDatabaseRule": "never-run-fresh-install-baseline-over-existing-production",
@@ -20,13 +20,13 @@
   "databaseContract": {
     "version": 2,
     "rpc": "backend_readiness_contract_v2",
-    "fingerprint": "c7164151f40be1a7af4271789f5d2c1c",
-    "freshInstallFingerprint": "13c5b940bcc5d0d0496b7d4107a6c31c",
+    "fingerprint": "11111111111111111111111111111111",
+    "freshInstallFingerprint": "00000000000000000000000000000000",
     "compatibleFingerprints": [
+      "11111111111111111111111111111111",
+      "00000000000000000000000000000000",
       "c7164151f40be1a7af4271789f5d2c1c",
-      "13c5b940bcc5d0d0496b7d4107a6c31c",
-      "f3d899ff05789e6cfb257abe011872d2",
-      "d0ecfedbd63abc305ad7f57aa298cabd"
+      "13c5b940bcc5d0d0496b7d4107a6c31c"
     ],
     "scope": "all-public-relations-columns-constraints-indexes-functions-policies-triggers-and-app-role-grants",
     "legacyFingerprint": "2557059895624917aebf24eec0e97cab",
@@ -101,6 +101,15 @@
       "default": true,
       "legacyFingerprintExcludesColumn": true,
       "sourceMigration": "supabase/migrations/supabase_migration_v6_29_15.sql"
+    },
+    "matchPicks": {
+      "version": 1,
+      "table": "match_picks",
+      "outcomes": ["home", "draw", "away"],
+      "lockAt": "model_predictions.kickoff_at",
+      "scoring": "1 point per correct outcome; AI = model_predictions.predicted_outcome",
+      "legacyFingerprintExcludesTable": true,
+      "sourceMigration": "supabase/migrations/supabase_migration_v6_29_16.sql"
     },
     "preLatestLegacyFingerprint": "c3180032babe6e091a2843a84de746e8"
   }

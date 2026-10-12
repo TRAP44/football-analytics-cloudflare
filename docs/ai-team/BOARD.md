@@ -16,6 +16,7 @@ _пусто_
 
 ## На ревью
 
+- [ ] «Обыграй AI»: прогноз 1/X/2 до начала матча в Штабе (вкладка ✦ AI), 1 очко за угаданный исход, AI играет своим предматчевым прогнозом; таблица лидеров за 30 дней в Профиле (только имя из Telegram); миграция v6.29.16 (`match_picks`) — **Claude** (решение Сергея 12.10) — PR: ветка `claude/beat-the-ai` — ревью: Codex
 - [ ] Переключатель AI в админке: «AI (Workers AI)» в настройках функций — выключает объяснение через AI и свои вопросы без деплоя; миграция Supabase v6.29.15 (`runtime_controls.ai_enabled`) — **Claude** — [PR #863](https://github.com/TRAP44/football-analytics-cloudflare/pull/863) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
