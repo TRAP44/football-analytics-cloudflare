@@ -19,7 +19,7 @@ PR: [#860](https://github.com/TRAP44/football-analytics-cloudflare/pull/860), в
 Сделано:
 - `src/channel-daily-post-job.js`: в окне 11:00–11:14 МСК (08:00–08:14 UTC) берёт сегодняшние предстоящие (≥ 30 минут до начала) матчи с валидным предматчевым снимком (`model_predictions`), сначала главные (`isTopLeague`), до пяти, по времени начала. Текст: «⚽ Матчи дня по версии модели MatchRadar — 12 октября», для каждого — время МСК, команды, турнир, «Команда 48% · Ничья 27% · Команда 25%», в конце — «Оценки модели до матча… Это аналитика, а не рекомендация.» Кнопка — ссылка в Mini App на первый матч (`fixtureTelegramDeepLink`, `campaign=daily_post`).
 - Публикация — существующий `publishChannelMessage` (отдельный бот-публикатор, журнал идемпотентности) с ключом `channel-daily:<дата>`: дважды за день не опубликует.
-- Выключено по умолчанию (`CHANNEL_DAILY_POST_ENABLED=false` в `wrangler.jsonc`): пока выключено, раз в сутки в `ops_events` пишется `CHANNEL_DAILY_POST_PREVIEW` с текстом поста.
+- Выключено по умолчанию (`CHANNEL_DAILY_POST_ENABLED=false` в `wrangler.jsonc`): пока выключено, раз в сутки в `ops_events` пишется `CHANNEL_DAILY_POST_PREVIEW` с текстом поста — частями до 480 символов (`meta.part`/`meta.parts`, журнал режет сообщения до 500), полный текст ещё и в кеше `channel-daily-preview:<дата>:v1`. В пост попадают только матчи текущего дня по Москве.
 Осталось / внимание:
 - Сергей: посмотреть предпросмотр (Claude пришлёт текст) и решить, включать ли — тогда `CHANNEL_DAILY_POST_ENABLED` → `"true"` отдельным PR. Нужен `TELEGRAM_PUBLISHER_BOT_TOKEN` (в Cloudflare и в окружении `background-jobs` GitHub), бот-публикатор — администратор канала.
 

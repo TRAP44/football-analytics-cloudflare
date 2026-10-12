@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { createChannelDailyPostJob, dailyPostCandidateIds, dailyPostMatches, dailyPostText } from '../src/channel-daily-post-job.js';
+import { createChannelDailyPostJob, dailyPostCandidateIds, dailyPostMatches, dailyPostText, previewParts } from '../src/channel-daily-post-job.js';
 
 const NOW = Date.parse('2026-10-12T08:05:00.000Z');
 const row = (id, date, home, away, { status = 'NS', league = 'Premier League', leagueId = 39 } = {}) => ({
@@ -117,6 +117,31 @@ test('while disabled the job only records a preview, once a day, inside the 11:0
   assert.match(ops[0].message, /Матчи дня/);
   assert.ok(cache.has('channel-daily-preview:2026-10-12:v1'));
   assert.equal((await job.processChannelDailyPost({}, new Date(NOW))).reason, 'preview_already_recorded');
+});
+
+test('a long post is previewed in parts under the 500-character journal limit, without losing text', async () => {
+  const many = Array.from({ length: 5 }, (_, i) => row(300 + i, `2026-10-12T1${i}:30:00.000Z`, `Очень длинное название клуба ${i}`, `Ещё одно длинное название ${i}`, { league: 'Лига чемпионов УЕФА' }));
+  const est = Object.fromEntries(many.map((_, i) => [300 + i, { home: 50, draw: 25, away: 25 }]));
+  const text = dailyPostText(dailyPostMatches(many, est, NOW), NOW);
+  assert.ok(text.length > 500);
+  const parts = previewParts(text);
+  assert.ok(parts.length > 1);
+  assert.ok(parts.every(part => part.length <= 480));
+  assert.equal(parts.join('\n'), text);
+
+  const ops = [];
+  const cache = new Map();
+  const job = createChannelDailyPostJob({
+    clock: () => NOW,
+    getCache: async key => (key.startsWith('provider-fixtures:') ? { fixtures: many } : cache.get(key) || null),
+    getModelProbabilities: async () => est,
+    recordOpsEvent: async (_cfg, event) => { ops.push(event); },
+    setCache: async (key, _id, value) => { cache.set(key, value); },
+  });
+  await job.processChannelDailyPost({}, new Date(NOW));
+  assert.equal(ops.map(event => event.message).join('\n'), text);
+  assert.deepEqual(ops.map(event => `${event.meta.part}/${event.meta.parts}`), parts.map((_, i) => `${i + 1}/${parts.length}`));
+  assert.equal(cache.get('channel-daily-preview:2026-10-12:v1').text, text);
 });
 
 test('when enabled it publishes with a per-day idempotency key and a deep link to the first match', async () => {

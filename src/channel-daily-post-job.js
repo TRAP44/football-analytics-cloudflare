@@ -125,6 +125,31 @@ export function dailyPostText(matches = [], nowMs = Date.now()) {
   return lines.join('\n').slice(0, 3900);
 }
 
+// Журнал ops_events хранит сообщения до 500 символов, а пост с 4–5 матчами
+// длиннее (ревью Codex #860). Предпросмотр пишется частями по строкам, чтобы
+// Сергей видел ровно тот текст, который потом будет опубликован.
+const PREVIEW_PART_CHARS = 480;
+const MAX_PREVIEW_PARTS = 12;
+export function previewParts(text = '') {
+  const parts = [];
+  let current = '';
+  for (const line of String(text).split('\n')) {
+    // Отдельная строка длиннее части режется — на практике строки короче 200.
+    const pieces = line.length > PREVIEW_PART_CHARS ? line.match(new RegExp(`[\\s\\S]{1,${PREVIEW_PART_CHARS}}`, 'g')) : [line];
+    for (const piece of pieces) {
+      const next = current ? `${current}\n${piece}` : piece;
+      if (next.length > PREVIEW_PART_CHARS && current) {
+        parts.push(current);
+        current = piece;
+      } else {
+        current = next;
+      }
+    }
+  }
+  if (current.trim()) parts.push(current);
+  return parts.slice(0, MAX_PREVIEW_PARTS);
+}
+
 export function createChannelDailyPostJob(deps = {}) {
   const {
     claimIdempotency,
@@ -201,16 +226,20 @@ export function createChannelDailyPostJob(deps = {}) {
     if (!text) return { ok: true, reason: 'no_matches' };
 
     if (!enabled) {
-      await record(cfg, {
-        severity: 'info',
-        source: 'channel_publisher',
-        eventType: 'channel_daily_post_preview',
-        code: 'CHANNEL_DAILY_POST_PREVIEW',
-        message: text.slice(0, 1800),
-        endpoint: 'cron:channel-daily-post',
-        meta: { date, matches: matches.length, enabled: false },
-      });
-      try { await setCache(PREVIEW_CACHE_KEY(date), 0, { date, recordedAt: new Date(now()).toISOString() }, cfg, 1440); } catch {}
+      const parts = previewParts(text);
+      for (let index = 0; index < parts.length; index += 1) {
+        await record(cfg, {
+          severity: 'info',
+          source: 'channel_publisher',
+          eventType: 'channel_daily_post_preview',
+          code: 'CHANNEL_DAILY_POST_PREVIEW',
+          message: parts[index],
+          endpoint: 'cron:channel-daily-post',
+          meta: { date, matches: matches.length, enabled: false, part: index + 1, parts: parts.length },
+        });
+      }
+      // Полный текст — ещё и в кеше предпросмотра (на сутки).
+      try { await setCache(PREVIEW_CACHE_KEY(date), 0, { date, recordedAt: new Date(now()).toISOString(), text }, cfg, 1440); } catch {}
       return { ok: true, reason: 'preview_recorded', matches: matches.length };
     }
 
