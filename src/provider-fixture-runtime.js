@@ -9,6 +9,7 @@ export function createProviderFixtureRuntime(deps) {
     bumpTelemetry,
     catalogRank,
     getCache,
+    getLatestInPlayProbabilities,
     getModelProbabilities,
     getStaleCache,
     isFinishedStatus,
@@ -372,15 +373,58 @@ export function createProviderFixtureRuntime(deps) {
     return value;
   }
 
+  // Последняя оценка по ходу матча для идущих матчей — так же необязательна и
+  // ограничена тем же сроком, что и предматчевые вероятности.
+  const liveEstimateCache=new Map();
+  // Модель по ходу матча считает только основное время: в овертайме, перерыве
+  // перед ним и серии пенальти последняя точка уже не описывает матч.
+  const MODELED_PHASES=new Set(['1H','HT','2H']);
+  const modeledLive=match=>Boolean(match) && match.live===true && MODELED_PHASES.has(String(match.status || '').toUpperCase());
+  async function feedLiveEstimates(matches, cfg) {
+    if (typeof getLatestInPlayProbabilities !== 'function') return {};
+    const ids=[...new Set(matches
+      .filter(modeledLive)
+      .map(match=>Number(match.fixtureId))
+      .filter(id=>Number.isSafeInteger(id) && id>0))]
+      .sort((a,b)=>a-b)
+      .slice(0,60);
+    if (!ids.length) return {};
+    const key=ids.join(',');
+    const cached=liveEstimateCache.get(key);
+    if (cached && Date.now()-cached.at<cached.ttl) return cached.value;
+    const loaded=await withDeadline(getLatestInPlayProbabilities(ids,cfg),FEED_PREDICTION_DEADLINE_MS);
+    const value=loaded.ok && loaded.value && typeof loaded.value==='object' && !Array.isArray(loaded.value) ? loaded.value : {};
+    liveEstimateCache.delete(key);
+    liveEstimateCache.set(key,{at:Date.now(),ttl:loaded.ok ? FEED_PREDICTION_TTL_MS : FEED_PREDICTION_FAILURE_TTL_MS,value});
+    if (liveEstimateCache.size>20) liveEstimateCache.delete(liveEstimateCache.keys().next().value);
+    return value;
+  }
+
   async function respondWithPredictions(cfg, body, ...rest) {
     if (!body || typeof body !== 'object' || !Array.isArray(body.matches) || !body.matches.length) return json(body, ...rest);
     let probabilities={};
+    let liveEstimates={};
     try {
-      probabilities=await feedModelProbabilities(body.matches,cfg);
+      [probabilities,liveEstimates]=await Promise.all([
+        feedModelProbabilities(body.matches,cfg).catch(()=>({})),
+        feedLiveEstimates(body.matches,cfg).catch(()=>({})),
+      ]);
     } catch {
       probabilities={};
+      liveEstimates={};
     }
-    const matches=body.matches.map(match=>{
+    const withLive=match=>{
+      const value=modeledLive(match) ? liveEstimates[Number(match.fixtureId)] : null;
+      if (!value) {
+        if (match && Object.hasOwn(match,'aiLiveProbabilities')) {
+          const {aiLiveProbabilities:_ignored,...other}=match;
+          return other;
+        }
+        return match;
+      }
+      return {...match,aiLiveProbabilities:{home:value.home,draw:value.draw,away:value.away,minute:value.minute}};
+    };
+    const matches=body.matches.map(withLive).map(match=>{
       const value=match && match.finished!==true ? probabilities[Number(match.fixtureId)] : null;
       if (!value) {
         if (match && Object.hasOwn(match,'aiProbabilities')) {
