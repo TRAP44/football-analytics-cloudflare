@@ -193,6 +193,7 @@ export function createScheduledJobsRuntime({
   processSmartNotifications,
   processPostMatchReturns,
   processPrematchPredictions,
+  processInPlayTimeline,
   runProductionMonitor,
   processDailyDigests,
   cleanupOpsEvents,
@@ -468,6 +469,10 @@ export function createScheduledJobsRuntime({
       // Задача 2: вероятности модели заранее для главных матчей дня (сама держит интервал и потолки).
       ['prematch_predictions', remindersTask.then(() => run('prematch_predictions', () => processPrematchPredictions(cfg, scheduledAt)))],
     ];
+    // Задача 3 (часть 2): точки кривой 1/X/2 по ходу идущих матчей (счёт и минута).
+    if (typeof processInPlayTimeline === 'function') {
+      tasks.push(['in_play_timeline', run('in_play_timeline', () => processInPlayTimeline(cfg, scheduledAt))]);
+    }
 
     if (scheduledAt.getUTCMinutes() % 15 === 0) {
       const monitorAfterReminders = remindersTask
