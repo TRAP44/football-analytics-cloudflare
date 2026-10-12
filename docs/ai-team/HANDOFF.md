@@ -14,6 +14,14 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-12 — Claude — Больше предматчевых прогнозов
+PR: [#852](https://github.com/TRAP44/football-analytics-cloudflare/pull/852), ветка `claude/prematch-limit-60`
+Сделано:
+- `wrangler.jsonc` (их же читает запуск фоновых задач в GitHub) и `.env.example`: `PREMATCH_PREDICTIONS_DAILY_LIMIT` 20 → 60, `PREMATCH_PREDICTIONS_PER_RUN` 2 → 3 (интервал прежний — 30 минут). Значения по умолчанию в коде не менял.
+Решения:
+- На 12.10 в `model_predictions` всего 5 строк: фоновые задачи почти не работали с 9.10, а потолок 20 в сутки мал для ленты. Тариф Pro — 7500 запросов в сутки; системный разбор матча тратит порядка десятка запросов (часть данных из кеша), то есть до ~600–900 в сутки на прогнозы — в пределах. Бюджет по-прежнему стерегут `providerBudgetDecision` и суточный потолок (`claimDailyBudget`).
+Осталось / внимание:
+- Через сутки посмотреть `ops_events` `PREMATCH_PREDICTIONS_RUN`: сколько посчитано и не упираемся ли в лимит источника.
 ## 2026-10-12 — Claude — Монитор прода: ложная тревога о схеме
 PR: [#851](https://github.com/TRAP44/football-analytics-cloudflare/pull/851), ветка `claude/monitor-schema-fingerprint`
 Сделано:

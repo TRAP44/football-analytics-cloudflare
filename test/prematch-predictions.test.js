@@ -291,7 +291,7 @@ test('wiring: cron task, feed enrichment and card fallback', () => {
   assert.match(app, /\$\{!m\.live && !m\.finished \? aiConfidenceMeterHtml\(aiHistory, m\) : ''\}/);
   assert.match(fs.readFileSync('public/modules/home-signal.js', 'utf8'), /aiConfidenceMeterHtml\(aiHistory, match\)/);
   const wrangler = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8').replace(/^\s*\/\/.*$/gm, ''));
-  assert.equal(wrangler.vars.PREMATCH_PREDICTIONS_DAILY_LIMIT, '20');
+  assert.equal(wrangler.vars.PREMATCH_PREDICTIONS_DAILY_LIMIT, '60');
 });
 
 test('Mini App card draws feed probabilities only when they are valid', () => {
