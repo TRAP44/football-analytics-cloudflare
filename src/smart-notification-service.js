@@ -299,28 +299,38 @@ export function inPlayEstimateLine(row, estimate, events = [], now = Date.now())
   const scoreHome = integerCandidate(estimate.score?.home);
   const scoreAway = integerCandidate(estimate.score?.away);
   if (scoreHome === null || scoreAway === null) return '';
-  const goals = asRows(events).filter(isGoal).length;
-  if (scoreHome + scoreAway !== goals) return '';
-  // Удаления тоже должны быть уже учтены, и у той же команды (ревью Codex #859):
-  // иначе в сообщение попала бы оценка, посчитанная до карточки или с
+  // Голы и удаления сверяются по командам (ревью Codex #859): если источники
+  // временно расходятся, кому засчитан гол, оценка в сообщение не попадает.
+  const homeTeam = positiveSafeInteger(estimate.teams?.home);
+  const awayTeam = positiveSafeInteger(estimate.teams?.away);
+  const perTeam = list => {
+    if (!homeTeam || !awayTeam) return null;
+    let home = 0;
+    let away = 0;
+    for (const event of list) {
+      const team = positiveSafeInteger(event?.teamId ?? event?.team_id);
+      if (team === homeTeam) home += 1;
+      else if (team === awayTeam) away += 1;
+      else return null;
+    }
+    return { home, away };
+  };
+  const goalEvents = asRows(events).filter(isGoal);
+  if (goalEvents.length) {
+    // Автогол: по событию нельзя надёжно сказать, какой стороне он засчитан.
+    if (goalEvents.some(event => String(event?.detail || '').toLowerCase().includes('own goal'))) return '';
+    const goals = perTeam(goalEvents);
+    if (!goals || goals.home !== scoreHome || goals.away !== scoreAway) return '';
+  } else if (scoreHome + scoreAway !== 0) return '';
+  // Удаления — так же: оценка не должна быть посчитана до карточки или с
   // удалением не у той стороны.
   const redHome = estimate.reds ? integerCandidate(estimate.reds.home ?? 0) : 0;
   const redAway = estimate.reds ? integerCandidate(estimate.reds.away ?? 0) : 0;
   if (redHome === null || redAway === null) return '';
   const redEvents = asRows(events).filter(isRedCard);
   if (redEvents.length) {
-    const homeTeam = positiveSafeInteger(estimate.teams?.home);
-    const awayTeam = positiveSafeInteger(estimate.teams?.away);
-    if (!homeTeam || !awayTeam) return '';
-    let home = 0;
-    let away = 0;
-    for (const event of redEvents) {
-      const team = positiveSafeInteger(event?.teamId ?? event?.team_id);
-      if (team === homeTeam) home += 1;
-      else if (team === awayTeam) away += 1;
-      else return '';
-    }
-    if (redHome !== Math.min(3, home) || redAway !== Math.min(3, away)) return '';
+    const reds = perTeam(redEvents);
+    if (!reds || redHome !== Math.min(3, reds.home) || redAway !== Math.min(3, reds.away)) return '';
   } else if (redHome + redAway !== 0) return '';
   const minute = integerCandidate(estimate.minute);
   const percent = value => `${Math.round(value)}%`;

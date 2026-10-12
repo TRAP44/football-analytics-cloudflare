@@ -4,8 +4,8 @@ import { inPlayEstimateLine } from '../src/smart-notification-service.js';
 
 const row = { home_name: 'Спартак', away_name: 'Зенит' };
 const NOW = Date.parse('2026-10-12T18:00:00.000Z');
-const estimate = { home: 76.6, draw: 17.3, away: 6.1, minute: 61, capturedAt: '2026-10-12T17:57:00.000Z', score: { home: 1, away: 0 } };
-const goal = { type: 'Goal', detail: 'Normal Goal' };
+const estimate = { home: 76.6, draw: 17.3, away: 6.1, minute: 61, capturedAt: '2026-10-12T17:57:00.000Z', score: { home: 1, away: 0 }, teams: { home: 10, away: 20 } };
+const goal = { type: 'Goal', detail: 'Normal Goal', teamId: 10 };
 
 test('a fresh estimate that already counts the goal is added to the alert', () => {
   assert.equal(
@@ -15,13 +15,23 @@ test('a fresh estimate that already counts the goal is added to the alert', () =
 });
 
 test('no line when the estimate is stale, before the goal or broken', () => {
-  assert.equal(inPlayEstimateLine(row, estimate, [goal, goal], NOW), '', 'estimate still at 1:0 after a second goal');
+  assert.equal(inPlayEstimateLine(row, estimate, [goal, { ...goal, minute: 70 }], NOW), '', 'estimate still at 1:0 after a second goal');
   assert.equal(inPlayEstimateLine(row, { ...estimate, capturedAt: '2026-10-12T17:40:00.000Z' }, [goal], NOW), '', 'older than 10 minutes');
   assert.equal(inPlayEstimateLine(row, { ...estimate, home: 90 }, [goal], NOW), '', 'sum is not 100');
   assert.equal(inPlayEstimateLine(row, { ...estimate, score: null }, [goal], NOW), '');
   assert.equal(inPlayEstimateLine(row, null, [goal], NOW), '');
   // Незабитый пенальти — не гол.
   assert.equal(inPlayEstimateLine(row, { ...estimate, score: { home: 0, away: 0 } }, [{ type: 'Goal', detail: 'Missed Penalty' }], NOW).startsWith('📊'), true);
+});
+
+test('goals are matched per team; own goals and unknown teams give no estimate', () => {
+  const awayGoal = { ...goal, teamId: 20 };
+  assert.equal(inPlayEstimateLine(row, estimate, [awayGoal], NOW), '', 'estimate 1:0 for the home side, event says away scored');
+  assert.equal(inPlayEstimateLine(row, { ...estimate, score: { home: 0, away: 1 } }, [awayGoal], NOW).startsWith('📊'), true);
+  assert.equal(inPlayEstimateLine(row, { ...estimate, teams: null }, [goal], NOW), '', 'no team ids in the estimate');
+  assert.equal(inPlayEstimateLine(row, estimate, [{ ...goal, teamId: 99 }], NOW), '', 'goal of an unknown team');
+  assert.equal(inPlayEstimateLine(row, estimate, [{ ...goal, detail: 'Own Goal' }], NOW), '', 'own goal attribution is ambiguous');
+  assert.equal(inPlayEstimateLine(row, { ...estimate, score: { home: 1, away: 0 } }, [], NOW), '', 'estimate has a goal the alert does not see');
 });
 
 test('a red-card alert needs an estimate that already counts the dismissal for the same team', () => {
