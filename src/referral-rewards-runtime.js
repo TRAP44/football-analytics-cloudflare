@@ -9,6 +9,7 @@
 import { telegramBotStartUrl } from './telegram-primary-identity.js';
 
 export const REFERRAL_MONTHLY_CAP = 10;
+export const RESERVATION_TTL_MINUTES = 15;
 const INVITE_START_PREFIX = 'ref__invite__profile__r';
 
 function plainObject(value) {
@@ -48,12 +49,13 @@ export function createReferralRewardsRuntime(deps = {}) {
     memory,
     recordGrowthEvent,
     recordOpsEvent,
+    supaPatch,
     supaRpc,
     supaSelectMany,
     telegramApi,
     telegramBotUsername,
   } = deps;
-  for (const [name, fn] of Object.entries({ ensureReferralCode, hasSupabase, json, supaRpc, supaSelectMany, telegramBotUsername })) {
+  for (const [name, fn] of Object.entries({ ensureReferralCode, hasSupabase, json, supaPatch, supaRpc, supaSelectMany, telegramBotUsername })) {
     if (typeof fn !== 'function') throw new TypeError(`Referral rewards runtime requires ${name}.`);
   }
   if (!memory || typeof memory !== 'object') throw new TypeError('Referral rewards runtime requires memory.');
@@ -128,17 +130,21 @@ export function createReferralRewardsRuntime(deps = {}) {
       .catch(() => null);
   }
 
-  // true — зафиксированного резерва с этим operation_id нет или он возвращён.
-  async function recoverAmbiguousReservation(id, operationId, cfg) {
+  // Резерв бонуса = status used + operation_id. После успешного разбора
+  // operation_id очищается (commit). Незакоммиченный резерв старше
+  // RESERVATION_TTL_MINUTES возвращается: так бонус не теряется ни при
+  // потерянном ответе базы, ни при сбое возврата, ни при падении воркера.
+  async function releaseStaleReservations(id, cfg) {
+    const before = new Date(Date.now() - RESERVATION_TTL_MINUTES * 60_000).toISOString();
     try {
-      const rows = await supaSelectMany(cfg, 'referral_rewards', { telegram_id: `eq.${id}`, operation_id: `eq.${operationId}`, status: 'eq.used' }, { limit: 1, select: 'id' });
-      if (!Array.isArray(rows)) return false;
-      const rewardId = positiveId(safeRead(rows[0], 'id'));
-      if (!rewardId) return true;
-      const refund = plainObject(await supaRpc(cfg, 'refund_referral_bonus', { p_telegram_id: id, p_reward_id: rewardId, p_operation_id: operationId }));
-      return safeRead(refund, 'refunded') === true;
+      await supaPatch(cfg, 'referral_rewards', {
+        telegram_id: `eq.${id}`,
+        status: 'eq.used',
+        operation_id: 'not.is.null',
+        used_at: `lt.${before}`,
+      }, { status: 'available', used_at: null, operation_id: null });
     } catch {
-      return false;
+      // Не мешает разбору: вернётся при следующей попытке.
     }
   }
 
@@ -146,20 +152,19 @@ export function createReferralRewardsRuntime(deps = {}) {
   async function reserveReferralBonus(userId, cfg) {
     const id = positiveId(userId);
     if (!id || !storageReady(cfg)) return { reserved: false, allowed: false, kind: 'bonus', reason: 'unavailable' };
+    await releaseStaleReservations(id, cfg);
     const operationId = crypto.randomUUID();
     let result;
     try {
       result = plainObject(await supaRpc(cfg, 'reserve_referral_bonus', { p_telegram_id: id, p_operation_id: operationId }));
     } catch (error) {
-      // Ответ потерян: резерв мог зафиксироваться. Ищем его по operation_id и возвращаем.
-      const recovered = await recoverAmbiguousReservation(id, operationId, cfg);
+      // Ответ потерян: если резерв зафиксировался, он не закоммичен и вернётся
+      // сам через RESERVATION_TTL_MINUTES (releaseStaleReservations).
       await reportOps(cfg, {
-        severity: recovered ? 'warning' : 'error',
-        code: recovered ? 'REFERRAL_BONUS_RESERVATION_RECOVERED' : 'REFERRAL_BONUS_RESERVATION_OUTCOME_UNKNOWN',
-        message: recovered
-          ? 'Referral bonus reservation response was lost; the committed reservation was found by operation id and returned.'
-          : 'Referral bonus reservation response was lost and the reservation could not be checked; reconcile by operation id.',
-        meta: { telegramId: id, operationId, error: String(error?.message || error || 'unknown_error').slice(0, 180) },
+        severity: 'warning',
+        code: 'REFERRAL_BONUS_RESERVATION_OUTCOME_UNKNOWN',
+        message: 'Referral bonus reservation response was lost; an uncommitted reservation is released automatically after the TTL.',
+        meta: { operationId, ttlMinutes: RESERVATION_TTL_MINUTES, error: String(error?.message || error || 'unknown_error').slice(0, 180) },
       });
       return { reserved: false, allowed: false, kind: 'bonus', rewardId: null, operationId: null, remaining: 0, reason: 'rpc_failed' };
     }
@@ -180,8 +185,24 @@ export function createReferralRewardsRuntime(deps = {}) {
   async function hasReferralBonus(userId, cfg) {
     const id = positiveId(userId);
     if (!id || !storageReady(cfg)) return false;
+    await releaseStaleReservations(id, cfg);
     const rows = await supaSelectMany(cfg, 'referral_rewards', { telegram_id: `eq.${id}`, status: 'eq.available' }, { limit: 1, select: 'id' });
     return Array.isArray(rows) && rows.length > 0;
+  }
+
+  /** Разбор выдан — бонус потрачен окончательно. */
+  async function commitReferralBonus(userId, reservation, cfg) {
+    const id = positiveId(userId);
+    const rewardId = positiveId(safeRead(reservation, 'rewardId'));
+    const operationId = String(safeRead(reservation, 'operationId') || '');
+    if (!id || !rewardId || !operationId) return { committed: false, reason: 'invalid_input' };
+    await supaPatch(cfg, 'referral_rewards', {
+      id: `eq.${rewardId}`,
+      telegram_id: `eq.${id}`,
+      status: 'eq.used',
+      operation_id: `eq.${operationId}`,
+    }, { operation_id: null });
+    return { committed: true };
   }
 
   async function refundReferralBonus(userId, reservation, cfg) {
@@ -196,6 +217,7 @@ export function createReferralRewardsRuntime(deps = {}) {
   async function referralSummary(userId, cfg) {
     const id = positiveId(userId);
     if (!id || !storageReady(cfg)) return { bonusAvailable: 0, invitedThisMonth: 0 };
+    await releaseStaleReservations(id, cfg);
     const since = new Date(Date.now() - 30 * 86400_000).toISOString();
     const [available, invited] = await Promise.all([
       supaSelectMany(cfg, 'referral_rewards', { telegram_id: `eq.${id}`, status: 'eq.available' }, { limit: 200, select: 'id' }),
@@ -231,5 +253,5 @@ export function createReferralRewardsRuntime(deps = {}) {
     }
   }
 
-  return Object.freeze({ apiReferral, grantReferralRewards, hasReferralBonus, reserveReferralBonus, refundReferralBonus, referralSummary });
+  return Object.freeze({ apiReferral, commitReferralBonus, grantReferralRewards, hasReferralBonus, reserveReferralBonus, refundReferralBonus, referralSummary });
 }

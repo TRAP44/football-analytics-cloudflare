@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { createReferralRewardsRuntime, inviteStartParam, REFERRAL_MONTHLY_CAP } from '../src/referral-rewards-runtime.js';
+import { createReferralRewardsRuntime, inviteStartParam, REFERRAL_MONTHLY_CAP, RESERVATION_TTL_MINUTES } from '../src/referral-rewards-runtime.js';
 import { inviteShareUrl, referralInviteHtml } from '../public/modules/referral-invite.js';
 
 const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -10,6 +10,7 @@ const CODE = '0123456789abcdef';
 
 function harness({ rpc = {}, rows = {}, code = CODE } = {}) {
   const calls = [];
+  const patches = [];
   const messages = [];
   const events = [];
   const rt = createReferralRewardsRuntime({
@@ -19,6 +20,7 @@ function harness({ rpc = {}, rows = {}, code = CODE } = {}) {
     memory: {},
     recordGrowthEvent: async (_cfg, event) => { events.push(event); },
     recordOpsEvent: async () => {},
+    supaPatch: async (_cfg, table, filters, patch) => { patches.push({ table, filters, patch }); },
     supaRpc: async (_cfg, name, params) => {
       calls.push({ name, params });
       const handler = rpc[name];
@@ -29,7 +31,7 @@ function harness({ rpc = {}, rows = {}, code = CODE } = {}) {
     telegramApi: async (method, _cfg, body) => { messages.push({ method, body }); },
     telegramBotUsername: async () => 'MatchRadarBot',
   });
-  return { rt, calls, messages, events };
+  return { rt, calls, messages, events, patches };
 }
 
 test('invite link uses the existing referral code format and opens the bot', async () => {
@@ -128,10 +130,12 @@ test('analysis: the bonus is used only after the daily limit and returned if the
   assert.match(source, /if \(usageReservation\.allowed !== true && typeof reserveReferralBonus === 'function'\)/);
   assert.match(source, /if \(usageReservation\.allowed !== true && bonusReservation\?\.allowed !== true\) \{/);
   assert.match(source, /if \(bonusReservation\?\.reserved && !usageCommitted && typeof refundReferralBonus === 'function'\)/);
+  assert.match(source, /if \(bonusReservation\?\.reserved && usageCommitted && typeof commitReferralBonus === 'function'\)/);
   assert.equal(source.match(/scheduleReferralReward\(\);/g)?.length, 3, 'reward check after cached, shared and fresh analysis');
   const worker = fs.readFileSync('src/worker.js', 'utf8');
   assert.match(worker, /reserveReferralBonus: \(\.\.\.args\) => reserveReferralBonus\(\.\.\.args\),/);
   assert.match(worker, /hasReferralBonus: \(\.\.\.args\) => hasReferralBonus\(\.\.\.args\),/);
+  assert.match(worker, /commitReferralBonus: \(\.\.\.args\) => commitReferralBonus\(\.\.\.args\),/);
 });
 
 test('profile panel: share via Telegram composer, numbers only from the server, no money words', () => {
@@ -172,48 +176,49 @@ test('migration: private table, atomic grant with new-user check and monthly cap
   assert.doesNotMatch(rewardsPart, /stars_amount|user_entitlements|billing_payments/, 'rewards are not purchases');
 });
 
-// Ревью Codex #868: потерянный ответ резерва не оставляет бонус списанным.
-test('a lost reservation response is recovered by operation id and the bonus is returned', async () => {
-  const make = ({ lookup }) => {
-    const calls = [];
-    const ops = [];
-    const rt = createReferralRewardsRuntime({
-      ensureReferralCode: async () => CODE,
-      hasSupabase: () => true,
-      json,
-      memory: {},
-      recordGrowthEvent: async () => {},
-      recordOpsEvent: async (_cfg, event) => { ops.push(event); },
-      supaRpc: async (_cfg, name, params) => {
-        calls.push({ name, params });
-        if (name === 'reserve_referral_bonus') throw new Error('timeout after commit');
-        return { refunded: true, reason: 'refunded' };
-      },
-      supaSelectMany: async (_cfg, _table, filters) => {
-        calls.push({ name: 'select', filters });
-        return lookup(filters);
-      },
-      telegramBotUsername: async () => 'MatchRadarBot',
-    });
-    return { rt, calls, ops };
-  };
+// Ревью Codex #868: резерв без commit (потерянный ответ, сбой возврата, падение
+// воркера) не списывает бонус навсегда — он возвращается через TTL.
+test('bonus lifecycle: commit after the analysis, stale uncommitted reservations return after the TTL', async () => {
+  const { rt, calls, patches } = harness({ rpc: { reserve_referral_bonus: { allowed: true, rewardId: 12, remaining: 0 } } });
+  const before = Date.now();
+  const reservation = await rt.reserveReferralBonus(5, {});
+  const release = patches[0];
+  assert.equal(release.table, 'referral_rewards');
+  assert.deepEqual({ ...release.filters, used_at: undefined }, { telegram_id: 'eq.5', status: 'eq.used', operation_id: 'not.is.null', used_at: undefined });
+  const cutoff = Date.parse(release.filters.used_at.slice(3));
+  assert.ok(Math.abs(before - RESERVATION_TTL_MINUTES * 60_000 - cutoff) < 5000, 'only reservations older than the TTL are released');
+  assert.deepEqual(release.patch, { status: 'available', used_at: null, operation_id: null });
+  assert.equal(calls[0].name, 'reserve_referral_bonus', 'stale reservations are released before a new one');
 
-  const committed = make({ lookup: () => [{ id: 31 }] });
-  const result = await committed.rt.reserveReferralBonus(5, {});
+  assert.deepEqual(await rt.commitReferralBonus(5, reservation, {}), { committed: true });
+  assert.deepEqual(patches[1], {
+    table: 'referral_rewards',
+    filters: { id: 'eq.12', telegram_id: 'eq.5', status: 'eq.used', operation_id: `eq.${reservation.operationId}` },
+    patch: { operation_id: null },
+  });
+  assert.equal((await rt.commitReferralBonus(5, { rewardId: 12 }, {})).committed, false);
+
+  await rt.hasReferralBonus(5, {});
+  assert.equal(patches[2].patch.status, 'available', 'the availability check releases stale reservations first');
+});
+
+test('a lost reservation response is reported with the operation id and treated as no bonus', async () => {
+  const ops = [];
+  const rt = createReferralRewardsRuntime({
+    ensureReferralCode: async () => CODE,
+    hasSupabase: () => true,
+    json,
+    memory: {},
+    recordOpsEvent: async (_cfg, event) => { ops.push(event); },
+    supaPatch: async () => {},
+    supaRpc: async () => { throw new Error('timeout after commit'); },
+    supaSelectMany: async () => [],
+    telegramBotUsername: async () => 'MatchRadarBot',
+  });
+  const result = await rt.reserveReferralBonus(5, {});
   assert.equal(result.allowed, false);
   assert.equal(result.reason, 'rpc_failed');
-  const operationId = committed.calls[0].params.p_operation_id;
-  assert.equal(committed.calls[1].filters.operation_id, `eq.${operationId}`);
-  assert.deepEqual(committed.calls[2], { name: 'refund_referral_bonus', params: { p_telegram_id: 5, p_reward_id: 31, p_operation_id: operationId } });
-  assert.equal(committed.ops[0].code, 'REFERRAL_BONUS_RESERVATION_RECOVERED');
-
-  const notCommitted = make({ lookup: () => [] });
-  await notCommitted.rt.reserveReferralBonus(5, {});
-  assert.equal(notCommitted.calls.filter(call => call.name === 'refund_referral_bonus').length, 0);
-  assert.equal(notCommitted.ops[0].code, 'REFERRAL_BONUS_RESERVATION_RECOVERED');
-
-  const unreachable = make({ lookup: () => { throw new Error('down'); } });
-  await unreachable.rt.reserveReferralBonus(5, {});
-  assert.equal(unreachable.ops[0].code, 'REFERRAL_BONUS_RESERVATION_OUTCOME_UNKNOWN');
-  assert.equal(unreachable.ops[0].meta.operationId, unreachable.calls[0].params.p_operation_id);
+  assert.equal(ops[0].code, 'REFERRAL_BONUS_RESERVATION_OUTCOME_UNKNOWN');
+  assert.match(ops[0].meta.operationId, /^[0-9a-f-]{36}$/);
+  assert.equal(ops[0].meta.ttlMinutes, RESERVATION_TTL_MINUTES);
 });

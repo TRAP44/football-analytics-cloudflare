@@ -2584,6 +2584,7 @@ function getReferralRewardsRuntime() {
       memory,
       recordGrowthEvent: (...args) => recordGrowthEvent(...args),
       recordOpsEvent,
+      supaPatch,
       supaRpc,
       supaSelectMany,
       telegramApi: (...args) => telegramApi(...args),
@@ -2595,6 +2596,7 @@ function getReferralRewardsRuntime() {
 const apiReferral = (...args) => getReferralRewardsRuntime().apiReferral(...args);
 const grantReferralRewards = (...args) => getReferralRewardsRuntime().grantReferralRewards(...args);
 const hasReferralBonus = (...args) => getReferralRewardsRuntime().hasReferralBonus(...args);
+const commitReferralBonus = (...args) => getReferralRewardsRuntime().commitReferralBonus(...args);
 const reserveReferralBonus = (...args) => getReferralRewardsRuntime().reserveReferralBonus(...args);
 const refundReferralBonus = (...args) => getReferralRewardsRuntime().refundReferralBonus(...args);
 const apiFavorites = (...args) => getUserDataApiRuntime().apiFavorites(...args);
@@ -3090,6 +3092,7 @@ function getAnalysisRuntime() {
       reserveAnalysisQuota,
       grantReferralRewards: (...args) => grantReferralRewards(...args),
       hasReferralBonus: (...args) => hasReferralBonus(...args),
+      commitReferralBonus: (...args) => commitReferralBonus(...args),
       reserveReferralBonus: (...args) => reserveReferralBonus(...args),
       refundReferralBonus: (...args) => refundReferralBonus(...args),
       reserveEntitlementUsage,

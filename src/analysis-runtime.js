@@ -101,6 +101,7 @@ export function createAnalysisRuntime(deps) {
     refundEntitlementUsage,
     grantReferralRewards,
     hasReferralBonus,
+    commitReferralBonus,
     refundReferralBonus,
     releaseDistributedAnalysisLock,
     reserveAnalysisQuota,
@@ -2339,6 +2340,21 @@ export function createAnalysisRuntime(deps) {
         }
       }
 
+      // Бонус за приглашение: разбор выдан — commit, иначе — возврат. Если
+      // ни то ни другое не подтвердилось, незакоммиченный резерв вернётся сам
+      // через 15 минут (referral-rewards-runtime, releaseStaleReservations).
+      if (bonusReservation?.reserved && usageCommitted && typeof commitReferralBonus === 'function') {
+        try {
+          const commit=objectValue(await commitReferralBonus(userId,bonusReservation,cfg));
+          if (commit?.committed !== true) throw new Error(safeText(commit?.reason,120) || 'referral_bonus_commit_not_confirmed');
+        } catch (error) {
+          await logFinalizationFailure(
+            'REFERRAL_BONUS_COMMIT_FAILED',
+            error,
+            {rewardId:positiveSafeInteger(bonusReservation.rewardId)},
+          );
+        }
+      }
       if (bonusReservation?.reserved && !usageCommitted && typeof refundReferralBonus === 'function') {
         try {
           const refund=objectValue(await refundReferralBonus(userId,bonusReservation,cfg));
