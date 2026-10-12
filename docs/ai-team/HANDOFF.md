@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-12 — Claude — Больше предматчевых прогнозов
-PR: ветка `claude/prematch-limit-60`
+PR: [#852](https://github.com/TRAP44/football-analytics-cloudflare/pull/852), ветка `claude/prematch-limit-60`
 Сделано:
 - `wrangler.jsonc` (их же читает запуск фоновых задач в GitHub) и `.env.example`: `PREMATCH_PREDICTIONS_DAILY_LIMIT` 20 → 60, `PREMATCH_PREDICTIONS_PER_RUN` 2 → 3 (интервал прежний — 30 минут). Значения по умолчанию в коде не менял.
 Решения:
