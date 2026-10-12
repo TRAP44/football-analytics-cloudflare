@@ -192,7 +192,7 @@ export function lineupPitchViewHtml(lineups, match = {}, { escapeHtml, fallback 
     ${teamMetaHtml(home, homeName, 'home', esc)}${teamMetaHtml(away, awayName, 'away', esc)}
     <p class="data-notice">Источник передал расстановку не для всех игроков — составы показаны списком.</p>
     ${startList(homeRows, home, homeName)}${startList(awayRows, away, awayName)}
-    ${partial ? '<p class="data-notice">⚠️ Источник передал неполный стартовый состав — он не считается подтверждённым.</p>' : unconfirmed ? '<p class="data-notice">⚠️ Состав не подтверждён: данные из устаревшего кеша или непроверенного источника.</p>' : ''}
+    ${partial ? '<p class="data-notice">⚠️ Источник передал неполный стартовый состав — он не считается подтверждённым.</p>' : unconfirmed ? '<p class="data-notice">⚠️ Состав не подтверждён источником — показан как есть.</p>' : ''}
     <div class="lp-benches">${benchHtml(home, homeName, esc)}${benchHtml(away, awayName, esc)}</div>
   </div>`;
   }
@@ -205,7 +205,7 @@ export function lineupPitchViewHtml(lineups, match = {}, { escapeHtml, fallback 
     </figure>
     ${teamMetaHtml(home, homeName, 'home', esc)}
     ${startList(homeRows, home, homeName)}${startList(awayRows, away, awayName)}
-    ${partial ? '<p class="data-notice">⚠️ Источник передал неполный стартовый состав — он не считается подтверждённым.</p>' : unconfirmed ? '<p class="data-notice">⚠️ Состав не подтверждён: данные из устаревшего кеша или непроверенного источника.</p>' : ''}
+    ${partial ? '<p class="data-notice">⚠️ Источник передал неполный стартовый состав — он не считается подтверждённым.</p>' : unconfirmed ? '<p class="data-notice">⚠️ Состав не подтверждён источником — показан как есть.</p>' : ''}
     <div class="lp-benches">${benchHtml(home, homeName, esc)}${benchHtml(away, awayName, esc)}</div>
   </div>`;
 }

@@ -117,9 +117,9 @@ test('codex #839: an XI the server downgraded to unconfirmed is labelled as such
   const html = lineupPitchViewHtml({ home, away }, match, { escapeHtml: esc });
   assert.match(html, /lp-status is-unconfirmed">состав не подтверждён/);
   assert.match(html, /lp-status">состав подтверждён/);
-  assert.match(html, /Состав не подтверждён: данные из устаревшего кеша или непроверенного источника/);
+  assert.match(html, /Состав не подтверждён источником — показан как есть/);
   const confirmed = lineupPitchViewHtml({ home: { ...home, quality: { confirmed: true } }, away }, match, { escapeHtml: esc });
-  assert.doesNotMatch(confirmed, /is-unconfirmed|Состав не подтверждён:/);
+  assert.doesNotMatch(confirmed, /is-unconfirmed|Состав не подтверждён источником/);
 });
 
 test('codex #839: substitutes stay visible when no starting XI is published', () => {
