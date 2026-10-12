@@ -28,7 +28,7 @@ export const MATCH_SWING_POLICY = Object.freeze({
 const LIVE_STATUSES = new Set(['1H', 'HT', '2H']);
 const MSK_OFFSET_MS = 3 * 3600_000;
 const SWING_EVENT_KEY = 'swing';
-const MAY_HAVE_REACHED_TELEGRAM = new Set(['claimed', 'sending', 'sent', 'unknown']);
+const MAY_HAVE_REACHED_TELEGRAM = new Set(['sending', 'sent', 'unknown']);
 const SLOT_KEY = (date, slot) => `telegram:channel-publish:v1:swing-slot:${date}:${slot}`;
 const DONE_KEY = fixtureId => `telegram:channel-publish:v1:swing-done:${fixtureId}`;
 
@@ -264,7 +264,7 @@ export function createMatchSwingJob(deps = {}) {
       event_type: 'in.("match.swing","team.swing")',
     }, summary);
     // Отсекает другой повод только доставка, которая могла дойти до Telegram;
-    // неудачная попытка (retry_pending, terminal_failed) не мешает отправить
+    // не начатая или неудачная попытка (claimed, retry_pending, terminal_failed) не мешает отправить
     // сообщение по актуальному поводу (ревью Codex #869).
     const deliveredAs = type => new Set(delivered
       .filter(row => String(safeRead(row, 'event_type') || '') === type)

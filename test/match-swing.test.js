@@ -219,9 +219,9 @@ test('personal: a swing already delivered for one reason is not repeated for the
   assert.deepEqual(retry.delivered.map(item => item.row.telegram_id), [5]);
 
   // Неудачная попытка по напоминанию, напоминание снято, команда любимая — сообщение уйдёт как team.swing.
-  const moved = harness({ reminders: [], favorites: [{ telegram_id: 5 }], deliveries: [{ telegram_id: 5, event_type: 'match.swing', status: 'retry_pending' }, { telegram_id: 9, event_type: 'match.swing', status: 'terminal_failed' }] });
+  const moved = harness({ reminders: [], favorites: [{ telegram_id: 5 }, { telegram_id: 10 }], deliveries: [{ telegram_id: 5, event_type: 'match.swing', status: 'retry_pending' }, { telegram_id: 9, event_type: 'match.swing', status: 'terminal_failed' }, { telegram_id: 10, event_type: 'match.swing', status: 'claimed' }] });
   await moved.job.processMatchSwings({}, new Date(NOW));
-  assert.deepEqual(moved.delivered.map(item => [item.row.telegram_id, item.eventType]), [[5, 'team.swing']]);
+  assert.deepEqual(moved.delivered.map(item => [item.row.telegram_id, item.eventType]), [[5, 'team.swing'], [10, 'team.swing']]);
 });
 
 test('every qualifying match in a run is handled, no per-run cap', async () => {
