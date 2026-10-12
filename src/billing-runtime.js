@@ -1,3 +1,4 @@
+import { passAcceptedStars } from './entitlements.js';
 export function createBillingRuntime(deps = {}) {
   if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
     throw new TypeError('Billing runtime dependencies are required.');
@@ -93,6 +94,13 @@ export function createBillingRuntime(deps = {}) {
   function unixSeconds(value,fallback=null) {
     const seconds=nonNegativeInt(value);
     return seconds !== null && seconds <= 8_640_000_000_000 ? seconds : fallback;
+  }
+
+  // Суммы, с которыми принимается уже совершённая оплата подписки: текущая
+  // цена и цена по умолчанию из кода (до смены цен 12.10 — 199/399). Новые
+  // счета и pre-checkout — только по текущей цене (ревью Codex #867).
+  function planAcceptedStars(planCfg) {
+    return new Set([positiveInt(planCfg?.stars), positiveInt(BILLING_PLANS[planCfg?.key]?.stars)].filter(Boolean));
   }
 
   function billingPlanConfig(plan, cfg) {
@@ -320,12 +328,9 @@ export function createBillingRuntime(deps = {}) {
     if (subscription) {
       if (positiveInt(subscription.userId)!==uid) return false;
       const planCfg = billingPlanConfig(subscription.plan, cfg);
-      // Уже совершённая оплата и автопродление принимаются и по цене по
-      // умолчанию из кода (до смены цен 12.10 — 199/399): Telegram мог одобрить
-      // платёж до деплоя, а продление идёт по цене исходной подписки (ревью
-      // Codex #867). Новые счета и pre-checkout — только по текущей цене.
-      const acceptedStars=new Set([positiveInt(planCfg?.stars), positiveInt(BILLING_PLANS[planCfg?.key]?.stars)].filter(Boolean));
-      if (!planCfg || !acceptedStars.has(amount)) return false;
+      // Telegram мог одобрить платёж до деплоя, а продление идёт по цене
+      // исходной подписки — см. planAcceptedStars.
+      if (!planCfg || !planAcceptedStars(planCfg).has(amount)) return false;
   
       const expiresUnix=unixSeconds(payment.subscription_expiration_date,null)
         ?? (paidAt+SUBSCRIPTION_PERIOD_SECONDS);
@@ -359,7 +364,7 @@ export function createBillingRuntime(deps = {}) {
     const pass = await parsePassInvoicePayload(payment.invoice_payload, cfg.botToken);
     if (!pass || positiveInt(pass.userId)!==uid) return false;
     const product = passProductConfig(pass.passType, cfg);
-    if (!product || amount!==positiveInt(product.stars)) return false;
+    if (!product || !passAcceptedStars(product).has(amount)) return false;
   
     const activated = await activatePassPurchase({
       telegramId:uid,
@@ -451,7 +456,7 @@ export function createBillingRuntime(deps = {}) {
       const pass = await parsePassInvoicePayload(source.invoice_payload, cfg.botToken);
       if (pass && positiveInt(pass.userId)===uid) {
         const product = passProductConfig(pass.passType, cfg);
-        if (product && positiveInt(item.amount)===positiveInt(product.stars)) {
+        if (product && passAcceptedStars(product).has(positiveInt(item.amount))) {
           const applied = await applySuccessfulPayment(userId, {
             currency: 'XTR',
             total_amount:positiveInt(item.amount),
@@ -469,7 +474,7 @@ export function createBillingRuntime(deps = {}) {
       const parsed = await parseInvoicePayload(source.invoice_payload, cfg.botToken);
       if (!parsed || positiveInt(parsed.userId)!==uid) continue;
       const planCfg = billingPlanConfig(parsed.plan, cfg);
-      if (!planCfg || positiveInt(item.amount)!==positiveInt(planCfg.stars)) continue;
+      if (!planCfg || !planAcceptedStars(planCfg).has(positiveInt(item.amount))) continue;
       const period=positiveInt(source.subscription_period) ?? SUBSCRIPTION_PERIOD_SECONDS;
       const itemDate=unixSeconds(item.date,null);
       if (itemDate===null) continue;
