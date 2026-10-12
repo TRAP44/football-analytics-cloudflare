@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { cloudflareVersionIdValid, validateReleaseIdentity } from '../src/release-identity.js';
-import { assertSameScriptContent, settingsOnlyVersion, versionHasReleaseStamp } from './cloudflare-settings-version.js';
+import { assertSameScriptContent, describeVersion, settingsOnlyVersion, versionHasReleaseStamp } from './cloudflare-settings-version.js';
 
 const RELEASE_RE = /^[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$/;
 const SHA_RE = /^[0-9a-f]{40}$/i;
@@ -127,7 +127,7 @@ function settingsOnlyActiveVersion(deployment, activeVersion) {
     throw new Error(`Cloudflare version details do not describe active production version ${activeVersionId}.`);
   }
   if (!settingsOnlyVersion(activeVersion)) {
-    throw new Error(`Active production version ${activeVersionId} has no CI release stamp and was not created by a secret change.`);
+    throw new Error(`Active production version ${activeVersionId} carries a CI release stamp; the settings-only path does not apply.`);
   }
   return activeVersionId;
 }
@@ -178,7 +178,7 @@ export function resolveSettingsBaseVersionId(deployment, activeVersion, deployme
     }
     if (versionHasReleaseStamp(details)) return previousId;
     if (!settingsOnlyVersion(details)) {
-      throw new Error(`Version ${previousId} in deployment history has no CI release stamp and was not created by a secret change.`);
+      throw new Error(`Version ${previousId} in deployment history could not be classified.`);
     }
     current = previousId;
   }
@@ -229,6 +229,11 @@ function main() {
     throw new Error('Usage: node scripts/verify-production-release-postcondition.js <deployment-json> <versions-json> <release> <sha>');
   }
   const deployment = JSON.parse(fs.readFileSync(deploymentPath, 'utf8'));
+  if (versionsPath === '--describe-version') {
+    // Первый аргумент — JSON версии (`wrangler versions view --json`).
+    console.log(describeVersion(deployment));
+    return;
+  }
   if (versionsPath === '--print-history-version-ids') {
     const deploymentsPath = process.argv[4];
     if (!deploymentsPath) throw new Error('Usage: node scripts/verify-production-release-postcondition.js <deployment-json> --print-history-version-ids <deployments-json>');
