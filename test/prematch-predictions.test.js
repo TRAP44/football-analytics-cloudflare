@@ -364,22 +364,26 @@ test('feed: live matches get the latest in-play estimate, others never do', asyn
     date: '2026-10-10',
     sourceMeta: { provider: 'api-football' },
     matches: [
-      { fixtureId: 301, live: true, home: { name: 'A' }, away: { name: 'B' } },
+      { fixtureId: 301, live: true, status: '2H', home: { name: 'A' }, away: { name: 'B' } },
       { fixtureId: 302, home: { name: 'C' }, away: { name: 'D' }, aiLiveProbabilities: { home: 90, draw: 5, away: 5 } },
-      { fixtureId: 303, live: true, home: { name: 'E' }, away: { name: 'F' } },
+      { fixtureId: 303, live: true, status: '1H', home: { name: 'E' }, away: { name: 'F' } },
+      // Овертайм и пенальти модель не считает (ревью Codex #858).
+      { fixtureId: 304, live: true, status: 'ET', home: { name: 'G' }, away: { name: 'H' } },
+      { fixtureId: 305, live: true, status: 'P', home: { name: 'I' }, away: { name: 'J' } },
     ],
   };
-  const { client, askedLive } = feedRuntime({ stale, probabilities: {}, live: { 301: { home: 76.6, draw: 17.3, away: 6.1, minute: 61 } } });
+  const { client, askedLive } = feedRuntime({ stale, probabilities: {}, live: { 301: { home: 76.6, draw: 17.3, away: 6.1, minute: 61 }, 304: { home: 90, draw: 5, away: 5, minute: 89 } } });
   const res = await client.apiMatches(new Request('https://x.test/api/matches?date=2026-10-10'), {});
   const byId = Object.fromEntries(res.body.matches.map(m => [m.fixtureId, m]));
   assert.deepEqual(askedLive, [[301, 303]], 'only live matches are looked up');
   assert.deepEqual(byId[301].aiLiveProbabilities, { home: 76.6, draw: 17.3, away: 6.1, minute: 61 });
   assert.equal(Object.hasOwn(byId[302], 'aiLiveProbabilities'), false, 'never passed through from the cached feed');
   assert.equal(Object.hasOwn(byId[303], 'aiLiveProbabilities'), false);
+  assert.equal(Object.hasOwn(byId[304], 'aiLiveProbabilities'), false, 'no regulation estimate in extra time');
 
   const failing = feedRuntime({ stale, probabilities: {}, live: new Error('db down') });
   const fallback = await failing.client.apiMatches(new Request('https://x.test/api/matches?date=2026-10-10'), {});
-  assert.equal(fallback.body.matches.length, 3);
+  assert.equal(fallback.body.matches.length, 5);
   assert.ok(fallback.body.matches.every(m => !Object.hasOwn(m, 'aiLiveProbabilities')));
 });
 

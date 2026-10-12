@@ -376,10 +376,14 @@ export function createProviderFixtureRuntime(deps) {
   // Последняя оценка по ходу матча для идущих матчей — так же необязательна и
   // ограничена тем же сроком, что и предматчевые вероятности.
   const liveEstimateCache=new Map();
+  // Модель по ходу матча считает только основное время: в овертайме, перерыве
+  // перед ним и серии пенальти последняя точка уже не описывает матч.
+  const MODELED_PHASES=new Set(['1H','HT','2H']);
+  const modeledLive=match=>Boolean(match) && match.live===true && MODELED_PHASES.has(String(match.status || '').toUpperCase());
   async function feedLiveEstimates(matches, cfg) {
     if (typeof getLatestInPlayProbabilities !== 'function') return {};
     const ids=[...new Set(matches
-      .filter(match=>match && match.live===true)
+      .filter(modeledLive)
       .map(match=>Number(match.fixtureId))
       .filter(id=>Number.isSafeInteger(id) && id>0))]
       .sort((a,b)=>a-b)
@@ -410,7 +414,7 @@ export function createProviderFixtureRuntime(deps) {
       liveEstimates={};
     }
     const withLive=match=>{
-      const value=match && match.live===true ? liveEstimates[Number(match.fixtureId)] : null;
+      const value=modeledLive(match) ? liveEstimates[Number(match.fixtureId)] : null;
       if (!value) {
         if (match && Object.hasOwn(match,'aiLiveProbabilities')) {
           const {aiLiveProbabilities:_ignored,...other}=match;
