@@ -208,15 +208,28 @@ test('personal: a swing already delivered for one reason is not repeated for the
   const { job, delivered } = harness({
     reminders: [{ telegram_id: 6 }, { telegram_id: 7 }],
     favorites: [{ telegram_id: 5 }, { telegram_id: 8 }],
-    deliveries: [{ telegram_id: 5, event_type: 'match.swing' }, { telegram_id: 6, event_type: 'team.swing' }],
+    deliveries: [{ telegram_id: 5, event_type: 'match.swing', status: 'sent' }, { telegram_id: 6, event_type: 'team.swing', status: 'unknown' }],
   });
   await job.processMatchSwings({}, new Date(NOW));
   assert.deepEqual(delivered.map(item => [item.row.telegram_id, item.eventType]), [[7, 'match.swing'], [8, 'team.swing']]);
 
   // Повтор того же повода (например, retry_pending) не отсекается — его решает дедупликация доставки.
-  const retry = harness({ reminders: [{ telegram_id: 5 }], favorites: [], deliveries: [{ telegram_id: 5, event_type: 'match.swing' }] });
+  const retry = harness({ reminders: [{ telegram_id: 5 }], favorites: [], deliveries: [{ telegram_id: 5, event_type: 'match.swing', status: 'retry_pending' }] });
   await retry.job.processMatchSwings({}, new Date(NOW));
   assert.deepEqual(retry.delivered.map(item => item.row.telegram_id), [5]);
+
+  // Неудачная попытка по напоминанию, напоминание снято, команда любимая — сообщение уйдёт как team.swing.
+  const moved = harness({ reminders: [], favorites: [{ telegram_id: 5 }], deliveries: [{ telegram_id: 5, event_type: 'match.swing', status: 'retry_pending' }, { telegram_id: 9, event_type: 'match.swing', status: 'terminal_failed' }] });
+  await moved.job.processMatchSwings({}, new Date(NOW));
+  assert.deepEqual(moved.delivered.map(item => [item.row.telegram_id, item.eventType]), [[5, 'team.swing']]);
+});
+
+test('every qualifying match in a run is handled, no per-run cap', async () => {
+  const ids = Array.from({ length: 14 }, (_, index) => index + 1);
+  const { job, delivered } = harness({ points: ids.map(id => POINT(id)), predictions: ids.map(id => PREDICTION(id)), favorites: [] });
+  const summary = await job.processMatchSwings({}, new Date(NOW));
+  assert.equal(summary.swings, 14);
+  assert.equal(new Set(delivered.map(item => item.row.fixture_id)).size, 14);
 });
 
 test('personal: a truncated audience is reported, not silently dropped', async () => {

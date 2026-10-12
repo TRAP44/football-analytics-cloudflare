@@ -21,7 +21,6 @@ export const MATCH_SWING_POLICY = Object.freeze({
   minDropPp: 25,
   minLeaderProb: 45,
   maxPointAgeMs: 10 * 60_000,
-  maxSwingsPerRun: 10,
   channelDailyCap: 3,
   maxRecipientsPerFixture: 10000,
 });
@@ -29,6 +28,7 @@ export const MATCH_SWING_POLICY = Object.freeze({
 const LIVE_STATUSES = new Set(['1H', 'HT', '2H']);
 const MSK_OFFSET_MS = 3 * 3600_000;
 const SWING_EVENT_KEY = 'swing';
+const MAY_HAVE_REACHED_TELEGRAM = new Set(['claimed', 'sending', 'sent', 'unknown']);
 const SLOT_KEY = (date, slot) => `telegram:channel-publish:v1:swing-slot:${date}:${slot}`;
 const DONE_KEY = fixtureId => `telegram:channel-publish:v1:swing-done:${fixtureId}`;
 
@@ -263,8 +263,12 @@ export function createMatchSwingJob(deps = {}) {
       fixture_id: `eq.${match.fixtureId}`,
       event_type: 'in.("match.swing","team.swing")',
     }, summary);
+    // Отсекает другой повод только доставка, которая могла дойти до Telegram;
+    // неудачная попытка (retry_pending, terminal_failed) не мешает отправить
+    // сообщение по актуальному поводу (ревью Codex #869).
     const deliveredAs = type => new Set(delivered
       .filter(row => String(safeRead(row, 'event_type') || '') === type)
+      .filter(row => MAY_HAVE_REACHED_TELEGRAM.has(String(safeRead(row, 'status') || '')))
       .map(row => positiveId(safeRead(row, 'telegram_id')))
       .filter(Boolean));
     const viaTeam = deliveredAs('team.swing');
@@ -459,7 +463,9 @@ export function createMatchSwingJob(deps = {}) {
       if (swing) swings.push({ match, swing });
     }
     summary.swings = swings.length;
-    for (const { match, swing } of swings.slice(0, MATCH_SWING_POLICY.maxSwingsPerRun)) {
+    // Без лимита на запуск (ревью Codex #869): идущих матчей с точками не больше
+    // 60 (in-play-timeline-job), а пропущенный перелом мог бы уже не повториться.
+    for (const { match, swing } of swings) {
       if (personalEnabled) await notifyPersonal(match, swing, cfg, summary);
       await postToChannel(match, swing, cfg, at, summary);
     }
