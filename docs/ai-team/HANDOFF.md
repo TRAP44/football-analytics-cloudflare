@@ -14,6 +14,15 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-12 — Claude — «Обыграй AI»
+PR: [#864](https://github.com/TRAP44/football-analytics-cloudflare/pull/864), ветка `claude/beat-the-ai`
+Сделано:
+- Миграция `supabase_migration_v6_29_16.sql`: таблица `match_picks` (telegram_id, fixture_id, pick home/draw/away, kickoff_at; PK пользователь+матч), RLS, доступ только service_role (select/insert/update). `backend_schema_fingerprint()` (v1) исключает таблицу — legacy-отпечатки не меняются.
+- `src/match-picks-runtime.js`: `GET/POST /api/match-pick` — прогноз только в матчах с предматчевым снимком модели и только до `model_predictions.kickoff_at`, менять можно до начала; `GET /api/picks-leaderboard` — 30 дней, топ-10, «вы против AI на тех же матчах», ожидающие итога. Очки считаются из `model_predictions` (`status = settled` и `settlement_verification_state` = confirmed/adjudicated, `actual_outcome`), AI = `predicted_outcome`; до проверки финальности — «итог проверяется». Таблица читает все прогнозы окна страницами по 1000 (до 20 000, иначе честная пометка). В таблице — только `first_name` (без @username, фамилии, ссылок). Лимиты: запись 20/мин, таблица 20/мин.
+- UI: `public/modules/beat-ai.js` (ленивый): карточка «🎯 Обыграй AI» во вкладке ✦ AI Штаба матча (кнопки хозяева / ничья / гости, выбор AI показывается после своего, итог +1/0), таблица в Профиле. Ревизия — launch109.
+Решения (Сергей 12.10): Штаб матча + Профиль; 1 очко за исход; только имя из Telegram.
+Осталось / внимание: миграция применена в прод 12.10 (Claude, Supabase MCP, `supabase_migration_v6_29_16`): v2 `449654e6…` (после доп. гранта delete для service_role — `match_picks_service_role_delete_v6_29_16`, как у всех таблиц, иначе падает проверка восстановления), legacy `2557…` без изменений, RLS включён, anon/authenticated без доступа. Чистая установка — v2 `d87de7ad…` (аннотация CI).
+
 ## 2026-10-12 — Claude — Переключатель AI в админке
 PR: [#863](https://github.com/TRAP44/football-analytics-cloudflare/pull/863), ветка `claude/admin-ai-switch`
 Сделано:

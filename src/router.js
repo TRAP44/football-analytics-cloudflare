@@ -54,6 +54,9 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     apiHistoryAnalysis,
     apiMatchExplanation,
     apiMatchQuestion,
+    apiMatchPickGet,
+    apiMatchPickSave,
+    apiPicksLeaderboard,
     apiLaunchFunnel,
     apiMe,
     apiMediaPublisherLink,
@@ -283,6 +286,13 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
   if (method === 'GET' && pathname === '/api/history-analysis') return await apiHistoryAnalysis(request, cfg, user);
   if (method === 'GET' && pathname === '/api/match-explanation') return await apiMatchExplanation(request, cfg, user);
   if (method === 'POST' && pathname === '/api/match-question') return await apiMatchQuestion(request, cfg, user);
+  // «Обыграй AI»: прогноз 1/X/2 до начала матча и таблица лидеров.
+  if (pathname === '/api/match-pick') {
+    if (method === 'GET') return await apiMatchPickGet(request, cfg, user);
+    if (method === 'POST') return await apiMatchPickSave(request, cfg, user);
+    return methodNotAllowed(['GET','POST']);
+  }
+  if (method === 'GET' && pathname === '/api/picks-leaderboard') return await apiPicksLeaderboard(request, cfg, user);
   if (pathname === '/api/favorites') return await apiFavorites(request, cfg, user);
   if (pathname === '/api/favorite-players') return await apiFavoritePlayers(request, cfg, user);
   if (pathname === '/api/digest-settings') return await apiDigestSettings(request, cfg, user);

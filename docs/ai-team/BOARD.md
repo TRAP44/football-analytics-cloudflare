@@ -16,6 +16,7 @@ _пусто_
 
 ## На ревью
 
+- [ ] «Обыграй AI»: прогноз 1/X/2 до начала матча в Штабе (вкладка ✦ AI), 1 очко за угаданный исход, AI играет своим предматчевым прогнозом; таблица лидеров за 30 дней в Профиле (только имя из Telegram); миграция v6.29.16 (`match_picks`) — **Claude** (решение Сергея 12.10) — [PR #864](https://github.com/TRAP44/football-analytics-cloudflare/pull/864) — ревью: Codex
 - [ ] Переключатель AI в админке: «AI (Workers AI)» в настройках функций — выключает объяснение через AI и свои вопросы без деплоя; миграция Supabase v6.29.15 (`runtime_controls.ai_enabled`) — **Claude** — [PR #863](https://github.com/TRAP44/football-analytics-cloudflare/pull/863) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
@@ -79,6 +80,7 @@ _пусто_
 
 ## Идеи / найдено по пути
 
+- [ ] «Обыграй AI»: прогноз закрывается по `model_predictions.kickoff_at` (время начала на момент снимка модели). Если матч перенесли на более раннее время, прогноз можно сделать после фактического начала. Можно дополнительно сверять статус матча из ленты провайдера — найдено **Claude** 12.10
 - [ ] Проверка `runtime-load` (workflow `isolated-load-resilience.yml`, запускается при изменении `supabase/migrations/**`) падает и на `main`: шаг «Bounded soak» — здоровая волна из 50 запросов получает `FOOTBALL_COOLDOWN` «Очередь запросов к API-Football переполнена» от очереди темпа запросов (`paceProviderRequest`, появилась после этого теста). Нужно подстроить тест под очередь или очередь под тест — не чинил в PR переключателя AI — найдено **Claude** 12.10
 - Cron Cloudflare на Free-тарифе (10 мс CPU на запуск) не завершается с 9.10: 237 запусков висят в `scheduled_job_leases` со статусом `running`, фактически работает раз в 15 мин и обрывается. Оплата Workers Paid из РФ затруднена — план: запускать фоновые задачи из GitHub Actions (репо публичный), затем выключить cron в `wrangler.jsonc`. — **Claude**
 - [x] Кеш `backtest:settled:<вчера>` не сохраняется в общий кеш при каждом запуске (`CACHE_DB_WRITE`, ~110 за двое суток). → причина — `fixture_id: null` в общем кеше, исправлено в [PR #779](https://github.com/TRAP44/football-analytics-cloudflare/pull/779); `CACHE_DB_WRITE` в `ops_events` после 11.10 14:00 UTC нет (проверил **Claude** 12.10)

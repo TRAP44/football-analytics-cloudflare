@@ -2445,6 +2445,23 @@ html[data-theme] body.miniapp-public-shell .match-question-answer:not(:empty) { 
 html[data-theme] body.miniapp-public-shell .match-question-asked { margin: 0; font-size: 13px; font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
 html[data-theme] body.miniapp-public-shell .match-question-empty { margin: 0; font-size: 14px; line-height: 1.45; color: var(--hint); }
 html[data-theme] body.miniapp-public-shell .match-question-remaining { font-size: 11px; color: var(--hint); }
+/* «Обыграй AI»: прогноз 1/X/2 и таблица лидеров. */
+html[data-theme] body.miniapp-public-shell .beat-ai-picks .beat-ai-chip { flex: 1 1 0; min-width: 0; text-align: center; overflow-wrap: anywhere; }
+html[data-theme] body.miniapp-public-shell .beat-ai-chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text, #111); }
+html[data-theme] body.miniapp-public-shell .beat-ai[aria-busy="true"] .beat-ai-chip { opacity: .55; pointer-events: none; }
+html[data-theme] body.miniapp-public-shell .beat-ai-line { margin: 6px 0 0; font-size: 14px; line-height: 1.45; color: var(--text); overflow-wrap: anywhere; }
+html[data-theme] body.miniapp-public-shell .beat-ai-line b { color: var(--accent); font-weight: 800; }
+html[data-theme] body.miniapp-public-shell .beat-ai-error { color: var(--hint); font-size: 13px; }
+html[data-theme] body.miniapp-public-shell .beat-ai-board-list { display: grid; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; }
+html[data-theme] body.miniapp-public-shell .beat-ai-board-list > li {
+  display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 8px;
+  padding: 8px 10px; border-radius: 12px; border: 1px solid var(--line); background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+  font-size: 14px; color: var(--text);
+}
+html[data-theme] body.miniapp-public-shell .beat-ai-board-list > li.is-me { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+html[data-theme] body.miniapp-public-shell .beat-ai-rank { font-weight: 800; color: var(--accent); text-align: center; }
+html[data-theme] body.miniapp-public-shell .beat-ai-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-theme] body.miniapp-public-shell .beat-ai-points { font-weight: 700; color: var(--hint); white-space: nowrap; }
 /* Задача 4: экран составов — 2.5D поле (перспектива расчётом координат). */
 html[data-theme] body.miniapp-public-shell .lp-view { display: grid; gap: 10px; }
 html[data-theme] body.miniapp-public-shell .lp-team { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
