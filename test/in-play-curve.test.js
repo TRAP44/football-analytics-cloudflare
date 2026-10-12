@@ -62,6 +62,12 @@ const liveRow = (id, home, away, elapsed, status = '2H') => ({
 
 test('live state is read only from the provider row', () => {
   assert.deepEqual(liveFixtureState(liveRow(7, 1, 0, 61)), { fixtureId: 7, status: '2H', minute: 61, homeGoals: 1, awayGoals: 0 });
+  assert.deepEqual(
+    liveFixtureState({ ...liveRow(7, 1, 0, 61), teams: { home: { id: 10 }, away: { id: 20 } } }).teams,
+    { home: 10, away: 20 },
+    'team ids are kept for red-card alerts',
+  );
+  assert.equal(liveFixtureState({ ...liveRow(7, 1, 0, 61), teams: { home: { id: 10 }, away: { id: 10 } } }).teams, undefined);
   for (const row of [liveRow(7, 1, 0, 61, 'FT'), liveRow(7, 1, 0, 61, 'ET'), liveRow(7, null, 0, 61), liveRow(0, 1, 0, 61), liveRow(7, 1, 0, null)]) {
     assert.equal(liveFixtureState(row), null);
   }
@@ -80,6 +86,8 @@ test('a new point is stored on a score change or a shift of at least 1 point', (
   assert.equal(row.causal_relation, 'confirmed');
   assert.deepEqual(row.provenance.score, { home: 1, away: 0 });
   assert.equal(row.provenance.source, 'in_play_model');
+  assert.equal(row.provenance.teams, undefined, 'no team ids — no field');
+  assert.deepEqual(inPlaySnapshotRow({ ...state, teams: { home: 10, away: 20 } }, probabilities, null, 'x').provenance.teams, { home: 10, away: 20 });
   // Значения проходят ограничения таблицы analysis_timeline_snapshots.
   assert.ok(['baseline', 'lineup', 'availability', 'odds_move', 'event', 'model_update'].includes(inPlaySnapshotRow(state, probabilities, { score: { home: 1, away: 0 } }, 'x').trigger_category));
 });
@@ -169,7 +177,10 @@ test('the chart shows in-play points during the match and says what they account
 
 test('the in-play task runs with the other background tasks', () => {
   const jobs = fs.readFileSync('src/scheduled-jobs.js', 'utf8');
-  assert.match(jobs, /\['in_play_timeline', run\('in_play_timeline', \(\) => processInPlayTimeline\(cfg, scheduledAt\)\)\]/);
+  assert.match(jobs, /run\('in_play_timeline', \(\) => processInPlayTimeline\(cfg, scheduledAt\)\)/);
+  assert.match(jobs, /tasks\.push\(\['in_play_timeline', inPlayTimelineTask\]\)/);
+  // Уведомления о голах ждут точку с новым счётом.
+  assert.match(jobs, /Promise\.all\(\[importantChangeTask, inPlayTimelineTask\]\)\s*\.then\(\(\) => run\('smart_notifications'/);
   const worker = fs.readFileSync('src/worker.js', 'utf8');
   assert.match(worker, /createInPlayTimelineJob\(\{/);
 });
