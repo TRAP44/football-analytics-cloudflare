@@ -194,6 +194,7 @@ export function createScheduledJobsRuntime({
   processPostMatchReturns,
   processPrematchPredictions,
   processInPlayTimeline,
+  processChannelDailyPost,
   runProductionMonitor,
   processDailyDigests,
   cleanupOpsEvents,
@@ -483,6 +484,11 @@ export function createScheduledJobsRuntime({
     }
 
     if (dailyDigestTask) tasks.push(['daily_digest', dailyDigestTask]);
+
+    // Ежедневный пост «Матчи дня» в канал (окно 11:00 МСК; задание само держит идемпотентность).
+    if (typeof processChannelDailyPost === 'function' && scheduledAt.getUTCHours() === 8 && scheduledAt.getUTCMinutes() < 15) {
+      tasks.push(['channel_daily_post', run('channel_daily_post', () => processChannelDailyPost(cfg, scheduledAt))]);
+    }
 
     if (scheduledAt.getUTCHours() === 3 && scheduledAt.getUTCMinutes() < 15) {
       tasks.push(['ops_cleanup', runDailyTaskOnce('ops_cleanup', () => cleanupOpsEvents(cfg), cfg, scheduledAt, ownershipState)]);

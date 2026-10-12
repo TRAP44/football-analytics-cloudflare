@@ -42,6 +42,7 @@ import { createMatchPicksRuntime } from './match-picks-runtime.js';
 import { createPrematchPredictionJob } from './prematch-prediction-job.js';
 import { createProviderStatusProbe } from './provider-status-probe.js';
 import { createInPlayTimelineJob } from './in-play-timeline-job.js';
+import { createChannelDailyPostJob } from './channel-daily-post-job.js';
 import { createBillingRuntime } from './billing-runtime.js';
 import { createBillingApiRuntime } from './billing-api-runtime.js';
 import { createClientTelemetryRuntime } from './client-telemetry-runtime.js';
@@ -1720,6 +1721,27 @@ function getInPlayTimelineJob() {
 }
 function processInPlayTimeline(...args) { return getInPlayTimelineJob().processInPlayTimeline(...args); }
 
+let channelDailyPostJob = null;
+function getChannelDailyPostJob() {
+  if (!channelDailyPostJob) {
+    channelDailyPostJob = createChannelDailyPostJob({
+      claimIdempotency: (...args) => claimChannelPublishIdempotency(...args),
+      clock: () => Date.now(),
+      completeIdempotency: (...args) => completeChannelPublishIdempotency(...args),
+      fixtureTelegramDeepLink: (...args) => fixtureTelegramDeepLink(...args),
+      getCache,
+      getModelProbabilities: (...args) => getModelProbabilities(...args),
+      isMainFixture: row => isTopLeague(Number(row?.league?.id), String(row?.league?.name || '')) === true,
+      loadProviderFixturesForDate: (...args) => loadProviderFixturesForDate(...args),
+      recordOpsEvent,
+      releaseIdempotency: (...args) => releaseChannelPublishIdempotency(...args),
+      setCache,
+    });
+  }
+  return channelDailyPostJob;
+}
+function processChannelDailyPost(...args) { return getChannelDailyPostJob().processChannelDailyPost(...args); }
+
 const {
   sendTelegramMessage,
   probeReminderReliabilitySchema,
@@ -3239,6 +3261,7 @@ const {
   processPostMatchReturns,
   processPrematchPredictions,
   processInPlayTimeline,
+  processChannelDailyPost,
   processSmartNotifications,
   productionSafetySnapshot,
   providerAuditCall,
