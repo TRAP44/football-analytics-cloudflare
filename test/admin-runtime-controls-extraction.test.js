@@ -455,6 +455,7 @@ test('defaults restore emits safe defaults through the same PATCH mutation contr
     remindersEnabled: true,
     expandedDataEnabled: true,
     autoSettlementRecoveryEnabled: false,
+    aiEnabled: true,
     message: '',
     reason: 'Администратор восстановил безопасные настройки.',
     action: 'defaults',

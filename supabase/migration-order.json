@@ -203,6 +203,10 @@
     {
       "path": "migrations/supabase_migration_v6_29_14.sql",
       "gitBlobSha": "feb23d187edc1f8a487defd36784dee205397824"
+    },
+    {
+      "path": "migrations/supabase_migration_v6_29_15.sql",
+      "gitBlobSha": "04a24815f2859a0d2c3cc3ee133a1d6f4754e4df"
     }
   ],
   "notes": [

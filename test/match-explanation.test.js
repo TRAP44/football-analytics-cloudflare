@@ -286,3 +286,19 @@ test('wiring: route, rate policy, Workers AI binding without secrets, same analy
   assert.match(fs.readFileSync('src/analysis-runtime.js', 'utf8'), /const cacheKey=`fixture:\$\{fixtureId\}:v17-starting-xi-rc146`/);
   assert.equal(EXPLANATION_ANALYSIS_CACHE_KEY(5), 'fixture:5:v17-starting-xi-rc146');
 });
+
+test('API: AI switch off — default fact order, no model call and no cached AI ordering', async () => {
+  const controls = { analysisEnabled: true, maintenanceMode: false, aiEnabled: false };
+  const fresh = runtime({ controls });
+  const res = await fresh.call();
+  assert.equal(res.body.available, true);
+  assert.equal(res.body.source, 'default');
+  assert.equal(res.body.reason, 'ai_disabled');
+  assert.equal(fresh.calls.ai, 0);
+  assert.equal(fresh.calls.rpc.length, 0, 'no AI limits are spent');
+
+  const cached = runtime({ controls, cached: { factIds: ['model_lead', 'h2h', 'lineups_pending'] } });
+  const fromCache = await cached.call();
+  assert.equal(fromCache.body.source, 'default', 'cached AI ordering is ignored while AI is off');
+  assert.equal(fromCache.body.reason, 'ai_disabled');
+});

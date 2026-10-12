@@ -317,17 +317,17 @@ const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
 const RELEASE_CHANNEL = 'rc144';
 const RC_NAME = 'RC144';
-const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: примените миграции до v6.29.14, включая проверенные LIVE-снимки давления.';
+const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: примените миграции до v6.29.15, включая переключатель AI в настройках функций.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_CONTRACT_VERSION = 2;
-const EXPECTED_SCHEMA_FINGERPRINT = 'f3d899ff05789e6cfb257abe011872d2';
-const FRESH_INSTALL_SCHEMA_FINGERPRINT = 'd0ecfedbd63abc305ad7f57aa298cabd';
-// The prior v2 contract remains accepted briefly for a safe phased rollout.
+const EXPECTED_SCHEMA_FINGERPRINT = 'c7164151f40be1a7af4271789f5d2c1c';
+const FRESH_INSTALL_SCHEMA_FINGERPRINT = '13c5b940bcc5d0d0496b7d4107a6c31c';
+// The prior v2 contract (before v6.29.15) remains accepted for a safe phased rollout.
 const COMPATIBLE_SCHEMA_FINGERPRINTS = Object.freeze([
   EXPECTED_SCHEMA_FINGERPRINT,
   FRESH_INSTALL_SCHEMA_FINGERPRINT,
-  '4e7b6afc69b45ab3e5eecc4685d75c73',
-  '289d4be4a3546443d48ff5f0b8bd6dcb',
+  'f3d899ff05789e6cfb257abe011872d2',
+  'd0ecfedbd63abc305ad7f57aa298cabd',
 ]);
 
 const { json, adminForbidden, publicRouteError } = createHttpRuntime({
@@ -346,6 +346,7 @@ const DEFAULT_RUNTIME_CONTROLS = Object.freeze({
   remindersEnabled: true,
   expandedDataEnabled: true,
   autoSettlementRecoveryEnabled: false,
+  aiEnabled: true,
   message: '',
   revision: 1,
   updatedAt: null,
@@ -633,6 +634,7 @@ const {
   enc,
   fetchWithTimeout: (...args) => fetchWithTimeout(...args),
   getAnalysisTimelineSnapshots: (...args) => getAnalysisTimelineSnapshots(...args),
+  getLatestInPlayEstimate: (...args) => getLatestInPlayEstimate(...args),
   getOddsSnapshots: (...args) => getOddsSnapshots(...args),
   getUserRecord: (...args) => getUserRecord(...args),
   hasSupabase: (...args) => hasSupabase(...args),
@@ -2404,6 +2406,32 @@ async function getModelProbabilities(fixtureIds, cfg) {
     result[id] = { home, draw, away };
   }
   return result;
+}
+
+// Последняя точка оценки по ходу матча для уведомлений о голах/удалениях.
+async function getLatestInPlayEstimate(fixtureId, cfg) {
+  const id = Number(fixtureId);
+  if (!Number.isSafeInteger(id) || id <= 0 || !hasSupabase(cfg)) return null;
+  const rows = await supaSelectMany(cfg, 'analysis_timeline_snapshots', {
+    fixture_id: `eq.${id}`,
+    snapshot_key: 'like.in-play:*',
+  }, {
+    limit: 1,
+    order: 'captured_at.desc',
+    select: 'home_prob,draw_prob,away_prob,match_minute,captured_at,provenance',
+  });
+  const row = Array.isArray(rows) ? rows[0] : null;
+  if (!row) return null;
+  return {
+    home: Number(row.home_prob),
+    draw: Number(row.draw_prob),
+    away: Number(row.away_prob),
+    minute: row.match_minute,
+    capturedAt: row.captured_at,
+    score: row.provenance && typeof row.provenance === 'object' ? row.provenance.score : null,
+    reds: row.provenance && typeof row.provenance === 'object' ? row.provenance.reds : null,
+    teams: row.provenance && typeof row.provenance === 'object' ? row.provenance.teams : null,
+  };
 }
 
 // Задача 3 (часть 2): последняя оценка по ходу матча (точка кривой in_play_model)

@@ -169,6 +169,7 @@ export function failClosedRuntimeControls(previous = {}, reason = 'control_plane
     remindersEnabled:false,
     expandedDataEnabled:false,
     autoSettlementRecoveryEnabled:false,
+    aiEnabled:false,
     message:CONTROL_PLANE_FAIL_CLOSED_MESSAGE,
     revision:positiveRevision(safeRead(source,'revision')),
     updatedAt:cleanTimestamp(safeRead(source,'updatedAt')),

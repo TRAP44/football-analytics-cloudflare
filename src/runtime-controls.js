@@ -129,6 +129,7 @@ function normalizeDefaults(defaults) {
     remindersEnabled:strictBoolean(source.remindersEnabled,true),
     expandedDataEnabled:strictBoolean(source.expandedDataEnabled,true),
     autoSettlementRecoveryEnabled:strictBoolean(source.autoSettlementRecoveryEnabled,false),
+    aiEnabled:strictBoolean(source.aiEnabled,true),
     message:cleanText(source.message,'',280),
     revision:positiveRevision(source.revision,1),
     updatedAt:timestampString(source.updatedAt),
@@ -153,6 +154,18 @@ function inspectRuntimeControls(row,defaults,{requireComplete=false}={}) {
       if (requireComplete) valid=false;
       return fallback;
     }
+    if (typeof raw !== 'boolean') {
+      valid=false;
+      return fallback;
+    }
+    return raw;
+  };
+  // Переключатель AI (v6.29.15) необязателен: строка из базы до миграции и
+  // старые точки журнала его не содержат — тогда AI включён. Неверный тип —
+  // по-прежнему ошибка.
+  const optionalBooleanField=(snake,camel,fallback)=>{
+    const raw=controlInputValue(source,snake,camel);
+    if (raw === undefined || raw === null) return fallback;
     if (typeof raw !== 'boolean') {
       valid=false;
       return fallback;
@@ -187,6 +200,7 @@ function inspectRuntimeControls(row,defaults,{requireComplete=false}={}) {
       'autoSettlementRecoveryEnabled',
       defaults.autoSettlementRecoveryEnabled,
     ),
+    aiEnabled:optionalBooleanField('ai_enabled','aiEnabled',defaults.aiEnabled),
     message:cleanText(rawMessage,'',280),
     revision:revision || defaults.revision,
     updatedAt,
@@ -196,7 +210,14 @@ function inspectRuntimeControls(row,defaults,{requireComplete=false}={}) {
 
 function validMutationControls(body) {
   const source=plainObject(body);
-  return CONTROL_BOOLEAN_FIELDS.every(key=>typeof source[key] === 'boolean');
+  return CONTROL_BOOLEAN_FIELDS.every(key=>typeof source[key] === 'boolean')
+    && (source.aiEnabled === undefined || typeof source.aiEnabled === 'boolean');
+}
+
+// Есть ли в строке runtime_controls колонка ai_enabled (миграция v6.29.15).
+function hasAiColumn(row) {
+  const source=plainObject(row);
+  return source === row && Object.hasOwn(source,'ai_enabled') && typeof source.ai_enabled === 'boolean';
 }
 
 // Bounded runtime-controls domain extracted from worker.js.
@@ -327,6 +348,7 @@ export function createRuntimeControlsRuntime({
         source:'supabase',
         schemaReady:true,
         failClosed:false,
+        aiColumnReady:hasAiColumn(row),
       };
       return {...memory.runtimeControls,cached:false};
     } catch (error) {
@@ -344,6 +366,7 @@ export function createRuntimeControlsRuntime({
       remindersEnabled:c.remindersEnabled,
       expandedDataEnabled:c.expandedDataEnabled,
       autoSettlementRecoveryEnabled:c.autoSettlementRecoveryEnabled,
+      aiEnabled:c.aiEnabled,
       securityLockdown:c.securityLockdown === true,
       message:c.message,
       revision:c.revision,
@@ -488,6 +511,7 @@ export function createRuntimeControlsRuntime({
       remindersEnabled:target.remindersEnabled,
       expandedDataEnabled:target.expandedDataEnabled,
       autoSettlementRecoveryEnabled:target.autoSettlementRecoveryEnabled,
+      aiEnabled:target.aiEnabled,
       message:target.message,
       reason:cleanText(source.reason,`Rollback to revision ${rowRevision}`,240),
       action:'rollback',
@@ -601,7 +625,21 @@ export function createRuntimeControlsRuntime({
       autoSettlementRecoveryEnabled:lockdownRequested || lockdownReleaseRequested
         ? false
         : source.autoSettlementRecoveryEnabled,
+      // Не передан (старая панель) — остаётся как есть.
+      aiEnabled:lockdownRequested ? false : lockdownReleaseRequested ? true
+        : typeof source.aiEnabled === 'boolean' ? source.aiEnabled : current.aiEnabled !== false,
     };
+    // До миграции v6.29.15 колонки нет: выключить AI нельзя, остальные
+    // настройки сохраняются как раньше.
+    const aiColumnReady=currentState.aiColumnReady === true;
+    if (!aiColumnReady && proposed.aiEnabled === false && !lockdownRequested) {
+      return {
+        error:'Переключатель AI появится после миграции Supabase v6.29.15.',
+        code:'RUNTIME_CONTROLS_AI_SCHEMA',
+        status:503,
+        current:publicRuntimeControls(current),
+      };
+    }
 
     if (wasSecurityLockdown && changeAction === 'update' && !isSecurityLockdownControls(proposed)) {
       return {
@@ -640,6 +678,7 @@ export function createRuntimeControlsRuntime({
       reminders_enabled:proposed.remindersEnabled,
       expanded_data_enabled:proposed.expandedDataEnabled,
       auto_settlement_recovery_enabled:proposed.autoSettlementRecoveryEnabled,
+      ...(aiColumnReady ? {ai_enabled:proposed.aiEnabled} : {}),
       message:lockdownRequested
         ? cleanText(source.message,'Аварийный режим безопасности активен. Изменения временно недоступны.',280)
         : lockdownReleaseRequested
@@ -723,6 +762,7 @@ export function createRuntimeControlsRuntime({
     const committedMatches=committed.valid
       && value.revision === expectedRevision+1
       && CONTROL_BOOLEAN_FIELDS.every(key=>value[key] === proposed[key])
+      && (!aiColumnReady || (hasAiColumn(rows[0]) && value.aiEnabled === proposed.aiEnabled))
       && value.message === next.message;
     if (!committedMatches) {
       const failureReason='Настройки не подтверждены: база данных вернула некорректное состояние.';
@@ -742,6 +782,7 @@ export function createRuntimeControlsRuntime({
       source:'supabase',
       schemaReady:true,
       failClosed:false,
+      aiColumnReady:hasAiColumn(rows[0]),
     };
 
     const securityLockdown=isSecurityLockdownControls(value);
@@ -773,6 +814,7 @@ export function createRuntimeControlsRuntime({
         remindersEnabled:value.remindersEnabled,
         expandedDataEnabled:value.expandedDataEnabled,
         autoSettlementRecoveryEnabled:value.autoSettlementRecoveryEnabled,
+        aiEnabled:value.aiEnabled,
         securityLockdown,
         action:changeAction,
         reason:changeReason,
