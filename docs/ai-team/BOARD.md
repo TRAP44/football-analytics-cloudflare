@@ -16,7 +16,7 @@ _пусто_
 
 ## На ревью
 
-- [ ] Цены ×≈2 (решение Сергея 12.10): Match Pass 75 ⭐, Day Pass 150 ⭐, 7 дней 299 ⭐, PRO 499 ⭐/30 дней, Premium 999 ⭐/30 дней — переменные в `wrangler.jsonc` — **Claude** — PR: ветка `claude/prices-x2` — ревью: Codex
+- [ ] Цены ×≈2 (решение Сергея 12.10): Match Pass 75 ⭐, Day Pass 150 ⭐, 7 дней 299 ⭐, PRO 499 ⭐/30 дней, Premium 999 ⭐/30 дней — переменные в `wrangler.jsonc` — **Claude** — [PR #867](https://github.com/TRAP44/football-analytics-cloudflare/pull/867) — ревью: Codex
 - [ ] Канал: ежедневный пост «Матчи дня по версии модели» (11:00 МСК, до 5 матчей с предматчевым прогнозом, без ставочных слов). Выключен (`CHANNEL_DAILY_POST_ENABLED=false`): пока раз в сутки пишет предпросмотр в `ops_events` — включать после одобрения текста Сергеем — **Claude** (решение Сергея 12.10) — [PR #860](https://github.com/TRAP44/football-analytics-cloudflare/pull/860) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
