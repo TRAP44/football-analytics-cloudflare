@@ -178,7 +178,7 @@ test('migration v6.29.15 adds the column, keeps the legacy fingerprint frozen an
   assert.match(sql, /alter table public\.runtime_controls\s+add column if not exists ai_enabled boolean not null default true;/);
   assert.match(sql, /or \(c\.table_name = 'runtime_controls' and c\.column_name = 'ai_enabled'\)/);
   assert.match(sql, /'aiEnabled', new\.ai_enabled,/);
-  assert.match(sql, /create rule runtime_controls_atomic_history as\non update to public\.runtime_controls\nwhere old\.revision is distinct from new\.revision/);
+  assert.match(sql, /create or replace rule runtime_controls_atomic_history as\non update to public\.runtime_controls\nwhere old\.revision is distinct from new\.revision/);
   // Определение Security Lockdown в журнале не меняется.
   assert.doesNotMatch(sql, /and not new\.ai_enabled/);
   const contract = JSON.parse(fs.readFileSync('release-contract.json', 'utf8'));

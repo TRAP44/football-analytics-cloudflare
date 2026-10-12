@@ -154,9 +154,9 @@ grant execute on function public.backend_schema_fingerprint()
   to service_role;
 
 
-drop rule if exists runtime_controls_atomic_history on public.runtime_controls;
-
-create rule runtime_controls_atomic_history as
+-- create or replace keeps the rule in place atomically (no window without the
+-- history rule, no drop statement).
+create or replace rule runtime_controls_atomic_history as
 on update to public.runtime_controls
 where old.revision is distinct from new.revision
 do also
