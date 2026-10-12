@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-12 — Claude — Карточка «AI угадал»
-PR: ветка `claude/ai-guessed-card`
+PR: [#866](https://github.com/TRAP44/football-analytics-cloudflare/pull/866), ветка `claude/ai-guessed-card`
 Сделано:
 - `/api/match-pick`: в проверенном итоге (`result`, только при confirmed/adjudicated) — счёт `actual_home/away_goals`, вероятность выбранного AI исхода из того же предматчевого снимка (`aiProbability`, только если сумма 98–102), названия команд и турнира из `model_predictions`.
 - `public/modules/ai-guessed-card.js`: модель карточки (кто угадал → «Вы и AI угадали» / «AI угадал» / «Вы обыграли AI»; никто — карточки нет), рисование в canvas 1080×1080 (тёмная база, янтарь `#fbbf24`), шаринг: `navigator.share({files})`, если поддерживается, иначе окно с картинкой и подсказкой «нажмите и удерживайте». Кнопка «📸 Карточка …» — в карточке «Обыграй AI» после итога. Ревизия — launch110.
