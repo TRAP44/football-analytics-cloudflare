@@ -285,7 +285,29 @@ function minuteLabel(event = {}) {
   return extra !== null && extra > 0 ? `${minute}+${extra}′` : `${minute}′`;
 }
 
-function matchEventMessage(row, event, eventType) {
+// Оценка модели по ходу матча для уведомления о голе/удалении — только если
+// она свежая и уже учитывает все голы, которые видит уведомление.
+const IN_PLAY_ESTIMATE_MAX_AGE_MS = 10 * 60_000;
+export function inPlayEstimateLine(row, estimate, events = [], now = Date.now()) {
+  if (!estimate || typeof estimate !== 'object') return '';
+  const values = ['home', 'draw', 'away'].map(key => Number(estimate[key]));
+  if (!values.every(value => Number.isFinite(value) && value >= 0 && value <= 100)) return '';
+  const sum = values[0] + values[1] + values[2];
+  if (sum < 98 || sum > 102) return '';
+  const capturedMs = Date.parse(String(estimate.capturedAt || ''));
+  if (!Number.isFinite(capturedMs) || now - capturedMs > IN_PLAY_ESTIMATE_MAX_AGE_MS || capturedMs - now > 60_000) return '';
+  const scoreHome = integerCandidate(estimate.score?.home);
+  const scoreAway = integerCandidate(estimate.score?.away);
+  if (scoreHome === null || scoreAway === null) return '';
+  const goals = asRows(events).filter(isGoal).length;
+  if (scoreHome + scoreAway !== goals) return '';
+  const minute = integerCandidate(estimate.minute);
+  const percent = value => `${Math.round(value)}%`;
+  return `📊 Оценка модели сейчас (${scoreHome}:${scoreAway}${minute !== null ? `, ${minute}′` : ''}): `
+    + `${row?.home_name || 'Хозяева'} ${percent(values[0])} · Ничья ${percent(values[1])} · ${row?.away_name || 'Гости'} ${percent(values[2])}`;
+}
+
+function matchEventMessage(row, event, eventType, estimateLine = '') {
   const title = eventType === 'match.goal' ? '⚽ Гол' : '🟥 Красная карточка';
   const actor = String(event.playerName || event.player || '').trim();
   const team = String(event.teamName || '').trim();
@@ -295,6 +317,7 @@ function matchEventMessage(row, event, eventType) {
     `${row?.home_name || 'Хозяева'} — ${row?.away_name || 'Гости'}`,
     [minuteLabel(event), team].filter(Boolean).join(' · '),
     actor,
+    estimateLine,
     '',
     'Откройте MatchRadar, чтобы увидеть обновлённый контекст матча.',
   ].filter(Boolean).join('\n');
@@ -414,6 +437,7 @@ export function createSmartNotificationService({
   loadLiveNotificationSnapshot,
   loadLineupSnapshot,
   getAnalysisTimelineSnapshots,
+  loadLatestInPlayEstimate,
   deliverSmartNotification,
   recordOpsEvent,
   maxFixturesPerRun = SMART_NOTIFICATION_POLICY.maxFixturesPerRun,
@@ -601,7 +625,16 @@ export function createSmartNotificationService({
 
         if (snapshot?.trusted === true && snapshot?.stale !== true) {
           const elapsed = minutesToKickoff < 0 ? Math.max(0, Math.floor(-minutesToKickoff)) : 0;
-          for (const event of notificationEventsFromSnapshot(snapshot, { elapsed })) {
+          const snapshotEvents = notificationEventsFromSnapshot(snapshot, { elapsed });
+          let estimate = null;
+          if (typeof loadLatestInPlayEstimate === 'function' && snapshotEvents.some(event => matchEventType(event))) {
+            try {
+              estimate = await loadLatestInPlayEstimate(fixtureId, cfg);
+            } catch {
+              estimate = null;
+            }
+          }
+          for (const event of snapshotEvents) {
             const basicType = matchEventType(event);
             if (basicType) {
               const eligible = basicType === 'match.goal'
@@ -617,7 +650,7 @@ export function createSmartNotificationService({
                   row,
                   eventType: basicType,
                   category: notificationCategory(basicType),
-                  text: matchEventMessage(row, event, basicType),
+                  text: matchEventMessage(row, event, basicType, inPlayEstimateLine(row, estimate, snapshotEvents)),
                   dedupeKey,
                 });
               }

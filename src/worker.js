@@ -631,6 +631,7 @@ const {
   enc,
   fetchWithTimeout: (...args) => fetchWithTimeout(...args),
   getAnalysisTimelineSnapshots: (...args) => getAnalysisTimelineSnapshots(...args),
+  getLatestInPlayEstimate: (...args) => getLatestInPlayEstimate(...args),
   getOddsSnapshots: (...args) => getOddsSnapshots(...args),
   getUserRecord: (...args) => getUserRecord(...args),
   hasSupabase: (...args) => hasSupabase(...args),
@@ -2365,6 +2366,30 @@ async function getModelProbabilities(fixtureIds, cfg) {
     result[id] = { home, draw, away };
   }
   return result;
+}
+
+// Последняя точка оценки по ходу матча для уведомлений о голах/удалениях.
+async function getLatestInPlayEstimate(fixtureId, cfg) {
+  const id = Number(fixtureId);
+  if (!Number.isSafeInteger(id) || id <= 0 || !hasSupabase(cfg)) return null;
+  const rows = await supaSelectMany(cfg, 'analysis_timeline_snapshots', {
+    fixture_id: `eq.${id}`,
+    snapshot_key: 'like.in-play:*',
+  }, {
+    limit: 1,
+    order: 'captured_at.desc',
+    select: 'home_prob,draw_prob,away_prob,match_minute,captured_at,provenance',
+  });
+  const row = Array.isArray(rows) ? rows[0] : null;
+  if (!row) return null;
+  return {
+    home: Number(row.home_prob),
+    draw: Number(row.draw_prob),
+    away: Number(row.away_prob),
+    minute: row.match_minute,
+    capturedAt: row.captured_at,
+    score: row.provenance && typeof row.provenance === 'object' ? row.provenance.score : null,
+  };
 }
 
 let userDataApiRuntime = null;
