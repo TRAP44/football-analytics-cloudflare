@@ -2389,6 +2389,7 @@ async function getLatestInPlayEstimate(fixtureId, cfg) {
     minute: row.match_minute,
     capturedAt: row.captured_at,
     score: row.provenance && typeof row.provenance === 'object' ? row.provenance.score : null,
+    reds: row.provenance && typeof row.provenance === 'object' ? row.provenance.reds : null,
   };
 }
 

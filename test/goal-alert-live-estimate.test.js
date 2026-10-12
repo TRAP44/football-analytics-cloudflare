@@ -24,6 +24,17 @@ test('no line when the estimate is stale, before the goal or broken', () => {
   assert.equal(inPlayEstimateLine(row, { ...estimate, score: { home: 0, away: 0 } }, [{ type: 'Goal', detail: 'Missed Penalty' }], NOW).startsWith('📊'), true);
 });
 
+test('a red-card alert needs an estimate that already counts the dismissal', () => {
+  const red = { type: 'Card', detail: 'Red Card' };
+  const before = { ...estimate, reds: { home: 0, away: 0, source: 'events' } };
+  const after = { ...estimate, reds: { home: 0, away: 1, source: 'events' } };
+  assert.equal(inPlayEstimateLine(row, before, [goal, red], NOW), '', 'estimate made before the red card');
+  assert.equal(inPlayEstimateLine(row, { ...estimate, reds: null }, [goal, red], NOW), '', 'reds unknown');
+  assert.equal(inPlayEstimateLine(row, after, [goal, red], NOW).startsWith('📊'), true);
+  assert.equal(inPlayEstimateLine(row, after, [goal], NOW), '', 'estimate counts a red card the alert does not see');
+  assert.equal(inPlayEstimateLine(row, { ...estimate, reds: { home: 'x', away: 0 } }, [goal], NOW), '');
+});
+
 test('the alert asks for the estimate once per fixture and only when there is a goal or red card', async () => {
   const fs = await import('node:fs');
   const source = fs.readFileSync('src/smart-notification-service.js', 'utf8');
@@ -31,4 +42,6 @@ test('the alert asks for the estimate once per fixture and only when there is a 
   assert.match(source, /text: matchEventMessage\(row, event, basicType, inPlayEstimateLine\(row, estimate, snapshotEvents\)\)/);
   const wiring = fs.readFileSync('src/service-wiring-runtime.js', 'utf8');
   assert.match(wiring, /loadLatestInPlayEstimate: getLatestInPlayEstimate/);
+  const worker = fs.readFileSync('src/worker.js', 'utf8');
+  assert.match(worker, /reds: row\.provenance && typeof row\.provenance === 'object' \? row\.provenance\.reds : null/);
 });

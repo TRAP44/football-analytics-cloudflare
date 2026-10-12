@@ -301,6 +301,13 @@ export function inPlayEstimateLine(row, estimate, events = [], now = Date.now())
   if (scoreHome === null || scoreAway === null) return '';
   const goals = asRows(events).filter(isGoal).length;
   if (scoreHome + scoreAway !== goals) return '';
+  // Удаления тоже должны быть уже учтены (ревью Codex #859): иначе после
+  // красной карточки в сообщение попала бы оценка, посчитанная до неё.
+  const redHome = estimate.reds ? integerCandidate(estimate.reds.home ?? 0) : 0;
+  const redAway = estimate.reds ? integerCandidate(estimate.reds.away ?? 0) : 0;
+  if (redHome === null || redAway === null) return '';
+  const redEvents = asRows(events).filter(isRedCard).length;
+  if (redHome + redAway !== redEvents) return '';
   const minute = integerCandidate(estimate.minute);
   const percent = value => `${Math.round(value)}%`;
   return `📊 Оценка модели сейчас (${scoreHome}:${scoreAway}${minute !== null ? `, ${minute}′` : ''}): `
