@@ -568,8 +568,13 @@ export function createTelegramDigestRuntime(deps = {}) {
   // 5 минут) → устаревший кэш матчей. Пустой ответ — только если данных нет нигде.
   const BOT_FINISHED_STATUSES=new Set(['FT','AET','PEN']);
 
-  function botCardsFromFixtures(fixtures) {
-    return digestFixtureRows(fixtures,20).map(match=>{
+  // keep — фильтр по статусу до ограничения в 20 матчей (ревью Codex #875: иначе 20 важных
+  // завершённых матчей вытесняли предстоящие).
+  function botCardsFromFixtures(fixtures, keep = () => true) {
+    const source=rowsOf(fixtures).filter(f=>{
+      try { return keep(String(f?.fixture?.status?.short || '').toUpperCase()); } catch { return false; }
+    });
+    return digestFixtureRows(source,20).map(match=>{
       try { return normalizeBotFixtureCard(match); } catch { return null; }
     }).filter(x=>positiveSafeInteger(x?.fixtureId));
   }
@@ -588,12 +593,19 @@ export function createTelegramDigestRuntime(deps = {}) {
     // одном нужных матчей нет, проверяется следующий (ревью Codex #875 — кэш матчей ограничен
     // 120 играми по важности и может не содержать LIVE, которые есть в снимке провайдера).
     const wanted=cards=>cards.filter(x=>liveOnly ? x.live : isOpen(x));
+    const keepStatus=status=>liveOnly ? isLiveStatus(status)===true : !BOT_FINISHED_STATUSES.has(status);
+    // Запасной список для «Матчей сегодня», если открытых нет нигде: первые карточки без фильтра.
+    let fallbackFixtures=null;
+    const fromFixtures=fixtures=>{
+      if (!fallbackFixtures && rowsOf(fixtures).length) fallbackFixtures=fixtures;
+      return botCardsFromFixtures(fixtures,keepStatus);
+    };
     const sources=[
       async()=>botCardsFromMatchCache(await getCache(matchCacheKey,cfg).catch(()=>null)),
       async()=>freeQuotaHealthy(8,1)
-        ? botCardsFromFixtures(await loadProviderFixturesForDate(date,cfg).catch(()=>[]))
+        ? fromFixtures(await loadProviderFixturesForDate(date,cfg).catch(()=>[]))
         : [],
-      async()=>botCardsFromFixtures((await getStaleCache(`provider-fixtures:${date}:v1`,cfg).catch(()=>null))?.fixtures),
+      async()=>fromFixtures((await getStaleCache(`provider-fixtures:${date}:v1`,cfg).catch(()=>null))?.fixtures),
       async()=>botCardsFromMatchCache(await getStaleCache(matchCacheKey,cfg).catch(()=>null)),
     ];
     let matches=[];
@@ -605,7 +617,7 @@ export function createTelegramDigestRuntime(deps = {}) {
       if (matches.length) break;
     }
     // «Матчи сегодня» без открытых матчей — показать завершённые, а не пустой ответ.
-    if (!matches.length && !liveOnly) matches=fallback;
+    if (!matches.length && !liveOnly) matches=fallback.length ? fallback : botCardsFromFixtures(fallbackFixtures);
     matches.sort((a,b)=>Number(b.live)-Number(a.live) || Date.parse(a.date || 0)-Date.parse(b.date || 0));
     return matches.slice(0,boundedLimit(limit,8,12));
   }

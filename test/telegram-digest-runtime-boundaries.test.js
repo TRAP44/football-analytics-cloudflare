@@ -368,3 +368,18 @@ test('LIVE keeps looking past a fresh match cache that has no live games (Codex 
   await api.sendBotDayMatches({url:'https://app.example/'},{},42,{liveOnly:false});
   assert.match(sent[0].payload.text,/Inter — Milan/,'today uses the first source that has open matches');
 });
+
+test('upcoming matches are not pushed out by 20 important finished ones (Codex #875)',async()=>{
+  const sent=[];
+  const finished=Array.from({length:25},(_,i)=>fixtureRow(100+i,'FT',`Home${i}`,`Away${i}`));
+  const snapshot={fixtures:[...finished,fixtureRow(7,'NS','Inter','Milan')]};
+  const {api}=runtime({
+    freeQuotaHealthy:()=>false,
+    matchInterestScore:({homeName})=>homeName==='Inter' ? 1 : 100,
+    getStaleCache:async key=>key==='provider-fixtures:2026-10-07:v1' ? snapshot : null,
+    telegramApi:async(method,_cfg,payload)=>{ sent.push({method,payload}); return {ok:true}; },
+  });
+  await api.sendBotDayMatches({url:'https://app.example/'},{},42,{liveOnly:false});
+  assert.match(sent[0].payload.text,/Inter — Milan/);
+  assert.doesNotMatch(sent[0].payload.text,/Home0/);
+});
