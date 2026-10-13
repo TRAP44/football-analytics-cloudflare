@@ -162,6 +162,7 @@ test('guide is shown only when it is neither dismissed nor opened with direct in
   for (const search of [
     '?view=search',
     '?view=history',
+    '?view=profile&section=billing',
     '?q=Barcelona',
     '?fixtureId=123&action=analysis',
     '?fixtureId=123&action=center',

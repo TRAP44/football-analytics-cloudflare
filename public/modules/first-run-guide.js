@@ -102,6 +102,7 @@ export function createFirstRunGuideController({
         startParam
         || view==='search'
         || view==='history'
+        || view==='profile'
         || query
         || (fixtureId>0 && ['analysis','center'].includes(action))
       );
