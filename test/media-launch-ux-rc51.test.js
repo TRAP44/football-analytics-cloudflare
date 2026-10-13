@@ -32,9 +32,9 @@ test('public onboarding explains the Telegram and Mini App roles',()=> {
   assert.match(botOrchestration,/async function sendFootballBotHome/);
   assert.match(botOrchestration,/telegramUser = \{\}/);
   assert.match(botOrchestration,/Привет, <b>/);
-  assert.match(botOrchestration,/Новости и 🔴 LIVE остаются здесь, в Telegram/);
-  assert.match(botOrchestration,/полного AI-разбора откроет Mini App/i);
-  assert.match(botOrchestration,/Если данных мало или перевеса нет/);
+  assert.match(botOrchestration,/Полный разбор — в приложении: кнопка «⚽ MatchRadar AI» рядом с полем ввода/);
+  // Без ставочного оборота «предложит пропустить матч» (вариант оформления A, 13.10).
+  assert.doesNotMatch(botOrchestration,/пропустить матч/);
 });
 
 test('match cards preserve team identity and use MatchRadar AI branding',()=> {

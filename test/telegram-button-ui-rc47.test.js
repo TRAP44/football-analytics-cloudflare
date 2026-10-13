@@ -9,8 +9,9 @@ const worker=(fs.readFileSync('src/worker.js','utf8')
   +'\n'+fs.readFileSync('src/telegram-bot-orchestration-runtime.js','utf8')
   +'\n'+fs.readFileSync('src/telegram-digest-runtime.js','utf8'));
 
-test('telegram uses a persistent button-first keyboard instead of a slash command menu',()=> {
-  assert.match(worker,/commands:\s*\[\]/);
+test('telegram uses a persistent button-first keyboard with a short slash command menu',()=> {
+  // Вариант оформления A (Сергей 13.10): кнопки остаются основными, в меню «/» — короткий список команд.
+  assert.match(worker,/setMyCommands', \{ commands: BOT_COMMANDS \}/);
   assert.match(worker,/is_persistent:\s*true/);
   assert.match(worker,/⚽ Матчи/);
   assert.match(worker,/🤖 AI-подборка/);
@@ -25,7 +26,7 @@ test('bot profile is branded as MatchRadar AI',()=> {
   assert.match(worker,/setMyShortDescription/);
   assert.match(worker,/setMyDescription/);
   assert.match(worker,/Матчи, LIVE и AI-разбор — быстро и по делу\./);
-  assert.match(worker,/AI-футбольный ассистент в Telegram: матчи, команды, LIVE и понятный разбор ключевых факторов\./);
+  assert.match(worker,/Футбольный AI-ассистент: ближайшие матчи ваших команд, LIVE и короткий разбор того, что меняет матч\./);
   assert.doesNotMatch(worker,/FM AI/);
 });
 
@@ -60,11 +61,18 @@ test('RC47 release contract follows extracted button-first runtimes',()=> {
   assert.match(worker,/return Object\.freeze\(\{/);
 });
 
-test('RC47 public bot uses blank Telegram command menu and persistent reply buttons',()=>{
-  assert.match(worker,/commands:\s*\[\]/);
+test('RC47 public bot uses a short Telegram command menu and persistent reply buttons',()=>{
+  assert.match(worker,/command: 'plans', description: 'Тарифы'/);
   assert.match(worker,/is_persistent:\s*true/);
   assert.match(worker,/function footballBotKeyboard/);
   assert.match(worker,/function footballBotMoreKeyboard/);
   assert.match(worker,/callback_data:\s*'digest:on'/);
   assert.match(worker,/callback_data:\s*'digest:off'/);
+});
+
+test('bot links to tariffs and notifications open the matching profile block',()=>{
+  assert.match(app,/view === 'profile'/);
+  assert.match(app,/section === 'billing' \? 'billingPanel'/);
+  assert.match(app,/section === 'notifications' \? 'smartNotificationsRoot'/);
+  assert.match(worker,/\[\{text:'💎 Тарифы'\},\{text:'⚙️ Уведомления'\}\]/);
 });
