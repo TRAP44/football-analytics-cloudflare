@@ -109,8 +109,27 @@ export function dailyPostCandidateIds(rows = [], nowMs = Date.now(), { isMain = 
     .map(entry => ({ id: entry.id, main: entry.main }));
 }
 
+// Подпись турнира со страной: «Premier League, Ливан» не спутать с АПЛ.
+// Международные турниры (страна World/пусто) — без страны.
+export function leagueLabel(league, countryName) {
+  const source = plainObject(league) || {};
+  const name = bettingFree(cleanName(source.name));
+  if (!name) return '';
+  const rawCountry = cleanName(source.country);
+  if (!rawCountry || /^world$/i.test(rawCountry)) return name;
+  let country = rawCountry;
+  if (typeof countryName === 'function') {
+    try {
+      country = cleanName(countryName(rawCountry)) || rawCountry;
+    } catch {
+      country = rawCountry;
+    }
+  }
+  return bettingFree(country) ? `${name}, ${country}` : name;
+}
+
 /** Кандидаты: сегодняшние предстоящие матчи с валидным предматчевым снимком. */
-export function dailyPostMatches(rows = [], predictions = {}, nowMs = Date.now(), { isMain = () => true } = {}) {
+export function dailyPostMatches(rows = [], predictions = {}, nowMs = Date.now(), { isMain = () => true, countryName } = {}) {
   const seen = new Set();
   const result = [];
   for (const row of Array.isArray(rows) ? rows : []) {
@@ -132,7 +151,7 @@ export function dailyPostMatches(rows = [], predictions = {}, nowMs = Date.now()
     if (!home || !away) continue;
     if (!bettingFree(home) || !bettingFree(away)) continue;
     const main = safeMain(isMain, item);
-    result.push({ fixtureId: id, kickoff, home, away, league: bettingFree(cleanName(plainObject(item.league)?.name)), probabilities: { home: values[0], draw: values[1], away: values[2] }, main });
+    result.push({ fixtureId: id, kickoff, home, away, league: leagueLabel(item.league, countryName), probabilities: { home: values[0], draw: values[1], away: values[2] }, main });
   }
   // Сначала главные матчи, потом по времени начала.
   return result
@@ -190,6 +209,7 @@ export function createChannelDailyPostJob(deps = {}) {
     claimIdempotency,
     clock,
     completeIdempotency,
+    countryName,
     fixtureTelegramDeepLink,
     getCache,
     getModelProbabilities,
@@ -261,9 +281,9 @@ export function createChannelDailyPostJob(deps = {}) {
         return { ok: false, reason: 'predictions_lookup_failed' };
       }
       // Считаем только то, что реально войдёт в пост (те же проверки, что при отборе).
-      found = dailyPostMatches(rows, predictions, at.getTime(), { isMain: isMainFixture }).length;
+      found = dailyPostMatches(rows, predictions, at.getTime(), { isMain: isMainFixture, countryName }).length;
     }
-    const matches = dailyPostMatches(rows, predictions, at.getTime(), { isMain: isMainFixture });
+    const matches = dailyPostMatches(rows, predictions, at.getTime(), { isMain: isMainFixture, countryName });
     const text = dailyPostText(matches, at.getTime());
     if (!text) return { ok: true, reason: 'no_matches' };
 

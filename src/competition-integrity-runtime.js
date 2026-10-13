@@ -181,6 +181,11 @@ export function createCompetitionIntegrityRuntime(deps) {
     Australia:'Австралия', Russia:'Россия', Ukraine:'Украина', Poland:'Польша', Greece:'Греция',
     Austria:'Австрия', Switzerland:'Швейцария', Denmark:'Дания', Sweden:'Швеция', Norway:'Норвегия',
     'Czech-Republic':'Чехия', 'Czech Republic':'Чехия', Romania:'Румыния', Croatia:'Хорватия', Serbia:'Сербия',
+    Lebanon:'Ливан', Jamaica:'Ямайка', Thailand:'Таиланд', China:'Китай', Qatar:'Катар',
+    'United-Arab-Emirates':'ОАЭ', Iran:'Иран', India:'Индия', Malaysia:'Малайзия', Indonesia:'Индонезия',
+    Vietnam:'Вьетнам', Egypt:'Египет', Morocco:'Марокко', Algeria:'Алжир', Tunisia:'Тунис',
+    Israel:'Израиль', Cyprus:'Кипр', Hungary:'Венгрия', Bulgaria:'Болгария', Ireland:'Ирландия',
+    Wales:'Уэльс', Finland:'Финляндия', Canada:'Канада', Kazakhstan:'Казахстан', Belarus:'Беларусь',
     World:'Мир', Europe:'Европа', Africa:'Африка', Asia:'Азия',
   }));
   
@@ -281,6 +286,19 @@ export function createCompetitionIntegrityRuntime(deps) {
     if (known) return known.priority>=80;
     if (YOUTH_RESERVE_RE.test(league)) return false;
     return /premier league|la liga|serie a|bundesliga|ligue 1|champions league|europa league|conference league|world cup|copa america|major league soccer|primeira liga/i.test(league);
+  }
+  
+  // Telegram-канал: «главный турнир» строже, чем isTopLeague. Национальные лиги
+  // вне справочника по названию не проходят — «Premier League» Ливана или Ямайки
+  // не должна выглядеть как АПЛ (предпросмотры 13.10). По названию — только
+  // международные турниры.
+  function isChannelLeague(leagueId, leagueName = '') {
+    const id=positiveSafeInteger(leagueId);
+    const known=id ? COMPETITIONS.get(id) : null;
+    if (known) return known.priority>=80;
+    const league=safeText(leagueName,160);
+    if (YOUTH_RESERVE_RE.test(league) || WOMEN_RE.test(league)) return false;
+    return /champions league|europa league|conference league|world cup|copa america/i.test(league);
   }
   
   function normalizeRoundLabel(round = '') {
@@ -745,6 +763,7 @@ export function createCompetitionIntegrityRuntime(deps) {
     leagueGroup,
     normalizeCompetition,
     isTopLeague,
+    isChannelLeague,
     normalizeRoundLabel,
     matchInterestScore,
     catalogRank,
