@@ -14,6 +14,15 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-13 — Claude — Фиксация результатов в фоновом запуске
+PR: [#870](https://github.com/TRAP44/football-analytics-cloudflare/pull/870), ветка `claude/settle-provider-snapshot`
+Сделано:
+- `src/settlement-runtime.js`: перед защитой лимитов в `settleBacktestDaily` и `runSettlementFinalityVerification` вызывается `ensureProviderSnapshot` — загрузка общего снимка квоты и, если тариф не подтверждён, один запрос `/status` (не расходует дневную квоту). Ошибки глотаются, решение принимает прежняя защита.
+- Зависимости `loadSharedProviderState` и `probeProviderStatus` прокинуты из `worker.js` через `operational-orchestration-runtime.js`; они необязательные — без них поведение прежнее.
+- Тест `test/settlement-provider-snapshot.test.js` (падает без исправления).
+Решения: проверка окончательности результатов включена в тот же PR — та же причина (пустая память о квоте в фоновом запуске), тот же вызов.
+Осталось / внимание: 13.10 «Итоги дня» ушли в 10:01 МСК (3 из 3); фоновые задачи идут каждые 5 минут.
+
 ## 2026-10-13 — Claude — «Перелом матча»
 PR: [#869](https://github.com/TRAP44/football-analytics-cloudflare/pull/869), ветка `claude/match-swing`
 Сделано:
