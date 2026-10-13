@@ -218,7 +218,8 @@ test('Telegram hub is button-first and full analysis deep-links directly to the 
     keyboard.keyboard.map(row => row.map(button => button.text)),
     [
       ['⚽ Матчи', '🔴 LIVE'],
-      ['⭐ Мои команды', '••• Ещё'],
+      ['⭐ Мои команды', '📰 Новости'],
+      ['💎 Тарифы', '⚙️ Уведомления'],
     ],
   );
   assert.equal(keyboard.is_persistent, true);
@@ -334,12 +335,11 @@ test('Telegram update handler accepts current and legacy button labels during ro
     telegramUpdate,
     /text === '⚽ Матчи сегодня' \|\| text === '⚽ Матчи'/,
   );
-  assert.match(
-    telegramUpdate,
-    /text === '🧠 AI-подборка' \|\| text === '🤖 AI-подборка'/,
-  );
-  assert.match(telegramUpdate, /text === '••• Ещё'/);
-  assert.match(telegramUpdate, /text === '← Главное меню'/);
+  // Убранные кнопки старой клавиатуры (13.10) отвечают новым меню.
+  for (const label of ['🧠 AI-подборка','🤖 AI-подборка','••• Ещё','← Главное меню','🕘 Последний разбор','📈 Протокол AI','🔎 Найти матч']) {
+    assert.ok(telegramUpdate.includes(`'${label}'`), label);
+  }
+  assert.match(telegramUpdate, /REMOVED_MENU_LABELS\.has\(text\)/);
 });
 
 test('startup experience presents MatchRadar without internal release details', () => {

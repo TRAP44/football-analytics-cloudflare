@@ -244,11 +244,12 @@ export function createTelegramBotUiRuntime(deps = {}) {
 
   function footballBotKeyboard(_request) {
     return {
-      // Сергей 13.10: меньше кнопок. Клуб пишут прямо в чат, поэтому «Найти матч»
-      // убрана; AI-подборка — в «Ещё». Старые подписи по-прежнему обрабатываются.
+      // Сергей 13.10: одно меню из шести кнопок, без «Ещё». Клуб пишут прямо в чат.
+      // Последний разбор, Протокол AI и AI-подборка убраны (есть в приложении).
       keyboard:[
         [{text:'⚽ Матчи'},{text:'🔴 LIVE'}],
-        [{text:'⭐ Мои команды'},{text:'••• Ещё'}],
+        [{text:'⭐ Мои команды'},{text:'📰 Новости'}],
+        [{text:'💎 Тарифы'},{text:'⚙️ Уведомления'}],
       ],
       resize_keyboard:true,
       is_persistent:true,
@@ -256,19 +257,9 @@ export function createTelegramBotUiRuntime(deps = {}) {
     };
   }
 
-  function footballBotMoreKeyboard(_request) {
-    return {
-      // Утренняя подборка — внутри «⚙️ Уведомления», справка — /help,
-      // главное меню — /start (Сергей 13.10).
-      keyboard:[
-        [{text:'🤖 AI-подборка'},{text:'🕘 Последний разбор'}],
-        [{text:'📰 Новости'},{text:'📈 Протокол AI'}],
-        [{text:'💎 Тарифы'},{text:'⚙️ Уведомления'}],
-      ],
-      resize_keyboard:true,
-      is_persistent:true,
-      input_field_placeholder:'Команда, матч или вопрос…',
-    };
+  // «Ещё» больше нет (Сергей 13.10): старый вызов возвращает то же единственное меню.
+  function footballBotMoreKeyboard(request) {
+    return footballBotKeyboard(request);
   }
 
   function favoriteTeamIdSet(rows=[]) {
@@ -383,27 +374,17 @@ export function createTelegramBotUiRuntime(deps = {}) {
       return {inline_keyboard:rows};
     }
 
-    rows.push(
-      [
-        {text:'🧠 AI-вердикт',callback_data:`match:verdict:${fixtureId}`},
-        {text:'🧑‍⚖️ Судья',callback_data:`match:referee:${fixtureId}`},
-      ],
-      [
-        {text:'👥 Составы и потери',callback_data:`match:squads:${fixtureId}`},
-        {text:'⚠️ Риски матча',callback_data:`match:market:${fixtureId}`},
-      ],
-    );
-
-    const refreshRow=[
-      {text:'🔄 Обновить AI',callback_data:`match:refresh:${fixtureId}`},
-    ];
+    // Сергей 13.10: «Судья», «Риски матча» и «Обновить AI» убраны — их покрывает полный разбор.
+    rows.push([
+      {text:'🧠 AI-вердикт',callback_data:`match:verdict:${fixtureId}`},
+      {text:'👥 Составы и потери',callback_data:`match:squads:${fixtureId}`},
+    ]);
     if (full) {
-      refreshRow.push({
+      rows.push([{
         text:'📊 Полный AI-разбор',
         web_app:{url:full},
-      });
+      }]);
     }
-    rows.push(refreshRow);
     rows.push([{
       text:'↗ Поделиться матчем',
       callback_data:`match:share:${fixtureId}`,
@@ -442,14 +423,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
     if (favoriteRow.length) rows.push(favoriteRow);
 
     rows.push(
-      [
-        {text:'🧑‍⚖️ Судья',callback_data:`match:referee:${fixtureId}`},
-        {text:'👥 Составы',callback_data:`match:squads:${fixtureId}`},
-      ],
-      [
-        {text:'⚠️ Риски матча',callback_data:`match:market:${fixtureId}`},
-        {text:'🔄 Обновить AI',callback_data:`match:refresh:${fixtureId}`},
-      ],
+      [{text:'👥 Составы',callback_data:`match:squads:${fixtureId}`}],
       [{
         text:'↗ Поделиться матчем',
         callback_data:`match:share:${fixtureId}`,
@@ -1079,8 +1053,8 @@ export function createTelegramBotUiRuntime(deps = {}) {
     );
 
     return {
-      // Поиск — текстом в чат (кнопка «Найти матч» убрана 13.10); в меню нужны матчи и «Ещё».
-      pass:mainButtons.includes('⚽ Матчи') && mainButtons.includes('••• Ещё')
+      // Поиск — текстом в чат (кнопка «Найти матч» убрана 13.10); одно меню из шести кнопок.
+      pass:mainButtons.includes('⚽ Матчи') && mainButtons.includes('📰 Новости') && mainButtons.length===6
         && Boolean(searchSelect)
         && handoffOk
         && favoriteCallbacks.has('favorite:toggle:101:12345')

@@ -321,10 +321,8 @@ test('RC43 Telegram /last sends the newest history row and a history deep link',
     /fixtureId=77/,
   );
 
-  assert.match(
-    telegramUpdate,
-    /\/\^\\\/last[\s\S]*?text === '🕘 Последний разбор'[\s\S]*?sendLastAiVerdict\(request, cfg,/,
-  );
+  // Сергей 13.10: кнопка и команда /last убраны из бота — «История» есть в приложении.
+  assert.match(telegramUpdate, /\(\?:last\|track\|picks\)/);
 });
 
 test('RC43 historical migration keeps compact verdict columns and bounded confidence', () => {

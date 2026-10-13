@@ -8,9 +8,9 @@ const worker=(fs.readFileSync('src/worker.js','utf8')
 
 test('telegram match buttons answer inline instead of forcing the mini app',()=> {
   assert.match(worker,/callback_data:\`match:verdict:/);
-  assert.match(worker,/callback_data:\`match:referee:/);
   assert.match(worker,/callback_data:\`match:squads:/);
-  assert.match(worker,/callback_data:\`match:market:/);
+  // Убранные разделы (13.10): старые кнопки отвечают коротко, без загрузки данных.
+  assert.match(worker,/REMOVED_MATCH_SECTIONS = new Set\(\['referee', 'market', 'refresh'\]\)/);
   assert.match(worker,/function sendBotFixtureSection/);
 });
 
@@ -39,7 +39,7 @@ test('match cards are cached and selectable from multi-result search and daily p
 
 test('find-match button prompts for natural text in chat',()=> {
   assert.match(worker,/text === '🔎 Найти матч'/);
-  assert.match(worker,/Напишите клуб или конкретный матч/);
+  assert.match(worker,/Просто напишите клуб или матч в чат/);
 });
 
 test('RC48 release contract preserves inline AI boundaries',()=> {
@@ -50,7 +50,7 @@ test('RC48 release contract preserves inline AI boundaries',()=> {
 });
 
 test('RC48 inline AI actions preserve callback-only server processing instead of a web-app dependency',()=>{
-  for(const section of ['verdict','referee','squads','market']){
+  for(const section of ['verdict','squads']){
     assert.match(worker,new RegExp('callback_data:\\x60match:'+section+':'));
   }
   assert.match(worker,/sendBotFixtureSection/);

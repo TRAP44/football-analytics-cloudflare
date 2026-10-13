@@ -561,23 +561,49 @@ export function createTelegramDigestRuntime(deps = {}) {
     }
   }
   
-  async function loadBotDayMatches(cfg, { liveOnly = false, limit = 8 } = {}) {
-    const date=todayUtc();
-    const cached=await getCache(`matches:${date}:v6-integrity`,cfg).catch(()=>null);
-    let matches=rowsOf(cached?.matches).map(match=>{
+  // Кнопки «⚽ Матчи» и «🔴 LIVE» (13.10: Сергей нажимал — «не дают информацию»). Кэш матчей
+  // живёт минуту и обновляется, только когда кто-то открывает приложение, а запрос к провайдеру
+  // из бота может не пройти защиту лимитов — тогда бот отвечал «матчи не найдены», хотя шло 13 игр.
+  // Теперь: свежий кэш → провайдер → снимок провайдера из фонового запуска (обновляется каждые
+  // 5 минут) → устаревший кэш матчей. Пустой ответ — только если данных нет нигде.
+  const BOT_FINISHED_STATUSES=new Set(['FT','AET','PEN']);
+
+  function botCardsFromFixtures(fixtures) {
+    return digestFixtureRows(fixtures,20).map(match=>{
       try { return normalizeBotFixtureCard(match); } catch { return null; }
     }).filter(x=>positiveSafeInteger(x?.fixtureId));
+  }
+
+  function botCardsFromMatchCache(payload) {
+    return rowsOf(payload?.matches).map(match=>{
+      try { return normalizeBotFixtureCard(match); } catch { return null; }
+    }).filter(x=>positiveSafeInteger(x?.fixtureId));
+  }
+
+  async function loadBotDayMatches(cfg, { liveOnly = false, limit = 8 } = {}) {
+    const date=todayUtc();
+    const matchCacheKey=`matches:${date}:v6-integrity`;
+    let matches=botCardsFromMatchCache(await getCache(matchCacheKey,cfg).catch(()=>null));
     if (!matches.length && freeQuotaHealthy(8,1)) {
-      const fixtures=await loadProviderFixturesForDate(date,cfg).catch(()=>[]);
-      matches=digestFixtureRows(fixtures,20).map(match=>{
-        try { return normalizeBotFixtureCard(match); } catch { return null; }
-      }).filter(x=>positiveSafeInteger(x?.fixtureId));
+      matches=botCardsFromFixtures(await loadProviderFixturesForDate(date,cfg).catch(()=>[]));
+    }
+    if (!matches.length) {
+      const snapshot=await getStaleCache(`provider-fixtures:${date}:v1`,cfg).catch(()=>null);
+      matches=botCardsFromFixtures(snapshot?.fixtures);
+    }
+    if (!matches.length) {
+      matches=botCardsFromMatchCache(await getStaleCache(matchCacheKey,cfg).catch(()=>null));
     }
     if (liveOnly) matches=matches.filter(x=>x.live);
+    else {
+      // «Матчи сегодня»: идущие и предстоящие; завершённые — только если других нет.
+      const open=matches.filter(x=>x.finished!==true && !BOT_FINISHED_STATUSES.has(String(x.status || '').toUpperCase()));
+      if (open.length) matches=open;
+    }
     matches.sort((a,b)=>Number(b.live)-Number(a.live) || Date.parse(a.date || 0)-Date.parse(b.date || 0));
     return matches.slice(0,boundedLimit(limit,8,12));
   }
-  
+
   function botDayMatchesText(matches = [], { liveOnly = false } = {}) {
     const rows=rowsOf(matches);
     if (!rows.length) return liveOnly
@@ -608,9 +634,17 @@ export function createTelegramDigestRuntime(deps = {}) {
         try { return normalizeBotFixtureCard(match); } catch { return null; }
       }).filter(match=>positiveSafeInteger(match?.fixtureId));
     }
-    if (!freeQuotaHealthy(8,1)) return [];
+    // Если провайдер из бота недоступен — прежний (устаревший) ответ лучше пустого (13.10).
+    const staleMatches=async()=>{
+      const stale=await getStaleCache(cacheKey,cfg).catch(()=>null);
+      return rowsOf(stale?.matches).map(match=>{
+        try { return normalizeBotFixtureCard(match); } catch { return null; }
+      }).filter(match=>positiveSafeInteger(match?.fixtureId));
+    };
+    if (!freeQuotaHealthy(8,1)) return staleMatches();
     let fixtures=await apiFootball('/fixtures',{team:id,next:8},cfg).catch(()=>[]);
     if (!fixtures.length) fixtures=await apiFootball('/fixtures',{team:id,last:6},cfg).catch(()=>[]);
+    if (!rowsOf(fixtures).length) return staleMatches();
     const matches=rowsOf(fixtures).filter(f=>!CANCELLED_FIXTURE_STATUSES.has(String(f?.fixture?.status?.short||''))).map(f=>{
       try { return normalizeBotFixtureCard(f); } catch { return null; }
     }).filter(x=>positiveSafeInteger(x?.fixtureId))

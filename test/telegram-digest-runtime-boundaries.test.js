@@ -309,3 +309,45 @@ test('digest public settings cap favorite teams and deduplicate provider identit
   assert.equal(settings.capabilities.smartRadarContext,false);
   assert.equal(settings.capabilities.customDeliveryTime,false);
 });
+
+// 13.10: «⚽ Матчи» и «🔴 LIVE» отвечали «не найдено», когда кэш матчей истёк, а запрос к
+// провайдеру из бота не прошёл защиту лимитов. Теперь берётся снимок из фонового запуска.
+function fixtureRow(id,status,home,away,date='2026-10-07T18:00:00+00:00'){
+  return {fixture:{id,date,status:{short:status}},league:{id:39,name:'Premier League',country:'England'},teams:{home:{id:id*10,name:home},away:{id:id*10+1,name:away}}};
+}
+
+test('bot day matches fall back to the background provider snapshot when cache and quota fail',async()=>{
+  const sent=[];
+  const snapshot={date:'2026-10-07',fixtures:[
+    fixtureRow(1,'1H','Arsenal','Chelsea'),
+    fixtureRow(2,'NS','Inter','Milan'),
+    fixtureRow(3,'FT','Roma','Lazio'),
+  ]};
+  const {api}=runtime({
+    freeQuotaHealthy:()=>false,
+    getCache:async()=>null,
+    getStaleCache:async key=>key==='provider-fixtures:2026-10-07:v1' ? snapshot : null,
+    telegramApi:async(method,_cfg,payload)=>{ sent.push({method,payload}); return {ok:true}; },
+  });
+  await api.sendBotDayMatches({url:'https://app.example/'},{},42,{liveOnly:true});
+  assert.match(sent[0].payload.text,/LIVE сейчас/);
+  assert.match(sent[0].payload.text,/Arsenal — Chelsea/);
+  assert.doesNotMatch(sent[0].payload.text,/Inter/);
+
+  sent.length=0;
+  await api.sendBotDayMatches({url:'https://app.example/'},{},42,{liveOnly:false});
+  assert.match(sent[0].payload.text,/Матчи сегодня/);
+  assert.match(sent[0].payload.text,/Inter — Milan/);
+  assert.doesNotMatch(sent[0].payload.text,/Roma/,'finished matches are hidden when others exist');
+  assert.equal(sent[0].payload.reply_markup.inline_keyboard.length,2);
+});
+
+test('bot day matches still say «not found» only when no source has data',async()=>{
+  const sent=[];
+  const {api}=runtime({
+    freeQuotaHealthy:()=>false,
+    telegramApi:async(method,_cfg,payload)=>{ sent.push({method,payload}); return {ok:true}; },
+  });
+  await api.sendBotDayMatches({url:'https://app.example/'},{},42,{liveOnly:true});
+  assert.match(sent[0].payload.text,/нет матчей в прямом эфире/);
+});
