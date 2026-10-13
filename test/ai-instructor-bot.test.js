@@ -217,9 +217,8 @@ test('Telegram hub is button-first and full analysis deep-links directly to the 
   assert.deepEqual(
     keyboard.keyboard.map(row => row.map(button => button.text)),
     [
-      ['⚽ Матчи', '🔎 Найти матч'],
-      ['🔴 LIVE', '⭐ Мои команды'],
-      ['🤖 AI-подборка', '••• Ещё'],
+      ['⚽ Матчи', '🔴 LIVE'],
+      ['⭐ Мои команды', '••• Ещё'],
     ],
   );
   assert.equal(keyboard.is_persistent, true);

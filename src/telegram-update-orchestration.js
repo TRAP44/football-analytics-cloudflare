@@ -1,6 +1,6 @@
 // Telegram update command/callback orchestration boundary for Issue #440.
 // All network, persistence, billing and product capabilities are injected by worker.js.
-import { BOT_NOTIFICATIONS_TEXT, botPlansText } from './telegram-bot-plans.js';
+import { BOT_DIGEST_BUTTONS, BOT_NOTIFICATIONS_TEXT, botPlansText } from './telegram-bot-plans.js';
 
 export function createTelegramUpdateProcessor(deps) {
   if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
@@ -797,7 +797,10 @@ export function createTelegramUpdateProcessor(deps) {
       chat_id:chatId,
       parse_mode:'HTML',
       text:BOT_NOTIFICATIONS_TEXT,
-      ...(url ? {reply_markup:{inline_keyboard:[[{text:'⚙️ Настроить уведомления',web_app:{url}}]]}} : {}),
+      reply_markup:{inline_keyboard:[
+        BOT_DIGEST_BUTTONS.map(button=>({...button})),
+        ...(url ? [[{text:'⚙️ Настроить уведомления',web_app:{url}}]] : []),
+      ]},
     });
     return json({ok:true});
   }

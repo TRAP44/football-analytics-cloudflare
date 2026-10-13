@@ -244,10 +244,11 @@ export function createTelegramBotUiRuntime(deps = {}) {
 
   function footballBotKeyboard(_request) {
     return {
+      // Сергей 13.10: меньше кнопок. Клуб пишут прямо в чат, поэтому «Найти матч»
+      // убрана; AI-подборка — в «Ещё». Старые подписи по-прежнему обрабатываются.
       keyboard:[
-        [{text:'⚽ Матчи'},{text:'🔎 Найти матч'}],
-        [{text:'🔴 LIVE'},{text:'⭐ Мои команды'}],
-        [{text:'🤖 AI-подборка'},{text:'••• Ещё'}],
+        [{text:'⚽ Матчи'},{text:'🔴 LIVE'}],
+        [{text:'⭐ Мои команды'},{text:'••• Ещё'}],
       ],
       resize_keyboard:true,
       is_persistent:true,
@@ -257,11 +258,12 @@ export function createTelegramBotUiRuntime(deps = {}) {
 
   function footballBotMoreKeyboard(_request) {
     return {
+      // Утренняя подборка — внутри «⚙️ Уведомления», справка — /help,
+      // главное меню — /start (Сергей 13.10).
       keyboard:[
-        [{text:'🕘 Последний разбор'},{text:'📰 Новости'}],
-        [{text:'📈 Протокол AI'},{text:'☀️ Утренняя подборка'}],
+        [{text:'🤖 AI-подборка'},{text:'🕘 Последний разбор'}],
+        [{text:'📰 Новости'},{text:'📈 Протокол AI'}],
         [{text:'💎 Тарифы'},{text:'⚙️ Уведомления'}],
-        [{text:'ℹ️ Как это работает'},{text:'← Главное меню'}],
       ],
       resize_keyboard:true,
       is_persistent:true,
@@ -1077,7 +1079,8 @@ export function createTelegramBotUiRuntime(deps = {}) {
     );
 
     return {
-      pass:mainButtons.includes('🔎 Найти матч')
+      // Поиск — текстом в чат (кнопка «Найти матч» убрана 13.10); в меню нужны матчи и «Ещё».
+      pass:mainButtons.includes('⚽ Матчи') && mainButtons.includes('••• Ещё')
         && Boolean(searchSelect)
         && handoffOk
         && favoriteCallbacks.has('favorite:toggle:101:12345')
