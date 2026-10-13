@@ -14,6 +14,12 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-13 — Claude — Обновление GitHub Actions (вместо Dependabot #856, #857)
+PR: ветка `claude/actions-bump`
+Сделано: в workflow обновлены закреплённые SHA: `actions/setup-node` 7.0.0 → 7.1.0, `actions/upload-artifact` 7.0.1 → 7.0.2, `github/codeql-action` init/analyze, `actions/download-artifact` 5 → 8.0.2 (только `backup-supabase.yml`). В `test/security-automation-config.test.js` и `test/supabase-backup-workflow.test.js` — новые SHA (из-за них падали PR Dependabot).
+Решения: Сергей 13.10 — сделать одним PR, PR Dependabot убрать. После слияния Dependabot закроет #856/#857 сам; если нет — закрыть вручную.
+Осталось / внимание: проверка `runtime-load` упадёт и здесь — она падает и на `main` (уже в «Идеи / найдено по пути», 12.10). После слияния стоит вручную запустить бэкап Supabase: download-artifact прыгнул на 3 мажорные версии.
+
 ## 2026-10-13 — Claude — Компактные новости в боте
 PR: ветка `claude/bot-news-compact`
 Сделано: `sendGeneralFootballNews` шлёт `compactNewsFeedText` — «📰 Главное в футболе», до 5 строк «N. <заголовок-ссылка> — источник» (короткие имена для ESPN, BBC, Reuters и др., иначе домен), одна кнопка «🔄 Обновить» (`news:refresh`). Избранное больше не запрашивается.

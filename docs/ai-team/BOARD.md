@@ -16,6 +16,7 @@ _пусто_
 
 ## На ревью
 
+- [ ] CI: обновление GitHub Actions вместо PR Dependabot #856 и #857 — setup-node 7.1.0, upload-artifact 7.0.2, codeql-action, download-artifact 8.0.2; тесты с закреплёнными SHA обновлены — **Claude** — ветка `claude/actions-bump` — ревью: Codex
 - [ ] Бот: компактные «📰 Новости» (решение Сергея 13.10) — «Главное в футболе»: до 5 заголовков-ссылок с источником и одна кнопка «🔄 Обновить»; убраны «Почему важно», «Что проверить», кнопки «Источник N»/«Проверить с AI» и кнопки команд. Новости любимой команды — без изменений — **Claude** — ветка `claude/bot-news-compact` — ревью: Codex
 - [ ] CLAUDE.md: порядок работы в каждом чате (новый чат на задачу, без подписки на PR и ожидания Codex, подсказка следующего шага, идеи по запросу) — **Claude** — ветка `claude/claude-md-session-rules` — ревью: Codex
 - [ ] Канал: включены «Матчи дня» (11:00 МСК) и «Перелом матча» (главные турниры, ≤ 3 в день) — `CHANNEL_DAILY_POST_ENABLED=true`, `CHANNEL_SWING_POST_ENABLED=true` (Сергей 13.10: «да» на оба) — **Claude** — [PR #876](https://github.com/TRAP44/football-analytics-cloudflare/pull/876) — ревью: Codex
