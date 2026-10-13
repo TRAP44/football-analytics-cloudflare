@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-13 — Claude — Фиксация результатов в фоновом запуске
-PR: [#PRNUM](https://github.com/TRAP44/football-analytics-cloudflare/pull/PRNUM), ветка `claude/settle-provider-snapshot`
+PR: [#870](https://github.com/TRAP44/football-analytics-cloudflare/pull/870), ветка `claude/settle-provider-snapshot`
 Сделано:
 - `src/settlement-runtime.js`: перед защитой лимитов в `settleBacktestDaily` и `runSettlementFinalityVerification` вызывается `ensureProviderSnapshot` — загрузка общего снимка квоты и, если тариф не подтверждён, один запрос `/status` (не расходует дневную квоту). Ошибки глотаются, решение принимает прежняя защита.
 - Зависимости `loadSharedProviderState` и `probeProviderStatus` прокинуты из `worker.js` через `operational-orchestration-runtime.js`; они необязательные — без них поведение прежнее.
