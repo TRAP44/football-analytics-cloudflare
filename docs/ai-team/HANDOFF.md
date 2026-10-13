@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-13 — Claude — Кнопка «Разобрать матч» в карточках
-PR: [#PRNUM](https://github.com/TRAP44/football-analytics-cloudflare/pull/PRNUM), ветка `claude/search-match-button`
+PR: [#874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874), ветка `claude/search-match-button`
 Сделано: в `public/styles/premium-ui.css` для `.search-match-action` — ширина 100%, 14px, у предстоящих матчей фон в акценте (`--accent`, янтарный при `data-accent="system"`). Причина вида со скриншота: `.miniapp-public-shell button { font: inherit }` перебивал `font-size:11px` из `styles.css`, а футер прижимал кнопку вправо. Ревизия ассетов `6.120.0-launch113`.
 Осталось / внимание: «Итоги» и «Центр матча» (идущие и завершённые) остаются нейтральными, тоже на всю ширину.
 
