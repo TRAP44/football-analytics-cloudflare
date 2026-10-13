@@ -184,7 +184,8 @@ export function createTelegramDigestRuntime(deps = {}) {
     });
   }
   
-  function digestFixtureRows(fixtures = [], limit = 3) {
+  // liveFirst=false — для списков бота: сначала важность турнира, а не любой LIVE (13.10).
+  function digestFixtureRows(fixtures = [], limit = 3, { liveFirst = true } = {}) {
     return rowsOf(fixtures).filter(f => {
       if (!f || typeof f!=='object' || Array.isArray(f)) return false;
       const status=plainText(f.fixture?.status?.short,16);
@@ -215,6 +216,10 @@ export function createTelegramDigestRuntime(deps = {}) {
           homeName,
           awayName,
           league:plainText(competition.shortName || competition.name || leagueName,120) || 'Турнир',
+          country:plainText(competition.country,80),
+          lowPriority:competition.youth===true || competition.friendly===true || competition.lower===true,
+          goals:{home:finiteMetric(f.goals?.home),away:finiteMetric(f.goals?.away)},
+          elapsed:finiteMetric(f.fixture?.status?.elapsed),
           score:score ?? 0,
           priority:priority ?? 0,
           featured:competition.featured===true,
@@ -223,7 +228,7 @@ export function createTelegramDigestRuntime(deps = {}) {
         return null;
       }
     }).filter(x => positiveSafeInteger(x?.fixtureId))
-      .sort((a,b) => Number(b.live)-Number(a.live) || Number(b.featured)-Number(a.featured) || b.score-a.score || b.priority-a.priority || String(a.date).localeCompare(String(b.date)))
+      .sort((a,b) => (liveFirst ? Number(b.live)-Number(a.live) : 0) || Number(b.featured)-Number(a.featured) || b.score-a.score || b.priority-a.priority || String(a.date).localeCompare(String(b.date)))
       .slice(0,boundedLimit(limit,3,20));
   }
   
@@ -570,22 +575,47 @@ export function createTelegramDigestRuntime(deps = {}) {
 
   // keep — фильтр по статусу до ограничения в 20 матчей (ревью Codex #875: иначе 20 важных
   // завершённых матчей вытесняли предстоящие).
+  // 13.10 (Сергей: «Матчи» и «LIVE» выглядят ужасно и одинаково): карточка списка хранит
+  // важность турнира и счёт, чтобы наверх шли главные матчи, а не случайные LIVE низших лиг.
+  function botListCard(raw) {
+    let card=null;
+    try { card=normalizeBotFixtureCard(raw); } catch { return null; }
+    if (!positiveSafeInteger(card?.fixtureId)) return null;
+    const competition=plainObject(raw?.competition) || {};
+    const goalsSource=plainObject(raw?.goals) || plainObject(raw?.score) || {};
+    const interest=finiteMetric(raw?.interestScore) ?? finiteMetric(raw?.score) ?? 0;
+    return {
+      ...card,
+      goalsHome:finiteMetric(goalsSource.home,0,99),
+      goalsAway:finiteMetric(goalsSource.away,0,99),
+      featured:raw?.featured===true || competition.featured===true,
+      priority:finiteMetric(raw?.priority) ?? finiteMetric(competition.priority) ?? 0,
+      interest,
+      lowPriority:raw?.lowPriority===true,
+    };
+  }
+
   function botCardsFromFixtures(fixtures, keep = () => true) {
     const source=rowsOf(fixtures).filter(f=>{
       try { return keep(String(f?.fixture?.status?.short || '').toUpperCase()); } catch { return false; }
     });
-    return digestFixtureRows(source,20).map(match=>{
-      try { return normalizeBotFixtureCard(match); } catch { return null; }
-    }).filter(x=>positiveSafeInteger(x?.fixtureId));
+    return digestFixtureRows(source,20,{liveFirst:false}).map(botListCard).filter(Boolean);
   }
 
   function botCardsFromMatchCache(payload) {
-    return rowsOf(payload?.matches).map(match=>{
-      try { return normalizeBotFixtureCard(match); } catch { return null; }
-    }).filter(x=>positiveSafeInteger(x?.fixtureId));
+    return rowsOf(payload?.matches).map(botListCard).filter(Boolean);
   }
 
-  async function loadBotDayMatches(cfg, { liveOnly = false, limit = 8 } = {}) {
+  function botImportanceOrder(a,b) {
+    return Number(b.featured)-Number(a.featured)
+      || Number(a.lowPriority)-Number(b.lowPriority)
+      || b.priority-a.priority
+      || b.interest-a.interest
+      || Number(b.live)-Number(a.live)
+      || Date.parse(a.date || 0)-Date.parse(b.date || 0);
+  }
+
+  async function selectBotDayMatches(cfg, { liveOnly = false, limit = 8 } = {}) {
     const date=todayUtc();
     const matchCacheKey=`matches:${date}:v6-integrity`;
     const isOpen=x=>x.finished!==true && !BOT_FINISHED_STATUSES.has(String(x.status || '').toUpperCase());
@@ -618,25 +648,112 @@ export function createTelegramDigestRuntime(deps = {}) {
     }
     // «Матчи сегодня» без открытых матчей — показать завершённые, а не пустой ответ.
     if (!matches.length && !liveOnly) matches=fallback.length ? fallback : botCardsFromFixtures(fallbackFixtures);
-    matches.sort((a,b)=>Number(b.live)-Number(a.live) || Date.parse(a.date || 0)-Date.parse(b.date || 0));
-    return matches.slice(0,boundedLimit(limit,8,12));
+    const total=matches.length;
+    const picked=[...matches].sort(botImportanceOrder).slice(0,boundedLimit(limit,8,12));
+    return {matches:picked,total};
   }
 
-  function botDayMatchesText(matches = [], { liveOnly = false } = {}) {
+  async function loadBotDayMatches(cfg, options = {}) {
+    return (await selectBotDayMatches(cfg,options)).matches;
+  }
+
+  function botMskTime(iso) {
+    const d=new Date(iso || '');
+    if (!Number.isFinite(d.getTime())) return '—';
+    return new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Moscow'}).format(d);
+  }
+
+  function botDayScore(m) {
+    return m.goalsHome!==null && m.goalsHome!==undefined && m.goalsAway!==null && m.goalsAway!==undefined
+      ? `${m.goalsHome}:${m.goalsAway}`
+      : '—';
+  }
+
+  // Минута или статус для идущего матча: «63′», «Перерыв».
+  function botLiveMark(m) {
+    const status=String(m.status || '').toUpperCase();
+    if (status==='HT') return 'Перерыв';
+    const elapsed=Number(m.elapsed);
+    if (Number.isFinite(elapsed) && elapsed>0) return `${elapsed}′`;
+    return plainText(m.statusLabel,40) || 'идёт';
+  }
+
+  function botMatchLine(m) {
+    const home=telegramHtmlEscape(m.homeName);
+    const away=telegramHtmlEscape(m.awayName);
+    if (m.live) return `🔴 ${telegramHtmlEscape(botLiveMark(m))} · ${home} <b>${botDayScore(m)}</b> ${away}`;
+    if (m.finished || BOT_FINISHED_STATUSES.has(String(m.status || '').toUpperCase())) {
+      return `✓ ${home} <b>${botDayScore(m)}</b> ${away}`;
+    }
+    return `<b>${botMskTime(m.date)}</b> · ${home} — ${away}`;
+  }
+
+  function botLeagueTitle(m) {
+    const league=plainText(m.league,80) || 'Турнир';
+    const country=plainText(m.country,60);
+    return country && country!=='Мир' && !league.toLowerCase().includes(country.toLowerCase())
+      ? `${league} · ${country}`
+      : league;
+  }
+
+  // Матчи по турнирам: турниры — по важности, внутри — сначала идущие, затем по времени.
+  function botLeagueGroups(matches = []) {
+    const groups=new Map();
+    for (const m of rowsOf(matches)) {
+      const title=botLeagueTitle(m);
+      if (!groups.has(title)) groups.set(title,[]);
+      groups.get(title).push(m);
+    }
+    return [...groups.entries()].map(([title,rows])=>({
+      title,
+      rows:[...rows].sort((a,b)=>Number(b.live)-Number(a.live) || Date.parse(a.date || 0)-Date.parse(b.date || 0)),
+    }));
+  }
+
+  function botDayMatchesText(matches = [], { liveOnly = false, total = 0 } = {}) {
     const rows=rowsOf(matches);
     if (!rows.length) return liveOnly
       ? '🔴 Сейчас в доступных данных нет матчей в прямом эфире.'
       : '⚽ На сегодня подходящие матчи пока не найдены.';
     const title=liveOnly ? '🔴 <b>LIVE сейчас</b>' : '⚽ <b>Матчи сегодня</b>';
-    return [title,'',...rows.map((m,i)=>`${i+1}. <b>${telegramHtmlEscape(m.homeName)} — ${telegramHtmlEscape(m.awayName)}</b>\n${telegramHtmlEscape(m.league || 'Турнир')} · ${m.live ? telegramHtmlEscape(m.statusLabel || 'идёт сейчас') : digestTime(m.date)}`),'','Нажмите на матч — сразу покажу короткую AI-оценку и кнопку полного разбора.'].join('\n');
+    const hasUpcoming=rows.some(m=>!m.live && !m.finished);
+    const subtitle=[
+      Number(total)>rows.length ? `главные ${rows.length} из ${Number(total)}` : '',
+      hasUpcoming ? 'время МСК' : '',
+    ].filter(Boolean).join(' · ');
+    const body=botLeagueGroups(rows).map(group=>[
+      `<b>${telegramHtmlEscape(group.title)}</b>`,
+      ...group.rows.map(botMatchLine),
+    ].join('\n'));
+    return [
+      subtitle ? `${title}\n<i>${subtitle}</i>` : title,
+      '',
+      body.join('\n\n'),
+      '',
+      'Выберите матч — пришлю короткую AI-оценку.',
+    ].join('\n');
   }
-  
+
+  function botShortName(name = '') {
+    const value=String(name || '').trim();
+    return value.length>18 ? `${value.slice(0,17).trimEnd()}…` : value;
+  }
+
+  function botDayButtonText(m, { liveOnly = false } = {}) {
+    const pair=`${botShortName(m.homeName)} ${m.live || m.finished ? botDayScore(m) : '—'} ${botShortName(m.awayName)}`;
+    if (m.live) return liveOnly ? `${botLiveMark(m)} ${pair}` : `🔴 ${pair}`;
+    if (m.finished) return pair;
+    return `${botMskTime(m.date)} ${pair}`;
+  }
+
   async function sendBotDayMatches(request,cfg,chatId,{liveOnly=false}={}) {
-    const matches=await loadBotDayMatches(cfg,{liveOnly,limit:8});
+    const {matches,total}=await selectBotDayMatches(cfg,{liveOnly,limit:8});
     await rememberBotFixtureCards(matches,cfg);
-    const rows=matches.map(m=>[{text:`${m.live?'🔴':'⚽'} ${String(m.homeName || '').slice(0,20)} — ${String(m.awayName || '').slice(0,20)}`,callback_data:`match:menu:${Number(m.fixtureId)}`}]);
-    if (!rows.length) rows.push([{text:'🔄 Обновить',callback_data:liveOnly?'feed:live':'feed:today'}]);
-    await telegramApi('sendMessage',cfg,{chat_id:chatId,parse_mode:'HTML',text:botDayMatchesText(matches,{liveOnly}),reply_markup:{inline_keyboard:rows}});
+    // Кнопки в том же порядке, что и список в тексте.
+    const ordered=botLeagueGroups(matches).flatMap(group=>group.rows);
+    const rows=ordered.map(m=>[{text:botDayButtonText(m,{liveOnly}),callback_data:`match:menu:${Number(m.fixtureId)}`}]);
+    rows.push([{text:'🔄 Обновить',callback_data:liveOnly?'feed:live':'feed:today'}]);
+    await telegramApi('sendMessage',cfg,{chat_id:chatId,parse_mode:'HTML',text:botDayMatchesText(ordered,{liveOnly,total}),reply_markup:{inline_keyboard:rows}});
   }
   
   async function botTeamIdMatches(teamId,cfg) {
