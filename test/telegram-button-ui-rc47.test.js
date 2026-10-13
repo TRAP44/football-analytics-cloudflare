@@ -33,10 +33,11 @@ test('bot profile is branded as MatchRadar AI',()=> {
 test('single match search exposes action buttons',()=> {
   assert.match(worker,/function footballMatchActionKeyboard/);
   assert.match(worker,/🧠 AI-вердикт/);
-  assert.match(worker,/🧑‍⚖️ Судья/);
   assert.match(worker,/👥 Составы и потери/);
-  // Кнопка раздела рисков без «рынка»; callback прежний (match:market), старые кнопки в чатах работают.
-  assert.match(worker,/⚠️ Риски матча/);
+  // Сергей 13.10: «Судья», «Риски матча», «Обновить AI» убраны с карточки матча.
+  assert.doesNotMatch(worker,/text:'🧑‍⚖️ Судья'/);
+  assert.doesNotMatch(worker,/text:'⚠️ Риски матча'/);
+  assert.doesNotMatch(worker,/text:'🔄 Обновить AI'/);
   assert.doesNotMatch(worker,/💹 Рынок и риски/);
   assert.match(worker,/📊 Полный AI-разбор/);
 });

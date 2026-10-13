@@ -2,6 +2,12 @@
 // All network, persistence, billing and product capabilities are injected by worker.js.
 import { BOT_DIGEST_BUTTONS, BOT_NOTIFICATIONS_TEXT, botPlansText } from './telegram-bot-plans.js';
 
+const REMOVED_MENU_LABELS = new Set([
+  '••• Ещё', '← Главное меню', '🕘 Последний разбор', '📈 Протокол AI',
+  '🤖 AI-подборка', '🧠 AI-подборка', '🔎 Найти матч',
+]);
+const REMOVED_MATCH_SECTIONS = new Set(['referee', 'market', 'refresh']);
+
 export function createTelegramUpdateProcessor(deps) {
   if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
     throw new TypeError('Telegram update orchestration dependencies are required.');
@@ -623,6 +629,15 @@ export function createTelegramUpdateProcessor(deps) {
       const section = matchAction[1];
       const fixtureId = positiveInteger(matchAction[2]);
       if (!fixtureId) return json({ok:false,error:'fixture_id_invalid'},400);
+      // Сергей 13.10: «Судья», «Риски матча» и «Обновить AI» убраны; старые кнопки в чатах
+      // отвечают коротко и ничего не загружают.
+      if (REMOVED_MATCH_SECTIONS.has(section)) {
+        await telegramApi('answerCallbackQuery', cfg, {
+          callback_query_id: callbackId,
+          text: 'Этот раздел убран. Всё есть в полном AI-разборе.',
+        }).catch(()=>null);
+        return json({ ok: true });
+      }
       await telegramApi('answerCallbackQuery', cfg, {
         callback_query_id: callbackId,
         text: section === 'menu' ? 'Готовлю короткую AI-оценку…' : section === 'review' ? 'Сверяю прогноз с фактом…' : 'Собираю футбольные данные…',
@@ -709,24 +724,19 @@ export function createTelegramUpdateProcessor(deps) {
     return json({ ok: true });
   }
 
-  if (chatId && text === '••• Ещё') {
-    const replyMarkup=safeMoreKeyboard(request);
-    await telegramApi('sendMessage',cfg,{
-      chat_id:chatId,
-      text:'Дополнительные функции:',
-      ...(replyMarkup ? {reply_markup:replyMarkup} : {}),
-    });
-    return json({ok:true});
-  }
-
-  if (chatId && text === '← Главное меню') {
+  // Сергей 13.10: одно меню из шести кнопок. Кнопки старой клавиатуры («Ещё», «Главное меню»,
+  // «Последний разбор», «Протокол AI», «AI-подборка», «Найти матч») и команды /last, /track,
+  // /picks убраны: отвечаем коротко и присылаем новое меню.
+  if (chatId && (REMOVED_MENU_LABELS.has(text) || /^\/(?:last|track|picks)(?:@\w+)?(?:\s|$)/i.test(text))) {
     const replyMarkup=safeBotKeyboard(request);
     await telegramApi('sendMessage',cfg,{
       chat_id:chatId,
-      text:'Главное меню',
+      text:text === '🔎 Найти матч'
+        ? '🔎 Просто напишите клуб или матч в чат — например «Реал» или «Интер — Милан».'
+        : 'Меню обновлено 👇 Напишите клуб в чат или выберите раздел.',
       ...(replyMarkup ? {reply_markup:replyMarkup} : {}),
     });
-    return json({ ok: true });
+    return json({ok:true});
   }
 
   if (chatId && /^\/paysupport(?:@\w+)?(?:\s|$)/i.test(text)) {
@@ -774,11 +784,6 @@ export function createTelegramUpdateProcessor(deps) {
     return json({ ok: true });
   }
 
-  if (chatId && (/^\/picks(?:@\w+)?(?:\s|$)/i.test(text) || (text === '🧠 AI-подборка' || text === '🤖 AI-подборка'))) {
-    await sendDailyPicks(request, cfg, chatId);
-    return json({ ok: true });
-  }
-
   if (chatId && (/^\/plans(?:@\w+)?(?:\s|$)/i.test(text) || text === '💎 Тарифы')) {
     // Кнопка web_app работает только в личном чате (ревью Codex #872).
     const url=msg?.chat?.type === 'private' ? safeWebAppUrl(request,{view:'profile',section:'billing'}) : '';
@@ -805,29 +810,10 @@ export function createTelegramUpdateProcessor(deps) {
     return json({ok:true});
   }
 
-  if (chatId && text === '🔎 Найти матч') {
-    await telegramApi('sendMessage', cfg, {
-      chat_id:chatId,
-      text:'🔎 Напишите клуб или конкретный матч. Можно по-русски: «Реал», «ПСЖ», «Бавария», «Бока Хуниорс», «Аль-Наср», «Интер Майами» или «Интер — Милан». Я ищу глобально, а кнопки разбора покажу прямо здесь.',
-    });
-    return json({ ok: true });
-  }
-
   if (chatId && /^\/(?:search|ask)(?:@\w+)?(?:\s|$)/i.test(text)) {
     if (!messageUserId) return json({ok:false,error:'telegram_user_invalid'},400);
     await sendBotFootballSearch(request, cfg, messageUserId, chatId, text);
     return json({ ok: true });
-  }
-
-  if (chatId && (/^\/last(?:@\w+)?(?:\s|$)/i.test(text) || text === '🕘 Последний разбор')) {
-    if (!messageUserId) return json({ok:false,error:'telegram_user_invalid'},400);
-    await sendLastAiVerdict(request, cfg, messageUserId, chatId);
-    return json({ ok: true });
-  }
-
-  if (chatId && (/^\/track(?:@\w+)?(?:\s|$)/i.test(text) || text === '📈 Протокол AI')) {
-    await sendBotAiTrackRecord(request,cfg,chatId);
-    return json({ok:true});
   }
 
   if (chatId && text === '☀️ Утренняя подборка') {

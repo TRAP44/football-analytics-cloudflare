@@ -383,8 +383,7 @@ test('RC64 Telegram /track sends the public record with a History deep link', as
     sent[0].payload.reply_markup.inline_keyboard[0][0].web_app.url,
     /view=history/,
   );
-  assert.match(
-    telegramUpdate,
-    /\/\^\\\/track[\s\S]*?text === '📈 Протокол AI'[\s\S]*?sendBotAiTrackRecord\(request,cfg,chatId\)/,
-  );
+  // Сергей 13.10: кнопка и команда /track убраны из бота — протокол есть в «Истории» приложения.
+  assert.match(telegramUpdate, /'📈 Протокол AI'/);
+  assert.match(telegramUpdate, /\(\?:last\|track\|picks\)/);
 });
