@@ -41,7 +41,7 @@ const adminLaunchFunnel=readRepoFile('public/modules/admin-launch-funnel.js');
 
 test('RC54 first-session path remains short and search-first after runtime extraction',()=> {
   assert.match(botOrchestration,/Напишите клуб прямо в чат/);
-  assert.match(botUi,/\[\{text:'⚽ Матчи'\},\{text:'🔎 Найти матч'\}\]/);
+  assert.match(botUi,/\[\{text:'⚽ Матчи'\},\{text:'🔴 LIVE'\}\]/);
   assert.match(updateOrchestration,/Можно по-русски: «Реал»/);
   assert.doesNotMatch(botOrchestration,/'<b>Как начать:<\/b>'/);
 });

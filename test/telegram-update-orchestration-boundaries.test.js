@@ -413,7 +413,9 @@ test('bot notifications open the notification block of the profile', async () =>
     const message=sent.find(call=>call.method==='sendMessage').payload;
     assert.match(message.text,/Профиль → Уведомления/);
     assert.doesNotMatch(message.text,/Итоги дня/);
-    const url=new URL(message.reply_markup.inline_keyboard[0][0].web_app.url);
+    const rows=message.reply_markup.inline_keyboard;
+    assert.deepEqual(rows[0].map(button=>button.callback_data),['digest:on','digest:off']);
+    const url=new URL(rows[1][0].web_app.url);
     assert.equal(url.searchParams.get('section'),'notifications');
   }
 });
@@ -428,7 +430,8 @@ test('bot tariffs and notifications send no Mini App button outside private chat
     const result=await processor(request,{},{message:{chat:{id:-100500,type:'supergroup'},from:{id:7},text}});
     assert.equal(result.status,200);
     const message=sent.find(call=>call.method==='sendMessage').payload;
-    assert.equal(message.reply_markup,undefined,text);
+    const buttons=(message.reply_markup?.inline_keyboard || []).flat();
+    assert.ok(buttons.every(button=>!button.web_app),text);
     assert.ok(message.text.length>0);
   }
 });

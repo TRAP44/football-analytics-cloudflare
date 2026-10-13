@@ -537,7 +537,10 @@ test('Telegram reply keyboards retain essential actions and never embed raw HTML
   assert.ok(homeLabels.includes('⚽ Матчи'));
   assert.ok(homeLabels.includes('🔴 LIVE'));
   assert.ok(homeLabels.includes('••• Ещё'));
-  assert.ok(moreLabels.includes('← Главное меню'));
+  assert.ok(moreLabels.includes('💎 Тарифы'));
+  assert.ok(moreLabels.includes('⚙️ Уведомления'));
+  assert.ok(home.keyboard.flat().length<=4,'main menu stays compact');
+  assert.ok(more.keyboard.flat().length<=6,'more menu stays compact');
   for(const label of [...homeLabels,...moreLabels]){
     assert.doesNotMatch(label,/<script|<iframe/i);
   }

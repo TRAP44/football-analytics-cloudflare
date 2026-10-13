@@ -10,7 +10,7 @@ const analysisController=fs.readFileSync('public/modules/analysis-controller.js'
 
 test('RC106 locks the Telegram to Mini App handoff contract',()=>{
   assert.match(worker,/function telegramMiniAppE2EDrill\(/);
-  assert.match(readContractSource(new URL('../src/telegram-bot-ui-runtime.js', import.meta.url), 'utf8'),/mainButtons\.includes\('🔎 Найти матч'\)/);
+  assert.match(readContractSource(new URL('../src/telegram-bot-ui-runtime.js', import.meta.url), 'utf8'),/mainButtons\.includes\('⚽ Матчи'\)/);
   assert.match(readContractSource(new URL('../src/telegram-bot-ui-runtime.js', import.meta.url), 'utf8'),/match:menu:\$\{match\.fixtureId\}/);
   assert.match(worker,/url\.searchParams\.get\('action'\)==='analysis'/);
   assert.match(worker,/url\.searchParams\.get\('handoff'\)==='1'/);
