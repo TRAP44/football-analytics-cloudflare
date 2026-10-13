@@ -193,7 +193,8 @@ test('channel on: at most three posts per Moscow day, one per match, failed post
 
 test('wiring: channel posts off by default, job runs after the in-play points are written', () => {
   const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
-  assert.match(wrangler, /"CHANNEL_SWING_POST_ENABLED": "false"/);
+  // Сергей 13.10: «да» — посты «Перелом матча» в канал включены; в коде по умолчанию выключено.
+  assert.match(wrangler, /"CHANNEL_SWING_POST_ENABLED": "true"/);
   const infra = fs.readFileSync('src/common-infrastructure-runtime.js', 'utf8');
   assert.match(infra, /channelSwingPostEnabled: boolEnv\(env\.CHANNEL_SWING_POST_ENABLED, false\)/);
   const jobs = fs.readFileSync('src/scheduled-jobs.js', 'utf8');

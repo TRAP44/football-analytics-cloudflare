@@ -16,6 +16,7 @@ _пусто_
 
 ## На ревью
 
+- [ ] Канал: включены «Матчи дня» (11:00 МСК) и «Перелом матча» (главные турниры, ≤ 3 в день) — `CHANNEL_DAILY_POST_ENABLED=true`, `CHANNEL_SWING_POST_ENABLED=true` (Сергей 13.10: «да» на оба) — **Claude** — [PR #PRNUM](https://github.com/TRAP44/football-analytics-cloudflare/pull/PRNUM) — ревью: Codex
 - [ ] Бот: одно меню из 6 кнопок (Матчи, LIVE, Мои команды, Новости, Тарифы, Уведомления), без «Ещё». Убраны совсем: Последний разбор, Протокол AI, AI-подборка (/last, /track, /picks), на карточке матча — Судья, Риски матча, Обновить AI; старые кнопки отвечают «меню обновлено». «Матчи»/«LIVE» больше не отвечают «не найдено» при истёкшем кэше — берут снимок провайдера из фонового запуска; «Мои команды» — прежний ответ, если провайдер недоступен — **Claude** — [PR #875](https://github.com/TRAP44/football-analytics-cloudflare/pull/875) — ревью: Codex
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.

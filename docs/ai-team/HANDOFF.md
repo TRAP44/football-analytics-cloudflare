@@ -14,6 +14,12 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-13 — Claude — Канал: публикация включена
+PR: [#PRNUM](https://github.com/TRAP44/football-analytics-cloudflare/pull/PRNUM), ветка `claude/channel-posts-on`
+Сделано: в `wrangler.jsonc` `CHANNEL_DAILY_POST_ENABLED` и `CHANNEL_SWING_POST_ENABLED` → `true` (фоновый запуск на GitHub Actions читает их из `wrangler.jsonc`). Тесты, закреплявшие `false`, обновлены; в коде по умолчанию по-прежнему `false`.
+Решения: Сергей 13.10 — «да» на оба поста, после фильтра турниров (#871).
+Осталось / внимание: первый «Матчи дня» — в ближайшее окно 11:00 МСК; «Перелом матча» — по ходу матчей главных турниров. Бот должен быть администратором `@MatchRadarFootball` с правом публикации, иначе в `ops_events` будет ошибка публикации. Выключить — вернуть `false`.
+
 ## 2026-10-13 — Claude — Бот: 6 кнопок, «Матчи»/«LIVE» с данными
 PR: [#875](https://github.com/TRAP44/football-analytics-cloudflare/pull/875), ветка `claude/bot-six-buttons`
 Сделано:
