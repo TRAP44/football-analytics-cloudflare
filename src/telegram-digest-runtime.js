@@ -583,23 +583,29 @@ export function createTelegramDigestRuntime(deps = {}) {
   async function loadBotDayMatches(cfg, { liveOnly = false, limit = 8 } = {}) {
     const date=todayUtc();
     const matchCacheKey=`matches:${date}:v6-integrity`;
-    let matches=botCardsFromMatchCache(await getCache(matchCacheKey,cfg).catch(()=>null));
-    if (!matches.length && freeQuotaHealthy(8,1)) {
-      matches=botCardsFromFixtures(await loadProviderFixturesForDate(date,cfg).catch(()=>[]));
+    const isOpen=x=>x.finished!==true && !BOT_FINISHED_STATUSES.has(String(x.status || '').toUpperCase());
+    // Фильтр («идут сейчас» / «ещё не закончились») применяется к каждому источнику: если в
+    // одном нужных матчей нет, проверяется следующий (ревью Codex #875 — кэш матчей ограничен
+    // 120 играми по важности и может не содержать LIVE, которые есть в снимке провайдера).
+    const wanted=cards=>cards.filter(x=>liveOnly ? x.live : isOpen(x));
+    const sources=[
+      async()=>botCardsFromMatchCache(await getCache(matchCacheKey,cfg).catch(()=>null)),
+      async()=>freeQuotaHealthy(8,1)
+        ? botCardsFromFixtures(await loadProviderFixturesForDate(date,cfg).catch(()=>[]))
+        : [],
+      async()=>botCardsFromFixtures((await getStaleCache(`provider-fixtures:${date}:v1`,cfg).catch(()=>null))?.fixtures),
+      async()=>botCardsFromMatchCache(await getStaleCache(matchCacheKey,cfg).catch(()=>null)),
+    ];
+    let matches=[];
+    let fallback=[];
+    for (const load of sources) {
+      const cards=await load();
+      if (!fallback.length && cards.length) fallback=cards;
+      matches=wanted(cards);
+      if (matches.length) break;
     }
-    if (!matches.length) {
-      const snapshot=await getStaleCache(`provider-fixtures:${date}:v1`,cfg).catch(()=>null);
-      matches=botCardsFromFixtures(snapshot?.fixtures);
-    }
-    if (!matches.length) {
-      matches=botCardsFromMatchCache(await getStaleCache(matchCacheKey,cfg).catch(()=>null));
-    }
-    if (liveOnly) matches=matches.filter(x=>x.live);
-    else {
-      // «Матчи сегодня»: идущие и предстоящие; завершённые — только если других нет.
-      const open=matches.filter(x=>x.finished!==true && !BOT_FINISHED_STATUSES.has(String(x.status || '').toUpperCase()));
-      if (open.length) matches=open;
-    }
+    // «Матчи сегодня» без открытых матчей — показать завершённые, а не пустой ответ.
+    if (!matches.length && !liveOnly) matches=fallback;
     matches.sort((a,b)=>Number(b.live)-Number(a.live) || Date.parse(a.date || 0)-Date.parse(b.date || 0));
     return matches.slice(0,boundedLimit(limit,8,12));
   }

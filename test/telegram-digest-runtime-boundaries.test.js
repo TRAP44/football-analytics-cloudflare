@@ -351,3 +351,20 @@ test('bot day matches still say «not found» only when no source has data',asyn
   await api.sendBotDayMatches({url:'https://app.example/'},{},42,{liveOnly:true});
   assert.match(sent[0].payload.text,/нет матчей в прямом эфире/);
 });
+
+test('LIVE keeps looking past a fresh match cache that has no live games (Codex #875)',async()=>{
+  const sent=[];
+  const freshCache={matches:[{fixtureId:5,homeName:'Inter',awayName:'Milan',status:'NS',live:false,date:'2026-10-07T18:00:00+00:00',league:'Лига'}]};
+  const snapshot={fixtures:[fixtureRow(6,'1H','Waterhouse','Tru-Juice')]};
+  const {api}=runtime({
+    freeQuotaHealthy:()=>false,
+    getCache:async key=>key==='matches:2026-10-07:v6-integrity' ? freshCache : null,
+    getStaleCache:async key=>key==='provider-fixtures:2026-10-07:v1' ? snapshot : null,
+    telegramApi:async(method,_cfg,payload)=>{ sent.push({method,payload}); return {ok:true}; },
+  });
+  await api.sendBotDayMatches({url:'https://app.example/'},{},42,{liveOnly:true});
+  assert.match(sent[0].payload.text,/Waterhouse — Tru-Juice/);
+  sent.length=0;
+  await api.sendBotDayMatches({url:'https://app.example/'},{},42,{liveOnly:false});
+  assert.match(sent[0].payload.text,/Inter — Milan/,'today uses the first source that has open matches');
+});
