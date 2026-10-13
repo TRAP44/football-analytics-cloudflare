@@ -1,5 +1,7 @@
 // Settlement and prediction-integrity runtime extracted from worker.js.
 // Provider, Supabase and runtime-control capabilities remain injected by the composition root.
+import { ensureProviderSnapshot } from './provider-status-probe.js';
+
 export function createSettlementRuntime(deps) {
   if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
     throw new TypeError('Settlement runtime dependencies are required.');
@@ -33,10 +35,12 @@ export function createSettlementRuntime(deps) {
     isFinishedStatus,
     loadProviderFixturesForDate,
     loadRuntimeControls,
+    loadSharedProviderState,
     memory,
     parseJsonObject,
     predictionOutcomeKey,
     probeOptionalTable,
+    probeProviderStatus,
     providerSnapshot,
     recordOpsEvent,
     redactOpsString,
@@ -54,6 +58,17 @@ export function createSettlementRuntime(deps) {
     supaUpsert,
     todayUtc,
   } = deps;
+
+  // Фоновый запуск (GitHub Actions) начинается с пустой памяти о квоте: без
+  // общего снимка тариф неизвестен и защита лимитов откладывает фиксацию даже
+  // на платном тарифе (12.10 — до 15:10 МСК). Как в предматчевых прогнозах
+  // (#862): подтянуть общий снимок и при необходимости спросить /status.
+  // Зависимости необязательные — без них поведение прежнее.
+  async function ensureSettlementProviderSnapshot(cfg) {
+    try {
+      await ensureProviderSnapshot({ cfg, loadSharedProviderState, providerSnapshot, probeProviderStatus, nowMs: Date.now() });
+    } catch {}
+  }
 
   if (!memory || typeof memory !== 'object' || Array.isArray(memory)) {
     throw new TypeError('Settlement runtime memory is required.');
@@ -1193,6 +1208,7 @@ export function createSettlementRuntime(deps) {
   
     const markerKey = `settlement-finality:${todayUtc()}:v2`;
     if (await getCache(markerKey, cfg)) return { skipped: 'already_checked', date: todayUtc() };
+    await ensureSettlementProviderSnapshot(cfg);
     if (!automaticSettlementQuotaHealthy()) return { skipped: 'provider_quota_guard' };
   
     const since = new Date(Date.now() - SETTLEMENT_FINALITY_LOOKBACK_DAYS * 86400_000).toISOString();
@@ -2162,6 +2178,7 @@ export function createSettlementRuntime(deps) {
       await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), pending: 0 }, cfg, 1440);
       return { date, pending: 0, settled: 0 };
     }
+    await ensureSettlementProviderSnapshot(cfg);
     if (!freeQuotaHealthy(12, 3)) return { skipped: 'provider_quota_guard', date, pending: pending.length };
     try {
       const fixtures = await loadProviderFixturesForDate(date, cfg);
