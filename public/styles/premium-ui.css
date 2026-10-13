@@ -2540,3 +2540,20 @@ html[data-theme] body.miniapp-public-shell .mr-inplay-bar .home { background: va
 html[data-theme] body.miniapp-public-shell .mr-inplay-bar .draw { background: #a7b0bf; }
 html[data-theme] body.miniapp-public-shell .mr-inplay-bar .away { background: #60a5fa; }
 html[data-theme] body.miniapp-public-shell .experience-prematch-note { display: block; margin-top: 4px; font-size: 12px; color: var(--hint); }
+
+/* Карточки матчей в поиске и на странице команды: главное действие — на всю
+   ширину и в акценте бренда. Раньше `button { font: inherit }` перебивал 11px,
+   и кнопка выглядела крупной серой справа (Сергей 13.10). */
+.miniapp-public-shell .search-match-footer { display: flex; justify-content: stretch; margin-top: 12px; }
+.miniapp-public-shell .search-match-action {
+  width: 100%;
+  min-height: 42px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 800;
+}
+.miniapp-public-shell .search-match-card.is-upcoming .search-match-action {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-text);
+}
