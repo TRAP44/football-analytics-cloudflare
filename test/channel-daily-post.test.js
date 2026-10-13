@@ -326,7 +326,9 @@ test('when enabled it publishes with a per-day idempotency key and a deep link t
 
 test('wiring: off by default, task only in the 11:00 MSK window', () => {
   const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
-  assert.match(wrangler, /"CHANNEL_DAILY_POST_ENABLED": "false"/);
+  // Сергей 13.10: «да» — публикация «Матчей дня» включена; в коде по умолчанию выключено.
+  assert.match(wrangler, /"CHANNEL_DAILY_POST_ENABLED": "true"/);
+  assert.match(fs.readFileSync('src/common-infrastructure-runtime.js', 'utf8'), /channelDailyPostEnabled: boolEnv\(env\.CHANNEL_DAILY_POST_ENABLED, false\)/);
   const jobs = fs.readFileSync('src/scheduled-jobs.js', 'utf8');
   assert.match(jobs, /scheduledAt\.getUTCHours\(\) === 8 && scheduledAt\.getUTCMinutes\(\) < 15\) \{\n\s+tasks\.push\(\['channel_daily_post'/);
 });
