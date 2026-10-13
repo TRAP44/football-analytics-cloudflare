@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-13 — Claude — Канал: фильтр главных турниров
-PR: [#PRNUM](https://github.com/TRAP44/football-analytics-cloudflare/pull/PRNUM), ветка `claude/channel-league-filter`
+PR: [#871](https://github.com/TRAP44/football-analytics-cloudflare/pull/871), ветка `claude/channel-league-filter`
 Сделано:
 - `isChannelLeague` (`src/competition-integrity-runtime.js`): турнир из справочника — по приоритету (≥ 80), вне справочника — только международные по названию (Лига чемпионов, Лига Европы, Лига конференций, ЧМ, Копа Америка), без молодёжных и женских. Используется для «Матчей дня» (`isMainFixture`) и поста «Перелом матча»; `isTopLeague` в остальном приложении не менялся.
 - «Матчи дня»: подпись турнира со страной (`leagueLabel`): «Premier League, Ливан», международные — без страны. В `COUNTRY_RU` добавлены русские названия ещё ~25 стран.
