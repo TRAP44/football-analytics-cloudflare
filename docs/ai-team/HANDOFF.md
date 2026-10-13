@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-13 — Claude — Бот: 6 кнопок, «Матчи»/«LIVE» с данными
-PR: [#PRNUM](https://github.com/TRAP44/football-analytics-cloudflare/pull/PRNUM), ветка `claude/bot-six-buttons`
+PR: [#875](https://github.com/TRAP44/football-analytics-cloudflare/pull/875), ветка `claude/bot-six-buttons`
 Сделано:
 - Одно меню: ⚽ Матчи, 🔴 LIVE, ⭐ Мои команды, 📰 Новости, 💎 Тарифы, ⚙️ Уведомления (`footballBotMoreKeyboard` теперь возвращает то же меню). Убраны Последний разбор, Протокол AI, AI-подборка и команды /last, /track, /picks; кнопки старой клавиатуры и эти команды отвечают «Меню обновлено» с новым меню (`REMOVED_MENU_LABELS`).
 - Карточка матча: убраны «Судья», «Риски матча», «Обновить AI»; старые кнопки в чатах отвечают коротким уведомлением без загрузки данных (`REMOVED_MATCH_SECTIONS`).
