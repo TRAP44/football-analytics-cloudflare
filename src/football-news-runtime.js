@@ -792,7 +792,7 @@ export function createFootballNewsRuntime(deps) {
     'skysports.com':'Sky Sports',
     'theguardian.com':'The Guardian',
     'theathletic.com':'The Athletic',
-    'nytimes.com':'The Athletic',
+    'nytimes.com':'The New York Times',
     'goal.com':'Goal',
     'uefa.com':'UEFA',
     'fifa.com':'FIFA',
@@ -806,8 +806,12 @@ export function createFootballNewsRuntime(deps) {
     'sports.ru':'Sports.ru',
   });
 
-  function newsSourceLabel(source = '') {
+  function newsSourceLabel(source = '', url = '') {
     const host=safeText(source,120).toLowerCase();
+    // The Athletic живёт на nytimes.com/athletic/…; остальное на nytimes.com — NYT.
+    if (host==='nytimes.com' && /^https?:\/\/(?:www\.)?nytimes\.com\/athletic\//i.test(safeText(url,500))) {
+      return 'The Athletic';
+    }
     return NEWS_SOURCE_LABELS[host] || host || 'источник';
   }
 
@@ -820,7 +824,7 @@ export function createFootballNewsRuntime(deps) {
       return '📰 <b>Главное в футболе</b>\n\nСвежих новостей пока нет. Попробуйте обновить позже.';
     }
     const rows=validItems.map((item,index)=>
-      `${index+1}. <a href="${html(item.url)}">${html(item.title)}</a> — ${html(newsSourceLabel(item.source))}`);
+      `${index+1}. <a href="${html(item.url)}">${html(item.title)}</a> — ${html(newsSourceLabel(item.source,item.url))}`);
     return ['📰 <b>Главное в футболе</b>','',...rows].join('\n');
   }
 

@@ -436,6 +436,16 @@ test('compact news feed escapes titles, caps the list and handles empty input',(
   assert.match(api.compactNewsFeedText([]),/Свежих новостей пока нет/);
 });
 
+test('compact news feed labels The Athletic only for /athletic/ URLs on nytimes.com',()=>{
+  const {api}=harness({});
+  const text=api.compactNewsFeedText([
+    {url:'https://www.nytimes.com/athletic/123/2026/10/13/arsenal-news/',title:'Arsenal news'},
+    {url:'https://www.nytimes.com/2026/10/13/sports/soccer/world-cup.html',title:'World Cup news'},
+  ]);
+  assert.match(text,/Arsenal news<\/a> — The Athletic/);
+  assert.match(text,/World Cup news<\/a> — The New York Times/);
+});
+
 test('favorite-team news validates membership and links a real upcoming fixture',async()=>{
   const now=Date.now();
   const future=new Date(now+6*60*60*1000).toISOString();
