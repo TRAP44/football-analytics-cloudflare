@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-13 — Claude — Бот: меньше кнопок
-PR: [#PRNUM](https://github.com/TRAP44/football-analytics-cloudflare/pull/PRNUM), ветка `claude/bot-fewer-buttons`
+PR: [#873](https://github.com/TRAP44/football-analytics-cloudflare/pull/873), ветка `claude/bot-fewer-buttons`
 Сделано:
 - Главное меню бота — 4 кнопки, «••• Ещё» — 6 (было 6 + 8). Убраны «🔎 Найти матч», «ℹ️ Как это работает», «← Главное меню»; «🤖 AI-подборка» перенесена в «Ещё».
 - «⚙️ Уведомления»: кнопки утренней подборки (`digest:on/off`, обработчики уже были) + кнопка приложения (только в личном чате).
