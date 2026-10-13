@@ -3310,6 +3310,7 @@ const {
   probeCalibrationLifecycleSchema,
   probeCalibrationPromotionSchema,
   probeOptionalTable,
+  probeProviderStatus,
   probeReminderReliabilitySchema,
   probeRuntimeHistorySchema,
   probeSupabaseSchemaDriftConfirmed,
