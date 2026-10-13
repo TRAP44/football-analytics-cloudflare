@@ -1,5 +1,7 @@
 // Telegram update command/callback orchestration boundary for Issue #440.
 // All network, persistence, billing and product capabilities are injected by worker.js.
+import { BOT_NOTIFICATIONS_TEXT, botPlansText } from './telegram-bot-plans.js';
+
 export function createTelegramUpdateProcessor(deps) {
   if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
     throw new TypeError('Telegram update orchestration dependencies are required.');
@@ -775,6 +777,29 @@ export function createTelegramUpdateProcessor(deps) {
   if (chatId && (/^\/picks(?:@\w+)?(?:\s|$)/i.test(text) || (text === '🧠 AI-подборка' || text === '🤖 AI-подборка'))) {
     await sendDailyPicks(request, cfg, chatId);
     return json({ ok: true });
+  }
+
+  if (chatId && (/^\/plans(?:@\w+)?(?:\s|$)/i.test(text) || text === '💎 Тарифы')) {
+    // Кнопка web_app работает только в личном чате (ревью Codex #872).
+    const url=msg?.chat?.type === 'private' ? safeWebAppUrl(request,{view:'profile',section:'billing'}) : '';
+    await telegramApi('sendMessage',cfg,{
+      chat_id:chatId,
+      parse_mode:'HTML',
+      text:botPlansText(cfg),
+      ...(url ? {reply_markup:{inline_keyboard:[[{text:'💎 Открыть тарифы',web_app:{url}}]]}} : {}),
+    });
+    return json({ok:true});
+  }
+
+  if (chatId && (/^\/settings(?:@\w+)?(?:\s|$)/i.test(text) || text === '⚙️ Уведомления')) {
+    const url=msg?.chat?.type === 'private' ? safeWebAppUrl(request,{view:'profile',section:'notifications'}) : '';
+    await telegramApi('sendMessage',cfg,{
+      chat_id:chatId,
+      parse_mode:'HTML',
+      text:BOT_NOTIFICATIONS_TEXT,
+      ...(url ? {reply_markup:{inline_keyboard:[[{text:'⚙️ Настроить уведомления',web_app:{url}}]]}} : {}),
+    });
+    return json({ok:true});
   }
 
   if (chatId && text === '🔎 Найти матч') {

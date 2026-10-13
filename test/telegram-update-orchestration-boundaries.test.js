@@ -360,3 +360,75 @@ test('a malformed runtime-controls response blocks Telegram dispatch before busi
   );
   assert.equal(calls,0);
 });
+
+// Вариант оформления бота A (Сергей 13.10): «💎 Тарифы» и «⚙️ Уведомления».
+test('bot tariffs show configured prices only and open the billing block of the profile', async () => {
+  const sent=[];
+  const processor=createTelegramUpdateProcessor(deps({
+    telegramApi:async(method,_cfg,payload)=>{ sent.push({method,payload}); return {ok:true}; },
+  }));
+  const cfg={
+    limits:{FREE:3,PRO:20,PREMIUM:100},
+    starsPrices:{PRO:499,PREMIUM:999},
+    passPrices:{MATCH_PASS:75,DAY_PASS:150,WEEKEND_PASS:299},
+    passDurations:{MATCH_PASS:72,DAY_PASS:24,WEEKEND_PASS:168},
+    passUsageLimits:{WEEKEND_PASS:6},
+  };
+  for (const text of ['💎 Тарифы','/plans']) {
+    sent.length=0;
+    const result=await processor(request,cfg,{message:{chat:{id:42,type:'private'},from:{id:7},text}});
+    assert.equal(result.status,200);
+    const message=sent.find(call=>call.method==='sendMessage').payload;
+    assert.match(message.text,/PRO<\/b> — 499 ⭐ за 30 дней · 20 разборов в день/);
+    assert.match(message.text,/Premium<\/b> — 999 ⭐/);
+    assert.match(message.text,/Match Pass<\/b> — 75 ⭐/);
+    assert.match(message.text,/Day Pass<\/b> — 150 ⭐/);
+    assert.match(message.text,/7 дней<\/b> — 299 ⭐ · до 6 AI-разборов за этот срок/);
+    assert.match(message.text,/Бесплатно — 3 AI-разбора в день/);
+    const url=new URL(message.reply_markup.inline_keyboard[0][0].web_app.url);
+    assert.equal(url.searchParams.get('view'),'profile');
+    assert.equal(url.searchParams.get('section'),'billing');
+  }
+});
+
+test('bot tariffs omit plans whose price is not configured', async () => {
+  const sent=[];
+  const processor=createTelegramUpdateProcessor(deps({
+    telegramApi:async(method,_cfg,payload)=>{ sent.push({method,payload}); return {ok:true}; },
+  }));
+  await processor(request,{passPrices:{}},{message:{chat:{id:42,type:'private'},from:{id:7},text:'💎 Тарифы'}});
+  const message=sent.find(call=>call.method==='sendMessage').payload;
+  assert.doesNotMatch(message.text,/PRO<\/b>|Premium<\/b>|Бесплатно/);
+  assert.doesNotMatch(message.text,/7 дней<\/b>/,'weekend pass is not sold without a usage cap');
+});
+
+test('bot notifications open the notification block of the profile', async () => {
+  const sent=[];
+  const processor=createTelegramUpdateProcessor(deps({
+    telegramApi:async(method,_cfg,payload)=>{ sent.push({method,payload}); return {ok:true}; },
+  }));
+  for (const text of ['⚙️ Уведомления','/settings']) {
+    sent.length=0;
+    await processor(request,{},{message:{chat:{id:42,type:'private'},from:{id:7},text}});
+    const message=sent.find(call=>call.method==='sendMessage').payload;
+    assert.match(message.text,/Профиль → Уведомления/);
+    assert.doesNotMatch(message.text,/Итоги дня/);
+    const url=new URL(message.reply_markup.inline_keyboard[0][0].web_app.url);
+    assert.equal(url.searchParams.get('section'),'notifications');
+  }
+});
+
+test('bot tariffs and notifications send no Mini App button outside private chats', async () => {
+  const sent=[];
+  const processor=createTelegramUpdateProcessor(deps({
+    telegramApi:async(method,_cfg,payload)=>{ sent.push({method,payload}); return {ok:true}; },
+  }));
+  for (const text of ['/plans','/settings']) {
+    sent.length=0;
+    const result=await processor(request,{},{message:{chat:{id:-100500,type:'supergroup'},from:{id:7},text}});
+    assert.equal(result.status,200);
+    const message=sent.find(call=>call.method==='sendMessage').payload;
+    assert.equal(message.reply_markup,undefined,text);
+    assert.ok(message.text.length>0);
+  }
+});

@@ -260,10 +260,12 @@ export function createTelegramBotUiRuntime(deps = {}) {
       keyboard:[
         [{text:'🕘 Последний разбор'},{text:'📰 Новости'}],
         [{text:'📈 Протокол AI'},{text:'☀️ Утренняя подборка'}],
+        [{text:'💎 Тарифы'},{text:'⚙️ Уведомления'}],
         [{text:'ℹ️ Как это работает'},{text:'← Главное меню'}],
       ],
       resize_keyboard:true,
       is_persistent:true,
+      input_field_placeholder:'Команда, матч или вопрос…',
     };
   }
 

@@ -14,6 +14,16 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-13 — Claude — Оформление бота (вариант A)
+PR: [#872](https://github.com/TRAP44/football-analytics-cloudflare/pull/872), ветка `claude/bot-polish`
+Сделано:
+- /start: три строки вместо инструкции; убран ставочный оборот «предложит пропустить матч». Описание бота (`setMyDescription`) переписано. Справка: «fixture» и английские ссылки заменены на русские.
+- «••• Ещё»: добавлены «💎 Тарифы» (`/plans`) и «⚙️ Уведомления» (`/settings`), подсказка в поле ввода. Тарифы — `src/telegram-bot-plans.js`, цены и лимиты только из конфигурации (`starsPrices`, `limits`, `passProductConfig`); 7-дневный доступ — только если продаётся (`saleReady`). Кнопки открывают Mini App на профиле: `view=profile&section=billing|notifications` (раньше `view=profile` из `/paysupport` приложение игнорировало).
+- Меню «/»: start, today, live, favorites, plans, settings, help (раньше пусто — решение RC47 заменено выбором Сергея). Тесты RC47/RC51 обновлены.
+- Ревизия фронтенд-ассетов `6.120.0-launch112`.
+Решения: Сергей 13.10 выбрал вариант A из трёх (A — коротко, B — пошаговый первый запуск, C — всё в Mini App), аватар не менять. «ℹ️ Как это работает» оставлен в «Ещё» рядом с «Главным меню».
+Осталось / внимание: команды и описание применяются при следующем /start (`configureFootballBot`).
+
 ## 2026-10-13 — Claude — Канал: фильтр главных турниров
 PR: [#871](https://github.com/TRAP44/football-analytics-cloudflare/pull/871), ветка `claude/channel-league-filter`
 Сделано:

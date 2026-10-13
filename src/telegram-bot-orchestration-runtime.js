@@ -2,6 +2,17 @@ import { neutralOutcomeText, neutralReasonText, neutralSignalText, NO_CLEAR_SIGN
 
 const SECTION_NAMES = new Set(['verdict','referee','squads','market','review']);
 
+// Команды в меню «/» Telegram (вариант оформления A, решение Сергея 13.10).
+const BOT_COMMANDS = Object.freeze([
+  Object.freeze({ command: 'start', description: 'Главное меню' }),
+  Object.freeze({ command: 'today', description: 'Матчи сегодня' }),
+  Object.freeze({ command: 'live', description: 'Идут сейчас' }),
+  Object.freeze({ command: 'favorites', description: 'Мои команды' }),
+  Object.freeze({ command: 'plans', description: 'Тарифы' }),
+  Object.freeze({ command: 'settings', description: 'Уведомления' }),
+  Object.freeze({ command: 'help', description: 'Как это работает' }),
+]);
+
 export function createTelegramBotOrchestrationRuntime(deps = {}) {
   if (!deps || typeof deps!=='object' || Array.isArray(deps)) {
     throw new TypeError('Telegram bot orchestration runtime dependencies are required.');
@@ -585,10 +596,10 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
     const appUrl=generatedHttpsUrl(telegramWebAppUrl,request);
     const call=(method,payload)=>Promise.resolve().then(()=>api(method,cfg,payload));
     const calls=[
-      call('setMyCommands', { commands: [] }),
+      call('setMyCommands', { commands: BOT_COMMANDS }),
       call('setMyName', { name: 'MatchRadar AI' }),
       call('setMyShortDescription', { short_description: 'Матчи, LIVE и AI-разбор — быстро и по делу.' }),
-      call('setMyDescription', { description: 'AI-футбольный ассистент в Telegram: матчи, команды, LIVE и понятный разбор ключевых факторов.' }),
+      call('setMyDescription', { description: 'Футбольный AI-ассистент: ближайшие матчи ваших команд, LIVE и короткий разбор того, что меняет матч. Напишите название клуба — и начнём.' }),
     ];
     if (appUrl) {
       calls.push(call('setChatMenuButton', {
@@ -615,13 +626,9 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
         '⚽ <b>MatchRadar AI</b>',
         'Видим, что меняет матч.',
         '',
-        `${hello} Напишите клуб прямо в чат — например «Реал», «Арсенал», «Бавария», «Бока Хуниорс» или «Интер Майами».`,
+        `${hello} Напишите клуб прямо в чат — например «Реал» или «Арсенал» — и я покажу ближайший матч и короткую AI-оценку.`,
         '',
-        '<b>Что будет дальше:</b> я найду ближайший матч; после одного нажатия сразу покажу короткую AI-оценку в чате.',
-        '📊 Кнопка полного AI-разбора откроет Mini App сразу на выбранном матче — повторный поиск не нужен.',
-        '📰 Новости и 🔴 LIVE остаются здесь, в Telegram.',
-        '',
-        '<i>Если данных мало или перевеса нет, MatchRadar AI прямо предложит пропустить матч.</i>',
+        'Полный разбор — в приложении: кнопка «⚽ MatchRadar AI» рядом с полем ввода.',
       ].join('\n'),
     };
     if (replyMarkup) payload.reply_markup=replyMarkup;
@@ -632,9 +639,9 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
     const cid=chatIdValue(chatId);
     if (!cid) throw statusError('Чат не определён.',400,'TELEGRAM_CHAT_INVALID');
     const links=[
-      ['Privacy','/privacy.html'],
-      ['Terms','/terms.html'],
-      ['Status','/status.html'],
+      ['Конфиденциальность','/privacy.html'],
+      ['Условия','/terms.html'],
+      ['Статус сервиса','/status.html'],
     ].map(([label,path])=>{
       const url=generatedHttpUrl(publicSiteUrl,request,path);
       return url ? `<a href="${escapeHtml(url,2000)}">${label}</a>` : '';
@@ -648,17 +655,16 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
       text:[
         '<b>Как пользоваться MatchRadar AI</b>',
         '',
-        '⚽ <b>Матчи сегодня</b> — персональная лента матчей.',
-        '🔴 <b>LIVE</b> — матчи, которые идут сейчас.',
-        '🧠 <b>AI-подборка</b> — три заметных матча дня.',
-        '🔎 <b>Найти матч</b> — бот попросит написать команду или игру.',
-        '⭐ <b>Мои команды</b> — избранное.',
-        '🕘 <b>Последний разбор</b> — сохранённый AI-вердикт.',
-        '📈 <b>Протокол AI</b> — подтверждённая история прогнозов без рекламного «процента побед».',
-        '📰 <b>Новости</b> — важные события с источниками и объяснением контекста.',
-        '☀️ <b>Утренняя подборка</b> — матчи дня и главное за утро.',
+        '🔎 Напишите клуб или матч прямо в чат — покажу ближайший матч и короткую AI-оценку.',
+        '⚽ <b>Матчи</b> — матчи сегодня, 🔴 <b>LIVE</b> — идут сейчас.',
+        '⭐ <b>Мои команды</b> — избранное и напоминания.',
+        '🤖 <b>AI-подборка</b> — три заметных матча дня.',
+        '🕘 <b>Последний разбор</b> — ваш сохранённый AI-разбор.',
+        '📈 <b>Протокол AI</b> — подтверждённая история прогнозов.',
+        '📰 <b>Новости</b> и ☀️ <b>Утренняя подборка</b> — главное за день.',
+        '💎 <b>Тарифы</b> и ⚙️ <b>Уведомления</b> — в меню «••• Ещё».',
         '',
-        'После одного нажатия на матч короткая AI-оценка появляется прямо в Telegram. <b>Полный AI-разбор</b> открывается в Mini App сразу на этом fixture.',
+        'Полный AI-разбор открывается в приложении сразу на выбранном матче.',
         '',
         '<i>MatchRadar AI — информационно-аналитический сервис. Он не гарантирует исход матча и не является финансовой или букмекерской рекомендацией.</i>',
         ...(links ? ['',links] : []),

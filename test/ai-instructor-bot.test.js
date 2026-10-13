@@ -273,7 +273,7 @@ test('Telegram quick AI requests an explicit server recheck with telegram origin
   });
 });
 
-test('Telegram bot configuration clears slash commands and installs the Mini App menu button', async () => {
+test('Telegram bot configuration sets the short command menu and installs the Mini App menu button', async () => {
   const calls = [];
   const botUi = createBotUi();
   const orchestration = createTelegramBotOrchestrationRuntime({
@@ -293,7 +293,7 @@ test('Telegram bot configuration clears slash commands and installs the Mini App
   );
 
   const byMethod = new Map(calls.map(call => [call.method, call.payload]));
-  assert.deepEqual(byMethod.get('setMyCommands'), { commands: [] });
+  assert.deepEqual(byMethod.get('setMyCommands').commands.map(item => item.command), ['start', 'today', 'live', 'favorites', 'plans', 'settings', 'help']);
   assert.deepEqual(byMethod.get('setMyName'), { name: 'MatchRadar AI' });
   assert.equal(
     byMethod.get('setChatMenuButton').menu_button.web_app.url,
