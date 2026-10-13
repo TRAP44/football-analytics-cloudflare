@@ -414,10 +414,26 @@ test('general Telegram news ignores malformed favorite ids and survives telemetr
     ()=>api.sendGeneralFootballNews({}, {}, 7, 99, {force:false}),
   );
   assert.equal(calls.telegram.length,1);
-  const keyboard=calls.telegram[0].payload.reply_markup.inline_keyboard;
-  const callbacks=keyboard.flat().map(item=>item.callback_data).filter(Boolean);
-  assert.ok(callbacks.includes('news:team:40'));
-  assert.equal(callbacks.some(value=>/news:team:(?:true|NaN|0)$/.test(value)),false);
+  // Компактный формат (13.10): одна кнопка «Обновить», заголовки — ссылки.
+  const payload=calls.telegram[0].payload;
+  assert.deepEqual(payload.reply_markup.inline_keyboard,[[{text:'🔄 Обновить',callback_data:'news:refresh'}]]);
+  assert.match(payload.text,/^📰 <b>Главное в футболе<\/b>/);
+  assert.match(payload.text,/1\. <a href="https:\/\/www\.reuters\.com\/sports\/football\/a">Liverpool lineup news<\/a> — Reuters/);
+  assert.doesNotMatch(payload.text,/Почему важно|Что проверить/);
+});
+
+test('compact news feed escapes titles, caps the list and handles empty input',()=>{
+  const {api}=harness({});
+  const items=Array.from({length:7},(_,i)=>({
+    url:`https://example.com/n${i}?q="x"`,
+    title:`<b>Title ${i}</b> & co`,
+  }));
+  const text=api.compactNewsFeedText(items);
+  assert.equal((text.match(/<a href=/g) || []).length,5);
+  assert.doesNotMatch(text,/<b>Title/);
+  assert.match(text,/&lt;b&gt;Title 0&lt;\/b&gt; &amp; co<\/a> — example\.com/);
+  assert.doesNotMatch(text,/href="[^"]*"x"/);
+  assert.match(api.compactNewsFeedText([]),/Свежих новостей пока нет/);
 });
 
 test('favorite-team news validates membership and links a real upcoming fixture',async()=>{
