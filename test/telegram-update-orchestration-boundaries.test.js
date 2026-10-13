@@ -372,7 +372,7 @@ test('bot tariffs show configured prices only and open the billing block of the 
     starsPrices:{PRO:499,PREMIUM:999},
     passPrices:{MATCH_PASS:75,DAY_PASS:150,WEEKEND_PASS:299},
     passDurations:{MATCH_PASS:72,DAY_PASS:24,WEEKEND_PASS:168},
-    passUsageLimits:{WEEKEND_PASS:50},
+    passUsageLimits:{WEEKEND_PASS:6},
   };
   for (const text of ['💎 Тарифы','/plans']) {
     sent.length=0;
@@ -383,7 +383,7 @@ test('bot tariffs show configured prices only and open the billing block of the 
     assert.match(message.text,/Premium<\/b> — 999 ⭐/);
     assert.match(message.text,/Match Pass<\/b> — 75 ⭐/);
     assert.match(message.text,/Day Pass<\/b> — 150 ⭐/);
-    assert.match(message.text,/7 дней<\/b> — 299 ⭐/);
+    assert.match(message.text,/7 дней<\/b> — 299 ⭐ · до 6 AI-разборов за этот срок/);
     assert.match(message.text,/Бесплатно — 3 AI-разбора в день/);
     const url=new URL(message.reply_markup.inline_keyboard[0][0].web_app.url);
     assert.equal(url.searchParams.get('view'),'profile');
@@ -412,6 +412,7 @@ test('bot notifications open the notification block of the profile', async () =>
     await processor(request,{},{message:{chat:{id:42,type:'private'},from:{id:7},text}});
     const message=sent.find(call=>call.method==='sendMessage').payload;
     assert.match(message.text,/Профиль → Уведомления/);
+    assert.doesNotMatch(message.text,/Итоги дня/);
     const url=new URL(message.reply_markup.inline_keyboard[0][0].web_app.url);
     assert.equal(url.searchParams.get('section'),'notifications');
   }

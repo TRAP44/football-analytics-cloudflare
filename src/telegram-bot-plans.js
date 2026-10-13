@@ -39,7 +39,9 @@ export function botPlansText(cfg = {}) {
   const day = passProductConfig('DAY_PASS', cfg);
   if (day) passes.push(`<b>Day Pass</b> — ${day.stars} ⭐ · все матчи на ${durationLabel(day.durationHours) || '24 ч'}`);
   const week = passProductConfig('WEEKEND_PASS', cfg);
-  if (week?.saleReady) passes.push(`<b>${durationLabel(week.durationHours) || '7 дней'}</b> — ${week.stars} ⭐ · все матчи`);
+  // Лимит разборов недельного доступа — обязательно в тексте (ревью Codex #872).
+  const weekCap = positiveInt(week?.usageLimit);
+  if (week?.saleReady && weekCap) passes.push(`<b>${durationLabel(week.durationHours) || '7 дней'}</b> — ${week.stars} ⭐ · до ${weekCap} AI-разборов за этот срок`);
   if (passes.length) lines.push('', 'Разовый доступ:', ...passes);
 
   lines.push('', 'Оплата — Telegram Stars в приложении.');
@@ -49,6 +51,6 @@ export function botPlansText(cfg = {}) {
 export const BOT_NOTIFICATIONS_TEXT = [
   '⚙️ <b>Уведомления</b>',
   '',
-  'Напоминания о матчах, голы любимых команд, «Перелом матча» и «Итоги дня» включаются в приложении: Профиль → Уведомления.',
-  'Утреннюю подборку можно включить прямо здесь — кнопка «☀️ Утренняя подборка».',
+  'Напоминания о матчах и события любимых команд и игроков (в том числе «Перелом матча») настраиваются в приложении: Профиль → Уведомления.',
+  'Утреннюю подборку можно включить прямо здесь — кнопка «☀️ Утренняя подборка» в меню «••• Ещё».',
 ].join('\n');
