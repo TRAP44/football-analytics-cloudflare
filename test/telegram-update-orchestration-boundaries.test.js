@@ -376,7 +376,7 @@ test('bot tariffs show configured prices only and open the billing block of the 
   };
   for (const text of ['💎 Тарифы','/plans']) {
     sent.length=0;
-    const result=await processor(request,cfg,{message:{chat:{id:42},from:{id:7},text}});
+    const result=await processor(request,cfg,{message:{chat:{id:42,type:'private'},from:{id:7},text}});
     assert.equal(result.status,200);
     const message=sent.find(call=>call.method==='sendMessage').payload;
     assert.match(message.text,/PRO<\/b> — 499 ⭐ за 30 дней · 20 разборов в день/);
@@ -396,7 +396,7 @@ test('bot tariffs omit plans whose price is not configured', async () => {
   const processor=createTelegramUpdateProcessor(deps({
     telegramApi:async(method,_cfg,payload)=>{ sent.push({method,payload}); return {ok:true}; },
   }));
-  await processor(request,{passPrices:{}},{message:{chat:{id:42},from:{id:7},text:'💎 Тарифы'}});
+  await processor(request,{passPrices:{}},{message:{chat:{id:42,type:'private'},from:{id:7},text:'💎 Тарифы'}});
   const message=sent.find(call=>call.method==='sendMessage').payload;
   assert.doesNotMatch(message.text,/PRO<\/b>|Premium<\/b>|Бесплатно/);
   assert.doesNotMatch(message.text,/7 дней<\/b>/,'weekend pass is not sold without a usage cap');
@@ -409,10 +409,25 @@ test('bot notifications open the notification block of the profile', async () =>
   }));
   for (const text of ['⚙️ Уведомления','/settings']) {
     sent.length=0;
-    await processor(request,{},{message:{chat:{id:42},from:{id:7},text}});
+    await processor(request,{},{message:{chat:{id:42,type:'private'},from:{id:7},text}});
     const message=sent.find(call=>call.method==='sendMessage').payload;
     assert.match(message.text,/Профиль → Уведомления/);
     const url=new URL(message.reply_markup.inline_keyboard[0][0].web_app.url);
     assert.equal(url.searchParams.get('section'),'notifications');
+  }
+});
+
+test('bot tariffs and notifications send no Mini App button outside private chats', async () => {
+  const sent=[];
+  const processor=createTelegramUpdateProcessor(deps({
+    telegramApi:async(method,_cfg,payload)=>{ sent.push({method,payload}); return {ok:true}; },
+  }));
+  for (const text of ['/plans','/settings']) {
+    sent.length=0;
+    const result=await processor(request,{},{message:{chat:{id:-100500,type:'supergroup'},from:{id:7},text}});
+    assert.equal(result.status,200);
+    const message=sent.find(call=>call.method==='sendMessage').payload;
+    assert.equal(message.reply_markup,undefined,text);
+    assert.ok(message.text.length>0);
   }
 });

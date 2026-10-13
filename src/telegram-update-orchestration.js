@@ -780,7 +780,8 @@ export function createTelegramUpdateProcessor(deps) {
   }
 
   if (chatId && (/^\/plans(?:@\w+)?(?:\s|$)/i.test(text) || text === '💎 Тарифы')) {
-    const url=safeWebAppUrl(request,{view:'profile',section:'billing'});
+    // Кнопка web_app работает только в личном чате (ревью Codex #872).
+    const url=msg?.chat?.type === 'private' ? safeWebAppUrl(request,{view:'profile',section:'billing'}) : '';
     await telegramApi('sendMessage',cfg,{
       chat_id:chatId,
       parse_mode:'HTML',
@@ -791,7 +792,7 @@ export function createTelegramUpdateProcessor(deps) {
   }
 
   if (chatId && (/^\/settings(?:@\w+)?(?:\s|$)/i.test(text) || text === '⚙️ Уведомления')) {
-    const url=safeWebAppUrl(request,{view:'profile',section:'notifications'});
+    const url=msg?.chat?.type === 'private' ? safeWebAppUrl(request,{view:'profile',section:'notifications'}) : '';
     await telegramApi('sendMessage',cfg,{
       chat_id:chatId,
       parse_mode:'HTML',
