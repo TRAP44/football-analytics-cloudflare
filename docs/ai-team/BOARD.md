@@ -16,7 +16,7 @@ _пусто_
 
 ## На ревью
 
-- [ ] Свежие LIVE и счёт любимых клубов из общих снимков — **Codex** — ветка `codex/favorite-live-freshness` — ревью: Claude.
+- [ ] Свежие LIVE и счёт любимых клубов из общих снимков — **Codex** — [PR #893](https://github.com/TRAP44/football-analytics-cloudflare/pull/893), ветка `codex/favorite-live-freshness` — ревью: Claude.
 
 
 
