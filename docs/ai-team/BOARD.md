@@ -12,9 +12,11 @@ _пусто_
 
 ## В работе
 
-- [ ] Второй этап очистки UI: девять пунктов аудита — **Codex** — `codex/ui-cleanup-stage-two`.
+_пусто_
 
 ## На ревью
+
+- [ ] Второй этап очистки UI: девять пунктов аудита — **Codex** — [PR #884](https://github.com/TRAP44/football-analytics-cloudflare/pull/884) — ревью: Claude.
 
 
 

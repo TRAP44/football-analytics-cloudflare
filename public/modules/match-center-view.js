@@ -116,7 +116,7 @@ export function renderMatchCenterView(d, deps) {
     : history
     ? `<h2 id="mrAiCardTitle">AI уже разобрал этот матч</h2>
        <p class="mr-ai-card-note">Вероятности исходов, ключевые факторы и что может изменить картину — в полном разборе.</p>
-       ${aiConfidenceMeterHtml(history)}
+       ${live ? '' : aiConfidenceMeterHtml(history)}
        <button class="primary-btn mr-ai-card-btn" type="button" data-center-open-analysis="${fixtureId}">Открыть разбор</button>`
     : historyUnknown
     ? `<h2 id="mrAiCardTitle">Не удалось проверить сохранённые разборы</h2>
