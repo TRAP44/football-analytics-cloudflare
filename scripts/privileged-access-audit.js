@@ -6,6 +6,7 @@ export const WORKFLOW_SECRET_ALLOWLIST = Object.freeze({
   '.github/workflows/backup-supabase.yml': new Set(['SUPABASE_DB_URL','BACKUP_ENCRYPTION_PASSPHRASE']),
   '.github/workflows/deploy-production.yml': new Set(['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','SUPABASE_ACCESS_TOKEN']),
   '.github/workflows/verify-production-migration.yml': new Set(['SUPABASE_ACCESS_TOKEN']),
+  '.github/workflows/audit-infrastructure-capacity.yml': new Set(['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','SUPABASE_ACCESS_TOKEN']),
   '.github/workflows/rollback-production.yml': new Set(['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID']),
   // Фоновые задачи вне Cloudflare (Workers Free обрывает cron): ключи только из
   // окружения background-jobs, доступного лишь ветке main (см. проверку ниже).
@@ -19,6 +20,7 @@ export const WORKFLOW_SECRET_ALLOWLIST = Object.freeze({
 // Workflow с боевыми ключами приложения: каждая задача, читающая секреты,
 // обязана работать в своём окружении GitHub (секреты окружения + ограничение веток).
 const WORKFLOW_REQUIRED_ENVIRONMENT = Object.freeze({
+  '.github/workflows/audit-infrastructure-capacity.yml': 'production',
   '.github/workflows/cron-runner.yml': 'background-jobs',
 });
 
