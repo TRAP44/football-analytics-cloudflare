@@ -9,6 +9,7 @@
 
 import { claimDailyBudget, peekDailyBudget } from './daily-budget-claim.js';
 import { ensureProviderSnapshot } from './provider-status-probe.js';
+import {prematchProviderBudget,PREMATCH_PROVIDER_BUDGET_PREFIX} from './prematch-provider-budget.js';
 
 const DAY_SECONDS = 86400;
 const FEED_CACHE_KEY = date => `matches:${date}:v6-integrity`;
@@ -63,7 +64,7 @@ export function prematchPredictionSettings(cfg = {}) {
  * Решение о бюджете провайдера до любых запросов. FREE/UNKNOWN — только при
  * подтверждённом остатке выше резерва; платный план — если нет cooldown.
  */
-export function providerBudgetDecision(snapshot, settings, nowMs = Date.now()) {
+export function providerBudgetDecision(snapshot, settings, nowMs = Date.now(), {requireDailyQuota=false}={}) {
   const snap = plainObject(snapshot) || {};
   if (snap.cooldownActive === true) return { allowed: false, reason: 'provider_cooldown' };
   if (snap.health === 'critical') return { allowed: false, reason: 'provider_critical' };
@@ -75,7 +76,7 @@ export function providerBudgetDecision(snapshot, settings, nowMs = Date.now()) {
   const ageMs = Number.isFinite(updatedMs) ? nowMs - updatedMs : Infinity;
   const minute = Number(snap.minuteRemaining);
   if (ageMs >= 0 && ageMs <= 90_000 && Number.isFinite(minute) && minute < 10) return { allowed: false, reason: 'provider_minute_budget' };
-  if (paid) return { allowed: true, reason: '' };
+  if (paid) return requireDailyQuota ? prematchProviderBudget(snap,nowMs) : {allowed:true,reason:''};
   const sameUtcDay = Number.isFinite(updatedMs) && utcDate(updatedMs) === utcDate(nowMs);
   const daily = Number(snap.dailyRemaining);
   if (!sameUtcDay || !Number.isFinite(daily) || daily < settings.freeDailyReserve) return { allowed: false, reason: 'provider_daily_reserve' };
@@ -317,7 +318,9 @@ export function createPrematchPredictionJob(deps = {}) {
           alreadyCached: summary.alreadyCached,
           skipped: summary.skipped,
           failed: summary.failed,
-          stopReason: summary.stopReason || null,
+          stopReason: summary.stopReason || summary.reason || null,
+          providerRequestsReserved:summary.providerRequestsReserved || 0,
+          providerRequestLimit:summary.providerRequestLimit || 0,
         },
       });
     } catch {}
@@ -340,23 +343,50 @@ export function createPrematchPredictionJob(deps = {}) {
 
     // Состояние квоты провайдера общее для всех изолятов (Supabase); в cron-изоляте
     // своей памяти о нём может не быть. Истёкший снимок обновляется запросом /status.
-    await ensureProviderSnapshot({ cfg, loadSharedProviderState, providerSnapshot, probeProviderStatus, nowMs: at.getTime() });
+    await ensureProviderSnapshot({ cfg, loadSharedProviderState, providerSnapshot, probeProviderStatus, nowMs: at.getTime(), requireDailyQuota:true });
     let budget;
     try {
-      budget = providerBudgetDecision(providerSnapshot(), settings, at.getTime());
+      budget = providerBudgetDecision(providerSnapshot(), settings, at.getTime(), {requireDailyQuota:true});
     } catch {
       budget = { allowed: false, reason: 'provider_unknown' };
     }
-    // Тихий пропуск без ops-события: при ограничении источника задание просто ждёт.
-    if (!budget.allowed) return { ...summary, reason: budget.reason };
+    const finish=async reason=>{
+      summary.reason=reason;
+      summary.stopReason=reason;
+      await report(cfg,summary);
+      return summary;
+    };
+    if (!budget.allowed) return finish(budget.reason);
+    const providerBudget=prematchProviderBudget(providerSnapshot(),at.getTime());
+    if (!providerBudget.allowed) return finish(providerBudget.reason);
+    summary.providerRequestLimit=providerBudget.limit;
+    summary.providerRequestsReserved=0;
+    const providerPeek=await peekDailyBudget({cfg,supaSelectMany,prefix:PREMATCH_PROVIDER_BUDGET_PREFIX,limit:providerBudget.limit,now:realNow});
+    if (!providerPeek.available) return finish(providerPeek.reason);
+    const baseCfg=cfg;
+    cfg={...cfg,prematchProviderClaim:async()=>{
+      const snapshot=providerSnapshot();
+      const decision=providerBudgetDecision(snapshot,settings,realNow(),{requireDailyQuota:true});
+      const reserve=prematchProviderBudget(snapshot,realNow());
+      let reason=summary.stopReason || (!decision.allowed ? decision.reason : !reserve.allowed ? reserve.reason : '');
+      if (!reason) {
+        const claim=await claimDailyBudget({cfg:baseCfg,supaRpc,supaSelectMany,prefix:PREMATCH_PROVIDER_BUDGET_PREFIX,limit:reserve.limit,now:realNow});
+        if (!claim.allowed) reason=claim.reason || 'daily_limit';
+      }
+      if (reason) {
+        summary.stopReason=reason;
+        throw Object.assign(new Error('Background provider budget protected.'),{code:'FOOTBALL_BACKGROUND_LIMIT',status:429});
+      }
+      summary.providerRequestsReserved++;
+    }};
 
     // Суточный потолок исчерпан — не тратим запросы к источнику на ленту.
     const peek = await peekDailyBudget({ cfg, supaSelectMany, prefix: BUDGET_PREFIX, limit: settings.dailyLimit, now: realNow });
-    if (!peek.available) return { ...summary, reason: peek.reason };
+    if (!peek.available) return finish(peek.reason);
 
     const nowMs = at.getTime();
     const feeds = (await Promise.all([utcDate(nowMs), utcDate(nowMs + DAY_SECONDS * 1000)].map(date => loadFeed(date, cfg)))).filter(Boolean);
-    if (!feeds.length) return { ...summary, reason: 'feed_not_cached' };
+    if (!feeds.length) return finish(summary.stopReason || 'feed_not_cached');
 
     // Избранные ищутся только среди команд матчей, которые вообще могут стать
     // кандидатами (предстоящие, в окне, не молодёжь/товарищеские/низшие лиги):
@@ -366,19 +396,23 @@ export function createPrematchPredictionJob(deps = {}) {
     const favorites = await favoriteTeams(eligible.flatMap(row => [row.homeId, row.awayId]), cfg);
     const candidates = prematchCandidates(feeds, favorites, nowMs).slice(0, 200);
     summary.candidates = candidates.length;
-    if (!candidates.length) return { ...summary, reason: preliminary.length ? 'no_candidates' : 'no_main_matches' };
+    if (!candidates.length) return finish(preliminary.length ? 'no_candidates' : 'no_main_matches');
 
     let existing;
     try {
       existing = await fixturesWithPrediction(candidates.map(row => row.fixtureId), cfg);
     } catch {
-      return { ...summary, ok: false, reason: 'predictions_lookup_failed' };
+      summary.ok=false;
+      return finish('predictions_lookup_failed');
     }
     const queue = candidates.filter(row => !existing.has(row.fixtureId));
     summary.withoutPrediction = queue.length;
-    if (!queue.length) return { ...summary, reason: 'all_predicted' };
+    if (!queue.length) return finish('all_predicted');
 
     for (const row of queue.slice(0, settings.perRun)) {
+      if (summary.stopReason) break;
+      const current=providerBudgetDecision(providerSnapshot(),settings,realNow(),{requireDailyQuota:true});
+      if (!current.allowed) { summary.stopReason=current.reason; break; }
       // Настоящий суточный потолок (24 часовые корзины, см. daily-budget-claim.js):
       // окно claim_provider_request само по себе не длиннее часа.
       const claim = await claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix: BUDGET_PREFIX, limit: settings.dailyLimit, now: realNow });
@@ -401,7 +435,7 @@ export function createPrematchPredictionJob(deps = {}) {
           summary.computed += 1;
         } else if (status === 429 || status === 503) {
           summary.skipped += 1;
-          summary.stopReason = 'provider_limited';
+          summary.stopReason ||= 'provider_limited';
           break;
         } else {
           summary.skipped += 1;
@@ -410,7 +444,7 @@ export function createPrematchPredictionJob(deps = {}) {
         summary.failed += 1;
         const code = String(safeRead(error, 'code') || '');
         if (/RATE|QUOTA|COOLDOWN|LIMIT/i.test(code) || Number(safeRead(error, 'status')) === 429) {
-          summary.stopReason = 'provider_limited';
+          summary.stopReason ||= 'provider_limited';
           break;
         }
       }

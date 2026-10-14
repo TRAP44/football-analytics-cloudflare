@@ -64,14 +64,14 @@ test('provider budget: FREE waits for a confirmed reserve, cooldown always block
   assert.equal(providerBudgetDecision({ plan: 'PRO', minuteRemaining: 3, updatedAt: fresh }, settings, NOW).reason, 'provider_minute_budget');
   // Старый минутный остаток (минута давно прошла) не блокирует.
   assert.equal(providerBudgetDecision({ plan: 'PRO', minuteRemaining: 3, updatedAt: yesterday }, settings, NOW).allowed, true);
-  assert.equal(providerBudgetDecision({ plan: 'PRO' }, settings, NOW).allowed, true);
+  assert.equal(providerBudgetDecision({ plan: 'PRO',dailyLimit:7500,dailyRemaining:7400,updatedAt:new Date(NOW).toISOString() }, settings, NOW).allowed, true);
 });
 
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-function job({ feed, predicted = [], snapshot = { plan: 'PRO' }, rpcAllowed = () => true, analyze, favorites = [], rateRows = [], raw = {}, staleRaw = {}, network = {} } = {}) {
+function job({ feed, predicted = [], snapshot = { plan: 'PRO',dailyLimit:7500,dailyRemaining:7400,updatedAt:new Date(NOW).toISOString() }, rpcAllowed = () => true, analyze, favorites = [], rateRows = [], raw = {}, staleRaw = {}, network = {} } = {}) {
   const calls = { analyzed: [], rpc: [], events: [], selects: [], cacheReads: [], network: [] };
   const rt = createPrematchPredictionJob({
     analyzeFixtureForSystem: async (fixtureId, cfg) => {
@@ -165,7 +165,7 @@ test('job: per-run cap, daily cap and provider limits stop the run', async () =>
   assert.equal(thrownResult.stopReason, 'provider_limited');
 });
 
-test('job: skips quietly without provider budget, outside the interval, when disabled or without the cached feed', async () => {
+test('job: reports one budget skip; interval and disabled ticks stay quiet', async () => {
   const feed = { matches: [match(1, 120, { isTop: true })] };
   const cases = [
     [{ snapshot: { plan: 'FREE', dailyRemaining: 10, updatedAt: new Date(NOW - 60_000).toISOString() } }, {}, at, 'provider_daily_reserve'],
@@ -178,7 +178,8 @@ test('job: skips quietly without provider budget, outside the interval, when dis
     const result = await rt.processPrematchPredictions(cfg, when);
     assert.equal(result.reason, reason);
     assert.deepEqual(calls.analyzed, []);
-    assert.deepEqual(calls.events, [], 'no ops noise on a quiet skip');
+    assert.equal(calls.events.length,reason.startsWith('provider_') ? 1 : 0);
+    if (calls.events.length) assert.equal(calls.events[0].meta.stopReason,reason);
   }
   const noFeed = job({ feed: null });
   assert.equal((await noFeed.rt.processPrematchPredictions({}, at)).reason, 'feed_not_cached');
@@ -452,7 +453,7 @@ test('job: favorites lookup skips duplicate rows of a popular team by team_id ke
     isTopLeague: () => false,
     loadProviderFixturesForDate: async () => [],
     loadSharedProviderState: async () => {},
-    providerSnapshot: () => ({ plan: 'PRO' }),
+    providerSnapshot: () => ({ plan: 'PRO',dailyLimit:7500,dailyRemaining:7400,updatedAt:new Date(NOW).toISOString() }),
     recordOpsEvent: async () => {},
     supaRpc: async () => ({ allowed: true }),
     supaSelectMany: async (_cfg, table, filters, options) => {
@@ -496,7 +497,7 @@ test('job: a cold match feed falls back to the raw fixtures of the day', async (
       const youth = /U21/.test(leagueName);
       return { youth, friendly: false, lower: false, featured: leagueId === 39 };
     },
-    providerSnapshot: () => ({ plan: 'PRO' }),
+    providerSnapshot: () => ({ plan: 'PRO',dailyLimit:7500,dailyRemaining:7400,updatedAt:new Date(NOW).toISOString() }),
     recordOpsEvent: async () => {},
     supaRpc: async () => ({ allowed: true }),
     supaSelectMany: async (_cfg, table) => (table === 'favorites' ? [{ team_id: 7 }] : []),
@@ -523,7 +524,7 @@ test('job: raw fallback is fail-closed when the competition classifier is unavai
       loadProviderFixturesForDate: async date => (date === '2026-10-11' ? raw : []),
       loadSharedProviderState: async () => {},
       normalizeCompetition,
-      providerSnapshot: () => ({ plan: 'PRO' }),
+      providerSnapshot: () => ({ plan: 'PRO',dailyLimit:7500,dailyRemaining:7400,updatedAt:new Date(NOW).toISOString() }),
       recordOpsEvent: async () => {},
       supaRpc: async () => ({ allowed: true }),
       supaSelectMany: async (_cfg, table) => (table === 'favorites' ? [{ team_id: 1 }] : []),
@@ -531,4 +532,63 @@ test('job: raw fallback is fail-closed when the competition classifier is unavai
     await rt.processPrematchPredictions({}, new Date(NOW));
     assert.deepEqual(analyzed, []);
   }
+});
+
+test('paid background stops at half of observed daily quota and fails closed on missing evidence',()=>{
+  const settings=prematchPredictionSettings({});
+  const snapshot={plan:'PRO',dailyLimit:7500,dailyRemaining:3751,updatedAt:new Date(NOW).toISOString()};
+  assert.equal(providerBudgetDecision(snapshot,settings,NOW,{requireDailyQuota:true}).allowed,true);
+  assert.equal(providerBudgetDecision({...snapshot,dailyRemaining:3750},settings,NOW,{requireDailyQuota:true}).reason,'provider_user_reserve');
+  for (const extra of [{dailyRemaining:null},{dailyRemaining:true},{dailyRemaining:7501},{dailyLimit:0},{updatedAt:new Date(NOW-31*60000).toISOString()},{updatedAt:new Date(NOW+1).toISOString()}]) {
+    assert.equal(providerBudgetDecision({...snapshot,...extra},settings,NOW,{requireDailyQuota:true}).reason,'provider_quota_unconfirmed');
+  }
+});
+
+test('background provider budget is exhausted before fetching feeds or computing matches',async()=>{
+  const {rt,calls}=job({feed:{matches:[match(1,120,{isTop:true})]},rateRows:[
+    {bucket_key:'prematch-provider-requests:h03',window_started_at:'2026-10-11T03:00:00Z',request_count:1875},
+  ]});
+  const result=await rt.processPrematchPredictions({},at);
+  assert.equal(result.reason,'daily_limit');
+  assert.deepEqual(calls.network,[]);
+  assert.deepEqual(calls.analyzed,[]);
+  assert.equal(calls.events.length,1);
+  assert.equal(calls.events[0].meta.providerRequestLimit,1875);
+});
+
+test('each actual background network attempt requires an atomic request claim and stops the run on rejection',async()=>{
+  let attempt=0;
+  const {rt,calls}=job({feed:{matches:[match(1,120,{isTop:true}),match(2,180,{isTop:true})]},
+    rpcAllowed:()=>++attempt<3,
+    analyze:async(id,cfg)=>{
+      await cfg.prematchProviderClaim('/predictions');
+      await cfg.prematchProviderClaim('/odds');
+      return jsonResponse({cached:false});
+    },
+  });
+  const result=await rt.processPrematchPredictions({},at);
+  assert.deepEqual(calls.analyzed,[1]);
+  assert.equal(result.stopReason,'daily_limit');
+  assert.equal(result.providerRequestsReserved,1);
+  const providerClaims=calls.rpc.filter(x=>x.params.p_bucket_key==='prematch-provider-requests:h12');
+  assert.equal(providerClaims.length,2);
+  assert.equal(providerClaims[0].params.p_limit,1875);
+  assert.equal(calls.events.length,1);
+});
+
+test('background rechecks the user reserve during the same calculation',async()=>{
+  const snapshot={plan:'PRO',dailyLimit:7500,dailyRemaining:7400,updatedAt:new Date(NOW).toISOString()};
+  const {rt,calls}=job({snapshot,feed:{matches:[match(1,120,{isTop:true}),match(2,180,{isTop:true})]},
+    analyze:async(id,cfg)=>{
+      await cfg.prematchProviderClaim('/predictions');
+      snapshot.dailyRemaining=3750;
+      await cfg.prematchProviderClaim('/odds');
+      assert.fail('second request must be rejected');
+    },
+  });
+  const result=await rt.processPrematchPredictions({},at);
+  assert.equal(result.stopReason,'provider_user_reserve');
+  assert.equal(result.providerRequestsReserved,1);
+  assert.deepEqual(calls.analyzed,[1]);
+  assert.equal(calls.events.length,1);
 });

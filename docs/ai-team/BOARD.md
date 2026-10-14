@@ -8,7 +8,7 @@
 
 ## Бэклог (Сергей расставляет приоритет сверху вниз)
 
-_пусто_
+- [ ] Задача 2, последующие этапы после резерва: наблюдаемые команды в приоритете; один пересчёт по объявленному составу без изменения первого прогноза; единое время расчёта в штабе/допустимых карточках — **Codex**.
 
 ## В работе
 
@@ -16,7 +16,8 @@ _пусто_
 
 ## На ревью
 
-- [ ] Свежие LIVE и счёт любимых клубов из общих снимков — **Codex** — [PR #893](https://github.com/TRAP44/football-analytics-cloudflare/pull/893), ветка `codex/favorite-live-freshness` — ревью: Claude.
+- [ ] Задача 2: замер запросов и резерв пользователей для фоновых прогнозов — **Codex** — ветка `codex/prematch-user-reserve`. — ревью: Claude.
+
 
 
 
@@ -39,6 +40,8 @@ _пусто_
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 ## Готово
+
+- [x] Свежие LIVE и счёт любимых клубов из общих снимков — **Codex** — [PR #893](https://github.com/TRAP44/football-analytics-cloudflare/pull/893), ветка `codex/favorite-live-freshness` — ревью: Claude. — слит.
 
 - [x] Аудит ответов бота: длинные названия, кнопки и пустые состояния — **Codex** — [PR #892](https://github.com/TRAP44/football-analytics-cloudflare/pull/892) — ревью: Claude. — слит.
 
@@ -154,3 +157,4 @@ _Сюда оба ассистента пишут проблемы и идеи, �
 ## Отложено Codex
 
 - Клубные custom emoji — [PR #888](https://github.com/TRAP44/football-analytics-cloudflare/pull/888) закрыт без merge: у владельца нет Premium/набора; выбран подход с картинками #889.
+

@@ -449,3 +449,20 @@ test('Phase 2 gateway rejects a non-array fixture response shape', async () => {
     error => error?.code === 'FOOTBALL_INVALID_RESPONSE',
   );
 });
+
+test('background admission runs before transport, including retry attempts, and interactive requests bypass it',async()=>{
+  let claims=0,transports=0;
+  const {gateway}=runtime({hasSupabase:()=>true,
+    memory:{provider:{plan:'PRO',dailyRemaining:7000,minuteRemaining:280}},
+    fetchWithTimeout:async()=>{transports++;return new Response(JSON.stringify({response:[]}));},
+  });
+  const cfg={apiFootballKey:'isolated-test-key',prematchProviderClaim:async()=>{claims++;throw Object.assign(new Error('background budget'),{status:429});}};
+  await assert.rejects(gateway.apiFootballNetwork('/fixtures',{id:1},cfg),/background budget/);
+  await assert.rejects(gateway.apiFootballNetwork('/fixtures',{id:1},cfg,{attempt:2}),/background budget/);
+  assert.equal(claims,2);
+  assert.equal(transports,0);
+  await gateway.apiFootballNetwork('/fixtures',{id:1},{apiFootballKey:'isolated-test-key'});
+  assert.equal(transports,1);
+  await gateway.apiFootballNetwork('/status',{},cfg);
+  assert.equal(claims,2,'status is a free provider probe');
+});

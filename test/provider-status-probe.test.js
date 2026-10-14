@@ -62,7 +62,7 @@ test('prematch job: an expired snapshot no longer blocks the run forever', async
       getStaleCache: async () => null,
       hasSupabase: () => true,
       loadSharedProviderState: async () => {},
-      probeProviderStatus: probe ? async () => { snapshot = { plan: 'PRO' }; } : undefined,
+      probeProviderStatus: probe ? async () => { snapshot = { plan: 'PRO', dailyLimit:7500,dailyRemaining:7400,updatedAt:new Date(NOW).toISOString() }; } : undefined,
       providerSnapshot: () => snapshot,
       supaRpc: async () => ({ allowed: true }),
       supaSelectMany: async () => [],
@@ -83,7 +83,7 @@ test('in-play job: after the probe the live feed may be fetched from the provide
       getModelProbabilities: async () => ({}),
       hasSupabase: () => true,
       loadProviderFixturesForDate: async (date, _cfg, options) => { network.push({ date, network: options?.allowNetwork }); return []; },
-      probeProviderStatus: probe ? async () => { snapshot = { plan: 'PRO' }; } : undefined,
+      probeProviderStatus: probe ? async () => { snapshot = { plan: 'PRO', dailyLimit:7500,dailyRemaining:7400,updatedAt:new Date(NOW).toISOString() }; } : undefined,
       providerSnapshot: () => snapshot,
       supaInsertIgnore: async () => {},
       supaSelectMany: async () => [],
@@ -153,4 +153,14 @@ test('worker wires the /status probe into both background jobs', () => {
   const worker = fs.readFileSync('src/worker.js', 'utf8');
   assert.equal(worker.match(/probeProviderStatus: \(\.\.\.args\) => probeProviderStatus\(\.\.\.args\)/g)?.length, 2);
   assert.match(worker, /createProviderStatusProbe\(\{\n      apiFootball: \(\.\.\.args\) => apiFootball\(\.\.\.args\),\n      inferPlan: \(\.\.\.args\) => inferFootballPlan\(\.\.\.args\),\n      memory,/);
+});
+
+test('prematch requires a current daily quota even for paid plans; other callers keep their existing policy',async()=>{
+  const snapshot={plan:'PRO'};
+  assert.equal(providerSnapshotNeedsProbe(snapshot,NOW),false);
+  assert.equal(providerSnapshotNeedsProbe(snapshot,NOW,{requireDailyQuota:true}),true);
+  assert.equal(providerSnapshotNeedsProbe({...snapshot,dailyLimit:7500,dailyRemaining:7400,updatedAt:new Date(NOW).toISOString()},NOW,{requireDailyQuota:true}),false);
+  let probes=0;
+  await ensureProviderSnapshot({nowMs:NOW,requireDailyQuota:true,providerSnapshot:()=>snapshot,probeProviderStatus:async()=>probes++});
+  assert.equal(probes,1);
 });
