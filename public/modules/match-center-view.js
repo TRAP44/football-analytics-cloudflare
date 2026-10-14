@@ -173,7 +173,7 @@ export function renderMatchCenterView(d, deps) {
 
     <div class="center-tab-panel match-center-primary" data-center-panel="ai" aria-label="AI о матче">
       <section class="panel mr-ai-card" aria-labelledby="mrAiCardTitle">
-        <div class="mr-ai-card-head"><span class="mr-kicker">✦ Вывод AI</span>${history?.aiConfidence ? `<span class="mr-ai-card-conf">уверенность ${Math.round(Number(history.aiConfidence))}/100</span>` : ''}</div>
+        <div class="mr-ai-card-head"><span class="mr-kicker">✦ Вывод AI</span></div>
         ${aiCardBody}
       </section>
       <section class="panel match-explanation beat-ai" id="beatAiPick" data-fixture="${Number(m.fixtureId) || 0}" aria-live="polite" hidden></section>

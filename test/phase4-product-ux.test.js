@@ -58,8 +58,8 @@ test('Match Center first level keeps AI confidence data quality three factors an
   const end=app.indexOf('function renderAnalysis',start);
   const body=app.slice(start,end);
   assert.match(body,/slice\(0, 3\)/);
-  assert.match(body,/Уверенность AI/);
-  assert.match(body,/Данные:/);
+  assert.doesNotMatch(body,/Уверенность AI|analysis-confidence-simple/);
+  assert.doesNotMatch(body,/Данные:/);
   assert.match(body,/Главные факторы/);
   assert.match(body,/Основные риски/);
 });

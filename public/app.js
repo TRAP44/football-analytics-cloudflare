@@ -3043,7 +3043,7 @@ function radarFeedItems(nowMs = Date.now()) {
         kicker: 'AI-РАЗБОР ГОТОВ',
         title: `${match.home?.name || ''} — ${match.away?.name || ''}`,
         // Метки сигнала бывают ставочными («ТБ 2.5», «П1») — показываем только нейтральный итог.
-        meta: [history.aiSignalCode === 'skip' ? 'Без уверенного вывода' : 'Сохранённый разбор', Number(history.aiConfidence || 0) ? `уверенность ${Math.round(Number(history.aiConfidence))}/100` : '', timeOf(match.date)].filter(Boolean).join(' · '),
+        meta: [history.aiSignalCode === 'skip' ? 'Без уверенного вывода' : 'Сохранённый разбор', timeOf(match.date)].filter(Boolean).join(' · '),
         action: 'history',
         fixtureId,
       };
@@ -6249,12 +6249,9 @@ function matchCockpitHtml(d = {}) {
 function analysisGlanceHtml(d = {}) {
   const factors = neutralTextList(d.insights).slice(0, 3);
   const risks = neutralTextList(d.risks).slice(0, 3);
-  const score = Number.isFinite(Number(d.confidence?.score)) ? Math.round(Number(d.confidence.score)) : null;
-  const dataQuality = qualityInfo(d.completeness);
   return `<section class="panel analysis-glance">
     <div class="analysis-glance-head">
       <div><span>ГЛАВНОЕ</span><h2>Что важно перед матчем</h2></div>
-      <div class="analysis-confidence-simple"><span>Уверенность AI</span><strong>${score === null ? '—' : `${score}/100`}</strong><small>${escapeHtml(publicText(d.confidence?.label || 'Оценивается'))}</small><small>Данные: ${escapeHtml(dataQuality.label || 'пока неполные')}</small></div>
     </div>
     <div class="analysis-glance-grid">
       <div><h3>Главные факторы</h3>${factors.length ? `<ol>${factors.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ol>` : '<p>Сильных отдельных факторов пока нет.</p>'}</div>
@@ -6335,8 +6332,6 @@ function renderAnalysis(d) {
       ${probabilityStrip(p)}
 
       <div class="experience-health-row">
-        <span class="quality-pill ${quality.cls}">● ${escapeHtml(publicText(confidence.label || quality.label || 'Оценивается'))}</span>
-        <span>${confidence.score ?? '—'}/100 уверенность</span>
         ${d.stale ? '<span>⚠️ Показана последняя доступная версия</span>' : ''}
       </div>
       ${analysisAccessUsageHtml(d.accessUsage, escapeHtml)}

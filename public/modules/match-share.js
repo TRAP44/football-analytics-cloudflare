@@ -53,7 +53,6 @@ export function buildMatchShareText({ match, probabilities, confidence, dateTime
   const probs = shareProbabilities(probabilities);
   if (probs) lines.push(`MatchRadar AI: хозяева ${probs[0]}% · ничья ${probs[1]}% · гости ${probs[2]}%`);
   const score = shareConfidence(confidence);
-  if (probs && score !== null) lines.push(`Уверенность модели: ${score}/100`);
 
   lines.push('', probs ? 'Аналитика модели, а не гарантия результата.' : 'Разбор и данные матча — в MatchRadar.');
   return lines.join('\n').slice(0, SHARE_TEXT_LIMIT);

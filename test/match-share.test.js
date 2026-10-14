@@ -17,7 +17,7 @@ test('share text is neutral: plain outcome words, no betting shorthand',()=>{
   assert.equal(text.split('\n')[0],'⚽ Милан — Рома');
   assert.match(text,/Серия А · 10 окт\., 22:54/);
   assert.match(text,/MatchRadar AI: хозяева 48% · ничья 27% · гости 25%/);
-  assert.match(text,/Уверенность модели: 66\/100/);
+  assert.doesNotMatch(text,/Уверенность модели|66\/100/);
   assert.match(text,/не гарантия результата/);
   assert.doesNotMatch(text,/П1|П2|\bН\b|ТБ|ТМ|Обе забьют|ставк|коэфф/i);
 });
