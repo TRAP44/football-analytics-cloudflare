@@ -247,9 +247,14 @@ export function renderMatchCenterView(d, deps) {
   const root=$('analysis');
   bindMatchCenterTabs();
   root.querySelectorAll('.smart-open-insights').forEach(btn => btn.addEventListener('click', () => {
+    const details=root.querySelector('[data-insight-details]');
+    if (!details) return;
+    details.hidden=!details.hidden;
+    btn.setAttribute('aria-expanded',String(!details.hidden));
+    btn.textContent=details.hidden?'Подробнее о матче →':'Скрыть подробности ↑';
     setMatchCenterTab('ai', false);
     requestAnimationFrame(() => {
-      root.querySelector('[data-center-section="insights"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (!details.hidden) root.querySelector('[data-center-section="insights"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }));
 

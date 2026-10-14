@@ -79,7 +79,7 @@ test('AI visual scores are bounded before presentation',()=>{
   const live=block(app,'function liveAiCoachHtml','function postMatchReviewHtml');
 
   assert.match(hero,/Math\.round\(clampPercent\(si\.dataScore\)\)/);
-  assert.match(full,/Math\.round\(clampPercent\(si\.dataScore\)\)/);
+  assert.doesNotMatch(full,/smart-insight-summary-panel|ТЕКУЩАЯ КАРТИНА|si\.dataScore/);
   assert.match(live,/Math\.round\(clampPercent\(ai\.confidence\)\)/);
   assert.doesNotMatch(hero,/Number\(si\.dataScore \|\| 0\)/);
   assert.doesNotMatch(live,/Math\.round\(Number\(ai\.confidence \|\| 0\)\)/);

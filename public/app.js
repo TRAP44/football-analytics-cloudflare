@@ -4973,7 +4973,7 @@ function smartInsightsHeroHtml(si, match) {
     </div>
     <p class="smart-story-summary">${escapeHtml(publicText(si.summary || ''))}</p>
     ${first ? `<div class="smart-story-focus"><span>${escapeHtml(first.icon || '💡')}</span><b>${escapeHtml(insightSideLabel(first.side, match))}</b><small>${escapeHtml(first.importance === 'high' ? 'Сильный сигнал' : first.importance === 'medium' ? 'Заметный сигнал' : 'Наблюдение')}</small></div>` : ''}
-    <button class="text-btn smart-open-insights" type="button">Все инсайты →</button>
+    ${si.insights?.length ? '<button class="secondary-btn smart-open-insights" type="button" aria-expanded="false">Подробнее о матче →</button>' : ''}
   </section>`;
 }
 
@@ -4981,17 +4981,9 @@ function smartInsightsFullHtml(si, match) {
   if (!si?.available) {
     return `<div class="empty"><strong>Недостаточно данных</strong><p>Когда появятся статистика и события, здесь будут автоматические выводы по ходу матча.</p></div>`;
   }
-  const dataScore=Math.round(clampPercent(si.dataScore));
-  return `<div class="smart-insights-full">
-    <section class="panel smart-insight-summary-panel">
-      <div class="smart-story-top">
-        <div><span class="smart-story-label">ТЕКУЩАЯ КАРТИНА</span><h2>${escapeHtml(si.headline || '')}</h2></div>
-        <div class="smart-data-score"><strong>${dataScore}%</strong><span>${escapeHtml(publicText(si.dataLabel || ''))}</span></div>
-      </div>
-      <p>${escapeHtml(si.summary || '')}</p>
-    </section>
+  return `<div class="smart-insights-full" data-insight-details hidden>
     <div class="smart-insight-list">${(si.insights || []).map(x => smartInsightCardHtml(x, match)).join('')}</div>
-    <section class="panel smart-methodology"><strong>Как это считается</strong><p>${escapeHtml(publicText(si.methodology || ''))}</p></section>
+    ${si.methodology ? `<details class="panel smart-methodology"><summary>Как это считается</summary><p>${escapeHtml(publicText(si.methodology))}</p></details>` : ''}
   </div>`;
 }
 
