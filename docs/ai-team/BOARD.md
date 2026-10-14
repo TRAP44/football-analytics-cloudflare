@@ -12,10 +12,11 @@
 
 ## В работе
 
-- [ ] Массовый запуск: объединить холодные чтения runtime_controls без задержки отключения функций — **Codex** — ветка `codex/runtime-controls-singleflight`.
 
 
 ## На ревью
+
+- [ ] Массовый запуск: объединить холодные чтения runtime_controls без задержки отключения функций — **Codex** — [PR #897](https://github.com/TRAP44/football-analytics-cloudflare/pull/897), ветка `codex/runtime-controls-singleflight` — ревью: Claude.
 
 
 
