@@ -196,3 +196,13 @@ test('background workflow installs locked production dependencies without lifecy
   const run=wf.indexOf('node scripts/cron-runner.js');
   assert.ok(install>=0 && install<run,'renderer package must exist before runner imports it');
 });
+
+test('prematch kill switch overrides checked-in settings without importing unrelated environment variables',()=>{
+  for (const [input,expected] of [['false','false'],['true','true'],['FALSE','false'],['invalid','false']]) {
+    const env=runnerEnv({PREMATCH_PREDICTIONS_ENABLED:input,UNRELATED:'no'},{PREMATCH_PREDICTIONS_ENABLED:'true'});
+    assert.equal(env.PREMATCH_PREDICTIONS_ENABLED,expected);
+    assert.equal(env.UNRELATED,undefined);
+  }
+  assert.equal(runnerEnv({PREMATCH_PREDICTIONS_ENABLED:''},{PREMATCH_PREDICTIONS_ENABLED:'true'}).PREMATCH_PREDICTIONS_ENABLED,'true');
+  assert.match(fs.readFileSync('.github/workflows/cron-runner.yml','utf8'),/PREMATCH_PREDICTIONS_ENABLED: \$\{\{ vars\.PREMATCH_PREDICTIONS_ENABLED \}\}/);
+});

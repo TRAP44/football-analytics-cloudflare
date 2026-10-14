@@ -59,6 +59,10 @@ export function runnerEnv(processEnv = {}, vars = {}, { sha = '', now = Date.now
     const value = processEnv[key];
     if (typeof value === 'string' && value.trim()) env[key] = value.trim();
   }
+  const prematchToggle=processEnv.PREMATCH_PREDICTIONS_ENABLED;
+  if (typeof prematchToggle==='string' && prematchToggle.trim()) {
+    env.PREMATCH_PREDICTIONS_ENABLED=prematchToggle.trim().toLowerCase()==='true' ? 'true' : 'false';
+  }
   // Отметка исполнителя: воркер с BACKGROUND_JOBS_EXECUTOR=github выполняет задачи только при ней.
   env.CRON_RUNNER = 'github-actions';
   env.CF_VERSION_METADATA = {

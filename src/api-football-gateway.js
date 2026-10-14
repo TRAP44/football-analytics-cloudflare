@@ -395,6 +395,10 @@ export function createApiFootballGateway({
     }
 
     await paceProviderRequest();
+    if (typeof cfg.prematchProviderClaim==='function' && path!=='/status') {
+      await cfg.prematchProviderClaim(path);
+    }
+
     noteProviderSend();
     const startedAt = Date.now();
     const attempt = Math.max(1, Number(options.attempt || 1));

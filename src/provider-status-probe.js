@@ -21,7 +21,7 @@ function utcDate(ms) {
 }
 
 /** Нужно ли спросить /status перед решением о бюджете. */
-export function providerSnapshotNeedsProbe(snapshot, nowMs = Date.now()) {
+export function providerSnapshotNeedsProbe(snapshot, nowMs = Date.now(), { requireDailyQuota = false } = {}) {
   const snap = plainObject(snapshot) || {};
   if (snap.cooldownActive === true) return false;
   // Cooldown закончился, но в памяти осталась ошибка лимита (health critical):
@@ -29,11 +29,12 @@ export function providerSnapshotNeedsProbe(snapshot, nowMs = Date.now()) {
   // (ревью Codex #862).
   if (snap.health === 'critical') return true;
   const plan = String(snap.plan || 'UNKNOWN').toUpperCase();
-  if (['PRO', 'ULTRA', 'MEGA'].includes(plan)) return false;
-  if (plan !== 'FREE') return true;
-  // Бесплатный тариф: остаток нужен свежий и за текущие сутки UTC.
+  if (['PRO', 'ULTRA', 'MEGA'].includes(plan) && !requireDailyQuota) return false;
+  if (!['FREE','PRO','ULTRA','MEGA'].includes(plan)) return true;
+  if (requireDailyQuota && (count(snap.dailyLimit)===null || count(snap.dailyLimit)===0 || count(snap.dailyRemaining)===null || snap.dailyRemaining>snap.dailyLimit)) return true;
+  // FREE and opted-in background callers need current-day quota evidence.
   const updatedMs = Date.parse(String(snap.updatedAt || ''));
-  if (!Number.isFinite(updatedMs)) return true;
+  if (!Number.isFinite(updatedMs) || (requireDailyQuota && nowMs<updatedMs)) return true;
   return utcDate(updatedMs) !== utcDate(nowMs) || nowMs - updatedMs > PROBE_MAX_AGE_MS;
 }
 
@@ -60,7 +61,7 @@ export function quotaFromStatusBody(body, inferPlan) {
  * спрашивает /status. Ошибки не пробрасываются: решение о бюджете примет
  * providerBudgetDecision по тому снимку, что есть.
  */
-export async function ensureProviderSnapshot({ cfg, loadSharedProviderState, providerSnapshot, probeProviderStatus, nowMs = Date.now() } = {}) {
+export async function ensureProviderSnapshot({ cfg, loadSharedProviderState, providerSnapshot, probeProviderStatus, nowMs = Date.now(), requireDailyQuota = false } = {}) {
   if (typeof loadSharedProviderState === 'function') {
     try {
       await loadSharedProviderState(cfg);
@@ -69,7 +70,7 @@ export async function ensureProviderSnapshot({ cfg, loadSharedProviderState, pro
   if (typeof probeProviderStatus !== 'function' || typeof providerSnapshot !== 'function') return { probed: false };
   let needs = false;
   try {
-    needs = providerSnapshotNeedsProbe(providerSnapshot(), nowMs);
+    needs = providerSnapshotNeedsProbe(providerSnapshot(), nowMs, { requireDailyQuota });
   } catch {
     needs = false;
   }
