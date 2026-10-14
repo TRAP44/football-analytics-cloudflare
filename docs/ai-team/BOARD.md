@@ -12,10 +12,11 @@
 
 ## В работе
 
+- [ ] Массовый запуск: объединить холодные чтения runtime_controls без задержки отключения функций — **Codex** — ветка `codex/runtime-controls-singleflight`.
+
 
 ## На ревью
 
-- [ ] Массовый запуск: изолированная проверка 10 000/сутки и пика 1000 — **Codex** — [PR #896](https://github.com/TRAP44/football-analytics-cloudflare/pull/896), ветка `codex/mass-launch-capacity` — ревью: Claude.
 
 
 
@@ -40,6 +41,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Массовый запуск: изолированная проверка 10 000/сутки и пика 1000 — **Codex** — [PR #896](https://github.com/TRAP44/football-analytics-cloudflare/pull/896), ветка `codex/mass-launch-capacity` — ревью: Claude. — слит.
 
 - [x] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude. — слит.
 

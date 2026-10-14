@@ -297,6 +297,8 @@ export function createRuntimeControlsRuntime({
     };
   }
 
+  let runtimeControlsFlight=null;
+
   async function loadRuntimeControls(cfg, options = {}) {
     const force=plainObject(options).force === true;
     const now=safeClock(clock);
@@ -319,6 +321,23 @@ export function createRuntimeControlsRuntime({
       if (cachedValue.valid) return {...memory.runtimeControls,cached:true};
     }
 
+    if (runtimeControlsFlight) {
+      if (!force) return runtimeControlsFlight;
+      // An administrative refresh needs a new read, not the row already in flight.
+      // Serializing it also prevents the older row from overwriting the refresh.
+      await runtimeControlsFlight;
+      return loadRuntimeControls(cfg,options);
+    }
+    const flight=Promise.resolve().then(()=>readRuntimeControls(cfg,now));
+    runtimeControlsFlight=flight;
+    try {
+      return await flight;
+    } finally {
+      if (runtimeControlsFlight===flight) runtimeControlsFlight=null;
+    }
+  }
+
+  async function readRuntimeControls(cfg,now) {
     const activateFailClosed = (reason, error = null) => {
       const previous=normalizeRuntimeControls(memory.runtimeControls?.value);
       const value=failClosedRuntimeControls(previous,cleanText(reason,'control_plane_unavailable',80));

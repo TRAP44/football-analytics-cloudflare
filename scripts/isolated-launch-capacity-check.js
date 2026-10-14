@@ -91,6 +91,7 @@ try {
   await run('signed_feed_sessions',users,'/api/matches');
   await run('shared_cached_analysis',concurrency,'/api/analyze',{fixtureId});
   assert.equal(stats.modelLookups,1,'one cold feed key must share one probability lookup per isolate');
+  assert.equal(stats.dbByOperation['GET /rest/v1/runtime_controls'],1,'one cold control-plane read per isolate; no forced admin refresh in this harness');
   assert.equal(httpPeak,concurrency,'the HTTP barrier must exercise the requested concurrent count');
   assert.equal(stats.externalBlocked,0,'no external service may be called even once');
   mkdirSync('load-results',{recursive:true});
