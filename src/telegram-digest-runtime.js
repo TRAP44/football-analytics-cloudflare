@@ -721,23 +721,18 @@ export function createTelegramDigestRuntime(deps = {}) {
     }));
   }
 
-  function botDayMatchesText(matches = [], { liveOnly = false, total = 0 } = {}) {
+  function botDayMatchesText(matches = [], { liveOnly = false } = {}) {
     const rows=rowsOf(matches);
     if (!rows.length) return liveOnly
       ? '🔴 Сейчас в доступных данных нет матчей в прямом эфире.'
       : '⚽ На сегодня подходящие матчи пока не найдены.';
     const title=liveOnly ? '🔴 <b>LIVE сейчас</b>' : '⚽ <b>Матчи сегодня</b>';
-    const hasUpcoming=rows.some(m=>!m.live && !m.finished);
-    const subtitle=[
-      Number(total)>rows.length ? `главные ${rows.length} из ${Number(total)}` : '',
-      hasUpcoming ? 'время МСК' : '',
-    ].filter(Boolean).join(' · ');
     const body=botLeagueGroups(rows).map(group=>[
       `<b>${telegramHtmlEscape(group.title)}</b>`,
       ...group.rows.map(botMatchLine),
     ].join('\n'));
     return [
-      subtitle ? `${title}\n<i>${subtitle}</i>` : title,
+      title,
       '',
       body.join('\n\n'),
       '',
