@@ -24,7 +24,7 @@ test('management audit performs only four fixed GETs and emits whitelisted metad
   for(const {url,options} of calls){
     assert.equal(options.method,'GET');assert.equal(options.redirect,'error');
     assert.ok(['api.cloudflare.com','api.supabase.com'].includes(new URL(url).hostname));
-    assert.equal(options.headers.Authorization,`Bearer ${url.includes('cloudflare.com')?env.CLOUDFLARE_API_TOKEN:env.SUPABASE_ACCESS_TOKEN}`);
+    assert.equal(options.headers.Authorization,`Bearer ${new URL(url).hostname==='api.cloudflare.com'?env.CLOUDFLARE_API_TOKEN:env.SUPABASE_ACCESS_TOKEN}`);
   }
   assert.equal(report.completeManagementObservations,true);
   assert.equal(report.productionChanged,false);
