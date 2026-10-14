@@ -1683,6 +1683,8 @@ function getPrematchPredictionJob() {
   if (!prematchPredictionJob) {
     prematchPredictionJob = createPrematchPredictionJob({
       analyzeFixtureForSystem: (...args) => getAnalysisRuntime().analyzeFixtureForSystem(...args),
+      analysisProviderFetch,
+      setCache,
       clock: () => Date.now(),
       getCache,
       getStaleCache,

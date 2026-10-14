@@ -1,3 +1,4 @@
+import {prematchLineupEvent,analysisIncludesLineupEvent,completedPrematchLineupRefresh,prematchLineupRefreshKey,PREMATCH_LINEUP_RETENTION_MINUTES} from './prematch-lineup-event.js';
 import { NO_CLEAR_SIGNAL_LABEL, isBettingText, withPublicSignalLabel } from './signal-wording.js';
 // AI analysis orchestration extracted from worker.js.
 // Provider, entitlement, cache, settlement and model capabilities are injected by the composition root.
@@ -586,13 +587,13 @@ export function createAnalysisRuntime(deps) {
   // блокировка матча (distributed-analysis-lock) и бюджет провайдера, но без квоты
   // пользователя, прав и pass, истории анализов и событий роста. Режим данных — как
   // у бесплатного пользователя; результат пишется в общий кеш и model_predictions.
-  async function analyzeFixtureForSystem(fixtureId, cfg) {
+  async function analyzeFixtureForSystem(fixtureId, cfg, {lineupEvent=null}={}) {
     const id=positiveSafeInteger(fixtureId);
     if (id === null) return json({error:'Некорректный номер матча.'},400);
-    return await runAnalysis({fixtureId:id}, cfg, null, {system:true});
+    return await runAnalysis({fixtureId:id}, cfg, null, {system:true,lineupEvent});
   }
 
-  async function runAnalysis(body, cfg, user, {system=false}={}) {
+  async function runAnalysis(body, cfg, user, {system=false,lineupEvent=null}={}) {
     const fixtureId=positiveSafeInteger(body.fixtureId);
     const userId=positiveSafeInteger(user?.id);
     const requestedOrigin=safeText(body.origin,30);
@@ -724,6 +725,11 @@ export function createAnalysisRuntime(deps) {
         meta:{fixtureId},
       }).catch(()=>null);
     }
+    const lineupRefresh=system && lineupEvent!==null;
+    const lineupContext=staleBefore?.match || lineupEvent?.match;
+    if (lineupRefresh && (!lineupContext || !prematchLineupEvent(lineupEvent,lineupContext))) {
+      return json({code:'LINEUP_EVENT_INVALID',error:'Нет свежего подтверждённого события составов.'},409);
+    }
     let previousFreshness=null;
     if (staleBefore) {
       try { previousFreshness=objectValue(analysisFreshness(staleBefore)); } catch {}
@@ -739,8 +745,8 @@ export function createAnalysisRuntime(deps) {
       && previousGeneratedMs < newsPublishedMs
     );
     const needsFreshnessRecheck=Boolean(recheckRequested && staleBefore && previousFreshness?.needsRecheck);
-    const shouldPerformRecheck=Boolean(needsFreshnessRecheck || newsImpactEligible);
-    const recheckReasonCode=newsImpactEligible ? 'news_impact' : (previousFreshness?.reasonCode || 'fresh');
+    const shouldPerformRecheck=Boolean(needsFreshnessRecheck || newsImpactEligible || lineupRefresh);
+    const recheckReasonCode=lineupRefresh ? 'lineups_announced' : newsImpactEligible ? 'news_impact' : (previousFreshness?.reasonCode || 'fresh');
     let freeRecheck=false;
     let recheckOwnershipUnknown=false;
     // Only freshness derived from the stored server-side snapshot can waive
@@ -755,7 +761,7 @@ export function createAnalysisRuntime(deps) {
         recheckOwnershipUnknown=true;
       }
     }
-    if (cached && !needsFreshnessRecheck) {
+    if (cached && !needsFreshnessRecheck && !lineupRefresh) {
       if (system) {
         // Свежий анализ уже есть — достаточно зафиксировать первый предматчевый снимок.
         await optionalAsync(captureModelPrediction,cached,cfg);
@@ -892,6 +898,17 @@ export function createAnalysisRuntime(deps) {
     let bonusReservation=null;
     let usageCommitted=false;
     try {
+    if (lineupRefresh) {
+      const event=prematchLineupEvent(lineupEvent,lineupContext);
+      if (!event) return json({code:'LINEUP_EVENT_INVALID'},409);
+      let marker;
+      try { marker=await getCache(prematchLineupRefreshKey(fixtureId),cfg); }
+      catch { return json({code:'LINEUP_REFRESH_STORAGE_UNAVAILABLE'},503); }
+      const latest=analysisCachePayload(await optionalAsync(getStaleCache,cacheKey,cfg),fixtureId) || staleBefore;
+      if (completedPrematchLineupRefresh(marker,fixtureId) || completedPrematchLineupRefresh(latest?.prematchLineupRefresh,fixtureId) || analysisIncludesLineupEvent(latest,event)) {
+        return json({ok:true,cached:true,fixtureId,lineupRefresh:false});
+      }
+    }
     let passAccess=false;
     if (!freeRecheck && passCandidate) {
       const passOperationId=crypto.randomUUID();
@@ -1074,6 +1091,8 @@ export function createAnalysisRuntime(deps) {
       },409,'data_invalid');
     }
 
+    const confirmedLineupEvent=lineupRefresh ? prematchLineupEvent(lineupEvent,{fixtureId,homeId,awayId,date:fixture?.fixture?.date,status:fixture?.fixture?.status?.short}) : null;
+    if (lineupRefresh && !confirmedLineupEvent) return json({code:'LINEUP_EVENT_INVALID'},409);
     const homeName=safeText(fixture?.teams?.home?.name,180);
     const awayName=safeText(fixture?.teams?.away?.name,180);
     const leagueName=safeText(fixture?.league?.name,180);
@@ -1153,7 +1172,9 @@ export function createAnalysisRuntime(deps) {
         skipReason:h2hSkipReason,
       }),
     ]);
-    const lineupResult=await safeAnalysisProviderFetch({
+    const lineupResult=confirmedLineupEvent
+      ? {data:confirmedLineupEvent.snapshot.data,meta:{feature:'lineups',provider:'api-football',source:'cache',fetchedAt:confirmedLineupEvent.snapshot.fetchedAt,ageSeconds:Math.floor((Date.now()-Date.parse(confirmedLineupEvent.snapshot.fetchedAt))/1000),expiresAt:new Date(Date.parse(confirmedLineupEvent.snapshot.fetchedAt)+300000).toISOString(),available:true,usableForConfidence:true,state:'available',stale:false}}
+      : await safeAnalysisProviderFetch({
       feature:'lineups',
       path:'/fixtures/lineups',
       params:{fixture:fixtureId},
@@ -2182,9 +2203,17 @@ export function createAnalysisRuntime(deps) {
       );
     } catch {}
 
+    const consumedLineupEvent=confirmedLineupEvent || (system ? prematchLineupEvent({fixtureId,feature:'lineups',provider:lineupResult.meta?.provider,fetchedAt:lineupResult.meta?.fetchedAt,data:lineupsRows},payload.match) : null);
+    if (consumedLineupEvent && analysisIncludesLineupEvent(payload,consumedLineupEvent)) {
+      payload.prematchLineupRefresh={fixtureId,phase:'lineups',fingerprint:consumedLineupEvent.fingerprint,computedAt:generatedAt};
+    } else if (completedPrematchLineupRefresh(staleBefore?.prematchLineupRefresh,fixtureId)) {
+      payload.prematchLineupRefresh=staleBefore.prematchLineupRefresh;
+    }
+    if (lineupRefresh && !completedPrematchLineupRefresh(payload.prematchLineupRefresh,fixtureId)) return json({code:'LINEUP_REFRESH_SOURCE_UNAVAILABLE'},503);
+    const durableLineupWrite=lineupRefresh || (system && completedPrematchLineupRefresh(payload.prematchLineupRefresh,fixtureId));
     let cacheStored=true;
     try {
-      const result=await setCache(cacheKey,fixtureId,payload,cfg,ttl);
+      const result=await setCache(cacheKey,fixtureId,payload,cfg,ttl,{requireDurable:durableLineupWrite});
       if (result === false) cacheStored=false;
     } catch {
       cacheStored=false;
@@ -2200,6 +2229,8 @@ export function createAnalysisRuntime(deps) {
       }).catch(()=>null);
     }
 
+    if (lineupRefresh && !cacheStored) return json({code:'LINEUP_REFRESH_CACHE_UNAVAILABLE'},503);
+
     await optionalAsync(
       captureAnalysisTimelineSnapshot,
       payload,
@@ -2207,6 +2238,9 @@ export function createAnalysisRuntime(deps) {
       {delta:effectiveRecheckDelta},
     );
     await optionalAsync(captureModelPrediction,payload,cfg);
+    if (cacheStored && completedPrematchLineupRefresh(payload.prematchLineupRefresh,fixtureId)) {
+      await optionalAsync(setCache,prematchLineupRefreshKey(fixtureId),fixtureId,payload.prematchLineupRefresh,cfg,PREMATCH_LINEUP_RETENTION_MINUTES,{requireDurable:true});
+    }
     await safeRecordHistory(payload);
 
     const deltaMetadata=delta=>({

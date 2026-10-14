@@ -268,3 +268,17 @@ test('Global match feed and provider quota survive shared-cache writes with NOT 
   assert.deepEqual(await reader.api.getCache(quotaKey,{}),{remaining:9});
   assert.equal(reader.ops.length,0);
 });
+
+test('durable cache writes confirm shared storage and never publish an L1 success after a failed write',async()=>{
+  const good=runtime({hasSupabase:()=>true});
+  assert.equal(await good.api.setCache('phase:77',77,{phase:'done'},{},10,{requireDurable:true}),true);
+  assert.equal(good.memory.cache.get('phase:77').payload.phase,'done');
+  const bad=runtime({hasSupabase:()=>true,supaUpsert:async()=>{throw new Error('storage down');}});
+  assert.equal(await bad.api.setCache('phase:77',77,{phase:'done'},{},10,{requireDurable:true}),false);
+  assert.equal(bad.memory.cache.has('phase:77'),false);
+  const local=runtime();
+  assert.equal(await local.api.setCache('phase:77',77,{phase:'done'},{},10,{requireDurable:true}),false);
+  assert.equal(local.memory.cache.has('phase:77'),false);
+  await local.api.setCache('normal:77',77,{ok:true},{},10);
+  assert.equal(local.memory.cache.has('normal:77'),true,'existing best-effort callers keep local caching');
+});

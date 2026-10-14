@@ -15,3 +15,18 @@ test('actual analysis composition measures cold and cached requests through an i
   assert.equal(report.results[0].requests.filter(x=>x.endpoint==='/fixtures/lineups').length,0);
   assert.ok(report.results.filter(x=>x.mode==='cached').every(x=>x.cached===true));
 });
+
+test('actual lineup refresh includes the new confirmed XI, preserves first prediction and repeats without provider work',()=>{
+  const report=JSON.parse(execFileSync(process.execPath,['scripts/measure-prematch-provider-cost.js','--lineup-refresh'],{encoding:'utf8',timeout:30000}));
+  const refresh=report.results.find(x=>x.mode==='lineup-refresh');
+  const repeat=report.results.find(x=>x.mode==='lineup-repeat');
+  assert.equal(refresh.status,200);
+  assert.equal(refresh.lineupsConfirmed,true);
+  assert.equal(refresh.completedLineupRefresh,true);
+  assert.equal(refresh.firstPredictionUnchanged,true);
+  assert.equal(refresh.providerRequests,4);
+  assert.equal(repeat.providerRequests,0);
+  assert.equal(repeat.cached,true);
+  assert.ok(refresh.predictionWrites.length>=2);
+  assert.ok(refresh.predictionWrites.every(x=>x.method==='POST' && x.prefer.includes('resolution=ignore-duplicates') && x.conflict==='fixture_id'));
+});
