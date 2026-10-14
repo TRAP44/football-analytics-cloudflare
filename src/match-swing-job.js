@@ -420,6 +420,7 @@ export function createMatchSwingJob(deps = {}) {
 
   async function processMatchSwings(cfg, scheduledAt = new Date(now())) {
     const summary = { ok: true, checked: 0, swings: 0, sent: 0, duplicate: 0, previews: 0, channelPosted: 0, channelCapped: 0, truncated: 0, failed: 0 };
+    if (cfg?.matchSwingEnabled === false) return { ...summary, reason: 'disabled' };
     let storage = false;
     try {
       storage = hasSupabase(cfg) === true;
