@@ -662,3 +662,13 @@ test('favorite stale fallback keeps its newer state and does not renew stale fix
   assert.equal((await api.botTeamIdMatches(40,{}))[0].goalsHome,2);
   assert.deepEqual(remembered,[]);
 });
+
+test('favorite recent next-fixture lookup cannot hide LIVE absent from that response',async()=>{
+  const {api}=runtime({getCache:async key=>key.startsWith('bot:team-id-matches:')
+    ? {matches:[favoriteFixture(2)],refreshedAt:new Date(Date.now()-1000).toISOString()}
+    : key.startsWith('provider-fixtures:')
+      ? {fixtures:[favoriteFixture(1,'2H',{elapsed:60})],fetchedAt:new Date(Date.now()-60000).toISOString()} : null,
+    apiFootball:async()=>assert.fail('must not query provider'),
+  });
+  assert.deepEqual((await api.botTeamIdMatches(40,{})).map(x=>x.fixtureId),[1,2]);
+});

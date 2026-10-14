@@ -845,7 +845,7 @@ export function createTelegramDigestRuntime(deps = {}) {
     const fresh=snapshots.filter(value=>{
       const time=timestamp(value), age=Date.now()-time;
       return value?.stale!==true && Number.isFinite(age) && age>=0
-        && age<=6*60*1000 && (!Number.isFinite(cacheTime) || time>=cacheTime);
+        && age<=6*60*1000;
     }).sort((a,b)=>timestamp(a)-timestamp(b));
     const updates=new Map();
     for (const snapshot of fresh) {
@@ -858,7 +858,7 @@ export function createTelegramDigestRuntime(deps = {}) {
       const merged=new Map(normalize(values).map(match=>[match.fixtureId,match]));
       const refreshed=[];
       for (const [fixtureId,{match,time}] of updates) {
-        if (Number.isFinite(baselineTime) && time<baselineTime) continue;
+        if (merged.has(fixtureId) && Number.isFinite(baselineTime) && time<baselineTime) continue;
         merged.set(fixtureId,match);
         refreshed.push(match);
       }
