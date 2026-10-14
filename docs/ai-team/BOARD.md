@@ -12,9 +12,11 @@ _пусто_
 
 ## В работе
 
-- [ ] Убрать подзаголовок «главные N из M · время МСК» из списков бота — **Codex** — ветка `codex/remove-bot-match-subtitle`.
+_пусто_
 
 ## На ревью
+
+- [ ] Убрать подзаголовок «главные N из M · время МСК» из списков бота — **Codex** — [PR #890](https://github.com/TRAP44/football-analytics-cloudflare/pull/890) — ревью: Claude.
 
 
 
