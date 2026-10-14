@@ -10,6 +10,7 @@ test('isolated HTTP harness exercises signed production-mode handlers and shares
   assert.equal(report.httpPeak,100);
   assert.equal(report.stats.externalBlocked,0);
   assert.equal(report.stats.modelLookups,1);
+  assert.equal(report.stats.dbByOperation['GET /rest/v1/runtime_controls'],1);
   assert.equal(report.rows[0].httpStatus[200],1000);
   assert.equal(report.rows[1].httpStatus[200],100);
   const wf=fs.readFileSync('.github/workflows/isolated-load-resilience.yml','utf8');

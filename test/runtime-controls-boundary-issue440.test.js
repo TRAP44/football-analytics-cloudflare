@@ -517,3 +517,87 @@ test('public runtime-control snapshot exposes fail-closed state without private 
   assert.equal(publicState.analysisEnabled,true);
   assert.equal(publicState.securityLockdown,false);
 });
+
+function concurrencyControlRow(revision=4,analysisEnabled=true) {
+  return {id:'global',revision,maintenance_mode:false,analysis_enabled:analysisEnabled,
+    search_enabled:true,live_enabled:true,reminders_enabled:true,expanded_data_enabled:true,
+    auto_settlement_recovery_enabled:false};
+}
+function controlReadGate() {
+  let resolve,reject;
+  const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});
+  return {promise,resolve,reject};
+}
+
+test('1000 cold and expired control reads share one lookup per wave without extending TTL',async()=>{
+  let reads=0,gate=controlReadGate();
+  const {api,setNow}=runtime({hasSupabase:()=>true,supaSelectOne:()=>{reads++;return gate.promise;}});
+  const cold=Array.from({length:1000},()=>api.loadRuntimeControls({}));
+  await Promise.resolve();
+  assert.equal(reads,1);
+  gate.resolve(concurrencyControlRow());
+  const initial=await Promise.all(cold);
+  assert.ok(initial.every(state=>state.value.revision===4 && !state.failClosed));
+  setNow(1_700_000_029_999);
+  assert.equal((await api.loadRuntimeControls({})).cached,true);
+  assert.equal(reads,1);
+  setNow(1_700_000_030_000);
+  gate=controlReadGate();
+  const expired=Array.from({length:1000},()=>api.loadRuntimeControls({}));
+  await Promise.resolve();
+  assert.equal(reads,2);
+  gate.resolve(concurrencyControlRow(5,false));
+  const updated=await Promise.all(expired);
+  assert.ok(updated.every(state=>state.value.revision===5 && state.value.analysisEnabled===false));
+});
+
+test('shared unavailable/missing/invalid control reads fail closed and retry after cache expiry',async()=>{
+  for(const outcome of ['unavailable','missing','invalid']) {
+    let reads=0,gate=controlReadGate();
+    const {api,setNow}=runtime({hasSupabase:()=>true,supaSelectOne:()=>{reads++;return gate.promise;}});
+    const batch=Array.from({length:1000},()=>api.loadRuntimeControls({}));
+    await Promise.resolve();
+    assert.equal(reads,1);
+    if(outcome==='unavailable')gate.reject(new Error('simulated guard unavailable'));
+    else gate.resolve(outcome==='missing'?null:{revision:5,analysis_enabled:'true'});
+    const states=await Promise.all(batch);
+    assert.ok(states.every(state=>state.failClosed && !state.value.analysisEnabled && state.value.controlPlaneFailClosed));
+    assert.equal((await api.loadRuntimeControls({})).cached,true);
+    assert.equal(reads,1);
+    setNow(1_700_000_030_000);
+    gate=controlReadGate();
+    const recovery=api.loadRuntimeControls({});
+    await Promise.resolve();
+    assert.equal(reads,2);
+    gate.resolve(concurrencyControlRow(6));
+    assert.equal((await recovery).failClosed,false);
+  }
+});
+
+test('forced administrative refresh starts a new read after the old flight and cannot be overwritten by it',async()=>{
+  let reads=0;
+  const first=controlReadGate(),second=controlReadGate(),third=controlReadGate();
+  const gates=[first,second,third];
+  const {api,memory}=runtime({hasSupabase:()=>true,supaSelectOne:()=>gates[reads++].promise});
+  const cold=api.loadRuntimeControls({});
+  const forced=api.loadRuntimeControls({},{force:true});
+  const forcedAgain=api.loadRuntimeControls({},{force:true});
+  await Promise.resolve();
+  assert.equal(reads,1);
+  first.resolve(concurrencyControlRow(4));
+  await cold;
+  // Let the forced read start without relying on wall-clock delays.
+  for(let i=0;i<10 && reads<2;i++)await Promise.resolve();
+  assert.equal(reads,2);
+  second.resolve(concurrencyControlRow(5,false));
+  const refresh=await forced;
+  assert.equal(refresh.value.revision,5);
+  assert.equal(refresh.value.analysisEnabled,false);
+  for(let i=0;i<10 && reads<3;i++)await Promise.resolve();
+  assert.equal(reads,3);
+  third.resolve(concurrencyControlRow(6,false));
+  assert.equal((await forcedAgain).value.revision,6);
+  assert.equal(memory.runtimeControls.value.revision,6);
+  assert.equal(memory.runtimeControls.value.analysisEnabled,false);
+  assert.equal(reads,3);
+});
