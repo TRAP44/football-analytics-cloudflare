@@ -353,6 +353,22 @@ export function createProviderFixtureRuntime(deps) {
       new Promise(resolve=>{ timer=setTimeout(()=>resolve({ok:false}),ms); }),
     ]).finally(()=>clearTimeout(timer));
   }
+  function sharedFeedLookup(cache,key,load) {
+    const cached=cache.get(key);
+    if (cached?.pending) return cached.pending;
+    if (cached && Date.now()-cached.at<cached.ttl) return Promise.resolve(cached.value);
+    const entry={pending:null};
+    entry.pending=withDeadline(Promise.resolve().then(load),FEED_PREDICTION_DEADLINE_MS).then(loaded=>{
+      const value=loaded.ok && loaded.value && typeof loaded.value==='object' && !Array.isArray(loaded.value) ? loaded.value : {};
+      // An evicted flight must not overwrite a newer load of the same key.
+      if (cache.get(key)===entry) cache.set(key,{at:Date.now(),ttl:loaded.ok ? FEED_PREDICTION_TTL_MS : FEED_PREDICTION_FAILURE_TTL_MS,value});
+      return value;
+    });
+    cache.delete(key);
+    cache.set(key,entry);
+    if (cache.size>20) cache.delete(cache.keys().next().value);
+    return entry.pending;
+  }
   async function feedModelProbabilities(matches, cfg) {
     if (typeof getModelProbabilities !== 'function') return {};
     const ids=[...new Set(matches
@@ -363,14 +379,7 @@ export function createProviderFixtureRuntime(deps) {
       .slice(0,200);
     if (!ids.length) return {};
     const key=ids.join(',');
-    const cached=feedPredictionCache.get(key);
-    if (cached && Date.now()-cached.at<cached.ttl) return cached.value;
-    const loaded=await withDeadline(getModelProbabilities(ids,cfg),FEED_PREDICTION_DEADLINE_MS);
-    const value=loaded.ok && loaded.value && typeof loaded.value==='object' && !Array.isArray(loaded.value) ? loaded.value : {};
-    feedPredictionCache.delete(key);
-    feedPredictionCache.set(key,{at:Date.now(),ttl:loaded.ok ? FEED_PREDICTION_TTL_MS : FEED_PREDICTION_FAILURE_TTL_MS,value});
-    if (feedPredictionCache.size>20) feedPredictionCache.delete(feedPredictionCache.keys().next().value);
-    return value;
+    return sharedFeedLookup(feedPredictionCache,key,()=>getModelProbabilities(ids,cfg));
   }
 
   // Последняя оценка по ходу матча для идущих матчей — так же необязательна и
@@ -390,14 +399,7 @@ export function createProviderFixtureRuntime(deps) {
       .slice(0,60);
     if (!ids.length) return {};
     const key=ids.join(',');
-    const cached=liveEstimateCache.get(key);
-    if (cached && Date.now()-cached.at<cached.ttl) return cached.value;
-    const loaded=await withDeadline(getLatestInPlayProbabilities(ids,cfg),FEED_PREDICTION_DEADLINE_MS);
-    const value=loaded.ok && loaded.value && typeof loaded.value==='object' && !Array.isArray(loaded.value) ? loaded.value : {};
-    liveEstimateCache.delete(key);
-    liveEstimateCache.set(key,{at:Date.now(),ttl:loaded.ok ? FEED_PREDICTION_TTL_MS : FEED_PREDICTION_FAILURE_TTL_MS,value});
-    if (liveEstimateCache.size>20) liveEstimateCache.delete(liveEstimateCache.keys().next().value);
-    return value;
+    return sharedFeedLookup(liveEstimateCache,key,()=>getLatestInPlayProbabilities(ids,cfg));
   }
 
   async function respondWithPredictions(cfg, body, ...rest) {

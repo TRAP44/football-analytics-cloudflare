@@ -27,7 +27,7 @@ async function batch(count,task) {
 }
 const rows=[];
 try {
-  for (const requests of [10,50,100]) {
+  for (const requests of (process.argv.includes('--full')?[10,50,100,1000]:[10,50,100])) {
     const key='isolated-load-'+requests;
     await query(`delete from public.usage_daily where telegram_id=${user}; delete from public.users where telegram_id=${user}; delete from public.provider_rate_windows where bucket_key='${key}'; delete from public.telegram_update_claims where update_key='${key}';`);
     const quota=await batch(requests,()=>query(`select public.consume_analysis_quota(${user},date '2099-10-09',5)::text;`,true));
@@ -42,7 +42,7 @@ try {
   }
   mkdirSync('load-results',{recursive:true});
   writeFileSync('load-results/database-load.json',JSON.stringify({scope:'disposable Supabase; queue bursts with at most 20 psql sessions; timings include process startup, not production HTTP latency',rows},null,2));
-  console.log('Disposable database load: 10/50/100 requests with 20-session cap passed quota, provider budget and Telegram dedupe checks.');
+  console.log('Disposable database load: requested burst profile with 20-session cap passed quota, provider budget and Telegram dedupe checks.');
 } finally {
-  await query(`delete from public.usage_daily where telegram_id=${user}; delete from public.users where telegram_id=${user}; delete from public.provider_rate_windows where bucket_key in ('isolated-load-10','isolated-load-50','isolated-load-100'); delete from public.telegram_update_claims where update_key in ('isolated-load-10','isolated-load-50','isolated-load-100');`);
+  await query(`delete from public.usage_daily where telegram_id=${user}; delete from public.users where telegram_id=${user}; delete from public.provider_rate_windows where bucket_key in ('isolated-load-10','isolated-load-50','isolated-load-100','isolated-load-1000'); delete from public.telegram_update_claims where update_key in ('isolated-load-10','isolated-load-50','isolated-load-100','isolated-load-1000');`);
 }

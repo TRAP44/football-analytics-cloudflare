@@ -43,7 +43,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm audit --audit-level=high
-      - run: node scripts/isolated-load-check.js
+      - run: node scripts/isolated-load-check.js --full
+      - name: Signed HTTP launch burst (10000 users, 1000 clients)
+        run: node scripts/isolated-launch-capacity-check.js --full
+      - name: Disposable PostgreSQL RPC burst
+        run: node scripts/isolated-postgres-burst-check.js
       - name: Bounded soak, burst and recovery
         run: node --expose-gc scripts/isolated-soak-check.js
       - name: Failure, replay and compensation regressions
@@ -173,7 +177,7 @@ jobs:
           source "$RUNNER_TEMP/supabase-fresh.env"
           set +a
           export ISOLATED_PG_CONTAINER="supabase_db_matchradar-supabase-fresh"
-          node scripts/isolated-db-load-check.js
+          node scripts/isolated-db-load-check.js --full
           node scripts/isolated-restore-check.js
 
       - name: Stop fresh Supabase stack

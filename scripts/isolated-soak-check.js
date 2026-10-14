@@ -35,7 +35,7 @@ const gateway=createApiFootballGateway({
     } finally {active--;}
   },
   updateProviderFromHeaders:()=>{},persistSharedProviderQuota:async()=>{},providerQuotaEvidence:()=>{},
-  providerSnapshot:()=>({cooldownActive:false}),withSingleFlight,sleepMs:()=>sleep(1),
+  providerSnapshot:()=>({cooldownActive:false}),withSingleFlight,sleepMs:sleep,
 });
 const counts={waves:0,requests:0,fulfilled:0,expectedRejected:0,burstWaves:0,timeoutWaves:0,guardOutageWaves:0,recoveryWaves:0};
 async function wave(nextMode,clients=50,groups=10) {
