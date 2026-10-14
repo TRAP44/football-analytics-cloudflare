@@ -545,3 +545,15 @@ test('Telegram reply keyboards retain essential actions and never embed raw HTML
     assert.doesNotMatch(label,/<script|<iframe/i);
   }
 });
+
+test('fixture normalization preserves real scores through repeated caching and rejects unknown goals',()=>{
+  const {api}=runtime();
+  const raw={fixture:{id:123,status:{short:'1H'}},goals:{home:0,away:2}};
+  const card=api.normalizeBotFixtureCard(raw);
+  assert.equal(card.goalsHome,0);
+  assert.equal(card.goalsAway,2);
+  assert.equal(api.normalizeBotFixtureCard(card).goalsAway,2);
+  for (const value of [null,undefined,true,-1,1.5,100,'bad']) {
+    assert.equal(api.normalizeBotFixtureCard({...raw,goals:{home:value,away:value}}).goalsHome,null);
+  }
+});

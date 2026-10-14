@@ -596,3 +596,69 @@ test('long favorite-team labels show intentional truncation and preserve their I
   assert.ok(button.text.endsWith('…'));
   assert.equal(button.callback_data,'favorite:team:40');
 });
+
+const favoriteFixture=(fixtureId,status='NS',extra={})=>({fixtureId,status,
+  live:status==='2H',finished:status==='FT',home:{id:40},away:{id:50},
+  homeName:'Liverpool',awayName:'Chelsea',date:new Date().toISOString(),...extra});
+
+test('favorite discovery cache merges newest shared LIVE, adds missing live games and makes no provider calls',async()=>{
+  let calls=0;
+  const now=Date.now();
+  const {api}=runtime({
+    apiFootball:async()=>{calls++;return [];},
+    getCache:async key=>key.startsWith('bot:team-id-matches:')
+      ? {matches:[favoriteFixture(1),favoriteFixture(2)],refreshedAt:new Date(now-60000).toISOString()}
+      : key.startsWith('provider-fixtures:')
+        ? {fixtures:[favoriteFixture(1,'2H',{elapsed:63,goalsHome:1,goalsAway:0}),favoriteFixture(3,'2H'),favoriteFixture(4,'2H',{home:{id:99}})],fetchedAt:new Date(now-2000).toISOString()}
+        : {matches:[favoriteFixture(1,'FT',{goalsHome:2,goalsAway:0})],refreshedAt:new Date(now-1000).toISOString()},
+  });
+  const matches=await api.botTeamIdMatches(40,{});
+  assert.equal(calls,0);
+  assert.equal(matches[0].fixtureId,3);
+  assert.equal(matches.find(x=>x.fixtureId===1).goalsHome,2);
+  assert.equal(matches.find(x=>x.fixtureId===1).finished,true);
+  assert.ok(matches.some(x=>x.fixtureId===2));
+  assert.ok(!matches.some(x=>x.fixtureId===4));
+  assert.equal(new Set(matches.map(x=>x.fixtureId)).size,matches.length);
+});
+
+test('favorite shared fallback works under quota protection and never fabricates missing scores',async()=>{
+  const sent=[];
+  const {api}=runtime({freeQuotaHealthy:()=>false,
+    getFavorites:async()=>[{team_id:40,team_name:'Liverpool'}],
+    getCache:async key=>key.startsWith('provider-fixtures:')
+      ? {fixtures:[favoriteFixture(1,'2H',{elapsed:63,goalsHome:0,goalsAway:2}),favoriteFixture(2,'2H',{elapsed:64})],fetchedAt:new Date().toISOString()} : null,
+    apiFootball:async()=>assert.fail('must use shared snapshot'),
+    telegramApi:async(method,cfg,payload)=>sent.push(payload),
+  });
+  await api.sendBotFavoriteTeamMatches({}, {},7,7,40);
+  assert.match(sent[0].text,/0:2 · LIVE · 63′/);
+  assert.doesNotMatch(sent[0].text,/0:0/);
+  assert.equal(sent[0].reply_markup.inline_keyboard[0][0].callback_data,'match:menu:1');
+});
+
+test('favorite state ignores stale, expired, future and older-than-discovery snapshots',async()=>{
+  for (const extra of [
+    {stale:true,fetchedAt:new Date().toISOString()},
+    {fetchedAt:new Date(Date.now()-7*60000).toISOString()},
+    {fetchedAt:new Date(Date.now()+60000).toISOString()},
+    {fetchedAt:new Date(Date.now()-60000).toISOString()},
+  ]) {
+    const {api}=runtime({getCache:async key=>key.startsWith('bot:team-id-matches:')
+      ? {matches:[favoriteFixture(1,'FT',{goalsHome:2})],refreshedAt:new Date(Date.now()-30000).toISOString()}
+      : key.startsWith('provider-fixtures:') ? {fixtures:[favoriteFixture(1,'2H',{goalsHome:1})],...extra} : null});
+    assert.equal((await api.botTeamIdMatches(40,{}))[0].goalsHome,2);
+  }
+});
+
+test('favorite stale fallback keeps its newer state and does not renew stale fixture cards',async()=>{
+  const remembered=[];
+  const {api}=runtime({freeQuotaHealthy:()=>false,
+    getCache:async key=>key.startsWith('provider-fixtures:')
+      ? {fixtures:[favoriteFixture(1,'2H',{goalsHome:1})],fetchedAt:new Date(Date.now()-60000).toISOString()} : null,
+    getStaleCache:async()=>({matches:[favoriteFixture(1,'FT',{goalsHome:2})],refreshedAt:new Date(Date.now()-30000).toISOString()}),
+    rememberBotFixtureCards:async matches=>remembered.push(...matches),
+  });
+  assert.equal((await api.botTeamIdMatches(40,{}))[0].goalsHome,2);
+  assert.deepEqual(remembered,[]);
+});
