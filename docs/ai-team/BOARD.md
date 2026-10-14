@@ -12,9 +12,11 @@ _пусто_
 
 ## В работе
 
-- [ ] Утренняя подборка: ссылки, цвета команд, одна кнопка — **Codex** — ветка `codex/morning-news-style`.
+_пусто_
 
 ## На ревью
+
+- [ ] Утренняя подборка: ссылки, цвета команд, одна кнопка — **Codex** — [PR #887](https://github.com/TRAP44/football-analytics-cloudflare/pull/887) — ревью: Claude.
 
 
 
