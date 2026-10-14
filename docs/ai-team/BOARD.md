@@ -12,11 +12,12 @@
 
 ## В работе
 
+- [ ] Массовый запуск: read-only аудит инфраструктуры через существующие secrets GitHub — **Codex** — ветка `codex/github-infrastructure-audit`.
+
 
 
 ## На ревью
 
-- [ ] Массовый запуск: объединить холодные чтения runtime_controls без задержки отключения функций — **Codex** — [PR #897](https://github.com/TRAP44/football-analytics-cloudflare/pull/897), ветка `codex/runtime-controls-singleflight` — ревью: Claude.
 
 
 
@@ -42,6 +43,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Массовый запуск: объединить холодные чтения runtime_controls без задержки отключения функций — **Codex** — [PR #897](https://github.com/TRAP44/football-analytics-cloudflare/pull/897), ветка `codex/runtime-controls-singleflight` — ревью: Claude. — слит.
 
 - [x] Массовый запуск: изолированная проверка 10 000/сутки и пика 1000 — **Codex** — [PR #896](https://github.com/TRAP44/football-analytics-cloudflare/pull/896), ветка `codex/mass-launch-capacity` — ревью: Claude. — слит.
 

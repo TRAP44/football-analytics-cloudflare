@@ -14,6 +14,14 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-15 — Codex — Обследование инфраструктуры через GitHub
+PR: ветка `codex/github-infrastructure-audit`.
+Сделано: ручной Audit Infrastructure Capacity использует существующие production secrets CF token/account и Supabase access token + vars project ref. Только main, checkout main, contents:read, отдельный шаг secrets, 4 фиксированных GET, timeout/redirect:error, безопасный Summary + JSON artifact 7 дней. Дополнен точный privileged allowlist и требование production environment для нового workflow. Код приложения/public/SQL не менялись.
+Наблюдения: отдельно запущена существующая Verify Production Supabase Migration на main; run https://github.com/TRAP44/football-analytics-cloudflare/actions/runs/38647289809 — success. Тем самым существующий секрет GitHub пригоден для чтения миграций, перенос в Codex не нужен. #897 опубликован, production SHA 9ad81e5, внешний монитор успешен, строка #897 перенесена в «Готово».
+Проверки: Node 22 npm ci/check/lint, release 580/580, полный набор 4140/4140, security:privileged. Unit tests подтверждают фиксированные GET/destinations, исключение credentials/сырых bodies/billing details из отчёта, отказы/redirect/невалидные identifiers без утечек, отсутствие вывода Free при пустых подписках и main/production workflow guard.
+Решения / внимание: Cloudflare subscriptions endpoint требует Billing Read; deploy token может не иметь его. Не обещать полное обследование до запуска. Supabase compute variant не тариф организации, public endpoints не раскрывают organization plan/реальную вместимость. Missing/403 отражаются явно, неполный отчёт даёт failed job и сохраняет sanitized artifact. Даже полный отчёт не подтверждает throughput — productionCapacityConfirmed false. Ни новых tokens, ни переноса старых не требовать автоматически. Новый workflow запустить после merge в main; до merge GitHub его не регистрирует для dispatch. Реальная нагрузка/покупки/создание ресурсов не выполнялись. Документ docs/INFRASTRUCTURE_AUDIT_RU.md.
+
+
 ## 2026-10-15 — Codex — Массовый запуск: холодное чтение выключателей
 PR: [PR #897](https://github.com/TRAP44/football-analytics-cloudflare/pull/897), ветка `codex/runtime-controls-singleflight`.
 Сделано: обычные параллельные loadRuntimeControls объединяют незавершённое чтение Supabase в одном runtime/isolate. Административный force:true после текущего запроса всегда начинает новое чтение; принудительные обновления сериализованы, старый ответ не перезаписывает новый. TTL 30 секунд и fail-closed сохранены; после завершения flight удаляется. public/ и миграции не менялись.
