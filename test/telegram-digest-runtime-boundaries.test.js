@@ -443,3 +443,18 @@ test('LIVE shows minute and score; buttons are not all the same red dot',async()
     '🔄 Обновить',
   ]);
 });
+
+test('review: important non-featured match survives more than 20 low-priority fixtures',async()=>{
+ const sent=[];
+ const fixtures=[...Array.from({length:21},(_,i)=>rankedRow(300+i,'2H',`Minor${i}`,`Side${i}`,'2nd Division')),rankedRow(900,'NS','MajorHome','MajorAway','Major League')];
+ const {api}=runtime({
+  freeQuotaHealthy:()=>false,
+  normalizeCompetition:(_id,name)=>({name,shortName:name,priority:name==='Major League'?70:20,lower:name==='2nd Division',featured:false}),
+  matchInterestScore:({leagueName})=>leagueName==='Major League'?30:60,
+  getStaleCache:async key=>key==='provider-fixtures:2026-10-07:v1'?{fixtures}:null,
+  telegramApi:async(method,_cfg,payload)=>{sent.push({method,payload});return {ok:true};},
+ });
+ await api.sendBotDayMatches({url:'https://app.example/'},{},42,{liveOnly:false});
+ assert.match(sent[0].payload.text,/MajorHome/);
+ assert.match(sent[0].payload.text,/главные 8 из 22/);
+});

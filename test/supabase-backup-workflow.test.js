@@ -31,7 +31,7 @@ test('Supabase backup workflow is read-only, pinned, encrypted and fail-closed',
   assert.match(workflow, /rm -f "\$VERIFY_ARCHIVE" "\$ARCHIVE"/);
   assert.match(workflow, /rm -rf "\$BACKUP_DIR"/);
   assert.match(workflow, /steps\.package\.outputs\.encrypted/);
-  assert.match(workflow, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/);
+  assert.match(workflow, /actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9/);
   assert.match(workflow, /retention-days: 30/);
   assert.doesNotMatch(workflow, /steps\.package\.outputs\.archive/);
   assert.doesNotMatch(workflow, /db (reset|push)/);
@@ -55,11 +55,11 @@ test('Supabase restore drill is isolated, measurable and preserves least privile
   assert.match(workflow, /restore_drill:/);
   assert.match(workflow, /needs: backup/);
   assert.equal((workflow.match(/runs-on: \[self-hosted, Linux, X64\]/g) || []).length,2);
-  assert.match(workflow, /actions\/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0/);
+  assert.match(workflow, /actions\/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333/);
   assert.doesNotMatch(workflow, /gh run download/);
   assert.match(workflow, /supabase@\$SUPABASE_CLI_VERSION" start/);
   assert.equal(
-    (workflow.match(/actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/g) || []).length,
+    (workflow.match(/actions\/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1/g) || []).length,
     2,
   );
   assert.ok(workflow.includes('Use Node.js 22 for restore drill'));

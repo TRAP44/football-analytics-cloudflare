@@ -185,7 +185,7 @@ export function createTelegramDigestRuntime(deps = {}) {
   }
   
   // liveFirst=false — для списков бота: сначала важность турнира, а не любой LIVE (13.10).
-  function digestFixtureRows(fixtures = [], limit = 3, { liveFirst = true } = {}) {
+  function digestFixtureRows(fixtures = [], limit = 3, { liveFirst = true, unbounded = false } = {}) {
     return rowsOf(fixtures).filter(f => {
       if (!f || typeof f!=='object' || Array.isArray(f)) return false;
       const status=plainText(f.fixture?.status?.short,16);
@@ -229,7 +229,7 @@ export function createTelegramDigestRuntime(deps = {}) {
       }
     }).filter(x => positiveSafeInteger(x?.fixtureId))
       .sort((a,b) => (liveFirst ? Number(b.live)-Number(a.live) : 0) || Number(b.featured)-Number(a.featured) || b.score-a.score || b.priority-a.priority || String(a.date).localeCompare(String(b.date)))
-      .slice(0,boundedLimit(limit,3,20));
+      .slice(0,unbounded ? 1000 : boundedLimit(limit,3,20));
   }
   
   function digestTime(iso) {
@@ -599,7 +599,7 @@ export function createTelegramDigestRuntime(deps = {}) {
     const source=rowsOf(fixtures).filter(f=>{
       try { return keep(String(f?.fixture?.status?.short || '').toUpperCase()); } catch { return false; }
     });
-    return digestFixtureRows(source,20,{liveFirst:false}).map(botListCard).filter(Boolean);
+    return digestFixtureRows(source,20,{liveFirst:false,unbounded:true}).map(botListCard).filter(Boolean);
   }
 
   function botCardsFromMatchCache(payload) {
