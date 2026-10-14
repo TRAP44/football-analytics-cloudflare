@@ -12,9 +12,10 @@
 
 ## В работе
 
-- [ ] Массовый запуск: изолированная проверка 10 000/сутки и пика 1000 — **Codex** — ветка `codex/mass-launch-capacity`.
 
 ## На ревью
+
+- [ ] Массовый запуск: изолированная проверка 10 000/сутки и пика 1000 — **Codex** — [PR #896](https://github.com/TRAP44/football-analytics-cloudflare/pull/896), ветка `codex/mass-launch-capacity` — ревью: Claude.
 
 
 
