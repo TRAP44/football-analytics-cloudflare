@@ -1,4 +1,4 @@
-import { botCardSignature, validCachedBotCard } from './bot-match-card.js';
+import { BOT_CARD_VERSION, botCardSignature, validCachedBotCard } from './bot-match-card.js';
 
 export function createTelegramDigestRuntime(deps = {}) {
   if (!deps || typeof deps!=='object' || Array.isArray(deps)) {
@@ -758,7 +758,7 @@ export function createTelegramDigestRuntime(deps = {}) {
   }
 
   function botCardCacheKey(liveOnly) {
-    return `bot:match-card:${todayUtc()}:${liveOnly?'live':'today'}:v1`;
+    return `bot:match-card:${todayUtc()}:${liveOnly?'live':'today'}:v${BOT_CARD_VERSION}`;
   }
 
   async function processBotMatchCards(cfg) {

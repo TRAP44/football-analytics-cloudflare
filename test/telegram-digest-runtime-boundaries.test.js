@@ -524,10 +524,14 @@ test('cached board sends one photo with readable caption and unchanged buttons; 
   assert.ok(form.get('caption').length<1024);
   assert.equal(form.get('photo').type,'image/png');
   assert.equal(JSON.parse(form.get('reply_markup')).inline_keyboard[0][0].callback_data,'match:menu:1');
+  snapshot.fixtures[0].fixture.status.elapsed=64;
+  await modified.sendBotDayMatches({}, {botMatchCardsEnabled:true},42,{liveOnly:true});
+  assert.equal(sent[1].method,'sendPhoto','minute changes must not switch the response to plain text');
+  assert.match(JSON.parse(sent[1].payload.get('reply_markup')).inline_keyboard[0][0].text,/64′/);
   snapshot.fixtures[0].goals.home=2;
   await modified.sendBotDayMatches({}, {botMatchCardsEnabled:true},42,{liveOnly:true});
-  assert.equal(sent[1].method,'sendMessage');
-  assert.match(sent[1].payload.text,/2:0/);
+  assert.equal(sent[2].method,'sendMessage');
+  assert.match(sent[2].payload.text,/2:0/);
 });
 
 test('photo timeout does not double-send; definite invalid photo falls back to text',async()=>{
