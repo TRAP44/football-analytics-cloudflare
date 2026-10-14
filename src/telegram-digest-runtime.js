@@ -27,7 +27,6 @@ export function createTelegramDigestRuntime(deps = {}) {
     matchInterestScore,
     memory,
     morningNewsText,
-    newsConversionKeyboard,
     normalizeBotFixtureCard,
     normalizeCompetition,
     planDailyDigestRecipients,
@@ -68,7 +67,6 @@ export function createTelegramDigestRuntime(deps = {}) {
     markTelegramWebhookMutation,
     matchInterestScore,
     morningNewsText,
-    newsConversionKeyboard,
     normalizeBotFixtureCard,
     normalizeCompetition,
     planDailyDigestRecipients,
@@ -985,8 +983,8 @@ export function createTelegramDigestRuntime(deps = {}) {
       }).catch(()=>null);
     }
     const newsText=morningNewsItems.length ? morningNewsText(morningNewsItems) : '';
-    const newsKeyboard=morningNewsItems.length
-      ? newsConversionKeyboard(morningNewsItems,[[{text:'📰 Новости MatchRadar AI',callback_data:'news:general'}]])
+    const newsKeyboard=newsText
+      ? {inline_keyboard:[[{text:'📰 Все новости',callback_data:'news:general'}]]}
       : null;
   
     const result=await runBoundedDailyDigest({

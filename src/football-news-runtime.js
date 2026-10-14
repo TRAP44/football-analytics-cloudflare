@@ -1,3 +1,5 @@
+import { morningNewsCompact } from './morning-news-format.js';
+
 // Football news discovery, trust, match-linking and Telegram presentation extracted from worker.js.
 // Search, cache, Telegram and fixture primitives are injected by the composition root.
 export function createFootballNewsRuntime(deps) {
@@ -944,7 +946,7 @@ export function createFootballNewsRuntime(deps) {
         generatedAt:new Date().toISOString(),
       };
     }
-    const key=`bot:news:morning:${date}:v2`;
+    const key=`bot:news:morning:${date}:v3`;
     const cached=plainObject(
       await Promise.resolve(getCache(key,cfg)).catch(()=>null),
     );
@@ -952,7 +954,7 @@ export function createFootballNewsRuntime(deps) {
     if (Array.isArray(cachedItems)) {
       return {
         date,
-        items:dedupeFootballNews(cachedItems,2),
+        items:dedupeFootballNews(cachedItems.filter(item=>!isPreviewOrBettingNews(item)),3),
         available:safeRead(cached,'available')===true,
         degraded:safeRead(cached,'degraded')===true,
         reason:safeText(safeRead(cached,'reason'),80),
@@ -963,7 +965,7 @@ export function createFootballNewsRuntime(deps) {
     const news=await currentGeneralFootballNews(cfg,false);
     const payload={
       date,
-      items:dedupeFootballNews(safeRead(news,'items'),2),
+      items:dedupeFootballNews(safeArray(safeRead(news,'items')).filter(item=>!isPreviewOrBettingNews(item)),3),
       available:safeRead(news,'available')===true,
       degraded:safeRead(news,'available')!==true,
       reason:safeText(safeRead(news,'reason'),80),
@@ -974,23 +976,7 @@ export function createFootballNewsRuntime(deps) {
   }
   
   function morningNewsText(items = []) {
-    const validItems=safeArray(items)
-      .map(normalizeFootballNewsResult)
-      .filter(Boolean)
-      .map(applyNewsTrustGate)
-      .slice(0,2);
-    if (!validItems.length) return '';
-    return [
-      '📰 <b>Главное за утро</b>',
-      '',
-      ...validItems.map((item,index)=>{
-        const category=plainObject(safeRead(item,'category')) || {};
-        const trust=plainObject(safeRead(item,'trust')) || {};
-        return `${index+1}. ${safeText(safeRead(category,'icon'),8,'📰')} <b>${html(safeRead(item,'title'))}</b>\n${html(safeRead(category,'label') || 'Футбол')} · ${newsImpactBadge(safeRead(category,'impact'))}\nИсточник: ${html(safeRead(item,'source') || 'веб-источник')} · ${html(safeRead(trust,'label') || 'Веб-источник')}`;
-      }),
-      '',
-      'Откройте источник или нажмите «Новости», чтобы увидеть объяснение MatchRadar AI.',
-    ].join('\n');
+    return morningNewsCompact(safeArray(items).map(normalizeFootballNewsResult).filter(Boolean));
   }
   
   async function tavilySearch(query, cfg) {

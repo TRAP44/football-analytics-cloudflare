@@ -1202,7 +1202,6 @@ function getTelegramDigestRuntime() {
       matchInterestScore,
       memory,
       morningNewsText,
-      newsConversionKeyboard,
       normalizeBotFixtureCard,
       normalizeCompetition,
       planDailyDigestRecipients,

@@ -458,3 +458,26 @@ test('review: important non-featured match survives more than 20 low-priority fi
  assert.match(sent[0].payload.text,/MajorHome/);
  assert.match(sent[0].payload.text,/главные 8 из 22/);
 });
+
+test('morning delivery has one news button, and filtered-empty news sends nothing',async()=>{
+  for (const text of ['☀️ <b>Футбольное утро</b>','']) {
+    const sent=[];
+    const {api}=runtime({
+      currentMorningFootballNews:async()=>({items:[{title:'Club update',url:'https://example.com/a'}]}),
+      morningNewsText:()=>text,
+      telegramApi:async(method,cfg,payload)=>{sent.push({method,payload});return {ok:true};},
+      runBoundedDailyDigest:async options=>{
+        if (options.sendNews) await options.sendNews({chat_id:7});
+        return {claimed:1,sent:1};
+      },
+    });
+    await api.setBotDigestSubscription(7,7,true,{});
+    await api.processDailyDigests({botToken:'test-token'},new Date('2026-10-07T07:00:00Z'));
+    assert.equal(sent.length,text?1:0);
+    if (text) {
+      assert.equal(sent[0].payload.text,text);
+      assert.deepEqual(sent[0].payload.reply_markup,{inline_keyboard:[[{text:'📰 Все новости',callback_data:'news:general'}]]});
+      assert.equal(sent[0].payload.disable_web_page_preview,true);
+    }
+  }
+});
