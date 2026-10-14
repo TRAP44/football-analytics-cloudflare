@@ -136,7 +136,7 @@ export function renderMatchCenterView(d, deps) {
     ...d,
     events:eventRows,
   });
-  const aiTimelineCompactHtml=matchCenterExtraHtml('renderAiTimelineCompact', d.aiTimeline || {}, m);
+  const aiTimelineCompactHtml=matchCenterExtraHtml('renderAiTimelineCompact', d.aiTimeline || {}, {...m,live,finished});
   const aiTimelineDetailsHtml=matchCenterExtraHtml('renderAiTimelineDetails', d.aiTimeline || {}, m);
   // Задача 3: кривая вероятностей — для LIVE и завершённых матчей, только по реальным снимкам.
   const aiProbabilityChartHtml=(live || finished)
@@ -225,7 +225,7 @@ export function renderMatchCenterView(d, deps) {
       ${matchCenterTrackRecordHtml(state, escapeHtml)}
       ${matchChangeNarrativeHtml(d, m)}
       ${aiTimelineCompactHtml}
-      ${aiProbabilityChartHtml ? `<section class="${aiProbabilityChartHtml.startsWith('<figure') ? '' : 'panel '}ai-prob-panel">${aiProbabilityChartHtml}</section>` : ''}
+      ${aiProbabilityChartHtml.includes('<svg') ? `<section class="${aiProbabilityChartHtml.startsWith('<figure') ? '' : 'panel '}ai-prob-panel">${aiProbabilityChartHtml}</section>` : ''}
       ${aiTimelineDetailsHtml}
       ${live ? liveAiCoachHtml(d.liveAiCoach, m) : ''}
       ${smartInsightsHeroHtml(d.smartInsights, m)}

@@ -321,7 +321,7 @@ test('AI Timeline: stored market-move trigger renders as a neutral data update',
       },
     ],
   };
-  const html=renderAiTimelineDetails(timeline,match);
+  const html=renderAiTimelineCompact(timeline,match);
   assert.match(html,/Обновление внешних данных/);
   assert.doesNotMatch(html,/Движение рынка|движением рынка/);
 });
@@ -333,10 +333,10 @@ test('AI Timeline: a stored note mentioning the market is replaced with neutral 
     note:'AI Timeline использует только реально сохранённые снимки. События и движение рынка помечаются как совпадение во времени, если причинность не подтверждена.',
   };
   const html=renderAiTimelineDetails(timeline,match);
-  assert.match(html,/События помечаются как совпадение во времени/);
+  assert.equal(html,'');
   assert.doesNotMatch(html,/рынка/);
   const plain=renderAiTimelineDetails({...timeline,note:'Сохранённых снимков мало.'},match);
-  assert.match(plain,/Сохранённых снимков мало\./);
+  assert.equal(plain,'');
 });
 
 test('AI Timeline: stale provenance and missing confidence stay explicit', () => {
@@ -369,7 +369,7 @@ test('AI Timeline renderer sorts points and escapes long untrusted explanations'
   },match);
 
   assert.equal(model.points[0].capturedAt,'2026-10-01T12:00:00.000Z');
-  const html=renderAiTimelineDetails(model,match);
+  const html=renderAiTimelineCompact(model,match)+renderAiTimelineDetails(model,match);
   assert.doesNotMatch(html,/<script>/i);
   assert.match(html,/&lt;script&gt;/);
 });
@@ -503,7 +503,7 @@ test('AI Timeline wiring captures fresh analyses and loads timeline into Match C
 });
 
 test('AI Timeline UI remains lazy-loaded after Match Pulse and supports narrow mobile widths', () => {
-  assert.match(appSource,/import\('\.\/modules\/ai-timeline\.js\?v=6\.120\.0-launch113'\)/);
+  assert.match(appSource,/import\('\.\/modules\/ai-timeline\.js\?v=6\.120\.0-launch114'\)/);
   const pulse=appSource.indexOf("matchCenterExtraHtml('renderMatchPulse'");
   const timeline=appSource.indexOf("'renderAiTimelineCompact',",appSource.indexOf('const matchPulseHtml'));
   assert.ok(pulse>=0 && timeline>pulse,'AI Timeline must be rendered after existing Match Pulse');
@@ -617,4 +617,11 @@ test('codex #836: a pre-match snapshot saved after a delayed kickoff stays befor
   const byKey = Object.fromEntries(timeline.points.map(point => [point.id, point.minute]));
   assert.equal(byKey.a, null, 'NS stays a pre-match point');
   assert.equal(byKey.b, 20, 'a first-half point still gets its wall-clock minute');
+});
+
+test('single snapshot has one summary without duplicated history or model-update noise',()=>{
+ const timeline={points:[point('2026-10-01T12:00:00Z',{home:52,draw:27,away:21})]};
+ const html=renderAiTimelineCompact(timeline,match)+renderAiTimelineDetails(timeline,match);
+ assert.equal((html.match(/52\.0%/g)||[]).length,1);
+ assert.doesNotMatch(html,/История AI|Обновление модели|минимум два|AI TIMELINE/);
 });
