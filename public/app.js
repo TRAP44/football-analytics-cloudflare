@@ -3464,16 +3464,17 @@ function renderMatches() {
 
   if ($('dataNotice')) {
     const notices = [];
-    if (state.matchesMeta?.stale && !state.matchesMeta?.refreshing) notices.push(`<div class="data-notice stale">⚠️ ${escapeHtml(state.matchesMeta.warning || 'Показаны последние сохранённые данные.')}</div>`);
+    if (state.matchesMeta?.stale && !state.matchesMeta?.refreshing) notices.push('<div class="data-notice stale">Обновление задерживается</div>');
     if (state.matchesMeta?.cached && state.matches.some(item => item?.live)) {
       const sourceTime=Date.parse(state.matchesMeta.refreshedAt || '');
       const oldEnough=Number.isFinite(sourceTime) && Date.now()-sourceTime>=2*60*1000;
       if (oldEnough) {
         const hhmm=new Date(sourceTime).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
-        notices.push(`<div class="data-notice stale">Текущий счёт из кеша по состоянию на ${escapeHtml(hhmm)}. События могли измениться.</div>`);
+        notices.length=0;
+        notices.push(`<div class="data-notice stale">Обновление задерживается · Последнее обновление — ${escapeHtml(hhmm)}</div>`);
       }
     }
-    if (Number(integrity.quarantined || 0) > 0) notices.push('<div class="data-notice integrity-notice">Некоторые матчи временно скрыты, пока мы проверяем данные.</div>');
+    if (Number(integrity.quarantined || 0) > 0) notices.push('<div class="data-notice integrity-notice">Некоторые матчи пока недоступны.</div>');
     $('dataNotice').innerHTML = notices.join('');
   }
 
@@ -3600,7 +3601,7 @@ function renderTournamentStandings(data) {
           <td class="wide-stat">${Number(row.win)}</td><td class="wide-stat">${Number(row.draw)}</td><td class="wide-stat">${Number(row.lose)}</td><td>${Number(row.goalsFor)}:${Number(row.goalsAgainst)}</td><td>${standingFormHtml(row.form)}</td>
         </tr>`).join('')}</tbody>
       </table></div>
-      <p class="tiny table-note">Источник: ${escapeHtml(data.sourceMeta?.label || 'API-Football')}${data.sourceMeta?.fallback ? ' · резервный источник' : ''}. ${data.sourceMeta?.attribution ? escapeHtml(data.sourceMeta.attribution) + '. ' : ''}Свежие данные сохраняются в общем кэше; резервные таблицы перепроверяются чаще основного источника.</p>
+      <p class="tiny table-note">Источник: ${escapeHtml(data.sourceMeta?.label || 'API-Football')}${data.sourceMeta?.fallback ? ' · резервный источник' : ''}. ${data.sourceMeta?.attribution ? escapeHtml(data.sourceMeta.attribution) + '. ' : ''}</p>
     </section>`).join('')}`;
   el.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({ id: Number(btn.dataset.openTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '' })));
 }
@@ -4353,7 +4354,6 @@ function playerSquadProfileHtml(profile = {}) {
       <div><span>Позиция</span><strong>${escapeHtml(playerPositionLabel(profile.position))}</strong></div>
       <div><span>Группа состава</span><strong>${escapeHtml(profile.group || '—')}</strong></div>
     </div>
-    <p class="tiny">Профиль загружается лениво через уже существующий кэш состава команды и не создаёт отдельный запрос на сезонную статистику игрока.</p>
   </section>`;
 }
 
