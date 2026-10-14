@@ -1,4 +1,6 @@
-export const BOT_CARD_VERSION = 2;
+import { shortBotLabel } from './bot-labels.js';
+
+export const BOT_CARD_VERSION = 3;
 export const BOT_CARD_MAX_BYTES = 250000;
 export const BOT_CARD_MAX_AGE_MS = 6 * 60 * 1000;
 export const BOT_CARD_REFRESH_AFTER_MS = 4 * 60 * 1000;
@@ -49,7 +51,7 @@ function nameLines(name) {
     if ((lines[last]+' '+word).trim().length>16 && lines[last] && lines.length<2) lines.push(word);
     else lines[last]=(lines[last]+' '+word).trim();
   }
-  return lines.map(line=>line.length>16 ? line.slice(0,21)+'…' : line);
+  return lines.map(line=>shortBotLabel(line,16));
 }
 
 function crest(teamId,x,y,logos) {

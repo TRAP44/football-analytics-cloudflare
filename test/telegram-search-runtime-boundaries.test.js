@@ -308,3 +308,14 @@ test('Telegram search recognizes Russian analysis and referee intents without in
   assert.equal(empty.query,'');
   assert.equal(empty.intent,'search');
 });
+
+test('long match buttons keep recognizable names of both teams',()=>{
+  const api=runtime();
+  const label=api.botMatchButtonText({homeName:'Home Very Long Professional Football Club Name',awayName:'Away Very Long Professional Football Club Name',live:true});
+  assert.match(label,/^🔴 Home Very Long/);
+  assert.match(label,/— Away Very Long/);
+  assert.ok(label.length<=58);
+  const emoji=api.botMatchButtonText({homeName:'A'.repeat(22)+'🏆 Extra Long Home Club',awayName:'Away Club'});
+  assert.match(emoji,/🏆…/);
+  assert.doesNotMatch(emoji,/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u);
+});

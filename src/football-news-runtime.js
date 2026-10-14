@@ -1,3 +1,4 @@
+import { botTeamPairLabel } from './bot-labels.js';
 import { morningNewsCompact } from './morning-news-format.js';
 
 // Football news discovery, trust, match-linking and Telegram presentation extracted from worker.js.
@@ -915,7 +916,7 @@ export function createFootballNewsRuntime(deps) {
       const home=safeText(safeRead(fixture,'homeName'),40);
       const away=safeText(safeRead(fixture,'awayName'),40);
       keyboard.push([{
-        text:home && away ? `⚽ ${home} — ${away}` : '⚽ Ближайший матч',
+        text:home && away ? `⚽ ${botTeamPairLabel(home,away)}` : '⚽ Ближайший матч',
         callback_data:`news:match:${fixtureId}`,
       }]);
     }

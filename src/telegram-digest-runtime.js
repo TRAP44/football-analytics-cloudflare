@@ -1,3 +1,4 @@
+import { shortBotLabel } from './bot-labels.js';
 import { BOT_CARD_VERSION, BOT_CARD_REFRESH_AFTER_MS, botCardSignature, validCachedBotCard } from './bot-match-card.js';
 
 export function createTelegramDigestRuntime(deps = {}) {
@@ -741,8 +742,7 @@ export function createTelegramDigestRuntime(deps = {}) {
   }
 
   function botShortName(name = '') {
-    const value=String(name || '').trim();
-    return value.length>18 ? `${value.slice(0,17).trimEnd()}…` : value;
+    return shortBotLabel(name,18);
   }
 
   function botDayButtonText(m, { liveOnly = false } = {}) {
@@ -859,10 +859,10 @@ export function createTelegramDigestRuntime(deps = {}) {
   async function sendBotFavoriteTeams(request,cfg,userId,chatId) {
     const favorites=rowsOf(await getFavorites(userId,cfg));
     if (!favorites.length) {
-      await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'⭐ <b>Мои команды пока пусты</b>\n\nОткройте любой матч и нажмите ☆ рядом с нужным клубом. После этого здесь появятся его ближайшие игры, а в MatchRadar AI · Новости — персональные новости.',parse_mode:'HTML',reply_markup:footballBotKeyboard(request)});
+      await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'⭐ <b>Мои команды</b>\n\nДобавьте клуб: откройте матч в миниапке и нажмите ☆ рядом с командой.',parse_mode:'HTML',reply_markup:footballBotKeyboard(request)});
       return;
     }
-    const rows=favorites.slice(0,12).map(x=>[{text:`⭐ ${String(x.team_name || 'Команда').slice(0,40)}`,callback_data:`favorite:team:${Number(x.team_id)}`}]);
+    const rows=favorites.slice(0,12).map(x=>[{text:`⭐ ${shortBotLabel(x.team_name,32) || 'Команда'}`,callback_data:`favorite:team:${Number(x.team_id)}`}]);
     await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'⭐ Мои команды\n\nВыберите клуб — покажу его ближайшие матчи прямо в чате.',reply_markup:{inline_keyboard:rows}});
   }
   
@@ -881,8 +881,8 @@ export function createTelegramDigestRuntime(deps = {}) {
     const matches=await botTeamIdMatches(id,cfg);
     const rows=matches.map(m=>[{text:botMatchButtonText(m),callback_data:`match:menu:${Number(m.fixtureId)}`}]);
     const body=matches.length
-      ? matches.map((m,i)=>`${i+1}. <b>${telegramHtmlEscape(m.homeName)} — ${telegramHtmlEscape(m.awayName)}</b> · ${m.live?'LIVE':digestTime(m.date)}`).join('\n')
-      : 'Ближайшие матчи сейчас не найдены или источник данных временно ограничен.';
+      ? matches.map((m,i)=>`${i+1}. <b>${telegramHtmlEscape(m.homeName)} — ${telegramHtmlEscape(m.awayName)}</b> · ${m.live ? `LIVE · ${telegramHtmlEscape(botLiveMark(m))}` : m.finished ? `Завершён · ${digestTime(m.date)}` : digestTime(m.date)}`).join('\n')
+      : 'Матчи клуба пока недоступны. Попробуйте обновить позже.';
     const buttons=rows.length?rows:[[{text:'🔄 Повторить',callback_data:`favorite:team:${id}`}]];
     buttons.push([{text:'📰 Новости клуба',callback_data:`news:team:${Number(teamId)}`}]);
     await telegramApi('sendMessage',cfg,{chat_id:chatId,parse_mode:'HTML',text:`⭐ <b>${telegramHtmlEscape(team.team_name || 'Команда')}</b>\n\n${body}`,reply_markup:{inline_keyboard:buttons}});

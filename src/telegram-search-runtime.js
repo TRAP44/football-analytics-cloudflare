@@ -1,3 +1,5 @@
+import { botTeamPairLabel } from './bot-labels.js';
+
 import { neutralOutcomeText, neutralSignalText, publicSignalLabel } from './signal-wording.js';
 export function createTelegramSearchRuntime(deps = {}) {
   if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
@@ -303,8 +305,7 @@ export function createTelegramSearchRuntime(deps = {}) {
     const away=safeText(plainObject(source.away)?.name ?? source.awayName,80,'Гости');
     const selection=plainObject(source.selection);
     const prefix=selection?.primary === true ? '⭐' : source.live === true ? '🔴' : source.finished === true ? '📋' : '🧠';
-    const label=`${prefix} ${home} — ${away}`;
-    return label.length > 58 ? `${label.slice(0,55)}…` : label;
+    return `${prefix} ${botTeamPairLabel(home,away,24)}`;
   }
 
   function botMatchLine(match, index = 0) {

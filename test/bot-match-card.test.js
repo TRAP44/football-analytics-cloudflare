@@ -71,3 +71,11 @@ test('minute-only refresh reuses image; caption-only matches do not invalidate u
   assert.equal(validCachedBotCard(card,botCardSignature(refreshed,true)),false);
   assert.notEqual(signature,botCardSignature([matches[1],matches[0],...matches.slice(2)],true));
 });
+
+test('long PNG team names stay within two short lines instead of covering the score',()=>{
+  const svg=buildBotMatchCardSvg([{...row,homeName:'Extremely Long Home Football Club Name',awayName:'Another Extremely Long Away Football Club'}]);
+  const names=[...svg.matchAll(/font-size="20"[^>]*>([^<]+)<\/text>/g)].map(m=>m[1]);
+  assert.equal(names.length,4);
+  assert.ok(names.every(name=>Array.from(name).length<=16));
+  assert.ok(names.some(name=>name.endsWith('…')));
+});

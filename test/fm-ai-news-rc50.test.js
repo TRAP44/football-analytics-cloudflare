@@ -572,3 +572,18 @@ test('morning cache filters previews before selecting three actual news stories'
   assert.equal(cached.cached,true);
   assert.deepEqual(cached.items,morning.items);
 });
+
+test('team-news match button preserves both long club names and the fixture callback',async()=>{
+  const {api,cache,calls}=harness({
+    getFavorites:async()=>[{team_id:40,team_name:'Liverpool'}],
+    botTeamIdMatches:async()=>[{fixtureId:9002,date:new Date(Date.now()+3600000).toISOString(),finished:false,live:false,
+      homeName:'Liverpool Extremely Long Football Club Name',awayName:'Arsenal Extremely Long Football Club Name'}],
+  });
+  cache.set('bot:news:team:40:v2',{available:true,items:[]});
+  await api.sendFavoriteTeamNews({}, {},7,99,40);
+  const button=calls.telegram.at(-1).payload.reply_markup.inline_keyboard[0][0];
+  assert.match(button.text,/Liverpool/);
+  assert.match(button.text,/— Arsenal/);
+  assert.ok(button.text.length<55);
+  assert.equal(button.callback_data,'news:match:9002');
+});
