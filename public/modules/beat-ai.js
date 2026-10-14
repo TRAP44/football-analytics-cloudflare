@@ -127,7 +127,7 @@ export function mountMatchPick({ root, fixtureId, match = {}, api, escapeHtml, i
 
 /** Таблица лидеров в Профиле. data — ответ GET /api/picks-leaderboard. */
 export function picksLeaderboardHtml(data, escapeHtml) {
-  const head = '<div class="match-explanation-head"><span>🎯 Обыграй AI</span><small>за 30 дней</small></div>';
+  const head = '<div class="match-explanation-head"><span>🎯 Соревнуйся с AI</span><small>Последние 30 дней</small></div>';
   if (!data || data.available !== true) {
     return `${head}<p class="beat-ai-line">Таблица временно недоступна.</p>`;
   }
@@ -136,7 +136,7 @@ export function picksLeaderboardHtml(data, escapeHtml) {
   const pending = nonNegative(me.pending);
   const mine = played
     ? `<p class="beat-ai-line">Ваши очки: <b>${nonNegative(me.points)}</b> из ${played} · AI на тех же матчах: <b>${nonNegative(me.aiPoints)}</b>${Number.isSafeInteger(me.rank) && me.rank > 0 ? ` · место ${me.rank}` : ''}</p>`
-    : '<p class="beat-ai-line">Сделайте прогноз в Штабе матча (вкладка ✦ AI) и сравните себя с AI.</p>';
+    : '<p class="beat-ai-intro">Кто точнее предскажет исход — ты или AI?</p>';
   const waiting = pending ? `<p class="beat-ai-line">Ожидают итога: ${pending}</p>` : '';
   const rows = (Array.isArray(data.top) ? data.top : []).slice(0, 10)
     .filter(row => row && typeof row === 'object')
@@ -144,12 +144,12 @@ export function picksLeaderboardHtml(data, escapeHtml) {
     .join('');
   const table = rows
     ? `<ol class="beat-ai-board-list" aria-label="Таблица лидеров">${rows}</ol>`
-    : '<p class="beat-ai-line">Пока нет завершённых матчей с прогнозами.</p>';
+    : (played || pending ? '<p class="beat-ai-line">Рейтинг появится после завершения матчей.</p>' : '');
   const partial = data.truncated === true ? '<p class="beat-ai-line">Прогнозов очень много — таблица посчитана по части из них.</p>' : '';
-  return `${head}${mine}${waiting}${table}${partial}<p class="match-explanation-note">Очко — за угаданный исход. AI играет своим прогнозом до матча. В таблице — только имя из Telegram.</p>`;
+  return `${head}${mine}${waiting}${table}${partial}<button type="button" class="primary-btn beat-ai-choose-match" data-beat-choose-match>Выбрать матч →</button><details class="beat-ai-rules"><summary>Как играть</summary><p>Выбери исход до начала матча в его штабе. Верный прогноз — 1 очко. Сравниваем с прогнозом AI на тех же матчах. В рейтинге показывается имя из Telegram.</p></details>`;
 }
 
-export async function loadPicksLeaderboard({ root, api, escapeHtml } = {}) {
+export async function loadPicksLeaderboard({ root, api, escapeHtml, onChooseMatch } = {}) {
   if (!root || typeof api !== 'function') return false;
   let data = null;
   try {
@@ -159,6 +159,7 @@ export async function loadPicksLeaderboard({ root, api, escapeHtml } = {}) {
   }
   if (!root.isConnected) return false;
   root.innerHTML = picksLeaderboardHtml(data, escapeHtml);
+  if (typeof onChooseMatch === 'function') root.querySelector?.('[data-beat-choose-match]')?.addEventListener('click',onChooseMatch);
   root.hidden = false;
   return true;
 }

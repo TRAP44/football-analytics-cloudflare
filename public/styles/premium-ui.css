@@ -2541,3 +2541,8 @@ html[data-theme] body.miniapp-public-shell .experience-prematch-note { display: 
   background: var(--accent);
   color: var(--accent-text);
 }
+
+.beat-ai-intro{font-size:16px;line-height:1.5;margin:14px 0;color:var(--text);}
+.beat-ai-choose-match{width:100%;min-height:46px;margin-top:14px;font-weight:800;}
+.beat-ai-rules{margin-top:12px;color:var(--hint);font-size:12px;line-height:1.5;}
+.beat-ai-rules summary{cursor:pointer;min-height:32px;display:flex;align-items:center;}

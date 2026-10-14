@@ -5644,7 +5644,7 @@ async function loadBeatAiBoard() {
   if (!root) return;
   try {
     const { loadPicksLeaderboard } = await loadBeatAiModule();
-    await loadPicksLeaderboard({ root, api, escapeHtml });
+    await loadPicksLeaderboard({ root, api, escapeHtml, onChooseMatch:()=>showView('matchesView') });
   } catch {}
 }
 
