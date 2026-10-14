@@ -6,14 +6,14 @@ import {renderBotMatchCard,fetchBotCardLogo} from '../scripts/bot-match-card-ren
 const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZwoAAAAASUVORK5CYII=';
 const row={fixtureId:1,home:{id:42},away:{id:49},homeName:'Arsenal',awayName:'Chelsea',league:'Премьер-лига',live:true,status:'2H',elapsed:63,goalsHome:1,goalsAway:0};
 
-test('card cache binds score, minute, names, order and mode and expires after six minutes',()=>{
+test('card cache binds visible scores, names and mode and expires after six minutes',()=>{
   const signature=botCardSignature([row],true);
   const card={signature,png,generatedAt:1000000};
   assert.equal(validCachedBotCard(card,signature,1000001),true);
   assert.equal(validCachedBotCard(card,signature,999999),false);
   assert.equal(validCachedBotCard({...card,generatedAt:NaN},signature,1000001),false);
   assert.equal(validCachedBotCard(card,signature,1360001),false);
-  for (const changes of [{elapsed:64},{goalsHome:2},{homeName:'Other club'}]) {
+  for (const changes of [{goalsHome:2},{homeName:'Other club'},{status:'HT'},{live:false,finished:true}]) {
     assert.equal(validCachedBotCard(card,botCardSignature([{...row,...changes}],true),1000001),false);
   }
   assert.notEqual(signature,botCardSignature([row],false));
@@ -26,7 +26,8 @@ test('SVG escapes provider text, uses actual scores, caps rows and rejects exter
   });
   assert.match(svg,/&lt;script&gt;/);
   assert.match(svg,/1 : 0/);
-  assert.match(svg,/LIVE · 63′/);
+  assert.match(svg,/>LIVE<\/text>/);
+  assert.doesNotMatch(svg,/63′/);
   assert.doesNotMatch(svg,/<script>|attacker.example/i);
   assert.equal((svg.match(/width="592"/g)||[]).length,4);
   const upcoming=buildBotMatchCardSvg([{...row,live:false,goalsHome:null,goalsAway:null,date:'2026-10-14T19:00:00Z'}]);
@@ -56,4 +57,17 @@ test('logo loader uses only canonical host, prohibits redirects and bounds PNG s
   assert.equal(await fetchBotCardLogo(42,async()=>new Response(new Uint8Array(128001))),null);
   const large=Buffer.from(png,'base64');large.writeUInt32BE(2000,16);
   assert.equal(await fetchBotCardLogo(42,async()=>new Response(large)),null);
+});
+
+test('minute-only refresh reuses image; caption-only matches do not invalidate unchanged leading four',()=>{
+  const matches=Array.from({length:8},(_,i)=>({...row,fixtureId:i+1}));
+  const signature=botCardSignature(matches,true);
+  const card={signature,png,generatedAt:Date.now()};
+  const refreshed=matches.map(m=>({...m,elapsed:64}));
+  assert.equal(validCachedBotCard(card,botCardSignature(refreshed,true)),true);
+  refreshed[7]={...refreshed[7],goalsHome:2};
+  assert.equal(validCachedBotCard(card,botCardSignature(refreshed,true)),true);
+  refreshed[0]={...refreshed[0],goalsHome:2};
+  assert.equal(validCachedBotCard(card,botCardSignature(refreshed,true)),false);
+  assert.notEqual(signature,botCardSignature([matches[1],matches[0],...matches.slice(2)],true));
 });

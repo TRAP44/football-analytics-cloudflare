@@ -1,6 +1,7 @@
-export const BOT_CARD_VERSION = 1;
+export const BOT_CARD_VERSION = 2;
 export const BOT_CARD_MAX_BYTES = 250000;
 export const BOT_CARD_MAX_AGE_MS = 6 * 60 * 1000;
+export const BOT_CARD_REFRESH_AFTER_MS = 4 * 60 * 1000;
 
 const text = (value, limit = 120) => typeof value === 'string'
   ? value.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, limit) : '';
@@ -18,9 +19,12 @@ export function botCardRows(matches = []) {
   }));
 }
 
-// Compare the complete rendered state, not just fixture IDs: never attach an old score.
+// Match only what is actually drawn. LIVE minutes and tail matches are shown
+// in current buttons/caption, not baked into the PNG. Never attach an old score.
 export function botCardSignature(matches, liveOnly = false) {
-  return JSON.stringify({v:BOT_CARD_VERSION,liveOnly:liveOnly===true,rows:botCardRows(matches)});
+  return JSON.stringify({v:BOT_CARD_VERSION,liveOnly:liveOnly===true,rows:botCardRows(matches).slice(0,4).map(row=>({
+    ...row,elapsed:null,status:row.live ? row.status==='HT' ? 'HT' : 'LIVE' : row.finished ? 'FT' : 'NS',
+  }))});
 }
 
 export function validCachedBotCard(card, signature, now = Date.now()) {
@@ -65,7 +69,7 @@ export function buildBotMatchCardSvg(matches, {liveOnly=false,logos=new Map(),ge
     const y=126+index*112;
     const score=(m.live || m.finished) && m.goalsHome!==null && m.goalsAway!==null
       ? `${m.goalsHome} : ${m.goalsAway}` : '—';
-    const status=m.live ? m.status==='HT' ? 'ПЕРЕРЫВ' : m.elapsed ? `LIVE · ${m.elapsed}′` : 'LIVE'
+    const status=m.live ? m.status==='HT' ? 'ПЕРЕРЫВ' : 'LIVE'
       : m.finished ? 'ЗАВЕРШЁН' : `${time(m.date)} МСК`;
     const names=(name,x,anchor)=>nameLines(name).map((line,j)=>
       `<text x="${x}" y="${y+53+j*23}" text-anchor="${anchor}" font-size="20" font-weight="bold" fill="#f3f6fa">${xml(line)}</text>`).join('');
