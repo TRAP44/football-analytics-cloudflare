@@ -295,12 +295,9 @@ export function createHistoryRenderer(options={}) {
       const awayLogo=escapedUrl(item.awayLogo);
       const fixtureDate=formattedDate(item.fixtureDate);
       const viewedAt=formattedAge(item.viewedAt);
-      const confidence=item.aiConfidence===null
-        ? ''
-        : ` · ${Math.round(item.aiConfidence)}/100`;
       // Метки сигнала бывают ставочными («ТБ 2.5», «П1») — в списке только нейтральный итог.
       const signal=item.aiSignalLabel
-        ? `<em class="history-ai-chip ${item.aiSignalCode==='skip' ? 'skip' : ''}">AI · ${item.aiSignalCode==='skip' ? 'без уверенного вывода' : 'разбор готов'}${confidence}</em>`
+        ? `<em class="history-ai-chip ${item.aiSignalCode==='skip' ? 'skip' : ''}">AI · ${item.aiSignalCode==='skip' ? 'без уверенного вывода' : 'разбор готов'}</em>`
         : '';
 
       return `

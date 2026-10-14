@@ -211,7 +211,7 @@ test('leaderboard card escapes names and shows the user against AI', () => {
   assert.match(html, /Ваши очки: <b>2<\/b> из 4 · AI на тех же матчах: <b>3<\/b> · место 2/);
   assert.match(html, /Ожидают итога: 1/);
   assert.match(html, /<li class="is-me">/);
-  assert.match(picksLeaderboardHtml({ available: true, top: [], me: {} }, escapeHtml), /Сделайте прогноз в Штабе матча/);
+  assert.match(picksLeaderboardHtml({ available: true, top: [], me: {} }, escapeHtml), /Кто точнее предскажет исход/);
   assert.match(picksLeaderboardHtml(null, escapeHtml), /временно недоступна/);
   assert.match(picksLeaderboardHtml({ available: true, truncated: true, top: [], me: {} }, escapeHtml), /по части из них/);
 });

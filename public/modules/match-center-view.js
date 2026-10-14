@@ -16,50 +16,6 @@ export function normalizeMatchCenterTab(tab) {
   return MATCH_CENTER_TABS.includes(tab) ? tab : DEFAULT_MATCH_CENTER_TAB;
 }
 
-const trackCount = value => {
-  const number = Number(value);
-  return Number.isSafeInteger(number) && number >= 0 ? number : 0;
-};
-
-// «Честность модели»: только счётчики из проверенного протокола /api/ai-track-record
-// (неизменяемые предматчевые прогнозы с подтверждённым итогом). Без процента побед
-// и без цифр, которых нет в ответе сервера.
-export function matchCenterTrackRecordHtml(state, escapeHtml) {
-  const record = state?.aiTrackRecord;
-  if (!record?.available) {
-    if (!state?.aiTrackRecordLoaded) return '';
-    return `<section class="panel mr-ai-proof is-empty" aria-label="Проверенная история модели">
-      <span class="mr-kicker">Честность модели</span>
-      <p>Проверенная история прогнозов ещё формируется: появится после подтверждённых итогов матчей.</p>
-    </section>`;
-  }
-  const sample = record.sample || {};
-  const verified = trackCount(sample.verified);
-  const matched = Math.min(trackCount(sample.matched), verified);
-  const missed = Math.min(trackCount(sample.missed), verified - matched);
-  const days = Number.isSafeInteger(Number(record.periodDays)) && Number(record.periodDays) > 0 ? Number(record.periodDays) : 180;
-  if (!verified) {
-    return `<section class="panel mr-ai-proof is-empty" aria-label="Проверенная история модели">
-      <span class="mr-kicker">Честность модели</span>
-      <p>За ${days} дней ещё нет матчей с подтверждённым итогом. Как только появятся, здесь будет видно, как часто AI угадывал.</p>
-    </section>`;
-  }
-  const small = sample.state === 'early';
-  return `<section class="panel mr-ai-proof" aria-label="Проверенная история модели">
-    <div class="mr-ai-proof-head">
-      <span class="mr-kicker">Честность модели</span>
-      <b class="mr-ai-proof-sample${small ? ' early' : ''}">${escapeHtml(String(sample.label || ''))}</b>
-    </div>
-    <p class="mr-ai-proof-main">Основной исход совпал в <strong>${matched}</strong> из <strong>${verified}</strong> проверенных матчей</p>
-    <div class="mr-ai-proof-bar" role="img" aria-label="Совпало ${matched}, не совпало ${missed}">
-      <i class="hit" style="flex-grow:${matched}"></i><i class="miss" style="flex-grow:${missed}"></i>
-    </div>
-    <p class="mr-ai-proof-note">За ${days} дней, только прогнозы, сделанные до матча. ${small ? 'Выборка пока маленькая — цифры будут меняться.' : 'Прошлые результаты не гарантируют будущие.'}</p>
-    ${state.aiTrackRecordError ? '<p class="mr-ai-proof-stale">Не удалось обновить протокол — показана последняя загруженная версия.</p>' : ''}
-    <button class="text-btn mr-ai-proof-link" type="button" data-center-track-record>Вся проверенная история модели →</button>
-  </section>`;
-}
-
 // Задача 3 (часть 2): последняя оценка по ходу матча (счёт и минута) — из точек
 // кривой с provenance.source = in_play_model. Новых цифр не считает: только
 // показывает сохранённую сервером точку.
@@ -136,7 +92,7 @@ export function renderMatchCenterView(d, deps) {
     ...d,
     events:eventRows,
   });
-  const aiTimelineCompactHtml=matchCenterExtraHtml('renderAiTimelineCompact', d.aiTimeline || {}, m);
+  const aiTimelineCompactHtml=matchCenterExtraHtml('renderAiTimelineCompact', d.aiTimeline || {}, {...m,live,finished});
   const aiTimelineDetailsHtml=matchCenterExtraHtml('renderAiTimelineDetails', d.aiTimeline || {}, m);
   // Задача 3: кривая вероятностей — для LIVE и завершённых матчей, только по реальным снимкам.
   const aiProbabilityChartHtml=(live || finished)
@@ -217,15 +173,14 @@ export function renderMatchCenterView(d, deps) {
 
     <div class="center-tab-panel match-center-primary" data-center-panel="ai" aria-label="AI о матче">
       <section class="panel mr-ai-card" aria-labelledby="mrAiCardTitle">
-        <div class="mr-ai-card-head"><span class="mr-kicker">✦ Вывод AI</span>${history?.aiConfidence ? `<span class="mr-ai-card-conf">уверенность ${Math.round(Number(history.aiConfidence))}/100</span>` : ''}</div>
+        <div class="mr-ai-card-head"><span class="mr-kicker">✦ Вывод AI</span></div>
         ${aiCardBody}
       </section>
       <section class="panel match-explanation beat-ai" id="beatAiPick" data-fixture="${Number(m.fixtureId) || 0}" aria-live="polite" hidden></section>
       ${live && IN_PLAY_STATUSES.has(String(m.status || '').toUpperCase()) ? inPlayEstimateHtml(latestInPlayEstimate(d.aiTimeline || {}), m, escapeHtml) : ''}
-      ${matchCenterTrackRecordHtml(state, escapeHtml)}
       ${matchChangeNarrativeHtml(d, m)}
       ${aiTimelineCompactHtml}
-      ${aiProbabilityChartHtml ? `<section class="${aiProbabilityChartHtml.startsWith('<figure') ? '' : 'panel '}ai-prob-panel">${aiProbabilityChartHtml}</section>` : ''}
+      ${aiProbabilityChartHtml.includes('<svg') ? `<section class="${aiProbabilityChartHtml.startsWith('<figure') ? '' : 'panel '}ai-prob-panel">${aiProbabilityChartHtml}</section>` : ''}
       ${aiTimelineDetailsHtml}
       ${live ? liveAiCoachHtml(d.liveAiCoach, m) : ''}
       ${smartInsightsHeroHtml(d.smartInsights, m)}
@@ -292,9 +247,14 @@ export function renderMatchCenterView(d, deps) {
   const root=$('analysis');
   bindMatchCenterTabs();
   root.querySelectorAll('.smart-open-insights').forEach(btn => btn.addEventListener('click', () => {
+    const details=root.querySelector('[data-insight-details]');
+    if (!details) return;
+    details.hidden=!details.hidden;
+    btn.setAttribute('aria-expanded',String(!details.hidden));
+    btn.textContent=details.hidden?'Подробнее о матче →':'Скрыть подробности ↑';
     setMatchCenterTab('ai', false);
     requestAnimationFrame(() => {
-      root.querySelector('[data-center-section="insights"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (!details.hidden) root.querySelector('[data-center-section="insights"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }));
 
@@ -314,7 +274,6 @@ export function renderMatchCenterView(d, deps) {
   $('centerWatchBtn')?.addEventListener('click',()=>toggleMatchWatch({...m,finished:false}));
   root.querySelectorAll('[data-quick-reminder]').forEach(button=>{syncQuickReminderButton(button,m.fixtureId);if(!state.remindersLoaded){button.disabled=true;button.textContent=state.remindersLoadError?'Напоминания недоступны · обновите в профиле':'Загружаю напоминания…';}button.addEventListener('click',()=>toggleReminder(m));});
   $('centerAnalyzeBtn')?.addEventListener('click', e => analyzeMatch(Number(m.fixtureId), e.currentTarget));
-  root.querySelector('[data-center-track-record]')?.addEventListener('click', () => $('navHistory')?.click());
   $('centerHistoryRetryBtn')?.addEventListener('click', e => {
     e.currentTarget.disabled = true;
     e.currentTarget.textContent = 'Проверяю…';

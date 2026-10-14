@@ -58,8 +58,8 @@ test('match feed card is compact and does not embed analysis detail',()=>{
 test('AI match view exposes key decision layer before detailed data',()=>{
   const glance=block(app,'function analysisGlanceHtml','function renderAnalysis');
   assert.match(glance,/slice\(0, 3\)/);
-  assert.match(glance,/Уверенность AI/);
-  assert.match(glance,/Данные:/);
+  assert.doesNotMatch(glance,/Уверенность AI|analysis-confidence-simple/);
+  assert.doesNotMatch(glance,/Данные:/);
   assert.match(glance,/Главные факторы/);
   assert.match(glance,/Основные риски/);
   const analysis=app.slice(app.indexOf('function renderAnalysis'));

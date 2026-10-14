@@ -288,9 +288,9 @@ test('wiring: cron task, feed enrichment and card fallback', () => {
   const api = feed.slice(feed.indexOf('async function apiMatches('), feed.indexOf('\n  }\n', feed.indexOf('async function apiMatches(')));
   assert.doesNotMatch(api, /return json\(/, 'every feed response passes through respondWithPredictions');
   const app = fs.readFileSync('public/app.js', 'utf8');
-  // Идущий матч тоже проходит через aiConfidenceMeterHtml: там только оценка по ходу матча.
-  assert.match(app, /\$\{!m\.finished \? aiConfidenceMeterHtml\(aiHistory, m\) : ''\}/);
-  assert.match(fs.readFileSync('public/modules/home-signal.js', 'utf8'), /aiConfidenceMeterHtml\(aiHistory, match\)/);
+  // По решению Сергея полосы вероятностей остаются в штабе, не в карточках ленты.
+  assert.doesNotMatch(app, /aiConfidenceMeterHtml\(aiHistory, m\)/);
+  assert.doesNotMatch(fs.readFileSync('public/modules/home-signal.js', 'utf8'), /aiConfidenceMeterHtml/);
   const wrangler = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8').replace(/^\s*\/\/.*$/gm, ''));
   assert.equal(wrangler.vars.PREMATCH_PREDICTIONS_DAILY_LIMIT, '60');
 });

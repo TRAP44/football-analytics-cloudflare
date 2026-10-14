@@ -62,7 +62,7 @@ test('AI match center keeps probabilities quality factors and risks above detail
   assert.match(glanceFn,/slice\(0, 3\)/);
   assert.match(glanceFn,/Главные факторы/);
   assert.match(glanceFn,/Основные риски/);
-  assert.match(glanceFn,/Данные:/);
+  assert.doesNotMatch(glanceFn,/Данные:|Уверенность AI/);
 });
 
 test('ordinary Match Center promotes smart context without fabricating probability fields',()=>{

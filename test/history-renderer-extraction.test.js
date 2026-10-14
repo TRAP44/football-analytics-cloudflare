@@ -315,7 +315,8 @@ test('history rows are normalized, deduplicated and invalid fixture identities a
     1,
   );
   // Метки сигнала бывают ставочными — в списке только нейтральный итог.
-  assert.match(root.innerHTML,/AI · без уверенного вывода · 82\/100/);
+  assert.match(root.innerHTML,/AI · без уверенного вывода/);
+  assert.doesNotMatch(root.innerHTML,/82\/100/);
   assert.doesNotMatch(root.innerHTML,/Сигнал/);
   assert.deepEqual(calls,[[77,firstButton]]);
 });

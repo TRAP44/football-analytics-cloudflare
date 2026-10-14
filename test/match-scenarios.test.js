@@ -134,7 +134,7 @@ test('live AI coach hides market-derived watch items, volatility reason and prem
     volatility:{label:'Высокий',reason:'Поздний гол или резкое движение рынка может сломать сценарий.'},
     prematch:{available:true,signal:'ТБ 2.5',outcome:'Победа Милан · 52%',stateLabel:'держится'},
   },{});
-  assert.match(html,/Следить за заменами хозяев/);
+  assert.doesNotMatch(html,/Следить за заменами хозяев|Что смотреть дальше/);
   assert.match(html,/Победа Милан · 52%/);
   assert.match(html,/Матч может быстро измениться\./);
   assert.match(html,/Оцениваю матч по счёту, событиям и статистике\./);

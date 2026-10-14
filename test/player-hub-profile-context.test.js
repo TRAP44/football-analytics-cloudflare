@@ -32,7 +32,7 @@ test('Player Hub 4B exposes age number position and squad group without season-s
   for (const label of ['Возраст','Номер','Позиция','Группа состава']) {
     assert.ok(source.includes(label), `missing profile field: ${label}`);
   }
-  assert.match(source, /не создаёт отдельный запрос на сезонную статистику игрока/);
+  assert.doesNotMatch(source, /не создаёт отдельный запрос на сезонную статистику игрока/);
   assert.doesNotMatch(source, /матчи сезона|голы сезона|ассисты сезона/);
 });
 

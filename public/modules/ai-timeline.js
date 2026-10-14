@@ -194,7 +194,7 @@ function triggerHtml(point={}) {
   const explanation=market
     ? 'Оценка изменилась вместе с обновлением внешних данных матча. Причинность не подтверждена.'
     : point.trigger?.explanation || (relation==='model_driven'?'Модель переоценила матч после обновления входных данных.':'');
-  return `<div class="ai-timeline-reason"><span class="${relation}">${escapeHtml(relationLabel(relation))}</span><strong>${escapeHtml(label)}</strong>${explanation?`<p>${escapeHtml(explanation)}</p>`:''}</div>`;
+  return `<div class="ai-timeline-reason">${label===relationLabel(relation)?'':`<span class="${relation}">${escapeHtml(relationLabel(relation))}</span>`}<strong>${escapeHtml(label)}</strong>${explanation?`<p>${escapeHtml(explanation)}</p>`:''}</div>`;
 }
 
 export function renderAiTimelineCompact(timeline = {}, match = {}) {
@@ -204,16 +204,16 @@ export function renderAiTimelineCompact(timeline = {}, match = {}) {
   const previous=model.points.length>1?model.points.at(-2):null;
   return `<section class="panel ai-timeline-compact" aria-label="AI Timeline: история сохранённых оценок">
     <div class="ai-timeline-head">
-      <div><span>🧠 AI TIMELINE</span><h2>Как менялась оценка</h2></div>
+      <div><span>ОЦЕНКА МАТЧА</span><h2>${model.points.length>1?'Как менялась оценка':'Оценка модели'}</h2></div>
       <b>${model.points.length} ${model.points.length===1?'точка':'точки'}</b>
     </div>
     <div class="ai-timeline-current">
       <span>${escapeHtml(pointTime(point,match))}</span>
       <strong>${probabilityLine(point,previous,match)}</strong>
     </div>
-    ${timeChartFromModel(model,match)}
-    ${triggerHtml(point)}
-    ${qualityHtml(point)}
+    ${!match.live && !match.finished && model.points.length>1?timeChartFromModel(model,match):''}
+    ${model.points.length>1?triggerHtml(point):''}
+    ${point.stale?'<small class="ai-timeline-quality">Есть устаревший источник</small>':''}
   </section>`;
 }
 
@@ -436,24 +436,15 @@ function pointHtml(point,index,points,match) {
   </article>`;
 }
 
-// Пояснение с сервера может упоминать рынок (старые ответы) — заменяем нейтральным.
-const MARKET_NOTE=/рын(ок|к|оч)|коэффициент/i;
-function timelineNote(note='') {
-  if (!note) return '';
-  return MARKET_NOTE.test(note)
-    ? 'AI Timeline использует только реально сохранённые снимки. События помечаются как совпадение во времени, если причинность не подтверждена.'
-    : note;
-}
-
 export function renderAiTimelineDetails(timeline = {}, match = {}) {
   const model=normalizeAiTimeline(timeline,match);
-  if (!model.available) return '';
+  if (!model.available || model.points.length<2) return '';
   return `<details class="panel ai-timeline-details">
-    <summary><span>История AI</span><b>${model.points.length} сохранённых точек</b></summary>
+    <summary><span>Предыдущие оценки</span><b>${model.points.length-1}</b></summary>
     <div class="ai-timeline-details-body">
-      <p class="ai-timeline-method">Показываются только реально сохранённые состояния модели. «Совпало по времени» не означает, что событие вызвало изменение вероятности.</p>
-      <div class="ai-timeline-list">${model.points.map((point,index)=>pointHtml(point,index,model.points,match)).join('')}</div>
-      ${timelineNote(model.note)?`<p class="tiny warning">${escapeHtml(timelineNote(model.note))}</p>`:''}
+      <p class="ai-timeline-method">События рядом с изменением оценки не всегда являются его причиной.</p>
+      <div class="ai-timeline-list">${model.points.slice(0,-1).map((point,index)=>pointHtml(point,index,model.points,match)).join('')}</div>
+
     </div>
   </details>`;
 }
