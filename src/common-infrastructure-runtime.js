@@ -48,6 +48,9 @@ export function createCommonInfrastructureRuntime(deps = {}) {
       theOddsApiKey: env.THE_ODDS_API_KEY || '',
       tavilyKey: env.TAVILY_KEY || '',
       botToken: env.TELEGRAM_BOT_TOKEN || '',
+      botMatchCardsEnabled: boolEnv(env.BOT_MATCH_CARDS_ENABLED, true),
+      // Internal Node-only capability, not an operator-managed environment variable.
+      botMatchCardRenderer: typeof env.botMatchCardRenderer === 'function' ? env.botMatchCardRenderer : null,
       publisherBotToken: env.TELEGRAM_PUBLISHER_BOT_TOKEN || '',
       telegramChannelId: env.TELEGRAM_CHANNEL_ID || '',
       // Ежедневный пост «Матчи дня» в канал: выключен, пока Сергей не одобрит текст.

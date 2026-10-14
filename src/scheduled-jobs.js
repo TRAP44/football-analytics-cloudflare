@@ -198,6 +198,7 @@ export function createScheduledJobsRuntime({
   processMatchSwings,
   runProductionMonitor,
   processDailyDigests,
+  processBotMatchCards,
   cleanupOpsEvents,
   cleanupRateWindows,
   cleanupScheduledJobLeases,
@@ -476,6 +477,7 @@ export function createScheduledJobsRuntime({
       // Задача 2: вероятности модели заранее для главных матчей дня (сама держит интервал и потолки).
       ['prematch_predictions', remindersTask.then(() => run('prematch_predictions', () => processPrematchPredictions(cfg, scheduledAt)))],
     ];
+    if (typeof processBotMatchCards==='function') tasks.push(['bot_match_cards', remindersTask.then(() => run('bot_match_cards', () => processBotMatchCards(cfg)))]);
     if (inPlayTimelineTask) tasks.push(['in_play_timeline', inPlayTimelineTask]);
     // «Перелом матча»: по свежим точкам кривой — после того, как они записаны.
     if (inPlayTimelineTask && typeof processMatchSwings === 'function') {

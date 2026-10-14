@@ -159,8 +159,8 @@ export function createBillingRuntime(deps = {}) {
     try {
       r = await fetchWithTimeout(`https://api.telegram.org/bot${cfg.botToken}/${safeMethod}`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body || {}),
+        headers: body instanceof FormData ? undefined : { 'content-type': 'application/json' },
+        body: body instanceof FormData ? body : JSON.stringify(body || {}),
       }, 8000, `Telegram ${safeMethod}`);
     } catch (cause) {
       const timedOut = String(cause?.code || '') === 'UPSTREAM_TIMEOUT';

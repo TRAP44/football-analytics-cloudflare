@@ -265,6 +265,8 @@ async function main() {
     console.error(`cron-runner: ${problem}`);
     process.exit(1);
   }
+  const { renderBotMatchCard } = await import('./bot-match-card-renderer.js');
+  env.botMatchCardRenderer = renderBotMatchCard;
   const trace = installFetchTrace();
   const { default: worker } = await import(pathToFileURL(path.join(root, 'src', 'worker.js')).href);
   const result = await runCron({ worker, env });
