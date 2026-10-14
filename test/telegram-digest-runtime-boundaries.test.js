@@ -500,9 +500,14 @@ test('background cards render at most two boards from fresh cache without provid
   assert.deepEqual(await api.processBotMatchCards(cfg),{prepared:2,failed:0,degraded:false});
   assert.equal(renders,2);
   assert.deepEqual(await api.processBotMatchCards(cfg),{prepared:0,failed:0,degraded:false});
+  for (const [key,value] of cache) {
+    if (key.startsWith('bot:match-card:')) value.generatedAt=Date.now()-5*60000;
+  }
+  assert.deepEqual(await api.processBotMatchCards(cfg),{prepared:2,failed:0,degraded:false},'renew before TTL expires even without a score change');
+  assert.equal(renders,4);
   snapshot.fetchedAt=new Date(Date.now()-7*60000).toISOString();
   assert.deepEqual(await api.processBotMatchCards(cfg),{prepared:0,failed:0,degraded:false});
-  assert.equal(renders,2);
+  assert.equal(renders,4);
 });
 
 test('cached board sends one photo with readable caption and unchanged buttons; mismatched score uses text',async()=>{

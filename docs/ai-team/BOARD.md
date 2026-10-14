@@ -12,9 +12,11 @@ _пусто_
 
 ## В работе
 
-- [ ] Стабильная LIVE-картинка при изменении минуты — **Codex** — ветка `codex/stable-live-image-cards`.
+_пусто_
 
 ## На ревью
+
+- [ ] Стабильная LIVE-картинка при изменении минуты — **Codex** — [PR #891](https://github.com/TRAP44/football-analytics-cloudflare/pull/891) — ревью: Claude.
 
 - [ ] Картинки списков матчей и LIVE с настоящими логотипами — **Codex** — [PR #889](https://github.com/TRAP44/football-analytics-cloudflare/pull/889) — ревью: Claude.
 

@@ -1,6 +1,7 @@
 export const BOT_CARD_VERSION = 2;
 export const BOT_CARD_MAX_BYTES = 250000;
 export const BOT_CARD_MAX_AGE_MS = 6 * 60 * 1000;
+export const BOT_CARD_REFRESH_AFTER_MS = 4 * 60 * 1000;
 
 const text = (value, limit = 120) => typeof value === 'string'
   ? value.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, limit) : '';

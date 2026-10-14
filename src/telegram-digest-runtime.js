@@ -1,4 +1,4 @@
-import { BOT_CARD_VERSION, botCardSignature, validCachedBotCard } from './bot-match-card.js';
+import { BOT_CARD_VERSION, BOT_CARD_REFRESH_AFTER_MS, botCardSignature, validCachedBotCard } from './bot-match-card.js';
 
 export function createTelegramDigestRuntime(deps = {}) {
   if (!deps || typeof deps!=='object' || Array.isArray(deps)) {
@@ -774,7 +774,7 @@ export function createTelegramDigestRuntime(deps = {}) {
         const ordered=botLeagueGroups(matches).flatMap(group=>group.rows);
         const signature=botCardSignature(ordered,liveOnly);
         const cached=await getCache(botCardCacheKey(liveOnly),cfg).catch(()=>null);
-        if (validCachedBotCard(cached,signature)) continue;
+        if (validCachedBotCard(cached,signature) && Date.now()-cached.generatedAt<BOT_CARD_REFRESH_AFTER_MS) continue;
         const generatedAt=Date.now();
         const png=await cfg.botMatchCardRenderer(ordered,{liveOnly,generatedAt});
         const card={signature,png,generatedAt};
