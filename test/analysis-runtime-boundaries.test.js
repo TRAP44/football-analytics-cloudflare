@@ -388,3 +388,15 @@ test('exhausted daily quota still reaches the referral bonus reservation when a 
     assert.equal(calls.bonus, 0);
   }
 });
+
+test('client body cannot request the internal system lineup refresh or bypass the cached analysis',async()=>{
+  let providerCalls=0;
+  const cached={match:{fixtureId:123,status:'NS',date:new Date(Date.now()+3600000).toISOString()},generatedAt:new Date().toISOString()};
+  const runtime=createAnalysisRuntime({...baseDeps(),getCache:async()=>cached,
+    loadProviderFixture:async()=>{providerCalls++;throw new Error('must stay cached');},
+    analysisFreshness:()=>({needsRecheck:false})});
+  const response=await runtime.apiAnalyze({json:async()=>({fixtureId:123,system:true,lineupEvent:{force:true}})},{},{id:456});
+  assert.equal(response.status,200);
+  assert.equal(response.body.cached,true);
+  assert.equal(providerCalls,0);
+});

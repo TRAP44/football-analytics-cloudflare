@@ -56,7 +56,7 @@ test('RC106 favorite mutation rerenders an open analysis',()=>{
 
 test('RC106 keeps cached Telegram brief to full analysis quota-safe and history read-only',()=>{
   const analyzeStart=worker.indexOf('async function apiAnalyze');
-  const cached=worker.indexOf('if (cached && !needsFreshnessRecheck)',analyzeStart);
+  const cached=worker.indexOf('if (cached && !needsFreshnessRecheck && !lineupRefresh)',analyzeStart);
   const cachedReturn=worker.indexOf('return json(safeAnalysisResponsePayload(cached',cached);
   const reserve=worker.indexOf('usageReservation=objectValue(await reserveAnalysisQuota(userId,cfg));',analyzeStart);
   assert.ok(cached>analyzeStart && cachedReturn>cached && reserve>cachedReturn);
@@ -81,7 +81,7 @@ test('RC106 handoff cannot bypass the protected quota reservation on an uncached
   const analyzeEnd=worker.indexOf('async function apiHistoryAnalysis',analyzeStart);
   assert.ok(analyzeStart>=0 && reserve>analyzeStart && analyzeEnd>reserve);
   const block=worker.slice(analyzeStart,analyzeEnd);
-  assert.match(block,/if \(cached && !needsFreshnessRecheck\)/);
+  assert.match(block,/if \(cached && !needsFreshnessRecheck && !lineupRefresh\)/);
   assert.match(block,/reserveAnalysisQuota\(userId,cfg\)/);
   assert.match(block,/analysisResponsePayload/);
 });

@@ -17,6 +17,8 @@ try {
   const results=[];
   for (const leadMinutes of [120,60]) {
     const requests=[];
+    let firstPrediction=null;
+    const predictionWrites=[];
     const fixtureId=770+leadMinutes;
     const fixture={fixture:{id:fixtureId,date:new Date(Date.now()+leadMinutes*60000).toISOString(),
       status:{short:'NS',elapsed:null},venue:{name:'Test stadium'},referee:null},
@@ -28,6 +30,12 @@ try {
         let result=[];
         if (url.pathname.endsWith('/claim_provider_request')) result={allowed:true,count:1};
         if (init?.method==='POST' && url.pathname.endsWith('/analysis_cache')) result=JSON.parse(init.body);
+        if (url.pathname.endsWith('/model_predictions') && init?.method==='POST') {
+          const row=JSON.parse(init.body);
+          const prefer=new Headers(init.headers).get('Prefer');
+          predictionWrites.push({method:init.method,prefer,conflict:url.searchParams.get('on_conflict')});
+          firstPrediction ??=row;
+        }
         return Response.json(result);
       }
       if (url.hostname!=='isolated-relay.test') throw new Error('Measurement blocked an unexpected external host.');
@@ -55,6 +63,24 @@ try {
       if (result.status!==200) throw new Error(`Analysis measurement failed: ${result.status}`);
       results.push({leadMinutes,mode,status:result.status,cached:body.cached,
         providerRequests:requests.length,requests:[...requests]});
+    }
+    if (leadMinutes===60 && process.argv.includes('--lineup-refresh')) {
+      const initialPrediction=JSON.stringify(firstPrediction);
+      const data=[40,50].map((teamId,side)=>({team:{id:teamId},formation:'4-3-3',
+        startXI:Array.from({length:11},(_,index)=>({player:{id:1000+side*100+index,name:`Player ${side}-${index}`}})),substitutes:[]}));
+      const event={fixtureId,feature:'lineups',provider:'api-football',fetchedAt:new Date().toISOString(),data};
+      const options={lineupEvent:event};
+      for (const mode of ['lineup-refresh','lineup-repeat']) {
+        requests.length=0;
+        const result=await worker.getAnalysisRuntime().analyzeFixtureForSystem(fixtureId,cfg,options);
+        const body=await result.json();
+        if (result.status!==200) throw new Error(`Lineup measurement failed: ${result.status}, ${body.code}`);
+        const analysis=worker.memory.cache.get(`fixture:${fixtureId}:v17-starting-xi-rc146`)?.payload;
+        results.push({leadMinutes,mode,status:result.status,cached:body.cached,
+          providerRequests:requests.length,requests:[...requests],lineupsConfirmed:analysis?.lineupQuality?.bothConfirmed,
+          completedLineupRefresh:Boolean(analysis?.prematchLineupRefresh),firstPredictionUnchanged:JSON.stringify(firstPrediction)===initialPrediction,
+          predictionWrites:[...predictionWrites]});
+      }
     }
   }
   console.log(JSON.stringify({isolated:true,results},null,2));

@@ -1,3 +1,4 @@
+import {prematchLineupEvent,analysisIncludesLineupEvent,completedPrematchLineupRefresh,prematchLineupCacheKey,prematchLineupRefreshKey,prematchLineupProbeKey,prematchAnalysisCacheKey,PREMATCH_LINEUP_RETENTION_MINUTES} from './prematch-lineup-event.js';
 // Задача 2: вероятности модели заранее для главных матчей дня.
 //
 // Фоновое задание (cron, под lease-механизмом scheduled-jobs) выбирает до K
@@ -130,6 +131,8 @@ export function prematchCandidates(feeds = [], favoriteTeamIds = new Set(), nowM
 export function createPrematchPredictionJob(deps = {}) {
   const {
     analyzeFixtureForSystem,
+    analysisProviderFetch,
+    setCache,
     clock,
     getCache,
     getStaleCache,
@@ -237,7 +240,7 @@ export function createPrematchPredictionJob(deps = {}) {
   // Кандидаты — из полного пакета матчей дня: нормализованная лента хранит
   // только ~120 матчей и ничего не знает об избранных командах. Записи ленты
   // (интерес, «главный», классификация) важнее сырых и идут первыми.
-  async function loadFeed(date, cfg) {
+  async function loadFeed(date, cfg, allowNetwork=true) {
     let normalized = [];
     try {
       const key = FEED_CACHE_KEY(date);
@@ -246,7 +249,7 @@ export function createPrematchPredictionJob(deps = {}) {
     } catch {
       normalized = [];
     }
-    const raw = await loadRawFixtures(date, cfg, !normalized.length);
+    const raw = await loadRawFixtures(date, cfg, allowNetwork && !normalized.length);
     const byId = new Map();
     for (const match of normalized) {
       const id = positiveId(safeRead(plainObject(match), 'fixtureId'));
@@ -301,6 +304,56 @@ export function createPrematchPredictionJob(deps = {}) {
     return new Set(rows.map(row => positiveId(safeRead(row, 'fixture_id'))).filter(Boolean));
   }
 
+  // The scheduler already owns cron-global. At most one discovery attempt
+  // per fixture; all later ticks only observe existing shared cache events.
+  async function lineupRefreshQueue(candidates,existing,cfg,settings,nowMs,summary) {
+    const queue=[];
+    let probes=0;
+    const eligible=candidates.filter(row=>existing.has(row.fixtureId)
+      && row.kickoff-nowMs<=90*60000).slice(0,40);
+    for (const row of eligible) {
+      try {
+        const marker=await getCache(prematchLineupRefreshKey(row.fixtureId),cfg)
+          || await getStaleCache(prematchLineupRefreshKey(row.fixtureId),cfg);
+        if (completedPrematchLineupRefresh(marker,row.fixtureId)) continue;
+        const analysis=await getStaleCache(prematchAnalysisCacheKey(row.fixtureId),cfg);
+        if (completedPrematchLineupRefresh(analysis?.prematchLineupRefresh,row.fixtureId)) continue;
+        let snapshot=await getCache(prematchLineupCacheKey(row.fixtureId),cfg);
+        let event=prematchLineupEvent(snapshot,row,nowMs);
+        if (!event && row.kickoff-nowMs<=65*60000 && probes<settings.perRun
+            && typeof analysisProviderFetch==='function' && typeof setCache==='function') {
+          const probeKey=prematchLineupProbeKey(row.fixtureId);
+          const probed=await getCache(probeKey,cfg) || await getStaleCache(probeKey,cfg);
+          if (probed?.fixtureId!==row.fixtureId) {
+            const saved=await setCache(probeKey,row.fixtureId,{fixtureId:row.fixtureId,attemptedAt:new Date(nowMs).toISOString()},cfg,PREMATCH_LINEUP_RETENTION_MINUTES,{requireDurable:true});
+            if (saved!==true) { summary.lineupSkipped++; summary.stopReason='lineup_storage_unavailable'; break; }
+            probes++;
+            const result=await analysisProviderFetch({feature:'lineups',path:'/fixtures/lineups',params:{fixture:row.fixtureId},fixtureId:row.fixtureId,cfg});
+            if (['rate_limited','plan_limited'].includes(result?.meta?.state)) {
+              summary.stopReason='provider_limited';
+              summary.lineupSkipped++;
+              break;
+            }
+            snapshot={fixtureId:row.fixtureId,feature:'lineups',provider:result?.meta?.provider,fetchedAt:result?.meta?.fetchedAt,
+              stale:result?.meta?.stale===true || result?.meta?.source==='stale-cache',data:result?.data};
+            event=prematchLineupEvent(snapshot,row,nowMs);
+          }
+        }
+        if (!event) { summary.lineupSkipped++; continue; }
+        if (analysisIncludesLineupEvent(analysis,event)) {
+          if (typeof setCache==='function') await setCache(prematchLineupRefreshKey(row.fixtureId),row.fixtureId,
+            {fixtureId:row.fixtureId,phase:'lineups',fingerprint:event.fingerprint,computedAt:analysis.generatedAt},cfg,PREMATCH_LINEUP_RETENTION_MINUTES,{requireDurable:true});
+          continue;
+        }
+        queue.push({...row,lineupEvent:event});
+        if (queue.length>=settings.perRun || summary.stopReason) break;
+      } catch { summary.lineupSkipped++; summary.stopReason ||= 'lineup_event_unavailable'; }
+      if (summary.stopReason) break;
+    }
+    summary.lineupProbes=probes;
+    return queue;
+  }
+
   async function report(cfg, summary) {
     if (typeof recordOpsEvent !== 'function') return;
     try {
@@ -321,6 +374,9 @@ export function createPrematchPredictionJob(deps = {}) {
           stopReason: summary.stopReason || summary.reason || null,
           providerRequestsReserved:summary.providerRequestsReserved || 0,
           providerRequestLimit:summary.providerRequestLimit || 0,
+          lineupRefreshed:summary.lineupRefreshed || 0,
+          lineupProbes:summary.lineupProbes || 0,
+          lineupSkipped:summary.lineupSkipped || 0,
         },
       });
     } catch {}
@@ -328,7 +384,7 @@ export function createPrematchPredictionJob(deps = {}) {
 
   async function processPrematchPredictions(cfg, scheduledAt = new Date()) {
     const settings = prematchPredictionSettings(cfg);
-    const summary = { ok: true, candidates: 0, withoutPrediction: 0, computed: 0, alreadyCached: 0, skipped: 0, failed: 0, stopReason: '' };
+    const summary = { ok: true, candidates: 0, withoutPrediction: 0, computed: 0, alreadyCached: 0, skipped: 0, failed: 0, stopReason: '',lineupRefreshed:0,lineupSkipped:0,lineupProbes:0 };
     const at = scheduledAt instanceof Date && Number.isFinite(scheduledAt.getTime()) ? scheduledAt : new Date();
     if (!settings.enabled) return { ...summary, reason: 'disabled' };
     let storage = false;
@@ -339,14 +395,14 @@ export function createPrematchPredictionJob(deps = {}) {
     }
     if (!storage) return { ...summary, reason: 'storage_unavailable' };
     const minuteOfDay = at.getUTCHours() * 60 + at.getUTCMinutes();
-    if (minuteOfDay % settings.intervalMinutes !== 0) return { ...summary, reason: 'interval' };
+    const initialWindow=minuteOfDay % settings.intervalMinutes===0;
 
     // Состояние квоты провайдера общее для всех изолятов (Supabase); в cron-изоляте
     // своей памяти о нём может не быть. Истёкший снимок обновляется запросом /status.
-    await ensureProviderSnapshot({ cfg, loadSharedProviderState, providerSnapshot, probeProviderStatus, nowMs: at.getTime(), requireDailyQuota:true });
+    await ensureProviderSnapshot({ cfg, loadSharedProviderState, providerSnapshot, probeProviderStatus, nowMs: realNow(), requireDailyQuota:true });
     let budget;
     try {
-      budget = providerBudgetDecision(providerSnapshot(), settings, at.getTime(), {requireDailyQuota:true});
+      budget = providerBudgetDecision(providerSnapshot(), settings, realNow(), {requireDailyQuota:true});
     } catch {
       budget = { allowed: false, reason: 'provider_unknown' };
     }
@@ -357,7 +413,7 @@ export function createPrematchPredictionJob(deps = {}) {
       return summary;
     };
     if (!budget.allowed) return finish(budget.reason);
-    const providerBudget=prematchProviderBudget(providerSnapshot(),at.getTime());
+    const providerBudget=prematchProviderBudget(providerSnapshot(),realNow());
     if (!providerBudget.allowed) return finish(providerBudget.reason);
     summary.providerRequestLimit=providerBudget.limit;
     summary.providerRequestsReserved=0;
@@ -385,8 +441,8 @@ export function createPrematchPredictionJob(deps = {}) {
     if (!peek.available) return finish(peek.reason);
 
     const nowMs = at.getTime();
-    const feeds = (await Promise.all([utcDate(nowMs), utcDate(nowMs + DAY_SECONDS * 1000)].map(date => loadFeed(date, cfg)))).filter(Boolean);
-    if (!feeds.length) return finish(summary.stopReason || 'feed_not_cached');
+    const feeds = (await Promise.all([utcDate(nowMs), utcDate(nowMs + DAY_SECONDS * 1000)].map(date => loadFeed(date, cfg, initialWindow)))).filter(Boolean);
+    if (!feeds.length) return initialWindow ? finish(summary.stopReason || 'feed_not_cached') : {...summary,reason:'interval'};
 
     // Избранные ищутся только среди команд матчей, которые вообще могут стать
     // кандидатами (предстоящие, в окне, не молодёжь/товарищеские/низшие лиги):
@@ -405,9 +461,12 @@ export function createPrematchPredictionJob(deps = {}) {
       summary.ok=false;
       return finish('predictions_lookup_failed');
     }
-    const queue = candidates.filter(row => !existing.has(row.fixtureId));
-    summary.withoutPrediction = queue.length;
-    if (!queue.length) return finish('all_predicted');
+    const refresh=await lineupRefreshQueue(candidates,existing,cfg,settings,realNow(),summary);
+    const initial=initialWindow ? candidates.filter(row=>!existing.has(row.fixtureId)) : [];
+    const priority=new Map(candidates.map((row,index)=>[row.fixtureId,index]));
+    const queue=[...refresh,...initial].sort((a,b)=>priority.get(a.fixtureId)-priority.get(b.fixtureId));
+    summary.withoutPrediction = initial.length;
+    if (!queue.length) return !initialWindow && !summary.lineupProbes && !summary.stopReason ? {...summary,reason:'interval'} : finish(summary.stopReason || (summary.lineupSkipped ? 'lineups_not_ready' : 'all_predicted'));
 
     for (const row of queue.slice(0, settings.perRun)) {
       if (summary.stopReason) break;
@@ -421,7 +480,7 @@ export function createPrematchPredictionJob(deps = {}) {
         break;
       }
       try {
-        const response = await analyzeFixtureForSystem(row.fixtureId, cfg);
+        const response = await analyzeFixtureForSystem(row.fixtureId, cfg,row.lineupEvent ? {lineupEvent:{...row.lineupEvent.snapshot,match:{fixtureId:row.fixtureId,date:new Date(row.kickoff).toISOString(),status:'NS',home:{id:row.homeId},away:{id:row.awayId}}}} : undefined);
         const status = Number(safeRead(response, 'status')) || 0;
         let body = null;
         try {
@@ -431,11 +490,12 @@ export function createPrematchPredictionJob(deps = {}) {
         }
         if (status === 200 && body?.cached === true && body?.fixtureId === row.fixtureId) {
           summary.alreadyCached += 1;
-        } else if (status === 200) {
+        } else if (status === 200 && body?.stale!==true) {
           summary.computed += 1;
+          if (row.lineupEvent) summary.lineupRefreshed++;
         } else if (status === 429 || status === 503) {
           summary.skipped += 1;
-          summary.stopReason ||= 'provider_limited';
+          summary.stopReason ||= ['LINEUP_REFRESH_CACHE_UNAVAILABLE','LINEUP_REFRESH_STORAGE_UNAVAILABLE'].includes(body?.code) ? 'lineup_storage_unavailable' : 'provider_limited';
           break;
         } else {
           summary.skipped += 1;

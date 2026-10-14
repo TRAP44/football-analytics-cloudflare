@@ -1,3 +1,5 @@
+export const PROVIDER_FEATURE_CACHE_VERSION = 'v5.0';
+
 // Provider data/reliability orchestration extracted from worker.js.
 // Provider transport, cache and policy capabilities are injected by the composition root.
 export function createProviderDataRuntime(deps) {
@@ -19,7 +21,6 @@ export function createProviderDataRuntime(deps) {
     setCache,
   } = deps;
 
-  const PROVIDER_FEATURE_CACHE_VERSION = 'v5.0';
   const ANALYSIS_PROVIDER_CACHE_VERSION = 'v2';
 
   function positiveSafeInteger(value) {

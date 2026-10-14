@@ -79,7 +79,7 @@ test('Mini App handoff validates fixture identity and records full AI through an
 
 test('cached Telegram brief to full Mini App still returns before quota reservation',()=> {
   const start=analysis.indexOf('async function apiAnalyze(request, cfg, user)');
-  const cached=analysis.indexOf('if (cached && !needsFreshnessRecheck) {',start);
+  const cached=analysis.indexOf('if (cached && !needsFreshnessRecheck && !lineupRefresh) {',start);
   const cachedReturn=analysis.indexOf('return json(safeAnalysisResponsePayload(cached',cached);
   const reserve=analysis.indexOf('usageReservation=objectValue(await reserveAnalysisQuota(userId,cfg));',start);
   assert.ok(start>=0 && cached>start && cachedReturn>cached && reserve>cachedReturn);

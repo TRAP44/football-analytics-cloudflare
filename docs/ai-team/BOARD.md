@@ -8,7 +8,7 @@
 
 ## Бэклог (Сергей расставляет приоритет сверху вниз)
 
-- [ ] Задача 2, последующие этапы после резерва: наблюдаемые команды в приоритете; один пересчёт по объявленному составу без изменения первого прогноза; единое время расчёта в штабе/допустимых карточках — **Codex**.
+- [ ] Задача 2, оставшиеся этапы: наблюдаемые команды в приоритете; единое время расчёта в штабе/допустимых карточках — **Codex**.
 
 ## В работе
 
@@ -16,7 +16,8 @@ _пусто_
 
 ## На ревью
 
-- [ ] Задача 2: замер запросов и резерв пользователей для фоновых прогнозов — **Codex** — [PR #894](https://github.com/TRAP44/football-analytics-cloudflare/pull/894), ветка `codex/prematch-user-reserve`. — ревью: Claude.
+- [ ] Задача 2: один пересчёт по объявленному составу — **Codex** — [PR #895](https://github.com/TRAP44/football-analytics-cloudflare/pull/895), ветка `codex/prematch-lineup-refresh`. — ревью: Claude.
+
 
 
 
@@ -40,6 +41,8 @@ _пусто_
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 ## Готово
+
+- [x] Задача 2: замер запросов и резерв пользователей для фоновых прогнозов — **Codex** — [PR #894](https://github.com/TRAP44/football-analytics-cloudflare/pull/894), ветка `codex/prematch-user-reserve`. — ревью: Claude. — слит.
 
 - [x] Свежие LIVE и счёт любимых клубов из общих снимков — **Codex** — [PR #893](https://github.com/TRAP44/football-analytics-cloudflare/pull/893), ветка `codex/favorite-live-freshness` — ревью: Claude. — слит.
 

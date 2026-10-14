@@ -191,7 +191,8 @@ test('RC59 recheck delta detects material changes and rejects cross-fixture comp
   assert.equal(mismatch.reasonCode, 'fixture_mismatch');
 });
 
-test('server only bypasses cached analysis for a real freshness or news-impact recheck', () => {
+test('server only bypasses cached analysis for a real freshness, news-impact or validated system lineup event', () => {
+  assert.match(analysisRuntime,/const lineupRefresh=system && lineupEvent!==null/);
   assert.match(
     analysisRuntime,
     /const recheckRequested=strictBoolean\(body\.recheck\)/,
@@ -202,7 +203,7 @@ test('server only bypasses cached analysis for a real freshness or news-impact r
   );
   assert.match(
     analysisRuntime,
-    /const shouldPerformRecheck=Boolean\(needsFreshnessRecheck \|\| newsImpactEligible\)/,
+    /const shouldPerformRecheck=Boolean\(needsFreshnessRecheck \|\| newsImpactEligible \|\| lineupRefresh\)/,
   );
   assert.match(
     analysisRuntime,
@@ -210,7 +211,7 @@ test('server only bypasses cached analysis for a real freshness or news-impact r
   );
   assert.match(
     analysisRuntime,
-    /if \(cached && !needsFreshnessRecheck\)[\s\S]*?if \(!newsImpactEligible\)[\s\S]*?safeAnalysisResponsePayload\(cached,/,
+    /if \(cached && !needsFreshnessRecheck && !lineupRefresh\)[\s\S]*?if \(!newsImpactEligible\)[\s\S]*?safeAnalysisResponsePayload\(cached,/,
   );
 });
 

@@ -270,16 +270,16 @@ export function createSharedCacheRuntime({
     return {provider,sourceUpdatedAt,freshness};
   }
 
-  async function setCache(cacheKey, fixtureId, payload, cfg = {}, minutes = cfg?.cacheMinutes) {
+  async function setCache(cacheKey, fixtureId, payload, cfg = {}, minutes = cfg?.cacheMinutes, {requireDurable=false}={}) {
     const ttlMinutes = cacheTtlMinutes(minutes, cfg?.cacheMinutes);
     const expiresAt = new Date(Date.now() + ttlMinutes * 60_000).toISOString();
     const expiresAtMs = Date.parse(expiresAt);
     const provenance = cacheSourceProvenance(payload);
     // Always keep an L1 copy. Supabase remains the persistent/shared cache.
-    memory.cache.set(cacheKey, { payload, expiresAt: expiresAtMs });
+    if (!requireDurable) memory.cache.set(cacheKey, { payload, expiresAt: expiresAtMs });
     if (memory.cache.size > 600) pruneLocalCache();
     noteTelemetry('cacheWrites');
-    if (!sharedCacheEnabled(cfg)) return;
+    if (!sharedCacheEnabled(cfg)) return requireDurable ? false : undefined;
     try {
       await supaUpsert(cfg, 'analysis_cache', {
         cache_key: cacheKey,
@@ -293,6 +293,11 @@ export function createSharedCacheRuntime({
         freshness_status: provenance.freshness,
         updated_at: new Date().toISOString(),
       }, 'cache_key');
+      if (requireDurable) {
+        memory.cache.set(cacheKey,{payload,expiresAt:expiresAtMs});
+        if (memory.cache.size>600) pruneLocalCache();
+        return true;
+      }
     } catch (error) {
       noteTelemetry('cacheWriteErrors');
       noteTelemetry('supabaseErrors');
@@ -300,6 +305,7 @@ export function createSharedCacheRuntime({
         severity: 'warning', source: 'cache', eventType: 'supabase_cache_write_fallback', code: 'CACHE_DB_WRITE',
         message: 'Shared cache persistence failed; the local cache copy remains available.', meta: { cacheCategory: cacheOpsCategory(cacheKey), provider: provenance.provider, errorName: String(error?.name || 'Error').slice(0, 40) },
       });
+      if (requireDurable) return false;
       // Cache persistence is an optimization. Do not fail a successful user request
       // only because the shared cache could not be written.
     }

@@ -71,22 +71,26 @@ function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-function job({ feed, predicted = [], snapshot = { plan: 'PRO',dailyLimit:7500,dailyRemaining:7400,updatedAt:new Date(NOW).toISOString() }, rpcAllowed = () => true, analyze, favorites = [], rateRows = [], raw = {}, staleRaw = {}, network = {} } = {}) {
+function job({ feed, predicted = [], snapshot = { plan: 'PRO',dailyLimit:7500,dailyRemaining:7400,updatedAt:new Date(NOW).toISOString() }, rpcAllowed = () => true, analyze, favorites = [], rateRows = [], raw = {}, staleRaw = {}, network = {}, extraCache = new Map(), lineupProbe, durableWrite=true, clock=()=>NOW } = {}) {
   const calls = { analyzed: [], rpc: [], events: [], selects: [], cacheReads: [], network: [] };
   const rt = createPrematchPredictionJob({
-    analyzeFixtureForSystem: async (fixtureId, cfg) => {
+    analyzeFixtureForSystem: async (fixtureId, cfg, options) => {
       calls.analyzed.push(fixtureId);
-      return analyze ? analyze(fixtureId, cfg) : jsonResponse({ cached: false, match: { fixtureId } });
+      return analyze ? analyze(fixtureId, cfg, options) : jsonResponse({ cached: false, match: { fixtureId } });
     },
-    clock: () => NOW,
+    analysisProviderFetch:lineupProbe,
+    setCache:async(key,id,payload)=>{if(durableWrite)extraCache.set(key,payload);return durableWrite;},
+    clock,
     getCache: async key => {
       calls.cacheReads.push(key);
+      if(extraCache.has(key))return extraCache.get(key);
       if (key === 'matches:2026-10-11:v6-integrity') return feed;
       const rawDate = /^provider-fixtures:(.+):v1$/.exec(key)?.[1];
       return rawDate && raw[rawDate] ? { date: rawDate, fixtures: raw[rawDate] } : null;
     },
     getStaleCache: async key => {
       calls.cacheReads.push(`stale:${key}`);
+      if(extraCache.has(key))return extraCache.get(key);
       const rawDate = /^provider-fixtures:(.+):v1$/.exec(key)?.[1];
       return rawDate && staleRaw[rawDate] ? { date: rawDate, fixtures: staleRaw[rawDate] } : null;
     },
@@ -113,7 +117,7 @@ function job({ feed, predicted = [], snapshot = { plan: 'PRO',dailyLimit:7500,da
 
 const at = new Date(NOW);
 
-test('job: a fixture that already has a model_predictions row is never selected again', async () => {
+test('job: the initial forecast never selects a fixture that already has a model_predictions row', async () => {
   const feed = { matches: [match(1, 120, { isTop: true }), match(2, 180, { isTop: true }), match(3, 240, { isTop: true })] };
   const { rt, calls } = job({ feed, predicted: [1] });
   const result = await rt.processPrematchPredictions({}, at);
@@ -591,4 +595,111 @@ test('background rechecks the user reserve during the same calculation',async()=
   assert.equal(result.providerRequestsReserved,1);
   assert.deepEqual(calls.analyzed,[1]);
   assert.equal(calls.events.length,1);
+});
+
+const announcedLineups=id=>({fixtureId:id,feature:'lineups',provider:'api-football',fetchedAt:new Date(NOW).toISOString(),
+  data:[id*10+1,id*10+2].map((teamId,side)=>({team:{id:teamId},formation:'4-3-3',
+    startXI:Array.from({length:11},(_,i)=>({player:{id:1000+side*100+i,name:`P${side}-${i}`}})),substitutes:[]}))});
+
+test('lineup event refreshes an already-predicted match between initial intervals without fetching the feed',async()=>{
+  const extraCache=new Map([['provider-feature:lineups:1:v5.0',announcedLineups(1)]]);
+  const {rt,calls}=job({feed:{matches:[match(1,60,{isTop:true})]},predicted:[1],extraCache,
+    analyze:async(id,cfg,options)=>{
+      assert.equal(options.lineupEvent.fixtureId,1);
+      return jsonResponse({cached:false,prematchLineupRefresh:{fixtureId:1,phase:'lineups'}});
+    }});
+  const result=await rt.processPrematchPredictions({},new Date(NOW+5*60000));
+  assert.deepEqual(calls.analyzed,[1]);
+  assert.deepEqual(calls.network,[]);
+  assert.equal(result.lineupRefreshed,1);
+  assert.equal(result.withoutPrediction,0);
+  assert.equal(calls.events.length,1);
+});
+
+test('once-only lineup discovery waits for both teams and never polls again on later ticks',async()=>{
+  const extraCache=new Map();let probes=0;
+  const {rt,calls}=job({feed:{matches:[match(1,60,{isTop:true})]},predicted:[1],extraCache,
+    lineupProbe:async request=>{probes++;await request.cfg.prematchProviderClaim('/fixtures/lineups');return {data:[],meta:{provider:'api-football',fetchedAt:new Date(NOW).toISOString()}};}});
+  await rt.processPrematchPredictions({},at);
+  await rt.processPrematchPredictions({},new Date(NOW+5*60000));
+  assert.equal(probes,1);
+  assert.deepEqual(calls.analyzed,[]);
+  assert.equal(extraCache.get('prematch-lineup-probe:1:v1').fixtureId,1);
+});
+
+test('lineup discovery is skipped when durable admission cannot be stored',async()=>{
+  let probes=0;
+  const {rt,calls}=job({feed:{matches:[match(1,60,{isTop:true})]},predicted:[1],durableWrite:false,
+    lineupProbe:async()=>{probes++;return {};}});
+  await rt.processPrematchPredictions({},at);
+  assert.equal(probes,0);
+  assert.deepEqual(calls.analyzed,[]);
+});
+
+test('a completed lineup phase prevents further refreshes even if its shared roster changes',async()=>{
+  const extraCache=new Map([['provider-feature:lineups:1:v5.0',announcedLineups(1)],
+    ['prematch-lineup-refresh:1:v1',{fixtureId:1,phase:'lineups',fingerprint:'previous',computedAt:new Date(NOW).toISOString()}]]);
+  const {rt,calls}=job({feed:{matches:[match(1,60,{isTop:true})]},predicted:[1],extraCache});
+  await rt.processPrematchPredictions({},at);
+  assert.deepEqual(calls.analyzed,[]);
+});
+
+test('limited lineup source stops the run instead of probing other matches',async()=>{
+  let probes=0;
+  const {rt,calls}=job({feed:{matches:[match(1,60,{isTop:true}),match(2,60,{isTop:true})]},predicted:[1,2],
+    lineupProbe:async()=>{probes++;return {data:[],meta:{state:'plan_limited'}};}});
+  const result=await rt.processPrematchPredictions({},at);
+  assert.equal(probes,1);
+  assert.equal(result.stopReason,'provider_limited');
+  assert.deepEqual(calls.analyzed,[]);
+  assert.equal(calls.events.length,1);
+});
+
+test('favorites retain priority over a top-league lineup refresh',async()=>{
+  const extraCache=new Map([['provider-feature:lineups:1:v5.0',announcedLineups(1)]]);
+  const {rt,calls}=job({feed:{matches:[match(1,60,{isTop:true}),match(2,120)]},predicted:[1],favorites:[21],extraCache});
+  await rt.processPrematchPredictions({prematchPredictionsPerRun:1},at);
+  assert.deepEqual(calls.analyzed,[2]);
+});
+
+test('system lineup refresh rejects a partial event without touching the provider or user quota',async()=>{
+  const cached={generatedAt:new Date().toISOString(),match:{fixtureId:77,status:'NS',date:new Date(Date.now()+3600000).toISOString(),home:{id:40},away:{id:50}}};
+  const {rt,calls}=analysisRuntime({getCache:async()=>cached,loadProviderFixture:async()=>assert.fail('invalid event must not fetch')});
+  const result=await rt.analyzeFixtureForSystem(77,{}, {lineupEvent:{fixtureId:77,feature:'lineups',provider:'api-football',fetchedAt:new Date().toISOString(),data:[]}});
+  assert.equal(result.status,409);
+  assert.equal(calls.lockClaimed,0);
+  assert.deepEqual([calls.history,calls.quota,calls.reserve,calls.entitlements,calls.growth],[0,0,0,0,0]);
+});
+
+test('delayed scheduler uses real observation time, not the earlier cron slot, for quota and lineup freshness',async()=>{
+  const realTime=NOW+90000;
+  const snapshot={plan:'PRO',dailyLimit:7500,dailyRemaining:7400,updatedAt:new Date(realTime).toISOString()};
+  const lineups={...announcedLineups(1),fetchedAt:new Date(realTime).toISOString()};
+  const extraCache=new Map([['provider-feature:lineups:1:v5.0',lineups]]);
+  const {rt,calls}=job({snapshot,clock:()=>realTime,feed:{matches:[match(1,60,{isTop:true})]},predicted:[1],extraCache});
+  const result=await rt.processPrematchPredictions({},at);
+  assert.deepEqual(calls.analyzed,[1]);
+  assert.equal(result.lineupRefreshed,1);
+  assert.notEqual(result.reason,'provider_quota_unconfirmed');
+});
+
+test('lineup repeat and marker-storage failure release the match lock without provider or user work',async()=>{
+  const cached={generatedAt:new Date().toISOString(),match:{fixtureId:77,status:'NS',date:new Date(Date.now()+3600000).toISOString(),home:{id:40},away:{id:50}}};
+  const event={...announcedLineups(77),fetchedAt:new Date().toISOString()};
+  event.data[0].team.id=40;event.data[1].team.id=50;
+  for(const fail of [false,true]) {
+    const {rt,calls}=analysisRuntime({
+      getCache:async key=>{
+        if(key.startsWith('fixture:'))return cached;
+        if(fail)throw new Error('db unavailable');
+        return {fixtureId:77,phase:'lineups',fingerprint:'already-done',computedAt:new Date().toISOString()};
+      },
+      getStaleCache:async()=>cached,
+      loadProviderFixture:async()=>assert.fail('must not perform provider work'),
+    });
+    const result=await rt.analyzeFixtureForSystem(77,{}, {lineupEvent:event});
+    assert.equal(result.status,fail?503:200);
+    assert.equal(calls.lockClaimed,1);assert.equal(calls.lockReleased,1);
+    assert.deepEqual([calls.history,calls.quota,calls.reserve,calls.entitlements,calls.growth],[0,0,0,0,0]);
+  }
 });
