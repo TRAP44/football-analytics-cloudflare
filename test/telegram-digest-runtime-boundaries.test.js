@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createTelegramDigestRuntime } from '../src/telegram-digest-runtime.js';
+import {botCardSignature} from '../src/bot-match-card.js';
 
 function escapeHtml(value='') {
   return String(value)
@@ -479,5 +480,69 @@ test('morning delivery has one news button, and filtered-empty news sends nothin
       assert.deepEqual(sent[0].payload.reply_markup,{inline_keyboard:[[{text:'📰 Все новости',callback_data:'news:general'}]]});
       assert.equal(sent[0].payload.disable_web_page_preview,true);
     }
+  }
+});
+
+const cardPng='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZwoAAAAASUVORK5CYII=';
+test('background cards render at most two boards from fresh cache without provider API calls',async()=>{
+  const snapshot={fixtures:[rankedRow(1,'2H','Arsenal','Chelsea','Premier League',{goals:{home:1,away:0},elapsed:63})],fetchedAt:new Date().toISOString()};
+  const cache=new Map([['provider-fixtures:2026-10-07:v1',snapshot]]);
+  let renders=0;
+  const {api}=runtime({
+    isLiveStatus:()=>true,
+    freeQuotaHealthy:()=>{throw new Error('background must not check provider quota');},
+    loadProviderFixturesForDate:()=>{throw new Error('no new provider calls');},
+    getCache:async key=>cache.get(key),
+    getStaleCache:()=>{throw new Error('no stale input');},
+    setCache:async(key,id,payload)=>cache.set(key,payload),
+  });
+  const cfg={botMatchCardsEnabled:true,botMatchCardRenderer:async()=>{renders++;return cardPng;}};
+  assert.deepEqual(await api.processBotMatchCards(cfg),{prepared:2,failed:0,degraded:false});
+  assert.equal(renders,2);
+  assert.deepEqual(await api.processBotMatchCards(cfg),{prepared:0,failed:0,degraded:false});
+  snapshot.fetchedAt=new Date(Date.now()-7*60000).toISOString();
+  assert.deepEqual(await api.processBotMatchCards(cfg),{prepared:0,failed:0,degraded:false});
+  assert.equal(renders,2);
+});
+
+test('cached board sends one photo with readable caption and unchanged buttons; mismatched score uses text',async()=>{
+  const sent=[];
+  const snapshot={fixtures:[rankedRow(1,'2H','Arsenal','Chelsea','Premier League',{goals:{home:1,away:0},elapsed:63})]};
+  const {api,deps}=rankedRuntime(snapshot,sent);
+  const selected=await api.loadBotDayMatches({}, {liveOnly:true});
+  const cache={png:cardPng,signature:botCardSignature(selected,true),generatedAt:Date.now()};
+  const modified=createTelegramDigestRuntime({...deps,getCache:async key=>key.includes('bot:match-card')?cache:null});
+  await modified.sendBotDayMatches({}, {botMatchCardsEnabled:true},42,{liveOnly:true});
+  assert.equal(sent.length,1);
+  assert.equal(sent[0].method,'sendPhoto');
+  const form=sent[0].payload;
+  assert.ok(form instanceof FormData);
+  assert.equal(form.get('chat_id'),'42');
+  assert.match(form.get('caption'),/LIVE сейчас/);
+  assert.doesNotMatch(form.get('caption'),/Arsenal/,'the picture is not duplicated in the caption');
+  assert.match(JSON.parse(form.get('reply_markup')).inline_keyboard[0][0].text,/63′ Arsenal 1:0 Chelsea/);
+  assert.ok(form.get('caption').length<1024);
+  assert.equal(form.get('photo').type,'image/png');
+  assert.equal(JSON.parse(form.get('reply_markup')).inline_keyboard[0][0].callback_data,'match:menu:1');
+  snapshot.fixtures[0].goals.home=2;
+  await modified.sendBotDayMatches({}, {botMatchCardsEnabled:true},42,{liveOnly:true});
+  assert.equal(sent[1].method,'sendMessage');
+  assert.match(sent[1].payload.text,/2:0/);
+});
+
+test('photo timeout does not double-send; definite invalid photo falls back to text',async()=>{
+  const snapshot={fixtures:[rankedRow(1,'2H','Arsenal','Chelsea','Premier League',{goals:{home:1,away:0},elapsed:63})]};
+  const {api,deps}=rankedRuntime(snapshot,[]);
+  const selected=await api.loadBotDayMatches({}, {liveOnly:true});
+  const cache={png:cardPng,signature:botCardSignature(selected,true),generatedAt:Date.now()};
+  for (const code of ['TELEGRAM_TIMEOUT','TELEGRAM_REJECTED']) {
+    const sent=[];
+    const error=Object.assign(new Error('PHOTO_INVALID'),{code,status:400});
+    const modified=createTelegramDigestRuntime({...deps,getCache:async key=>key.includes('bot:match-card')?cache:null,
+      telegramApi:async(method,cfg,payload)=>{sent.push(method);if(method==='sendPhoto') throw error;},
+    });
+    const action=modified.sendBotDayMatches({}, {botMatchCardsEnabled:true},42,{liveOnly:true});
+    if (code==='TELEGRAM_TIMEOUT') {await assert.rejects(action,e=>e===error);assert.deepEqual(sent,['sendPhoto']);}
+    else {await action;assert.deepEqual(sent,['sendPhoto','sendMessage']);}
   }
 });

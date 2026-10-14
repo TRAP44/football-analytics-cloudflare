@@ -37,6 +37,7 @@
   },
   "vars": {
     "DEV_MODE": "false",
+    "BOT_MATCH_CARDS_ENABLED": "true",
     "TELEGRAM_CHANNEL_ID": "@MatchRadarFootball",
     "CHANNEL_DAILY_POST_ENABLED": "true",
     "CHANNEL_SWING_POST_ENABLED": "false",

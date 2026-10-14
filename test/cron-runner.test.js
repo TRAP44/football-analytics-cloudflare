@@ -189,3 +189,10 @@ test('with BACKGROUND_JOBS_EXECUTOR=github a Cloudflare cron invocation only dis
   assert.equal(runnerEnv({}, {}).CRON_RUNNER, 'github-actions');
   assert.match(fs.readFileSync('wrangler.jsonc', 'utf8'), /"BACKGROUND_JOBS_EXECUTOR": "github"/);
 });
+
+test('background workflow installs locked production dependencies without lifecycle scripts',()=>{
+  const wf=fs.readFileSync('.github/workflows/cron-runner.yml','utf8');
+  const install=wf.indexOf('npm ci --omit=dev --ignore-scripts');
+  const run=wf.indexOf('node scripts/cron-runner.js');
+  assert.ok(install>=0 && install<run,'renderer package must exist before runner imports it');
+});

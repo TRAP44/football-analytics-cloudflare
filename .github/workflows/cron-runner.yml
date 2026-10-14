@@ -53,6 +53,10 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+          cache: npm
+
+      - name: Install background rendering dependency
+        run: npm ci --omit=dev --ignore-scripts
 
       - name: Run scheduled tasks
         run: node scripts/cron-runner.js

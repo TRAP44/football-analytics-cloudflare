@@ -1,3 +1,5 @@
+import { botCardSignature, validCachedBotCard } from './bot-match-card.js';
+
 export function createTelegramDigestRuntime(deps = {}) {
   if (!deps || typeof deps!=='object' || Array.isArray(deps)) {
     throw new TypeError('Telegram digest runtime dependencies are required.');
@@ -613,7 +615,7 @@ export function createTelegramDigestRuntime(deps = {}) {
       || Date.parse(a.date || 0)-Date.parse(b.date || 0);
   }
 
-  async function selectBotDayMatches(cfg, { liveOnly = false, limit = 8 } = {}) {
+  async function selectBotDayMatches(cfg, { liveOnly = false, limit = 8, cacheOnly = false } = {}) {
     const date=todayUtc();
     const matchCacheKey=`matches:${date}:v6-integrity`;
     const isOpen=x=>x.finished!==true && !BOT_FINISHED_STATUSES.has(String(x.status || '').toUpperCase());
@@ -628,13 +630,24 @@ export function createTelegramDigestRuntime(deps = {}) {
       if (!fallbackFixtures && rowsOf(fixtures).length) fallbackFixtures=fixtures;
       return botCardsFromFixtures(fixtures,keepStatus);
     };
+    const freshForCard=payload=>{
+      const fetched=Date.parse(payload?.fetchedAt || payload?.refreshedAt || '');
+      const age=Date.now()-fetched;
+      return payload?.stale!==true && Number.isFinite(age) && age>=0 && age<=6*60*1000;
+    };
     const sources=[
-      async()=>botCardsFromMatchCache(await getCache(matchCacheKey,cfg).catch(()=>null)),
-      async()=>freeQuotaHealthy(8,1)
+      async()=>{
+        const payload=await getCache(matchCacheKey,cfg).catch(()=>null);
+        return !cacheOnly || freshForCard(payload) ? botCardsFromMatchCache(payload) : [];
+      },
+      async()=>!cacheOnly && freeQuotaHealthy(8,1)
         ? fromFixtures(await loadProviderFixturesForDate(date,cfg).catch(()=>[]))
         : [],
-      async()=>fromFixtures((await getStaleCache(`provider-fixtures:${date}:v1`,cfg).catch(()=>null))?.fixtures),
-      async()=>botCardsFromMatchCache(await getStaleCache(matchCacheKey,cfg).catch(()=>null)),
+      async()=>{
+        const payload=await (cacheOnly ? getCache : getStaleCache)(`provider-fixtures:${date}:v1`,cfg).catch(()=>null);
+        return !cacheOnly || freshForCard(payload) ? fromFixtures(payload?.fixtures) : [];
+      },
+      async()=>cacheOnly ? [] : botCardsFromMatchCache(await getStaleCache(matchCacheKey,cfg).catch(()=>null)),
     ];
     let matches=[];
     let fallback=[];
@@ -744,6 +757,66 @@ export function createTelegramDigestRuntime(deps = {}) {
     return `${botMskTime(m.date)} ${pair}`;
   }
 
+  function botCardCacheKey(liveOnly) {
+    return `bot:match-card:${todayUtc()}:${liveOnly?'live':'today'}:v1`;
+  }
+
+  async function processBotMatchCards(cfg) {
+    if (cfg?.botMatchCardsEnabled!==true || typeof cfg?.botMatchCardRenderer!=='function') {
+      return {skipped:'renderer_unavailable',prepared:0};
+    }
+    let prepared=0;
+    let failed=0;
+    for (const liveOnly of [false,true]) {
+      try {
+        const {matches}=await selectBotDayMatches(cfg,{liveOnly,limit:8,cacheOnly:true});
+        if (!matches.length) continue;
+        const ordered=botLeagueGroups(matches).flatMap(group=>group.rows);
+        const signature=botCardSignature(ordered,liveOnly);
+        const cached=await getCache(botCardCacheKey(liveOnly),cfg).catch(()=>null);
+        if (validCachedBotCard(cached,signature)) continue;
+        const generatedAt=Date.now();
+        const png=await cfg.botMatchCardRenderer(ordered,{liveOnly,generatedAt});
+        const card={signature,png,generatedAt};
+        if (!validCachedBotCard(card,signature)) throw new Error('invalid_bot_card');
+        await setCache(botCardCacheKey(liveOnly),0,card,cfg,6);
+        prepared++;
+      } catch {failed++;}
+    }
+    return {prepared,failed,degraded:failed>0};
+  }
+
+  async function sendCachedBotMatchCard(cfg,chatId,ordered,rows,liveOnly) {
+    if (cfg?.botMatchCardsEnabled!==true || !ordered.length) return false;
+    const card=await getCache(botCardCacheKey(liveOnly),cfg).catch(()=>null);
+    if (!validCachedBotCard(card,botCardSignature(ordered,liveOnly))) return false;
+    let bytes;
+    try {
+      const raw=atob(card.png);
+      bytes=new Uint8Array(raw.length);
+      for (let i=0;i<raw.length;i++) bytes[i]=raw.charCodeAt(i);
+    } catch {return false;}
+    const remaining=ordered.slice(4);
+    const caption=[liveOnly?'🔴 LIVE сейчас':'⚽ Матчи сегодня',
+      ...(remaining.length ? ['', 'Ещё матчи:', ...remaining.map(m=>botDayButtonText(m,{liveOnly}))] : []),
+      '', 'Выберите матч ниже ↓',
+    ].join('\n');
+    const form=new FormData();
+    form.set('chat_id',String(chatId));
+    form.set('photo',new Blob([bytes],{type:'image/png'}),'matchradar-matches.png');
+    form.set('caption',caption);
+    form.set('reply_markup',JSON.stringify({inline_keyboard:rows}));
+    try {
+      await telegramApi('sendPhoto',cfg,form);
+      return true;
+    } catch (error) {
+      // Only a definite image rejection may fall back. A timeout can mean delivered.
+      if (error?.status===400 && error?.code==='TELEGRAM_REJECTED'
+        && /photo|image|file|media/i.test(String(error?.message || ''))) return false;
+      throw error;
+    }
+  }
+
   async function sendBotDayMatches(request,cfg,chatId,{liveOnly=false}={}) {
     const {matches,total}=await selectBotDayMatches(cfg,{liveOnly,limit:8});
     await rememberBotFixtureCards(matches,cfg);
@@ -751,6 +824,7 @@ export function createTelegramDigestRuntime(deps = {}) {
     const ordered=botLeagueGroups(matches).flatMap(group=>group.rows);
     const rows=ordered.map(m=>[{text:botDayButtonText(m,{liveOnly}),callback_data:`match:menu:${Number(m.fixtureId)}`}]);
     rows.push([{text:'🔄 Обновить',callback_data:liveOnly?'feed:live':'feed:today'}]);
+    if (await sendCachedBotMatchCard(cfg,chatId,ordered,rows,liveOnly)) return;
     await telegramApi('sendMessage',cfg,{chat_id:chatId,parse_mode:'HTML',text:botDayMatchesText(ordered,{liveOnly,total}),reply_markup:{inline_keyboard:rows}});
   }
   
@@ -1071,6 +1145,7 @@ export function createTelegramDigestRuntime(deps = {}) {
     currentDailyDigest,
     loadBotDayMatches,
     botDayMatchesText,
+    processBotMatchCards,
     sendBotDayMatches,
     botTeamIdMatches,
     sendBotFavoriteTeams,

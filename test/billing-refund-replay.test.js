@@ -601,3 +601,18 @@ test('price change cutover: payments at the previous default price still activat
   assert.equal(harness.memory.users.get(userId)?.plan, 'PRO');
   assert.equal(harness.memory.billingPayments.get('subscription-legacy-sync')?.stars_amount, BILLING_PLANS.PRO.stars);
 });
+
+test('Telegram photo multipart preserves binary upload and normal messages keep JSON',async()=>{
+  const captured=[];
+  const {runtime}=baseBillingHarness({fetchWithTimeout:async(url,init)=>{
+    captured.push(init);
+    return {ok:true,status:200,json:async()=>({ok:true,result:{message_id:1}})};
+  }});
+  const form=new FormData();form.set('chat_id','7');form.set('photo',new Blob(['png'],{type:'image/png'}),'card.png');
+  await runtime.telegramApi('sendPhoto',{botToken:'test-token'},form);
+  assert.equal(captured[0].body,form);
+  assert.equal(captured[0].headers,undefined,'fetch sets the multipart boundary');
+  await runtime.telegramApi('sendMessage',{botToken:'test-token'},{chat_id:7,text:'Матчи'});
+  assert.equal(captured[1].headers['content-type'],'application/json');
+  assert.deepEqual(JSON.parse(captured[1].body),{chat_id:7,text:'Матчи'});
+});

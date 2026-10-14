@@ -1247,6 +1247,7 @@ function botTeamIdMatches(...args) { return getTelegramDigestRuntime().botTeamId
 function sendBotFavoriteTeams(...args) { return getTelegramDigestRuntime().sendBotFavoriteTeams(...args); }
 function sendBotFavoriteTeamMatches(...args) { return getTelegramDigestRuntime().sendBotFavoriteTeamMatches(...args); }
 function sendDailyPicks(...args) { return getTelegramDigestRuntime().sendDailyPicks(...args); }
+function processBotMatchCards(...args) { return getTelegramDigestRuntime().processBotMatchCards(...args); }
 function processDailyDigests(...args) { return getTelegramDigestRuntime().processDailyDigests(...args); }
 
 let telegramSearchRuntime = null;
@@ -3316,6 +3317,7 @@ const {
   probeRuntimeHistorySchema,
   probeSupabaseSchemaDriftConfirmed,
   processDailyDigests,
+  processBotMatchCards,
   processDueReminders,
   processImportantChangeNotifications,
   processLineupNotifications,
