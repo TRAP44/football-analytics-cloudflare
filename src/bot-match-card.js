@@ -24,7 +24,7 @@ export function botCardSignature(matches, liveOnly = false) {
 }
 
 export function validCachedBotCard(card, signature, now = Date.now()) {
-  if (!card || card.signature!==signature || typeof card.generatedAt!=='number') return false;
+  if (!card || card.signature!==signature || !Number.isFinite(card.generatedAt) || !Number.isFinite(now)) return false;
   if (now-card.generatedAt<0 || now-card.generatedAt>BOT_CARD_MAX_AGE_MS) return false;
   return typeof card.png==='string' && card.png.startsWith('iVBORw0KGgo')
     && card.png.length<=Math.ceil(BOT_CARD_MAX_BYTES/3)*4 && /^[A-Za-z0-9+/]+={0,2}$/.test(card.png);

@@ -11,6 +11,7 @@ test('card cache binds score, minute, names, order and mode and expires after si
   const card={signature,png,generatedAt:1000000};
   assert.equal(validCachedBotCard(card,signature,1000001),true);
   assert.equal(validCachedBotCard(card,signature,999999),false);
+  assert.equal(validCachedBotCard({...card,generatedAt:NaN},signature,1000001),false);
   assert.equal(validCachedBotCard(card,signature,1360001),false);
   for (const changes of [{elapsed:64},{goalsHome:2},{homeName:'Other club'}]) {
     assert.equal(validCachedBotCard(card,botCardSignature([{...row,...changes}],true),1000001),false);
