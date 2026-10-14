@@ -5005,7 +5005,6 @@ function liveAiCoachHtml(ai, match) {
   const xgQualityLabel = publicText(ai.current?.xgQuality?.label || '');
   // Рыночные подсказки из старых или кешированных ответов сервера не показываем.
   const neutral = value => (typeof value === 'string' && !SCENARIO_BETTING_TEXT.test(value) ? value : '');
-  const watch = Array.isArray(ai.watchNext) ? ai.watchNext.filter(neutral).slice(0,3) : [];
   const volatilityReason = neutral(ai.volatility?.reason) || 'Матч может быстро измениться.';
   const summary = typeof ai.summary === 'string' && ai.summary
     ? (neutral(ai.summary) || 'Оцениваю матч по счёту, событиям и статистике.')
@@ -5034,7 +5033,6 @@ function liveAiCoachHtml(ai, match) {
       <div><span>Риск сценария</span><strong>${escapeHtml(publicText(ai.volatility?.label || 'Средний'))}</strong><small>${escapeHtml(publicText(volatilityReason))}</small></div>
     </div>
     ${ai.prematch?.available ? `<div class="live-ai-prematch"><span>До матча</span><strong>${escapeHtml(publicText(prematchLabel))}</strong><b>${escapeHtml(publicText(ai.prematch.stateLabel || 'сравниваю'))}</b></div>` : `<div class="live-ai-prematch muted"><span>До матча</span><strong>Сохранённого AI-разбора нет</strong><b>читаю только текущий матч</b></div>`}
-    ${watch.length ? `<div class="live-ai-watch"><strong>Что смотреть дальше</strong><ul>${watch.map(x=>`<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul></div>` : ''}
     <p class="live-ai-disclaimer">Оценка по ходу матча перестраивается при каждом обновлении счёта, событий и статистики. Это объяснение сценария, а не гарантия результата.</p>
   </section>`;
 }

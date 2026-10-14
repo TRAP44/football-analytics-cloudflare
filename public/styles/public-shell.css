@@ -1987,6 +1987,7 @@ html {
 .miniapp-public-shell .smart-data-score,
 .miniapp-public-shell .live-ai-head > b,
 .miniapp-public-shell .post-match-review-head > b{
+  color:var(--accent);
   flex:0 0 auto;
   min-width:64px;
   padding:8px 9px;
