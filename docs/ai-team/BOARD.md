@@ -16,7 +16,7 @@ _пусто_
 
 ## На ревью
 
-- [ ] Задача 2: замер запросов и резерв пользователей для фоновых прогнозов — **Codex** — ветка `codex/prematch-user-reserve`. — ревью: Claude.
+- [ ] Задача 2: замер запросов и резерв пользователей для фоновых прогнозов — **Codex** — [PR #894](https://github.com/TRAP44/football-analytics-cloudflare/pull/894), ветка `codex/prematch-user-reserve`. — ревью: Claude.
 
 
 
@@ -157,4 +157,3 @@ _Сюда оба ассистента пишут проблемы и идеи, �
 ## Отложено Codex
 
 - Клубные custom emoji — [PR #888](https://github.com/TRAP44/football-analytics-cloudflare/pull/888) закрыт без merge: у владельца нет Premium/набора; выбран подход с картинками #889.
-
