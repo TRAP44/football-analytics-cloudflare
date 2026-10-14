@@ -12,7 +12,7 @@ _пусто_
 
 ## В работе
 
-_пусто_
+- [ ] Исправить кеширование модулей в post-deploy smoke — **Codex** — `codex/fix-deploy-ui-smoke`.
 
 ## На ревью
 

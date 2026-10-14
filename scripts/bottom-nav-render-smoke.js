@@ -805,7 +805,7 @@ async function main() {
       await cdp.call('Runtime.evaluate', { expression:`localStorage.removeItem('football-analytics:first-run-guide:v1')` });
       await navigateForExpectedRevision(cdp, targetUrl, Boolean(remoteUrl));
       const observationCheck=await cdp.call('Runtime.evaluate',{awaitPromise:true,expression:`(async()=>{
-        const {renderObservationPanel}=await import('/modules/match-observation.js');
+        const {renderObservationPanel}=await import('/modules/match-observation.js?v=${EXPECTED_ASSET_REVISION}');
         const root=document.getElementById('matchObservation');
         renderObservationPanel({root,watchlist:[{fixtureId:991,homeName:'Очень длинное название футбольного клуба International United',awayName:'Ещё одна длинная команда Athletic Club'},{fixtureId:992,homeName:'Архивный матч',awayName:'Гости'}],matches:[{fixtureId:991,live:true,home:{name:'Очень длинное название футбольного клуба International United'},away:{name:'Ещё одна длинная команда Athletic Club'}}],reminders:[],remindersLoaded:true,escapeHtml:s=>String(s).replaceAll('<','&lt;'),dateTime:()=>'',onOpen:id=>{window.observationOpened=id;},onRemove:id=>{window.observationRemoved=id;}});
         root.open=true;
@@ -815,7 +815,7 @@ async function main() {
       })()`});
       if(observationCheck.exceptionDetails) throw new Error('Observation browser scenario failed: '+JSON.stringify(observationCheck.exceptionDetails));
       const cleanMatchCheck=await cdp.call('Runtime.evaluate',{awaitPromise:true,expression:`(async()=>{
-        const {renderMatchCenterView}=await import('/modules/match-center-view.js');
+        const {renderMatchCenterView}=await import('/modules/match-center-view.js?v=${EXPECTED_ASSET_REVISION}');
         const root=document.createElement('section');
         root.setAttribute('data-qa-clean-match','');
         document.querySelector('main').append(root);
