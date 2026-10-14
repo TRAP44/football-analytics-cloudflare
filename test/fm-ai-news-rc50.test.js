@@ -436,6 +436,20 @@ test('compact news feed escapes titles, caps the list and handles empty input',(
   assert.match(api.compactNewsFeedText([]),/Свежих новостей пока нет/);
 });
 
+test('compact news feed hides prediction/betting pages and trims the source tail (13.10)',()=>{
+  const {api}=harness({});
+  const text=api.compactNewsFeedText([
+    {url:'https://www.rotowire.com/soccer/a',title:'Real Madrid vs Villarreal Prediction, Lineups & Team News | RotoWire'},
+    {url:'https://example.com/odds',title:'Arsenal vs Chelsea odds and betting tips'},
+    {url:'https://example.ru/p',title:'Прогноз на матч Зенит — Спартак'},
+    {url:'https://www.espn.com/soccer/story/1',title:'Mbappe ruled out of Clasico with ankle injury | ESPN'},
+    {url:'https://www.bbc.com/sport/football/2',title:'Arsenal 2-1 Chelsea: Saka scores late winner'},
+  ]);
+  assert.doesNotMatch(text,/Prediction|odds|Прогноз/);
+  assert.match(text,/1\. <a href="https:\/\/www\.espn\.com\/soccer\/story\/1">Mbappe ruled out of Clasico with ankle injury<\/a> — ESPN/);
+  assert.match(text,/2\. <a [^>]+>Arsenal 2-1 Chelsea: Saka scores late winner<\/a> — BBC/);
+});
+
 test('compact news feed labels The Athletic only for /athletic/ URLs on nytimes.com',()=>{
   const {api}=harness({});
   const text=api.compactNewsFeedText([
@@ -475,11 +489,15 @@ test('favorite-team news validates membership and links a real upcoming fixture'
 
   await api.sendFavoriteTeamNews({}, {}, 7, 99, '40', {force:false});
   const message=calls.telegram.at(-1).payload;
-  assert.match(message.text,/Проверить|Матч:/);
+  // Компактный вид, как у общей ленты (13.10).
+  assert.match(message.text,/^📰 <b>Новости: Liverpool<\/b>/);
+  assert.match(message.text,/1\. <a href="https:\/\/www\.reuters\.com\/sports\/football\/a">Liverpool injury update<\/a> — Reuters/);
+  assert.doesNotMatch(message.text,/Почему важно|Что проверить/);
+  assert.deepEqual(message.reply_markup.inline_keyboard[0],[{text:'⚽ Liverpool — Arsenal',callback_data:'news:match:9001'}]);
   assert.ok(
     message.reply_markup.inline_keyboard
       .flat()
-      .some(item=>item.callback_data==='news:match:9001'),
+      .every(item=>!/Источник/.test(item.text)),
   );
 
   const before=calls.telegram.length;

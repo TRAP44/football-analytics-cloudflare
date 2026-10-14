@@ -655,7 +655,7 @@ export function createFootballNewsRuntime(deps) {
       const cachedItems=safeRead(cached,'items');
       if (Array.isArray(cachedItems)) {
         return {
-          items:dedupeFootballNews(cachedItems,7),
+          items:dedupeFootballNews(cachedItems,10),
           available:safeRead(cached,'available')===true,
           reason:safeText(safeRead(cached,'reason'),80),
           generatedAt:safeText(safeRead(cached,'generatedAt'),80),
@@ -664,8 +664,8 @@ export function createFootballNewsRuntime(deps) {
       }
     }
     const search=await tavilyNewsSearch(
-      'soccer football latest news injuries suspensions lineups coaches Champions League Premier League La Liga Serie A Bundesliga Ligue 1',
-      cfg,{days:2,maxResults:7},
+      'soccer football news injuries suspensions transfers coaches Champions League Premier League La Liga Serie A Bundesliga Ligue 1',
+      cfg,{days:2,maxResults:10},
     );
     const payload={
       items:safeArray(safeRead(search,'results')),
@@ -703,7 +703,7 @@ export function createFootballNewsRuntime(deps) {
         return {
           teamId:id,
           teamName:name,
-          items:dedupeFootballNews(cachedItems,6),
+          items:dedupeFootballNews(cachedItems,8),
           available:safeRead(cached,'available')===true,
           reason:safeText(safeRead(cached,'reason'),80),
           generatedAt:safeText(safeRead(cached,'generatedAt'),80),
@@ -714,7 +714,7 @@ export function createFootballNewsRuntime(deps) {
     const search=await tavilyNewsSearch(
       `${name} football latest injuries suspension lineup coach team news`,
       cfg,
-      {days:5,maxResults:6},
+      {days:5,maxResults:8},
     );
     const payload={
       teamId:id,
@@ -815,17 +815,34 @@ export function createFootballNewsRuntime(deps) {
     return NEWS_SOURCE_LABELS[host] || host || 'источник';
   }
 
-  function compactNewsFeedText(items = [], limit = 5) {
+  // 13.10 (Сергей: новости «выглядят ужасно»): в ленту попадали страницы-прогнозы вида
+  // «Real Madrid vs Villarreal Prediction, Lineups & Team News | RotoWire». Прогнозы, ставки и
+  // превью матчей — не новости (и ставок в MatchRadar нет), такие заголовки не показываем.
+  const NEWS_PREVIEW_TITLE_RE=/\b(?:predictions?|preview|betting|bets?|odds|tips|picks|parlay)\b|прогноз|ставк|коэффициент/i;
+
+  function isPreviewOrBettingNews(item = {}) {
+    return testRegex(NEWS_PREVIEW_TITLE_RE,safeText(safeRead(item,'title'),220));
+  }
+
+  // Хвост «| RotoWire», «— ESPN»: источник и так подписан после ссылки.
+  function cleanNewsTitle(title = '') {
+    const value=safeText(title,220);
+    const trimmed=value.replace(/\s+[|–—]\s+[^|–—]{2,40}$/,'').trim();
+    return trimmed.length>=20 ? trimmed : value;
+  }
+
+  function compactNewsFeedText(items = [], limit = 5, options = {}) {
+    const title=safeText(safeRead(options,'title'),120,'Главное в футболе');
     const validItems=safeArray(items)
       .map(normalizeFootballNewsResult)
-      .filter(Boolean)
+      .filter(item=>item && !isPreviewOrBettingNews(item))
       .slice(0,limit);
     if (!validItems.length) {
-      return '📰 <b>Главное в футболе</b>\n\nСвежих новостей пока нет. Попробуйте обновить позже.';
+      return `📰 <b>${html(title)}</b>\n\nСвежих новостей пока нет. Попробуйте обновить позже.`;
     }
     const rows=validItems.map((item,index)=>
-      `${index+1}. <a href="${html(item.url)}">${html(item.title)}</a> — ${html(newsSourceLabel(item.source,item.url))}`);
-    return ['📰 <b>Главное в футболе</b>','',...rows].join('\n');
+      `${index+1}. <a href="${html(item.url)}">${html(cleanNewsTitle(item.title))}</a> — ${html(newsSourceLabel(item.source,item.url))}`);
+    return [`📰 <b>${html(title)}</b>`,'',...rows].join('\n');
   }
 
   async function sendGeneralFootballNews(request,cfg,userId,chatId,options={}) {
@@ -889,29 +906,28 @@ export function createFootballNewsRuntime(deps) {
       || null;
     const fixtureId=positiveInteger(safeRead(fixture,'fixtureId'));
     const extra=[];
+    // Тот же компактный вид, что и «Главное в футболе» (13.10): заголовки-ссылки, без
+    // «Почему важно» / «Что проверить» и кнопок «Источник N».
+    const keyboard=[];
     if (fixtureId) {
-      extra.push([{
-        text:'⚽ Проверить ближайший матч',
+      const home=safeText(safeRead(fixture,'homeName'),40);
+      const away=safeText(safeRead(fixture,'awayName'),40);
+      keyboard.push([{
+        text:home && away ? `⚽ ${home} — ${away}` : '⚽ Ближайший матч',
         callback_data:`news:match:${fixtureId}`,
       }]);
     }
-    extra.push([
+    keyboard.push([
       {text:'🔄 Обновить',callback_data:`news:team_refresh:${id}`},
       {text:'📰 Все новости',callback_data:'news:general'},
     ]);
     await telegramApi('sendMessage',cfg,{
       chat_id:chatId,
       parse_mode:'HTML',
-      text:newsFeedText(items,{
-        title:'MatchRadar AI · Новости',
-        teamName:safeText(safeRead(team,'team_name'),120),
-        fixture,
-        fixtures:matches,
+      text:compactNewsFeedText(items,5,{
+        title:`Новости: ${safeText(safeRead(team,'team_name'),120,'команда')}`,
       }),
-      reply_markup:newsConversionKeyboard(items,extra,{
-        fixtureId,
-        fixtures:matches,
-      }),
+      reply_markup:{inline_keyboard:keyboard},
       disable_web_page_preview:true,
     });
   }

@@ -331,7 +331,7 @@ test('bot day matches fall back to the background provider snapshot when cache a
   });
   await api.sendBotDayMatches({url:'https://app.example/'},{},42,{liveOnly:true});
   assert.match(sent[0].payload.text,/LIVE сейчас/);
-  assert.match(sent[0].payload.text,/Arsenal — Chelsea/);
+  assert.match(sent[0].payload.text,/Arsenal <b>—<\/b> Chelsea/);
   assert.doesNotMatch(sent[0].payload.text,/Inter/);
 
   sent.length=0;
@@ -339,7 +339,9 @@ test('bot day matches fall back to the background provider snapshot when cache a
   assert.match(sent[0].payload.text,/Матчи сегодня/);
   assert.match(sent[0].payload.text,/Inter — Milan/);
   assert.doesNotMatch(sent[0].payload.text,/Roma/,'finished matches are hidden when others exist');
-  assert.equal(sent[0].payload.reply_markup.inline_keyboard.length,2);
+  // Два открытых матча + «Обновить».
+  assert.equal(sent[0].payload.reply_markup.inline_keyboard.length,3);
+  assert.equal(sent[0].payload.reply_markup.inline_keyboard.at(-1)[0].callback_data,'feed:today');
 });
 
 test('bot day matches still say «not found» only when no source has data',async()=>{
@@ -363,7 +365,7 @@ test('LIVE keeps looking past a fresh match cache that has no live games (Codex 
     telegramApi:async(method,_cfg,payload)=>{ sent.push({method,payload}); return {ok:true}; },
   });
   await api.sendBotDayMatches({url:'https://app.example/'},{},42,{liveOnly:true});
-  assert.match(sent[0].payload.text,/Waterhouse — Tru-Juice/);
+  assert.match(sent[0].payload.text,/Waterhouse <b>—<\/b> Tru-Juice/);
   sent.length=0;
   await api.sendBotDayMatches({url:'https://app.example/'},{},42,{liveOnly:false});
   assert.match(sent[0].payload.text,/Inter — Milan/,'today uses the first source that has open matches');
@@ -382,4 +384,77 @@ test('upcoming matches are not pushed out by 20 important finished ones (Codex #
   await api.sendBotDayMatches({url:'https://app.example/'},{},42,{liveOnly:false});
   assert.match(sent[0].payload.text,/Inter — Milan/);
   assert.doesNotMatch(sent[0].payload.text,/Home0/);
+});
+
+// 13.10: Сергей — «Матчи» и «LIVE» выглядели одинаково: 8 случайных LIVE низших лиг, все
+// кнопки красные, список дублировал кнопки. Теперь наверху главные турниры, матчи сгруппированы
+// по турнирам, у LIVE — минута и счёт, у предстоящих — время МСК.
+function rankedRow(id,status,home,away,league,{date='2026-10-07T18:00:00+00:00',goals=null,elapsed=null}={}){
+  return {
+    fixture:{id,date,status:{short:status,elapsed}},
+    league:{id,name:league,country:'Country'},
+    teams:{home:{id:id*10,name:home},away:{id:id*10+1,name:away}},
+    goals:goals || {home:null,away:null},
+  };
+}
+
+function rankedRuntime(snapshot,sent){
+  return runtime({
+    freeQuotaHealthy:()=>false,
+    isLiveStatus:status=>['1H','2H','HT'].includes(status),
+    normalizeCompetition:(_id,name,country)=>name==='Premier League'
+      ? {name:'Премьер-лига',shortName:'Премьер-лига',country:'Англия',priority:95,featured:true}
+      : {name,shortName:name,country:'Египет',priority:30,featured:false,lower:name==='2nd Division'},
+    getStaleCache:async key=>key==='provider-fixtures:2026-10-07:v1' ? snapshot : null,
+    telegramApi:async(method,_cfg,payload)=>{ sent.push({method,payload}); return {ok:true}; },
+  });
+}
+
+test('«Матчи» put important tournaments above random lower-league LIVE games',async()=>{
+  const sent=[];
+  const minor=Array.from({length:10},(_,i)=>rankedRow(200+i,'2H',`Minor${i}`,`Side${i}`,'2nd Division',{goals:{home:0,away:0},elapsed:70}));
+  const snapshot={fixtures:[...minor,rankedRow(9,'NS','Arsenal','Chelsea','Premier League',{date:'2026-10-07T19:00:00+00:00'})]};
+  const {api}=rankedRuntime(snapshot,sent);
+  await api.sendBotDayMatches({url:'https://app.example/'},{},42,{liveOnly:false});
+  const {text,reply_markup}=sent[0].payload;
+  assert.ok(text.indexOf('Arsenal')<text.indexOf('Minor'),'featured match goes first');
+  assert.match(text,/<b>Премьер-лига · Англия<\/b>\n<b>22:00<\/b> · Arsenal — Chelsea/,'grouped by tournament, time in MSK');
+  assert.match(text,/главные 8 из 11 · время МСК/);
+  assert.equal(reply_markup.inline_keyboard[0][0].text,'22:00 Arsenal — Chelsea');
+  assert.equal(reply_markup.inline_keyboard[0][0].callback_data,'match:menu:9');
+  assert.equal(reply_markup.inline_keyboard.length,9,'8 matches + refresh');
+});
+
+test('LIVE shows minute and score; buttons are not all the same red dot',async()=>{
+  const sent=[];
+  const snapshot={fixtures:[
+    rankedRow(1,'2H','Arsenal','Chelsea','Premier League',{goals:{home:1,away:0},elapsed:63}),
+    rankedRow(2,'HT','Al Ahly','Zamalek','Egypt League',{goals:{home:0,away:0}}),
+  ]};
+  const {api}=rankedRuntime(snapshot,sent);
+  await api.sendBotDayMatches({url:'https://app.example/'},{},42,{liveOnly:true});
+  const {text,reply_markup}=sent[0].payload;
+  assert.match(text,/🔴 63′ · Arsenal <b>1:0<\/b> Chelsea/);
+  assert.match(text,/🔴 Перерыв · Al Ahly <b>0:0<\/b> Zamalek/);
+  assert.doesNotMatch(text,/время МСК/,'no time note when nothing is upcoming');
+  assert.deepEqual(reply_markup.inline_keyboard.map(row=>row[0].text),[
+    '63′ Arsenal 1:0 Chelsea',
+    'Перерыв Al Ahly 0:0 Zamalek',
+    '🔄 Обновить',
+  ]);
+});
+
+test('review: important non-featured match survives more than 20 low-priority fixtures',async()=>{
+ const sent=[];
+ const fixtures=[...Array.from({length:21},(_,i)=>rankedRow(300+i,'2H',`Minor${i}`,`Side${i}`,'2nd Division')),rankedRow(900,'NS','MajorHome','MajorAway','Major League')];
+ const {api}=runtime({
+  freeQuotaHealthy:()=>false,
+  normalizeCompetition:(_id,name)=>({name,shortName:name,priority:name==='Major League'?70:20,lower:name==='2nd Division',featured:false}),
+  matchInterestScore:({leagueName})=>leagueName==='Major League'?30:60,
+  getStaleCache:async key=>key==='provider-fixtures:2026-10-07:v1'?{fixtures}:null,
+  telegramApi:async(method,_cfg,payload)=>{sent.push({method,payload});return {ok:true};},
+ });
+ await api.sendBotDayMatches({url:'https://app.example/'},{},42,{liveOnly:false});
+ assert.match(sent[0].payload.text,/MajorHome/);
+ assert.match(sent[0].payload.text,/главные 8 из 22/);
 });

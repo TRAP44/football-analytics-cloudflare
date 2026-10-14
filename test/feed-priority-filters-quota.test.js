@@ -83,7 +83,7 @@ test('responsive filters have reset and clear locale labels without extra API re
   assert.match(app,/state\.filter = 'top'/);
   assert.match(app,/m\.isTop === true/);
   assert.match(app,/state\.matchesMeta\?\.restrictedDate === true/);
-  assert.match(app,/Date\.parse\(state\.matchesMeta\.refreshedAt/);
+  assert.doesNotMatch(app,/Текущий счёт из кеша|События могли измениться/);
   assert.match(css,/\.match-filter-reset/);
   assert.match(css,/\.league-filter-grid/);
 });
