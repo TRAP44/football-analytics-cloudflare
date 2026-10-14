@@ -3369,7 +3369,6 @@ function matchCardHtml(m, { grouped = false } = {}) {
           <strong>${escapeHtml(m.away?.name || '')}</strong>
         </button>
       </div>
-      ${!m.finished ? aiConfidenceMeterHtml(aiHistory, m) : ''}
       <div class="match-card-actions compact-actions single">${primaryAction}</div>
       <div class="match-secondary-actions" aria-label="Дополнительные действия">
         <span>${favoriteButton(m.home)}${favoriteButton(m.away)}</span>
@@ -3415,7 +3414,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch114').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,analysisHistoryForFixture,aiConfidenceMeterHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch114').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 

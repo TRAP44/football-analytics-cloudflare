@@ -102,8 +102,6 @@ export function createHomeSignalRenderer({
   state,
   safeUrl,
   escapeHtml,
-  analysisHistoryForFixture,
-  aiConfidenceMeterHtml,
   openMatchCenter,
   openTeam,
 }) {
@@ -173,7 +171,6 @@ export function createHomeSignalRenderer({
       ? `<strong>${escapeHtml(homeMatchScoreLabel(match))}</strong><small>${escapeHtml(match.live ? phase || 'Идёт матч' : 'Итоговый счёт')}</small>`
       : `<strong class="is-time">${escapeHtml(timeOf(match.date))}</strong><small>Начало</small>`;
     const meta=[match.league || 'Турнир',match.roundLabel || ''].filter(Boolean).join(' · ');
-    const aiHistory=!match.live && !match.finished ? analysisHistoryForFixture(fixtureId) : null;
     const reason=$('homeFeaturedReason');
     if (reason) reason.textContent=match.live ? 'Идёт сейчас' : match.featured ? 'Матч дня' : match.finished ? 'Итоги дня' : 'Выбор радара';
 
@@ -188,7 +185,6 @@ export function createHomeSignalRenderer({
           <div class="mr-featured-score">${centre}</div>
           ${teamHtml(match.away,'Гости')}
         </div>
-        ${!match.finished ? aiConfidenceMeterHtml(aiHistory, match) : ''}
         <button class="mr-featured-open" type="button" data-featured-center="${fixtureId}">Открыть штаб матча <span aria-hidden="true">→</span></button>
       </article>`;
     cardRoot.querySelector('[data-featured-center]')?.addEventListener('click',event=>openMatchCenter(fixtureId,event.currentTarget));
