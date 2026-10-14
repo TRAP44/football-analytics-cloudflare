@@ -5124,7 +5124,6 @@ function renderMatchCenter(d) {
   const m = d.match || {};
   if (previousFixture && previousFixture !== Number(m.fixtureId || 0)) state.currentCenterTab = 'ai';
   if (!state.historyLoaded && !state.historyLoading && !state.historyLoadError) void loadHistory(false);
-  if (!state.aiTrackRecordLoaded && !state.aiTrackRecordLoading && !state.aiTrackRecordError) void loadAiTrackRecord();
   if (d.mode === 'upcoming' && !state.remindersLoaded && !state.remindersLoading && !state.remindersLoadError) void loadReminders();
   const view = matchCenterExtras?.renderMatchCenterView;
   if (typeof view !== 'function') {
