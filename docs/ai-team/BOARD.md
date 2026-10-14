@@ -16,7 +16,7 @@ _пусто_
 
 ## На ревью
 
-- [ ] Задача 2: один пересчёт по объявленному составу — **Codex** — ветка `codex/prematch-lineup-refresh`. — ревью: Claude.
+- [ ] Задача 2: один пересчёт по объявленному составу — **Codex** — [PR #895](https://github.com/TRAP44/football-analytics-cloudflare/pull/895), ветка `codex/prematch-lineup-refresh`. — ревью: Claude.
 
 
 
