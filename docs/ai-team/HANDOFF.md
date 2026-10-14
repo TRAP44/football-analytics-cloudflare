@@ -16,7 +16,7 @@ PR: ссылка или ветка
 
 
 ## 2026-10-14 — Codex — Клубные emoji для матчей и LIVE
-PR: ветка `codex/team-custom-emoji`.
+PR: [#888](https://github.com/TRAP44/football-analytics-cloudflare/pull/888), ветка `codex/team-custom-emoji`.
 Сделано: HTML custom emoji рядом с обеими командами в списках «Матчи» и LIVE, соответствие по API-Football team ID. Конфигурация TELEGRAM_TEAM_EMOJI_IDS хранит большие ID строками, TELEGRAM_TEAM_EMOJI_ENABLED по умолчанию false. Неизвестные команды получают ⚽ при включении.
 Проверки: Node 22, npm ci, check/lint, release 578/578, полный набор 4086/4086, Worker dry-run. Подставные интеграции проверяют upcoming/LIVE, неизменность callback, отключённое оформление, большие ID и единственный fallback при явном Telegram 400; timeout/429 не повторяются.
 Решения: согласно Bot API на 14.10, нужен Premium у владельца бота для прямых сообщений либо дополнительное имя Fragment. Реальные ID не выдуманы. Код не обращается за гербами при каждом показе, не добавляет запросы к провайдеру. Инструкция docs/TELEGRAM_TEAM_EMOJI_RU.md.

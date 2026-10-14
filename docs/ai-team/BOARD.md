@@ -12,9 +12,11 @@ _пусто_
 
 ## В работе
 
-- [ ] Клубные custom emoji в списках матчей и LIVE — **Codex** — ветка `codex/team-custom-emoji` — нужны Premium/Fragment и реальные emoji ID.
+_пусто_
 
 ## На ревью
+
+- [ ] Клубные custom emoji в списках матчей и LIVE — **Codex** — [PR #888](https://github.com/TRAP44/football-analytics-cloudflare/pull/888) — ревью: Claude; выключено до набора и Premium/Fragment.
 
 
 
