@@ -533,7 +533,10 @@ test('morning news cache is optional, sanitized and reports degraded source stat
   const morning=await api.currentMorningFootballNews({});
   assert.equal(morning.degraded,true);
   assert.equal(morning.items.length,1);
-  assert.match(api.morningNewsText(morning.items),/Главное за утро/);
+  const text=api.morningNewsText(morning.items);
+  assert.match(text,/Футбольное утро/);
+  assert.match(text,/<a href="https:\/\/example.com\/a">/);
+  assert.doesNotMatch(text,/возможное влияние|Веб-источник|Источник:|Blocked morning item/);
 });
 
 test('Telegram navigation owns news while Mini App remains intentionally separate',()=>{
@@ -550,4 +553,22 @@ test('Telegram navigation owns news while Mini App remains intentionally separat
     digestRuntimeSource,
     /sendNews:newsText[\s\S]{0,180}?telegramApi\('sendMessage'/,
   );
+});
+
+test('morning cache filters previews before selecting three actual news stories',async()=>{
+  const {api,cache}=harness();
+  cache.set('bot:news:general:current:v2',{
+    available:true,
+    items:[
+      {url:'https://example.com/preview',title:'Liverpool match preview'},
+      ...Array.from({length:4},(_,i)=>({url:`https://example.com/news-${i}`,title:`Liverpool announces club news ${i}`})),
+    ],
+  });
+  const morning=await api.currentMorningFootballNews({});
+  assert.equal(morning.items.length,3);
+  assert.doesNotMatch(api.morningNewsText(morning.items),/preview/);
+  assert.match(api.morningNewsText(morning.items),/🔴 Liverpool/);
+  const cached=await api.currentMorningFootballNews({});
+  assert.equal(cached.cached,true);
+  assert.deepEqual(cached.items,morning.items);
 });
