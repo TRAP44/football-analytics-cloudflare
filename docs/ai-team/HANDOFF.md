@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-15 — Codex — Обследование инфраструктуры через GitHub
-PR: ветка `codex/github-infrastructure-audit`.
+PR: [PR #898](https://github.com/TRAP44/football-analytics-cloudflare/pull/898), ветка `codex/github-infrastructure-audit`.
 Сделано: ручной Audit Infrastructure Capacity использует существующие production secrets CF token/account и Supabase access token + vars project ref. Только main, checkout main, contents:read, отдельный шаг secrets, 4 фиксированных GET, timeout/redirect:error, безопасный Summary + JSON artifact 7 дней. Дополнен точный privileged allowlist и требование production environment для нового workflow. Код приложения/public/SQL не менялись.
 Наблюдения: отдельно запущена существующая Verify Production Supabase Migration на main; run https://github.com/TRAP44/football-analytics-cloudflare/actions/runs/38647289809 — success. Тем самым существующий секрет GitHub пригоден для чтения миграций, перенос в Codex не нужен. #897 опубликован, production SHA 9ad81e5, внешний монитор успешен, строка #897 перенесена в «Готово».
 Проверки: Node 22 npm ci/check/lint, release 580/580, полный набор 4140/4140, security:privileged. Unit tests подтверждают фиксированные GET/destinations, исключение credentials/сырых bodies/billing details из отчёта, отказы/redirect/невалидные identifiers без утечек, отсутствие вывода Free при пустых подписках и main/production workflow guard.

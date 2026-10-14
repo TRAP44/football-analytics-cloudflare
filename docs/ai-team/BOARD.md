@@ -12,11 +12,12 @@
 
 ## В работе
 
-- [ ] Массовый запуск: read-only аудит инфраструктуры через существующие secrets GitHub — **Codex** — ветка `codex/github-infrastructure-audit`.
 
 
 
 ## На ревью
+
+- [ ] Массовый запуск: read-only аудит инфраструктуры через существующие secrets GitHub — **Codex** — [PR #898](https://github.com/TRAP44/football-analytics-cloudflare/pull/898), ветка `codex/github-infrastructure-audit` — ревью: Claude.
 
 
 
