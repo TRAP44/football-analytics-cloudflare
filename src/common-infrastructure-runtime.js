@@ -1,3 +1,5 @@
+import { parseTeamEmojiMap } from './telegram-team-emoji.js';
+
 export function createCommonInfrastructureRuntime(deps = {}) {
   const {
     API_CONTRACT_VERSION,
@@ -48,6 +50,8 @@ export function createCommonInfrastructureRuntime(deps = {}) {
       theOddsApiKey: env.THE_ODDS_API_KEY || '',
       tavilyKey: env.TAVILY_KEY || '',
       botToken: env.TELEGRAM_BOT_TOKEN || '',
+      telegramTeamEmojiEnabled: boolEnv(env.TELEGRAM_TEAM_EMOJI_ENABLED, false),
+      telegramTeamEmojiIds: parseTeamEmojiMap(env.TELEGRAM_TEAM_EMOJI_IDS || ''),
       publisherBotToken: env.TELEGRAM_PUBLISHER_BOT_TOKEN || '',
       telegramChannelId: env.TELEGRAM_CHANNEL_ID || '',
       // Ежедневный пост «Матчи дня» в канал: выключен, пока Сергей не одобрит текст.

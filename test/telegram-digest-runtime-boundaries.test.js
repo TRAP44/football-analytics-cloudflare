@@ -481,3 +481,41 @@ test('morning delivery has one news button, and filtered-empty news sends nothin
     }
   }
 });
+
+test('club custom emoji appear in upcoming and LIVE text by team ID without changing callbacks',async()=>{
+  for (const liveOnly of [false,true]) {
+    const sent=[];
+    const snapshot={fixtures:[rankedRow(1,liveOnly?'2H':'NS','Arsenal','Chelsea','Premier League',{goals:{home:1,away:0},elapsed:63})]};
+    const {api}=rankedRuntime(snapshot,sent);
+    await api.sendBotDayMatches({}, {telegramTeamEmojiEnabled:true,telegramTeamEmojiIds:{'10':'5368324170671202286'}},42,{liveOnly});
+    assert.match(sent[0].payload.text,/<tg-emoji emoji-id="5368324170671202286">⚽<\/tg-emoji> Arsenal/);
+    assert.match(sent[0].payload.text,/⚽ Chelsea/);
+    assert.equal(sent[0].payload.reply_markup.inline_keyboard[0][0].callback_data,'match:menu:1');
+    assert.doesNotMatch(sent[0].payload.reply_markup.inline_keyboard[0][0].text,/<tg-emoji/);
+  }
+});
+
+test('custom emoji rejection falls back once; ambiguous failures never cause duplicate sends',async()=>{
+  const snapshot={fixtures:[rankedRow(1,'2H','Arsenal','Chelsea','Premier League',{goals:{home:1,away:0},elapsed:63})]};
+  for (const code of ['TELEGRAM_REJECTED','TELEGRAM_TIMEOUT','TELEGRAM_RATE_LIMIT']) {
+    const sent=[];
+    const {deps}=rankedRuntime(snapshot,[]);
+    const error=Object.assign(new Error('custom emoji not allowed'),{code,status:code==='TELEGRAM_REJECTED'?400:429});
+    const api=createTelegramDigestRuntime({...deps,telegramApi:async(method,cfg,payload)=>{
+      sent.push(payload);
+      if (sent.length===1) throw error;
+      return {ok:true};
+    }});
+    const action=api.sendBotDayMatches({}, {telegramTeamEmojiEnabled:true,telegramTeamEmojiIds:{'10':'5368324170671202286'}},42,{liveOnly:true});
+    if (code==='TELEGRAM_REJECTED') {
+      await action;
+      assert.equal(sent.length,2);
+      assert.doesNotMatch(sent[1].text,/<tg-emoji/);
+      assert.match(sent[1].text,/⚽ Arsenal/);
+      assert.deepEqual(sent[1].reply_markup,sent[0].reply_markup);
+    } else {
+      await assert.rejects(action,e=>e===error);
+      assert.equal(sent.length,1);
+    }
+  }
+});

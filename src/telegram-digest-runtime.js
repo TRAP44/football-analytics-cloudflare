@@ -1,3 +1,5 @@
+import { teamEmojiHtml, withoutTeamCustomEmoji, isTeamEmojiRejected } from './telegram-team-emoji.js';
+
 export function createTelegramDigestRuntime(deps = {}) {
   if (!deps || typeof deps!=='object' || Array.isArray(deps)) {
     throw new TypeError('Telegram digest runtime dependencies are required.');
@@ -676,9 +678,9 @@ export function createTelegramDigestRuntime(deps = {}) {
     return plainText(m.statusLabel,40) || 'идёт';
   }
 
-  function botMatchLine(m) {
-    const home=telegramHtmlEscape(m.homeName);
-    const away=telegramHtmlEscape(m.awayName);
+  function botMatchLine(m, { teamEmojiEnabled = false, teamEmojiIds = {} } = {}) {
+    const home=`${teamEmojiEnabled ? `${teamEmojiHtml(m.home?.id,teamEmojiIds)} ` : ''}${telegramHtmlEscape(m.homeName)}`;
+    const away=`${teamEmojiEnabled ? `${teamEmojiHtml(m.away?.id,teamEmojiIds)} ` : ''}${telegramHtmlEscape(m.awayName)}`;
     if (m.live) return `🔴 ${telegramHtmlEscape(botLiveMark(m))} · ${home} <b>${botDayScore(m)}</b> ${away}`;
     if (m.finished || BOT_FINISHED_STATUSES.has(String(m.status || '').toUpperCase())) {
       return `✓ ${home} <b>${botDayScore(m)}</b> ${away}`;
@@ -708,7 +710,7 @@ export function createTelegramDigestRuntime(deps = {}) {
     }));
   }
 
-  function botDayMatchesText(matches = [], { liveOnly = false, total = 0 } = {}) {
+  function botDayMatchesText(matches = [], { liveOnly = false, total = 0, teamEmojiEnabled = false, teamEmojiIds = {} } = {}) {
     const rows=rowsOf(matches);
     if (!rows.length) return liveOnly
       ? '🔴 Сейчас в доступных данных нет матчей в прямом эфире.'
@@ -721,7 +723,7 @@ export function createTelegramDigestRuntime(deps = {}) {
     ].filter(Boolean).join(' · ');
     const body=botLeagueGroups(rows).map(group=>[
       `<b>${telegramHtmlEscape(group.title)}</b>`,
-      ...group.rows.map(botMatchLine),
+      ...group.rows.map(m=>botMatchLine(m,{teamEmojiEnabled,teamEmojiIds})),
     ].join('\n'));
     return [
       subtitle ? `${title}\n<i>${subtitle}</i>` : title,
@@ -751,7 +753,24 @@ export function createTelegramDigestRuntime(deps = {}) {
     const ordered=botLeagueGroups(matches).flatMap(group=>group.rows);
     const rows=ordered.map(m=>[{text:botDayButtonText(m,{liveOnly}),callback_data:`match:menu:${Number(m.fixtureId)}`}]);
     rows.push([{text:'🔄 Обновить',callback_data:liveOnly?'feed:live':'feed:today'}]);
-    await telegramApi('sendMessage',cfg,{chat_id:chatId,parse_mode:'HTML',text:botDayMatchesText(ordered,{liveOnly,total}),reply_markup:{inline_keyboard:rows}});
+    const payload={
+      chat_id:chatId,
+      parse_mode:'HTML',
+      text:botDayMatchesText(ordered,{
+        liveOnly,total,
+        teamEmojiEnabled:cfg?.telegramTeamEmojiEnabled===true,
+        teamEmojiIds:cfg?.telegramTeamEmojiIds,
+      }),
+      reply_markup:{inline_keyboard:rows},
+    };
+    try {
+      await telegramApi('sendMessage',cfg,payload);
+    } catch (error) {
+      // Retry only a definite Telegram rejection of custom emoji. Never retry
+      // timeouts or ambiguous network failures: the original may have arrived.
+      if (!payload.text.includes('<tg-emoji ') || !isTeamEmojiRejected(error)) throw error;
+      await telegramApi('sendMessage',cfg,{...payload,text:withoutTeamCustomEmoji(payload.text)});
+    }
   }
   
   async function botTeamIdMatches(teamId,cfg) {
