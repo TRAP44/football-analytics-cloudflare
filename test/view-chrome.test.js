@@ -16,7 +16,7 @@ function element() {
 
 test('view chrome keeps public screen titles and subtitles in one module', () => {
   assert.deepEqual(VIEW_CHROME.matchesView, ['Главная', 'Видим, что меняет матч.']);
-  assert.deepEqual(VIEW_CHROME.analysisView, ['Матч-центр', 'Что происходит, почему и что важно дальше']);
+  assert.deepEqual(VIEW_CHROME.analysisView, ['Открыть матч', 'Что происходит, почему и что важно дальше']);
   assert.equal(BACK_VIEW_LABELS.playerView, 'К игроку');
 });
 

@@ -1106,10 +1106,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch114'),
+      import('./modules/match-center-view.js?v=6.120.0-launch115'),
       import('./modules/match-pulse.js?v=6.120.0-launch87'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch114'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch114'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch115'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch115'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1266,7 +1266,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch114').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch115').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -2156,7 +2156,7 @@ function openActivePassMatches(passType = 'DAY_PASS') {
     if (action) {
       action.scrollIntoView({ block:'center', behavior:'smooth' });
       action.focus();
-      toast(label + ' активен. Выберите будущий матч и нажмите «Разобрать матч».');
+      toast(label + ' активен. Выберите будущий матч и нажмите «Разобрать с AI».');
       return;
     }
     toast(label + ' активен, но сейчас нет будущих матчей для разбора.');
@@ -2601,7 +2601,7 @@ function searchMatchCard(match) {
   const status = live ? (match.statusLabel || 'Матч идёт') : finished ? 'Завершён' : dateTime(match.date);
   const action = finished || live
     ? `<button class="search-match-action" type="button" data-search-center="${Number(match.fixtureId)}">${finished ? 'Итоги' : 'Центр матча'}</button>`
-    : `<button class="search-match-action" type="button" data-search-fixture="${Number(match.fixtureId)}">Разобрать матч</button>`;
+    : `<button class="search-match-action" type="button" data-search-fixture="${Number(match.fixtureId)}">Разобрать с AI</button>`;
   const primaryLabel=primary ? `<div class="search-match-primary"><b>⭐ ОСНОВНОЙ МАТЧ</b><span>${escapeHtml(match?.selection?.reason || state.globalSearch.matchDiscovery?.primaryReason || 'Основной выбор MatchRadar для анализа')}</span></div>` : '';
   return `<article class="search-match-card ${live ? 'is-live' : finished ? 'is-finished' : 'is-upcoming'} ${primary ? 'is-primary' : ''}">${primaryLabel}
     <div class="search-match-meta"><span>${escapeHtml(match.league || match.competition?.name || 'Матч')}</span><small>${escapeHtml(status)}</small></div>
@@ -2944,7 +2944,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch114');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch115');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3318,15 +3318,7 @@ function aiConfidenceMeterHtml(history, match = null) {
     if (!feed) return '';
     return `${aiProbabilityBarHtml({ aiProbabilities: feed })}<div class="mr-ai-strip"><span>✦ Оценка модели до разбора</span></div>`;
   }
-  const raw = Number(history.aiConfidence);
-  const hasScore = history.aiConfidence !== null && history.aiConfidence !== undefined && Number.isFinite(raw);
-  const score = hasScore ? Math.max(0, Math.min(100, raw)) : 0;
-  const label = score >= 70 ? 'Высокая' : score >= 45 ? 'Средняя' : 'Низкая';
-  const bars = Math.max(1, Math.min(5, Math.round(score / 20)));
-  const meter = hasScore
-    ? `<span class="mr-ai-meter" role="img" aria-label="Уверенность модели: ${label}">${[1, 2, 3, 4, 5].map(n => `<i class="${n <= bars ? 'on' : ''}"></i>`).join('')}<b>${label}</b></span>`
-    : '';
-  return `${aiProbabilityBarHtml(history)}<div class="mr-ai-strip"><span>✦ AI-разбор готов</span>${meter}</div>`;
+  return aiProbabilityBarHtml(history);
 }
 
 function matchCardHtml(m, { grouped = false } = {}) {
@@ -3343,12 +3335,12 @@ function matchCardHtml(m, { grouped = false } = {}) {
       ? '<span class="match-finished-label">Завершён</span>'
       : `<span class="match-time-label">${escapeHtml(timeOf(m.date))}</span>`;
   const primaryAction = m.live
-    ? `<button class="analyze-btn live-center-btn" type="button" data-center="${Number(m.fixtureId)}">Матч-центр</button>`
+    ? `<button class="analyze-btn live-center-btn" type="button" data-center="${Number(m.fixtureId)}">Открыть матч</button>`
     : m.finished
       ? `<button class="analyze-btn finished-btn" type="button" data-center="${Number(m.fixtureId)}">Итоги матча</button>`
       : aiHistory
-        ? `<button class="analyze-btn analyzed-btn" type="button" data-history-analysis="${Number(m.fixtureId)}">Открыть AI-разбор</button>`
-        : `<button class="analyze-btn" type="button" data-fixture="${Number(m.fixtureId)}">Разобрать матч</button>`;
+        ? `<button class="analyze-btn analyzed-btn" type="button" data-history-analysis="${Number(m.fixtureId)}">Открыть разбор</button>`
+        : `<button class="analyze-btn" type="button" data-fixture="${Number(m.fixtureId)}">Разобрать с AI</button>`;
 
   const favoriteButton = team => { const active = isFavorite(team?.id); return `<button class="fav-star compact ${active ? 'active' : ''} ${state.favoriteMutations.has(Number(team?.id)) ? 'is-pending' : ''}" type="button" data-team-id="${Number(team?.id)}" data-team-name="${escapeHtml(team?.name || '')}" data-team-logo="${escapeHtml(team?.logo || '')}" aria-pressed="${active ? 'true' : 'false'}" aria-label="${active ? 'Удалить из избранного' : 'Добавить в избранное'}: ${escapeHtml(team?.name || '')}" ${state.favoriteMutations.has(Number(team?.id)) ? 'disabled' : ''}>${favoriteStarSvg(active)}</button>`; };
 
@@ -3414,7 +3406,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch114').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch115').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -4756,8 +4748,7 @@ function centerAbsenceSummary(absences, match) {
     const suspension=Number(summary.suspension || 0);
     const doubtful=Number(summary.doubtful || 0);
     return `<div>
-      <span>${escapeHtml(name)}</span><strong>${total}</strong><small>активных отметок</small>
-      <p>${injury ? `🚑 ${injury}` : ''}${suspension ? `${injury ? ' · ' : ''}🟥 ${suspension}` : ''}${doubtful ? `${injury || suspension ? ' · ' : ''}❔ ${doubtful}` : ''}</p>
+      <span>${escapeHtml(name)}</span><strong>${total}</strong><small>игроков</small>
     </div>`;
   };
   const hc = absences?.home?.length || 0;
@@ -4962,7 +4953,6 @@ function smartInsightsHeroHtml(si, match) {
     </div>
     <p class="smart-story-summary">${escapeHtml(publicText(si.summary || ''))}</p>
     ${first ? `<div class="smart-story-focus"><span>${escapeHtml(first.icon || '💡')}</span><b>${escapeHtml(insightSideLabel(first.side, match))}</b><small>${escapeHtml(first.importance === 'high' ? 'Сильный сигнал' : first.importance === 'medium' ? 'Заметный сигнал' : 'Наблюдение')}</small></div>` : ''}
-    ${si.insights?.length ? '<button class="secondary-btn smart-open-insights" type="button" aria-expanded="false">Подробнее о матче →</button>' : ''}
   </section>`;
 }
 
@@ -4970,7 +4960,7 @@ function smartInsightsFullHtml(si, match) {
   if (!si?.available) {
     return `<div class="empty"><strong>Недостаточно данных</strong><p>Когда появятся статистика и события, здесь будут автоматические выводы по ходу матча.</p></div>`;
   }
-  return `<div class="smart-insights-full" data-insight-details hidden>
+  return `<div class="smart-insights-full">
     <div class="smart-insight-list">${(si.insights || []).map(x => smartInsightCardHtml(x, match)).join('')}</div>
     ${si.methodology ? `<details class="panel smart-methodology"><summary>Как это считается</summary><p>${escapeHtml(publicText(si.methodology))}</p></details>` : ''}
   </div>`;
@@ -5582,7 +5572,7 @@ async function loadAnalysisExplanation(fixtureId) {
   const root = $('matchExplanation');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch114');
+    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch115');
     const { loadMatchExplanation } = await matchExplanationModule;
     await loadMatchExplanation({
       root,
@@ -5602,7 +5592,7 @@ async function loadMatchQuestions(fixtureId) {
   const root = $('matchQuestions');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch114');
+    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch115');
     const { mountMatchQuestions } = await matchQuestionsModule;
     mountMatchQuestions({
       root,
@@ -5619,7 +5609,7 @@ async function loadMatchQuestions(fixtureId) {
 // «Обыграй AI»: прогноз в Штабе матча и таблица в Профиле — ленивый модуль.
 let beatAiModule = null;
 function loadBeatAiModule() {
-  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch114').catch(error => { beatAiModule = null; throw error; });
+  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch115').catch(error => { beatAiModule = null; throw error; });
   return beatAiModule;
 }
 async function mountBeatAi(m = {}) {
@@ -5654,7 +5644,7 @@ async function loadReferralInvitePanel() {
   const root = $('referralInvite');
   if (!root) return;
   try {
-    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch114');
+    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch115');
     const { loadReferralInvite } = await referralInviteModule;
     await loadReferralInvite({ root, api, escapeHtml, tg, toast });
   } catch {
@@ -5665,7 +5655,7 @@ async function loadReferralInvitePanel() {
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch114');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch115');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {
@@ -5964,12 +5954,7 @@ function matchScenariosHtml({ ai = {}, match = {}, probabilities = {}, goal = nu
   const risks = (Array.isArray(ai.risks) ? ai.risks : []).map(scenarioText).filter(Boolean).slice(0, 3);
   const checks = (Array.isArray(ai.matchPlan?.checks) ? ai.matchPlan.checks : []).map(scenarioText).filter(Boolean).slice(0, 2);
   const liveWatch = scenarioText(ai.matchPlan?.liveWatch);
-  const confidenceText = Number.isFinite(Number(ai.confidenceScore)) ? `${Math.round(clampPercent(ai.confidenceScore))}/100` : 'данных мало';
-  const dataTrust = ai.dataTrust || {};
-  const dataTrustScore = Number.isFinite(Number(dataTrust.score)) ? `${Math.round(clampPercent(dataTrust.score))}%` : '—';
   const lineupNote = scenarioText(ai.lineupImpact?.note);
-  const qualityGate = ai.qualityGate || {};
-  const gateReasons = Array.isArray(qualityGate.reasons) ? qualityGate.reasons.slice(0, 2) : [];
   return `
     <section class="panel ai-instructor-card match-scenarios ${locked ? 'archived' : 'active'}">
       <div class="ai-instructor-head">
@@ -5983,9 +5968,6 @@ function matchScenariosHtml({ ai = {}, match = {}, probabilities = {}, goal = nu
       </div>` : `<div class="empty compact-empty">Сценарии появятся, когда у модели будет достаточно данных по матчу.</div>`}
       ${lineupNote ? `<div class="ai-lineup-note">👥 ${escapeHtml(lineupNote)}</div>` : ''}
       <div class="ai-instructor-facts">
-        <div><span>Уверенность модели</span><strong>${escapeHtml(ai.confidenceLabel || '—')}</strong><small>${confidenceText}</small></div>
-        <div class="ai-data-trust"><span>Качество данных</span><strong>${escapeHtml(dataTrust.label || 'Оценивается')}</strong><small>${dataTrustScore}${scenarioText(dataTrust.note) ? ` · ${escapeHtml(scenarioText(dataTrust.note))}` : ''}</small></div>
-        <div class="ai-data-trust"><span>Проверка качества</span><strong>${escapeHtml(qualityGate.label || 'Оценивается')}</strong><small>${escapeHtml(scenarioText(gateReasons[0]?.text) || 'Без блокирующих замечаний к данным.')}</small></div>
         <div><span>Судья</span><strong>${escapeHtml(ai.refereeProfile?.name || ai.referee || match.referee || 'Ещё не указан')}</strong><small>${escapeHtml(publicText(ai.refereeHistory?.available ? `${ai.refereeHistory.styleLabel} · ${ai.refereeHistory.avgYellow} жёлт. · ${ai.refereeHistory.avgRed} красн. · выборка ${ai.refereeHistory.sample}` : ai.refereeProfile?.country ? `${ai.refereeProfile.country} · ${ai.refereeNote || ''}` : ai.refereeNote || 'Назначение судьи может появиться ближе к матчу.'))}</small></div>
       </div>
       ${factors.length ? `<div class="ai-instructor-reasons"><strong>Почему так</strong><ul>${factors.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>` : ''}
@@ -6185,12 +6167,6 @@ function matchCockpitHtml(d = {}) {
       ? 'Источник вернул пустой ответ — это не означает «потерь нет»'
       : 'Данные о потерях сейчас не подтверждены';
 
-  const qualityText=quality.confidence===null
-    ? 'Оценивается'
-    : `${quality.confidence}/100${quality.completeness
-        ? ` · данные ${quality.completeness.score}/${quality.completeness.max}`
-        : ''}`;
-
   const card=(tab,icon,title,value,note,available=true)=>`<button class="match-cockpit-card ${available?'':'is-missing'}" type="button" data-cockpit-tab="${escapeHtml(tab)}">
     <span class="match-cockpit-icon">${icon}</span>
     <span class="match-cockpit-copy"><small>${escapeHtml(title)}</small><strong>${escapeHtml(value)}</strong><em>${escapeHtml(publicText(note || ''))}</em></span>
@@ -6227,10 +6203,6 @@ function matchCockpitHtml(d = {}) {
         h2h ? `${h2h.homeWins} — ${h2h.draws} — ${h2h.awayWins}` : 'Нет выборки',
         h2h ? `${homeName} · ничьи · ${awayName}, выборка ${h2h.sample}` : 'H2H не используется, если источник не вернул выборку',
         Boolean(h2h))}
-      ${card('overview','🧠','Качество оценки',
-        qualityText,
-        quality.label || 'Уверенность модели и полнота входных данных считаются отдельно',
-        quality.confidence!==null)}
     </div>
     ${cockpit.lineupNote ? `<div class="match-cockpit-note"><span>👥</span><p>${escapeHtml(publicText(cockpit.lineupNote))}</p></div>` : ''}
   </section>`;

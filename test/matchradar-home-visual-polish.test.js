@@ -49,7 +49,7 @@ test('home match cards separate status from score and keep one clear primary act
   assert.doesNotMatch(center,/идёт матч/i);
 
   assert.match(card,/LIVE\$\{liveMinute\}/);
-  assert.match(card,/Матч-центр/);
+  assert.match(card,/Открыть матч/);
   assert.match(card,/score-live/);
   assert.match(card,/score-finished/);
   assert.match(card,/score-upcoming/);

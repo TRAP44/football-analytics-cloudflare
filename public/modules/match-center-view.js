@@ -101,6 +101,7 @@ export function renderMatchCenterView(d, deps) {
   const hasAbsences=Boolean(d.availabilityQuality?.observed || d.absences?.home?.length || d.absences?.away?.length);
   const history=analysisHistoryForFixture(m.fixtureId);
   const fixtureId=Number(m.fixtureId || 0);
+  const aiDetailsOpen=$('analysis')?.querySelector('.ai-extra-details[data-fixture="'+fixtureId+'"]')?.open===true;
   state.currentCenterTab=normalizeMatchCenterTab(state.currentCenterTab);
 
   // «Вывод AI»: сохранённый разбор пользователя или честное приглашение его запустить.
@@ -116,7 +117,7 @@ export function renderMatchCenterView(d, deps) {
     ? `<h2 id="mrAiCardTitle">AI уже разобрал этот матч</h2>
        <p class="mr-ai-card-note">Вероятности исходов, ключевые факторы и что может изменить картину — в полном разборе.</p>
        ${aiConfidenceMeterHtml(history)}
-       <button class="primary-btn mr-ai-card-btn" type="button" data-center-open-analysis="${fixtureId}">Открыть полный AI-разбор</button>`
+       <button class="primary-btn mr-ai-card-btn" type="button" data-center-open-analysis="${fixtureId}">Открыть разбор</button>`
     : historyUnknown
     ? `<h2 id="mrAiCardTitle">Не удалось проверить сохранённые разборы</h2>
        <p class="mr-ai-card-note">Проверим ещё раз, чтобы не тратить дневной лимит на повторный разбор.</p>
@@ -124,7 +125,7 @@ export function renderMatchCenterView(d, deps) {
     : upcoming
       ? `<h2 id="mrAiCardTitle">AI ещё не разбирал этот матч</h2>
          <p class="mr-ai-card-note">Разбор посчитает вероятности исходов, ключевые факторы и риски. Учитывается в дневном лимите разборов.</p>
-         <button id="centerAnalyzeBtn" class="primary-btn mr-ai-card-btn" type="button">✦ Запустить AI-разбор</button>`
+         <button id="centerAnalyzeBtn" class="primary-btn mr-ai-card-btn" type="button">✦ Разобрать с AI</button>`
       : `<h2 id="mrAiCardTitle">AI-разбор до матча не запускался</h2>
          <p class="mr-ai-card-note">Ниже — что AI видит по данным матча прямо сейчас.</p>`;
 
@@ -176,37 +177,42 @@ export function renderMatchCenterView(d, deps) {
         <div class="mr-ai-card-head"><span class="mr-kicker">✦ Вывод AI</span></div>
         ${aiCardBody}
       </section>
-      <section class="panel match-explanation beat-ai" id="beatAiPick" data-fixture="${Number(m.fixtureId) || 0}" aria-live="polite" hidden></section>
       ${live && IN_PLAY_STATUSES.has(String(m.status || '').toUpperCase()) ? inPlayEstimateHtml(latestInPlayEstimate(d.aiTimeline || {}), m, escapeHtml) : ''}
-      ${matchChangeNarrativeHtml(d, m)}
-      ${aiTimelineCompactHtml}
-      ${aiProbabilityChartHtml.includes('<svg') ? `<section class="${aiProbabilityChartHtml.startsWith('<figure') ? '' : 'panel '}ai-prob-panel">${aiProbabilityChartHtml}</section>` : ''}
-      ${aiTimelineDetailsHtml}
-      ${live ? liveAiCoachHtml(d.liveAiCoach, m) : ''}
-      ${smartInsightsHeroHtml(d.smartInsights, m)}
+      ${d.smartInsights?.available ? smartInsightsHeroHtml(d.smartInsights, m) : ''}
       ${finished ? postMatchReviewHtml(d.postMatchReview || {}, m) : ''}
-      ${d.smartInsights?.available ? `<div data-center-section="insights">${smartInsightsFullHtml(d.smartInsights, m)}</div>` : ''}
+      <details class="panel ai-extra-details" data-fixture="${fixtureId}" ${aiDetailsOpen?'open':''}>
+        <summary>Подробнее о матче <span aria-hidden="true">⌄</span></summary>
+        <div class="ai-extra-body">
+          ${matchChangeNarrativeHtml(d, m)}
+          ${aiTimelineCompactHtml}
+          ${aiProbabilityChartHtml.includes('<svg') ? `<section class="ai-prob-panel">${aiProbabilityChartHtml}</section>` : ''}
+          ${aiTimelineDetailsHtml}
+          ${live ? liveAiCoachHtml(d.liveAiCoach, m) : ''}
+          ${d.smartInsights?.available ? smartInsightsFullHtml(d.smartInsights, m) : ''}
+          <section class="panel match-explanation beat-ai" id="beatAiPick" data-fixture="${Number(m.fixtureId) || 0}" aria-live="polite" hidden></section>
+        </div>
+      </details>
       <p class="mr-ai-honesty">AI показывает только то, что есть в данных матча. Это аналитика, а не гарантия результата.</p>
     </div>
 
     <div class="center-tab-panel" data-center-panel="summary">
       ${matchCenterExtraHtml('renderMatchHeadquarters',d)}
       <section class="panel observation-controls" aria-label="Наблюдение за матчем">
-        <p class="muted">Наблюдение сохраняет матч на этом устройстве. Telegram-напоминание включается отдельно.</p>
-        ${!finished || isWatchedMatch(m.fixtureId) ? `<button id="centerWatchBtn" class="secondary-btn" type="button" aria-pressed="${isWatchedMatch(m.fixtureId)}">${isWatchedMatch(m.fixtureId)?'Убрать из наблюдения':'Следить за матчем'}</button>` : ''}
-        ${upcoming ? `<button class="quick-reminder-btn secondary-btn" data-quick-reminder="${positiveEntityId(m.fixtureId)}" type="button">Telegram-напоминание</button>` : ''}
+        <details class="observation-help"><summary aria-label="О наблюдении и напоминаниях">ⓘ</summary><p>«Следить» сохраняет матч на этом устройстве. «Напомнить» включает сообщение в Telegram.</p></details>
+        ${!finished || isWatchedMatch(m.fixtureId) ? `<button id="centerWatchBtn" class="secondary-btn" type="button" aria-pressed="${isWatchedMatch(m.fixtureId)}">${isWatchedMatch(m.fixtureId)?'Слежу ✓':'Следить'}</button>` : ''}
+        ${upcoming ? `<button class="quick-reminder-btn secondary-btn" data-quick-reminder="${positiveEntityId(m.fixtureId)}" type="button">Напомнить</button>` : ''}
       </section>
       ${d.note ? `<section class="panel center-note"><p class="tiny warning">${escapeHtml(publicText(d.note))}</p></section>` : ''}
       <section class="panel center-primary-metrics">
-        <div class="center-section-title"><div><span class="center-priority-label">ГЛАВНОЕ</span><h2>Ключевые показатели</h2><p>Самые полезные метрики без перегрузки</p></div></div>
+        <div class="center-section-title"><div><span class="center-priority-label">ГЛАВНОЕ</span><h2>Ключевые показатели</h2></div></div>
         ${centerKeyStatsHtml(d.statistics)}
       </section>
-      ${hasAbsences ? `<section class="panel"><div class="center-section-title"><div><h2>🩺 Потери состава</h2><p>Доступность игроков и важные отсутствия</p></div></div>${centerAbsenceSummary(d.absences,m)}</section>` : ''}
+      ${hasAbsences ? `<section class="panel"><div class="center-section-title"><div><h2>🩺 Потери состава</h2><p>Подробности — во вкладке «Составы»</p></div></div>${centerAbsenceSummary(d.absences,m)}</section>` : ''}
       ${m.venue || m.city || m.referee ? `<section class="panel center-meta-line mr-hq-meta">${m.venue || m.city ? `<span>🏟 ${escapeHtml([m.venue, m.city].filter(Boolean).join(', '))}</span>` : ''}${m.referee ? `<span>Судья: ${escapeHtml(m.referee)}</span>` : ''}</section>` : ''}
       <details class="panel analysis-disclosure coverage-panel">
-        <summary>Подробнее о данных</summary>
+        <summary>О данных</summary>
         <div class="analysis-disclosure-body">
-        <div class="center-section-title"><div><h2>Покрытие и свежесть</h2><p>${d.cached ? 'Данные из сохранённой версии' : 'Свежие данные источника'} · ${dateTime(d.generatedAt)}</p></div></div>
+        <div class="center-section-title"><div><h2>Обновление данных</h2><p>${d.cached ? 'Данные из сохранённой версии' : 'Свежие данные источника'} · ${dateTime(d.generatedAt)}</p></div></div>
         ${centerCoverageHtml(d)}
         ${centerFreshnessHtml(d)}
         ${d.quotaMode ? `<div class="quota-public-chip">${escapeHtml(publicText(d.quotaMode.label || ''))} · обновление ${Number(d.quotaMode.liveRefreshSeconds || d.refreshSeconds || 0)} сек.</div>` : ''}
@@ -246,18 +252,6 @@ export function renderMatchCenterView(d, deps) {
 
   const root=$('analysis');
   bindMatchCenterTabs();
-  root.querySelectorAll('.smart-open-insights').forEach(btn => btn.addEventListener('click', () => {
-    const details=root.querySelector('[data-insight-details]');
-    if (!details) return;
-    details.hidden=!details.hidden;
-    btn.setAttribute('aria-expanded',String(!details.hidden));
-    btn.textContent=details.hidden?'Подробнее о матче →':'Скрыть подробности ↑';
-    setMatchCenterTab('ai', false);
-    requestAnimationFrame(() => {
-      if (!details.hidden) root.querySelector('[data-center-section="insights"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  }));
-
   root.querySelectorAll('[data-center-player]').forEach(btn => btn.addEventListener('click', () => {
     openPlayerFromMatch(Number(btn.dataset.centerPlayer || 0), btn.dataset.centerPlayerSide || '');
   }));

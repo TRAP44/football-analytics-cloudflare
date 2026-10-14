@@ -814,6 +814,29 @@ async function main() {
         if(window.observationOpened!==991 || window.observationRemoved!==991)throw Error('observation actions failed');
       })()`});
       if(observationCheck.exceptionDetails) throw new Error('Observation browser scenario failed: '+JSON.stringify(observationCheck.exceptionDetails));
+      const cleanMatchCheck=await cdp.call('Runtime.evaluate',{awaitPromise:true,expression:`(async()=>{
+        const {renderMatchCenterView}=await import('/modules/match-center-view.js');
+        const root=document.createElement('section');
+        root.setAttribute('data-qa-clean-match','');
+        document.querySelector('main').append(root);
+        const escapeHtml=s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+        const state={historyLoaded:true,remindersLoaded:true,currentCenterTab:'ai',profile:{features:{}}};
+        const deps=new Proxy({state,$:id=>id==='analysis'?root:root.querySelector('#'+id),escapeHtml,publicText:s=>s??'',safeUrl:()=>'',timeOf:()=> '21:00',dateTime:()=> '14 октября',isAdmin:()=>false,isWatchedMatch:()=>false,positiveEntityId:Number,analysisHistoryForFixture:()=>null,smartInsightsHeroHtml:()=>'<section class="panel"><h2>Контроль мяча</h2><p>Команда чаще владеет мячом.</p></section>',matchChangeNarrativeHtml:()=>'<section class="panel">Сохранённое изменение</section>',matchCenterExtraHtml:()=>'',bindMatchCenterTabs:()=>root.querySelectorAll('[data-center-panel]').forEach(el=>el.classList.toggle('active',el.dataset.centerPanel==='ai'))},{get:(obj,key)=>key in obj?obj[key]:()=>''});
+        const data={mode:'upcoming',match:{fixtureId:991,date:'2026-10-14T18:00:00Z',league:'Премьер-лига',home:{id:1,name:'Очень длинное название команды United'},away:{id:2,name:'Другая длинная команда Athletic'}},smartInsights:{available:true}};
+        renderMatchCenterView(data,deps);
+        let details=root.querySelector('.ai-extra-details');
+        if(!details || details.open)throw Error('AI details must start collapsed');
+        details.querySelector('summary').click();
+        if(!details.open)throw Error('AI details do not open');
+        renderMatchCenterView(data,deps);
+        details=root.querySelector('.ai-extra-details');
+        if(!details.open)throw Error('AI details close on refresh');
+        if(root.scrollWidth>root.clientWidth+2)throw Error('expanded match details overflow');
+        details.querySelector('summary').click();
+        if(details.open)throw Error('AI details do not close');
+        root.remove();
+      })()`});
+      if(cleanMatchCheck.exceptionDetails)throw Error('Clean match layout failed: '+JSON.stringify(cleanMatchCheck.exceptionDetails));
       const evaluated = await cdp.call('Runtime.evaluate', {
         returnByValue: true,
         expression: `(() => {

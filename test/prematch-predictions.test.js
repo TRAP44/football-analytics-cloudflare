@@ -309,7 +309,8 @@ test('Mini App card draws feed probabilities only when they are valid', () => {
   for (const bad of [{ home: 80, draw: 30, away: 20 }, { home: 'x', draw: 1, away: 1 }, { home: -1, draw: 51, away: 50 }, null]) {
     assert.equal(meter(null, { aiProbabilities: bad }), '');
   }
-  assert.match(meter({ aiConfidence: 70, aiProbabilities: { home: 50, draw: 30, away: 20 } }, null), /AI-разбор готов/);
+  assert.match(meter({ aiConfidence: 70, aiProbabilities: { home: 50, draw: 30, away: 20 } }, null), /mr-prob/);
+  assert.doesNotMatch(meter({ aiConfidence: 70, aiProbabilities: { home: 50, draw: 30, away: 20 } }, null), /Уверенность|mr-ai-meter|AI-разбор готов/);
 
   // Идущий матч: только оценка по ходу матча, предматчевые цифры (и из разбора) не показываются.
   const live = { live: true, aiProbabilities: { home: 52.3, draw: 26.1, away: 21.6 }, aiLiveProbabilities: { home: 76.6, draw: 17.3, away: 6.1, minute: 61 } };
