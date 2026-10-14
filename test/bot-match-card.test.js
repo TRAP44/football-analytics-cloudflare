@@ -27,7 +27,7 @@ test('SVG escapes provider text, uses actual scores, caps rows and rejects exter
   assert.match(svg,/&lt;script&gt;/);
   assert.match(svg,/1 : 0/);
   assert.match(svg,/LIVE · 63′/);
-  assert.doesNotMatch(svg,/<script>|attacker.example/);
+  assert.doesNotMatch(svg,/<script>|attacker.example/i);
   assert.equal((svg.match(/width="592"/g)||[]).length,4);
   const upcoming=buildBotMatchCardSvg([{...row,live:false,goalsHome:null,goalsAway:null,date:'2026-10-14T19:00:00Z'}]);
   assert.match(upcoming,/22:00 МСК/);
