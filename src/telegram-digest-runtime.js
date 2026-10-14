@@ -831,25 +831,54 @@ export function createTelegramDigestRuntime(deps = {}) {
     const from=fromDate.toISOString().slice(0,10), to=toDate.toISOString().slice(0,10);
     const cacheKey=`bot:team-id-matches:${id}:${from}:${to}:v1`;
     const cached=await getCache(cacheKey,cfg).catch(()=>null);
-    if (Array.isArray(cached?.matches)) {
-      return cached.matches.map(match=>{
-        try { return normalizeBotFixtureCard(match); } catch { return null; }
-      }).filter(match=>positiveSafeInteger(match?.fixtureId));
+    const normalize=values=>rowsOf(values).map(match=>{
+      try { return normalizeBotFixtureCard(match); } catch { return null; }
+    }).filter(match=>positiveSafeInteger(match?.fixtureId));
+    // Discovery stays cached for two hours. Current state comes from the shared
+    // snapshots already populated by background jobs, without provider calls.
+    const snapshots=await Promise.all([
+      getCache(`provider-fixtures:${todayUtc()}:v1`,cfg).catch(()=>null),
+      getCache(`matches:${todayUtc()}:v6-integrity`,cfg).catch(()=>null),
+    ]);
+    const timestamp=value=>Date.parse(value?.fetchedAt || value?.refreshedAt || '');
+    const cacheTime=timestamp(cached);
+    const fresh=snapshots.filter(value=>{
+      const time=timestamp(value), age=Date.now()-time;
+      return value?.stale!==true && Number.isFinite(age) && age>=0
+        && age<=6*60*1000;
+    }).sort((a,b)=>timestamp(a)-timestamp(b));
+    const updates=new Map();
+    for (const snapshot of fresh) {
+      for (const match of normalize(snapshot.fixtures || snapshot.matches)) {
+        if (positiveSafeInteger(match.home?.id)!==id && positiveSafeInteger(match.away?.id)!==id) continue;
+        updates.set(match.fixtureId,{match,time:timestamp(snapshot)});
+      }
     }
-    // Если провайдер из бота недоступен — прежний (устаревший) ответ лучше пустого (13.10).
+    const merge=async (values,baselineTime=cacheTime)=>{
+      const merged=new Map(normalize(values).map(match=>[match.fixtureId,match]));
+      const refreshed=[];
+      for (const [fixtureId,{match,time}] of updates) {
+        if (merged.has(fixtureId) && Number.isFinite(baselineTime) && time<baselineTime) continue;
+        merged.set(fixtureId,match);
+        refreshed.push(match);
+      }
+      let matches=[...merged.values()].filter(match=>!CANCELLED_FIXTURE_STATUSES.has(String(match.status || '').toUpperCase()));
+      if (updates.size) matches.sort((a,b)=>Number(b.live)-Number(a.live) || Number(a.finished)-Number(b.finished) || Date.parse(a.date||0)-Date.parse(b.date||0));
+      matches=matches.slice(0,6);
+      await rememberBotFixtureCards(refreshed.filter(match=>matches.includes(match)),cfg);
+      return matches;
+    };
+    if (Array.isArray(cached?.matches)) return merge(cached.matches);
     const staleMatches=async()=>{
       const stale=await getStaleCache(cacheKey,cfg).catch(()=>null);
-      return rowsOf(stale?.matches).map(match=>{
-        try { return normalizeBotFixtureCard(match); } catch { return null; }
-      }).filter(match=>positiveSafeInteger(match?.fixtureId));
+      return merge(stale?.matches,timestamp(stale));
     };
-    if (!freeQuotaHealthy(8,1)) return staleMatches();
+    // A shared match is enough to answer; preserve the provider budget.
+    if (updates.size || !freeQuotaHealthy(8,1)) return staleMatches();
     let fixtures=await apiFootball('/fixtures',{team:id,next:8},cfg).catch(()=>[]);
-    if (!fixtures.length) fixtures=await apiFootball('/fixtures',{team:id,last:6},cfg).catch(()=>[]);
+    if (!rowsOf(fixtures).length) fixtures=await apiFootball('/fixtures',{team:id,last:6},cfg).catch(()=>[]);
     if (!rowsOf(fixtures).length) return staleMatches();
-    const matches=rowsOf(fixtures).filter(f=>!CANCELLED_FIXTURE_STATUSES.has(String(f?.fixture?.status?.short||''))).map(f=>{
-      try { return normalizeBotFixtureCard(f); } catch { return null; }
-    }).filter(x=>positiveSafeInteger(x?.fixtureId))
+    const matches=normalize(fixtures).filter(match=>!CANCELLED_FIXTURE_STATUSES.has(String(match.status || '').toUpperCase()))
       .sort((a,b)=>Number(b.live)-Number(a.live) || Number(a.finished)-Number(b.finished) || Date.parse(a.date||0)-Date.parse(b.date||0)).slice(0,6);
     await setCache(cacheKey,id,{matches,refreshedAt:new Date().toISOString()},cfg,120).catch(()=>null);
     await rememberBotFixtureCards(matches,cfg);
@@ -881,7 +910,7 @@ export function createTelegramDigestRuntime(deps = {}) {
     const matches=await botTeamIdMatches(id,cfg);
     const rows=matches.map(m=>[{text:botMatchButtonText(m),callback_data:`match:menu:${Number(m.fixtureId)}`}]);
     const body=matches.length
-      ? matches.map((m,i)=>`${i+1}. <b>${telegramHtmlEscape(m.homeName)} — ${telegramHtmlEscape(m.awayName)}</b> · ${m.live ? `LIVE · ${telegramHtmlEscape(botLiveMark(m))}` : m.finished ? `Завершён · ${digestTime(m.date)}` : digestTime(m.date)}`).join('\n')
+      ? matches.map((m,i)=>`${i+1}. <b>${telegramHtmlEscape(m.homeName)} — ${telegramHtmlEscape(m.awayName)}</b> · ${(m.live || m.finished) && Number.isSafeInteger(m.goalsHome) && Number.isSafeInteger(m.goalsAway) ? `${m.goalsHome}:${m.goalsAway} · ` : ''}${m.live ? `LIVE · ${telegramHtmlEscape(botLiveMark(m))}` : m.finished ? `Завершён · ${digestTime(m.date)}` : digestTime(m.date)}`).join('\n')
       : 'Матчи клуба пока недоступны. Попробуйте обновить позже.';
     const buttons=rows.length?rows:[[{text:'🔄 Повторить',callback_data:`favorite:team:${id}`}]];
     buttons.push([{text:'📰 Новости клуба',callback_data:`news:team:${Number(teamId)}`}]);

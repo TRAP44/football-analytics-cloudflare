@@ -529,6 +529,8 @@ export function createTelegramBotUiRuntime(deps = {}) {
       live,
       finished,
       elapsed,
+      goalsHome:nonNegativeSafeInteger(source.goalsHome ?? source.goals?.home ?? source.score?.home,99),
+      goalsAway:nonNegativeSafeInteger(source.goalsAway ?? source.goals?.away ?? source.score?.away,99),
       home,
       away,
       homeName:home.name,
