@@ -3464,16 +3464,6 @@ function renderMatches() {
 
   if ($('dataNotice')) {
     const notices = [];
-    if (state.matchesMeta?.stale && !state.matchesMeta?.refreshing) notices.push('<div class="data-notice stale">Обновление задерживается</div>');
-    if (state.matchesMeta?.cached && state.matches.some(item => item?.live)) {
-      const sourceTime=Date.parse(state.matchesMeta.refreshedAt || '');
-      const oldEnough=Number.isFinite(sourceTime) && Date.now()-sourceTime>=2*60*1000;
-      if (oldEnough) {
-        const hhmm=new Date(sourceTime).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
-        notices.length=0;
-        notices.push(`<div class="data-notice stale">Обновление задерживается · Последнее обновление — ${escapeHtml(hhmm)}</div>`);
-      }
-    }
     if (Number(integrity.quarantined || 0) > 0) notices.push('<div class="data-notice integrity-notice">Некоторые матчи пока недоступны.</div>');
     $('dataNotice').innerHTML = notices.join('');
   }
