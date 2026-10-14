@@ -219,7 +219,8 @@ test('malformed, non-finite and ambiguous evidence fails closed instead of fabri
   }));
 });
 
-test('provider review requires real user depth plus repeated coverage evidence', async () => {
+test('provider review requires real user depth plus repeated coverage evidence', async t => {
+  t.mock.timers.enable({apis:['Date'],now:Date.parse('2026-10-07T12:00:00Z')});
   const enoughEvidence = await betaDashboard(createRuntime(providerEvidenceRows(5)));
   assert.equal(enoughEvidence.report.providerExpansionEvidence.status, 'review_provider_options');
   assert.equal(enoughEvidence.report.providerExpansionEvidence.betaUsers, 5);
