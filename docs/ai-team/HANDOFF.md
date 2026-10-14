@@ -14,6 +14,11 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-14 — Codex — Срочное отключение «Перелом матча»
+PR: ветка `codex/match-swing-off`.
+Сделано: по прямому указанию Сергея отключены посты в канал и вся задача «Перелом матча», включая личные уведомления; MATCH_SWING_ENABLED=false, CHANNEL_SWING_POST_ENABLED=false. Другие фоновые задачи не отключаются.
+
+
 ## 2026-10-13 — Claude — Обновление GitHub Actions (вместо Dependabot #856, #857)
 PR: ветка `claude/actions-bump`
 Сделано: в workflow обновлены закреплённые SHA: `actions/setup-node` 7.0.0 → 7.1.0, `actions/upload-artifact` 7.0.1 → 7.0.2, `github/codeql-action` init/analyze, `actions/download-artifact` 5 → 8.0.2 (только `backup-supabase.yml`). В `test/security-automation-config.test.js` и `test/supabase-backup-workflow.test.js` — новые SHA (из-за них падали PR Dependabot).

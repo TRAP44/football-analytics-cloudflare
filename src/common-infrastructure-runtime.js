@@ -54,6 +54,7 @@ export function createCommonInfrastructureRuntime(deps = {}) {
       channelDailyPostEnabled: boolEnv(env.CHANNEL_DAILY_POST_ENABLED, false),
       // Посты «Перелом матча» в канал: выключены, пока Сергей не одобрит текст.
       channelSwingPostEnabled: boolEnv(env.CHANNEL_SWING_POST_ENABLED, false),
+      matchSwingEnabled: boolEnv(env.MATCH_SWING_ENABLED, true),
       webhookSecret: env.TELEGRAM_WEBHOOK_SECRET || '',
       adminTelegramIds: telegramIdList(env.ADMIN_TELEGRAM_IDS),
       betaTelegramIds: telegramIdList(env.BETA_TELEGRAM_IDS),
