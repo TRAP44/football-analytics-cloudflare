@@ -234,7 +234,7 @@ test('RC43 analyzed upcoming matches expose saved verdicts without spending a ne
     /state\.history\.find\(item => Number\(item\.fixtureId\) === id && item\.aiSignalLabel\)/,
   );
   assert.match(app, /data-history-analysis/);
-  assert.match(app, /Открыть AI-разбор/);
+  assert.match(app, /Открыть разбор/);
 
 });
 

@@ -413,8 +413,8 @@ test('Match Pulse keeps navigation onboarding and frontend revision contracts in
   );
   assert.match(app,/class="center-tabs[ "]/);
   assert.match(app,/data-center-tab="summary"/);
-  assert.match(app,/smart-open-insights/);
-  assert.match(app,/setMatchCenterTab\('ai', false\)/);
+  assert.match(app,/ai-extra-details/);
+  assert.match(app,/<summary>Подробнее о матче/);
   assert.match(html,/id="firstRunGuide"/);
   assert.match(html,/id="firstRunGuideSearch"/);
   assert.match(html,/id="firstRunGuideFavorite"/);
@@ -422,9 +422,9 @@ test('Match Pulse keeps navigation onboarding and frontend revision contracts in
   const revision=html.match(
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
-  assert.equal(revision,'6.120.0-launch114');
+  assert.equal(revision,'6.120.0-launch115');
   assert.match(
     html,
-    /<script type="module" src="\/app\.js\?v=6\.120\.0-launch114"><\/script>/,
+    /<script type="module" src="\/app\.js\?v=6\.120\.0-launch115"><\/script>/,
   );
 });

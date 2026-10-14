@@ -43,7 +43,7 @@ test('Search uses consistent AI action wording',()=>{
   const start=app.indexOf('function searchMatchCard');
   const end=app.indexOf('function bindSearchMatchActions',start);
   const source=app.slice(start,end);
-  assert.match(source,/>Разобрать матч<\/button>/);
+  assert.match(source,/>Разобрать с AI<\/button>/);
   assert.doesNotMatch(source,/Преданализ/);
 });
 

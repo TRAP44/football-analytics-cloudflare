@@ -232,8 +232,8 @@ test('RC46 skip state changes the plan from betting action to wait-and-reassess'
 
 test('RC46 Mini App renders data trust and the concrete pre-kickoff plan as separate concepts', () => {
   assert.match(app, /Качество данных/);
-  assert.match(app, /dataTrust\.label/);
-  assert.match(app, /dataTrustScore/);
+  assert.doesNotMatch(app, /escapeHtml\(dataTrust\.label/);
+  assert.doesNotMatch(app, /<small>\$\{dataTrustScore\}/);
 
   // План до старта без «решений»: только нейтральные уточнения и что смотреть по ходу матча.
   assert.match(app, /Что уточнить до начала/);

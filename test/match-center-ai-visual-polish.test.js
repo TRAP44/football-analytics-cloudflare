@@ -31,8 +31,8 @@ test('Match Center premium polish keeps the existing data and interaction contra
     'mr-hq-tabs',
   ]) assert.ok(center.includes(token),token);
   assert.doesNotMatch(center,/d\.probabilities|probabilityStrip\(/);
-  assert.match(center,/setMatchCenterTab\('ai', false\)/);
-  assert.match(center,/data-center-section="insights"/);
+  assert.match(center,/class="panel ai-extra-details"/);
+  assert.match(center,/<summary>Подробнее о матче/);
   assert.match(center,/scrollIntoView/);
 });
 
@@ -137,7 +137,7 @@ test('frontend asset revision is consistent after Match Center presentation chan
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
 
-  assert.equal(revision,'6.120.0-launch114');
+  assert.equal(revision,'6.120.0-launch115');
   for(const asset of [
     'styles.css',
     'styles/public-shell.css',

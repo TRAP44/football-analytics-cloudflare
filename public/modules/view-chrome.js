@@ -5,7 +5,7 @@ export const VIEW_CHROME = Object.freeze({
   tournamentView: Object.freeze(['Турнир', 'Матчи и таблица']),
   teamView: Object.freeze(['Команда', 'Матчи и данные клуба']),
   playerView: Object.freeze(['Игрок', 'Показатели и роль в текущем матче']),
-  analysisView: Object.freeze(['Матч-центр', 'Что происходит, почему и что важно дальше']),
+  analysisView: Object.freeze(['Матч', 'Счёт, составы и разбор']),
   historyView: Object.freeze(['История', 'Сохранённые AI-разборы']),
   profileView: Object.freeze(['Профиль', 'Напоминания и настройки']),
 });

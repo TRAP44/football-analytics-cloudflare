@@ -503,7 +503,7 @@ test('AI Timeline wiring captures fresh analyses and loads timeline into Match C
 });
 
 test('AI Timeline UI remains lazy-loaded after Match Pulse and supports narrow mobile widths', () => {
-  assert.match(appSource,/import\('\.\/modules\/ai-timeline\.js\?v=6\.120\.0-launch114'\)/);
+  assert.match(appSource,/import\('\.\/modules\/ai-timeline\.js\?v=6\.120\.0-launch115'\)/);
   const pulse=appSource.indexOf("matchCenterExtraHtml('renderMatchPulse'");
   const timeline=appSource.indexOf("'renderAiTimelineCompact',",appSource.indexOf('const matchPulseHtml'));
   assert.ok(pulse>=0 && timeline>pulse,'AI Timeline must be rendered after existing Match Pulse');
@@ -560,7 +560,7 @@ test('live curve: fewer than two real points gives an honest empty state, never 
 test('match center shows the curve for live and finished matches only', () => {
   const view = readRepoFile('public/modules/match-center-view.js');
   assert.match(view, /const aiProbabilityChartHtml=\(live \|\| finished\)\s*\? matchCenterExtraHtml\('renderAiProbabilityChart', d\.aiTimeline \|\| \{\}, \{\.\.\.m,live,finished\}, eventRows\)/);
-  assert.match(view, /<section class="\$\{aiProbabilityChartHtml\.startsWith\('<figure'\) \? '' : 'panel '\}ai-prob-panel">\$\{aiProbabilityChartHtml\}<\/section>/);
+  assert.match(view, /<section class="ai-prob-panel">\$\{aiProbabilityChartHtml\}<\/section>/);
   assert.match(readRepoFile('public/app.js'), /renderAiProbabilityChart: t\.renderAiProbabilityChart,/);
 });
 

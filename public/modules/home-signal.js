@@ -172,7 +172,8 @@ export function createHomeSignalRenderer({
       : `<strong class="is-time">${escapeHtml(timeOf(match.date))}</strong><small>Начало</small>`;
     const meta=[match.league || 'Турнир',match.roundLabel || ''].filter(Boolean).join(' · ');
     const reason=$('homeFeaturedReason');
-    if (reason) reason.textContent=match.live ? 'Идёт сейчас' : match.featured ? 'Матч дня' : match.finished ? 'Итоги дня' : 'Выбор радара';
+    if (reason) reason.textContent=match.live ? 'Идёт сейчас' : match.featured ? 'Матч дня' : match.finished ? 'Итоги дня' : '';
+    if (reason) reason.hidden=!reason.textContent;
 
     cardRoot.innerHTML=`
       <article class="mr-featured-card ${match.live ? 'is-live' : match.finished ? 'is-finished' : 'is-upcoming'}">
@@ -185,7 +186,7 @@ export function createHomeSignalRenderer({
           <div class="mr-featured-score">${centre}</div>
           ${teamHtml(match.away,'Гости')}
         </div>
-        <button class="mr-featured-open" type="button" data-featured-center="${fixtureId}">Открыть штаб матча <span aria-hidden="true">→</span></button>
+        <button class="mr-featured-open" type="button" data-featured-center="${fixtureId}">Открыть матч <span aria-hidden="true">→</span></button>
       </article>`;
     cardRoot.querySelector('[data-featured-center]')?.addEventListener('click',event=>openMatchCenter(fixtureId,event.currentTarget));
     cardRoot.querySelectorAll('[data-open-team]').forEach(btn=>btn.addEventListener('click',()=>openTeam({

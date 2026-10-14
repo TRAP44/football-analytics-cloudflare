@@ -229,7 +229,7 @@ test('active Day and Weekend Pass expose a direct use path instead of a disabled
   assert.match(app, /function openActivePassMatches\(passType = 'DAY_PASS'\)/);
   assert.match(app, /\.match-card\.is-upcoming \.analyze-btn\[data-fixture\]/);
   assert.match(app, /сейчас нет будущих матчей для разбора/);
-  assert.match(app, /Разобрать матч/);
+  assert.match(app, /Разобрать с AI/);
 });
 
 test('Profile keeps FREE PRO PREMIUM and adds compact Match Day Weekend Pass cards', () => {

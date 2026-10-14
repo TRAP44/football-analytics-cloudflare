@@ -2546,3 +2546,17 @@ html[data-theme] body.miniapp-public-shell .experience-prematch-note { display: 
 .beat-ai-choose-match{width:100%;min-height:46px;margin-top:14px;font-weight:800;}
 .beat-ai-rules{margin-top:12px;color:var(--hint);font-size:12px;line-height:1.5;}
 .beat-ai-rules summary{cursor:pointer;min-height:32px;display:flex;align-items:center;}
+
+/* Clear secondary details and legible subscription copy. */
+.ai-extra-details>summary{display:flex;justify-content:space-between;align-items:center;min-height:48px;color:var(--accent);font-weight:800;cursor:pointer;list-style:none;}
+.ai-extra-details>summary::-webkit-details-marker{display:none;}
+.ai-extra-details[open]>summary span{transform:rotate(180deg);}
+.ai-extra-body{display:grid;gap:12px;margin-top:14px;}
+.observation-help{margin-left:auto;order:3;}
+.observation-help>summary{cursor:pointer;min-height:44px;min-width:44px;display:grid;place-items:center;color:var(--hint);}
+.observation-help p{font-size:13px;line-height:1.5;max-width:280px;}
+.miniapp-public-shell .pass-store-head p,.miniapp-public-shell .pass-card p,.miniapp-public-shell .pass-card small,.miniapp-public-shell .pass-meta span,.miniapp-public-shell .active-pass-row span,.miniapp-public-shell .active-pass-row strong,.miniapp-public-shell .pass-store-status,.miniapp-public-shell .billing-plan-badge{font-size:12px;line-height:1.5;}
+
+.miniapp-public-shell .billing-summary-grid span,.miniapp-public-shell .billing-access-description,.miniapp-public-shell .billing-summary-note,.miniapp-public-shell .pricing-card p{font-size:12px;line-height:1.5;}
+
+.ai-instructor-facts>div:only-child{grid-column:1/-1;}
