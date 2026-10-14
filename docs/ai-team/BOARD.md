@@ -12,11 +12,10 @@ _пусто_
 
 ## В работе
 
-_пусто_
+- [ ] Аудит ответов бота: длинные названия, кнопки и пустые состояния — **Codex** — ветка `codex/bot-presentation-audit`.
 
 ## На ревью
 
-- [ ] Стабильная LIVE-картинка при изменении минуты — **Codex** — [PR #891](https://github.com/TRAP44/football-analytics-cloudflare/pull/891) — ревью: Claude.
 
 
 
@@ -37,6 +36,8 @@ _пусто_
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 ## Готово
+
+- [x] Стабильная LIVE-картинка при изменении минуты — **Codex** — [PR #891](https://github.com/TRAP44/football-analytics-cloudflare/pull/891) — ревью: Claude. — слит.
 
 - [x] Убрать подзаголовок «главные N из M · время МСК» из списков бота — **Codex** — [PR #890](https://github.com/TRAP44/football-analytics-cloudflare/pull/890) — ревью: Claude. — слит.
 
@@ -117,6 +118,8 @@ _пусто_
 - [x] Настройка совместной работы Claude + Codex — **Claude** — [PR #793](https://github.com/TRAP44/football-analytics-cloudflare/pull/793)
 
 ## Идеи / найдено по пути
+
+- Матчи любимого клуба: `botTeamIdMatches` держит кеш 120 минут, а `normalizeBotFixtureCard` не переносит счёт; LIVE клуба требует отдельной проверки свежести и данных без увеличения запросов провайдеру — найдено **Codex** при аудите ответов бота.
 
 - [x] Фиксация результатов (`settleBacktestDaily`) в фоновом запуске на GitHub Actions начинается с пустого `memory.provider`: 12.10 до 15:10 МСК её откладывала защита лимитов (`provider_quota_guard`), хотя тариф платный. Стоит перед ней вызывать `ensureProviderSnapshot`, как в предматчевых прогнозах и кривой по ходу матча (#862). → [PR #870](https://github.com/TRAP44/football-analytics-cloudflare/pull/870)
 - [ ] Два предматчевых прогноза (матчи 23.09 и 2.10) до сих пор `pending` — фиксация вчерашнего дня их больше не берёт. Нужна разовая проверка или дозачистка старых `pending`.

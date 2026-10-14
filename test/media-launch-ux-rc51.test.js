@@ -60,8 +60,8 @@ test('favorites toggle directly on the match card and refresh the keyboard',()=>
 });
 
 test('empty favorites state tells the user exactly how to start',()=> {
-  assert.match(digest,/Мои команды пока пусты/);
-  assert.match(digest,/нажмите ☆ рядом с нужным клубом/);
+  assert.match(digest,/⭐ <b>Мои команды<\/b>/);
+  assert.match(digest,/нажмите ☆ рядом с командой/);
   assert.doesNotMatch(digest,/Добавление клубов в избранное перенесём/);
 });
 

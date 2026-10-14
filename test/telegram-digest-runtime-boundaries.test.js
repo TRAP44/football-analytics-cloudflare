@@ -557,3 +557,42 @@ test('photo timeout does not double-send; definite invalid photo falls back to t
     else {await action;assert.deepEqual(sent,['sendPhoto','sendMessage']);}
   }
 });
+
+test('favorite-team empty state stays short and retains the main keyboard',async()=>{
+  const sent=[];
+  const {api}=runtime({telegramApi:async(method,cfg,payload)=>sent.push(payload)});
+  await api.sendBotFavoriteTeams({}, {},7,7);
+  assert.match(sent[0].text,/Мои команды/);
+  assert.match(sent[0].text,/нажмите ☆/);
+  assert.ok(sent[0].text.length<180);
+  assert.deepEqual(sent[0].reply_markup,{inline_keyboard:[]});
+});
+test('favorite club distinguishes finished games from LIVE and retains match actions',async()=>{
+  const sent=[];
+  const {api}=runtime({
+    getFavorites:async()=>[{team_id:40,team_name:'Liverpool'}],
+    getCache:async key=>key.startsWith('bot:team-id-matches:') ? {matches:[
+      {fixtureId:1,homeName:'Liverpool',awayName:'Arsenal',finished:true,date:'2026-10-14T18:00:00Z'},
+      {fixtureId:2,homeName:'Liverpool',awayName:'Chelsea',live:true,status:'2H',elapsed:63,date:'2026-10-14T19:00:00Z'},
+      {fixtureId:3,homeName:'Liverpool',awayName:'Other',live:true,statusLabel:'<b>unexpected</b>'},
+    ]} : null,
+    telegramApi:async(method,cfg,payload)=>sent.push(payload),
+  });
+  await api.sendBotFavoriteTeamMatches({}, {},7,7,40);
+  assert.match(sent[0].text,/Завершён/);
+  assert.match(sent[0].text,/LIVE · 63′/);
+  assert.match(sent[0].text,/&lt;b&gt;unexpected&lt;\/b&gt;/);
+  assert.equal(sent[0].reply_markup.inline_keyboard[0][0].callback_data,'match:menu:1');
+  assert.equal(sent[0].reply_markup.inline_keyboard[1][0].callback_data,'match:menu:2');
+});
+
+test('long favorite-team labels show intentional truncation and preserve their ID',async()=>{
+  const sent=[];
+  const {api}=runtime({getFavorites:async()=>[{team_id:40,team_name:'Liverpool Football Club With An Extremely Long Name'}],
+    telegramApi:async(method,cfg,payload)=>sent.push(payload)});
+  await api.sendBotFavoriteTeams({}, {},7,7);
+  const button=sent[0].reply_markup.inline_keyboard[0][0];
+  assert.match(button.text,/Liverpool/);
+  assert.ok(button.text.endsWith('…'));
+  assert.equal(button.callback_data,'favorite:team:40');
+});
