@@ -10,13 +10,15 @@ import { workerRuntime } from '../test-support/worker-root.js';
 const flights=workerRuntime.getCommonInfrastructureRuntime().withSingleFlight;
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const rows=[];
+const full=process.argv.includes('--full');
+const levels=full?[10,50,100,1000]:[10,50,100];
 function harness(mode) {
   let attempts=0, claims=0, active=0, maxActive=0, cooldown=0;
   const observations=[];
   const gateway=createApiFootballGateway({
-    memory:{provider:{plan:'FREE',minuteLimit:10,minuteRemaining:10,dailyRemaining:90}},
-    providerPlanLimits:{FREE:{minute:10},UNKNOWN:{minute:10}},
-    providerBudgetFloors:{FREE:{minuteReserve:2},UNKNOWN:{minuteReserve:2}},
+    memory:{provider:mode==='pro_unique_requests' ? {plan:'PRO',minuteLimit:300,minuteRemaining:300,dailyLimit:7500,dailyRemaining:7400} : {plan:'FREE',minuteLimit:10,minuteRemaining:10,dailyRemaining:90}},
+    providerPlanLimits:{FREE:{minute:10},UNKNOWN:{minute:10},PRO:{minute:300,second:5}},
+    providerBudgetFloors:{FREE:{minuteReserve:2},UNKNOWN:{minuteReserve:2},PRO:{minuteReserve:18}},
     hasSupabase:()=>true,
     supaRpc:async(_cfg,_name,args)=>{
       if (mode==='database_down') throw new Error('simulated database outage');
@@ -42,22 +44,27 @@ function harness(mode) {
   });
   return {gateway,stats:()=>({attempts,claims,maxActive,cooldown,observations:observations.length})};
 }
-for (const concurrency of [10,50,100]) {
-  for (const scenario of ['shared_request','unique_requests','database_down','timeout','rate_limit','recover']) {
+for (const concurrency of levels) {
+  for (const scenario of ['shared_request','unique_requests','database_down','timeout','rate_limit','recover',...(full?['pro_unique_requests']:[])]) {
     const h=harness(scenario);
     const latencies=[];
     const started=performance.now();
     const results=await Promise.allSettled(Array.from({length:concurrency},async(_,index)=>{
       const at=performance.now();
       try {
-        return await h.gateway.apiFootball('/fixtures',{id:scenario==='unique_requests'?index+1:1},{apiFootballKey:'isolated-dummy-key'});
+        return await h.gateway.apiFootball('/fixtures',{id:['unique_requests','pro_unique_requests'].includes(scenario)?index+1:1},{apiFootballKey:'isolated-dummy-key'});
       } finally {latencies.push(performance.now()-at);}
     }));
     const durationMs=performance.now()-started;
     const fulfilled=results.filter(r=>r.status==='fulfilled').length;
     const errors=results.filter(r=>r.status==='rejected').map(r=>r.reason?.code || 'unknown');
     const stats=h.stats();
-    if (scenario==='unique_requests') {
+    if (scenario==='pro_unique_requests') {
+      const admitted=Math.min(concurrency,h.gateway.distributedProviderMinuteLimit());
+      assert.ok(fulfilled>0 && fulfilled<=admitted,'minute and bounded pacing queue both protect PRO');
+      assert.equal(stats.attempts,fulfilled);
+      assert.ok(errors.every(code=>code==='FOOTBALL_COOLDOWN'));
+    } else if (scenario==='unique_requests') {
       assert.equal(fulfilled,4,'FREE atomic budget must admit exactly four distinct requests');
       assert.equal(stats.attempts,4);
     } else if (scenario==='database_down') {
@@ -79,7 +86,7 @@ for (const concurrency of [10,50,100]) {
       p95Ms:+latencies[Math.ceil(concurrency*.95)-1].toFixed(2),errors:[...new Set(errors)]});
   }
 }
-for (const concurrency of [10,50,100]) {
+for (const concurrency of levels) {
   let state=null,sideEffects=0;
   const coordinator={
     async claim() {

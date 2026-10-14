@@ -332,13 +332,13 @@ function feedRuntime({ stale, probabilities, live = null }) {
   const asked = [];
   const askedLive = [];
   const methods = {
-    ...(live ? { getLatestInPlayProbabilities: async ids => { askedLive.push(ids); if (live instanceof Error) throw live; return live; } } : {}),
+    ...(live ? { getLatestInPlayProbabilities: async ids => { askedLive.push(ids); if(typeof live==='function')return live(ids); if (live instanceof Error) throw live; return live; } } : {}),
     apiFootball: async () => [],
     bumpTelemetry: () => {},
     catalogRank: () => 0,
     getCache: async () => null,
     getStaleCache: async key => (key.startsWith('matches:') ? stale : null),
-    getModelProbabilities: async ids => { asked.push(ids); if (probabilities === 'hang') return new Promise(() => {}); if (probabilities instanceof Error) throw probabilities; return probabilities; },
+    getModelProbabilities: async ids => { asked.push(ids); if(typeof probabilities==='function')return probabilities(ids); if (probabilities === 'hang') return new Promise(() => {}); if (probabilities instanceof Error) throw probabilities; return probabilities; },
     isFootballRateLimitError: () => false,
     isRetryableFootballTransportError: () => false,
     isFinishedStatus: () => false,
@@ -702,4 +702,28 @@ test('lineup repeat and marker-storage failure release the match lock without pr
     assert.equal(calls.lockClaimed,1);assert.equal(calls.lockReleased,1);
     assert.deepEqual([calls.history,calls.quota,calls.reserve,calls.entitlements,calls.growth],[0,0,0,0,0]);
   }
+});
+
+test('1000 concurrent feed reads share one cold prematch and LIVE lookup',async()=>{
+  const stale={date:'2026-10-10',sourceMeta:{provider:'api-football'},matches:[{fixtureId:301,status:'2H',live:true,home:{name:'Home'},away:{name:'Away'}}]};
+  const delay=()=>new Promise(resolve=>setTimeout(resolve,20));
+  const {client,asked,askedLive}=feedRuntime({stale,
+    probabilities:async()=>{await delay();return {301:{home:50,draw:30,away:20}};},
+    live:async()=>{await delay();return {301:{home:70,draw:20,away:10,minute:61}};},
+  });
+  const responses=await Promise.all(Array.from({length:1000},()=>client.apiMatches(new Request('https://worker.test/api/matches?date=2026-10-10'),{})));
+  assert.equal(asked.length,1);assert.equal(askedLive.length,1);
+  assert.ok(responses.every(r=>r.body.matches[0].aiProbabilities.home===50 && r.body.matches[0].aiLiveProbabilities.minute===61));
+});
+
+test('shared hanging probability lookup retains the deadline and short failure cache under burst',async()=>{
+  const stale={date:'2026-10-10',sourceMeta:{provider:'api-football'},matches:[{fixtureId:301,status:'NS'}]};
+  const {client,asked}=feedRuntime({stale,probabilities:'hang'});
+  const start=Date.now();
+  const responses=await Promise.all(Array.from({length:1000},()=>client.apiMatches(new Request('https://worker.test/api/matches?date=2026-10-10'),{})));
+  assert.equal(asked.length,1);
+  assert.ok(Date.now()-start<3000);
+  assert.ok(responses.every(r=>!Object.hasOwn(r.body.matches[0],'aiProbabilities')));
+  await client.apiMatches(new Request('https://worker.test/api/matches?date=2026-10-10'),{});
+  assert.equal(asked.length,1,'negative cache prevents a retry storm');
 });
