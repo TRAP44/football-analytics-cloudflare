@@ -5,6 +5,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FRONTEND_ASSET_REVISION } from '../public/modules/app-runtime.js';
 
 const WIDTHS = [320, 360, 375, 390, 430, 768, 1280];
 const NAV_IDS = ['navMatches', 'navMyTeams', 'navHistory', 'navProfile'];
@@ -14,7 +15,8 @@ const EXPECTED_ASSET_REVISION = (() => {
   const html = fs.readFileSync(path.resolve('public/index.html'), 'utf8');
   const match = html.match(/<meta\s+name=["']frontend-asset-revision["']\s+content=["']([^"']+)["']/i);
   if (!match?.[1]) throw new Error('frontend asset revision is missing from public/index.html');
-  return match[1];
+  if (match[1] !== FRONTEND_ASSET_REVISION) throw new Error('frontend asset revision differs from app runtime');
+  return FRONTEND_ASSET_REVISION;
 })();
 
 function browserExecutable() {
