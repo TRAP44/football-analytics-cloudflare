@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-14 — Codex — CodeQL: версия модулей для smoke
-PR: ветка `codex/validate-smoke-asset-revision`.
+PR: [#886](https://github.com/TRAP44/football-analytics-cloudflare/pull/886), ветка `codex/validate-smoke-asset-revision`.
 Причина: CodeQL main #38556879915 отметил js/file-access-to-http после передачи строки версии из HTML в браузерный import.
 Сделано: URL проверки использует статическую FRONTEND_ASSET_REVISION из app-runtime.js; метаданные HTML только сверяются с ней. Содержимое файла больше не передаётся в browser/CDP. Версионированные импорты сохранены, проверки и rollback не отключались.
 Осталось: пройти CI, затем merge Сергея и автоматический деплой launch115.

@@ -12,9 +12,11 @@ _пусто_
 
 ## В работе
 
-- [ ] Проверять версию smoke по константе приложения, не передавать HTML в браузер — **Codex** — `codex/validate-smoke-asset-revision`.
+_пусто_
 
 ## На ревью
+
+- [ ] Проверять версию smoke по константе приложения — **Codex** — [PR #886](https://github.com/TRAP44/football-analytics-cloudflare/pull/886).
 
 - [ ] Исправить кеширование модулей в post-deploy smoke — **Codex** — [PR #885](https://github.com/TRAP44/football-analytics-cloudflare/pull/885).
 
