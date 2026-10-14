@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-14 — Codex — Исправление проверки деплоя launch115
-PR: ветка `codex/fix-deploy-ui-smoke`.
+PR: [#885](https://github.com/TRAP44/football-analytics-cloudflare/pull/885), ветка `codex/fix-deploy-ui-smoke`.
 Причина: Deploy Production #38554458827 откатил #884 на launch114, поскольку новые браузерные сценарии импортировали компоненты без ?v=, в отличие от приложения. Старый неизменно кешируемый модуль мог не содержать ai-extra-details.
 Сделано: smoke импортирует match-center-view и match-observation с EXPECTED_ASSET_REVISION. Проверки и rollback не ослаблены; public/ не менялся.
 Проверки: check/lint и браузерный smoke 320–1280 px прошли. Воспроизведено на локальном сервере, который возвращает реальный старый компонент по неверсионированному URL: старая проверка падает с тем же AI details must start collapsed, исправленная проходит.

@@ -12,9 +12,11 @@ _пусто_
 
 ## В работе
 
-- [ ] Исправить кеширование модулей в post-deploy smoke — **Codex** — `codex/fix-deploy-ui-smoke`.
+_пусто_
 
 ## На ревью
+
+- [ ] Исправить кеширование модулей в post-deploy smoke — **Codex** — [PR #885](https://github.com/TRAP44/football-analytics-cloudflare/pull/885).
 
 - [ ] Второй этап очистки UI: девять пунктов аудита — **Codex** — [PR #884](https://github.com/TRAP44/football-analytics-cloudflare/pull/884) — ревью: Claude.
 
