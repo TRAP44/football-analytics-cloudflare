@@ -16,9 +16,9 @@ _пусто_
 
 ## На ревью
 
-- [ ] Картинки списков матчей и LIVE с настоящими логотипами — **Codex** — [PR #889](https://github.com/TRAP44/football-analytics-cloudflare/pull/889) — ревью: Claude.
+- [ ] Убрать подзаголовок «главные N из M · время МСК» из списков бота — **Codex** — [PR #890](https://github.com/TRAP44/football-analytics-cloudflare/pull/890) — ревью: Claude.
 
-- [ ] Утренняя подборка: ссылки, цвета команд, одна кнопка — **Codex** — [PR #887](https://github.com/TRAP44/football-analytics-cloudflare/pull/887) — ревью: Claude.
+
 
 
 
@@ -36,6 +36,9 @@ _пусто_
 - [ ] Задача 1: сортировка ближайшего матча любимой команды — **Codex** — [PR #805](https://github.com/TRAP44/football-analytics-cloudflare/pull/805) — ревью: Claude.
 
 ## Готово
+
+- [x] Картинки списков матчей и LIVE с настоящими логотипами — **Codex** — [PR #889](https://github.com/TRAP44/football-analytics-cloudflare/pull/889) — ревью: Claude. — слит.
+- [x] Утренняя подборка: ссылки, цвета команд, одна кнопка — **Codex** — [PR #887](https://github.com/TRAP44/football-analytics-cloudflare/pull/887) — ревью: Claude. — слит.
 
 - [x] Проверять версию smoke по константе приложения — **Codex** — [PR #886](https://github.com/TRAP44/football-analytics-cloudflare/pull/886). — слит, launch115 опубликована.
 - [x] Исправить кеширование модулей в post-deploy smoke — **Codex** — [PR #885](https://github.com/TRAP44/football-analytics-cloudflare/pull/885). — слит, launch115 опубликована.
