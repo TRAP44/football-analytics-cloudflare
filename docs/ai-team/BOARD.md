@@ -12,9 +12,11 @@ _пусто_
 
 ## В работе
 
-- [ ] Картинки списков матчей и LIVE с настоящими логотипами — **Codex** — ветка `codex/bot-match-image-cards`.
+_пусто_
 
 ## На ревью
+
+- [ ] Картинки списков матчей и LIVE с настоящими логотипами — **Codex** — [PR #889](https://github.com/TRAP44/football-analytics-cloudflare/pull/889) — ревью: Claude.
 
 - [ ] Утренняя подборка: ссылки, цвета команд, одна кнопка — **Codex** — [PR #887](https://github.com/TRAP44/football-analytics-cloudflare/pull/887) — ревью: Claude.
 
@@ -135,3 +137,7 @@ _Сюда оба ассистента пишут проблемы и идеи, �
 - [x] **Решение Сергея:** в преданализе Mini App остаются драйверы и подсказки про рынок как входной сигнал модели («Рынок и модель расходятся», «Линия 1X2 отсутствует…», вес «рынок» в модели). Это прозрачность расчёта, а не ставочная подсказка, но слово «рынок» видно пользователю. Оставить как есть или убрать из интерфейса — найдено **Claude**, ждёт решения → Сергей: «убирай оба» (11.10) — [PR #828](https://github.com/TRAP44/football-analytics-cloudflare/pull/828)
 - [x] Ещё упоминания рынка, которые видит пользователь (вне задачи «убрать оба», не трогал): кнопка бота «💹 Проверить рынок» и действие «рынок» в news-impact (`src/news-impact-recovery-runtime.js`), причина свежести «рынок и вероятности могли заметно измениться» (`src/analysis-lifecycle-runtime.js`), темы новостей «… · рынок» (`src/football-news-runtime.js`), метод модели «Рынок, прогноз источника…» (`src/analysis-runtime.js`), ярлыки качества коэффициентов (`src/odds-quality.js`), заметки «Сверить движение коэффициентов…» (`src/analysis-context-runtime.js`; в Mini App уже отфильтрованы). Следующий кандидат на нейтрализацию — найдено **Claude** → Сергей: «убирай» (11.10) — [PR #829](https://github.com/TRAP44/football-analytics-cloudflare/pull/829)
 - [ ] Отдельный выключатель AI-объяснения в runtime controls (сейчас — переменная `AI_EXPLANATION_ENABLED` и общий `analysisEnabled`): нужна колонка в `runtime_controls` + миграция Supabase + админка — найдено **Claude** при задаче 5
+
+## Отложено Codex
+
+- Клубные custom emoji — [PR #888](https://github.com/TRAP44/football-analytics-cloudflare/pull/888) закрыт без merge: у владельца нет Premium/набора; выбран подход с картинками #889.
