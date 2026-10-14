@@ -420,7 +420,8 @@ test('«Матчи» put important tournaments above random lower-league LIVE ga
   const {text,reply_markup}=sent[0].payload;
   assert.ok(text.indexOf('Arsenal')<text.indexOf('Minor'),'featured match goes first');
   assert.match(text,/<b>Премьер-лига · Англия<\/b>\n<b>22:00<\/b> · Arsenal — Chelsea/,'grouped by tournament, time in MSK');
-  assert.match(text,/главные 8 из 11 · время МСК/);
+  assert.doesNotMatch(text,/главные \d+ из \d+|время МСК|<i>/i);
+  assert.match(text,/^⚽ <b>Матчи сегодня<\/b>\n\n<b>Премьер-лига/);
   assert.equal(reply_markup.inline_keyboard[0][0].text,'22:00 Arsenal — Chelsea');
   assert.equal(reply_markup.inline_keyboard[0][0].callback_data,'match:menu:9');
   assert.equal(reply_markup.inline_keyboard.length,9,'8 matches + refresh');
@@ -457,7 +458,8 @@ test('review: important non-featured match survives more than 20 low-priority fi
  });
  await api.sendBotDayMatches({url:'https://app.example/'},{},42,{liveOnly:false});
  assert.match(sent[0].payload.text,/MajorHome/);
- assert.match(sent[0].payload.text,/главные 8 из 22/);
+ assert.doesNotMatch(sent[0].payload.text,/главные \d+ из \d+/);
+ assert.equal(sent[0].payload.reply_markup.inline_keyboard.length,9,'8 matches plus refresh');
 });
 
 test('morning delivery has one news button, and filtered-empty news sends nothing',async()=>{
