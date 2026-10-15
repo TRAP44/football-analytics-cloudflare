@@ -16,6 +16,7 @@ export function createTelegramSearchRuntime(deps = {}) {
     footballSearchHandoffKeyboard,
     freeQuotaHealthy,
     getCache,
+    getFavorites,
     getHistory,
     getStaleCache,
     loadPublicAiTrackRecord,
@@ -572,7 +573,7 @@ export function createTelegramSearchRuntime(deps = {}) {
   // Inline-режим (Сергей 15.10): `@MatchRadarBot Реал` в любом чате Telegram →
   // карточка матча с кнопкой «Открыть AI-разбор». Карточку видят все в чате,
   // кнопка ведёт в бота со ссылкой автора — главный бесплатный канал роста.
-  const INLINE_RESULTS_LIMIT=5;
+  const INLINE_RESULTS_LIMIT=10;
   const INLINE_CACHE_SECONDS=120;
 
   function inlineDate(iso) {
@@ -617,12 +618,19 @@ export function createTelegramSearchRuntime(deps = {}) {
     return {home,draw,away};
   }
 
+  // «Premier League» бывает в десятке стран — добавляем страну, кроме международных турниров.
+  function inlineLeague(match) {
+    const league=safeText(match.league,60,'Футбол');
+    const country=safeText(match.country,40);
+    return country && country!=='Мир' && !league.toLowerCase().includes(country.toLowerCase()) ? `${league} · ${country}` : league;
+  }
+
   function inlineMessageText(match, probabilities) {
     const home=safeText(match.home?.name,80,'Хозяева');
     const away=safeText(match.away?.name,80,'Гости');
     const lines=[
       `⚽ <b>${telegramHtmlEscape(home)} — ${telegramHtmlEscape(away)}</b>`,
-      `${telegramHtmlEscape(safeText(match.league,80,'Футбол'))} · ${telegramHtmlEscape(inlineStatus(match))}`,
+      `${telegramHtmlEscape(inlineLeague(match))} · ${telegramHtmlEscape(inlineStatus(match))}`,
     ];
     if (probabilities && match.live !== true && match.finished !== true) {
       lines.push('',
@@ -644,7 +652,45 @@ export function createTelegramSearchRuntime(deps = {}) {
     }
   }
 
-  async function inlineMatches(rawQuery, cfg) {
+  // Короткие названия турниров, которые набирают люди. Каждый термин должен найтись
+  // в названии турнира или стране матча.
+  const INLINE_LEAGUE_ALIASES=Object.freeze({
+    'рпл':['premier league','россия'],
+    'апл':['апл'],
+    'лч':['лч'],
+    'ле':['ле'],
+    'лк':['лк'],
+    'серия а':['серия a'],
+    'ла лига':['ла лига'],
+    'лига 1':['лига 1'],
+    'бундеслига':['бундеслига'],
+  });
+
+  function inlineLeagueParts(match) {
+    return [match.league, match.leagueShort, match.leagueOriginal, match.country, match.countryRaw]
+      .map(value=>normalizedSearch(value,120))
+      .filter(Boolean);
+  }
+
+  // Турнир или страна: «АПЛ», «Лига Европы», «РПЛ», «Англия», «Premier League».
+  function inlineLeagueMatch(match, query) {
+    const q=normalizedSearch(query,60);
+    if (!q) return false;
+    const parts=inlineLeagueParts(match);
+    const terms=INLINE_LEAGUE_ALIASES[q];
+    if (terms) return terms.every(term=>parts.some(part=>part===term || (term.length>=3 && part.includes(term))));
+    // Двухбуквенные коды — только точное совпадение с коротким названием турнира.
+    if (q.length<3) return normalizedSearch(match.leagueShort,40)===q;
+    return parts.some(part=>part.includes(q));
+  }
+
+  function inlineFavoriteIds(rows) {
+    return new Set(rowsOrEmpty(rows,50)
+      .map(row=>positiveSafeInteger(plainObject(row)?.team_id ?? plainObject(row)?.teamId ?? plainObject(row)?.id))
+      .filter(Boolean));
+  }
+
+  async function inlineMatches(rawQuery, cfg, userId = 0) {
     const query=safeText(rawQuery,60);
     const day=safeText(optionalCall(todayUtc,''),20);
     const key=`matches:${day}:v6-integrity`;
@@ -656,17 +702,30 @@ export function createTelegramSearchRuntime(deps = {}) {
     const stale=!Number.isFinite(refreshed) || Date.now()-refreshed>6*60*1000;
     const dayRows=rowsOrEmpty(payload?.matches,200).map(match=>validMatch(match)).filter(Boolean)
       .map(match=>stale ? {...match,inlineStale:true} : match);
-    // Пустой запрос — главные матчи дня: лента уже отсортирована по важности.
+    const recent=match=>{
+      const kickoff=Date.parse(safeText(match.date,80));
+      return match.inlineStale !== true || !Number.isFinite(kickoff) || Date.now()-kickoff<165*60*1000;
+    };
+    // LIVE поднимаем только у турниров высшего уровня — иначе наверх вылезают
+    // низшие лиги, которые идут прямо сейчас.
+    const eliteLive=match=>match.live===true && plainObject(match.competition)?.tier==='elite';
+    const open=match=>match.finished !== true && recent(match);
+
+    // Пустой запрос: сначала матчи любимых команд пользователя, затем главные
+    // матчи дня в порядке важности ленты.
     if (query.length < 2) {
-      const recent=match=>{
-        const kickoff=Date.parse(safeText(match.date,80));
-        return match.inlineStale !== true || !Number.isFinite(kickoff) || Date.now()-kickoff<165*60*1000;
-      };
-      return dayRows
-        .filter(match=>match.finished !== true && match.lowPriority !== true && recent(match))
-        .sort((left,right)=>Number(right.live===true)-Number(left.live===true))
-        .slice(0,INLINE_RESULTS_LIMIT);
+      const favorites=userId && typeof getFavorites==='function'
+        ? inlineFavoriteIds(await optionalAsync(getFavorites,[],userId,cfg))
+        : new Set();
+      const mine=dayRows.filter(match=>open(match)
+        && (favorites.has(positiveSafeInteger(match.home?.id)) || favorites.has(positiveSafeInteger(match.away?.id))));
+      const top=dayRows
+        .filter(match=>open(match) && match.lowPriority !== true && !mine.includes(match))
+        .sort((left,right)=>Number(eliteLive(right))-Number(eliteLive(left)));
+      return [...mine,...top].slice(0,INLINE_RESULTS_LIMIT);
     }
+
+    // Команда: «Реал», «Real Madrid», «Милан — Интер».
     const parts=botSearchParts(query);
     const pick=searchParts=>dayRows
       .map(match=>({match,score:botMatchScore(match,searchParts)}))
@@ -681,6 +740,15 @@ export function createTelegramSearchRuntime(deps = {}) {
     if (!matches.length && plan.providerQuery && plan.providerQuery!==parts.first) {
       matches=pick({...parts,query:plan.providerQuery,first:plan.providerQuery});
     }
+    // Турнир или страна: все его матчи сегодня — сначала идущие, затем по времени.
+    if (!matches.length) {
+      matches=dayRows
+        .filter(match=>inlineLeagueMatch(match,parts.query))
+        .sort((left,right)=>Number(right.live===true)-Number(left.live===true)
+          || Number(left.finished===true)-Number(right.finished===true)
+          || safeText(left.date,80).localeCompare(safeText(right.date,80)));
+    }
+    // Команда, которая сегодня не играет: ближайший матч у источника данных.
     if (!matches.length) matches=await botRemoteTeamMatches(parts,cfg);
     return matches.slice(0,INLINE_RESULTS_LIMIT);
   }
@@ -691,7 +759,7 @@ export function createTelegramSearchRuntime(deps = {}) {
     const userId=positiveSafeInteger(source?.from?.id);
     if (!queryId || !userId) throw inputError('Inline-запрос Telegram некорректен.','TELEGRAM_INLINE_INVALID');
 
-    const matches=await inlineMatches(source.query,cfg).catch(()=>[]);
+    const matches=await inlineMatches(source.query,cfg,userId).catch(()=>[]);
     const referralCode=typeof ensureReferralCode==='function'
       ? safeText(await optionalAsync(ensureReferralCode,'',userId,cfg),64)
       : '';
@@ -712,7 +780,7 @@ export function createTelegramSearchRuntime(deps = {}) {
         type:'article',
         id:`m${fixtureId}`,
         title:`${home} — ${away}`,
-        description:`${safeText(match.league,60,'Футбол')} · ${inlineStatus(match).replace(/^🗓 /,'')}`,
+        description:`${inlineLeague(match)} · ${inlineStatus(match).replace(/^🗓 /,'')}`,
         ...(thumbnail ? {thumbnail_url:thumbnail} : {}),
         input_message_content:{
           message_text:safeMessageText(inlineMessageText(match,inlineProbabilities(analysis))),

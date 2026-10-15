@@ -20,17 +20,22 @@ function mskLabel(iso) {
   return `${day(date) === day(new Date()) ? 'сегодня' : day(date)}, ${time} МСК`;
 }
 const day = [
-  { fixtureId: 11, date: at(120), league: 'La Liga', live: false, finished: false,
+  { fixtureId: 11, date: at(120), league: 'Ла Лига', leagueShort: 'Ла Лига', country: 'Испания', live: false, finished: false,
     home: { id: 541, name: 'Real Madrid', logo: 'https://media.example/541.png' }, away: { id: 529, name: 'Barcelona' } },
-  { fixtureId: 12, date: at(-63), league: 'Serie A', live: true, finished: false, statusLabel: "63'",
+  { fixtureId: 12, date: at(-63), league: 'Серия A', leagueShort: 'Серия A', country: 'Италия', live: true, finished: false, statusLabel: "63'", competition: { tier: 'elite' },
     score: { home: 2, away: 1 }, home: { id: 489, name: 'AC Milan' }, away: { id: 497, name: 'AS Roma' } },
   { fixtureId: 13, date: at(-240), league: 'Premier League', live: false, finished: true,
     score: { home: 0, away: 0 }, home: { id: 42, name: 'Arsenal' }, away: { id: 49, name: 'Chelsea' } },
   { fixtureId: 14, date: at(30), league: 'U19 League', live: false, finished: false, lowPriority: true,
     home: { id: 7, name: 'Real Madrid U19' }, away: { id: 8, name: 'Getafe U19' } },
+  // Низшая лига, идёт сейчас: в главных матчах дня не поднимается наверх.
+  { fixtureId: 15, date: at(-30), league: 'Premier League', country: 'Уганда', live: true, finished: false, statusLabel: "30'",
+    competition: { tier: 'standard' }, score: { home: 0, away: 0 }, home: { id: 90, name: 'Kataka' }, away: { id: 91, name: 'Vipers' } },
+  { fixtureId: 16, date: at(200), league: 'Premier League', country: 'Россия', live: false, finished: false,
+    competition: { tier: 'major' }, home: { id: 596, name: 'Zenit' }, away: { id: 597, name: 'Spartak Moscow' } },
 ];
 
-function setup({ cache = {}, plan = null, remote = [], staleFeed = null } = {}) {
+function setup({ cache = {}, plan = null, remote = [], staleFeed = null, favorites = [] } = {}) {
   const calls = [];
   const deepLinks = [];
   const feedKey = `matches:${DAY}:v6-integrity`;
@@ -47,6 +52,7 @@ function setup({ cache = {}, plan = null, remote = [], staleFeed = null } = {}) 
     footballSearchHandoffKeyboard: () => null,
     freeQuotaHealthy: () => true,
     getCache: async key => store[key] ?? null,
+    getFavorites: async () => favorites,
     getHistory: async () => [],
     getStaleCache: async key => (key === feedKey ? staleFeed : null),
     loadPublicAiTrackRecord: async () => ({ available: false }),
@@ -80,7 +86,7 @@ test('inline query returns a shareable match card with the author referral link'
   assert.equal(card.type, 'article');
   assert.equal(card.title, 'Real Madrid — Barcelona');
   assert.equal(card.thumbnail_url, 'https://media.example/541.png');
-  assert.equal(card.description, `La Liga · ${mskLabel(day[0].date)}`);
+  assert.equal(card.description, `Ла Лига · Испания · ${mskLabel(day[0].date)}`);
   const text = card.input_message_content.message_text;
   assert.match(text, /<b>Real Madrid — Barcelona<\/b>/);
   assert.match(text, /Real Madrid 52% · ничья 25% · Barcelona 23%/);
@@ -95,7 +101,7 @@ test('empty inline query shows the main matches of the day: LIVE first, no finis
   const { calls, ask } = setup();
   await ask('');
   const ids = calls[0].payload.results.map(r => r.id);
-  assert.deepEqual(ids, ['m12', 'm11']);
+  assert.deepEqual(ids, ['m12', 'm11', 'm15', 'm16']);
   const live = calls[0].payload.results[0];
   assert.match(live.input_message_content.message_text, /🔴 LIVE 63&#39; · 2:1/);
   // Для идущего матча довматчевые проценты не показываются.
@@ -137,8 +143,29 @@ test('expired feed cache falls back to the day snapshot without stale minute or 
   const { calls, ask } = setup({ staleFeed: { matches: day, refreshedAt: at(-30) } });
   await ask('');
   const results = calls[0].payload.results;
-  assert.deepEqual(results.map(r => r.id), ['m12', 'm11']);
+  assert.deepEqual(results.map(r => r.id), ['m12', 'm11', 'm15', 'm16']);
   const live = results[0].input_message_content.message_text;
-  assert.match(live, /Serie A · 🔴 идёт сейчас/);
+  assert.match(live, /Серия A · Италия · 🔴 идёт сейчас/);
   assert.doesNotMatch(live, /2:1|63/);
+});
+
+test('main matches of the day: low-tier LIVE is not lifted above the top games; country disambiguates the league', async () => {
+  const { calls, ask } = setup();
+  await ask('');
+  const ids = calls[0].payload.results.map(r => r.id);
+  assert.deepEqual(ids, ['m12', 'm11', 'm15', 'm16']);
+  const { calls: found, ask: search } = setup();
+  await search('Kataka');
+  assert.match(found[0].payload.results[0].description, /^Premier League · Уганда · /);
+});
+
+test('people find what they need: own teams first, then tournaments and countries by their usual names', async () => {
+  const { calls, ask } = setup({ favorites: [{ team_id: 596 }] });
+  await ask('');
+  assert.equal(calls[0].payload.results[0].id, 'm16');
+  for (const [query, expected] of [['рпл', ['m16']], ['Серия А', ['m12']], ['Испания', ['m11']], ['Ла Лига', ['m11']]]) {
+    const { calls: found, ask: search } = setup();
+    await search(query);
+    assert.deepEqual(found[0].payload.results.map(r => r.id), expected, query);
+  }
 });
