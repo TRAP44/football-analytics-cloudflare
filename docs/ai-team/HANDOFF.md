@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-15 — Claude — «Поделиться матчем» в боте с реферальной ссылкой
-PR: ветка `claude/bot-share-match-referral` (ссылка на PR — на доске).
+PR: [PR #914](https://github.com/TRAP44/football-analytics-cloudflare/pull/914), ветка `claude/bot-share-match-referral`.
 Сделано: `sendBotFixtureShareCard` / `fixtureShareCardText` (`publisher-runtime.js`) — карточка для пересылки: команды, «турнир, страна», время МСК или «Идёт матч 61′ · 1:0» / «Матч завершён · 2:2», AI-вывод только для home/away/double_* (до матча), личная ссылка `fx<id>__social__match_share__telegram__r<код>` в тексте и две URL-кнопки; кнопка «🧠 Открыть самому» (web_app) убрана — в пересланном сообщении она не работает. Обработчик `match:share` отвечает на нажатие после отправки карточки («Перешлите карточку друзьям — ссылка в ней ваша»). «↗ Поделиться матчем» добавлена в `footballSearchHandoffKeyboard` (будущий матч из поиска). Зависимость `telegramFullAnalysisUrl` из publisher-runtime убрана.
 Решения: в базе на 15.10 — 3 `referral_code_created` (из Профиля), 0 `share_created` из бота и 0 `referral_open`: цепочка атрибуции на сервере была готова, мешал UX карточки. Атрибуция и награды не менялись (growth_events + `grant_referral_rewards` из #868): награда только новому пользователю после первого разбора.
 Проверки: Node 22 check/lint, release 582/582, полный набор — только bot-match-card (нет `@resvg/resvg-wasm` в песочнице, как на main). Новый тест `test/bot-share-match-referral.test.js`: ссылка с кодом поделившегося, только URL-кнопки, без ставочных рынков, LIVE/итог без устаревшего вывода, друг → тот же матч и приглашение за поделившимся, повтор/самоприглашение не засчитываются.
