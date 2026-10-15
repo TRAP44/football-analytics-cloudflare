@@ -465,6 +465,11 @@ export function createTelegramBotUiRuntime(deps = {}) {
         web_app:{url:full},
       }]);
     }
+    // Сергей 15.10: «Поделиться матчем» — во всех карточках матча.
+    rows.push([{
+      text:'↗ Поделиться матчем',
+      callback_data:`match:share:${fixtureId}`,
+    }]);
 
     const search=trustedSearchUrl(request,searchUrl);
     if (search) {

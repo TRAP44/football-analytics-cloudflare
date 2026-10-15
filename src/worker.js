@@ -919,7 +919,6 @@ function getPublisherRuntime() {
       releaseChannelPublishIdempotency,
       telegramApi,
       telegramCampaignDeepLink,
-      telegramFullAnalysisUrl,
       telegramHtmlEscape,
       telegramShareComposerUrl
     });

@@ -628,9 +628,12 @@ export function createTelegramUpdateProcessor(deps) {
     if (callbackChatId && shareAction) {
       const fixtureId=positiveInteger(shareAction[1]);
       if (!fixtureId) return json({ok:false,error:'fixture_id_invalid'},400);
-      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Готовлю ссылку…'}).catch(()=>null);
+      // Отвечаем на нажатие сразу, до работы с базой и Telegram: иначе при медленном ответе
+      // нажатие истекает, человек жмёт ещё раз и получает две карточки (ревью Codex #914).
+      // Без обещания «ссылка ваша» — реф-код может временно не создаться.
+      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Готовлю карточку — перешлите её друзьям'}).catch(()=>null);
       try { await sendBotFixtureShareCard(request,cfg,callbackUserId,callbackChatId,fixtureId); }
-      catch { await telegramApi('sendMessage',cfg,{chat_id:callbackChatId,text:'Не удалось подготовить ссылку на этот матч.'}).catch(()=>null); }
+      catch { await telegramApi('sendMessage',cfg,{chat_id:callbackChatId,text:'Не удалось подготовить карточку этого матча. Попробуйте ещё раз.'}).catch(()=>null); }
       return json({ok:true});
     }
     const matchAction = data.match(/^match:(menu|verdict|referee|squads|market|refresh|review):(\d+)$/);

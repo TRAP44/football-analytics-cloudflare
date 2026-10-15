@@ -435,3 +435,18 @@ test('bot tariffs and notifications send no Mini App button outside private chat
     assert.ok(message.text.length>0);
   }
 });
+
+test('share tap is acknowledged before remote work and never promises a personal link (Codex #914)', async () => {
+  const calls=[];
+  const processor=createTelegramUpdateProcessor(deps({
+    telegramApi:(method,_cfg,payload)=>{ calls.push({method,payload}); return {ok:true}; },
+    sendBotFixtureShareCard:async()=>{ calls.push({method:'shareCard'}); throw new Error('slow storage'); },
+  }));
+  const result=await processor(request,{},{
+    callback_query:{id:'cb-share',data:'match:share:1234567',from:{id:7},message:{chat:{id:8}}},
+  });
+  assert.equal(result.status,200);
+  assert.deepEqual(calls.map(call=>call.method),['answerCallbackQuery','shareCard','sendMessage']);
+  assert.doesNotMatch(calls[0].payload.text,/ваша/);
+  assert.match(calls[2].payload.text,/Не удалось подготовить карточку/);
+});
