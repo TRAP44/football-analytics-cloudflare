@@ -14,6 +14,14 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-15 — Codex — Пакетная синхронизация профилей при первом входе
+PR: [PR #906](https://github.com/TRAP44/football-analytics-cloudflare/pull/906), ветка `codex/analysis-user-write-batching`.
+Сделано: profile-only batch до100/2мс, точная connection identity/snapshot, ожидание persistence до userSyncAt. Ошибка batch вызывает независимые individual writes. Telegram validation, квоты/оплата, singleflight/TTL сохранены. SQL harness проверяет обновление имени PRO-пользователя без изменения plan/subscription_until.
+Замер: main #902 p95 ленты1926мс, пакеты772/933/860мс, REST10002→102–104. Все HTTP200/DB200–201; SQL users10000/history1000/events1160, paidProfilePreserved=true. Cached p95 не улучшился (3973→4728/4331/4903), цель2с не достигнута. Подробно docs/USER_PROFILE_LOAD_RU.md.
+Проверки: Node22 npm ci/check/lint/security:privileged, release581/581, полный набор4146/4146, Worker dry-run; три настоящих DB ramp. #902 перенесён в Готово; открытый Claude #905 не пересекает код, только coordination docs.
+CI: после переноса #905 выявлена гонка readiness — init PostgreSQL временно принимал Unix-socket SQL перед штатным restart. Обе локальные проверки теперь ждут TCP 127.0.0.1, доступный только у окончательного процесса.
+Осталось / внимание: Node/PG не deployed Workers/hosted Nano; production capacity не подтверждена. Batch локален isolate; при отказе storage добавляется failed batch перед fallback. Public/SQL миграции не менялись.
+
 ## 2026-10-15 — Claude — «Перелом матча» удалён целиком
 PR: [PR #905](https://github.com/TRAP44/football-analytics-cloudflare/pull/905), ветка `claude/remove-channel-swing-posts`.
 Сделано: удалены `src/match-swing-job.js` и его тест, задание `match_swing` в `scheduled-jobs.js`, проводка в `worker.js`/`operational-orchestration-runtime.js`, конфиги `matchSwingEnabled`/`channelSwingPostEnabled` и переменные `MATCH_SWING_ENABLED`/`CHANNEL_SWING_POST_ENABLED` (wrangler, .env.example), упоминание в тексте настроек бота. В «Бэклог» записаны идеи 1, 2, 3, 5 по порядку.

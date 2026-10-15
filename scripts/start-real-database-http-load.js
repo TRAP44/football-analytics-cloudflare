@@ -24,7 +24,7 @@ function execute(command,args,{input='',env=process.env,quiet=false}={}) {
   });
 }
 const docker=(args,options={})=>execute('docker',['--host=unix:///var/run/docker.sock',...args],{...options,env:dockerEnv});
-const query=sql=>docker(['exec','-i','-u','postgres',database,'psql','-X','-q','-A','-t','-v','ON_ERROR_STOP=1','-d','isolated'],{input:sql});
+const query=sql=>docker(['exec','-i','-u','postgres',database,'psql','-h','127.0.0.1','-X','-q','-A','-t','-v','ON_ERROR_STOP=1','-d','isolated'],{input:sql});
 const created=[];let gateway;
 try {
   await docker(['network','create',network]);created.push(['network','rm',network]);
@@ -72,11 +72,16 @@ try {
   assert.ok(ready,'Disposable PostgREST did not become healthy.');
   const file=join(directory,'status.json');
   writeFileSync(file,JSON.stringify({API_URL:'http://127.0.0.1:54321',SERVICE_ROLE_KEY:token}),{mode:0o600});
+  // Synthetic paid user: profile upserts must never overwrite billing fields.
+  await query("insert into public.users(telegram_id,first_name,plan,subscription_until) values (700000,'Before load','PRO','2099-01-01T00:00:00Z');");
   await execute(process.execPath,['scripts/run-real-database-http-load.js',file],{quiet:true}).then(output=>console.log(output));
   const evidence=JSON.parse(await query("select json_build_object('users', (select count(*) from public.users where telegram_id between 700000 and 709999),'history',(select count(*) from public.analysis_history where telegram_id between 700000 and 709999),'fullAiEvents',(select count(*) from public.growth_events where telegram_id between 700000 and 709999 and event_name='full_ai'))::text;"));
   assert.equal(Number(evidence.users),10000,'HTTP load must persist all synthetic users in real PostgreSQL.');
   assert.ok(Number(evidence.history)>=1000,'Cached analyses must persist real history rows.');
   assert.equal(Number(evidence.fullAiEvents),1160,'Deferred analytics must persist all events from the four ramp steps.');
+  const paidProfilePreserved=await query("select plan='PRO' and subscription_until='2099-01-01T00:00:00Z'::timestamptz and first_name='Load' from public.users where telegram_id=700000;");
+  assert.equal(paidProfilePreserved,'t','Profile synchronization must preserve paid subscription fields and update profile data.');
+  evidence.paidProfilePreserved=true;
   const summaryFile='load-results/real-database-http-summary.json';
   const summary=JSON.parse(readFileSync(summaryFile,'utf8'));
   summary.databaseEvidence={...evidence,migrations:plan.length,schemaFingerprint:fingerprint,postgres:'16.11',rest:'16.4',memoryMiB:512,cpuLimit:1,maxConnections:60,restPool:20};

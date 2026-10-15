@@ -13,7 +13,7 @@ const dockerEnv={...process.env};
 for(const key of ['DOCKER_HOST','DOCKER_CONTEXT','DOCKER_TLS','DOCKER_TLS_VERIFY','DOCKER_CERT_PATH'])delete dockerEnv[key];
 const image='postgres:16.11-bookworm@sha256:a2420e9555e2224583fe84d0bb3f0b967e69354ae3a0be55a9c14e251388c4eb';
 async function docker(args){return (await execute('docker',['--host=unix:///var/run/docker.sock',...args],{env:dockerEnv,timeout:60000,maxBuffer:2*1024*1024})).stdout.trim();}
-async function query(sql){return docker(['exec','-u','postgres',name,'psql','-X','-q','-A','-t','-v','ON_ERROR_STOP=1','-d','isolated','-c',sql]);}
+async function query(sql){return docker(['exec','-u','postgres',name,'psql','-h','127.0.0.1','-X','-q','-A','-t','-v','ON_ERROR_STOP=1','-d','isolated','-c',sql]);}
 function definition(file,fn){const source=readFileSync(file,'utf8');const start=source.indexOf(`create or replace function public.${fn}(`);assert.ok(start>=0);const end=source.indexOf('\n$$;',start);assert.ok(end>start);return source.slice(start,end+4);}
 let created=false;
 try {
