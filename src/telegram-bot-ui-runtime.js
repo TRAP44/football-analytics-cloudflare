@@ -242,19 +242,12 @@ export function createTelegramBotUiRuntime(deps = {}) {
     return url.toString();
   }
 
-  function footballBotKeyboard(request, chatId = 0) {
-    // Сергей 15.10: «Матчи» и «LIVE» открывают приложение (текстовые списки в чате
-    // убраны), «Новости» и «Тарифы» убраны из меню. Клуб пишут прямо в чат.
-    // Кнопки web_app в клавиатуре Telegram разрешает только в личке (ревью Codex #917):
-    // без id личного чата (> 0) — обычные текстовые кнопки.
-    const privateChat=Number(chatId)>0;
-    const button=(text,params)=>{
-      const url=privateChat ? generatedWebAppUrl(request,telegramWebAppUrl,params) : '';
-      return url ? {text,web_app:{url}} : {text};
-    };
+  // Сергей 15.10: в меню только то, чего нет в кнопке приложения рядом с полем
+  // ввода. «Матчи» и «LIVE» убраны (дублировали её), клуб пишут прямо в чат.
+  // Параметры оставлены для совместимости вызовов.
+  function footballBotKeyboard(_request, _chatId = 0) {
     return {
       keyboard:[
-        [button('⚽ Матчи',{}),button('🔴 LIVE',{filter:'live'})],
         [{text:'⭐ Мои команды'},{text:'⚙️ Уведомления'}],
       ],
       resize_keyboard:true,
@@ -1066,8 +1059,8 @@ export function createTelegramBotUiRuntime(deps = {}) {
     );
 
     return {
-      // Поиск — текстом в чат; меню из четырёх кнопок (Сергей 15.10).
-      pass:mainButtons.includes('⚽ Матчи') && !mainButtons.includes('📰 Новости') && mainButtons.length===4
+      // Поиск — текстом в чат; меню из двух кнопок (Сергей 15.10).
+      pass:mainButtons.includes('⭐ Мои команды') && !mainButtons.includes('⚽ Матчи') && mainButtons.length===2
         && Boolean(searchSelect)
         && handoffOk
         && favoriteCallbacks.has('favorite:toggle:101:12345')

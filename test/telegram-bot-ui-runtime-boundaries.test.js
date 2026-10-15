@@ -534,12 +534,11 @@ test('Telegram reply keyboards retain essential actions and never embed raw HTML
   assert.equal(more.is_persistent,true);
   const homeLabels=home.keyboard.flat().map(button=>button.text);
   const moreLabels=more.keyboard.flat().map(button=>button.text);
-  assert.ok(homeLabels.includes('⚽ Матчи'));
-  assert.ok(homeLabels.includes('🔴 LIVE'));
+  assert.ok(homeLabels.includes('⭐ Мои команды'));
   assert.ok(moreLabels.includes('⚙️ Уведомления'));
-  // Сергей 15.10: «Новости» и «Тарифы» убраны из меню.
-  assert.ok(!homeLabels.includes('📰 Новости') && !homeLabels.includes('💎 Тарифы'));
-  assert.equal(home.keyboard.flat().length,4,'one menu of four buttons');
+  // Сергей 15.10: «Матчи», «LIVE», «Новости», «Тарифы» убраны из меню.
+  for (const label of ['⚽ Матчи','🔴 LIVE','📰 Новости','💎 Тарифы']) assert.ok(!homeLabels.includes(label),label);
+  assert.equal(home.keyboard.flat().length,2,'one menu of two buttons');
   assert.deepEqual(more,home,'no separate «Ещё» menu');
   for(const label of [...homeLabels,...moreLabels]){
     assert.doesNotMatch(label,/<script|<iframe/i);

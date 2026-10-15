@@ -217,18 +217,11 @@ test('Telegram hub is button-first and full analysis deep-links directly to the 
   assert.deepEqual(
     keyboard.keyboard.map(row => row.map(button => button.text)),
     [
-      ['⚽ Матчи', '🔴 LIVE'],
       ['⭐ Мои команды', '⚙️ Уведомления'],
     ],
   );
-  // Сергей 15.10: «Матчи» и «LIVE» открывают приложение, а не список в чате.
-  const [matchesButton, liveButton] = keyboard.keyboard[0];
-  assert.equal(new URL(matchesButton.web_app.url).searchParams.get('filter'), null);
-  assert.equal(new URL(liveButton.web_app.url).searchParams.get('filter'), 'live');
-  // В группах Telegram не принимает web_app в клавиатуре — там обычные кнопки.
-  const group = bot.footballBotKeyboard(request, -100123);
-  assert.ok(group.keyboard.flat().every(button => !button.web_app));
-  assert.ok(bot.footballBotKeyboard(request).keyboard.flat().every(button => !button.web_app));
+  // Сергей 15.10: «Матчи» и «LIVE» убраны — дублировали кнопку приложения.
+  assert.ok(keyboard.keyboard.flat().every(button => !button.web_app));
   assert.equal(keyboard.is_persistent, true);
 
   const actions = bot.footballMatchActionKeyboard(request, {
@@ -334,7 +327,7 @@ test('Telegram home safely personalizes the greeting and returns the current hub
   assert.equal(sent[0].payload.parse_mode, 'HTML');
   assert.match(sent[0].payload.text, /Привет, <b>&lt;Alex &amp; Co&gt;<\/b>/);
   assert.doesNotMatch(sent[0].payload.text, /<Alex & Co>/);
-  assert.equal(sent[0].payload.reply_markup.keyboard[0][0].text, '⚽ Матчи');
+  assert.equal(sent[0].payload.reply_markup.keyboard[0][0].text, '⭐ Мои команды');
 });
 
 test('Telegram update handler accepts current and legacy button labels during rollout', () => {
