@@ -161,3 +161,25 @@ test('new boards go before edits so the per-run cap reaches everyone', async () 
   await run([row('1H', 20, 1, 0)]);
   assert.deepEqual(calls.map(c => `${c.method}:${c.payload.chat_id}`), ['sendMessage:12', 'editMessageText:11']);
 });
+
+test('Telegram rate limit clears the «sending» mark and stops the run, so the user gets the board later', async () => {
+  const limited = Object.assign(new Error('Too Many Requests'), { status: 429, code: 'TELEGRAM_RATE_LIMIT' });
+  const favorites = [{ telegram_id: 11, team_id: 596 }, { telegram_id: 12, team_id: 596 }];
+  const store = new Map([['provider-fixtures:2026-10-15:v1', { fixtures: [row('1H', 10, 0, 0)] }]]);
+  let sends = 0;
+  const job = createFavoriteScoreboardJob({
+    clock: () => NOW,
+    filterRecipients: async rows => ({ rows }),
+    getCache: async key => store.get(key) ?? null,
+    hasSupabase: () => true,
+    setCache: async (key, _id, payload) => { store.set(key, payload); return true; },
+    supaSelectPaged: async () => ({ rows: favorites }),
+    telegramApi: async () => { sends += 1; if (sends === 1) throw limited; return { message_id: 500 + sends }; },
+  });
+  const summary = await job.processFavoriteScoreboards({}, new Date(NOW));
+  assert.equal(summary.stopped, 'rate_limited');
+  assert.equal(sends, 1);
+  assert.deepEqual(store.get('scoreboard:7:v1').users, {});
+  await job.processFavoriteScoreboards({}, new Date(NOW));
+  assert.equal(Object.keys(store.get('scoreboard:7:v1').users).length, 2);
+});

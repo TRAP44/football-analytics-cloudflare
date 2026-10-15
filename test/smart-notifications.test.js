@@ -487,3 +487,29 @@ test('capability snapshots are frozen and enforce FREE versus paid categories',(
     preferences:{enabled:false,players:true},
   }).reason,'preference_master_disabled');
 });
+
+test('users with a live scoreboard for the match get no separate goal alert (one message per match)', async () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse('2026-10-01T12:20:00.000Z');
+  try {
+    const rows = [1, 2].map(id => ({ telegram_id:id, fixture_id:100, fixture_date:'2026-10-01T12:00:00.000Z', home_name:'Alpha', away_name:'Beta', enabled:true }));
+    const deliveries = [];
+    const service = createSmartNotificationService({
+      hasSupabase:()=>true,
+      loadRuntimeControls:async()=>({value:{remindersEnabled:true}}),
+      supaSelectPaged:async()=>({rows,truncated:false}),
+      filterRecipients:async input=>({rows:input,blockedByPreference:0,blockedByEntitlement:0}),
+      loadFavoritePlayersByUser:async()=>new Map(),
+      loadLiveNotificationSnapshot:async()=>({ trusted:true, stale:false, events:[{minute:20,extra:0,type:'Goal',detail:'Normal Goal',teamId:11,playerId:10,eventKey:'20:goal:10'}] }),
+      loadLineupSnapshot:async()=>({confirmed:false}),
+      getAnalysisTimelineSnapshots:async()=>[],
+      loadScoreboardRecipients:async fixtureId=>new Set(fixtureId===100 ? [1] : []),
+      deliverSmartNotification:async input=>{ deliveries.push(input); return {state:'sent'}; },
+      recordOpsEvent:async()=>{},
+    });
+    await service.processSmartNotifications({botToken:'token'});
+    assert.deepEqual(deliveries.filter(d=>d.eventType==='match.goal').map(d=>d.row.telegram_id), [2]);
+  } finally {
+    Date.now = originalNow;
+  }
+});

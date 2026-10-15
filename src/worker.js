@@ -43,7 +43,7 @@ import { createReferralRewardsRuntime } from './referral-rewards-runtime.js';
 import { createPrematchPredictionJob } from './prematch-prediction-job.js';
 import { createProviderStatusProbe } from './provider-status-probe.js';
 import { createInPlayTimelineJob } from './in-play-timeline-job.js';
-import { createFavoriteScoreboardJob } from './favorite-scoreboard-job.js';
+import { createFavoriteScoreboardJob, scoreboardRecipientIds } from './favorite-scoreboard-job.js';
 import { createBillingRuntime } from './billing-runtime.js';
 import { createBillingApiRuntime } from './billing-api-runtime.js';
 import { createClientTelemetryRuntime } from './client-telemetry-runtime.js';
@@ -615,6 +615,7 @@ const {
   telegramDedupeObservabilitySelfTest,
   enforceTelegramBurst,
 } = createServiceWiringRuntime({
+  loadScoreboardRecipients: (fixtureId, cfg) => scoreboardRecipientIds(getCache, fixtureId, cfg),
   SMART_NOTIFICATION_POLICY,
   bumpTelemetry: (...args) => bumpTelemetry(...args),
   bytesToHex,

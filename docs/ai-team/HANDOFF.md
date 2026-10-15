@@ -18,7 +18,7 @@ PR: ссылка или ветка
 PR: ветка `claude/favorite-live-scoreboard`.
 Сделано: `src/favorite-scoreboard-job.js` — задача `favorite_scoreboard` в scheduled-jobs после `in_play_timeline`. Берёт идущие (1H/HT/2H/ET/BT/P) и завершённые за 4 ч (FT/AET/PEN) матчи из кеша `provider-fixtures:<день>:v1` (вчерашний — в первые 4 ч UTC), болельщиков из `favorites` (`team_id in (...)`), фильтр `filterSmartNotificationRecipients(rows,'match.goal')`. Одна запись кеша `scoreboard:<fixture>:v1` с message_id каждого получателя: новое сообщение только для идущего матча, дальше `editMessageText` при изменении текста, после свистка — итог и `done`. 403/заблокировал бота — `blocked`, больше не пишем. Потолок 600 сообщений за запуск. Кнопка — `match:menu` (до конца) / `match:review` (итог). `FAVORITE_SCOREBOARD_ENABLED` (по умолчанию true) в `.env.example`.
 Решения: без новых запросов к источнику и без миграций; авторы голов не показываются (в пакете матчей дня нет событий) — можно добавить отдельно.
-Осталось / внимание: пользователь с напоминанием на матч получит и табло, и уведомление о голе — при жалобах убрать дубль.
+Осталось / внимание: у кого идёт табло по матчу, отдельное уведомление о голе (`match.goal`) не отправляется (`loadScoreboardRecipients` в smart-notification-service). Лимит Telegram 429 — отметка снимается, запуск останавливается.
 Проверки: check/lint/verify:release, release, review-tail, isolated-load, полный набор (только bot-match-card — нет resvg). Новый test/favorite-scoreboard-job.test.js.
 
 ## 2026-10-15 — Claude — Бот: выбор любимых команд после /start

@@ -63,6 +63,19 @@ export function scoreboardFixture(row, nowMs = Date.now()) {
   };
 }
 
+// Кому по матчу уже идёт табло — им не нужно отдельное уведомление о голе
+// (ревью Codex #919: одно сообщение на матч).
+export async function scoreboardRecipientIds(getCache, fixtureId, cfg) {
+  const id = positiveId(fixtureId);
+  if (!id || typeof getCache !== 'function') return new Set();
+  let state = null;
+  try { state = plainObject(await getCache(SCOREBOARD_CACHE_KEY(id), cfg)); } catch { return new Set(); }
+  return new Set(Object.entries(plainObject(state?.users) || {})
+    .filter(([, board]) => plainObject(board) && !board.blocked)
+    .map(([userId]) => positiveId(Number(userId)))
+    .filter(Boolean));
+}
+
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
 }
@@ -251,10 +264,12 @@ export function createFavoriteScoreboardJob(deps = {}) {
           if (error?.status === 403 || /blocked|deactivated|chat not found/i.test(message)) {
             boards[userId] = { blocked: true, at };
             summary.blocked += 1;
-          } else if (error?.code === 'TELEGRAM_REJECTED') {
-            // Telegram точно отклонил — сообщения нет, можно попробовать в следующий раз.
+          } else if (error?.code === 'TELEGRAM_REJECTED' || error?.code === 'TELEGRAM_RATE_LIMIT' || error?.status === 429) {
+            // Telegram точно не принял сообщение — снимаем отметку, попробуем позже.
             delete boards[userId];
             summary.failed += 1;
+            // Лимит Telegram: дальше в этом запуске не шлём (ревью Codex #919).
+            if (error?.code === 'TELEGRAM_RATE_LIMIT' || error?.status === 429) summary.stopped = 'rate_limited';
           } else {
             // Тайм-аут или сеть: сообщение могло уйти — отметку оставляем, без повтора.
             summary.failed += 1;
@@ -265,6 +280,7 @@ export function createFavoriteScoreboardJob(deps = {}) {
           summary.stopped = 'checkpoint_failed';
           break;
         }
+        if (summary.stopped) break;
         continue;
       }
       const board = plainObject(boards[userId]) || {};
@@ -288,12 +304,16 @@ export function createFavoriteScoreboardJob(deps = {}) {
           summary.failed += 1;
         } else {
           summary.failed += 1;
+          if (error?.code === 'TELEGRAM_RATE_LIMIT' || error?.status === 429) {
+            summary.stopped = 'rate_limited';
+            break;
+          }
           continue;
         }
       }
       entry.changed = true;
     }
-    if (!summary.stopped) {
+    if (summary.stopped !== 'checkpoint_failed') {
       for (const entry of states.values()) {
         if (entry.changed && !await saveBoards(entry.match.fixtureId, entry.boards, cfg)) summary.failed += 1;
       }
