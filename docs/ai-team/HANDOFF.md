@@ -14,6 +14,14 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-15 — Claude — Удалён пост «Матчи дня» в канале
+PR: ветка `claude/remove-channel-daily-post`.
+Сделано: по решению Сергея («уродский и не нужный, отключи и удали») удалены `src/channel-daily-post-job.js`, его тест, запуск в `scheduled-jobs.js` (окно 08:00 UTC), проводка в `worker.js`/`operational-orchestration-runtime.js`, конфиг `channelDailyPostEnabled` и переменная `CHANNEL_DAILY_POST_ENABLED` в `wrangler.jsonc`/`.env.example`. `bettingFree` перенесён в `match-swing-job.js` (нужен «Перелому матча»).
+Решения: «Перелом матча», личные «Итоги дня» в боте и фильтр лиг канала `isChannelLeague` не менялись. Уже опубликованные посты в канале код не удаляет — их Сергей убирает вручную.
+Проверки: Node 22 npm ci/check/lint, release 580/580, полный набор 4118/4119 — провал только `test/bot-match-card.test.js` (в песочнице не скачался `@resvg/resvg-wasm`, падает и на main).
+Осталось / внимание: после merge и деплоя 16.10 в 11:00 МСК поста быть не должно; записи `CHANNEL_DAILY_POST_*` в ops_events прекратятся.
+
+
 ## 2026-10-15 — Codex — Настоящий PostgreSQL/PostgREST под HTTP-нагрузкой
 PR: [PR #900](https://github.com/TRAP44/football-analytics-cloudflare/pull/900), ветка `codex/real-database-http-load`.
 Сделано: локальный Docker стенд PostgreSQL 16.11 + PostgREST 16.4, pinned digests, UUID network/containers, loopback-only REST, БД без опубликованного порта. 39 настоящих fresh migrations, fingerprint совпадает с контрактом. 512 MiB/1 CPU/60 connections, REST pool 20. Настоящие HTTP-запросы к БД вместо заглушки; gateway только prefix/apikey-to-generated-JWT adapter. Standalone orchestrator запускает ramp 10→50→100→1000 и чистит только свои ресурсы; новый CI job без secrets.

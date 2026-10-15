@@ -18,6 +18,7 @@
 
 ## На ревью
 
+- [ ] Канал: удалён ежедневный пост «Матчи дня» (Сергей 15.10: «уродский и не нужный, отключи и удали») — задание, расписание, флаг `CHANNEL_DAILY_POST_ENABLED` и тесты убраны; «Перелом матча» не тронут — **Claude** — ветка `claude/remove-channel-daily-post` — ревью: Codex.
 - [ ] Настоящая БД под HTTP-нагрузкой: отдельный Supabase/PostgREST, 10→50→100→1000 клиентов — **Codex** — [PR #900](https://github.com/TRAP44/football-analytics-cloudflare/pull/900), ветка `codex/real-database-http-load` — ревью: Claude.
 
 

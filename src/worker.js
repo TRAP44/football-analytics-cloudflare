@@ -43,7 +43,6 @@ import { createReferralRewardsRuntime } from './referral-rewards-runtime.js';
 import { createPrematchPredictionJob } from './prematch-prediction-job.js';
 import { createProviderStatusProbe } from './provider-status-probe.js';
 import { createInPlayTimelineJob } from './in-play-timeline-job.js';
-import { createChannelDailyPostJob } from './channel-daily-post-job.js';
 import { createMatchSwingJob } from './match-swing-job.js';
 import { createBillingRuntime } from './billing-runtime.js';
 import { createBillingApiRuntime } from './billing-api-runtime.js';
@@ -1726,27 +1725,6 @@ function getInPlayTimelineJob() {
 }
 function processInPlayTimeline(...args) { return getInPlayTimelineJob().processInPlayTimeline(...args); }
 
-let channelDailyPostJob = null;
-function getChannelDailyPostJob() {
-  if (!channelDailyPostJob) {
-    channelDailyPostJob = createChannelDailyPostJob({
-      claimIdempotency: (...args) => claimChannelPublishIdempotency(...args),
-      clock: () => Date.now(),
-      completeIdempotency: (...args) => completeChannelPublishIdempotency(...args),
-      fixtureTelegramDeepLink: (...args) => fixtureTelegramDeepLink(...args),
-      getCache,
-      getModelProbabilities: (...args) => getModelProbabilities(...args),
-      countryName: (...args) => normalizeCountryName(...args),
-      isMainFixture: row => isChannelLeague(Number(row?.league?.id), String(row?.league?.name || '')) === true,
-      loadProviderFixturesForDate: (...args) => loadProviderFixturesForDate(...args),
-      recordOpsEvent,
-      releaseIdempotency: (...args) => releaseChannelPublishIdempotency(...args),
-      setCache,
-    });
-  }
-  return channelDailyPostJob;
-}
-function processChannelDailyPost(...args) { return getChannelDailyPostJob().processChannelDailyPost(...args); }
 
 let matchSwingJob = null;
 function getMatchSwingJob() {
@@ -3326,7 +3304,6 @@ const {
   processPostMatchReturns,
   processPrematchPredictions,
   processInPlayTimeline,
-  processChannelDailyPost,
   processMatchSwings,
   processSmartNotifications,
   productionSafetySnapshot,

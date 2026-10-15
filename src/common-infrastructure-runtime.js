@@ -54,7 +54,6 @@ export function createCommonInfrastructureRuntime(deps = {}) {
       publisherBotToken: env.TELEGRAM_PUBLISHER_BOT_TOKEN || '',
       telegramChannelId: env.TELEGRAM_CHANNEL_ID || '',
       // Ежедневный пост «Матчи дня» в канал: выключен, пока Сергей не одобрит текст.
-      channelDailyPostEnabled: boolEnv(env.CHANNEL_DAILY_POST_ENABLED, false),
       // Посты «Перелом матча» в канал: выключены, пока Сергей не одобрит текст.
       channelSwingPostEnabled: boolEnv(env.CHANNEL_SWING_POST_ENABLED, false),
       matchSwingEnabled: boolEnv(env.MATCH_SWING_ENABLED, true),
