@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-15 — Claude — LIVE-табло: надёжность (#921)
-PR: ветка `claude/scoreboard-reliability`.
+PR: [#925](https://github.com/TRAP44/football-analytics-cloudflare/pull/925), ветка `claude/scoreboard-reliability`.
 Сделано: `src/favorite-scoreboard-job.js` переписан: снимок старше 10 мин или раньше показанного не применяется (итог — всегда, из итога назад в LIVE нельзя); состояния active/pending/blocked/done компактно (`m,h,a,s`, старый формат #919 читается); пачка новых табло сначала надёжно сохраняется как pending, таймаут → без повтора sendMessage, `scoreboardRecipientIds` отдаёт только active (pending получают обычные уведомления о голах); 4xx/429 → отметка снимается, 429 — пауза `scoreboard:pause:v1` до retry_after; курсор `scoreboard:discovery:v1` по `telegram_id`; порядок итоги → правки/новые поровну; лимит 600 сообщений и 45 с; одна ops-запись с причинами и хвостом. Стенд `scripts/scoreboard-harness.js`, замер `scripts/scoreboard-capacity-sim.js`, политика и замеры — `docs/LIVE_SCOREBOARD_RU.md`.
 Решения: миграции нет; 600 не увеличен — на 10000 упираемся в размер JSON на матч (~0,5 МБ, ~35 МБ записи за первую раздачу, ~80 мин до последнего). Предложена таблица `scoreboard_deliveries` — отдельная подзадача, только после «да» Сергея.
 Осталось / внимание: следующие задачи по #924 — #922 (кнопки бота), затем #923 (скорость разбора).
