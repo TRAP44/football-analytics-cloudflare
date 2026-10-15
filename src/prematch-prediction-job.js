@@ -302,27 +302,34 @@ export function createPrematchPredictionJob(deps = {}) {
     return found;
   }
 
-  // Матчи с включённым напоминанием, частями по 200 id. Ошибка чтения не
-  // останавливает расчёт: остаются прежние приоритеты избранных и главных.
+  // Матчи с включённым напоминанием, частями по 200 id. Строка — пара
+  // (пользователь, матч), поэтому популярный матч может занять всю страницу:
+  // как в favoriteTeams, пагинация по fixture_id (gt) перескакивает его дубли.
+  // Ошибка чтения не останавливает расчёт: остаются прежние приоритеты.
   async function watchedFixtures(fixtureIds, cfg) {
     const ids = [...new Set(fixtureIds.filter(Boolean))].sort((a, b) => a - b).slice(0, MAX_WATCHED_LOOKUP_FIXTURES);
     const found = new Set();
     for (let index = 0; index < ids.length; index += 200) {
       const chunk = ids.slice(index, index + 200);
-      let rows;
-      try {
-        rows = await supaSelectMany(
-          cfg,
-          'match_reminders',
-          { fixture_id: `in.(${chunk.join(',')})`, enabled: 'eq.true' },
-          { limit: 1000, select: 'fixture_id' },
-        );
-      } catch {
-        continue;
-      }
-      for (const row of Array.isArray(rows) ? rows : []) {
-        const id = positiveId(safeRead(row, 'fixture_id'));
-        if (id) found.add(id);
+      let after = 0;
+      for (let page = 0; page <= chunk.length; page += 1) {
+        let rows;
+        try {
+          rows = await supaSelectMany(
+            cfg,
+            'match_reminders',
+            { and: `(fixture_id.in.(${chunk.join(',')}),fixture_id.gt.${after})`, enabled: 'eq.true' },
+            { limit: 1000, select: 'fixture_id', order: 'fixture_id.asc' },
+          );
+        } catch {
+          break;
+        }
+        const list = (Array.isArray(rows) ? rows : []).map(row => positiveId(safeRead(row, 'fixture_id'))).filter(Boolean);
+        for (const id of list) found.add(id);
+        if (list.length < 1000) break;
+        const last = Math.max(...list);
+        if (!(last > after)) break;
+        after = last;
       }
     }
     return found;

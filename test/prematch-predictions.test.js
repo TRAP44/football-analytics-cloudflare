@@ -109,6 +109,7 @@ function job({ feed, predicted = [], snapshot = { plan: 'PRO',dailyLimit:7500,da
       if (table === 'favorites') return favorites.map(team_id => ({ team_id }));
       if (table === 'match_reminders') {
         if (remindersFail) throw new Error('supabase down');
+        if (typeof reminders === 'function') return reminders(filters);
         return reminders.map(fixture_id => ({ fixture_id }));
       }
       if (table === 'model_predictions') return predicted.map(fixture_id => ({ fixture_id }));
@@ -258,12 +259,27 @@ test('job: reminded matches are prioritised and reported; lookup failure keeps t
   assert.equal(calls.events[0].meta.watched, 1);
   const lookup = calls.selects.find(row => row.table === 'match_reminders');
   assert.equal(lookup.filters.enabled, 'eq.true');
-  assert.equal(lookup.filters.fixture_id, 'in.(1,2,3)');
+  assert.equal(lookup.filters.and, '(fixture_id.in.(1,2,3),fixture_id.gt.0)');
 
   const failed = job({ feed, reminders: [2], remindersFail: true });
   const failedResult = await failed.rt.processPrematchPredictions({ prematchPredictionsPerRun: 1 }, at);
   assert.deepEqual(failed.calls.analyzed, [1]);
   assert.equal(failedResult.watched, 0);
+});
+
+test('job: reminders of a popular match do not hide other reminded matches', async () => {
+  const feed = { matches: [match(1, 120, { isTop: true, interestScore: 99 }), match(2, 150), match(3, 180)] };
+  // Матч 2 — 1000 строк напоминаний (полная страница), матч 3 — на следующей.
+  const reminders = filters => {
+    const after = Number(/gt\.(\d+)\)$/.exec(filters.and)[1]);
+    if (after < 2) return Array.from({ length: 1000 }, () => ({ fixture_id: 2 }));
+    return [{ fixture_id: 3 }];
+  };
+  const { rt, calls } = job({ feed, reminders });
+  const result = await rt.processPrematchPredictions({ prematchPredictionsPerRun: 3 }, at);
+  assert.equal(result.watched, 2);
+  assert.deepEqual(calls.analyzed, [2, 3, 1]);
+  assert.equal(calls.selects.filter(row => row.table === 'match_reminders').length, 2);
 });
 
 function analysisRuntime(overrides = {}) {
