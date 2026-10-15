@@ -212,7 +212,7 @@ test('live and finished matches show the score, not a stale pre-match verdict', 
   assert.doesNotMatch(done.sent[0].body.text,/🧠 AI:/);
 });
 
-test('every bot match card offers «Поделиться матчем», and the tap answers after the card is sent', () => {
+test('every bot match card offers «Поделиться матчем», and the tap is acknowledged at once', () => {
   const botUi=fs.readFileSync('src/telegram-bot-ui-runtime.js','utf8');
   for (const name of ['footballMatchActionKeyboard','footballQuickAiHandoffKeyboard','footballSearchHandoffKeyboard']) {
     const start=botUi.indexOf(`function ${name}(`);
@@ -223,8 +223,9 @@ test('every bot match card offers «Поделиться матчем», and the
 
   const update=fs.readFileSync('src/telegram-update-orchestration.js','utf8');
   const handler=update.slice(update.indexOf('const shareAction='),update.indexOf('const matchAction ='));
-  assert.ok(handler.indexOf('await sendBotFixtureShareCard')<handler.indexOf("'answerCallbackQuery'"));
-  assert.match(handler,/Перешлите карточку друзьям/);
+  // Нажатие подтверждаем сразу — до базы и Telegram (ревью Codex #914).
+  assert.ok(handler.indexOf("'answerCallbackQuery'")<handler.indexOf('await sendBotFixtureShareCard'));
+  assert.match(handler,/перешлите её друзьям/);
 });
 
 test('kickoff passed but the cached card still says «not started»: no stale verdict (Codex #914)', async () => {
@@ -241,7 +242,7 @@ test('kickoff passed but the cached card still says «not started»: no stale ve
   assert.match(fresh.sent[0].body.text,/🧠 AI: <b>Перевес Реал Мадрид<\/b>/);
 });
 
-test('without a referral code the card still works, and the tap does not promise a personal link', async () => {
+test('without a referral code the card still works with a plain match link', async () => {
   const {publisher,sent,cfg}=harness({referralDown:true});
   const result=await publisher.sendBotFixtureShareCard(new Request('https://app.example/'),cfg,SHARER,SHARER,FIXTURE);
   assert.deepEqual(result,{ok:true,referral:false});
