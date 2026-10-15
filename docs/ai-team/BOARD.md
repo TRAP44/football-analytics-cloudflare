@@ -12,13 +12,14 @@
 
 ## В работе
 
-- [ ] Сократить p95 готового разбора под реальной DB-нагрузкой без ослабления квот/истории — **Codex** — ветка `codex/cached-analysis-latency`.
 
 
 
 
 
 ## На ревью
+
+- [ ] Сократить p95 готового разбора под реальной DB-нагрузкой без ослабления квот/истории — **Codex** — [PR #902](https://github.com/TRAP44/football-analytics-cloudflare/pull/902), ветка `codex/cached-analysis-latency` — ревью: Claude.
 
 - [ ] Канал: удалён ежедневный пост «Матчи дня» (Сергей 15.10: «уродский и не нужный, отключи и удали») — задание, расписание, флаг `CHANNEL_DAILY_POST_ENABLED` и тесты убраны; «Перелом матча» не тронут — **Claude** — ветка `claude/remove-channel-daily-post` — ревью: Codex.
 

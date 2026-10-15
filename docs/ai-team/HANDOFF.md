@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-15 — Codex — Сокращение задержки готового разбора
-PR: ветка `codex/cached-analysis-latency`.
+PR: [PR #902](https://github.com/TRAP44/football-analytics-cloudflare/pull/902), ветка `codex/cached-analysis-latency`.
 Сделано: cached-ответ ждёт history и свежую quota metadata параллельно, затем запускает прежние growth/referral фоновые операции. История группируется по точным Supabase URL/key, до 100 callers/2 мс, подтверждение upsert ожидается каждым; дубликаты берут newest viewed_at, сортируются conflict keys. Failures каждого caller идут в старый индивидуальный retry. Unknown identity не группируется. In-memory/getHistory, квоты/оплата/access и API shapes сохранены; public/SQL без изменений.
 Замер: baseline p95 cached 5589 мс; только порядок — 5079; с batching три прогона 4268/4461/4502 мс (примерно 19–24% ниже). На те же 1000 cached requests DB REST 7000→6011, history REST 1000→11; все HTTP/DB 200/201. SQL подтвердил 10 000 users, 1000 history, 1160 full_ai events по четырём ступеням. Повтор поверх #901: p95 3949 мс, REST6012, SQL evidence полный. Подробно docs/CACHED_ANALYSIS_LATENCY_RU.md. REST timing по операциям добавлен в harness; SQL evidence событий теперь обязательный.
 Проверки: Node 22 npm ci/check/lint, release 581/581, полный набор 4136/4136 после переноса #901, включая snapshot connection identity, security:privileged, Worker dry-run. Unit tests подтверждают параллельное ожидание, batch bounds/identity isolation/dedupe/ошибки и сохранённые индивидуальные retries.
