@@ -206,3 +206,10 @@ test('prematch kill switch overrides checked-in settings without importing unrel
   assert.equal(runnerEnv({PREMATCH_PREDICTIONS_ENABLED:''},{PREMATCH_PREDICTIONS_ENABLED:'true'}).PREMATCH_PREDICTIONS_ENABLED,'true');
   assert.match(fs.readFileSync('.github/workflows/cron-runner.yml','utf8'),/PREMATCH_PREDICTIONS_ENABLED: \$\{\{ vars\.PREMATCH_PREDICTIONS_ENABLED \}\}/);
 });
+
+test('cron runner forwards the favorite scoreboard kill switch from GitHub variables', () => {
+  assert.equal(runnerEnv({FAVORITE_SCOREBOARD_ENABLED:'false'},{}).FAVORITE_SCOREBOARD_ENABLED,'false');
+  assert.equal(runnerEnv({FAVORITE_SCOREBOARD_ENABLED:''},{}).FAVORITE_SCOREBOARD_ENABLED,undefined);
+  const workflow=fs.readFileSync('.github/workflows/cron-runner.yml','utf8');
+  assert.match(workflow,/FAVORITE_SCOREBOARD_ENABLED: \$\{\{ vars\.FAVORITE_SCOREBOARD_ENABLED \}\}/);
+});

@@ -17,6 +17,7 @@ const row = (status, elapsed, home, away, extra = {}) => ({
 function setup({ fixtures, favorites = [{ telegram_id: 11, team_id: 596 }], allow = rows => rows, failEdit = null, failSave = false } = {}) {
   const store = new Map([['provider-fixtures:2026-10-15:v1', { fixtures }]]);
   const calls = [];
+  let saves = 0;
   let nextId = 100;
   const job = createFavoriteScoreboardJob({
     clock: () => NOW,
@@ -25,7 +26,8 @@ function setup({ fixtures, favorites = [{ telegram_id: 11, team_id: 596 }], allo
     hasSupabase: () => true,
     setCache: async (key, _id, payload, _cfg, _ttl, options) => {
       assert.equal(options?.requireDurable, true);
-      if (failSave) return false;
+      saves += 1;
+      if (failSave === true || (typeof failSave === 'number' && saves >= failSave)) return false;
       store.set(key, payload);
       return true;
     },
@@ -135,13 +137,27 @@ test('a user following teams in two simultaneous matches gets both boards (filte
   assert.equal(calls.filter(c => c.method === 'sendMessage').length, 2);
 });
 
-test('if a new board cannot be saved durably the run stops instead of sending duplicates later', async () => {
-  const { run, calls } = setup({
-    fixtures: [row('1H', 10, 0, 0)],
-    favorites: [{ telegram_id: 11, team_id: 596 }, { telegram_id: 12, team_id: 596 }],
-    failSave: true,
-  });
-  const summary = await run();
+test('no durable «sending» mark — no message; mark saved but result lost — never sent twice', async () => {
+  let { run, calls } = setup({ fixtures: [row('1H', 10, 0, 0)], failSave: true });
+  let summary = await run();
   assert.equal(summary.stopped, 'checkpoint_failed');
-  assert.equal(calls.length, 1, 'no more sends after a failed checkpoint');
+  assert.equal(calls.length, 0, 'nothing is sent without a saved mark');
+
+  // Отметка сохранена (1-я запись), запись после отправки не удалась (2-я).
+  const second = setup({ fixtures: [row('1H', 10, 0, 0)], failSave: 2 });
+  summary = await second.run();
+  assert.equal(second.calls.filter(c => c.method === 'sendMessage').length, 1);
+  await second.run([row('1H', 15, 1, 0)]);
+  assert.equal(second.calls.filter(c => c.method === 'sendMessage').length, 1, 'pending mark blocks a duplicate');
+});
+
+test('new boards go before edits so the per-run cap reaches everyone', async () => {
+  const favorites = [{ telegram_id: 11, team_id: 596 }];
+  const { run, calls, store } = setup({ fixtures: [row('1H', 10, 0, 0)], favorites });
+  await run();
+  store.set('scoreboard:7:v1', { users: { ...store.get('scoreboard:7:v1').users } });
+  favorites.push({ telegram_id: 12, team_id: 596 });
+  calls.length = 0;
+  await run([row('1H', 20, 1, 0)]);
+  assert.deepEqual(calls.map(c => `${c.method}:${c.payload.chat_id}`), ['sendMessage:12', 'editMessageText:11']);
 });

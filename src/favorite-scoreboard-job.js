@@ -189,7 +189,11 @@ export function createFavoriteScoreboardJob(deps = {}) {
       usersByTeam.get(teamId).add(userId);
     }
 
-    let budget = MAX_MESSAGES_PER_RUN;
+    // Очередь работ по всем матчам: сначала новые табло, затем обновления — от
+    // давно не обновлявшихся. Так потолок за запуск не съедают одни и те же люди
+    // и последние матчи тоже доходят (ревью Codex #919).
+    const states = new Map();
+    const work = [];
     for (const match of matches) {
       const users = new Set([...(usersByTeam.get(match.homeId) || []), ...(usersByTeam.get(match.awayId) || [])]);
       if (!users.size) continue;
@@ -197,68 +201,102 @@ export function createFavoriteScoreboardJob(deps = {}) {
       summary.recipients += users.size;
       let state = null;
       try { state = plainObject(await getCache(SCOREBOARD_CACHE_KEY(match.fixtureId), cfg)); } catch {}
-      const boards = { ...(plainObject(state?.users) || {}) };
-      const body = scoreboardText(match);
-      const markup = scoreboardKeyboard(match);
-      let changed = false;
+      const entry = { match, body: scoreboardText(match), markup: scoreboardKeyboard(match), boards: { ...(plainObject(state?.users) || {}) }, changed: false };
+      states.set(match.fixtureId, entry);
       for (const userId of users) {
-        const board = plainObject(boards[userId]);
-        if (board?.blocked || board?.done) continue;
-        if (!board && !match.live) continue;
-        if (board && board.text === body) {
+        const board = plainObject(entry.boards[userId]);
+        if (board?.blocked || board?.done || board?.pending) continue;
+        if (!board) {
+          if (match.live) work.push({ entry, userId, kind: 'new', at: 0 });
+          continue;
+        }
+        if (board.text === entry.body) {
           summary.unchanged += 1;
           continue;
         }
-        if (budget <= 0) {
-          summary.capped = true;
+        work.push({ entry, userId, kind: 'edit', at: Number(board.at) || 0 });
+      }
+    }
+    work.sort((x, y) => (x.kind === y.kind ? x.at - y.at : x.kind === 'new' ? -1 : 1));
+
+    let budget = MAX_MESSAGES_PER_RUN;
+    for (const item of work) {
+      if (budget <= 0) {
+        summary.capped = true;
+        break;
+      }
+      budget -= 1;
+      const { entry, userId } = item;
+      const { match, body, markup, boards } = entry;
+      const at = now();
+      if (item.kind === 'new') {
+        // Отметка «отправляю» сохраняется надёжно ДО отправки: если потом запись не
+        // удастся, следующий запуск увидит отметку и не пришлёт второе табло
+        // (ревью Codex #919). Не сохранилась отметка — не отправляем вовсе.
+        boards[userId] = { pending: true, at };
+        if (!await saveBoards(match.fixtureId, boards, cfg)) {
+          delete boards[userId];
+          summary.failed += 1;
+          summary.stopped = 'checkpoint_failed';
           break;
         }
-        budget -= 1;
         try {
-          if (!board) {
-            const sent = plainObject(await telegramApi('sendMessage', cfg, { chat_id: userId, parse_mode: 'HTML', text: body, reply_markup: markup, disable_notification: false }));
-            const messageId = positiveId(sent?.message_id);
-            if (!messageId) throw new Error('sendMessage returned no message_id');
-            boards[userId] = { messageId, text: body };
-            summary.sent += 1;
-            // Новое табло сразу сохраняем надёжно: иначе следующий запуск пришлёт
-            // второе сообщение (ревью Codex #919). Не сохранилось — останавливаемся.
-            if (!await saveBoards(match.fixtureId, boards, cfg)) {
-              summary.failed += 1;
-              summary.stopped = 'checkpoint_failed';
-              break;
-            }
-            continue;
-          } else {
-            await telegramApi('editMessageText', cfg, { chat_id: userId, message_id: board.messageId, parse_mode: 'HTML', text: body, reply_markup: markup });
-            boards[userId] = { ...board, text: body, ...(match.final ? { done: true } : {}) };
-            if (match.final) summary.closed += 1;
-            else summary.edited += 1;
-          }
-          changed = true;
+          const sent = plainObject(await telegramApi('sendMessage', cfg, { chat_id: userId, parse_mode: 'HTML', text: body, reply_markup: markup }));
+          const messageId = positiveId(sent?.message_id);
+          if (!messageId) throw new Error('sendMessage returned no message_id');
+          boards[userId] = { messageId, text: body, at };
+          summary.sent += 1;
         } catch (error) {
           const message = String(error?.message || '');
-          if (/not modified/i.test(message)) {
-            boards[userId] = { ...board, text: body, ...(match.final ? { done: true } : {}) };
-            changed = true;
-            summary.unchanged += 1;
-          } else if (error?.status === 403 || /blocked|deactivated|chat not found/i.test(message)) {
-            // Пользователь закрыл бота — больше не пишем ему по этому матчу.
-            boards[userId] = { ...(board || {}), blocked: true };
-            changed = true;
+          if (error?.status === 403 || /blocked|deactivated|chat not found/i.test(message)) {
+            boards[userId] = { blocked: true, at };
             summary.blocked += 1;
-          } else if (board && /message to edit not found|can't be edited/i.test(message)) {
-            // Сообщение удалено или слишком старое — закрываем табло без новых сообщений.
-            boards[userId] = { ...board, done: true };
-            changed = true;
+          } else if (error?.code === 'TELEGRAM_REJECTED') {
+            // Telegram точно отклонил — сообщения нет, можно попробовать в следующий раз.
+            delete boards[userId];
             summary.failed += 1;
           } else {
+            // Тайм-аут или сеть: сообщение могло уйти — отметку оставляем, без повтора.
             summary.failed += 1;
           }
         }
+        if (!await saveBoards(match.fixtureId, boards, cfg)) {
+          summary.failed += 1;
+          summary.stopped = 'checkpoint_failed';
+          break;
+        }
+        continue;
       }
-      if (changed && !summary.stopped && !await saveBoards(match.fixtureId, boards, cfg)) summary.failed += 1;
-      if (summary.capped || summary.stopped) break;
+      const board = plainObject(boards[userId]) || {};
+      try {
+        await telegramApi('editMessageText', cfg, { chat_id: userId, message_id: board.messageId, parse_mode: 'HTML', text: body, reply_markup: markup });
+        boards[userId] = { ...board, text: body, at, ...(match.final ? { done: true } : {}) };
+        if (match.final) summary.closed += 1;
+        else summary.edited += 1;
+      } catch (error) {
+        const message = String(error?.message || '');
+        if (/not modified/i.test(message)) {
+          boards[userId] = { ...board, text: body, at, ...(match.final ? { done: true } : {}) };
+          summary.unchanged += 1;
+        } else if (error?.status === 403 || /blocked|deactivated|chat not found/i.test(message)) {
+          // Пользователь закрыл бота — больше не пишем ему по этому матчу.
+          boards[userId] = { ...board, blocked: true, at };
+          summary.blocked += 1;
+        } else if (/message to edit not found|can't be edited/i.test(message)) {
+          // Сообщение удалено или слишком старое — закрываем табло без новых сообщений.
+          boards[userId] = { ...board, done: true, at };
+          summary.failed += 1;
+        } else {
+          summary.failed += 1;
+          continue;
+        }
+      }
+      entry.changed = true;
+    }
+    if (!summary.stopped) {
+      for (const entry of states.values()) {
+        if (entry.changed && !await saveBoards(entry.match.fixtureId, entry.boards, cfg)) summary.failed += 1;
+      }
     }
     summary.ok = summary.failed === 0;
     await report(cfg, summary);
