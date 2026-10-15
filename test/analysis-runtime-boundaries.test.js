@@ -400,3 +400,42 @@ test('client body cannot request the internal system lineup refresh or bypass th
   assert.equal(response.body.cached,true);
   assert.equal(providerCalls,0);
 });
+
+function cachedResponseGate() {
+  let resolve,reject;
+  const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});
+  return {promise,resolve,reject};
+}
+
+test('cached response starts history and quota together and schedules growth/referrals only after both finish',async()=>{
+  const history=cachedResponseGate(),quota=cachedResponseGate(),events=[],pending=[];
+  const cached={generatedAt:new Date().toISOString(),match:{fixtureId:123,status:'NS',date:new Date(Date.now()+3600000).toISOString()}};
+  const quotaValue={plan:'FREE',used:2,limit:3,left:1};
+  const runtime=createAnalysisRuntime({...baseDeps(),
+    getCache:async()=>cached,analysisFreshness:()=>({needsRecheck:false}),newsImpactDeltaStatus:()=>null,
+    analysisResponsePayload:(payload,meta)=>({...payload,...meta}),
+    recordHistory:async()=>{events.push('history');await history.promise;events.push('history_done');},
+    getQuota:async()=>{events.push('quota');const value=await quota.promise;events.push('quota_done');return value;},
+    recordGrowthEvent:async()=>{events.push('growth');},
+    grantReferralRewards:async()=>{events.push('referral');},
+    loadProviderFixture:async()=>{throw new Error('cached response must not call provider');},
+  });
+  let settled=false;
+  const response=runtime.apiAnalyze({json:async()=>({fixtureId:123})},{waitUntil:task=>pending.push(task)},{id:456});
+  response.then(()=>{settled=true;});
+  for(let i=0;i<12;i++)await Promise.resolve();
+  assert.deepEqual(events,['history','quota']);
+  quota.resolve(quotaValue);
+  for(let i=0;i<5;i++)await Promise.resolve();
+  assert.equal(settled,false,'history must still finish before the response');
+  assert.ok(!events.includes('growth') && !events.includes('referral'));
+  history.resolve();
+  const result=await response;
+  assert.equal(result.status,200);assert.equal(result.body.cached,true);
+  assert.deepEqual(result.body.quota,quotaValue);
+  assert.ok(events.indexOf('growth')>events.indexOf('quota_done'));
+  assert.ok(events.indexOf('referral')>events.indexOf('history_done'));
+  assert.equal(events.filter(event=>event==='growth').length,1);
+  assert.equal(events.filter(event=>event==='referral').length,1);
+  await Promise.all(pending);
+});

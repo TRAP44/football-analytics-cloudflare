@@ -17,8 +17,10 @@
 
 ## На ревью
 
+- [ ] Сократить p95 готового разбора под реальной DB-нагрузкой без ослабления квот/истории — **Codex** — [PR #902](https://github.com/TRAP44/football-analytics-cloudflare/pull/902), ветка `codex/cached-analysis-latency` — ревью: Claude.
+
+
 - [ ] Шапка и нижняя полоса Telegram в цвет фона Mini App (как у Blum) — **Claude** — [PR #904](https://github.com/TRAP44/football-analytics-cloudflare/pull/904), ветка `claude/telegram-chrome-color` — ревью: Codex
-- [ ] Настоящая БД под HTTP-нагрузкой: отдельный Supabase/PostgREST, 10→50→100→1000 клиентов — **Codex** — [PR #900](https://github.com/TRAP44/football-analytics-cloudflare/pull/900), ветка `codex/real-database-http-load` — ревью: Claude.
 
 
 
@@ -46,6 +48,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Настоящая БД под HTTP-нагрузкой: отдельный Supabase/PostgREST, 10→50→100→1000 клиентов — **Codex** — [PR #900](https://github.com/TRAP44/football-analytics-cloudflare/pull/900), ветка `codex/real-database-http-load` — ревью: Claude. — слит.
 
 - [x] Задача 2: матчи с напоминанием первыми в фоновом предматчевом расчёте — **Claude** — [PR #899](https://github.com/TRAP44/football-analytics-cloudflare/pull/899) — слит 15.10. Задача 2 закрыта: этап «единое время расчёта в штабе/карточках» отменён решением Сергея 15.10 («пользователь не должен этого видеть»).
 - [x] Канал: удалён ежедневный пост «Матчи дня» (Сергей 15.10) — **Claude** — [PR #901](https://github.com/TRAP44/football-analytics-cloudflare/pull/901) — слит 15.10.

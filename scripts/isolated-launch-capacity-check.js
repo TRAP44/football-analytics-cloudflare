@@ -29,13 +29,14 @@ await worker.getSharedCacheRuntime().setCache(`matches:${date}:v6-integrity`,0,{
 await worker.getSharedCacheRuntime().setCache(`fixture:${fixtureId}:v17-starting-xi-rc146`,fixtureId,
   {match,generatedAt:new Date().toISOString(),probabilities:{home:50,draw:30,away:20}},{},20);
 const originalFetch=globalThis.fetch,stats={dbRequests:0,dbActive:0,dbPeak:0,modelLookups:0,dbByOperation:{},dbHttpStatus:{},dbErrorsByOperation:{},externalBlocked:0};
-const pending=new Set(),rows=[];
+const pending=new Set(),rows=[],dbTimings=new Map();
 let active=0,httpPeak=0,currentBarrier=null;
 globalThis.fetch=async(input,init={})=>{
   const url=new URL(typeof input==='string'?input:input.url || String(input));
   if(realDatabase?url.origin!==localDatabase.url:url.hostname!=='isolated.supabase.test'){stats.externalBlocked++;throw new Error('External transport forbidden by isolated load harness');}
   const operation=`${init.method || 'GET'} ${url.pathname}`;stats.dbByOperation[operation]=(stats.dbByOperation[operation] || 0)+1;
   stats.dbRequests++;stats.dbActive++;stats.dbPeak=Math.max(stats.dbPeak,stats.dbActive);
+  const dbStarted=performance.now();
   try {
     if(realDatabase){
       if(url.pathname.endsWith('/model_predictions'))stats.modelLookups++;
@@ -49,7 +50,10 @@ globalThis.fetch=async(input,init={})=>{
     if(url.pathname.endsWith('/model_predictions')){stats.modelLookups++;return Response.json([]);}
     if(url.pathname.includes('/rpc/'))return Response.json({allowed:true,count:1,retryAfter:0});
     return Response.json([]);
-  } finally {stats.dbActive--;}
+  } finally {
+    stats.dbActive--;
+    if(realDatabase){const values=dbTimings.get(operation) || [];values.push(performance.now()-dbStarted);dbTimings.set(operation,values);}
+  }
 };
 const contexts={waitUntil(p){pending.add(p);p.finally(()=>pending.delete(p)).catch(()=>{});}};
 const server=createServer(async(req,res)=>{
@@ -109,7 +113,8 @@ try {
   assert.equal(httpPeak,concurrency,'the HTTP barrier must exercise the requested concurrent count');
   assert.equal(stats.externalBlocked,0,'no external service may be called even once');
   mkdirSync('load-results',{recursive:true});
-  const result={scope:realDatabase?'Local HTTP, full Worker fetch and real PostgreSQL/PostgREST over loopback; synthetic users/cached fixtures, one process. Not deployed Cloudflare/Supabase Nano throughput.':'Local HTTP, full Worker fetch and signed auth, one process/isolate, simulated Supabase 20ms; not Cloudflare capacity, real DB throughput, Telegram clients, or 1000 physical DB connections',
+  const dbOperationLatency=Object.fromEntries([...dbTimings].map(([operation,values])=>{values.sort((a,b)=>a-b);return [operation,{count:values.length,p50Ms:+values[Math.ceil(values.length*.5)-1].toFixed(2),p95Ms:+values[Math.ceil(values.length*.95)-1].toFixed(2)}];}));
+  const result={dbOperationLatency,scope:realDatabase?'Local HTTP, full Worker fetch and real PostgreSQL/PostgREST over loopback; synthetic users/cached fixtures, one process. Not deployed Cloudflare/Supabase Nano throughput.':'Local HTTP, full Worker fetch and signed auth, one process/isolate, simulated Supabase 20ms; not Cloudflare capacity, real DB throughput, Telegram clients, or 1000 physical DB connections',
     target:{dailyUsers:users,peakClients:concurrency},latencyTargetMs:2000,latencyTargetMet:rows.every(row=>row.p95Ms<=2000),databaseTransport:realDatabase?'real':'simulated',productionCapacityConfirmed:false,loadPassed:rows.every(row=>row.httpStatus[200]===row.requests) && !Object.keys(stats.dbHttpStatus).some(status=>Number(status)>=400),rows,stats,httpPeak,eventLoopP95Ms:+(lag.percentile(95)/1e6).toFixed(2),rssMiB:+(process.memoryUsage().rss/1048576).toFixed(2)};
   writeFileSync(realDatabase?`load-results/real-database-http-${concurrency}.json`:full?'load-results/launch-capacity.json':'load-results/launch-capacity-smoke.json',JSON.stringify(result,null,2));
   console.log(JSON.stringify(result,null,2));
