@@ -14,6 +14,13 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-15 — Codex — Пакетная синхронизация профилей при первом входе
+PR: ветка `codex/analysis-user-write-batching`.
+Сделано: profile-only batch до100/2мс, точная connection identity/snapshot, ожидание persistence до userSyncAt. Ошибка batch вызывает независимые individual writes. Telegram validation, квоты/оплата, singleflight/TTL сохранены. SQL harness проверяет обновление имени PRO-пользователя без изменения plan/subscription_until.
+Замер: main #902 p95 ленты1926мс, пакеты772/933/860мс, REST10002→102–104. Все HTTP200/DB200–201; SQL users10000/history1000/events1160, paidProfilePreserved=true. Cached p95 не улучшился (3973→4728/4331/4903), цель2с не достигнута. Подробно docs/USER_PROFILE_LOAD_RU.md.
+Проверки: Node22 npm ci/check/lint/security:privileged, release581/581, полный набор4146/4146, Worker dry-run; три настоящих DB ramp. #902 перенесён в Готово; открытый Claude #905 не пересекает код, только coordination docs.
+Осталось / внимание: Node/PG не deployed Workers/hosted Nano; production capacity не подтверждена. Batch локален isolate; при отказе storage добавляется failed batch перед fallback. Public/SQL миграции не менялись.
+
 ## 2026-10-15 — Codex — Сокращение задержки готового разбора
 PR: [PR #902](https://github.com/TRAP44/football-analytics-cloudflare/pull/902), ветка `codex/cached-analysis-latency`.
 Сделано: cached-ответ ждёт history и свежую quota metadata параллельно, затем запускает прежние growth/referral фоновые операции. История группируется по точным Supabase URL/key, до 100 callers/2 мс, подтверждение upsert ожидается каждым; дубликаты берут newest viewed_at, сортируются conflict keys. Failures каждого caller идут в старый индивидуальный retry. Unknown identity не группируется. In-memory/getHistory, квоты/оплата/access и API shapes сохранены; public/SQL без изменений.

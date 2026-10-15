@@ -1,5 +1,6 @@
 import { MAX_TELEGRAM_INIT_DATA_LENGTH } from './security-gate.js';
 import { usesStrictTelegramFreshness } from './security-route-registry.js';
+import { createUserProfileWriteBatcher } from './user-profile-write-batcher.js';
 
 
 function positiveTelegramId(value) {
@@ -27,6 +28,7 @@ export function createUserAuthRuntime({
   bumpTelemetry,
   recordOpsEvent,
 }) {
+  const persistProfile=createUserProfileWriteBatcher((cfg,rows)=>supaUpsert(cfg,'users',rows,'telegram_id'));
   async function getRequestUser(request, cfg) {
     let initData='';
     try {
@@ -119,7 +121,7 @@ export function createUserAuthRuntime({
           bumpTelemetry('userSyncSkips');
           return;
         }
-        await supaUpsert(cfg, 'users', record, 'telegram_id');
+        await persistProfile(cfg,record);
         memory.userSyncAt.set(userId, Date.now());
         if (memory.userSyncAt.size > 1500) pruneMemoryState();
       });

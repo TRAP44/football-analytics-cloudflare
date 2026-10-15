@@ -11,13 +11,14 @@
 
 ## В работе
 
+- [ ] Пакетная синхронизация профилей при массовом первом входе — **Codex** — ветка `codex/analysis-user-write-batching` — ревью: Claude.
+
 
 
 
 
 ## На ревью
 
-- [ ] Сократить p95 готового разбора под реальной DB-нагрузкой без ослабления квот/истории — **Codex** — [PR #902](https://github.com/TRAP44/football-analytics-cloudflare/pull/902), ветка `codex/cached-analysis-latency` — ревью: Claude.
 
 
 - [ ] Шапка и нижняя полоса Telegram в цвет фона Mini App (как у Blum) — **Claude** — [PR #904](https://github.com/TRAP44/football-analytics-cloudflare/pull/904), ветка `claude/telegram-chrome-color` — ревью: Codex
@@ -48,6 +49,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Сократить p95 готового разбора под реальной DB-нагрузкой без ослабления квот/истории — **Codex** — [PR #902](https://github.com/TRAP44/football-analytics-cloudflare/pull/902), ветка `codex/cached-analysis-latency` — ревью: Claude. — слит.
 
 - [x] Настоящая БД под HTTP-нагрузкой: отдельный Supabase/PostgREST, 10→50→100→1000 клиентов — **Codex** — [PR #900](https://github.com/TRAP44/football-analytics-cloudflare/pull/900), ветка `codex/real-database-http-load` — ревью: Claude. — слит.
 

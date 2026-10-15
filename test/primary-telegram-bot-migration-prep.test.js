@@ -121,7 +121,7 @@ test('publisher token stays independent from primary bot migration', async () =>
 
 test('user data remains keyed by Telegram user id, independent of bot username', () => {
   assert.match(readContractSource(new URL('../src/auth-user.js', import.meta.url), 'utf8'),/telegram_id:\s*userId/);
-  assert.match(readContractSource(new URL('../src/auth-user.js', import.meta.url), 'utf8'),/supaUpsert\(cfg, 'users', record, 'telegram_id'\)/);
+  assert.match(readContractSource(new URL('../src/auth-user.js', import.meta.url), 'utf8'),/supaUpsert\(cfg,'users',rows,'telegram_id'\)/);
   assert.match(readContractSource(new URL('../src/auth-user.js',import.meta.url),'utf8'),/supaSelectOne\(cfg, 'users', \{ telegram_id: `eq\.\$\{normalizedUserId\}` \}\)/);
 });
 
