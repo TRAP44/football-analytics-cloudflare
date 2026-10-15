@@ -94,11 +94,10 @@ test('match list renders snapshots immediately and refreshes without blocking vi
 
 test('match cards keep one primary action with compact secondary favorite and reminder actions', () => {
   const body = functionBody('matchCardHtml', 'bindMatchActions');
-  assert.match(body, /compact-match-card/);
-  assert.match(body, /compact-actions/);
-  assert.match(body, /match-secondary-actions/);
-  assert.match(body, /data-quick-reminder/);
-  assert.match(body, /fav-star compact/);
+  // UX-ревью 15.10: вся строка — одно действие; избранное и напоминание — внутри матча.
+  assert.equal((body.match(/<button /g) || []).length, 1);
+  assert.match(body, /class="match-row-open"/);
+  assert.doesNotMatch(body, /data-quick-reminder|fav-star|match-secondary-actions/);
   assert.doesNotMatch(body, /match-card-more/);
   assert.doesNotMatch(body, /matchAiSnapshotHtml/);
 });

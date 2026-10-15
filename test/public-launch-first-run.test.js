@@ -45,7 +45,7 @@ test('first run guide is one-time local UI state with privacy-safe product actio
 
 test('direct launch intent bypasses the guide and is not overwritten by the default Home route',()=>{
   assert.match(firstRun,/function hasDirectLaunchIntent\(\)/);
-  assert.match(firstRun,/const hidden=dismissed \|\| dismissedThisSession \|\| count>=3 \|\| hasDirectLaunchIntent\(\)/);
+  assert.match(firstRun,/const hidden=dismissed \|\| dismissedThisSession \|\| count>=3 \|\| experienced \|\| hasDirectLaunchIntent\(\)/);
   assert.match(firstRun,/view==='search'/);
   assert.match(firstRun,/view==='history'/);
   assert.match(firstRun,/\['analysis','center'\]\.includes\(action\)/);
@@ -99,4 +99,35 @@ test('first-run controller handles deep links and dismisses guide without networ
   assert.equal(controller.renderFirstRunGuide(),true);
   assert.equal(controller.startFirstRunSearch(),true);
   assert.equal(matchSearch.focused,true);
+});
+
+test('returning user (history or dismissed guide) gets a compact home hero without the tagline',()=>{
+  const hero={classList:{value:new Set(),toggle(name,on){on?this.value.add(name):this.value.delete(name);}}};
+  const make=({history=[],stored}={})=>{
+    const persisted=new Map(stored?[[ 'football-analytics:first-run-guide:v1','1' ]]:[]);
+    const guide={hidden:false};
+    hero.classList.value.clear();
+    const controller=createFirstRunGuideController({
+      window:{location:{search:''},setTimeout:callback=>callback()},tg:null,
+      state:{history,favorites:[]},
+      storage:{getItem:key=>persisted.has(key)?'1':null,setItem:(key,value)=>persisted.set(key,value)},
+      elementById:id=>({firstRunGuide:guide,homeHero:hero})[id] || null,
+      sendProductAction:()=>{},
+      renderGlobalSearch:()=>{},
+      showView:()=>{},
+    });
+    return {controller,guide};
+  };
+  const fresh=make();
+  fresh.controller.renderFirstRunGuide();
+  assert.equal(fresh.guide.hidden,false);
+  assert.equal(hero.classList.value.has('is-compact'),false);
+  fresh.controller.dismissFirstRunGuide();
+  assert.equal(hero.classList.value.has('is-compact'),true);
+
+  const returning=make({history:[{fixtureId:7}]});
+  returning.controller.renderFirstRunGuide();
+  assert.equal(returning.guide.hidden,true);
+  assert.equal(hero.classList.value.has('is-compact'),true);
+  assert.match(fs.readFileSync('public/styles/premium-ui.css','utf8'),/\.mr-hero\.is-compact \.mr-hero-title/);
 });

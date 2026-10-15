@@ -32,7 +32,7 @@ test('MatchRadar home visual polish keeps the existing interaction contract',()=
   ]) assert.ok(css.includes(selector),selector);
 
   const card=sourceSection(app,'function matchCardHtml','function bindMatchActions');
-  for(const token of ['compact-match-card','compact-match-row','compact-score','analyze-btn','match-secondary-actions']){
+  for(const token of ['match-row','match-row-open','match-row-teams','match-row-score','data-fixture','data-center','data-history-analysis']){
     assert.ok(card.includes(token),token);
   }
 });
@@ -48,11 +48,11 @@ test('home match cards separate status from score and keep one clear primary act
   assert.equal(homeMatchScoreLabel({live:true,score:{home:null,away:null}}),'— : —');
   assert.doesNotMatch(center,/идёт матч/i);
 
-  assert.match(card,/LIVE\$\{liveMinute\}/);
+  assert.match(card,/match-row-live">LIVE</);
   assert.match(card,/Открыть матч/);
-  assert.match(card,/score-live/);
-  assert.match(card,/score-finished/);
-  assert.match(card,/score-upcoming/);
+  assert.match(card,/is-live/);
+  assert.match(card,/is-finished/);
+  assert.match(card,/is-upcoming/);
   assert.match(css,/Home Match Card Hierarchy — status, score and first-action clarity/);
   assert.match(css,/\.compact-score\.score-upcoming\{[\s\S]*?font-size:12px/);
   assert.match(css,/\.compact-match-card\.is-live \.live-center-btn\{/);

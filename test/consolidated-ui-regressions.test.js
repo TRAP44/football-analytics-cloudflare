@@ -56,7 +56,6 @@ test('favorite star primitive has one SVG geometry and requires a real boolean a
     app,
     /import \{[^}]*favoriteStarSvg[^}]*\} from '\.\/modules\/client-core\.js';/,
   );
-  assert.match(app,/\$\{favoriteStarSvg\(active\)\}/);
   assert.match(app,/analysis-favorite-star">\$\{favoriteStarSvg\(homeFavorite\)\}/);
   assert.match(app,/analysis-favorite-star">\$\{favoriteStarSvg\(awayFavorite\)\}/);
 });
@@ -128,5 +127,5 @@ test('match time remains plain tabular text instead of a badge/pill', () => {
   assert.match(rule,/font-variant-numeric:\s*tabular-nums;/);
 
   const card=section(app,'function matchCardHtml','function bindMatchActions');
-  assert.match(card,/match-time-label">\$\{escapeHtml\(timeOf\(m\.date\)\)\}/);
+  assert.match(card,/match-row-kickoff">\$\{escapeHtml\(timeOf\(m\.date\)\)\}/);
 });

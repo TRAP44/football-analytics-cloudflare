@@ -251,7 +251,7 @@ test('match cards hide technical coverage and numeric interest meters', () => {
   const cardRenderer = app.match(/function matchCardHtml[\s\S]*?\n}\n\nfunction bindMatchActions/)?.[0] || '';
   assert.doesNotMatch(cardRenderer, /coverage-mini/);
   assert.doesNotMatch(cardRenderer, /interest-meter/);
-  assert.match(cardRenderer, /match-secondary-actions/);
+  assert.match(cardRenderer, /match-row-open/);
   assert.doesNotMatch(cardRenderer, /match-signal|favorite-signal/);
 });
 

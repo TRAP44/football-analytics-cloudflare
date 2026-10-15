@@ -251,3 +251,9 @@ test('all unsupported Telegram fixture sections are rejected before provider ana
   assert.equal(analyses,0);
   assert.equal(sent.length,0);
 });
+
+test('bot post-match review does not list totals or both-teams-score markets (Сергей 15.10)',async()=>{
+  const source=(await import('node:fs')).readFileSync(new URL('../src/telegram-bot-orchestration-runtime.js',import.meta.url),'utf8');
+  assert.doesNotMatch(source,/review\.markets/);
+  assert.doesNotMatch(source,/<b>Голы:<\/b>/);
+});

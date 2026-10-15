@@ -557,3 +557,16 @@ test('fixture normalization preserves real scores through repeated caching and r
     assert.equal(api.normalizeBotFixtureCard({...raw,goals:{home:value,away:value}}).goalsHome,null);
   }
 });
+
+test('bot AI verdict shows expected goals, not totals or both-teams-score markets (Сергей 15.10)',()=>{
+  const {api}=runtime();
+  const verdict=api.botAiVerdictText({
+    match:{home:{name:'Милан'},away:{name:'<Рома>'}},
+    goalModel:{homeExpected:1.74,awayExpected:0.96,over25:62,btts:58},
+    aiInstructor:{betSignal:{code:'home'}},
+  });
+  assert.match(verdict,/Ожидаемые голы: Милан 1\.7 — 1\.0 &lt;Рома&gt;/);
+  assert.doesNotMatch(verdict,/3\+|Забьют обе|62%|58%/);
+  const missing=api.botAiVerdictText({match:{home:{name:'A'},away:{name:'B'}},goalModel:{over25:70}});
+  assert.doesNotMatch(missing,/Ожидаемые голы|3\+|70%/);
+});
