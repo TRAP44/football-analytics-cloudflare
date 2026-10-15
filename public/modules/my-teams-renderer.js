@@ -6,11 +6,12 @@ export function createMyTeamsRenderer({
   timeOf,
   onOpenTeam,
   onOpenMatch,
+  onRetryLoad = () => {},
   now = () => Date.now(),
 }) {
   if (!state || typeof elementById !== 'function' || typeof escapeHtml !== 'function' || typeof safeUrl !== 'function' ||
       typeof timeOf !== 'function' || typeof onOpenTeam !== 'function' || typeof onOpenMatch !== 'function' ||
-      typeof now !== 'function') {
+      typeof now !== 'function' || typeof onRetryLoad !== 'function') {
     throw new TypeError('My Teams renderer requires state, formatters and explicit callbacks.');
   }
 
@@ -78,22 +79,41 @@ export function createMyTeamsRenderer({
     const favorites=Array.isArray(state.favorites) ? state.favorites : [];
     const matches=Array.isArray(state.matches) ? state.matches : [];
     const nowMs=currentTimeMs();
+    const loadFailed=Boolean(state.favoritesLoadError);
+    const loading=state.favoritesLoading === true;
+    const loaded=state.favoritesLoaded === true;
+    const retryNotice=loadFailed ? `<div class="recovery-card compact" role="status">
+      <div class="recovery-card-icon" aria-hidden="true">↻</div>
+      <div class="recovery-card-copy"><strong>Не удалось обновить команды</strong><span>${loaded ? 'Показан ранее загруженный список.' : 'Попробуйте ещё раз.'}</span></div>
+      <button id="myTeamsRetry" class="secondary-btn recovery-retry-btn" type="button">Повторить</button>
+    </div>` : '';
+    const bindRetry=() => $('myTeamsRetry')?.addEventListener('click', () => {
+      if (state.favoritesLoading !== true) onRetryLoad();
+    });
 
-    if (state.favoritesLoading === true && state.favoritesLoaded !== true) {
+    if (!loaded && (loading || (!loadFailed && state.favoritesLoaded === false))) {
       root.innerHTML = '<div class="loader compact-loader">Загружаю ваши команды…</div>';
       if (onboarding) onboarding.hidden = true;
       return;
     }
 
+    if (loadFailed && !loaded) {
+      root.innerHTML = retryNotice;
+      if (onboarding) onboarding.hidden = true;
+      bindRetry();
+      return;
+    }
+
     const validFavorites=favorites.filter(team => team && typeof team === 'object' && !Array.isArray(team) && positiveId(team.teamId));
     if (!validFavorites.length) {
-      root.innerHTML = '';
-      if (onboarding) onboarding.hidden = false;
+      root.innerHTML = retryNotice;
+      if (onboarding) onboarding.hidden = loadFailed || loading;
+      bindRetry();
       return;
     }
 
     if (onboarding) onboarding.hidden = true;
-    root.innerHTML = validFavorites.map(team => {
+    root.innerHTML = retryNotice + validFavorites.map(team => {
       const id = positiveId(team.teamId);
       const teamName=safeText(team.teamName,'Команда');
       const rawLogo=safeText(team.teamLogo);
@@ -131,6 +151,7 @@ export function createMyTeamsRenderer({
       </article>`;
     }).join('');
 
+    bindRetry();
     root.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => {
       const id=positiveId(btn.dataset.openTeam);
       if (!id) return;

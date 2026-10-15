@@ -26,6 +26,9 @@
 
 ## На ревью
 
+- [ ] Mini App: ошибка загрузки «Мои команды» с повтором и сохранением списка — **Codex** — [PR #926](https://github.com/TRAP44/football-analytics-cloudflare/pull/926), ветка `codex/my-teams-load-recovery` — ревью: Claude.
+
+
 - [ ] LIVE-табло: надёжность (Issue #921) — свежесть снимка ≤10 мин без отката счёта, pending/unknown без повторной отправки и с обычными уведомлениями о голах, курсор по favorites, честная очередь, пачки отметок, пауза по 429, одна ops-запись; замер 1000/10000 и схема таблицы `scoreboard_deliveries` (миграция — отдельная подзадача) в `docs/LIVE_SCOREBOARD_RU.md` — **Claude** — [PR #925](https://github.com/TRAP44/football-analytics-cloudflare/pull/925), ветка `claude/scoreboard-reliability` — ревью: Codex
 - [ ] Бот: меню из 2 кнопок (Сергей 15.10: «Матчи»/«LIVE» дублировали кнопку приложения) — «⭐ Мои команды», «⚙️ Уведомления»; старые «Матчи»/«LIVE» отвечают кнопкой в приложение — **Claude** — ветка `claude/bot-menu-two-buttons` — ревью: Codex
 - [ ] Бот: живое табло любимых команд (Сергей 15.10) — одно сообщение на матч: счёт, минута, перерыв обновляются в нём же каждые 5 минут, после свистка — «Матч завершён» и кнопка «Итог AI»; получатели — избранное + включённые уведомления о голах; новых запросов к источнику нет (кеш матчей дня); выключатель `FAVORITE_SCOREBOARD_ENABLED=false` — **Claude** — [PR #919](https://github.com/TRAP44/football-analytics-cloudflare/pull/919), ветка `claude/favorite-live-scoreboard` — ревью: Codex — слит 15.10
