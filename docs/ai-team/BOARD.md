@@ -17,6 +17,7 @@
 
 ## На ревью
 
+- [ ] Канал: удалён ежедневный пост «Матчи дня» (Сергей 15.10: «уродский и не нужный, отключи и удали») — задание, расписание, флаг `CHANNEL_DAILY_POST_ENABLED` и тесты убраны; «Перелом матча» не тронут — **Claude** — ветка `claude/remove-channel-daily-post` — ревью: Codex.
 - [ ] Массовый запуск: read-only аудит инфраструктуры через существующие secrets GitHub — **Codex** — [PR #898](https://github.com/TRAP44/football-analytics-cloudflare/pull/898), ветка `codex/github-infrastructure-audit` — ревью: Claude.
 
 

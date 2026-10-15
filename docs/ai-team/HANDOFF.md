@@ -14,6 +14,14 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-15 — Claude — Удалён пост «Матчи дня» в канале
+PR: ветка `claude/remove-channel-daily-post`.
+Сделано: по решению Сергея («уродский и не нужный, отключи и удали») удалены `src/channel-daily-post-job.js`, его тест, запуск в `scheduled-jobs.js` (окно 08:00 UTC), проводка в `worker.js`/`operational-orchestration-runtime.js`, конфиг `channelDailyPostEnabled` и переменная `CHANNEL_DAILY_POST_ENABLED` в `wrangler.jsonc`/`.env.example`. `bettingFree` перенесён в `match-swing-job.js` (нужен «Перелому матча»).
+Решения: «Перелом матча», личные «Итоги дня» в боте и фильтр лиг канала `isChannelLeague` не менялись. Уже опубликованные посты в канале код не удаляет — их Сергей убирает вручную.
+Проверки: Node 22 npm ci/check/lint, release 580/580, полный набор 4118/4119 — провал только `test/bot-match-card.test.js` (в песочнице не скачался `@resvg/resvg-wasm`, падает и на main).
+Осталось / внимание: после merge и деплоя 16.10 в 11:00 МСК поста быть не должно; записи `CHANNEL_DAILY_POST_*` в ops_events прекратятся.
+
+
 ## 2026-10-15 — Codex — Обследование инфраструктуры через GitHub
 PR: [PR #898](https://github.com/TRAP44/football-analytics-cloudflare/pull/898), ветка `codex/github-infrastructure-audit`.
 Сделано: ручной Audit Infrastructure Capacity использует существующие production secrets CF token/account и Supabase access token + vars project ref. Только main, checkout main, contents:read, отдельный шаг secrets, 4 фиксированных GET, timeout/redirect:error, безопасный Summary + JSON artifact 7 дней. Дополнен точный privileged allowlist и требование production environment для нового workflow. Код приложения/public/SQL не менялись.
