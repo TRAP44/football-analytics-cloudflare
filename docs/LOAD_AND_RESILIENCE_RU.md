@@ -43,3 +43,7 @@ Staging-проверка требует отдельного Worker/Supabase, т
 `node scripts/isolated-postgres-burst-check.js` создаёт одноразовый PostgreSQL без сети и проверяет реальные RPC-блокировки на очереди 1000 вызовов с максимумом 20 SQL-сессий. В Supabase CI `isolated-db-load-check.js --full` дополнительно включает очередь 1000. Это не 1000 соединений БД.
 
 Длительный soak уважает реальное ожидание limiter: подмена его на 1 мс искусственно накапливала очередь и вызывала ложный отказ healthy-фазы. Подробные результаты и ограничения — [отчёт массового запуска](MASS_LAUNCH_CAPACITY_2026_10_15_RU.md).
+
+## Реальный PostgreSQL/PostgREST под HTTP-нагрузкой
+
+`node scripts/start-real-database-http-load.js` создаёт одноразовый стек со всеми 39 fresh migrations, проверяет fingerprint и запускает signed Worker HTTP ramp 10/50/100/1000. В финале — 10 000 чтений ленты и 1000 готовых разборов. Ответы БД настоящие. Контейнеры/сеть/credentials удаляются после теста; production не подключается. Подробные результаты и ограничения — [REAL_DATABASE_HTTP_LOAD_RU.md](REAL_DATABASE_HTTP_LOAD_RU.md).
