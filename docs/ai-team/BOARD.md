@@ -21,7 +21,7 @@
 
 ## На ревью
 
-- [ ] Канал: убраны автоматические посты «Перелом матча» (Сергей 15.10: «лишнее, отключи или удали») — публикация, предпросмотры, флаг `CHANNEL_SWING_POST_ENABLED`; личные сообщения о переломе в проде и так выключены (`MATCH_SWING_ENABLED=false`), включение — только по «да» Сергея — **Claude** — ветка `claude/remove-channel-swing-posts` — ревью: Codex.
+- [ ] «Перелом матча» удалён целиком (Сергей 15.10: «вообще удали, это не нужно») — посты в канал, личные сообщения, задание в расписании, флаги `CHANNEL_SWING_POST_ENABLED`/`MATCH_SWING_ENABLED` — **Claude** — [PR #905](https://github.com/TRAP44/football-analytics-cloudflare/pull/905), ветка `claude/remove-channel-swing-posts` — ревью: Codex.
 - [ ] Сократить p95 готового разбора под реальной DB-нагрузкой без ослабления квот/истории — **Codex** — [PR #902](https://github.com/TRAP44/football-analytics-cloudflare/pull/902), ветка `codex/cached-analysis-latency` — ревью: Claude.
 
 

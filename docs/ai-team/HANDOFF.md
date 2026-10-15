@@ -14,12 +14,11 @@ PR: ссылка или ветка
 
 ---
 
-## 2026-10-15 — Claude — Убраны посты «Перелом матча» в канал
-PR: ветка `claude/remove-channel-swing-posts`.
-Сделано: из `src/match-swing-job.js` удалены публикация в канал, предпросмотры CHANNEL_SWING_POST_PREVIEW, дневные слоты и фильтр главных турниров; из worker — проводка idempotency/isTopLeague/isChannelLeague; конфиг `channelSwingPostEnabled` и `CHANNEL_SWING_POST_ENABLED` (wrangler, .env.example). `bettingFree` больше не нужен — удалён. Тесты переписаны: в канал ничего не уходит.
-Решения: Сергей 15.10 — автоматические посты в канал не нужны. Код личных сообщений «Перелом матча» не тронут, но в проде вся задача выключена `MATCH_SWING_ENABLED=false` (было и до PR, замечание Codex); включать — только по «да» Сергея. Ручная тестовая публикация из админки (`/api/admin/channel-publisher/test`) осталась. В «Бэклог» записаны идеи 1, 2, 3, 5 по порядку.
-Проверки: Node 22 npm ci/check/lint, release 580/580, полный набор 4126/4127 — провал только `test/bot-match-card.test.js` (в песочнице нет `@resvg/resvg-wasm`, падает и на main).
-Осталось / внимание: после деплоя автоматических постов в канале нет совсем.
+## 2026-10-15 — Claude — «Перелом матча» удалён целиком
+PR: [PR #905](https://github.com/TRAP44/football-analytics-cloudflare/pull/905), ветка `claude/remove-channel-swing-posts`.
+Сделано: удалены `src/match-swing-job.js` и его тест, задание `match_swing` в `scheduled-jobs.js`, проводка в `worker.js`/`operational-orchestration-runtime.js`, конфиги `matchSwingEnabled`/`channelSwingPostEnabled` и переменные `MATCH_SWING_ENABLED`/`CHANNEL_SWING_POST_ENABLED` (wrangler, .env.example), упоминание в тексте настроек бота. В «Бэклог» записаны идеи 1, 2, 3, 5 по порядку.
+Решения: Сергей 15.10 — сначала убрать посты в канал, затем «вообще удали, это не нужно» (в проде задача и так была выключена `MATCH_SWING_ENABLED=false`, замечание Codex). Кривая LIVE (`in_play_timeline`) и ручная тестовая публикация из админки остались. Бот больше ничего сам в канал не публикует.
+Проверки: Node 22 npm ci/check/lint, release 581/581, полный набор — провал только `test/bot-match-card.test.js` (в песочнице нет `@resvg/resvg-wasm`, падает и на main).
 
 
 ## 2026-10-15 — Codex — Сокращение задержки готового разбора

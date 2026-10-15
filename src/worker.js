@@ -43,7 +43,6 @@ import { createReferralRewardsRuntime } from './referral-rewards-runtime.js';
 import { createPrematchPredictionJob } from './prematch-prediction-job.js';
 import { createProviderStatusProbe } from './provider-status-probe.js';
 import { createInPlayTimelineJob } from './in-play-timeline-job.js';
-import { createMatchSwingJob } from './match-swing-job.js';
 import { createBillingRuntime } from './billing-runtime.js';
 import { createBillingApiRuntime } from './billing-api-runtime.js';
 import { createClientTelemetryRuntime } from './client-telemetry-runtime.js';
@@ -590,7 +589,6 @@ const {
   reserveEntitlementUsage,
   resolveUserEntitlements,
   filterSmartNotificationRecipients,
-  deliverSmartNotification,
   reminderDeliveryStatus,
   processDueReminders,
   processLineupNotifications,
@@ -1726,24 +1724,6 @@ function getInPlayTimelineJob() {
 function processInPlayTimeline(...args) { return getInPlayTimelineJob().processInPlayTimeline(...args); }
 
 
-let matchSwingJob = null;
-function getMatchSwingJob() {
-  if (!matchSwingJob) {
-    matchSwingJob = createMatchSwingJob({
-      clock: () => Date.now(),
-      deliverSmartNotification: (...args) => deliverSmartNotification(...args),
-      filterRecipients: (...args) => filterSmartNotificationRecipients(...args),
-      getCache,
-      hasSupabase,
-      loadRuntimeControls: (...args) => loadRuntimeControls(...args),
-      recordOpsEvent,
-      supaSelectMany,
-      supaSelectPaged,
-    });
-  }
-  return matchSwingJob;
-}
-function processMatchSwings(...args) { return getMatchSwingJob().processMatchSwings(...args); }
 
 const {
   sendTelegramMessage,
@@ -3298,7 +3278,6 @@ const {
   processPostMatchReturns,
   processPrematchPredictions,
   processInPlayTimeline,
-  processMatchSwings,
   processSmartNotifications,
   productionSafetySnapshot,
   providerAuditCall,
