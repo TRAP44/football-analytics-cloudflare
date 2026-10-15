@@ -264,8 +264,8 @@ export function createTelegramBotUiRuntime(deps = {}) {
   }
 
   // «Ещё» больше нет (Сергей 13.10): старый вызов возвращает то же единственное меню.
-  function footballBotMoreKeyboard(request) {
-    return footballBotKeyboard(request);
+  function footballBotMoreKeyboard(request, chatId = 0) {
+    return footballBotKeyboard(request,chatId);
   }
 
   function favoriteTeamIdSet(rows=[]) {
