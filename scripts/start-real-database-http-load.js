@@ -47,7 +47,7 @@ try {
     '-e',`PGRST_DB_URI=postgres://authenticator:${password}@${database}:5432/isolated`,
     '-e','PGRST_DB_SCHEMAS=public','-e','PGRST_DB_ANON_ROLE=anon','-e','PGRST_DB_POOL=20',
     '-e',`PGRST_JWT_SECRET=${secret}`,
-    'public.ecr.aws/supabase/postgrest@sha256:d155c6718ed9a9f990d159a2ab7c0a3f16944dbb6d0a0344557421042acfe0df']);created.push(['rm','-f','-v',rest]);
+    'ghcr.io/supabase/postgrest@sha256:d155c6718ed9a9f990d159a2ab7c0a3f16944dbb6d0a0344557421042acfe0df']);created.push(['rm','-f','-v',rest]);
   const encoded=value=>Buffer.from(JSON.stringify(value)).toString('base64url');
   const unsigned=`${encoded({alg:'HS256',typ:'JWT'})}.${encoded({role:'service_role',exp:Math.floor(Date.now()/1000)+3600})}`;
   const token=`${unsigned}.${createHmac('sha256',secret).update(unsigned).digest('base64url')}`;
