@@ -14,6 +14,13 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-15 — Claude — «Перелом матча» удалён целиком
+PR: [PR #905](https://github.com/TRAP44/football-analytics-cloudflare/pull/905), ветка `claude/remove-channel-swing-posts`.
+Сделано: удалены `src/match-swing-job.js` и его тест, задание `match_swing` в `scheduled-jobs.js`, проводка в `worker.js`/`operational-orchestration-runtime.js`, конфиги `matchSwingEnabled`/`channelSwingPostEnabled` и переменные `MATCH_SWING_ENABLED`/`CHANNEL_SWING_POST_ENABLED` (wrangler, .env.example), упоминание в тексте настроек бота. В «Бэклог» записаны идеи 1, 2, 3, 5 по порядку.
+Решения: Сергей 15.10 — сначала убрать посты в канал, затем «вообще удали, это не нужно» (в проде задача и так была выключена `MATCH_SWING_ENABLED=false`, замечание Codex). Кривая LIVE (`in_play_timeline`) и ручная тестовая публикация из админки остались. Бот больше ничего сам в канал не публикует.
+Проверки: Node 22 npm ci/check/lint, release 581/581, полный набор — провал только `test/bot-match-card.test.js` (в песочнице нет `@resvg/resvg-wasm`, падает и на main).
+
+
 ## 2026-10-15 — Codex — Сокращение задержки готового разбора
 PR: [PR #902](https://github.com/TRAP44/football-analytics-cloudflare/pull/902), ветка `codex/cached-analysis-latency`.
 Сделано: cached-ответ ждёт history и свежую quota metadata параллельно, затем запускает прежние growth/referral фоновые операции. История группируется по точным Supabase URL/key, до 100 callers/2 мс, подтверждение upsert ожидается каждым; дубликаты берут newest viewed_at, сортируются conflict keys. Failures каждого caller идут в старый индивидуальный retry. Unknown identity не группируется. In-memory/getHistory, квоты/оплата/access и API shapes сохранены; public/SQL без изменений.

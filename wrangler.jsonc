@@ -39,8 +39,6 @@
     "DEV_MODE": "false",
     "BOT_MATCH_CARDS_ENABLED": "true",
     "TELEGRAM_CHANNEL_ID": "@MatchRadarFootball",
-    "CHANNEL_SWING_POST_ENABLED": "false",
-    "MATCH_SWING_ENABLED": "false",
     "FREE_DAILY_LIMIT": "3",
     "PRO_DAILY_LIMIT": "20",
     "PREMIUM_DAILY_LIMIT": "100",

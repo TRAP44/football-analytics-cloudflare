@@ -194,7 +194,6 @@ export function createScheduledJobsRuntime({
   processPostMatchReturns,
   processPrematchPredictions,
   processInPlayTimeline,
-  processMatchSwings,
   runProductionMonitor,
   processDailyDigests,
   processBotMatchCards,
@@ -478,10 +477,6 @@ export function createScheduledJobsRuntime({
     ];
     if (typeof processBotMatchCards==='function') tasks.push(['bot_match_cards', remindersTask.then(() => run('bot_match_cards', () => processBotMatchCards(cfg)))]);
     if (inPlayTimelineTask) tasks.push(['in_play_timeline', inPlayTimelineTask]);
-    // «Перелом матча»: по свежим точкам кривой — после того, как они записаны.
-    if (inPlayTimelineTask && typeof processMatchSwings === 'function') {
-      tasks.push(['match_swing', inPlayTimelineTask.then(() => run('match_swing', () => processMatchSwings(cfg, scheduledAt)))]);
-    }
 
     if (scheduledAt.getUTCMinutes() % 15 === 0) {
       const monitorAfterReminders = remindersTask
