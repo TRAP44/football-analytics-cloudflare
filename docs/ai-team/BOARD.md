@@ -12,12 +12,13 @@
 
 ## В работе
 
-- [ ] Настоящая БД под HTTP-нагрузкой: отдельный Supabase/PostgREST, 10→50→100→1000 клиентов — **Codex** — ветка `codex/real-database-http-load`.
 
 
 
 
 ## На ревью
+
+- [ ] Настоящая БД под HTTP-нагрузкой: отдельный Supabase/PostgREST, 10→50→100→1000 клиентов — **Codex** — [PR #900](https://github.com/TRAP44/football-analytics-cloudflare/pull/900), ветка `codex/real-database-http-load` — ревью: Claude.
 
 
 

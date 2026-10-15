@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-15 — Codex — Настоящий PostgreSQL/PostgREST под HTTP-нагрузкой
-PR: ветка `codex/real-database-http-load`.
+PR: [PR #900](https://github.com/TRAP44/football-analytics-cloudflare/pull/900), ветка `codex/real-database-http-load`.
 Сделано: локальный Docker стенд PostgreSQL 16.11 + PostgREST 16.4, pinned digests, UUID network/containers, loopback-only REST, БД без опубликованного порта. 39 настоящих fresh migrations, fingerprint совпадает с контрактом. 512 MiB/1 CPU/60 connections, REST pool 20. Настоящие HTTP-запросы к БД вместо заглушки; gateway только prefix/apikey-to-generated-JWT adapter. Standalone orchestrator запускает ramp 10→50→100→1000 и чистит только свои ресурсы; новый CI job без secrets.
 Результат: большая ступень 10 000 GET + 1000 cached POST, все HTTP 200, реальные REST ответы только 200/201 (18 002), внешний fetch 0. p95 1761/5994 мс; SQL подтвердил 10 000 пользователей и 1000 строк истории. Предыдущий полный прогон 1818/6582 мс. Функциональные критерии пройдены, инженерная цель p95≤2с у разбора на пике не достигнута. Это измеренный результат, не обещание вместимости Cloudflare Free/hosted Nano. Payloads синтетические, L1 заранее прогрет, signed auth настоящая. Cold provider/платежи/Telegram/мобильные клиенты не нагружались.
 Проверки: Node 22 npm ci/check/lint, release 580/580, полный набор 4142/4142, security:privileged. Реальный стек дважды прошёл полный ramp и SQL evidence; после каждого прогона контейнеры/сеть удалены.
