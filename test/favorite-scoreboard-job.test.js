@@ -271,3 +271,87 @@ test('policy and measurements are documented', () => {
   const doc = fs.readFileSync('docs/LIVE_SCOREBOARD_RU.md', 'utf8');
   for (const word of ['pending', 'unknown', 'blocked', 'done', 'курсор', '429', '1000', '10000', 'scoreboard_deliveries']) assert.ok(doc.includes(word), word);
 });
+
+// Ревью Codex #925.
+
+test('opt-out after the board: no edits or closing once goal alerts are off or the team is removed', async () => {
+  const h = createScoreboardHarness({ favorites: fans(2, 596, 11) });
+  h.setFixtures([fixtureRow()]);
+  await h.run();
+  assert.equal(h.sent.length, 2);
+  h.setAllow(rows => rows.filter(row => row.telegram_id !== 11));
+  h.favorites.splice(h.favorites.findIndex(row => row.telegram_id === 12), 1);
+  h.tick();
+  h.setFixtures([fixtureRow({ elapsed: 30, home: 1 })]);
+  const summary = await h.run();
+  assert.equal(summary.edited, 0);
+  assert.equal(summary.optedOut, 2);
+  assert.equal(h.counters.telegram, 2, 'no editMessageText after opt-out');
+  h.tick();
+  h.setFixtures([fixtureRow({ status: 'FT', elapsed: 90, home: 1 })]);
+  await h.run();
+  assert.equal(h.counters.telegram, 2, 'no closing edit either');
+});
+
+test('recipient re-check failure defers edits instead of sending them', async () => {
+  let broken = false;
+  const h = createScoreboardHarness({ favorites: fans(1, 596, 11), allow: rows => { if (broken) throw new Error('settings down'); return rows; } });
+  h.setFixtures([fixtureRow()]);
+  await h.run();
+  broken = true;
+  h.tick();
+  h.setFixtures([fixtureRow({ elapsed: 30, home: 1 })]);
+  let summary = await h.run();
+  assert.equal(summary.edited, 0);
+  assert.equal(summary.recheckFailed, true);
+  assert.equal(summary.deferred, 1);
+  broken = false;
+  h.tick();
+  h.setFixtures([fixtureRow({ elapsed: 35, home: 1 })]);
+  summary = await h.run();
+  assert.equal(summary.edited, 1);
+});
+
+test('several favorite teams of one user split by the page boundary: every match gets its board', async () => {
+  const two = (id) => [{ telegram_id: id, team_id: 596 }, { telegram_id: id, team_id: 489 }];
+  const matches = () => [fixtureRow({ id: 7 }), fixtureRow({ id: 8, homeId: 489, awayId: 505 })];
+  const h = createScoreboardHarness({ favorites: two(11), discoveryMaxRows: 1 });
+  for (let i = 0; i < 4; i += 1) { h.setFixtures(matches()); await h.run(); h.tick(); }
+  assert.ok(h.board(7, 11)?.m && h.board(8, 11)?.m, 'both boards');
+  assert.equal(h.sent.length, 2);
+
+  const many = createScoreboardHarness({ favorites: [1, 2, 3, 4, 5].flatMap(two), discoveryMaxRows: 3 });
+  for (let i = 0; i < 8; i += 1) { many.setFixtures(matches()); await many.run(); many.tick(); }
+  const delivered = many.sent.map(s => s.message_id);
+  assert.equal(many.sent.length, 10, 'five users × two matches, no duplicates');
+  assert.equal(new Set(delivered).size, 10);
+  for (const id of [1, 2, 3, 4, 5]) assert.ok(many.board(7, id)?.m && many.board(8, id)?.m, `user ${id}`);
+});
+
+test('time budget is checked before every send inside a claimed batch', async () => {
+  const h = createScoreboardHarness({ favorites: fans(200), sendDelayMs: 1000, runTimeBudgetMs: 45_000 });
+  h.setFixtures([fixtureRow()]);
+  const started = h.now();
+  const summary = await h.run();
+  assert.ok(h.now() - started <= 47_000, `run lasted ${h.now() - started} ms`);
+  assert.equal(summary.capped, true);
+  assert.ok(summary.deferred > 0);
+  const users = h.store.get('scoreboard:7:v1').users;
+  assert.equal(Object.values(users).filter(b => b.s === 'p').length, 0, 'no stranded pending marks');
+  for (let i = 0; i < 6 && h.sent.length < 200; i += 1) { h.tick(); h.setFixtures([fixtureRow()]); await h.run(); }
+  assert.equal(h.sent.length, 200);
+  assert.equal(new Set(h.sent.map(s => s.chat)).size, 200, 'no duplicates after continuation');
+});
+
+test('freshness uses the real execution time, not the cron slot', async () => {
+  const h = createScoreboardHarness({ favorites: fans(1, 596, 11) });
+  // Пакет обновлён после начала слота: не «из будущего».
+  h.setFixtures([fixtureRow()], { fetchedAt: h.now() });
+  let summary = await h.job.processFavoriteScoreboards({}, new Date(h.now() - 90_000));
+  assert.equal(summary.sent, 1);
+  // Запуск задержался: к слоту снимку было 5 минут, на деле уже 12.
+  const late = createScoreboardHarness({ favorites: fans(1, 596, 11) });
+  late.setFixtures([fixtureRow()], { fetchedAt: late.now() - 12 * 60_000 });
+  summary = await late.job.processFavoriteScoreboards({}, new Date(late.now() - 7 * 60_000));
+  assert.equal(summary.sent, 0);
+});

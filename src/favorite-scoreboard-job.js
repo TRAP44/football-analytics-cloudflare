@@ -34,6 +34,8 @@ export const MAX_MESSAGES_PER_RUN = 600;
 export const CLAIM_BATCH_SIZE = 150;
 const RUN_TIME_BUDGET_MS = 45_000;
 const DISCOVERY_PAGE_SIZE = 1000;
+const FUTURE_SKEW_MS = 60_000;
+const RECHECK_CHUNK = 200;
 const DISCOVERY_MAX_ROWS = 10_000;
 const MAX_FIXTURES = 120;
 
@@ -195,7 +197,9 @@ export function createFavoriteScoreboardJob(deps = {}) {
         if (!match || seen.has(match.fixtureId)) continue;
         seen.add(match.fixtureId);
         match.fetchedAt = Number.isFinite(fetchedAt) ? fetchedAt : 0;
-        match.fresh = Number.isFinite(fetchedAt) && nowMs - fetchedAt >= 0 && nowMs - fetchedAt <= SNAPSHOT_MAX_AGE_MS;
+        // Время запуска — фактическое (ревью Codex #925): пакет, обновлённый уже после
+        // слота cron, свежий; небольшой сдвиг часов вперёд допустим.
+        match.fresh = Number.isFinite(fetchedAt) && nowMs - fetchedAt >= -FUTURE_SKEW_MS && nowMs - fetchedAt <= SNAPSHOT_MAX_AGE_MS;
         result.push(match);
         if (result.length >= MAX_FIXTURES) return result;
       }
@@ -219,11 +223,15 @@ export function createFavoriteScoreboardJob(deps = {}) {
   // Новые получатели по курсору telegram_id: за запуск не больше DISCOVERY_MAX_ROWS
   // строк избранного; если строк больше (truncated), курсор переносит хвост на
   // следующий запуск — никто не выпадает навсегда.
+  // Курсор составной (telegram_id, team_id): telegram_id в favorites не уникален, и
+  // граница страницы может разрезать команды одного человека (ревью Codex #925).
+  // team = 0 — «все строки этого человека уже прочитаны» (telegram_id gt).
   async function discover(teamIds, cursor, cfg) {
     const params = { team_id: `in.(${teamIds.join(',')})` };
-    if (cursor > 0) params.telegram_id = `gt.${cursor}`;
+    if (cursor.id > 0 && cursor.team > 0) params.or = `(telegram_id.gt.${cursor.id},and(telegram_id.eq.${cursor.id},team_id.gt.${cursor.team}))`;
+    else if (cursor.id > 0) params.telegram_id = `gt.${cursor.id}`;
     const page = plainObject(await supaSelectPaged(cfg, 'favorites', params, {
-      pageSize: Math.min(DISCOVERY_PAGE_SIZE, discoveryMaxRows), maxRows: discoveryMaxRows, order: 'telegram_id.asc',
+      pageSize: Math.min(DISCOVERY_PAGE_SIZE, discoveryMaxRows), maxRows: discoveryMaxRows, order: 'telegram_id.asc,team_id.asc',
     }));
     const rows = Array.isArray(page?.rows) ? page.rows : null;
     if (!rows) throw new TypeError('favorites lookup returned an invalid response.');
@@ -236,8 +244,40 @@ export function createFavoriteScoreboardJob(deps = {}) {
     }
     const allowed = plainObject(await filterRecipients([...byUser.values()], 'match.goal', cfg));
     const ids = new Set((Array.isArray(allowed?.rows) ? allowed.rows : []).map(row => positiveId(row?.telegram_id)).filter(Boolean));
-    const lastId = rows.reduce((max, row) => Math.max(max, positiveId(row?.telegram_id)), cursor);
-    return { rows: rows.filter(row => ids.has(positiveId(row?.telegram_id))), truncated: page.truncated === true, lastId };
+    const lastRow = rows[rows.length - 1];
+    const last = lastRow ? { id: positiveId(lastRow.telegram_id), team: positiveId(lastRow.team_id) } : cursor;
+    return { rows: rows.filter(row => ids.has(positiveId(row?.telegram_id))), truncated: page.truncated === true, last };
+  }
+
+  // Актуальная проверка получателей уже показанных табло: фильтр уведомлений о
+  // голах и избранное по их id (не зависит от курсора и страниц discovery).
+  // Возвращает Map(userId → Set(teamId)) или null, если проверить не удалось.
+  async function recheckExisting(items, cfg) {
+    try {
+      const userIds = [...new Set(items.map(item => item.userId))].sort((x, y) => x - y);
+      const allowed = plainObject(await filterRecipients(userIds.map(id => ({ telegram_id: id })), 'match.goal', cfg));
+      if (!Array.isArray(allowed?.rows)) return null;
+      const ids = [...new Set(allowed.rows.map(row => positiveId(row?.telegram_id)).filter(Boolean))].sort((x, y) => x - y);
+      const teams = [...new Set(items.flatMap(item => [item.entry.match.homeId, item.entry.match.awayId]))].sort((x, y) => x - y);
+      const result = new Map();
+      for (let i = 0; i < ids.length; i += RECHECK_CHUNK) {
+        const chunk = ids.slice(i, i + RECHECK_CHUNK);
+        const page = plainObject(await supaSelectPaged(cfg, 'favorites', {
+          telegram_id: `in.(${chunk.join(',')})`, team_id: `in.(${teams.join(',')})`,
+        }, { pageSize: DISCOVERY_PAGE_SIZE, maxRows: DISCOVERY_MAX_ROWS, order: 'telegram_id.asc,team_id.asc' }));
+        if (!Array.isArray(page?.rows) || page.truncated === true) return null;
+        for (const row of page.rows) {
+          const userId = positiveId(row?.telegram_id);
+          const teamId = positiveId(row?.team_id);
+          if (!userId || !teamId) continue;
+          if (!result.has(userId)) result.set(userId, new Set());
+          result.get(userId).add(teamId);
+        }
+      }
+      return result;
+    } catch {
+      return null;
+    }
   }
 
   async function report(cfg, summary) {
@@ -262,7 +302,7 @@ export function createFavoriteScoreboardJob(deps = {}) {
   async function processFavoriteScoreboards(cfg, scheduledAt = new Date()) {
     const summary = {
       ok: true, matches: 0, recipients: 0, sent: 0, edited: 0, closed: 0, unchanged: 0, blocked: 0,
-      failed: 0, unknown: 0, unknownPending: 0, deferred: 0, staleSkipped: 0, staleMatches: 0, capped: false, stopped: '',
+      failed: 0, unknown: 0, unknownPending: 0, optedOut: 0, deferred: 0, staleSkipped: 0, staleMatches: 0, capped: false, stopped: '',
       oldestWaitSec: 0, discovery: { cursor: 0, next: 0, truncated: false }, telegramCalls: 0, dbWrites: 0,
     };
     if (cfg?.favoriteScoreboardEnabled === false) return { ...summary, reason: 'disabled' };
@@ -271,7 +311,9 @@ export function createFavoriteScoreboardJob(deps = {}) {
     if (!storage) return { ...summary, reason: 'storage_unavailable' };
 
     const startedAt = now();
-    const at = scheduledAt instanceof Date && Number.isFinite(scheduledAt.getTime()) ? scheduledAt.getTime() : startedAt;
+    // Свежесть и паузы — по фактическому времени, а не по слоту cron (ревью Codex #925).
+    const at = startedAt;
+    void scheduledAt;
 
     // Лимит Telegram (429) из прошлого запуска ещё действует — ждём.
     const pause = await readJson(SCOREBOARD_PAUSE_KEY, cfg);
@@ -311,10 +353,12 @@ export function createFavoriteScoreboardJob(deps = {}) {
     const liveTeams = [...new Set(matches.filter(m => m.live && m.fresh).flatMap(m => [m.homeId, m.awayId]))].sort((x, y) => x - y);
     const teamsKey = textHash(liveTeams.join(','));
     const cursorState = await readJson(SCOREBOARD_CURSOR_KEY, cfg);
-    const cursor = cursorState?.teams === teamsKey ? positiveId(cursorState.after) : 0;
-    summary.discovery.cursor = cursor;
+    const cursor = cursorState?.teams === teamsKey
+      ? { id: positiveId(cursorState.after), team: positiveId(cursorState.afterTeam) }
+      : { id: 0, team: 0 };
+    summary.discovery.cursor = cursor.id;
     const usersByTeam = new Map();
-    let discovery = { rows: [], truncated: false, lastId: cursor };
+    let discovery = { rows: [], truncated: false, last: cursor };
     if (liveTeams.length) {
       try {
         discovery = await discover(liveTeams, cursor, cfg);
@@ -373,6 +417,37 @@ export function createFavoriteScoreboardJob(deps = {}) {
     edits.sort((x, y) => x.a - y.a);
     news.sort((x, y) => x.entry.match.fixtureId - y.entry.match.fixtureId || x.userId - y.userId);
 
+    // Уже показанные табло правим, только если человек по-прежнему получает
+    // уведомления о голах и держит команду матча в избранном (ревью Codex #925).
+    // Проверяются те, до кого дойдёт этот запуск; остальные — в хвосте.
+    const overflow = [...closings.splice(maxMessages), ...edits.splice(Math.max(0, maxMessages - closings.length))];
+    const existing = [...closings, ...edits];
+    if (existing.length) {
+      const keep = await recheckExisting(existing, cfg);
+      if (!keep) {
+        // Проверить не удалось — правки откладываем, без отправки.
+        overflow.push(...existing);
+        closings.length = 0;
+        edits.length = 0;
+        summary.failed += 1;
+        summary.recheckFailed = true;
+      } else {
+        const stillFan = item => keep.get(item.userId)?.has(item.entry.match.homeId) || keep.get(item.userId)?.has(item.entry.match.awayId);
+        for (const list of [closings, edits]) {
+          const kept = list.filter(item => {
+            if (stillFan(item)) return true;
+            // Отписался от голов или убрал команду: табло больше не трогаем.
+            const board = item.entry.boards[item.userId];
+            item.entry.boards[item.userId] = { ...board, s: 'd' };
+            item.entry.changed = true;
+            summary.optedOut += 1;
+            return false;
+          });
+          list.splice(0, list.length, ...kept);
+        }
+      }
+    }
+
     // Порядок: все итоги, затем поровну пачки правок и пачки новых табло (пачка
     // новых — один матч, чтобы отметки сохранялись одной записью).
     const chunkSize = Math.max(1, Math.min(CLAIM_BATCH_SIZE, Math.ceil(maxMessages / 4)));
@@ -412,7 +487,8 @@ export function createFavoriteScoreboardJob(deps = {}) {
     };
 
     let index = 0;
-    while (index < queue.length && !summary.stopped) {
+    let unsentClaims = 0;
+    while (index < queue.length && !summary.stopped && !summary.capped) {
       if (budget <= 0 || now() - startedAt > timeBudgetMs) {
         summary.capped = true;
         break;
@@ -439,10 +515,14 @@ export function createFavoriteScoreboardJob(deps = {}) {
           break;
         }
         for (const userId of batch) {
-          if (summary.stopped) {
-            // Отметки, до которых не дошли, снимаем — человек получит табло позже.
+          // Дедлайн проверяется перед каждой отправкой (ревью Codex #925).
+          if (!summary.stopped && now() - startedAt > timeBudgetMs) summary.capped = true;
+          if (summary.stopped || summary.capped) {
+            // Отметки, до которых не дошли, снимаем и сохраняем ниже — человек
+            // получит табло в следующем запуске (курсор вернётся к нему).
             delete boards[userId];
             retryNew.push(userId);
+            unsentClaims += 1;
             continue;
           }
           budget -= 1;
@@ -513,8 +593,8 @@ export function createFavoriteScoreboardJob(deps = {}) {
 
     // Отложенное: не дошедшие в этом запуске правки/итоги/новые и самое долгое ожидание.
     const rest = queue.slice(index);
-    summary.deferred = rest.length;
-    const waits = rest.filter(item => item.kind !== 'new' && item.a).map(item => Math.round((at - item.a) / 1000));
+    summary.deferred = rest.length + unsentClaims + overflow.length;
+    const waits = [...rest, ...overflow].filter(item => item.kind !== 'new' && item.a).map(item => Math.round((at - item.a) / 1000));
     summary.oldestWaitSec = waits.length ? Math.max(...waits) : 0;
 
     if (summary.stopped !== 'checkpoint_failed') {
@@ -527,12 +607,14 @@ export function createFavoriteScoreboardJob(deps = {}) {
     // иначе — до конца прочитанной части; хвост за пределами выборки — в следующий раз.
     if (liveTeams.length && summary.stopped !== 'favorites_lookup_failed') {
       const pendingNew = [...rest.filter(item => item.kind === 'new').map(item => item.userId), ...retryNew];
-      let next = 0;
-      if (pendingNew.length) next = Math.min(...pendingNew) - 1;
-      else if (discovery.truncated) next = discovery.lastId;
-      summary.discovery.next = next;
-      if (next !== cursor || cursorState?.teams !== teamsKey) {
-        if (await writeJson(SCOREBOARD_CURSOR_KEY, 0, { teams: teamsKey, after: next }, cfg)) summary.dbWrites += 1;
+      let next = { id: 0, team: 0 };
+      // Необработанный новый — перечитываем все его строки (gt id-1); табло, что уже
+      // есть, повторно не создаются.
+      if (pendingNew.length) next = { id: Math.min(...pendingNew) - 1, team: 0 };
+      else if (discovery.truncated) next = discovery.last;
+      summary.discovery.next = next.id;
+      if (next.id !== cursor.id || next.team !== cursor.team || cursorState?.teams !== teamsKey) {
+        if (await writeJson(SCOREBOARD_CURSOR_KEY, 0, { teams: teamsKey, after: next.id, afterTeam: next.team }, cfg)) summary.dbWrites += 1;
       }
     }
 

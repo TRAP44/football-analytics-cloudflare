@@ -23,6 +23,8 @@ export function createScoreboardHarness({
   maxMessagesPerRun,
   discoveryMaxRows,
   clockStart = NOW,
+  sendDelayMs = 0,
+  runTimeBudgetMs,
 } = {}) {
   const store = new Map();
   const ops = [];
@@ -35,6 +37,7 @@ export function createScoreboardHarness({
     clock: () => clock,
     maxMessagesPerRun,
     discoveryMaxRows,
+    runTimeBudgetMs,
     filterRecipients: async rows => ({ rows: allow(rows) }),
     getCache: async key => {
       counters.dbReads += 1;
@@ -52,21 +55,29 @@ export function createScoreboardHarness({
       store.set(key, JSON.parse(json));
       return true;
     },
-    // Как PostgREST: фильтры team_id in (...) и telegram_id gt.X, порядок по telegram_id,
-    // постранично до maxRows с признаком truncated.
+    // Как PostgREST: team_id in (...), telegram_id in (...) / gt.X, составной курсор
+    // or=(telegram_id.gt.X,and(telegram_id.eq.X,team_id.gt.T)), порядок
+    // (telegram_id, team_id), постранично до maxRows с признаком truncated.
     supaSelectPaged: async (_cfg, table, params, options) => {
       if (table !== 'favorites') throw new Error(`unexpected table ${table}`);
-      const teams = new Set(String(params.team_id).replace(/^in\.\(|\)$/g, '').split(',').map(Number));
-      const after = params.telegram_id ? Number(String(params.telegram_id).replace(/^gt\./, '')) : 0;
+      const list = value => new Set(String(value).replace(/^in\.\(|\)$/g, '').split(',').map(Number));
+      const teams = list(params.team_id);
+      const users = String(params.telegram_id || '').startsWith('in.') ? list(params.telegram_id) : null;
+      const after = String(params.telegram_id || '').startsWith('gt.') ? Number(params.telegram_id.slice(3)) : 0;
+      const composite = params.or ? String(params.or).match(/^\(telegram_id\.gt\.(\d+),and\(telegram_id\.eq\.\1,team_id\.gt\.(\d+)\)\)$/) : null;
+      if (params.or && !composite) throw new Error(`unexpected or filter ${params.or}`);
+      if (options.order !== 'telegram_id.asc,team_id.asc') throw new Error(`unexpected order ${options.order}`);
       const rows = favorites
-        .filter(row => teams.has(row.team_id) && row.telegram_id > after)
-        .sort((x, y) => x.telegram_id - y.telegram_id);
+        .filter(row => teams.has(row.team_id) && (!users || users.has(row.telegram_id)) && row.telegram_id > after)
+        .filter(row => !composite || row.telegram_id > Number(composite[1]) || (row.telegram_id === Number(composite[1]) && row.team_id > Number(composite[2])))
+        .sort((x, y) => x.telegram_id - y.telegram_id || x.team_id - y.team_id);
       const cap = options.maxRows;
       counters.favoriteReads += Math.max(1, Math.ceil(Math.min(rows.length, cap) / options.pageSize));
       return { rows: rows.slice(0, cap), truncated: rows.length > cap };
     },
     telegramApi: async (method, _cfg, payload) => {
       counters.telegram += 1;
+      clock += sendDelayMs; // виртуальная задержка Telegram
       if (telegram) {
         const result = await telegram(method, payload, { sent });
         if (result !== undefined) return result;
@@ -81,7 +92,8 @@ export function createScoreboardHarness({
     recordOpsEvent: async (_cfg, event) => { ops.push(event); },
   });
   return {
-    job, store, ops, sent, counters,
+    job, store, ops, sent, counters, favorites,
+    setAllow(fn) { allow = fn; },
     setFixtures(rows, { fetchedAt = clock, date = DAY } = {}) {
       store.set(`provider-fixtures:${date}:v1`, { date, fixtures: rows, fetchedAt: new Date(fetchedAt).toISOString() });
     },
