@@ -46,7 +46,8 @@ test('FREE date guard returns a clear user response without calling the provider
   assert.equal(r.body.restrictedDate,true);
   assert.equal(r.body.date,'2026-10-10');
   assert.deepEqual(r.body.matches,[]);
-  assert.match(r.body.warning,/FREE/);
+  assert.match(r.body.warning,/не загружаются/);
+  assert.doesNotMatch(r.body.warning,/API-Football/);
   assert.equal(calls.length,0);
 });
 

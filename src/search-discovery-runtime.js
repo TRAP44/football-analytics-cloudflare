@@ -846,7 +846,7 @@ export function createSearchDiscoveryRuntime(deps) {
           ...(stale || { teams: [] }), query, knownTeams, resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : (stale?.resolvedQuery || ''), competitions, ...fixtureSearch,
           cached: Boolean(stale), stale: Boolean(stale),
           warning: mergeSearchWarnings(
-            stale ? 'Поиск показан из сохранённых данных: бережём лимит API-Football.' : 'Поиск команд временно не запущен: бережём остаток бесплатной квоты источника данных.',
+            stale ? 'Поиск показан из сохранённых данных: бережём лимит запросов.' : 'Поиск команд временно не запущен: бережём остаток бесплатной квоты источника данных.',
             fixtureSearch.warning,
           ),
           provider:capabilities(),
@@ -863,7 +863,7 @@ export function createSearchDiscoveryRuntime(deps) {
       }
       if (isFootballRateLimitError(error)) {
         providerDegraded=true;
-        warning='API-Football временно ограничил поиск команд. Повторите чуть позже.';
+        warning='Источник данных временно ограничил поиск команд. Повторите чуть позже.';
       } else if (recoverableProviderError(error)) {
         providerDegraded=true;
         warning='Поиск команд временно недоступен. Повторите чуть позже.';

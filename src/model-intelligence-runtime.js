@@ -786,7 +786,6 @@ export function createModelIntelligenceRuntime(deps) {
     }
     // Решение Сергея (11.10.2026): рынок и коэффициенты не показываются пользователю —
     // котировки остаются входом модели, но не попадают в тексты факторов и рисков.
-    if (model?.winner) factors.push(`Прогноз API-Football указывает: ${model.winner}.`);
     const homeAbs = absences?.home?.length || 0, awayAbs = absences?.away?.length || 0;
     const homeSuspensions = Number(absences?.summary?.home?.suspension || 0);
     const awaySuspensions = Number(absences?.summary?.away?.suspension || 0);
@@ -808,7 +807,7 @@ export function createModelIntelligenceRuntime(deps) {
         factors.push('Оба подтверждённых стартовых состава близки к сезонному ядру команд; сильной поправки по XI не требуется.');
       }
     }
-    if (!model?.probabilities) risks.push('API-Football не вернул процентный прогноз для этого матча.');
+    if (!model?.probabilities) risks.push('Внешний процентный прогноз для этого матча недоступен.');
     if ((homeForm?.overall?.sample || 0) < 4 || (awayForm?.overall?.sample || 0) < 4) risks.push('Небольшая выборка недавних матчей одной из команд.');
     if (confidence?.disagreement >= 10) risks.push('Источники заметно расходятся между собой — уверенность модели снижена.');
     if (minutesToKickoff !== null && minutesToKickoff <= 120 && !lineups?.home && !lineups?.away) risks.push('Подтверждённые стартовые составы ещё не доступны.');
@@ -837,7 +836,7 @@ export function createModelIntelligenceRuntime(deps) {
   function signalDisplayName(name) {
     return ({
       market: 'Коэффициенты П1 / Н / П2',
-      apiPrediction: 'API Prediction',
+      apiPrediction: 'Внешний прогноз',
       recentForm: 'Недавняя форма',
       seasonStrength: 'Сила сезона',
       h2h: 'Очные встречи',

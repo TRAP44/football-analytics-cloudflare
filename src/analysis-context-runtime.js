@@ -570,7 +570,7 @@ export function createAnalysisContextRuntime(deps) {
         seasonStatsCached:seasonStatsUsable,
         standingsCached:standingsUsable,
         sources,
-        note:'Вкладка сравнения сама не делает дополнительных запросов к API-Football: она собирается из данных текущего анализа и уже сохранённых данных.',
+        note:'Вкладка сравнения сама не делает дополнительных запросов к источнику данных: она собирается из данных текущего анализа и уже сохранённых данных.',
       },
     };
   }

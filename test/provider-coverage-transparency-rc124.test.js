@@ -7,7 +7,7 @@ const css=fs.readFileSync('public/styles.css','utf8');
 
 test('RC124 analysis explains provider feature coverage to users',()=>{
   assert.match(app,/function providerCoverageHtml\(reliability = \{\}\)/);
-  for (const label of ['Травмы','Составы','Прогноз API','Очные встречи']) assert.ok(app.includes(label));
+  for (const label of ['Травмы','Составы','Внешний прогноз','Очные встречи']) assert.ok(app.includes(label));
   // Коэффициенты не показываются пользователю (решение 11.10.2026).
   const coverage=app.slice(app.indexOf('function providerCoverageHtml('),app.indexOf('\nconst SCENARIO_BETTING_TEXT'));
   assert.doesNotMatch(coverage,/odds:'Коэффициенты'/);

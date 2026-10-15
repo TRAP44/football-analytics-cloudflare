@@ -199,7 +199,7 @@ export function createProviderDataRuntime(deps) {
     } else if (byFeature.lineups && !byFeature.lineups.confidenceBearing && minutesToKickoff !== null && minutesToKickoff <= 120) {
       warnings.push('Стартовые составы не подтверждены свежим атрибутированным источником; они исключены из модельного сигнала.');
     }
-    if (byFeature.predictions && !byFeature.predictions.confidenceBearing) warnings.push('Процентный прогноз API-Football недоступен или не прошёл проверку свежести; этот сигнал исключён из расчёта.');
+    if (byFeature.predictions && !byFeature.predictions.confidenceBearing) warnings.push('Внешний процентный прогноз недоступен или не прошёл проверку свежести; этот сигнал исключён из расчёта.');
   
     return {
       state: hardFailures.length ? 'degraded' : missing.length ? 'partial' : 'healthy',
