@@ -635,20 +635,24 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
     const team=START_TEAMS.find(([teamIdValue])=>teamIdValue===id);
     if (!uid || !team) throw statusError('Команда не определена.',400,'TEAM_ID_INVALID');
     const selected=favoriteIdSet(await requireFunction('getFavorites',getFavorites)(uid,cfg));
+    let current=selected;
     if (!selected.has(id)) {
       await requireFunction('addFavorite',addFavorite)(uid,{
         id,name:team[1],logo:`https://media.api-sports.io/football/teams/${id}.png`,
       },cfg);
-      selected.add(id);
+      // Быстрые нажатия приходят параллельно: перечитываем избранное после записи,
+      // чтобы клавиатура показала все отмеченные клубы (ревью Codex #918).
+      current=favoriteIdSet(await optionalAsync(getFavorites,[],uid,cfg));
+      current.add(id);
     }
     const cid=chatIdValue(chatId);
     const mid=positiveSafeInteger(messageId);
     if (cid && mid) {
       await optionalAsync(requireFunction('telegramApi',telegramApi),null,'editMessageReplyMarkup',cfg,{
-        chat_id:cid,message_id:mid,reply_markup:favoritePickerKeyboard(selected),
+        chat_id:cid,message_id:mid,reply_markup:favoritePickerKeyboard(current),
       });
     }
-    return {team:{id,name:team[1],label:team[2]},count:selected.size};
+    return {team:{id,name:team[1],label:team[2]},count:current.size};
   }
 
   async function configureFootballBot(request, cfg, chatId) {
