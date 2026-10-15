@@ -40,17 +40,8 @@ test('user-facing server texts use neutral wording instead of the market', () =>
   assert.doesNotMatch(read('src/analysis-runtime.js'), /сдвинуть 1X2/);
 });
 
-test('Mini App hides odds in data coverage and old market wording in the model method', () => {
+test('Mini App hides odds in data coverage; the model method block is gone (Сергей 15.10)', () => {
   const app = read('public/app.js');
   assert.doesNotMatch(app, /odds:'Коэффициенты'/);
-  const regex = app.slice(app.indexOf('const SCENARIO_BETTING_TEXT'), app.indexOf('\n', app.indexOf('const SCENARIO_BETTING_TEXT')));
-  const start = app.indexOf('function modelMethodText(');
-  const fn = new Function(`${regex}\n${app.slice(start, app.indexOf('\n}\n', start))}\n}\nreturn modelMethodText;`)();
-  const old = 'Рынок, прогноз источника данных, недавняя форма, сила сезона и очные встречи объединяются динамически. XI не может сдвинуть 1X2 более чем на 2.8 п.п.';
-  const shown = fn(old);
-  assert.match(shown, /^Прогноз источника данных, недавняя форма, сила сезона, очные встречи и другие источники объединяются динамически\./);
-  assert.match(shown, /сдвинуть вероятности исходов более чем на 2\.8 п\.п\./);
-  assert.doesNotMatch(shown, MARKET);
-  assert.equal(fn(''), 'Модель объединяет доступные статистические сигналы.');
-  assert.equal(fn('Ставка на коэффициент'), 'Модель объединяет доступные статистические сигналы.');
+  assert.doesNotMatch(app, /function modelMethodText\(/);
 });

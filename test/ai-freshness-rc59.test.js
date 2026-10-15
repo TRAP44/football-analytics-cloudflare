@@ -256,7 +256,7 @@ test('adaptive analysis cache TTL tightens toward kickoff', () => {
 
 test('Mini App exposes recheck state and requests conditional server rechecks by default', () => {
   assert.match(app, /function analysisFreshnessHtml\(/);
-  assert.match(app, /Перепроверить AI сейчас/);
+  assert.match(app, /↻ Обновить разбор/);
   assert.match(app, /analysisRecheckBtn/);
   assert.match(css, /\.analysis-freshness\.recheck/);
   assert.match(analysisController, /recheck:safeRead\(source,'recheck'\)!==false/);

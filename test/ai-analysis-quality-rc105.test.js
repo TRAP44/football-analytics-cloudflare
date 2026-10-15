@@ -337,9 +337,9 @@ test('RC105 UI exposes quality gate reason and goal-sample quality', () => {
   assert.doesNotMatch(appSource, /<span>Проверка качества<\/span>/);
   assert.doesNotMatch(appSource, /escapeHtml\(qualityGate\.label/);
   assert.doesNotMatch(appSource, /escapeHtml\(scenarioText\(gateReasons\[0\]\?\.text/);
-  assert.match(appSource, /Качество выборки:/);
-  assert.match(appSource, /goal\.qualityLabel/);
-  assert.match(appSource, /goal\.qualityScore/);
+  // Сергей 15.10: штаб матча без служебных оценок качества выборки.
+  assert.doesNotMatch(appSource, /Качество выборки:/);
+  assert.doesNotMatch(appSource, /goal\.qualityScore/);
 
   assert.match(
     analysisContextSource,

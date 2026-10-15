@@ -108,9 +108,8 @@ test('Mini App exposes a kickoff handoff card and match-center action',()=>{
   assert.match(app,/function kickoffHandoffHtml\(/);
   assert.match(app,/kickoffMatchCenterBtn/);
   assert.match(app,/openMatchCenter\(Number\(m\.fixtureId\)/);
-  assert.match(app,/Предматчевый разбор зафиксирован/);
+  assert.match(app,/Предматчевый AI переведён в архивный режим/);
   assert.match(css,/\.kickoff-handoff/);
-  assert.match(css,/\.ai-instructor-card\.archived/);
 });
 
 test('RC61 lifecycle boundary remains explicitly wired from Worker',()=>{

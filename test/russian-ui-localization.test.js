@@ -78,12 +78,9 @@ test('common user-facing mixed English labels are removed from the Mini App', ()
   ];
   for (const phrase of russianCopyForbidden) assert.equal(app.includes(phrase), false, phrase);
   assert.match(app, /function publicText\(value\)/);
-  assert.match(app, /function dataPolicyModeLabel\(value\)/);
-  assert.match(app, /function predictionAdviceLabel\(value\)/);
   assert.match(readContractSource(new URL('../public/modules/admin-model-quality.js', import.meta.url), 'utf8'), /Защитная проверка/);
   assert.match(app, /подтверждено ·/);
   assert.match(readContractSource(new URL('../public/modules/admin-provider.js', import.meta.url), 'utf8'), /первый ответ/);
-  assert.match(app, /Преданализ матча/);
   assert.match(app, /Сохранённые данные/);
 });
 

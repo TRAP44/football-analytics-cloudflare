@@ -172,7 +172,7 @@ function probabilityLine(point, previous, match) {
   if (view.previousProbability===null || view.value===null) return `${escapeHtml(label)} · ${current}`;
   const arrow=view.direction==='up'?'↑':view.direction==='down'?'↓':'→';
   const sign=view.value>0?'+':'';
-  return `${escapeHtml(label)} · ${Number(view.previousProbability).toFixed(1)}% → ${current} <b class="ai-timeline-delta ${view.direction}">${arrow} ${sign}${Number(view.value).toFixed(1)} п.п.</b>`;
+  return `${escapeHtml(label)} · ${Number(view.previousProbability).toFixed(1)}% → ${current} <b class="ai-timeline-delta ${view.direction}">${arrow} ${sign}${Number(view.value).toFixed(1)}</b>`;
 }
 
 function qualityHtml(point={}) {

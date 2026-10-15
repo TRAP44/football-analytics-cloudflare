@@ -110,12 +110,10 @@ test('analysis uses progressive disclosure and keeps technical material off the 
   const body = functionBody('renderAnalysis', 'safeUrl');
   const tabs = body.indexOf('<div class="analysis-tabs"');
   assert.ok(tabs > 0);
-  const beforeTabs = body.slice(0, tabs);
-  assert.match(beforeTabs, /analysisGlanceHtml\(d\)/);
-  assert.doesNotMatch(beforeTabs, /providerCoverageHtml/);
-  assert.doesNotMatch(beforeTabs, /dataProvenanceHtml/);
-  assert.match(body, /<summary>Подробнее о расчёте<\/summary>/);
-  assert.match(body, /<summary>Подробнее о данных<\/summary>/);
+  // Сергей 15.10: «Главное» — первая вкладка, открытая сразу; служебных блоков о данных нет.
+  assert.ok(body.indexOf('analysisGlanceHtml(d)') > tabs);
+  assert.doesNotMatch(body, /providerCoverageHtml|dataProvenanceHtml/);
+  assert.doesNotMatch(body, /<summary>Подробнее о расчёте<\/summary>|<summary>Подробнее о данных<\/summary>/);
   assert.doesNotMatch(body, /Переиспользование данных/);
 });
 

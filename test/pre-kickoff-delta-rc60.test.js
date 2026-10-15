@@ -128,7 +128,6 @@ test('Telegram and Mini App explain what changed after recheck',()=>{
   assert.match(telegram,/rowsOrEmpty\(delta\.items,3\)\.map/);
   assert.match(app,/class="analysis-delta/);
   assert.match(app,/Прогноз стабилен/);
-  assert.match(app,/item\.before && item\.after/);
   assert.match(css,/\.analysis-delta\.material/);
 });
 

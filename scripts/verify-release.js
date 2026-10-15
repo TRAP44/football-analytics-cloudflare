@@ -443,7 +443,8 @@ if (!worker.includes('processDailyDigests')) failures.push('RC44 daily bot diges
 if (!worker.includes('buildAiInstructor') || !worker.includes('processDailyDigests')) failures.push('RC44 AI/digest contract is missing');
 if (!worker.includes('function buildAiInstructor')) failures.push('AI football instructor engine is missing');
 if (!worker.includes('referee:safeText(fixture?.fixture?.referee,180)')) failures.push('Pre-match referee context is missing');
-if (!app.includes('function matchScenariosHtml')) failures.push('AI match scenarios UI is missing');
+// Сергей 15.10: штаб матча — три вкладки (Главное · Составы · Форма), без «Сценариев».
+if (!app.includes('data-tab="brief" type="button">Главное') || !app.includes('data-tab="squads"') || !app.includes('data-tab="form"') || app.includes('function matchScenariosHtml')) failures.push('Match HQ three-tab layout is missing');
 if (!html.includes('boot-card boot-card-simple') || !html.includes('MatchRadar') || !html.includes('Видим, что меняет матч.') || !html.includes('Загружаем матчи…') || html.includes('id="bootVersion"')) failures.push('MatchRadar minimal public startup is missing');
 if (!worker.includes('createTelegramBotOrchestrationRuntime') || !worker.includes('buildAiInstructor')) failures.push('RC44 AI/bot contract is missing');
 if (!html.includes('id="dailyOverview"') || !html.includes('id="homePersonalMatchBtn"') || html.includes('id="homeLiveCard"') || html.includes('id="homeTeamsBtn"') || html.includes('id="homeFavoriteBtn"')) failures.push('Phase 4.1 clean Home priority contract is missing');
@@ -482,7 +483,7 @@ if (!app.includes("const assetVersion = CLIENT_VERSION.split('-')[0]")) failures
 if (app.includes('6.14.0-rc22') || worker.includes('6.14.0-rc22')) failures.push('Stale RC22 release checks remain');
 if (!html.includes('<html lang="ru">') || !app.includes('function humanizeTechnicalText(value)')) failures.push('Russian UI localization contract is missing');
 if (!adminHtml.includes('<html lang="ru">')) failures.push('Admin Russian localization contract is missing');
-if (!app.includes('Качество выборки:') || !app.includes('Перепроверить AI сейчас')) failures.push('Prematch Russian localization contract is missing');
+if (!app.includes('↻ Обновить разбор') || app.includes('Качество выборки:')) failures.push('Prematch Russian localization contract is missing');
 if (!app.includes('friendlyErrorMessage') || !app.includes('humanizeTechnicalText')) failures.push('Dynamic Russian localization contract is missing');
 if (!app.includes('function humanizeTechnicalText(value)')) failures.push('Admin text humanization contract is missing');
 if (!app.includes('Центр матча') && !app.includes('Матч-центр')) failures.push('Match-center Russian localization contract is missing');

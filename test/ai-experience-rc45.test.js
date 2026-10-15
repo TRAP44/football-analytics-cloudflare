@@ -237,7 +237,7 @@ test('Telegram update orchestration routes both explicit and natural text into t
 
 test('Mini App launch intent supports search and exact fixture deep links while reusing saved analysis', () => {
   const launchBlock = sourceBlock(app, 'async function openLaunchFixture(', 'function applyLaunchIntent()');
-  const intentBlock = sourceBlock(app, 'function applyLaunchIntent()', 'function analysisFreshnessHtml(');
+  const intentBlock = sourceBlock(app, 'function applyLaunchIntent()', 'function kickoffHandoffHtml(');
 
   assert.match(launchBlock, /analysisHistoryForFixture\(id\)/);
   assert.match(launchBlock, /openHistoryAnalysis\(id, null\)/);

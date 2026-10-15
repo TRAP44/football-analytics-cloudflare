@@ -54,7 +54,6 @@ test('team fixture discovery avoids date-range queries that require a season', (
 test('search match results have direct actions without running analysis automatically', () => {
   assert.match(app, /data-search-fixture/);
   assert.match(app, /data-search-center/);
-  assert.match(app, /Преданализ/);
   assert.match(app, /Центр матча/);
   assert.match(app, /Итоги/);
   assert.match(styles, /\.search-match-card/);

@@ -19,63 +19,8 @@ test('team form card names the goals metric without betting label', () => {
   assert.match(app, /<small>3\+ гола<\/small>/);
 });
 
-test('prematch scenario and source table derive names from the outcome key, not stored П1/П2 labels', () => {
-  assert.match(app, /\['home','draw','away'\]\.includes\(row\.leaderKey\) \? prematchOutcomeName\(row\.leaderKey, match\)/);
-  assert.match(app, /\['home','draw','away'\]\.includes\(leader\.key\) \? prematchOutcomeName\(leader\.key, match\)/);
-  const start = app.indexOf('function prematchOutcomeName(');
-  const fn = new Function(`${app.slice(start, app.indexOf('\n}\n', start) + 2)}\nreturn prematchOutcomeName;`)();
-  assert.equal(fn('home', { home: {}, away: {} }), 'Хозяева');
-  assert.equal(fn('away', { home: {}, away: { name: 'Рома' } }), 'Рома');
-  assert.equal(fn('draw', {}), 'Ничья');
-});
-
-test('cached pre-match goal scenarios are rewritten in words, betting-only cards are hidden', () => {
-  const block = (a, b) => app.slice(app.indexOf(a), app.indexOf(b, app.indexOf(a)));
-  const regex = block('const SCENARIO_BETTING_TEXT', '\n');
-  const fns = block('function prematchScenarioText(', '\nfunction prematchSourceRow');
-  const escapeHtml = value => String(value ?? '');
-  const outcome = block('function prematchOutcomeName(', '\n}\n') + '\n}\n';
-  const card = new Function('escapeHtml', 'publicText', `${regex}\n${outcome}\n${fns}\nreturn prematchScenarioCard;`)(escapeHtml, value => value);
-  const goals = card({
-    title: 'Голевой сценарий: более открытая игра',
-    text: 'Модель Пуассона даёт 3.1 ожидаемых гола суммарно и 64% на ТБ 2.5. Это вспомогательная модель.',
-  });
-  assert.match(goals, /64% на 3\+ гола в матче/);
-  assert.doesNotMatch(goals, /ТБ/);
-  const btts = card({
-    title: 'Обе команды способны забить',
-    text: 'Эвристическая вероятность «обе забьют» — 66%. Это не букмекерская рекомендация, а производная от недавних голов команд.',
-  });
-  assert.match(btts, /вероятность, что забьют обе команды, — 66%\. Это производная/);
-  assert.doesNotMatch(btts, /букмекер|обе забьют/);
-  const close = card({
-    title: 'Базовый сценарий: равная игра',
-    text: 'Разрыв между двумя наиболее вероятными исходами — всего 3 п.п. Небольшой игровой эпизод, состав или изменение рынка может перевернуть порядок вероятностей.',
-  });
-  assert.match(close, /состав или новые данные могут перевернуть/);
-  assert.doesNotMatch(close, /рынка/);
-  const leader = card({
-    title: 'Базовый сценарий: П1',
-    text: 'П1 получает наибольшую вероятность (52%). Ключевой вопрос — реализуется ли перевес.',
-  }, { home: { name: 'Милан' }, away: {} });
-  assert.match(leader, /Базовый сценарий: Милан/);
-  assert.match(leader, /Милан получает наибольшую вероятность/);
-  const noNames = card({ title: 'Базовый сценарий: П2', text: 'П2 получает наибольшую вероятность (40%).' }, {});
-  assert.match(noNames, /Базовый сценарий: Гости/);
-  assert.equal(card({ title: 'Ставка дня', text: 'П1 по коэффициенту 1.85' }), '');
-  assert.match(app, /scenarioCards\.length \? scenarioCards\.join\(''\)/);
-});
-
-test('pre-match headline and summary pass through the same outcome-name normalization', () => {
-  assert.match(app, /<h2>\$\{escapeHtml\(prematchScenarioText\(pm\.headline, match\) \|\| 'Преданализ матча'\)\}<\/h2>/);
-  assert.match(app, /prematch-brief-summary">\$\{escapeHtml\(prematchScenarioText\(pm\.summary, match\)\)\}/);
-});
-
-test('every pre-match text block (drivers, watch list) uses the outcome-name normalization', () => {
-  const start = app.indexOf('function prematchDriverCard(');
-  const driver = app.slice(start, app.indexOf('\n}\n', start));
-  assert.match(driver, /prematchScenarioText\(driver\.title, match\)/);
-  assert.match(driver, /prematchScenarioText\(driver\.text, match\)/);
-  assert.doesNotMatch(driver, /publicText\(driver\.(title|text)/);
-  assert.match(app, /const watch = \(Array\.isArray\(pm\.watch\) \? pm\.watch : \[\]\)\.map\(item => prematchScenarioText\(item, match\)\)/);
+test('match HQ no longer renders pre-match brief blocks with stored П1/П2 labels (Сергей 15.10)', () => {
+  for (const name of ['prematchBriefHtml', 'prematchDriverCard', 'prematchScenarioText', 'prematchOutcomeName']) {
+    assert.doesNotMatch(app, new RegExp(`function ${name}\\(`), name);
+  }
 });
