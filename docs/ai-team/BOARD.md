@@ -48,6 +48,7 @@
 
 ## Готово
 
+- [x] Канал: удалён ежедневный пост «Матчи дня» (Сергей 15.10) — **Claude** — [PR #901](https://github.com/TRAP44/football-analytics-cloudflare/pull/901) — слит 15.10.
 - [x] Массовый запуск: read-only аудит инфраструктуры через существующие secrets GitHub — **Codex** — [PR #898](https://github.com/TRAP44/football-analytics-cloudflare/pull/898), ветка `codex/github-infrastructure-audit` — ревью: Claude. — слит.
 
 - [x] Массовый запуск: объединить холодные чтения runtime_controls без задержки отключения функций — **Codex** — [PR #897](https://github.com/TRAP44/football-analytics-cloudflare/pull/897), ветка `codex/runtime-controls-singleflight` — ревью: Claude. — слит.

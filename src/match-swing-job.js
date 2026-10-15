@@ -13,8 +13,25 @@
 // Запросов к источнику данных задание не делает.
 
 import { publishChannelMessage } from './channel-publisher.js';
-import { bettingFree } from './channel-daily-post-job.js';
+import { isBettingText } from './signal-wording.js';
 import { smartNotificationDedupeKey } from './smart-notification-policy.js';
+
+// Перенесено из удалённого поста «Матчи дня».
+// Названия от провайдера могут содержать спонсора-букмекера (ревью Codex #860):
+// такой турнир публикуется без названия, а матч с такой командой не попадает в пост.
+const BOOKMAKER_BRANDING = new RegExp([
+  '\\b(?:1x\\s?bet|bet365|betway|betclic|betano|betboom|betcity|bwin|unibet|parimatch|pin-?up',
+  'marathon\\s?bet|olimp\\s?bet|leon\\s?bet|fonbet|winline|liga\\s+stavok|superbet|tipsport',
+  'fortuna\\s+liga|sportingbet|coolbet|mozzart|meridian\\s?bet|betsson|betfair|william\\s+hill|ladbrokes)\\b',
+  // Общие английские слова о ставках — целыми словами (Real Betis не задевается).
+  '\\b(?:bet|bets|betting|bookmakers?|bookies?|sportsbooks?|casinos?|gambling|wagers?|odds|lottery|poker)\\b',
+  'фонбет|винлайн|лига\\s+ставок|бетбум|париматч|олимп\\s?бет|марафон\\s?бет|1хбет|бетсити|букмекер',
+].join('|'), 'iu');
+
+export function bettingFree(name = '') {
+  const text = String(name || '');
+  return text && !BOOKMAKER_BRANDING.test(text) && !isBettingText(text) ? text : '';
+}
 
 export const MATCH_SWING_POLICY = Object.freeze({
   minFavoriteGapPp: 10,
