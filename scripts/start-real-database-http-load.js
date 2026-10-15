@@ -24,7 +24,7 @@ function execute(command,args,{input='',env=process.env,quiet=false}={}) {
   });
 }
 const docker=(args,options={})=>execute('docker',['--host=unix:///var/run/docker.sock',...args],{...options,env:dockerEnv});
-const query=sql=>docker(['exec','-i','-u','postgres',database,'psql','-X','-q','-A','-t','-v','ON_ERROR_STOP=1','-d','isolated'],{input:sql});
+const query=sql=>docker(['exec','-i','-u','postgres',database,'psql','-h','127.0.0.1','-X','-q','-A','-t','-v','ON_ERROR_STOP=1','-d','isolated'],{input:sql});
 const created=[];let gateway;
 try {
   await docker(['network','create',network]);created.push(['network','rm',network]);
