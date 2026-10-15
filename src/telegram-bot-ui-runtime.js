@@ -242,11 +242,14 @@ export function createTelegramBotUiRuntime(deps = {}) {
     return url.toString();
   }
 
-  function footballBotKeyboard(request) {
+  function footballBotKeyboard(request, chatId = 0) {
     // Сергей 15.10: «Матчи» и «LIVE» открывают приложение (текстовые списки в чате
     // убраны), «Новости» и «Тарифы» убраны из меню. Клуб пишут прямо в чат.
+    // Кнопки web_app в клавиатуре Telegram разрешает только в личке (ревью Codex #917):
+    // без id личного чата (> 0) — обычные текстовые кнопки.
+    const privateChat=Number(chatId)>0;
     const button=(text,params)=>{
-      const url=generatedWebAppUrl(request,telegramWebAppUrl,params);
+      const url=privateChat ? generatedWebAppUrl(request,telegramWebAppUrl,params) : '';
       return url ? {text,web_app:{url}} : {text};
     };
     return {
@@ -758,7 +761,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
       await telegramApi('sendMessage',cfg,{
         chat_id:chat,
         text:'Матч больше не найден в доступных данных.',
-        reply_markup:footballBotKeyboard(request),
+        reply_markup:footballBotKeyboard(request,chat),
       });
       return false;
     }

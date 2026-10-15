@@ -214,9 +214,9 @@ export function createTelegramUpdateProcessor(deps) {
     }
   }
 
-  function safeBotKeyboard(request) {
+  function safeBotKeyboard(request, chatId = 0) {
     try {
-      const keyboard=footballBotKeyboard(request);
+      const keyboard=footballBotKeyboard(request,chatId);
       return plainObject(keyboard) || undefined;
     } catch {
       return undefined;
@@ -375,7 +375,7 @@ export function createTelegramUpdateProcessor(deps) {
       await setBotDigestSubscription(callbackUserId, callbackChatId, true, cfg, safeWebAppUrl(request));
       backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'digest_opt_in',channel:'telegram'});
       await telegramApi('answerCallbackQuery', cfg, { callback_query_id: callbackId, text: 'Утренняя подборка включена' });
-      const replyMarkup=safeBotKeyboard(request);
+      const replyMarkup=safeBotKeyboard(request,callbackChatId);
       await telegramApi('sendMessage', cfg, {
         chat_id:callbackChatId,
         text:'✅ Утренняя подборка включена. Примерно в 07:00 UTC будут приходить матчи дня и короткий блок важных футбольных новостей.',
@@ -386,7 +386,7 @@ export function createTelegramUpdateProcessor(deps) {
     if (callbackChatId && data === 'digest:off') {
       await setBotDigestSubscription(callbackUserId, callbackChatId, false, cfg, safeWebAppUrl(request));
       await telegramApi('answerCallbackQuery', cfg, { callback_query_id: callbackId, text: 'Утренняя подборка выключена' });
-      const replyMarkup=safeBotKeyboard(request);
+      const replyMarkup=safeBotKeyboard(request,callbackChatId);
       await telegramApi('sendMessage', cfg, {
         chat_id:callbackChatId,
         text:'🔕 Утренняя AI-подборка отключена.',
@@ -741,7 +741,7 @@ export function createTelegramUpdateProcessor(deps) {
   // «Последний разбор», «Протокол AI», «AI-подборка», «Найти матч») и команды /last, /track,
   // /picks убраны: отвечаем коротко и присылаем новое меню.
   if (chatId && (REMOVED_MENU_LABELS.has(text) || /^\/(?:last|track|picks)(?:@\w+)?(?:\s|$)/i.test(text))) {
-    const replyMarkup=safeBotKeyboard(request);
+    const replyMarkup=safeBotKeyboard(request,chatId);
     await telegramApi('sendMessage',cfg,{
       chat_id:chatId,
       text:text === '🔎 Найти матч'
@@ -787,7 +787,7 @@ export function createTelegramUpdateProcessor(deps) {
         text:legacyLive ? '🔴 Матчи, которые идут сейчас, — в MatchRadar.' : '⚽ Все матчи дня — в MatchRadar.',
         reply_markup:{inline_keyboard:[[{text:legacyLive ? '🔴 Открыть LIVE' : '⚽ Открыть матчи',web_app:{url}}]]},
       });
-      const replyMarkup=safeBotKeyboard(request);
+      const replyMarkup=safeBotKeyboard(request,chatId);
       if (replyMarkup) await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'Меню обновлено 👇',reply_markup:replyMarkup}).catch(()=>null);
     } else {
       await sendBotDayMatches(request,cfg,chatId,{liveOnly:legacyLive});
@@ -848,7 +848,7 @@ export function createTelegramUpdateProcessor(deps) {
     const userId=telegramUserId(msg.from?.id);
     if (!userId) return json({ok:false,error:'telegram_user_invalid'},400);
     await setBotDigestSubscription(userId, chatId, true, cfg, safeWebAppUrl(request));
-    const replyMarkup=safeBotKeyboard(request);
+    const replyMarkup=safeBotKeyboard(request,chatId);
     await telegramApi('sendMessage', cfg, {
       chat_id:chatId,
       text:'✅ Утренняя подборка включена: матчи дня + главное в футболе.',
@@ -861,7 +861,7 @@ export function createTelegramUpdateProcessor(deps) {
     const userId=telegramUserId(msg.from?.id);
     if (!userId) return json({ok:false,error:'telegram_user_invalid'},400);
     await setBotDigestSubscription(userId, chatId, false, cfg, safeWebAppUrl(request));
-    const replyMarkup=safeBotKeyboard(request);
+    const replyMarkup=safeBotKeyboard(request,chatId);
     await telegramApi('sendMessage', cfg, {
       chat_id:chatId,
       text:'🔕 Утренняя AI-подборка отключена.',

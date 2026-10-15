@@ -612,7 +612,7 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
     const firstName=safeText(user.first_name,40);
     const hello=firstName ? `Привет, <b>${escapeHtml(firstName,40)}</b>.` : 'Привет.';
     const replyMarkup=typeof footballBotKeyboard==='function'
-      ? optionalCall(footballBotKeyboard,undefined,request)
+      ? optionalCall(footballBotKeyboard,undefined,request,cid)
       : undefined;
     const payload={
       chat_id:cid,
@@ -642,7 +642,7 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
       return url ? `<a href="${escapeHtml(url,2000)}">${label}</a>` : '';
     }).filter(Boolean).join(' · ');
     const replyMarkup=typeof footballBotKeyboard==='function'
-      ? optionalCall(footballBotKeyboard,undefined,request)
+      ? optionalCall(footballBotKeyboard,undefined,request,cid)
       : undefined;
     const payload={
       chat_id:cid,
