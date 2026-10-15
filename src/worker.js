@@ -1740,7 +1740,7 @@ function getFavoriteScoreboardJob() {
       hasSupabase,
       recordOpsEvent,
       setCache,
-      supaSelectMany,
+      supaSelectPaged,
       telegramApi: (...args) => telegramApi(...args),
     });
   }

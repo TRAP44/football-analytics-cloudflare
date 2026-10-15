@@ -14,7 +14,7 @@ const row = (status, elapsed, home, away, extra = {}) => ({
   ...extra,
 });
 
-function setup({ fixtures, favorites = [{ telegram_id: 11, team_id: 596 }], allow = rows => rows, failEdit = null } = {}) {
+function setup({ fixtures, favorites = [{ telegram_id: 11, team_id: 596 }], allow = rows => rows, failEdit = null, failSave = false } = {}) {
   const store = new Map([['provider-fixtures:2026-10-15:v1', { fixtures }]]);
   const calls = [];
   let nextId = 100;
@@ -23,11 +23,17 @@ function setup({ fixtures, favorites = [{ telegram_id: 11, team_id: 596 }], allo
     filterRecipients: async rows => ({ rows: allow(rows) }),
     getCache: async key => store.get(key) ?? null,
     hasSupabase: () => true,
-    setCache: async (key, _id, payload) => { store.set(key, payload); return true; },
-    supaSelectMany: async (_cfg, table, query) => {
+    setCache: async (key, _id, payload, _cfg, _ttl, options) => {
+      assert.equal(options?.requireDurable, true);
+      if (failSave) return false;
+      store.set(key, payload);
+      return true;
+    },
+    supaSelectPaged: async (_cfg, table, query, options) => {
       assert.equal(table, 'favorites');
       assert.match(query.team_id, /^in\.\(/);
-      return favorites;
+      assert.equal(options.pageSize, 1000);
+      return { rows: favorites, truncated: false };
     },
     telegramApi: async (method, _cfg, payload) => {
       calls.push({ method, payload });
@@ -110,9 +116,32 @@ test('switch FAVORITE_SCOREBOARD_ENABLED=false turns the job off', async () => {
   const { calls } = setup({ fixtures: [row('1H', 5, 0, 0)] });
   const job = createFavoriteScoreboardJob({
     filterRecipients: async () => ({ rows: [] }), getCache: async () => null, hasSupabase: () => true,
-    setCache: async () => true, supaSelectMany: async () => [], telegramApi: async () => ({}),
+    setCache: async () => true, supaSelectPaged: async () => ({ rows: [] }), telegramApi: async () => ({}),
   });
   const summary = await job.processFavoriteScoreboards({ favoriteScoreboardEnabled: false });
   assert.equal(summary.reason, 'disabled');
   assert.equal(calls.length, 0);
+});
+
+test('a user following teams in two simultaneous matches gets both boards (filter is per user)', async () => {
+  const other = { fixture: { id: 8, date: '2026-10-15T18:00:00Z', status: { short: '1H', elapsed: 30 } }, league: { name: 'Serie A' },
+    teams: { home: { id: 489, name: 'AC Milan' }, away: { id: 505, name: 'Inter' } }, goals: { home: 0, away: 0 } };
+  const { run, calls } = setup({
+    fixtures: [row('1H', 10, 0, 0), other],
+    favorites: [{ telegram_id: 11, team_id: 596 }, { telegram_id: 11, team_id: 489 }],
+    allow: rows => rows.slice(0, 1),
+  });
+  await run();
+  assert.equal(calls.filter(c => c.method === 'sendMessage').length, 2);
+});
+
+test('if a new board cannot be saved durably the run stops instead of sending duplicates later', async () => {
+  const { run, calls } = setup({
+    fixtures: [row('1H', 10, 0, 0)],
+    favorites: [{ telegram_id: 11, team_id: 596 }, { telegram_id: 12, team_id: 596 }],
+    failSave: true,
+  });
+  const summary = await run();
+  assert.equal(summary.stopped, 'checkpoint_failed');
+  assert.equal(calls.length, 1, 'no more sends after a failed checkpoint');
 });

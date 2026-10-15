@@ -87,8 +87,8 @@ function scoreboardKeyboard(match) {
 }
 
 export function createFavoriteScoreboardJob(deps = {}) {
-  const { clock, filterRecipients, getCache, hasSupabase, recordOpsEvent, setCache, supaSelectMany, telegramApi } = deps;
-  for (const [name, fn] of Object.entries({ filterRecipients, getCache, hasSupabase, setCache, supaSelectMany, telegramApi })) {
+  const { clock, filterRecipients, getCache, hasSupabase, recordOpsEvent, setCache, supaSelectPaged, telegramApi } = deps;
+  for (const [name, fn] of Object.entries({ filterRecipients, getCache, hasSupabase, setCache, supaSelectPaged, telegramApi })) {
     if (typeof fn !== 'function') throw new TypeError(`Favorite scoreboard job requires ${name}.`);
   }
   const now = () => {
@@ -120,13 +120,32 @@ export function createFavoriteScoreboardJob(deps = {}) {
     return result;
   }
 
+  // Все болельщики постранично (ревью Codex #919: одна выборка ограничена 1000 строк).
   async function fans(teamIds, cfg) {
-    const rows = await supaSelectMany(cfg, 'favorites', { team_id: `in.(${teamIds.join(',')})` }, {
-      limit: 20000, select: 'telegram_id,team_id',
-    });
-    if (!Array.isArray(rows)) throw new TypeError('favorites lookup returned an invalid response.');
-    const allowed = plainObject(await filterRecipients(rows, 'match.goal', cfg));
-    return Array.isArray(allowed?.rows) ? allowed.rows : [];
+    const page = plainObject(await supaSelectPaged(cfg, 'favorites', { team_id: `in.(${teamIds.join(',')})` }, {
+      pageSize: 1000, maxRows: 10000, order: 'telegram_id.asc',
+    }));
+    const rows = Array.isArray(page?.rows) ? page.rows : null;
+    if (!rows) throw new TypeError('favorites lookup returned an invalid response.');
+    // Фильтр уведомлений сводит строки к одной на пользователя — проверяем людей,
+    // а все их любимые команды оставляем (ревью Codex #919).
+    const byUser = new Map();
+    for (const row of rows) {
+      const userId = positiveId(row?.telegram_id);
+      if (userId && !byUser.has(userId)) byUser.set(userId, { telegram_id: userId });
+    }
+    const allowed = plainObject(await filterRecipients([...byUser.values()], 'match.goal', cfg));
+    const ids = new Set((Array.isArray(allowed?.rows) ? allowed.rows : []).map(row => positiveId(row?.telegram_id)).filter(Boolean));
+    return rows.filter(row => ids.has(positiveId(row?.telegram_id)));
+  }
+
+  async function saveBoards(fixtureId, boards, cfg) {
+    try {
+      // С requireDurable запись возвращает true только после сохранения в базе.
+      return (await setCache(SCOREBOARD_CACHE_KEY(fixtureId), fixtureId, { users: boards, updatedAt: new Date(now()).toISOString() }, cfg, BOARD_TTL_MINUTES, { requireDurable: true })) === true;
+    } catch {
+      return false;
+    }
   }
 
   async function report(cfg, summary) {
@@ -202,6 +221,14 @@ export function createFavoriteScoreboardJob(deps = {}) {
             if (!messageId) throw new Error('sendMessage returned no message_id');
             boards[userId] = { messageId, text: body };
             summary.sent += 1;
+            // Новое табло сразу сохраняем надёжно: иначе следующий запуск пришлёт
+            // второе сообщение (ревью Codex #919). Не сохранилось — останавливаемся.
+            if (!await saveBoards(match.fixtureId, boards, cfg)) {
+              summary.failed += 1;
+              summary.stopped = 'checkpoint_failed';
+              break;
+            }
+            continue;
           } else {
             await telegramApi('editMessageText', cfg, { chat_id: userId, message_id: board.messageId, parse_mode: 'HTML', text: body, reply_markup: markup });
             boards[userId] = { ...board, text: body, ...(match.final ? { done: true } : {}) };
@@ -230,11 +257,8 @@ export function createFavoriteScoreboardJob(deps = {}) {
           }
         }
       }
-      if (changed) {
-        try { await setCache(SCOREBOARD_CACHE_KEY(match.fixtureId), match.fixtureId, { users: boards, updatedAt: new Date(now()).toISOString() }, cfg, BOARD_TTL_MINUTES); }
-        catch { summary.failed += 1; }
-      }
-      if (summary.capped) break;
+      if (changed && !summary.stopped && !await saveBoards(match.fixtureId, boards, cfg)) summary.failed += 1;
+      if (summary.capped || summary.stopped) break;
     }
     summary.ok = summary.failed === 0;
     await report(cfg, summary);
