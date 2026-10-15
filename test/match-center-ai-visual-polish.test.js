@@ -110,7 +110,8 @@ test('AI analysis keeps probabilities decision factors risks and detailed data i
   const probs=analysis.indexOf('experience-prob-labels');
   const glance=analysis.indexOf('analysisGlanceHtml(d)');
   const details=analysis.indexOf('analysis-more-data');
-  assert.ok(hero>=0 && hero<outcome && outcome<probs && probs<glance && glance<details);
+  // Сергей 15.10: «Главное» — первая из трёх вкладок, открытых сразу.
+  assert.ok(hero>=0 && hero<outcome && outcome<probs && probs<details && details<glance);
 
   const glanceFn=block(app,'function analysisGlanceHtml','function renderAnalysis');
   assert.match(glanceFn,/slice\(0, 3\)/);
@@ -137,7 +138,7 @@ test('frontend asset revision is consistent after Match Center presentation chan
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
 
-  assert.equal(revision,'6.120.0-launch117');
+  assert.equal(revision,'6.120.0-launch118');
   for(const asset of [
     'styles.css',
     'styles/public-shell.css',

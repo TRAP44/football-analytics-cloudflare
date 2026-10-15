@@ -163,7 +163,8 @@ test('AI Timeline: multiple points are chronological and show base plus delta', 
 
   const html=renderAiTimelineCompact(timeline,match);
   assert.match(html,/57\.0% → 61\.0%/);
-  assert.match(html,/↑ \+4\.0 п\.п\./);
+  assert.match(html,/↑ \+4\.0<\/b>/);
+  assert.doesNotMatch(html,/п\.п\./);
 });
 
 test('AI Timeline: duplicate and near-identical baseline snapshots are deduplicated deterministically', () => {
@@ -503,7 +504,7 @@ test('AI Timeline wiring captures fresh analyses and loads timeline into Match C
 });
 
 test('AI Timeline UI remains lazy-loaded after Match Pulse and supports narrow mobile widths', () => {
-  assert.match(appSource,/import\('\.\/modules\/ai-timeline\.js\?v=6\.120\.0-launch117'\)/);
+  assert.match(appSource,/import\('\.\/modules\/ai-timeline\.js\?v=6\.120\.0-launch118'\)/);
   const pulse=appSource.indexOf("matchCenterExtraHtml('renderMatchPulse'");
   const timeline=appSource.indexOf("'renderAiTimelineCompact',",appSource.indexOf('const matchPulseHtml'));
   assert.ok(pulse>=0 && timeline>pulse,'AI Timeline must be rendered after existing Match Pulse');

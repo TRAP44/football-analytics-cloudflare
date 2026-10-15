@@ -355,10 +355,10 @@ test('startup experience presents MatchRadar without internal release details', 
 });
 
 test('Mini App exposes instructor/referee UI and current capability flags', () => {
-  assert.match(app, /function matchScenariosHtml\(/);
+  // Сергей 15.10: блока «Сценарии» в штабе больше нет, судья — строкой во вкладке «Главное».
+  assert.doesNotMatch(app, /function matchScenariosHtml\(/);
   assert.match(app, /analysis-referee-line/);
   assert.match(app, /Судья/);
-  assert.match(css, /\.ai-instructor-card/);
 
   for (const flag of [
     'aiAnalysisQualityGate',

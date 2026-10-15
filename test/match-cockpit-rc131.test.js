@@ -84,8 +84,10 @@ test('RC131 derives the at-a-glance cockpit without new data requests',()=>{
   assert.deepEqual(model.market.strongestMove,['П1',3]);
   assert.equal(model.quality.confidence,74);
 
-  const start=app.indexOf('function matchCockpitHtml');
-  const end=app.indexOf('function analysisGlanceHtml',start);
+  // Сергей 15.10: отдельной сетки «Матч за 15 секунд» больше нет — место в таблице
+  // и очные встречи из той же модели показывает вкладка «Форма».
+  const start=app.indexOf('function analysisFormFactsHtml');
+  const end=app.indexOf('\n}\n',start);
   const cockpit=app.slice(start,end);
   assert.match(app,/import \{ deriveMatchCockpit \} from '\.\/modules\/match-cockpit\.js';/);
   assert.match(cockpit,/deriveMatchCockpit\(d\)/);
@@ -118,9 +120,6 @@ test('RC131 does not turn stale or untrusted injury evidence into a zero-loss cl
     assert.equal(model.injuries.homeAbs,0);
     assert.equal(model.injuries.awayAbs,0);
   }
-
-  assert.match(app,/пустой ответ — это не означает «потерь нет»/);
-  assert.match(app,/Данные о потерях сейчас не подтверждены/);
 });
 
 test('RC131 lineup reliability cannot be overridden by stale structural confirmation',()=>{
@@ -255,13 +254,9 @@ test('RC131 market card requires trusted odds provenance and coherent movement',
   assert.equal(incoherent.market.strongestMove,null);
 });
 
-test('RC131 cockpit cards navigate to detailed tabs instead of duplicating screens',()=>{
-  assert.match(app,/data-cockpit-tab=/);
-  assert.match(app,/querySelectorAll\('\[data-cockpit-tab\]'\)/);
-  assert.match(
-    app,
-    /setAnalysisTab\(btn\.dataset\.cockpitTab \|\| 'overview', true\)/,
-  );
+test('RC131 match HQ has no cockpit grid duplicating the three tabs (Сергей 15.10)',()=>{
+  assert.doesNotMatch(app,/data-cockpit-tab=/);
+  assert.doesNotMatch(app,/МАТЧ ЗА 15 СЕКУНД/);
 });
 
 test('RC131 cockpit stays responsive and uses the existing visual tokens',()=>{
@@ -312,7 +307,7 @@ test('RC131 frontend revision includes the strict cockpit model',()=>{
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
 
-  assert.equal(revision,'6.120.0-launch117');
+  assert.equal(revision,'6.120.0-launch118');
   assert.ok(
     html.includes('/app.js?v='+revision),
   );

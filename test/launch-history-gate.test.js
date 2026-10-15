@@ -92,7 +92,7 @@ test('history-unavailable recheck explains itself and hides the recheck button',
   const render = new Function('escapeHtml', 'publicText', `${source}\nreturn analysisFreshnessHtml;`)(value => String(value ?? ''), value => String(value ?? ''));
   const freshness = { label: 'Анализ устарел', state: 'recheck', needsRecheck: true, ageMinutes: 240 };
   const blocked = render(freshness, { requested: true, performed: false, reasonCode: 'history_unavailable' });
-  assert.match(blocked, /Перепроверка временно недоступна/);
+  assert.match(blocked, /Обновление временно недоступно/);
   assert.match(blocked, /лимит не списан/);
   assert.doesNotMatch(blocked, /analysisRecheckBtn/);
   const normal = render(freshness, {});

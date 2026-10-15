@@ -2560,3 +2560,50 @@ html[data-theme] body.miniapp-public-shell .experience-prematch-note { display: 
 .miniapp-public-shell .billing-summary-grid span,.miniapp-public-shell .billing-access-description,.miniapp-public-shell .billing-summary-note,.miniapp-public-shell .pricing-card p{font-size:12px;line-height:1.5;}
 
 .ai-instructor-facts>div:only-child{grid-column:1/-1;}
+
+/* Штаб матча (Сергей 15.10): данные открыты сразу, три вкладки на всю ширину. */
+.miniapp-public-shell section.analysis-more-data {
+  margin: 12px 0 0;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  background: transparent;
+}
+.miniapp-public-shell .analysis-more-data .analysis-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  overflow: visible;
+}
+.miniapp-public-shell .analysis-more-data .analysis-tab-btn {
+  min-width: 0;
+  justify-content: center;
+  text-align: center;
+}
+.miniapp-public-shell .analysis-disclaimer {
+  margin: 4px 2px 0;
+  color: var(--hint);
+}
+.miniapp-public-shell .analysis-table-pair {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.miniapp-public-shell .analysis-more-data .analysis-referee-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 10px;
+  border-radius: var(--mr-radius-sm, 14px);
+  padding: 12px 14px;
+  font-size: 12px;
+}
+.miniapp-public-shell .analysis-more-data .analysis-referee-line strong {
+  font-size: 13px;
+  text-align: right;
+}
+.miniapp-public-shell .analysis-more-data .freshness-recheck-btn {
+  width: 100%;
+  border: 0;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 900;
+}

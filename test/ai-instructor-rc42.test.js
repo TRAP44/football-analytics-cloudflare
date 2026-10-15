@@ -293,11 +293,9 @@ test('RC42 match center records referee history only from finished match analyti
   );
 });
 
-test('RC42 Mini App exposes referee history only when verified history is available', () => {
-  assert.match(app, /ai\.refereeHistory\?\.available/);
-  assert.match(app, /ai\.refereeHistory\.styleLabel/);
-  assert.match(app, /ai\.refereeHistory\.avgYellow/);
-  assert.match(app, /ai\.refereeHistory\.sample/);
+test('RC42 Mini App match HQ shows only the referee name, no unverified history (Сергей 15.10)', () => {
+  assert.doesNotMatch(app, /ai\.refereeHistory/);
+  assert.match(app, /analysis-referee-line/);
 });
 
 test('RC42 historical referee table remains worker-only with RLS enabled', () => {

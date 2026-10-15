@@ -63,9 +63,11 @@ test('AI match view exposes key decision layer before detailed data',()=>{
   assert.match(glance,/Главные факторы/);
   assert.match(glance,/Основные риски/);
   const analysis=app.slice(app.indexOf('function renderAnalysis'));
-  assert.ok(analysis.indexOf('analysisGlanceHtml(d)') < analysis.indexOf('Подробные данные матча'));
-  assert.match(analysis,/class="analysis-more-data"/);
-  assert.doesNotMatch(analysis.slice(0,analysis.indexOf('Подробные данные матча')),/analysisVersion|fingerprint|temperature/);
+  // Сергей 15.10: данные открыты сразу (без свёрнутого блока), «Главное» — первая вкладка.
+  assert.ok(analysis.indexOf('class="analysis-tabs"') < analysis.indexOf('analysisGlanceHtml(d)'));
+  assert.match(analysis,/<section class="analysis-more-data"/);
+  assert.doesNotMatch(analysis,/<details class="analysis-more-data"|Подробные данные матча/);
+  assert.doesNotMatch(analysis.slice(0,analysis.indexOf('function safeUrl')),/analysisVersion|fingerprint|temperature/);
   const center=block(app,'export function renderMatchCenterView','// end renderMatchCenterView');
   assert.match(center,/class="center-tabs mr-hq-tabs"/);
   assert.ok(center.indexOf('center-scoreboard') < center.indexOf('mr-hq-tabs'));

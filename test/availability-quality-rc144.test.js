@@ -391,5 +391,5 @@ test('RC144 exposes availability quality through current cache, UI and smoke con
     /trustedInjuries\.length(?:>0)?\s*&&\s*featureTrusted\('injuries'\)/,
   );
   assert.match(app,/function availabilityQualityHintHtml\(quality = \{\}\)/);
-  assert.match(app,/availabilityQualityHintHtml\(d\.availabilityQuality\)/);
+  assert.match(readRepoFile('public/modules/match-center-view.js'),/availabilityQualityHintHtml\(d\.availabilityQuality\)/);
 });

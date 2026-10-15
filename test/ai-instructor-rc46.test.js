@@ -230,14 +230,9 @@ test('RC46 skip state changes the plan from betting action to wait-and-reassess'
   assert.match(result.riskNote, /не форсируйте решение/);
 });
 
-test('RC46 Mini App renders data trust and the concrete pre-kickoff plan as separate concepts', () => {
-  assert.match(app, /Качество данных/);
+test('RC46 Mini App match HQ has no data-trust score or betting-style plan (Сергей 15.10)', () => {
   assert.doesNotMatch(app, /escapeHtml\(dataTrust\.label/);
   assert.doesNotMatch(app, /<small>\$\{dataTrustScore\}/);
-
-  // План до старта без «решений»: только нейтральные уточнения и что смотреть по ходу матча.
-  assert.match(app, /Что уточнить до начала/);
-  assert.match(app, /Что смотреть по ходу матча/);
   assert.doesNotMatch(app, /AI-ПЛАН ДО СТАРТОВОГО СВИСТКА|Условие отмены|Что проверить перед решением/);
 });
 
@@ -281,5 +276,4 @@ test('RC46 Telegram /ask and natural text route through the shared football sear
 
 test('RC46 prematch empty state keeps correct Russian wording', () => {
   assert.doesNotMatch(app, /Главное недоступен/);
-  assert.match(app, /Преданализ недоступен/);
 });

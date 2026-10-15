@@ -56,8 +56,8 @@ test('AI match center keeps probabilities quality factors and risks above detail
   const probs=analysis.indexOf('experience-prob-labels');
   const health=analysis.indexOf('experience-health-row');
   const glance=analysis.indexOf('analysisGlanceHtml(d)');
-  const details=analysis.indexOf('Подробные данные матча');
-  assert.ok(hero>=0 && hero<probs && probs<health && health<glance && glance<details);
+  const details=analysis.indexOf('class="analysis-tabs"');
+  assert.ok(hero>=0 && hero<probs && probs<health && health<details && details<glance);
   const glanceFn=block(app,'function analysisGlanceHtml','function renderAnalysis');
   assert.match(glanceFn,/slice\(0, 3\)/);
   assert.match(glanceFn,/Главные факторы/);
@@ -86,7 +86,7 @@ test('profile keeps legal and service links after user settings',()=>{
 });
 
 test('existing fixture deep-link and share contracts remain available',()=>{
-  const launch=block(app,'function applyLaunchIntent','function analysisFreshnessHtml');
+  const launch=block(app,'function applyLaunchIntent','function kickoffHandoffHtml');
   assert.match(launch,/fixtureId/);
   assert.match(launch,/\['analysis','center'\]/);
   const share=fs.readFileSync('public/modules/match-share.js','utf8');

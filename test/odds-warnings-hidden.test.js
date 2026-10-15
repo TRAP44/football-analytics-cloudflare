@@ -28,8 +28,8 @@ test('analysis filters market wording before it reaches skipped and risks', () =
 test('cached analyses hide market wording in skipped list and glance', () => {
   const app = fs.readFileSync('public/app.js', 'utf8');
   assert.match(app, /function neutralTextList\(items\)/);
-  assert.match(app, /neutralTextList\(d\.dataPolicy\?\.skipped\)/);
-  assert.doesNotMatch(app, /d\.dataPolicy\.skipped\.map/);
+  // Список «что пропущено» удалён из штаба вместе с блоком «О данных» (Сергей 15.10).
+  assert.doesNotMatch(app, /d\.dataPolicy\.skipped/);
   assert.match(app, /const risks = neutralTextList\(d\.risks\)/);
   assert.match(app, /const factors = neutralTextList\(d\.insights\)/);
   const start = app.indexOf('function neutralTextList');
