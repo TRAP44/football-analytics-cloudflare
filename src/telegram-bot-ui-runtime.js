@@ -242,14 +242,20 @@ export function createTelegramBotUiRuntime(deps = {}) {
     return url.toString();
   }
 
-  function footballBotKeyboard(_request) {
+  function footballBotKeyboard(request, chatId = 0) {
+    // Сергей 15.10: «Матчи» и «LIVE» открывают приложение (текстовые списки в чате
+    // убраны), «Новости» и «Тарифы» убраны из меню. Клуб пишут прямо в чат.
+    // Кнопки web_app в клавиатуре Telegram разрешает только в личке (ревью Codex #917):
+    // без id личного чата (> 0) — обычные текстовые кнопки.
+    const privateChat=Number(chatId)>0;
+    const button=(text,params)=>{
+      const url=privateChat ? generatedWebAppUrl(request,telegramWebAppUrl,params) : '';
+      return url ? {text,web_app:{url}} : {text};
+    };
     return {
-      // Сергей 13.10: одно меню из шести кнопок, без «Ещё». Клуб пишут прямо в чат.
-      // Последний разбор, Протокол AI и AI-подборка убраны (есть в приложении).
       keyboard:[
-        [{text:'⚽ Матчи'},{text:'🔴 LIVE'}],
-        [{text:'⭐ Мои команды'},{text:'📰 Новости'}],
-        [{text:'💎 Тарифы'},{text:'⚙️ Уведомления'}],
+        [button('⚽ Матчи',{}),button('🔴 LIVE',{filter:'live'})],
+        [{text:'⭐ Мои команды'},{text:'⚙️ Уведомления'}],
       ],
       resize_keyboard:true,
       is_persistent:true,
@@ -258,8 +264,8 @@ export function createTelegramBotUiRuntime(deps = {}) {
   }
 
   // «Ещё» больше нет (Сергей 13.10): старый вызов возвращает то же единственное меню.
-  function footballBotMoreKeyboard(request) {
-    return footballBotKeyboard(request);
+  function footballBotMoreKeyboard(request, chatId = 0) {
+    return footballBotKeyboard(request,chatId);
   }
 
   function favoriteTeamIdSet(rows=[]) {
@@ -755,7 +761,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
       await telegramApi('sendMessage',cfg,{
         chat_id:chat,
         text:'Матч больше не найден в доступных данных.',
-        reply_markup:footballBotKeyboard(request),
+        reply_markup:footballBotKeyboard(request,chat),
       });
       return false;
     }
@@ -1060,8 +1066,8 @@ export function createTelegramBotUiRuntime(deps = {}) {
     );
 
     return {
-      // Поиск — текстом в чат (кнопка «Найти матч» убрана 13.10); одно меню из шести кнопок.
-      pass:mainButtons.includes('⚽ Матчи') && mainButtons.includes('📰 Новости') && mainButtons.length===6
+      // Поиск — текстом в чат; меню из четырёх кнопок (Сергей 15.10).
+      pass:mainButtons.includes('⚽ Матчи') && !mainButtons.includes('📰 Новости') && mainButtons.length===4
         && Boolean(searchSelect)
         && handoffOk
         && favoriteCallbacks.has('favorite:toggle:101:12345')

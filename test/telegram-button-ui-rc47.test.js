@@ -75,5 +75,5 @@ test('bot links to tariffs and notifications open the matching profile block',()
   assert.match(app,/view === 'profile'/);
   assert.match(app,/section === 'billing' \? 'billingPanel'/);
   assert.match(app,/section === 'notifications' \? 'smartNotificationsRoot'/);
-  assert.match(worker,/\[\{text:'💎 Тарифы'\},\{text:'⚙️ Уведомления'\}\]/);
+  assert.match(worker,/\[\{text:'⭐ Мои команды'\},\{text:'⚙️ Уведомления'\}\]/);
 });

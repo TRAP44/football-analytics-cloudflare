@@ -612,7 +612,7 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
     const firstName=safeText(user.first_name,40);
     const hello=firstName ? `Привет, <b>${escapeHtml(firstName,40)}</b>.` : 'Привет.';
     const replyMarkup=typeof footballBotKeyboard==='function'
-      ? optionalCall(footballBotKeyboard,undefined,request)
+      ? optionalCall(footballBotKeyboard,undefined,request,cid)
       : undefined;
     const payload={
       chat_id:cid,
@@ -642,7 +642,7 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
       return url ? `<a href="${escapeHtml(url,2000)}">${label}</a>` : '';
     }).filter(Boolean).join(' · ');
     const replyMarkup=typeof footballBotKeyboard==='function'
-      ? optionalCall(footballBotKeyboard,undefined,request)
+      ? optionalCall(footballBotKeyboard,undefined,request,cid)
       : undefined;
     const payload={
       chat_id:cid,
@@ -652,10 +652,9 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
         '',
         '🔎 Напишите клуб или матч прямо в чат — покажу ближайший матч и короткую AI-оценку.',
         '↗ В любом чате наберите <b>@</b> и имя бота, затем клуб — и отправьте карточку матча с AI-разбором.',
-        '⚽ <b>Матчи</b> — матчи сегодня, 🔴 <b>LIVE</b> — идут сейчас.',
+        '⚽ <b>Матчи</b> и 🔴 <b>LIVE</b> — открывают приложение со всеми матчами дня.',
         '⭐ <b>Мои команды</b> — избранное и их ближайшие матчи.',
-        '📰 <b>Новости</b> — главное в футболе.',
-        '💎 <b>Тарифы</b> и ⚙️ <b>Уведомления</b> — там же включается утренняя подборка.',
+        '⚙️ <b>Уведомления</b> — там же включается утренняя подборка.',
         '',
         'Полный AI-разбор открывается в приложении сразу на выбранном матче.',
         '',

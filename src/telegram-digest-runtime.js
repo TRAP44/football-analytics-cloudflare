@@ -888,7 +888,7 @@ export function createTelegramDigestRuntime(deps = {}) {
   async function sendBotFavoriteTeams(request,cfg,userId,chatId) {
     const favorites=rowsOf(await getFavorites(userId,cfg));
     if (!favorites.length) {
-      await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'⭐ <b>Мои команды</b>\n\nДобавьте клуб: откройте матч в миниапке и нажмите ☆ рядом с командой.',parse_mode:'HTML',reply_markup:footballBotKeyboard(request)});
+      await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'⭐ <b>Мои команды</b>\n\nДобавьте клуб: откройте матч в миниапке и нажмите ☆ рядом с командой.',parse_mode:'HTML',reply_markup:footballBotKeyboard(request,chatId)});
       return;
     }
     const rows=favorites.slice(0,12).map(x=>[{text:`⭐ ${shortBotLabel(x.team_name,32) || 'Команда'}`,callback_data:`favorite:team:${Number(x.team_id)}`}]);

@@ -536,10 +536,10 @@ test('Telegram reply keyboards retain essential actions and never embed raw HTML
   const moreLabels=more.keyboard.flat().map(button=>button.text);
   assert.ok(homeLabels.includes('⚽ Матчи'));
   assert.ok(homeLabels.includes('🔴 LIVE'));
-  assert.ok(homeLabels.includes('📰 Новости'));
-  assert.ok(moreLabels.includes('💎 Тарифы'));
   assert.ok(moreLabels.includes('⚙️ Уведомления'));
-  assert.equal(home.keyboard.flat().length,6,'one menu of six buttons');
+  // Сергей 15.10: «Новости» и «Тарифы» убраны из меню.
+  assert.ok(!homeLabels.includes('📰 Новости') && !homeLabels.includes('💎 Тарифы'));
+  assert.equal(home.keyboard.flat().length,4,'one menu of four buttons');
   assert.deepEqual(more,home,'no separate «Ещё» menu');
   for(const label of [...homeLabels,...moreLabels]){
     assert.doesNotMatch(label,/<script|<iframe/i);
