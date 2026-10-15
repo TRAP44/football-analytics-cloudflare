@@ -28,7 +28,6 @@ export function createPublisherRuntime(deps = {}) {
     releaseChannelPublishIdempotency,
     telegramApi,
     telegramCampaignDeepLink,
-    telegramFullAnalysisUrl,
     telegramHtmlEscape,
     telegramShareComposerUrl
   } = deps;
@@ -58,7 +57,6 @@ export function createPublisherRuntime(deps = {}) {
     releaseChannelPublishIdempotency,
     telegramApi,
     telegramCampaignDeepLink,
-    telegramFullAnalysisUrl,
     telegramHtmlEscape,
     telegramShareComposerUrl,
   })) {
@@ -132,27 +130,81 @@ export function createPublisherRuntime(deps = {}) {
     }
   }
   
-  function fixtureShareCardText(match = {}, analysis = null) {
-    const card=normalizeBotFixtureCard(match || {});
-    const ai=analysis?.aiInstructor || {};
-    const signal=ai.betSignal || {};
+  // Карточка «Поделиться матчем» в боте (Сергей 15.10, бэклог №1). Её пересылают друзьям,
+  // поэтому в ней только ссылки (личная реферальная ссылка поделившегося) и нет кнопок,
+  // которые не работают в пересланном сообщении (callback, web_app).
+  // Без ставок: AI-вывод только об исходе матча, без «3+ гола» / «обе забьют» и коэффициентов.
+  const SHARE_OUTCOME_SIGNALS=new Set(['home','away','double_home','double_away']);
+
+  function moscowKickoff(iso) {
+    const raw=safeText(iso,80);
+    if (!raw) return '';
+    const date=new Date(raw);
+    if (!Number.isFinite(date.getTime())) return '';
+    try {
+      return `${new Intl.DateTimeFormat('ru-RU',{
+        day:'2-digit',
+        month:'2-digit',
+        hour:'2-digit',
+        minute:'2-digit',
+        timeZone:'Europe/Moscow',
+      }).format(date)} МСК`;
+    } catch {
+      return '';
+    }
+  }
+
+  function shareMatchState(card) {
+    const score=Number.isSafeInteger(card.goalsHome) && Number.isSafeInteger(card.goalsAway)
+      ? `${card.goalsHome}:${card.goalsAway}`
+      : '';
+    if (card.live) {
+      const minute=Number.isSafeInteger(card.elapsed) && card.elapsed>0 ? ` ${card.elapsed}′` : '';
+      return `🔴 Идёт матч${minute}${score?` · ${score}`:''}`;
+    }
+    if (card.finished) return `🏁 Матч завершён${score?` · ${score}`:''}`;
+    const kickoff=moscowKickoff(card.date);
+    return kickoff ? `🗓 ${kickoff}` : '';
+  }
+
+  function shareAiLine(card, analysis) {
+    // Предматчевый вывод во время и после матча устарел — тогда не показываем его.
+    if (card.live || card.finished) return '';
+    const ai=plainObject(plainObject(analysis)?.aiInstructor) || {};
+    const signal=plainObject(ai.betSignal) || {};
+    const code=typeof signal.code === 'string' ? signal.code.trim().toLowerCase() : '';
+    if (!SHARE_OUTCOME_SIGNALS.has(code)) return '';
+    const verdict=neutralSignalText(code,{home:card.homeName,away:card.awayName});
+    if (!verdict) return '';
     const confidenceValue=finiteNumber(ai.confidenceScore,0,100);
-    const confidence=confidenceValue===null ? '' : `${Math.round(confidenceValue)}/100`;
+    const confidence=confidenceValue===null ? '' : ` · уверенность ${Math.round(confidenceValue)}/100`;
+    return `🧠 AI: <b>${telegramHtmlEscape(verdict)}</b>${confidence}`;
+  }
+
+  function fixtureShareCardText(match = {}, analysis = null, deepLinkUrl = '') {
+    const card=normalizeBotFixtureCard(match || {});
+    const tournament=[card.league || 'Футбол',card.country].filter(Boolean).join(', ');
+    const link=safeText(deepLinkUrl,512);
     return [
-      '⚽ <b>MatchRadar AI · МАТЧ</b>',
+      `⚽ <b>${telegramHtmlEscape(card.homeName)} — ${telegramHtmlEscape(card.awayName)}</b>`,
+      telegramHtmlEscape(tournament),
+      shareMatchState(card) || null,
+      shareAiLine(card,analysis) || null,
       '',
-      `<b>${telegramHtmlEscape(card.homeName)} — ${telegramHtmlEscape(card.awayName)}</b>`,
-      telegramHtmlEscape(card.league || 'Футбол'),
-      card.date ? `🗓 ${telegramHtmlEscape(botFixtureDateTime(card.date))}` : '',
-      // Нейтральный вывод по коду сигнала вместо ставочной метки («ТБ 2.5», «П1»).
-      neutralSignalText(signal.code,{home:card.homeName,away:card.awayName})
-        ? `🧠 AI: <b>${telegramHtmlEscape(neutralSignalText(signal.code,{home:card.homeName,away:card.awayName}))}</b>${confidence?` · ${confidence}`:''}`
-        : '🧠 AI-разбор откроется сразу по ссылке.',
+      'Разбор матча от MatchRadar AI: составы, форма, что важно в игре.',
+      link ? `👉 <a href="${telegramHtmlEscape(link)}">Открыть матч в MatchRadar</a>` : null,
       '',
       '<i>Информационная аналитика, не гарантия результата.</i>',
-    ].filter(Boolean).join('\n');
+    ].filter(line=>line!==null).join('\n');
   }
-  
+
+  function fixtureShareCardKeyboard(deepLinkUrl, plainText) {
+    return {inline_keyboard:[
+      [{text:'⚽ Открыть матч в MatchRadar',url:deepLinkUrl}],
+      [{text:'↗ Отправить в чат',url:telegramShareComposerUrl(deepLinkUrl,plainText)}],
+    ]};
+  }
+
   async function sendBotFixtureShareCard(request,cfg,userId,chatId,fixtureId) {
     const safeFixtureId=positiveId(fixtureId);
     if (safeFixtureId===null) throw new TypeError('Invalid fixture ID.');
@@ -163,7 +215,15 @@ export function createPublisherRuntime(deps = {}) {
       fixtureTelegramDeepLink(cfg,safeFixtureId,{source:'social',campaign:'match_share',content:'telegram',referralCode}),
     ]);
     if (!match) throw new Error('Матч не найден.');
-    const plain=`${match.homeName} — ${match.awayName}\nMatchRadar: открыть матч и доступный AI-разбор`;
+    const card=normalizeBotFixtureCard(match);
+    const plain=`${card.homeName} — ${card.awayName}: разбор матча в MatchRadar`;
+    await telegramApi('sendMessage',cfg,{
+      chat_id:chatId,
+      parse_mode:'HTML',
+      text:fixtureShareCardText(match,analysis,link.url),
+      disable_web_page_preview:true,
+      reply_markup:fixtureShareCardKeyboard(link.url,plain),
+    });
     void recordGrowthEvent(cfg,{
       userId,
       eventName:'share_created',
@@ -171,15 +231,7 @@ export function createPublisherRuntime(deps = {}) {
       fixtureId:safeFixtureId,
       metadata:{surface:'match_card',referral:Boolean(referralCode)},
     });
-    await telegramApi('sendMessage',cfg,{
-      chat_id:chatId,
-      parse_mode:'HTML',
-      text:fixtureShareCardText(match,analysis),
-      reply_markup:{inline_keyboard:[
-        [{text:'↗ Отправить другу / в канал',url:telegramShareComposerUrl(link.url,plain)}],
-        [{text:'🧠 Открыть самому',web_app:{url:telegramFullAnalysisUrl(request,safeFixtureId,'brief')}}],
-      ]},
-    });
+    return {ok:true,referral:Boolean(referralCode)};
   }
   
   

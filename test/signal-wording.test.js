@@ -57,7 +57,9 @@ test('full history re-open and Telegram share cards also use the neutral label (
   const userData=fs.readFileSync('src/user-data-api-runtime.js','utf8');
   assert.match(userData,/return json\(withPublicSignalLabel\(analysisResponsePayload\(payload,\{cached:true,stale:!fresh,historyReadOnly:true/);
   const publisher=fs.readFileSync('src/publisher-runtime.js','utf8');
-  assert.match(publisher,/telegramHtmlEscape\(neutralSignalText\(signal\.code/);
+  // Карточка «Поделиться матчем» (15.10): только исход, вывод — через neutralSignalText.
+  assert.match(publisher,/const verdict=neutralSignalText\(code,/);
+  assert.match(publisher,/telegramHtmlEscape\(verdict\)/);
   assert.doesNotMatch(publisher,/signal\.label/);
   const tasks=fs.readFileSync('docs/ai-team/TASKS_RU.md','utf8');
   assert.doesNotMatch(tasks,/Задача 5 \(LLM\) без этого требует секрет/);

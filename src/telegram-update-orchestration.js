@@ -628,9 +628,18 @@ export function createTelegramUpdateProcessor(deps) {
     if (callbackChatId && shareAction) {
       const fixtureId=positiveInteger(shareAction[1]);
       if (!fixtureId) return json({ok:false,error:'fixture_id_invalid'},400);
-      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Готовлю ссылку…'}).catch(()=>null);
-      try { await sendBotFixtureShareCard(request,cfg,callbackUserId,callbackChatId,fixtureId); }
-      catch { await telegramApi('sendMessage',cfg,{chat_id:callbackChatId,text:'Не удалось подготовить ссылку на этот матч.'}).catch(()=>null); }
+      // Карточка с личной ссылкой поделившегося (Сергей 15.10): подсказку показываем, когда она уже в чате.
+      let shared=false;
+      try {
+        await sendBotFixtureShareCard(request,cfg,callbackUserId,callbackChatId,fixtureId);
+        shared=true;
+      } catch {
+        await telegramApi('sendMessage',cfg,{chat_id:callbackChatId,text:'Не удалось подготовить карточку этого матча. Попробуйте ещё раз.'}).catch(()=>null);
+      }
+      await telegramApi('answerCallbackQuery',cfg,{
+        callback_query_id:callbackId,
+        text:shared ? 'Перешлите карточку друзьям — ссылка в ней ваша' : 'Не получилось, попробуйте ещё раз',
+      }).catch(()=>null);
       return json({ok:true});
     }
     const matchAction = data.match(/^match:(menu|verdict|referee|squads|market|refresh|review):(\d+)$/);

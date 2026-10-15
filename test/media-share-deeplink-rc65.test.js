@@ -70,7 +70,7 @@ test('Telegram match cards expose native share flow',()=> {
   assert.match(botUi,/match:share:/);
   assert.match(telegramUpdate,/match:share:/);
   assert.match(publisher,/async function sendBotFixtureShareCard\(/);
-  assert.match(publisher,/Отправить другу \/ в канал/);
+  assert.match(publisher,/Отправить в чат/);
   assert.match(publisher,/telegramShareComposerUrl\(/);
 });
 
