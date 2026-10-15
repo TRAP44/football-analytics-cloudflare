@@ -8,10 +8,9 @@ const notifications = fs.readFileSync('public/modules/smart-notifications.js', '
 const premium = fs.readFileSync('public/styles/premium-ui.css', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8');
 
-test('match card AI CTA owns the full primary action row', () => {
-  assert.match(app, /match-card-actions compact-actions single/);
-  assert.match(premium, /\.compact-actions \{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\)/);
-  assert.match(premium, /\.compact-actions \.analyze-btn \{[\s\S]*width:\s*100%/);
+test('match card row is one full-width action', () => {
+  assert.match(app, /<button class="match-row-open" type="button" \$\{action\.attr\}/);
+  assert.match(premium, /\.match-row-open \{[\s\S]*?width: 100%/);
 });
 
 test('profile removes redundant PRO CTA technical data drawer and status link', () => {

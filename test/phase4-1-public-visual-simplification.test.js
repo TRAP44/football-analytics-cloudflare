@@ -47,11 +47,11 @@ test('Home keeps search and filters primary while only a real personal match may
 
 test('match feed card is compact and does not embed analysis detail',()=>{
   const card=block(app,'function matchCardHtml','function bindMatchActions');
-  assert.match(card,/compact-match-card/);
-  assert.match(card,/match-card-topline/);
-  assert.match(card,/compact-match-row/);
-  assert.match(card,/compact-actions/);
-  assert.match(card,/match-secondary-actions/);
+  assert.match(card,/match-card match-row/);
+  assert.match(card,/match-row-status/);
+  assert.match(card,/match-row-teams/);
+  assert.match(card,/match-row-open/);
+  assert.doesNotMatch(card,/match-secondary-actions|fav-star|data-quick-reminder/);
   assert.doesNotMatch(card,/matchAiSnapshotHtml|Почему здесь|match-card-more/);
 });
 
@@ -154,11 +154,9 @@ test('personal match and Radar feed never render before personalized data exists
 
 test('compact match cards escape untrusted team labels and use safe logo URLs',()=>{
   const card=block(app,'function matchCardHtml','function bindMatchActions');
-  assert.match(card,/class="competition-name">\$\{escapeHtml\(m\.league \|\| 'Турнир'\)\}/);
-  assert.match(card,/data-team-name="\$\{escapeHtml\(m\.home\?\.name \|\| ''\)\}"/);
-  assert.match(card,/data-team-name="\$\{escapeHtml\(m\.away\?\.name \|\| ''\)\}"/);
-  assert.match(card,/src="\$\{safeUrl\(m\.home\.logo\)\}"/);
-  assert.match(card,/src="\$\{safeUrl\(m\.away\.logo\)\}"/);
-  assert.match(card,/<strong>\$\{escapeHtml\(m\.home\?\.name \|\| ''\)\}<\/strong>/);
-  assert.match(card,/<strong>\$\{escapeHtml\(m\.away\?\.name \|\| ''\)\}<\/strong>/);
+  assert.match(card,/class="match-row-league">\$\{escapeHtml\(leagueLabel\)\}/);
+  assert.match(card,/src="\$\{safeUrl\(t\.logo\)\}"/);
+  assert.match(card,/<span class="match-row-name">\$\{escapeHtml\(t\.name \|\| ''\)\}<\/span>/);
+  assert.match(card,/aria-label="\$\{escapeHtml\(`\$\{action\.label\}: \$\{m\.home\?\.name \|\| ''\} — \$\{m\.away\?\.name \|\| ''\}`\)\}"/);
+  assert.match(card,/<b class="match-row-score">\$\{escapeHtml\(score\(side\)\)\}<\/b>/);
 });

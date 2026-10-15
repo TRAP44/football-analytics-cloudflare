@@ -136,13 +136,25 @@ export function createFirstRunGuideController({
       ? `Выбрано команд: ${count}. Можно добавить ещё или открыть матч.`
       : 'Выберите 1–3 любимые команды. Их матчи появятся в блоке «Для вас».';});
     if (favoriteButton) safeCall(()=>{favoriteButton.textContent=count ? 'Добавить ещё команду' : 'Выбрать команды';});
-    const hidden=dismissed || dismissedThisSession || count>=3 || hasDirectLaunchIntent();
+    // Кто уже открывал разборы, знает приложение — подсказка ему не нужна.
+    const history=safeRead(stateObject,'history');
+    const experienced=Array.isArray(history) && history.length>0;
+    const hidden=dismissed || dismissedThisSession || count>=3 || experienced || hasDirectLaunchIntent();
+    syncHomeHero(hidden);
     try {
       guide.hidden=hidden;
       return !hidden;
     } catch {
       return false;
     }
+  }
+
+  // Большой слоган «Читай игру» — для знакомства. Вернувшимся оставляем только
+  // дату и счётчики, чтобы лента матчей поднялась на первый экран (UX-ревью 15.10).
+  function syncHomeHero(compact) {
+    const hero=safeElement(elementById,'homeHero');
+    if (!hero) return;
+    safeCall(()=>{hero.classList.toggle('is-compact',compact===true);});
   }
 
   function dismissFirstRunGuide() {
@@ -154,6 +166,7 @@ export function createFirstRunGuideController({
     try {
       if (guide) safeCall(()=>{guide.hidden=true;});
     } catch {}
+    syncHomeHero(true);
     return true;
   }
 

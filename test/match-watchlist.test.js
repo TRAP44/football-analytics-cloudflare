@@ -93,10 +93,11 @@ test('watchlist helpers persist locally without backend or provider requests', (
 
 test('match cards expose follow control and reuse existing match data', () => {
   const source = block('function matchCardHtml', 'function analysisHistoryForFixture');
-  assert.match(source, /data-watch-fixture=/);
-  assert.match(source, /👁 Следить/);
-  assert.match(source, /👁 Слежу/);
-  assert.match(source, /toggleMatchWatch\(match\)/);
+  // Компактная строка (UX-ревью 15.10): «Следить» живёт в центре матча,
+  // в ленте — только метка у матча, за которым следят.
+  assert.match(source, /const watchActive = isWatchedMatch\(m\.fixtureId\)/);
+  assert.match(source, /Вы следите за матчем/);
+  assert.match(readFileSync(new URL('../public/modules/match-center-view.js', import.meta.url), 'utf8'), /centerWatchBtn[\s\S]*toggleMatchWatch/);
 });
 
 test('watched matches receive explicit Radar Feed priority', () => {
@@ -114,7 +115,7 @@ test('watchlist controls stay compact on the public mobile shell', () => {
 });
 
 test('match watchlist ships with one exact frontend asset revision across public and admin shells', () => {
-  assert.equal(FRONTEND_ASSET_REVISION,'6.120.0-launch119');
+  assert.equal(FRONTEND_ASSET_REVISION,'6.120.0-launch120');
 
   const revisions=[html,adminHtml].map(surface=>
     surface.match(

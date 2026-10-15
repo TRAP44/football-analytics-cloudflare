@@ -1107,10 +1107,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch119'),
+      import('./modules/match-center-view.js?v=6.120.0-launch120'),
       import('./modules/match-pulse.js?v=6.120.0-launch87'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch119'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch119'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch120'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch120'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1267,7 +1267,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch119').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch120').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -2921,7 +2921,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch119');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch120');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3298,56 +3298,81 @@ function aiConfidenceMeterHtml(history, match = null) {
   return aiProbabilityBarHtml(history);
 }
 
-function matchCardHtml(m, { grouped = false } = {}) {
+// Карточка ленты — одна компактная строка, как в концепте SIGNAL V2 (UX-ревью 15.10):
+// время / LIVE слева, команды строками, счёт справа. Вся строка — одно действие:
+// идёт или завершён → центр матча, впереди → AI-разбор (или сохранённый разбор).
+// Избранное, напоминание и «Следить» — внутри матча, чтобы на экран влезало 5–6 матчей.
+function matchCardHtml(m) {
+  const id = Number(m.fixtureId) || 0;
   const aiHistory = analysisHistoryForFixture(m.fixtureId);
   const cardState = m.live ? 'is-live' : m.finished ? 'is-finished' : 'is-upcoming';
   const reminderActive = hasReminder(m.fixtureId);
-  const reminderPending = state.reminderMutations.has(Number(m.fixtureId));
-  const reminderMinutes = Number(state.preferences?.reminderMinutes || 30);
   const watchActive = isWatchedMatch(m.fixtureId);
-  const liveMinute = Number(m.elapsed || 0) > 0 ? ` · ${Number(m.elapsed)}′` : '';
-  const statusLabel = m.live
-    ? `<b class="match-live-label">LIVE${liveMinute}</b>`
+  const minute = Number(m.elapsed || 0) > 0 ? `${Number(m.elapsed)}′` : '';
+  const status = m.live
+    ? `<b class="match-row-live">LIVE</b>${minute ? `<small>${escapeHtml(minute)}</small>` : ''}`
     : m.finished
-      ? '<span class="match-finished-label">Завершён</span>'
-      : `<span class="match-time-label">${escapeHtml(timeOf(m.date))}</span>`;
-  const primaryAction = m.live
-    ? `<button class="analyze-btn live-center-btn" type="button" data-center="${Number(m.fixtureId)}">Открыть матч</button>`
-    : m.finished
-      ? `<button class="analyze-btn finished-btn" type="button" data-center="${Number(m.fixtureId)}">Итоги матча</button>`
-      : aiHistory
-        ? `<button class="analyze-btn analyzed-btn" type="button" data-history-analysis="${Number(m.fixtureId)}">Открыть разбор</button>`
-        : `<button class="analyze-btn" type="button" data-fixture="${Number(m.fixtureId)}">Разобрать с AI</button>`;
-
-  const favoriteButton = team => { const active = isFavorite(team?.id); return `<button class="fav-star compact ${active ? 'active' : ''} ${state.favoriteMutations.has(Number(team?.id)) ? 'is-pending' : ''}" type="button" data-team-id="${Number(team?.id)}" data-team-name="${escapeHtml(team?.name || '')}" data-team-logo="${escapeHtml(team?.logo || '')}" aria-pressed="${active ? 'true' : 'false'}" aria-label="${active ? 'Удалить из избранного' : 'Добавить в избранное'}: ${escapeHtml(team?.name || '')}" ${state.favoriteMutations.has(Number(team?.id)) ? 'disabled' : ''}>${favoriteStarSvg(active)}</button>`; };
+      ? '<span class="match-row-final">Финал</span>'
+      : `<span class="match-row-kickoff">${escapeHtml(timeOf(m.date))}</span>`;
+  const action = m.live || m.finished
+    ? { attr: `data-center="${id}"`, label: m.live ? 'Открыть матч' : 'Итоги матча' }
+    : aiHistory
+      ? { attr: `data-history-analysis="${id}"`, label: 'Открыть разбор' }
+      : { attr: `data-fixture="${id}"`, label: 'Разобрать с AI' };
+  const score = side => {
+    const value = Number(m.score?.[side]);
+    return (m.live || m.finished) && Number.isInteger(value) && value >= 0 ? String(value) : '';
+  };
+  const team = (side) => {
+    const t = m[side] || {};
+    return `<span class="match-row-team">
+          ${t.logo ? `<img src="${safeUrl(t.logo)}" alt="" loading="lazy">` : '<i class="match-row-logo-fallback" aria-hidden="true"></i>'}
+          <span class="match-row-name">${escapeHtml(t.name || '')}</span>
+          <b class="match-row-score">${escapeHtml(score(side))}</b>
+        </span>`;
+  };
+  const marks = [
+    aiHistory && !m.live && !m.finished ? '<span class="match-row-mark ai">AI</span>' : '',
+    reminderActive ? '<span class="match-row-mark" aria-label="Напоминание включено">🔔</span>' : '',
+    watchActive ? '<span class="match-row-mark" aria-label="Вы следите за матчем">👁</span>' : '',
+  ].join('');
+  const leagueLabel = m.leagueShort || m.league || 'Турнир';
 
   return `
-    <article class="match-card compact-match-card ${cardState}">
-      <div class="match-card-topline">
-        <span class="competition-name">${escapeHtml(m.league || 'Турнир')}</span>
-        ${statusLabel}
-      </div>
-      <div class="compact-match-row">
-        <button class="team-open-link compact-team" type="button" data-open-team="${Number(m.home?.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}">
-          ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : '<span class="team-logo-fallback">⚽</span>'}
-          <strong>${escapeHtml(m.home?.name || '')}</strong>
-        </button>
-        <div class="compact-score ${m.live ? 'score-live' : m.finished ? 'score-finished' : 'score-upcoming'}">${escapeHtml(matchCenter(m))}</div>
-        <button class="team-open-link compact-team away" type="button" data-open-team="${Number(m.away?.id)}" data-team-name="${escapeHtml(m.away?.name || '')}" data-team-logo="${escapeHtml(m.away?.logo || '')}">
-          ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : '<span class="team-logo-fallback">⚽</span>'}
-          <strong>${escapeHtml(m.away?.name || '')}</strong>
-        </button>
-      </div>
-      <div class="match-card-actions compact-actions single">${primaryAction}</div>
-      <div class="match-secondary-actions" aria-label="Дополнительные действия">
-        <span>${favoriteButton(m.home)}${favoriteButton(m.away)}</span>
-        ${!m.finished ? `<button class="match-watch-btn compact ${watchActive ? 'active' : ''}" type="button" data-watch-fixture="${Number(m.fixtureId)}" aria-pressed="${watchActive ? 'true' : 'false'}" aria-label="${watchActive ? 'Перестать следить за матчем' : 'Следить за матчем'}">${watchActive ? '👁 Слежу' : '👁 Следить'}</button>` : ''}
-        ${!m.live && !m.finished ? `<button class="quick-reminder-btn compact ${reminderActive ? 'active' : ''} ${reminderPending ? 'is-pending' : ''}" type="button" data-quick-reminder="${Number(m.fixtureId)}" aria-pressed="${reminderActive ? 'true' : 'false'}" ${reminderPending ? 'disabled' : ''}>${reminderActive ? '🔔' : '🔕'} <span>${reminderActive ? 'Включено' : `${reminderMinutes} мин.`}</span></button>` : ''}
-      </div>
+    <article class="match-card match-row ${cardState}">
+      <button class="match-row-open" type="button" ${action.attr} aria-label="${escapeHtml(`${action.label}: ${m.home?.name || ''} — ${m.away?.name || ''}`)}">
+        <span class="match-row-status">${status}<small class="match-row-league">${escapeHtml(leagueLabel)}</small></span>
+        <span class="match-row-teams">
+          ${team('home')}
+          ${team('away')}
+        </span>
+        <span class="match-row-side">${marks}<span class="match-row-chevron" aria-hidden="true">›</span></span>
+      </button>
     </article>`;
 }
 
+function bindMatchRows(root = document) {
+  // Кнопка-строка не передаётся контроллерам: они переписывают textContent кнопки,
+  // а у строки внутри разметка. Состояние загрузки показываем классом.
+  root.querySelectorAll('.match-row-open').forEach(row => {
+    row.addEventListener('click', async () => {
+      if (row.classList.contains('is-opening')) return;
+      const id = Number(row.dataset.fixture || row.dataset.center || row.dataset.historyAnalysis || 0);
+      if (!id) return;
+      row.classList.add('is-opening');
+      try {
+        if (row.dataset.fixture) await analyzeMatch(id, null);
+        else if (row.dataset.center) await openMatchCenter(id, null);
+        else await openHistoryAnalysis(id, null);
+      } finally {
+        row.classList.remove('is-opening');
+      }
+    });
+  });
+}
+
 function bindMatchActions(root = document) {
+  bindMatchRows(root);
   root.querySelectorAll('.analyze-btn[data-fixture]').forEach(btn => {
     btn.addEventListener('click', () => analyzeMatch(Number(btn.dataset.fixture), btn));
   });
@@ -3383,7 +3408,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch119').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch120').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -5504,7 +5529,7 @@ async function loadAnalysisExplanation(fixtureId) {
   const root = $('matchExplanation');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch119');
+    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch120');
     const { loadMatchExplanation } = await matchExplanationModule;
     await loadMatchExplanation({
       root,
@@ -5524,7 +5549,7 @@ async function loadMatchQuestions(fixtureId) {
   const root = $('matchQuestions');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch119');
+    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch120');
     const { mountMatchQuestions } = await matchQuestionsModule;
     mountMatchQuestions({
       root,
@@ -5541,7 +5566,7 @@ async function loadMatchQuestions(fixtureId) {
 // «Обыграй AI»: прогноз в Штабе матча и таблица в Профиле — ленивый модуль.
 let beatAiModule = null;
 function loadBeatAiModule() {
-  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch119').catch(error => { beatAiModule = null; throw error; });
+  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch120').catch(error => { beatAiModule = null; throw error; });
   return beatAiModule;
 }
 async function mountBeatAi(m = {}) {
@@ -5576,7 +5601,7 @@ async function loadReferralInvitePanel() {
   const root = $('referralInvite');
   if (!root) return;
   try {
-    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch119');
+    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch120');
     const { loadReferralInvite } = await referralInviteModule;
     await loadReferralInvite({ root, api, escapeHtml, tg, toast });
   } catch {
@@ -5587,7 +5612,7 @@ async function loadReferralInvitePanel() {
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch119');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch120');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {
@@ -5914,7 +5939,7 @@ function renderAnalysis(d) {
       <div class="experience-health-row">
         ${d.stale ? '<span>⚠️ Показана последняя доступная версия</span>' : ''}
       </div>
-      ${analysisAccessUsageHtml(d.accessUsage, escapeHtml)}
+      ${state.profile?.features?.monetizationEnabled === true ? analysisAccessUsageHtml(d.accessUsage, escapeHtml) : ''}
 
       <div class="experience-actions">
         <button id="reminderBtn" class="reminder-btn ${reminderActive ? 'active' : ''} ${reminderPending ? 'is-pending' : ''}" type="button" aria-pressed="${reminderActive ? 'true' : 'false'}" ${reminderPending ? 'disabled' : ''}>${reminderPending ? '⏳ Сохраняю…' : reminderActive ? `🔔 За ${Number(activeReminder?.remindBeforeMinutes || 30)} мин.${activeReminder?.kickoffNotify ? ' + старт' : ''}` : `🔕 Напомнить за ${Number(state.preferences?.reminderMinutes || 30)} минут`}</button>

@@ -2607,3 +2607,87 @@ html[data-theme] body.miniapp-public-shell .experience-prematch-note { display: 
   color: var(--accent-text);
   font-weight: 900;
 }
+
+/* --------------------------------------------------------------------------
+   Лента: компактная строка матча (SIGNAL V2, UX-ревью 15.10).
+   Время / LIVE · команды строками со счётом справа · метки и стрелка.
+   -------------------------------------------------------------------------- */
+html[data-theme] body.miniapp-public-shell .match-card.match-row {
+  position: relative; margin: 0; padding: 0; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 16px;
+  background: var(--surface); box-shadow: none; min-height: 0;
+}
+html[data-theme] body.miniapp-public-shell .match-card.match-row::before,
+html[data-theme] body.miniapp-public-shell .match-card.match-row::after { content: none; }
+html[data-theme] body.miniapp-public-shell .match-card.match-row.is-live {
+  border-color: color-mix(in srgb, var(--brand-live, #ff4d5e) 45%, var(--line));
+  box-shadow: inset 3px 0 0 var(--brand-live, #ff4d5e);
+}
+html[data-theme] body.miniapp-public-shell .match-row-open {
+  display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  width: 100%; min-height: 64px; margin: 0; padding: 10px 12px 10px 14px;
+  border: 0; border-radius: inherit; background: transparent; color: var(--text);
+  font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+html[data-theme] body.miniapp-public-shell .match-row-open:active,
+html[data-theme] body.miniapp-public-shell .match-row-open.is-opening {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+html[data-theme] body.miniapp-public-shell .match-row-open.is-opening .match-row-chevron {
+  animation: match-row-pulse .8s ease-in-out infinite alternate;
+}
+@keyframes match-row-pulse { from { opacity: .35; } to { opacity: 1; } }
+html[data-theme] body.miniapp-public-shell .match-row-open:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: -2px;
+}
+html[data-theme] body.miniapp-public-shell .match-row-status {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0;
+  font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1;
+}
+html[data-theme] body.miniapp-public-shell .match-row-status small { font-size: 11px; font-weight: 700; color: var(--hint); }
+html[data-theme] body.miniapp-public-shell .match-row-live { font-size: 12px; letter-spacing: .06em; color: var(--brand-live, #ff4d5e); }
+html[data-theme] body.miniapp-public-shell .match-row.is-live .match-row-status small:not(.match-row-league) { color: var(--brand-live, #ff4d5e); }
+html[data-theme] body.miniapp-public-shell .match-row-final { font-size: 12px; color: var(--hint); }
+html[data-theme] body.miniapp-public-shell .match-row-status .match-row-league {
+  max-width: 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+}
+html[data-theme] body.miniapp-public-shell .match-row-teams { display: grid; gap: 6px; min-width: 0; }
+html[data-theme] body.miniapp-public-shell .match-row-team {
+  display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-width: 0;
+}
+html[data-theme] body.miniapp-public-shell .match-row-team img,
+html[data-theme] body.miniapp-public-shell .match-row-logo-fallback {
+  width: 20px; height: 20px; border-radius: 50%; object-fit: contain;
+}
+html[data-theme] body.miniapp-public-shell .match-row-logo-fallback {
+  display: block; background: var(--surface-2); border: 1px solid var(--line);
+}
+html[data-theme] body.miniapp-public-shell .match-row-name {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 700;
+}
+html[data-theme] body.miniapp-public-shell .match-row-score {
+  min-width: 14px; text-align: right; font-size: 16px; font-weight: 900; font-variant-numeric: tabular-nums;
+}
+html[data-theme] body.miniapp-public-shell .match-row.is-live .match-row-score { color: var(--accent); }
+html[data-theme] body.miniapp-public-shell .match-row-side { display: flex; align-items: center; gap: 4px; }
+html[data-theme] body.miniapp-public-shell .match-row-mark { font-size: 12px; line-height: 1; }
+html[data-theme] body.miniapp-public-shell .match-row-mark.ai {
+  padding: 3px 6px; border-radius: 999px; font-size: 10px; font-weight: 900; letter-spacing: .04em;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+html[data-theme] body.miniapp-public-shell .match-row-chevron { font-size: 22px; line-height: 1; color: var(--hint); }
+html[data-theme] body.miniapp-public-shell .home-match-section-list:has(.match-row) { gap: 8px; }
+@media (max-width: 360px) {
+  html[data-theme] body.miniapp-public-shell .match-row-open { grid-template-columns: 46px minmax(0, 1fr) auto; gap: 8px; padding-left: 12px; }
+  html[data-theme] body.miniapp-public-shell .match-row-name { font-size: 14px; }
+}
+
+/* Вернувшийся пользователь: без слогана, только дата и счётчики. */
+html[data-theme] body.miniapp-public-shell .mr-hero.is-compact { margin-bottom: 12px; padding-top: 2px; }
+html[data-theme] body.miniapp-public-shell .mr-hero.is-compact .mr-hero-title,
+html[data-theme] body.miniapp-public-shell .mr-hero.is-compact .mr-hero-sub,
+html[data-theme] body.miniapp-public-shell .mr-hero.is-compact .mr-hero-radar { display: none; }
+
+/* Блок «Чем отличается MatchRadar» — знакомство; вернувшимся не показываем. */
+html[data-theme] body.miniapp-public-shell #homeHero.is-compact ~ .mr-manifesto { display: none; }
