@@ -207,3 +207,16 @@ test('history rejects misleading AI confidence types without abandoning the save
   assert.equal(rows[0].ai_confidence,null);
   assert.equal(rows[0].ai_signal_code,'');
 });
+
+test('failed multi-user history batch preserves individual background retries',async()=>{
+  const persisted=[],pending=[];let batchFailures=0;
+  const {service}=runtime({hasSupabase:()=>true,supaUpsert:async(_cfg,_table,rows)=>{
+    if(Array.isArray(rows)){batchFailures++;throw new Error('simulated batch failure');}
+    persisted.push(rows.telegram_id);
+  },retryDelayMs:0});
+  const cfg={supabaseUrl:'https://history-project.test',supabaseKey:'dummy-local-key',waitUntil:task=>pending.push(task)};
+  await Promise.all([service.recordHistory(41,payload(101),cfg),service.recordHistory(42,payload(102),{...cfg})]);
+  await Promise.all(pending);
+  assert.equal(batchFailures,1);
+  assert.deepEqual(persisted.sort(),[41,42]);
+});

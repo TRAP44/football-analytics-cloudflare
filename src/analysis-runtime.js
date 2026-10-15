@@ -768,8 +768,13 @@ export function createAnalysisRuntime(deps) {
         return json({ok:true,cached:true,fixtureId});
       }
       if (!newsImpactEligible) {
-        await safeRecordHistory(cached);
-        if (trackFullAi) fireAndForget(recordGrowthEvent,cfg,{userId,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,freshness:safeText(previousFreshness?.state,40) || 'fresh'}});
+        // Both are required before delivery but do not depend on each other.
+        // Keep background growth/referral reads behind this foreground work so
+        // a burst cannot fill the DB pool ahead of the response's quota read.
+        const [, quota]=await Promise.all([
+          safeRecordHistory(cached),
+          quotaSnapshotForResponse(userId,cfg,null),
+        ]);
         const newsImpact=safeNewsImpactDeltaStatus(
           staleBefore,
           cached,
@@ -782,8 +787,9 @@ export function createAnalysisRuntime(deps) {
           },
         );
         await recordTrackedFullAiOutcome('cached');
+        if (trackFullAi) fireAndForget(recordGrowthEvent,cfg,{userId,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,freshness:safeText(previousFreshness?.state,40) || 'fresh'}});
         scheduleReferralReward();
-        return json(safeAnalysisResponsePayload(cached,{cached:true,stale:false,recheck:{requested:recheckRequested,performed:false,free:false,reasonCode:recheckReasonCode},newsImpact,quota:await quotaSnapshotForResponse(userId,cfg,null)}));
+        return json(safeAnalysisResponsePayload(cached,{cached:true,stale:false,recheck:{requested:recheckRequested,performed:false,free:false,reasonCode:recheckReasonCode},newsImpact,quota}));
       }
     }
   

@@ -17,10 +17,17 @@ PR: ссылка или ветка
 ## 2026-10-15 — Claude — Убраны посты «Перелом матча» в канал
 PR: ветка `claude/remove-channel-swing-posts`.
 Сделано: из `src/match-swing-job.js` удалены публикация в канал, предпросмотры CHANNEL_SWING_POST_PREVIEW, дневные слоты и фильтр главных турниров; из worker — проводка idempotency/isTopLeague/isChannelLeague; конфиг `channelSwingPostEnabled` и `CHANNEL_SWING_POST_ENABLED` (wrangler, .env.example). `bettingFree` больше не нужен — удалён. Тесты переписаны: в канал ничего не уходит.
-Решения: Сергей 15.10 — автоматические посты в канал не нужны. Личные сообщения «Перелом матча» (напоминание/любимая команда) не тронуты. Ручная тестовая публикация из админки (`/api/admin/channel-publisher/test`) осталась. В «Бэклог» записаны идеи 1, 2, 3, 5 по порядку.
+Решения: Сергей 15.10 — автоматические посты в канал не нужны. Код личных сообщений «Перелом матча» не тронут, но в проде вся задача выключена `MATCH_SWING_ENABLED=false` (было и до PR, замечание Codex); включать — только по «да» Сергея. Ручная тестовая публикация из админки (`/api/admin/channel-publisher/test`) осталась. В «Бэклог» записаны идеи 1, 2, 3, 5 по порядку.
 Проверки: Node 22 npm ci/check/lint, release 580/580, полный набор 4126/4127 — провал только `test/bot-match-card.test.js` (в песочнице нет `@resvg/resvg-wasm`, падает и на main).
 Осталось / внимание: после деплоя автоматических постов в канале нет совсем.
 
+
+## 2026-10-15 — Codex — Сокращение задержки готового разбора
+PR: [PR #902](https://github.com/TRAP44/football-analytics-cloudflare/pull/902), ветка `codex/cached-analysis-latency`.
+Сделано: cached-ответ ждёт history и свежую quota metadata параллельно, затем запускает прежние growth/referral фоновые операции. История группируется по точным Supabase URL/key, до 100 callers/2 мс, подтверждение upsert ожидается каждым; дубликаты берут newest viewed_at, сортируются conflict keys. Failures каждого caller идут в старый индивидуальный retry. Unknown identity не группируется. In-memory/getHistory, квоты/оплата/access и API shapes сохранены; public/SQL без изменений.
+Замер: baseline p95 cached 5589 мс; только порядок — 5079; с batching три прогона 4268/4461/4502 мс (примерно 19–24% ниже). На те же 1000 cached requests DB REST 7000→6011, history REST 1000→11; все HTTP/DB 200/201. SQL подтвердил 10 000 users, 1000 history, 1160 full_ai events по четырём ступеням. Повтор поверх #901: p95 3949 мс, REST6012, SQL evidence полный. Подробно docs/CACHED_ANALYSIS_LATENCY_RU.md. REST timing по операциям добавлен в harness; SQL evidence событий теперь обязательный.
+Проверки: Node 22 npm ci/check/lint, release 581/581, полный набор 4136/4136 после переноса #901, включая snapshot connection identity, security:privileged, Worker dry-run. Unit tests подтверждают параллельное ожидание, batch bounds/identity isolation/dedupe/ошибки и сохранённые индивидуальные retries.
+Решения / внимание: 2с пока не достигнуты, production capacity не подтверждена. Отдельный реальный PostgreSQL/PostgREST с прогретым синтетическим L1, Node composition; Cloudflare CPU и hosted Nano RTT/IO не измерены. Не спрашивать тарифы/перенос tokens повторно: Workers Free, Supabase Free/Nano, API-Football PRO известны. #900 слит и перенесён в «Готово». Claude #901 слит и подтянут в ветку; открытый #899 не пересекается с кодом; координационные файлы меняются только своей строкой/записью.
 
 ## 2026-10-15 — Claude — Шапка и нижняя полоса Telegram в цвет фона Mini App
 PR: [PR #904](https://github.com/TRAP44/football-analytics-cloudflare/pull/904), ветка `claude/telegram-chrome-color`.
