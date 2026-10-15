@@ -374,7 +374,8 @@ test('bot tariffs show configured prices only and open the billing block of the 
     passDurations:{MATCH_PASS:72,DAY_PASS:24,WEEKEND_PASS:168},
     passUsageLimits:{WEEKEND_PASS:6},
   };
-  for (const text of ['💎 Тарифы','/plans']) {
+  // Сергей 15.10: кнопки «Тарифы» в меню нет; /plans работает.
+  for (const text of ['/plans']) {
     sent.length=0;
     const result=await processor(request,cfg,{message:{chat:{id:42,type:'private'},from:{id:7},text}});
     assert.equal(result.status,200);
@@ -449,4 +450,26 @@ test('share tap is acknowledged before remote work and never promises a personal
   assert.deepEqual(calls.map(call=>call.method),['answerCallbackQuery','shareCard','sendMessage']);
   assert.doesNotMatch(calls[0].payload.text,/ваша/);
   assert.match(calls[2].payload.text,/Не удалось подготовить карточку/);
+});
+
+test('old «⚽ Матчи» / «🔴 LIVE» / «📰 Новости» buttons lead to the app and the new menu (Сергей 15.10)', async () => {
+  for (const [text, filter] of [['⚽ Матчи', null], ['🔴 LIVE', 'live'], ['/today', null]]) {
+    const sent=[];
+    let dayMatches=0;
+    const processor=createTelegramUpdateProcessor(deps({
+      telegramApi:async(method,_cfg,payload)=>{ sent.push({method,payload}); return {ok:true}; },
+      sendBotDayMatches:async()=>{ dayMatches+=1; },
+    }));
+    const result=await processor(request,{},{message:{chat:{id:42,type:'private'},from:{id:7},text}});
+    assert.equal(result.status,200);
+    assert.equal(dayMatches,0,text);
+    const url=new URL(sent[0].payload.reply_markup.inline_keyboard[0][0].web_app.url);
+    assert.equal(url.searchParams.get('filter'),filter,text);
+  }
+  const sent=[];
+  const processor=createTelegramUpdateProcessor(deps({
+    telegramApi:async(method,_cfg,payload)=>{ sent.push({method,payload}); return {ok:true}; },
+  }));
+  await processor(request,{},{message:{chat:{id:42,type:'private'},from:{id:7},text:'📰 Новости'}});
+  assert.match(sent[0].payload.text,/Меню обновлено/);
 });

@@ -218,10 +218,13 @@ test('Telegram hub is button-first and full analysis deep-links directly to the 
     keyboard.keyboard.map(row => row.map(button => button.text)),
     [
       ['⚽ Матчи', '🔴 LIVE'],
-      ['⭐ Мои команды', '📰 Новости'],
-      ['💎 Тарифы', '⚙️ Уведомления'],
+      ['⭐ Мои команды', '⚙️ Уведомления'],
     ],
   );
+  // Сергей 15.10: «Матчи» и «LIVE» открывают приложение, а не список в чате.
+  const [matchesButton, liveButton] = keyboard.keyboard[0];
+  assert.equal(new URL(matchesButton.web_app.url).searchParams.get('filter'), null);
+  assert.equal(new URL(liveButton.web_app.url).searchParams.get('filter'), 'live');
   assert.equal(keyboard.is_persistent, true);
 
   const actions = bot.footballMatchActionKeyboard(request, {

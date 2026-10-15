@@ -3,6 +3,7 @@
 import { BOT_DIGEST_BUTTONS, BOT_NOTIFICATIONS_TEXT, botPlansText } from './telegram-bot-plans.js';
 
 const REMOVED_MENU_LABELS = new Set([
+  '📰 Новости', '💎 Тарифы',
   '••• Ещё', '← Главное меню', '🕘 Последний разбор', '📈 Протокол AI',
   '🤖 AI-подборка', '🧠 AI-подборка', '🔎 Найти матч',
 ]);
@@ -774,13 +775,23 @@ export function createTelegramUpdateProcessor(deps) {
     return json({ ok: true });
   }
 
-  if (chatId && (/^\/today(?:@\w+)?(?:\s|$)/i.test(text) || /^матчи$/i.test(text) || (text === '⚽ Матчи сегодня' || text === '⚽ Матчи'))) {
-    await sendBotDayMatches(request,cfg,chatId,{liveOnly:false});
-    return json({ ok: true });
-  }
-
-  if (chatId && (/^\/live(?:@\w+)?(?:\s|$)/i.test(text) || /^live$/i.test(text) || /^лайв$/i.test(text) || text === '🔴 LIVE')) {
-    await sendBotDayMatches(request,cfg,chatId,{liveOnly:true});
+  // Сергей 15.10: текстовые списки «Матчи» и «LIVE» в чате убраны — матчи в приложении.
+  // Старая клавиатура присылает текст: отвечаем кнопкой в приложение и новым меню.
+  const legacyMatches=/^\/today(?:@\w+)?(?:\s|$)/i.test(text) || /^матчи$/i.test(text) || text === '⚽ Матчи сегодня' || text === '⚽ Матчи';
+  const legacyLive=/^\/live(?:@\w+)?(?:\s|$)/i.test(text) || /^live$/i.test(text) || /^лайв$/i.test(text) || text === '🔴 LIVE';
+  if (chatId && (legacyMatches || legacyLive)) {
+    const url=msg?.chat?.type === 'private' ? safeWebAppUrl(request,legacyLive ? {filter:'live'} : {}) : '';
+    if (url) {
+      await telegramApi('sendMessage',cfg,{
+        chat_id:chatId,
+        text:legacyLive ? '🔴 Матчи, которые идут сейчас, — в MatchRadar.' : '⚽ Все матчи дня — в MatchRadar.',
+        reply_markup:{inline_keyboard:[[{text:legacyLive ? '🔴 Открыть LIVE' : '⚽ Открыть матчи',web_app:{url}}]]},
+      });
+      const replyMarkup=safeBotKeyboard(request);
+      if (replyMarkup) await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'Меню обновлено 👇',reply_markup:replyMarkup}).catch(()=>null);
+    } else {
+      await sendBotDayMatches(request,cfg,chatId,{liveOnly:legacyLive});
+    }
     return json({ ok: true });
   }
 
