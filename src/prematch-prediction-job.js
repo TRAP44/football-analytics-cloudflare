@@ -22,6 +22,9 @@ const MAX_LEAD_HOURS = 36;
 const UPCOMING_STATUSES = new Set(['NS', 'TBD']);
 const MAX_FEED_MATCHES = 3000;
 const MAX_FAVORITE_LOOKUP_TEAMS = 4000;
+// Матчи, на которые пользователи включили напоминание в Telegram, — серверный
+// признак «наблюдаемого» матча («Следить» хранится только на устройстве).
+const MAX_WATCHED_LOOKUP_FIXTURES = 1000;
 
 function plainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
@@ -85,7 +88,7 @@ export function providerBudgetDecision(snapshot, settings, nowMs = Date.now(), {
 }
 
 /** Кандидаты из уже закешированной ленты матчей: предстоящие главные матчи в окне. */
-export function prematchCandidates(feeds = [], favoriteTeamIds = new Set(), nowMs = Date.now()) {
+export function prematchCandidates(feeds = [], favoriteTeamIds = new Set(), nowMs = Date.now(), watchedFixtureIds = new Set()) {
   const seen = new Set();
   const rows = [];
   for (const feed of feeds) {
@@ -104,13 +107,15 @@ export function prematchCandidates(feeds = [], favoriteTeamIds = new Set(), nowM
       const homeId = positiveId(safeRead(plainObject(m.home), 'id'));
       const awayId = positiveId(safeRead(plainObject(m.away), 'id'));
       const favorite = favoriteTeamIds.has(homeId) || favoriteTeamIds.has(awayId);
+      const watched = watchedFixtureIds.has(fixtureId);
       const competition = plainObject(m.competition) || {};
       const top = m.featured === true || competition.featured === true || m.isTop === true;
-      if (!favorite && !top) continue;
+      if (!favorite && !watched && !top) continue;
       seen.add(fixtureId);
       rows.push({
         fixtureId,
         kickoff,
+        watched,
         favorite,
         top,
         interest: Number.isFinite(Number(m.interestScore)) ? Number(m.interestScore) : 0,
@@ -120,7 +125,8 @@ export function prematchCandidates(feeds = [], favoriteTeamIds = new Set(), nowM
     }
   }
   return rows.sort((a, b) => (
-    Number(b.favorite) - Number(a.favorite)
+    Number(b.watched) - Number(a.watched)
+    || Number(b.favorite) - Number(a.favorite)
     || Number(b.top) - Number(a.top)
     || b.interest - a.interest
     || a.kickoff - b.kickoff
@@ -296,6 +302,39 @@ export function createPrematchPredictionJob(deps = {}) {
     return found;
   }
 
+  // Матчи с включённым напоминанием, частями по 200 id. Строка — пара
+  // (пользователь, матч), поэтому популярный матч может занять всю страницу:
+  // как в favoriteTeams, пагинация по fixture_id (gt) перескакивает его дубли.
+  // Ошибка чтения не останавливает расчёт: остаются прежние приоритеты.
+  async function watchedFixtures(fixtureIds, cfg) {
+    const ids = [...new Set(fixtureIds.filter(Boolean))].sort((a, b) => a - b).slice(0, MAX_WATCHED_LOOKUP_FIXTURES);
+    const found = new Set();
+    for (let index = 0; index < ids.length; index += 200) {
+      const chunk = ids.slice(index, index + 200);
+      let after = 0;
+      for (let page = 0; page <= chunk.length; page += 1) {
+        let rows;
+        try {
+          rows = await supaSelectMany(
+            cfg,
+            'match_reminders',
+            { and: `(fixture_id.in.(${chunk.join(',')}),fixture_id.gt.${after})`, enabled: 'eq.true' },
+            { limit: 1000, select: 'fixture_id', order: 'fixture_id.asc' },
+          );
+        } catch {
+          break;
+        }
+        const list = (Array.isArray(rows) ? rows : []).map(row => positiveId(safeRead(row, 'fixture_id'))).filter(Boolean);
+        for (const id of list) found.add(id);
+        if (list.length < 1000) break;
+        const last = Math.max(...list);
+        if (!(last > after)) break;
+        after = last;
+      }
+    }
+    return found;
+  }
+
   async function fixturesWithPrediction(fixtureIds, cfg) {
     const ids = fixtureIds.slice(0, 200);
     if (!ids.length) return new Set();
@@ -366,6 +405,7 @@ export function createPrematchPredictionJob(deps = {}) {
         endpoint: 'cron:prematch-predictions',
         meta: {
           candidates: summary.candidates,
+          watched: summary.watched || 0,
           withoutPrediction: summary.withoutPrediction,
           computed: summary.computed,
           alreadyCached: summary.alreadyCached,
@@ -384,7 +424,7 @@ export function createPrematchPredictionJob(deps = {}) {
 
   async function processPrematchPredictions(cfg, scheduledAt = new Date()) {
     const settings = prematchPredictionSettings(cfg);
-    const summary = { ok: true, candidates: 0, withoutPrediction: 0, computed: 0, alreadyCached: 0, skipped: 0, failed: 0, stopReason: '',lineupRefreshed:0,lineupSkipped:0,lineupProbes:0 };
+    const summary = { ok: true, candidates: 0, watched: 0, withoutPrediction: 0, computed: 0, alreadyCached: 0, skipped: 0, failed: 0, stopReason: '',lineupRefreshed:0,lineupSkipped:0,lineupProbes:0 };
     const at = scheduledAt instanceof Date && Number.isFinite(scheduledAt.getTime()) ? scheduledAt : new Date();
     if (!settings.enabled) return { ...summary, reason: 'disabled' };
     let storage = false;
@@ -450,8 +490,10 @@ export function createPrematchPredictionJob(deps = {}) {
     const eligible = prematchCandidates(feeds, { has: () => true }, nowMs);
     const preliminary = eligible.filter(row => row.top);
     const favorites = await favoriteTeams(eligible.flatMap(row => [row.homeId, row.awayId]), cfg);
-    const candidates = prematchCandidates(feeds, favorites, nowMs).slice(0, 200);
+    const watched = await watchedFixtures(eligible.map(row => row.fixtureId), cfg);
+    const candidates = prematchCandidates(feeds, favorites, nowMs, watched).slice(0, 200);
     summary.candidates = candidates.length;
+    summary.watched = candidates.filter(row => row.watched).length;
     if (!candidates.length) return finish(preliminary.length ? 'no_candidates' : 'no_main_matches');
 
     let existing;

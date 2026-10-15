@@ -22,8 +22,16 @@ PR: [PR #902](https://github.com/TRAP44/football-analytics-cloudflare/pull/902),
 Решения / внимание: 2с пока не достигнуты, production capacity не подтверждена. Отдельный реальный PostgreSQL/PostgREST с прогретым синтетическим L1, Node composition; Cloudflare CPU и hosted Nano RTT/IO не измерены. Не спрашивать тарифы/перенос tokens повторно: Workers Free, Supabase Free/Nano, API-Football PRO известны. #900 слит и перенесён в «Готово». Claude #901 слит и подтянут в ветку; открытый #899 не пересекается с кодом; координационные файлы меняются только своей строкой/записью.
 
 
+## 2026-10-15 — Claude — Задача 2: наблюдаемые матчи в приоритете
+PR: [PR #899](https://github.com/TRAP44/football-analytics-cloudflare/pull/899), ветка `claude/prematch-reminder-priority`.
+Сделано: фон предматчевых прогнозов (`src/prematch-prediction-job.js`) читает `match_reminders` (enabled) для подходящих матчей и ставит их первыми: напоминание → избранные → главные → интерес/время. Матч с напоминанием выбирается и вне главных лиг; окно 20 мин – 36 ч и фильтры молодёжных/низших лиг действуют. В журнал запуска добавлено `watched`. Описание — этап 3 в docs/PREMATCH_PROVIDER_BUDGET_RU.md.
+Решения: «Следить» в Mini App хранится только на устройстве, поэтому серверный признак наблюдения — включённое напоминание. Чтение — `select fixture_id` по 200 id с пагинацией по fixture_id (как у избранных: популярный матч не скрывает остальные), максимум 1000 матчей, только Supabase; ошибка чтения не останавливает фон (прежний порядок). Бюджеты/perRun/потолки, миграции, public/ не менялись.
+Проверки: Node 22 npm ci/check/lint, release 580/580, полный набор 4136/4137 — единственный провал `test/bot-match-card.test.js` и на чистом main: в песочнице не скачался `@resvg/resvg-wasm` (нет сети к npm), к PR не относится; проверит CI.
+Осталось / внимание: единое время расчёта в штабе/допустимых карточках. Здоровье 15.10: ошибок вебхука нет, «Итоги дня» уходят (3/3); есть таймауты RPC Supabase у lease фоновых задач (claim/renew/complete, единицы за сутки).
+
+
 ## 2026-10-15 — Claude — Удалён пост «Матчи дня» в канале
-PR: ветка `claude/remove-channel-daily-post`.
+PR: [PR #901](https://github.com/TRAP44/football-analytics-cloudflare/pull/901), ветка `claude/remove-channel-daily-post` — слит 15.10.
 Сделано: по решению Сергея («уродский и не нужный, отключи и удали») удалены `src/channel-daily-post-job.js`, его тест, запуск в `scheduled-jobs.js` (окно 08:00 UTC), проводка в `worker.js`/`operational-orchestration-runtime.js`, конфиг `channelDailyPostEnabled` и переменная `CHANNEL_DAILY_POST_ENABLED` в `wrangler.jsonc`/`.env.example`. `bettingFree` перенесён в `match-swing-job.js` (нужен «Перелому матча»).
 Решения: «Перелом матча», личные «Итоги дня» в боте и фильтр лиг канала `isChannelLeague` не менялись. Уже опубликованные посты в канале код не удаляет — их Сергей убирает вручную.
 Проверки: Node 22 npm ci/check/lint, release 580/580, полный набор 4118/4119 — провал только `test/bot-match-card.test.js` (в песочнице не скачался `@resvg/resvg-wasm`, падает и на main).
