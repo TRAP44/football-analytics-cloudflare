@@ -21,6 +21,11 @@ PR: [PR #902](https://github.com/TRAP44/football-analytics-cloudflare/pull/902),
 Проверки: Node 22 npm ci/check/lint, release 581/581, полный набор 4136/4136 после переноса #901, включая snapshot connection identity, security:privileged, Worker dry-run. Unit tests подтверждают параллельное ожидание, batch bounds/identity isolation/dedupe/ошибки и сохранённые индивидуальные retries.
 Решения / внимание: 2с пока не достигнуты, production capacity не подтверждена. Отдельный реальный PostgreSQL/PostgREST с прогретым синтетическим L1, Node composition; Cloudflare CPU и hosted Nano RTT/IO не измерены. Не спрашивать тарифы/перенос tokens повторно: Workers Free, Supabase Free/Nano, API-Football PRO известны. #900 слит и перенесён в «Готово». Claude #901 слит и подтянут в ветку; открытый #899 не пересекается с кодом; координационные файлы меняются только своей строкой/записью.
 
+## 2026-10-15 — Claude — Задача 2 закрыта
+PR: ветка `claude/board-drop-calc-time` (только документы).
+Решения: Сергей 15.10 отменил этап «единое время расчёта (рассчитано в ЧЧ:ММ) в штабе/карточках» — «пользователь не должен видеть этого». Строка удалена из «Бэклога», #899 перенесён в «Готово», в docs/PREMATCH_PROVIDER_BUDGET_RU.md отмечено решение.
+Осталось / внимание: не добавлять пользователю отметки времени расчёта вероятностей без нового решения Сергея. «Бэклог» сейчас пуст.
+
 
 ## 2026-10-15 — Claude — Задача 2: наблюдаемые матчи в приоритете
 PR: [PR #899](https://github.com/TRAP44/football-analytics-cloudflare/pull/899), ветка `claude/prematch-reminder-priority`.
