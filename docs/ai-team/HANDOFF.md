@@ -14,6 +14,14 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-15 — Claude — Убраны посты «Перелом матча» в канал
+PR: ветка `claude/remove-channel-swing-posts`.
+Сделано: из `src/match-swing-job.js` удалены публикация в канал, предпросмотры CHANNEL_SWING_POST_PREVIEW, дневные слоты и фильтр главных турниров; из worker — проводка idempotency/isTopLeague/isChannelLeague; конфиг `channelSwingPostEnabled` и `CHANNEL_SWING_POST_ENABLED` (wrangler, .env.example). `bettingFree` больше не нужен — удалён. Тесты переписаны: в канал ничего не уходит.
+Решения: Сергей 15.10 — автоматические посты в канал не нужны. Личные сообщения «Перелом матча» (напоминание/любимая команда) не тронуты. Ручная тестовая публикация из админки (`/api/admin/channel-publisher/test`) осталась. В «Бэклог» записаны идеи 1, 2, 3, 5 по порядку.
+Проверки: Node 22 npm ci/check/lint, release 580/580, полный набор 4126/4127 — провал только `test/bot-match-card.test.js` (в песочнице нет `@resvg/resvg-wasm`, падает и на main).
+Осталось / внимание: после деплоя автоматических постов в канале нет совсем.
+
+
 ## 2026-10-15 — Claude — Шапка и нижняя полоса Telegram в цвет фона Mini App
 PR: [PR #904](https://github.com/TRAP44/football-analytics-cloudflare/pull/904), ветка `claude/telegram-chrome-color`.
 Сделано: `applyInterfacePreferences` (public/modules/ui-preferences.js) берёт `--bg` с `body`, а не с `html`, и красит им шапку, фон и нижнюю полосу Telegram (`setBottomBarColor`, если клиент умеет). Ревизия ассетов launch115 → launch116. Тест в `test/interface-personalization.test.js`.

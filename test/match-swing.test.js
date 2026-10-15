@@ -49,9 +49,9 @@ test('text: only numbers from the snapshots, no betting words', () => {
   ].join('\n'));
   assert.equal(isBettingText(text), false);
   const half = matchSwing({ home: 19, draw: 30, away: 51 }, live({ status: 'HT', minute: 45, score: { home: 1, away: 0 }, home: 51, draw: 28, away: 21 }));
-  const channel = matchSwingText({ homeName: 'Ковентри', awayName: 'Ньюкасл' }, half, { channel: true });
-  assert.match(channel, /Ковентри 1:0 Ньюкасл · перерыв/);
-  assert.match(channel, /Как менялась оценка — в MatchRadar\.$/);
+  const halfText = matchSwingText({ homeName: 'Ковентри', awayName: 'Ньюкасл' }, half);
+  assert.match(halfText, /Ковентри 1:0 Ньюкасл · перерыв/);
+  assert.equal(halfText.includes('MatchRadar'), false);
 });
 
 function claimStore() {
@@ -144,59 +144,27 @@ test('personal: reminder holders get match.swing, fans of either team team.swing
   assert.equal(calm.delivered.length, 0);
 });
 
-test('channel off: one preview per match for top leagues only, nothing published', async () => {
+test('channel: nothing is posted or previewed in the channel (Сергей 15.10)', async () => {
   const { job, ops, store } = harness();
-  await job.processMatchSwings({ channelSwingPostEnabled: false }, new Date(NOW));
-  const preview = ops.filter(event => event.code === 'CHANNEL_SWING_POST_PREVIEW');
-  assert.equal(preview.length, 1);
-  assert.equal(preview[0].transitionKey, 'channel-swing-preview:1');
-  assert.match(preview[0].message, /Как менялась оценка — в MatchRadar\./);
-  assert.equal(store.claims.size, 0);
-
-  const minor = harness({ top: false });
-  await minor.job.processMatchSwings({}, new Date(NOW));
-  assert.equal(minor.ops.filter(event => event.code === 'CHANNEL_SWING_POST_PREVIEW').length, 0);
-
-  const branded = harness({ predictions: [PREDICTION(1, { home_name: 'Betway Stars' })] });
-  await branded.job.processMatchSwings({}, new Date(NOW));
-  assert.equal(branded.ops.filter(event => event.code === 'CHANNEL_SWING_POST_PREVIEW').length, 0);
-});
-
-test('channel on: at most three posts per Moscow day, one per match, failed posts free the slot', async () => {
-  const ids = [1, 2, 3, 4];
-  const { job, store, ops } = harness({ points: ids.map(id => POINT(id)), predictions: ids.map(id => PREDICTION(id)), reminders: [], favorites: [] });
-  const cfg = { channelSwingPostEnabled: true, publisherBotToken: 'publisher-token', botToken: 'main-token', telegramChannelId: '@MatchRadarFootball' };
   const original = globalThis.fetch;
   const sent = [];
-  globalThis.fetch = async (url, init) => { sent.push(JSON.parse(init.body)); return new Response(JSON.stringify({ ok: true, result: { message_id: 70 + sent.length } }), { status: 200, headers: { 'content-type': 'application/json' } }); };
+  globalThis.fetch = async (url, init) => { sent.push(String(url)); return new Response('{}', { status: 200 }); };
   try {
-    const first = await job.processMatchSwings(cfg, new Date(NOW));
-    assert.equal(first.channelPosted, 3);
-    assert.equal(first.channelCapped, 1);
-    const second = await job.processMatchSwings(cfg, new Date(NOW + 5 * 60_000));
-    assert.equal(second.channelPosted, 0, 'no repeat posts for the same matches');
+    const summary = await job.processMatchSwings({ channelSwingPostEnabled: true, publisherBotToken: 'publisher-token', telegramChannelId: '@MatchRadarFootball' }, new Date(NOW));
+    assert.equal(summary.swings, 1);
+    assert.equal('channelPosted' in summary, false);
   } finally {
     globalThis.fetch = original;
   }
-  assert.equal(sent.length, 3);
-  assert.equal(sent[0].chat_id, '@MatchRadarFootball');
-  assert.match(sent[0].text, /⚡ Перелом матча/);
-  assert.equal(sent[0].reply_markup.inline_keyboard[0][0].url, 'https://t.me/MatchRadarBot?startapp=f1');
-  assert.deepEqual([1, 2, 3].map(n => store.claims.get(`telegram:channel-publish:v1:swing-slot:2026-10-12:${n}`)?.state), ['sent', 'sent', 'sent']);
-  assert.equal(ops.filter(event => event.code === 'CHANNEL_SWING_POST_PUBLISHED').length, 3);
-
-  // Публикатор выключен — пост не вышел, слот дня освобождается.
-  const disabled = harness({ reminders: [], favorites: [] });
-  await disabled.job.processMatchSwings({ channelSwingPostEnabled: true }, new Date(NOW));
-  assert.equal(disabled.store.claims.has('telegram:channel-publish:v1:swing-slot:2026-10-12:1'), false);
+  assert.deepEqual(sent, []);
+  assert.equal(store.claims.size, 0);
+  assert.equal(ops.filter(event => event.source === 'channel_publisher').length, 0);
+  assert.equal(fs.readFileSync('src/match-swing-job.js', 'utf8').includes('publishChannelMessage'), false);
 });
 
-test('wiring: channel posts off by default, job runs after the in-play points are written', () => {
-  const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
-  // Сергей 13.10: «да» — посты «Перелом матча» в канал включены; в коде по умолчанию выключено.
-  assert.match(wrangler, /"CHANNEL_SWING_POST_ENABLED": "false"/);
-  const infra = fs.readFileSync('src/common-infrastructure-runtime.js', 'utf8');
-  assert.match(infra, /channelSwingPostEnabled: boolEnv\(env\.CHANNEL_SWING_POST_ENABLED, false\)/);
+test('wiring: no channel switch, job runs after the in-play points are written', () => {
+  assert.equal(fs.readFileSync('wrangler.jsonc', 'utf8').includes('CHANNEL_SWING_POST_ENABLED'), false);
+  assert.equal(fs.readFileSync('src/common-infrastructure-runtime.js', 'utf8').includes('channelSwingPostEnabled'), false);
   const jobs = fs.readFileSync('src/scheduled-jobs.js', 'utf8');
   assert.match(jobs, /tasks\.push\(\['match_swing', inPlayTimelineTask\.then\(\(\) => run\('match_swing', \(\) => processMatchSwings\(cfg, scheduledAt\)\)\)\]\);/);
   const worker = fs.readFileSync('src/worker.js', 'utf8');

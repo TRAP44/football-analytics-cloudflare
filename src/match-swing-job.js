@@ -4,50 +4,25 @@
 //   • лично — тем, у кого стоит напоминание на матч или в нём играет любимая
 //     команда (существующая доставка smart-уведомлений: дедупликация, настройки
 //     «Матчи»/«Команды», один раз на матч);
-//   • в канал — только главные турниры и не больше трёх постов за день (МСК).
-//     Пока CHANNEL_SWING_POST_ENABLED выключен, вместо поста пишется
-//     предпросмотр в ops_events (CHANNEL_SWING_POST_PREVIEW).
+//   • в канал не публикуется (Сергей 15.10: посты в канал убраны).
 //
 // Только данные, которые уже есть: предматчевый снимок model_predictions и
 // свежая точка кривой по ходу матча (analysis_timeline_snapshots, in-play:*).
 // Запросов к источнику данных задание не делает.
 
-import { publishChannelMessage } from './channel-publisher.js';
-import { isBettingText } from './signal-wording.js';
 import { smartNotificationDedupeKey } from './smart-notification-policy.js';
-
-// Перенесено из удалённого поста «Матчи дня».
-// Названия от провайдера могут содержать спонсора-букмекера (ревью Codex #860):
-// такой турнир публикуется без названия, а матч с такой командой не попадает в пост.
-const BOOKMAKER_BRANDING = new RegExp([
-  '\\b(?:1x\\s?bet|bet365|betway|betclic|betano|betboom|betcity|bwin|unibet|parimatch|pin-?up',
-  'marathon\\s?bet|olimp\\s?bet|leon\\s?bet|fonbet|winline|liga\\s+stavok|superbet|tipsport',
-  'fortuna\\s+liga|sportingbet|coolbet|mozzart|meridian\\s?bet|betsson|betfair|william\\s+hill|ladbrokes)\\b',
-  // Общие английские слова о ставках — целыми словами (Real Betis не задевается).
-  '\\b(?:bet|bets|betting|bookmakers?|bookies?|sportsbooks?|casinos?|gambling|wagers?|odds|lottery|poker)\\b',
-  'фонбет|винлайн|лига\\s+ставок|бетбум|париматч|олимп\\s?бет|марафон\\s?бет|1хбет|бетсити|букмекер',
-].join('|'), 'iu');
-
-export function bettingFree(name = '') {
-  const text = String(name || '');
-  return text && !BOOKMAKER_BRANDING.test(text) && !isBettingText(text) ? text : '';
-}
 
 export const MATCH_SWING_POLICY = Object.freeze({
   minFavoriteGapPp: 10,
   minDropPp: 25,
   minLeaderProb: 45,
   maxPointAgeMs: 10 * 60_000,
-  channelDailyCap: 3,
   maxRecipientsPerFixture: 10000,
 });
 
 const LIVE_STATUSES = new Set(['1H', 'HT', '2H']);
-const MSK_OFFSET_MS = 3 * 3600_000;
 const SWING_EVENT_KEY = 'swing';
 const MAY_HAVE_REACHED_TELEGRAM = new Set(['sending', 'sent', 'unknown']);
-const SLOT_KEY = (date, slot) => `telegram:channel-publish:v1:swing-slot:${date}:${slot}`;
-const DONE_KEY = fixtureId => `telegram:channel-publish:v1:swing-done:${fixtureId}`;
 
 function plainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
@@ -130,7 +105,7 @@ function minuteText(swing) {
 }
 
 /** Текст сообщения: только числа из предматчевого снимка и свежей точки. */
-export function matchSwingText(match, swing, { channel = false } = {}) {
+export function matchSwingText(match, swing) {
   const home = cleanName(match?.homeName, 'Хозяева');
   const away = cleanName(match?.awayName, 'Гости');
   const names = { home, away };
@@ -143,32 +118,22 @@ export function matchSwingText(match, swing, { channel = false } = {}) {
     '',
     'Оценка модели по счёту и оставшемуся времени. Это аналитика, а не рекомендация.',
   ];
-  if (channel) lines.push('Как менялась оценка — в MatchRadar.');
   return lines.join('\n');
-}
-
-function mskDate(ms) {
-  return new Date(ms + MSK_OFFSET_MS).toISOString().slice(0, 10);
 }
 
 export function createMatchSwingJob(deps = {}) {
   const {
-    claimIdempotency,
     clock,
-    completeIdempotency,
     deliverSmartNotification,
     filterRecipients,
-    fixtureTelegramDeepLink,
     getCache,
     hasSupabase,
-    isTopLeague,
     loadRuntimeControls,
     recordOpsEvent,
-    releaseIdempotency,
     supaSelectMany,
     supaSelectPaged,
   } = deps;
-  for (const [name, fn] of Object.entries({ claimIdempotency, completeIdempotency, deliverSmartNotification, getCache, hasSupabase, releaseIdempotency, supaSelectMany, supaSelectPaged })) {
+  for (const [name, fn] of Object.entries({ deliverSmartNotification, getCache, hasSupabase, supaSelectMany, supaSelectPaged })) {
     if (typeof fn !== 'function') throw new TypeError(`Match swing job requires ${name}.`);
   }
 
@@ -338,105 +303,8 @@ export function createMatchSwingJob(deps = {}) {
     }
   }
 
-  // Канал: главный турнир, имена без букмекерских брендов, ≤ 3 постов за день (МСК).
-  function channelEligible(match) {
-    const home = bettingFree(cleanName(match.homeName, ''));
-    const away = bettingFree(cleanName(match.awayName, ''));
-    if (!home || !away) return false;
-    try {
-      return typeof isTopLeague === 'function' && isTopLeague(match.leagueId, match.leagueName) === true;
-    } catch {
-      return false;
-    }
-  }
-
-  async function postToChannel(match, swing, cfg, nowMs, summary) {
-    if (!channelEligible(match)) return;
-    const text = matchSwingText(match, swing, { channel: true });
-    if (cfg?.channelSwingPostEnabled !== true) {
-      // Предпросмотр: одна запись на матч (transitionKey), пост не публикуется.
-      if (await record(cfg, {
-        severity: 'info',
-        source: 'channel_publisher',
-        eventType: 'channel_swing_post_preview',
-        code: 'CHANNEL_SWING_POST_PREVIEW',
-        transitionKey: `channel-swing-preview:${match.fixtureId}`,
-        message: text,
-        endpoint: 'cron:match-swing',
-        meta: { fixtureId: match.fixtureId, enabled: false },
-      })) summary.previews += 1;
-      return;
-    }
-    try {
-      if (await getCache(DONE_KEY(match.fixtureId), cfg)) return;
-    } catch {
-      return;
-    }
-    const date = mskDate(nowMs);
-    let slot = null;
-    for (let index = 1; index <= MATCH_SWING_POLICY.channelDailyCap; index += 1) {
-      const key = SLOT_KEY(date, index);
-      const claim = await claimIdempotency(key, { fixtureId: match.fixtureId }, cfg).catch(() => ({ unavailable: true }));
-      if (claim?.unavailable === true) return;
-      if (claim?.claimed === true) {
-        slot = { key, claimId: claim.claimId };
-        break;
-      }
-    }
-    if (!slot) {
-      summary.channelCapped += 1;
-      return;
-    }
-    try {
-      const link = typeof fixtureTelegramDeepLink === 'function'
-        ? await fixtureTelegramDeepLink(cfg, match.fixtureId, { source: 'channel', campaign: 'match_swing', content: 'auto' })
-        : null;
-      const result = await publishChannelMessage({
-        cfg,
-        fixtureId: match.fixtureId,
-        text,
-        ctaUrl: link?.url,
-        idempotencyKey: `channel-swing:${match.fixtureId}`,
-      }, {
-        claimIdempotency: (key, meta) => claimIdempotency(key, meta, cfg),
-        completeIdempotency: (key, meta) => completeIdempotency(key, meta, cfg),
-        releaseIdempotency: (key, meta) => releaseIdempotency(key, meta, cfg),
-      });
-      if (result?.published) {
-        await completeIdempotency(slot.key, { claimId: slot.claimId, fixtureId: match.fixtureId, messageId: result.messageId }, cfg);
-        await completeIdempotency(DONE_KEY(match.fixtureId), { fixtureId: match.fixtureId, messageId: result.messageId }, cfg);
-        summary.channelPosted += 1;
-        await record(cfg, {
-          severity: 'info',
-          source: 'channel_publisher',
-          eventType: 'channel_swing_post',
-          code: 'CHANNEL_SWING_POST_PUBLISHED',
-          message: `Пост «Перелом матча» опубликован (матч ${match.fixtureId}).`,
-          endpoint: 'cron:match-swing',
-          meta: { fixtureId: match.fixtureId, messageId: result.messageId || null, slot: slot.key.slice(-1) },
-        });
-        return;
-      }
-      // Пост не вышел (повтор, выключенный публикатор, сбой) — слот свободен.
-      await releaseIdempotency(slot.key, { claimId: slot.claimId, fixtureId: match.fixtureId }, cfg);
-      if (result?.duplicate) await completeIdempotency(DONE_KEY(match.fixtureId), { fixtureId: match.fixtureId }, cfg).catch(() => null);
-    } catch (error) {
-      // Исход публикации неизвестен — слот не освобождаем: лучше пропустить пост, чем превысить лимит.
-      summary.failed += 1;
-      await record(cfg, {
-        severity: 'warning',
-        source: 'channel_publisher',
-        eventType: 'channel_swing_post',
-        code: String(error?.code || 'CHANNEL_SWING_POST_FAILED'),
-        message: String(error?.message || error).slice(0, 300),
-        endpoint: 'cron:match-swing',
-        meta: { fixtureId: match.fixtureId, deliveryUncertain: error?.deliveryUncertain === true },
-      });
-    }
-  }
-
   async function processMatchSwings(cfg, scheduledAt = new Date(now())) {
-    const summary = { ok: true, checked: 0, swings: 0, sent: 0, duplicate: 0, previews: 0, channelPosted: 0, channelCapped: 0, truncated: 0, failed: 0 };
+    const summary = { ok: true, checked: 0, swings: 0, sent: 0, duplicate: 0, truncated: 0, failed: 0 };
     if (cfg?.matchSwingEnabled === false) return { ...summary, reason: 'disabled' };
     let storage = false;
     try {
@@ -485,17 +353,16 @@ export function createMatchSwingJob(deps = {}) {
     // 60 (in-play-timeline-job), а пропущенный перелом мог бы уже не повториться.
     for (const { match, swing } of swings) {
       if (personalEnabled) await notifyPersonal(match, swing, cfg, summary);
-      await postToChannel(match, swing, cfg, at, summary);
     }
 
     summary.ok = summary.failed === 0 && summary.truncated === 0;
-    if (summary.sent || summary.failed || summary.truncated || summary.channelPosted || summary.previews) {
+    if (summary.sent || summary.failed || summary.truncated) {
       await record(cfg, {
         severity: summary.ok ? 'info' : 'warning',
         source: 'smart_notifications',
         eventType: 'match_swing_run',
         code: summary.ok ? 'MATCH_SWING_RUN' : 'MATCH_SWING_RUN_DEGRADED',
-        message: `Перелом матча: переломов ${summary.swings}, личных сообщений ${summary.sent}, постов ${summary.channelPosted}, предпросмотров ${summary.previews}, ошибок ${summary.failed}${summary.truncated ? `, список получателей обрезан (${summary.truncated})` : ''}.`,
+        message: `Перелом матча: переломов ${summary.swings}, личных сообщений ${summary.sent}, ошибок ${summary.failed}${summary.truncated ? `, список получателей обрезан (${summary.truncated})` : ''}.`,
         endpoint: 'cron:match-swing',
         meta: summary,
       });

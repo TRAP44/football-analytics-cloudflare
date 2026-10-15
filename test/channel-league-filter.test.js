@@ -40,10 +40,10 @@ test('channel league: domestic leagues outside the catalog do not pass by name',
   assert.equal(isChannelLeague(null, ''), false);
 });
 
-test('composition root uses the channel filter for channel posts; daily post is removed', () => {
+test('composition root: no automatic channel posts are wired (Сергей 15.10)', () => {
   const worker = fs.readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
-  assert.equal(worker.includes('ChannelDailyPost'), false, 'пост «Матчи дня» удалён (Сергей 15.10)');
+  assert.equal(worker.includes('ChannelDailyPost'), false, 'пост «Матчи дня» удалён');
   assert.equal(fs.existsSync(new URL('../src/channel-daily-post-job.js', import.meta.url)), false);
   const swing = worker.slice(worker.indexOf('matchSwingJob = createMatchSwingJob({'));
-  assert.match(swing.slice(0, swing.indexOf('});')), /isTopLeague: \(\.\.\.args\) => isChannelLeague\(\.\.\.args\)/);
+  assert.equal(swing.slice(0, swing.indexOf('});')).includes('isTopLeague'), false, '«Перелом матча» в канал не публикуется');
 });

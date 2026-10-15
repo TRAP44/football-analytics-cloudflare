@@ -1730,18 +1730,13 @@ let matchSwingJob = null;
 function getMatchSwingJob() {
   if (!matchSwingJob) {
     matchSwingJob = createMatchSwingJob({
-      claimIdempotency: (...args) => claimChannelPublishIdempotency(...args),
       clock: () => Date.now(),
-      completeIdempotency: (...args) => completeChannelPublishIdempotency(...args),
       deliverSmartNotification: (...args) => deliverSmartNotification(...args),
       filterRecipients: (...args) => filterSmartNotificationRecipients(...args),
-      fixtureTelegramDeepLink: (...args) => fixtureTelegramDeepLink(...args),
       getCache,
       hasSupabase,
-      isTopLeague: (...args) => isChannelLeague(...args),
       loadRuntimeControls: (...args) => loadRuntimeControls(...args),
       recordOpsEvent,
-      releaseIdempotency: (...args) => releaseChannelPublishIdempotency(...args),
       supaSelectMany,
       supaSelectPaged,
     });
@@ -2371,7 +2366,6 @@ const {
   isYouthReserveMatch,
   normalizeCompetition,
   isTopLeague,
-  isChannelLeague,
   normalizeRoundLabel,
   matchInterestScore,
   catalogRank,
