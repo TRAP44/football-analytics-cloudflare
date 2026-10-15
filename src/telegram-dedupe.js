@@ -88,7 +88,7 @@ function telegramUpdateDedupeRisk(update = {}) {
   if (update?.callback_query) {
     const data=textValue(update?.callback_query?.data);
     if (
-      /^(?:digest:(?:on|off)|favorite:toggle:\d+:\d+|postmatch:return:(?:on|off))$/.test(data)
+      /^(?:digest:(?:on|off)|favorite:toggle:\d+:\d+|fav:pick:\d+|postmatch:return:(?:on|off))$/.test(data)
     ) {
       return { kind:TELEGRAM_DEDUPE_RISK.IDEMPOTENT_MUTATION, highRisk:true };
     }

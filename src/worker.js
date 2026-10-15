@@ -1169,6 +1169,8 @@ function sendBotFixtureSection(...args) { return getTelegramBotOrchestrationRunt
 function toggleBotFavorite(...args) { return getTelegramBotOrchestrationRuntime().toggleBotFavorite(...args); }
 function configureFootballBot(...args) { return getTelegramBotOrchestrationRuntime().configureFootballBot(...args); }
 function sendFootballBotHome(...args) { return getTelegramBotOrchestrationRuntime().sendFootballBotHome(...args); }
+function sendFavoritePicker(...args) { return getTelegramBotOrchestrationRuntime().sendFavoritePicker(...args); }
+function pickStartFavorite(...args) { return getTelegramBotOrchestrationRuntime().pickStartFavorite(...args); }
 function sendFootballBotHelp(...args) { return getTelegramBotOrchestrationRuntime().sendFootballBotHelp(...args); }
 
 let telegramDigestRuntime = null;
@@ -3331,6 +3333,8 @@ const {
   sendBotFixtureMenu,
   sendBotFixtureSection,
   sendBotFixtureShareCard,
+  sendFavoritePicker,
+  pickStartFavorite,
   answerBotInlineQuery,
   sendBotFootballSearch,
   sendDailyPicks,

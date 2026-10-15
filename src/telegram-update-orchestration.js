@@ -44,6 +44,8 @@ export function createTelegramUpdateProcessor(deps) {
     newsTeamToken,
     sendBotFootballSearch,
     answerBotInlineQuery,
+    sendFavoritePicker,
+    pickStartFavorite,
     sendFavoriteTeamNews,
     toggleBotFavorite,
     loadBotFixtureCard,
@@ -591,6 +593,21 @@ export function createTelegramUpdateProcessor(deps) {
       }
       return json({ok:true});
     }
+    const startPick=data.match(/^fav:pick:(\d+)$/);
+    if (callbackChatId && startPick && typeof pickStartFavorite === 'function') {
+      try {
+        const result=await pickStartFavorite(cfg,callbackUserId,callbackChatId,cb.message?.message_id,positiveInteger(startPick[1]));
+        await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:`★ ${textValue(result?.team?.label,40) || 'Команда'} — в «Моих командах»`}).catch(()=>null);
+      } catch (error) {
+        await swallowAsync(telegramApi,'answerCallbackQuery',cfg,{callback_query_id:callbackId,text:boundedErrorText(error?.message,'Не удалось добавить команду',160),show_alert:true});
+      }
+      return json({ok:true});
+    }
+    if (callbackChatId && data === 'fav:done') {
+      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Готово'}).catch(()=>null);
+      await sendBotFavoriteTeams(request,cfg,callbackUserId,callbackChatId);
+      return json({ok:true});
+    }
     const favoriteAction=data.match(/^favorite:team:(\d+)$/);
     if (callbackChatId && favoriteAction) {
       const teamId=positiveInteger(favoriteAction[1]);
@@ -734,6 +751,11 @@ export function createTelegramUpdateProcessor(deps) {
       return json({ok:true});
     }
     await sendFootballBotHome(request, cfg, chatId, msg.from || {});
+    // Новичок без избранного сразу выбирает команды (Сергей 15.10) — только в личке.
+    if (msg?.chat?.type === 'private' && typeof sendFavoritePicker === 'function') {
+      const favorites=await swallowAsync(getFavorites,userId,cfg);
+      if (Array.isArray(favorites) && !favorites.length) await swallowAsync(sendFavoritePicker,request,cfg,userId,chatId);
+    }
     return json({ ok: true });
   }
 
@@ -797,6 +819,14 @@ export function createTelegramUpdateProcessor(deps) {
 
   if (chatId && (/^\/favorites(?:@\w+)?(?:\s|$)/i.test(text) || text === '⭐ Мои команды')) {
     if (!messageUserId) return json({ok:false,error:'telegram_user_invalid'},400);
+    // Пусто — сразу выбор команд вместо подсказки «откройте миниапп».
+    if (msg?.chat?.type === 'private' && typeof sendFavoritePicker === 'function') {
+      const favorites=await swallowAsync(getFavorites,messageUserId,cfg);
+      if (Array.isArray(favorites) && !favorites.length) {
+        await sendFavoritePicker(request,cfg,messageUserId,chatId);
+        return json({ok:true});
+      }
+    }
     await sendBotFavoriteTeams(request,cfg,messageUserId,chatId);
     return json({ ok: true });
   }
