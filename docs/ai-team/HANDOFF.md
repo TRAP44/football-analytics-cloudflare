@@ -14,6 +14,11 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-15 — Claude — Бот: меню из 2 кнопок
+PR: ветка `claude/bot-menu-two-buttons`.
+Сделано: `footballBotKeyboard` — «⭐ Мои команды», «⚙️ Уведомления». «⚽ Матчи»/«🔴 LIVE» (web_app из #917) убраны: дублировали кнопку приложения рядом с полем ввода. Текст старых кнопок по-прежнему отвечает кнопкой в приложение (#917). /help обновлён.
+Проверки: check/lint, release, полный набор (только bot-match-card — нет resvg).
+
 ## 2026-10-15 — Claude — Живое табло любимых команд
 PR: ветка `claude/favorite-live-scoreboard`.
 Сделано: `src/favorite-scoreboard-job.js` — задача `favorite_scoreboard` в scheduled-jobs после `in_play_timeline`. Берёт идущие (1H/HT/2H/ET/BT/P) и завершённые за 4 ч (FT/AET/PEN) матчи из кеша `provider-fixtures:<день>:v1` (вчерашний — в первые 4 ч UTC), болельщиков из `favorites` (`team_id in (...)`), фильтр `filterSmartNotificationRecipients(rows,'match.goal')`. Одна запись кеша `scoreboard:<fixture>:v1` с message_id каждого получателя: новое сообщение только для идущего матча, дальше `editMessageText` при изменении текста, после свистка — итог и `done`. 403/заблокировал бота — `blocked`, больше не пишем. Потолок 600 сообщений за запуск. Кнопка — `match:menu` (до конца) / `match:review` (итог). `FAVORITE_SCOREBOARD_ENABLED` (по умолчанию true) в `.env.example`.

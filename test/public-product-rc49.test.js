@@ -37,8 +37,8 @@ test('telegram search shares the same canonical club resolution',()=> {
 });
 
 test('main Telegram navigation keeps content in chat',()=> {
-  assert.match(readContractSource(new URL('../src/telegram-bot-ui-runtime.js', import.meta.url), 'utf8'),/button\('⚽ Матчи',\{\}\)/);
-  assert.match(readContractSource(new URL('../src/telegram-bot-ui-runtime.js', import.meta.url), 'utf8'),/button\('🔴 LIVE',\{filter:'live'\}\)/);
+  assert.match(readContractSource(new URL('../src/telegram-bot-ui-runtime.js', import.meta.url), 'utf8'),/'⭐ Мои команды'/);
+  assert.match(readContractSource(new URL('../src/telegram-bot-ui-runtime.js', import.meta.url), 'utf8'),/'⚙️ Уведомления'/);
   assert.match(readContractSource(new URL('../src/telegram-bot-ui-runtime.js', import.meta.url), 'utf8'),/\{\s*text:\s*'⭐\s*Мои\s*команды'\s*\}/);
   assert.match(worker,/function sendBotDayMatches/);
   assert.match(worker,/function sendBotFavoriteTeams/);
