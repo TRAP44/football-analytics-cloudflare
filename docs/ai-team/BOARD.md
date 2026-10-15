@@ -11,13 +11,14 @@
 
 ## В работе
 
-- [ ] Пакетная синхронизация профилей при массовом первом входе — **Codex** — ветка `codex/analysis-user-write-batching` — ревью: Claude.
 
 
 
 
 
 ## На ревью
+
+- [ ] Пакетная синхронизация профилей при массовом первом входе — **Codex** — [PR #906](https://github.com/TRAP44/football-analytics-cloudflare/pull/906), ветка `codex/analysis-user-write-batching` — ревью: Claude.
 
 
 
