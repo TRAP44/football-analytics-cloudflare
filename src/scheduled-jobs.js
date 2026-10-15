@@ -194,6 +194,7 @@ export function createScheduledJobsRuntime({
   processPostMatchReturns,
   processPrematchPredictions,
   processInPlayTimeline,
+  processFavoriteScoreboards,
   runProductionMonitor,
   processDailyDigests,
   processBotMatchCards,
@@ -477,6 +478,10 @@ export function createScheduledJobsRuntime({
     ];
     if (typeof processBotMatchCards==='function') tasks.push(['bot_match_cards', remindersTask.then(() => run('bot_match_cards', () => processBotMatchCards(cfg)))]);
     if (inPlayTimelineTask) tasks.push(['in_play_timeline', inPlayTimelineTask]);
+    // Живое табло любимых команд — после кривой по ходу матча: она обновляет пакет матчей дня.
+    if (typeof processFavoriteScoreboards === 'function') {
+      tasks.push(['favorite_scoreboard', Promise.resolve(inPlayTimelineTask).then(() => run('favorite_scoreboard', () => processFavoriteScoreboards(cfg, scheduledAt)))]);
+    }
 
     if (scheduledAt.getUTCMinutes() % 15 === 0) {
       const monitorAfterReminders = remindersTask
