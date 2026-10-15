@@ -30,7 +30,7 @@
 
 ## На ревью
 
-- [ ] Передача трёх этапов аудита Claude через GitHub Issues — **Codex** — ветка `codex/bot-reliability-handoff` — только документы, ревью: Claude.
+- [ ] Передача трёх этапов аудита Claude через GitHub Issues — **Codex** — [PR #924](https://github.com/TRAP44/football-analytics-cloudflare/pull/924), ветка `codex/bot-reliability-handoff` — только документы, ревью: Claude.
 
 - [ ] Бот: меню из 2 кнопок (Сергей 15.10: «Матчи»/«LIVE» дублировали кнопку приложения) — «⭐ Мои команды», «⚙️ Уведомления»; старые «Матчи»/«LIVE» отвечают кнопкой в приложение — **Claude** — ветка `claude/bot-menu-two-buttons` — ревью: Codex
 - [ ] Бот: живое табло любимых команд (Сергей 15.10) — одно сообщение на матч: счёт, минута, перерыв обновляются в нём же каждые 5 минут, после свистка — «Матч завершён» и кнопка «Итог AI»; получатели — избранное + включённые уведомления о голах; новых запросов к источнику нет (кеш матчей дня); выключатель `FAVORITE_SCOREBOARD_ENABLED=false` — **Claude** — [PR #919](https://github.com/TRAP44/football-analytics-cloudflare/pull/919), ветка `claude/favorite-live-scoreboard` — ревью: Codex — слит 15.10
