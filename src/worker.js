@@ -1253,6 +1253,8 @@ function getTelegramSearchRuntime() {
     telegramSearchRuntime = createTelegramSearchRuntime({
       apiFootball: (...args) => apiFootball(...args),
       digestTime: (...args) => digestTime(...args),
+      ensureReferralCode: (...args) => ensureReferralCode(...args),
+      fixtureTelegramDeepLink: (...args) => fixtureTelegramDeepLink(...args),
       footballMatchActionKeyboard: (...args) => footballMatchActionKeyboard(...args),
       footballSearchHandoffKeyboard: (...args) => footballSearchHandoffKeyboard(...args),
       freeQuotaHealthy: (...args) => freeQuotaHealthy(...args),
@@ -1277,6 +1279,7 @@ function getTelegramSearchRuntime() {
 
 function telegramHtmlEscape(...args) { return getTelegramSearchRuntime().telegramHtmlEscape(...args); }
 function botSearchParts(...args) { return getTelegramSearchRuntime().botSearchParts(...args); }
+function answerBotInlineQuery(...args) { return getTelegramSearchRuntime().answerBotInlineQuery(...args); }
 function botIntentLead(...args) { return getTelegramSearchRuntime().botIntentLead(...args); }
 function botMatchScore(...args) { return getTelegramSearchRuntime().botMatchScore(...args); }
 function botMatchButtonText(...args) { return getTelegramSearchRuntime().botMatchButtonText(...args); }
@@ -3327,6 +3330,7 @@ const {
   sendBotFixtureMenu,
   sendBotFixtureSection,
   sendBotFixtureShareCard,
+  answerBotInlineQuery,
   sendBotFootballSearch,
   sendDailyPicks,
   sendDigestControls,
