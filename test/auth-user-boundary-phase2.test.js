@@ -314,3 +314,27 @@ test('Phase 2 auth boundary keeps local user storage and record fallback shape',
   assert.equal(row.username,'seven');
   assert.equal(row.plan,'FREE');
 });
+
+test('profile batching confirms writes before sync timestamps and excludes subscription fields',async()=>{
+  const writes=[];let release;
+  const gate=new Promise(resolve=>release=resolve);
+  const rt=createRuntime({hasSupabase:()=>true,supaUpsert:async(_cfg,table,rows,conflict)=>{writes.push({table,rows,conflict});await gate;}});
+  const cfg={supabaseUrl:'https://project.test',supabaseKey:'local-test-key'};
+  const pending=Array.from({length:100},(_,i)=>rt.api.upsertUser({id:i+1,username:`u${i}`,plan:'PREMIUM',subscription_until:'2099-01-01'},cfg));
+  await Promise.resolve();await Promise.resolve();
+  assert.equal(writes.length,1);assert.equal(rt.memory.userSyncAt.size,0);
+  assert.equal(writes[0].table,'users');assert.equal(writes[0].conflict,'telegram_id');
+  assert.equal(writes[0].rows.length,100);
+  assert.ok(writes[0].rows.every(row=>!('plan' in row) && !('subscription_until' in row)));
+  release();await Promise.all(pending);assert.equal(rt.memory.userSyncAt.size,100);
+  await rt.api.upsertUser({id:1},cfg);assert.equal(writes.length,1);
+});
+
+test('failed profile persistence does not mark sync successful and allows retry',async()=>{
+  let fail=true;
+  const rt=createRuntime({hasSupabase:()=>true,supaUpsert:async()=>{if(fail)throw new Error('storage unavailable');}});
+  const cfg={supabaseUrl:'https://project.test',supabaseKey:'local-test-key'};
+  await assert.rejects(rt.api.upsertUser({id:7},cfg),/storage unavailable/);
+  assert.equal(rt.memory.userSyncAt.has(7),false);
+  fail=false;await rt.api.upsertUser({id:7},cfg);assert.equal(rt.memory.userSyncAt.has(7),true);
+});

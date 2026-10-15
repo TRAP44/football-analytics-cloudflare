@@ -1526,9 +1526,11 @@ function humanizeTechnicalText(value) {
 // Название поставщика данных пользователю не показываем (Сергей 15.10).
 function hideProviderName(value) {
   return String(value ?? '')
-    .replace(/API[\s-]?Football(?:\s+FREE)?/gi, 'источник данных')
-    .replace(/\bAPI[\s-]?прогноз\b/gi, 'внешний прогноз')
-    .replace(/\bПрогноз API\b/g, 'Внешний прогноз');
+    // \b не работает с кириллицей — границы через Unicode-классы без lookbehind (старые iOS WebView) — ревью Codex #907.
+    .replace(/API[\s-]?Football(?:\s+FREE)?/giu, 'источник данных')
+    .replace(/(^|[^\p{L}\p{N}])API[\s-]?прогноз(?![\p{L}\p{N}])/giu, '$1внешний прогноз')
+    .replace(/(^|[^\p{L}\p{N}])Прогноз[\s-]API(?![\p{L}\p{N}])/gu, '$1Внешний прогноз')
+    .replace(/(^|[^\p{L}\p{N}])прогноз[\s-]API(?![\p{L}\p{N}])/gu, '$1внешний прогноз');
 }
 
 function publicText(value) {

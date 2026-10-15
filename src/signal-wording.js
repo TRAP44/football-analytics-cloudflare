@@ -28,10 +28,20 @@ export function isBettingText(text) {
   return typeof text === 'string' && BETTING_TEXT.test(text);
 }
 
-// Текст из разбора без ставочных фраз: иначе пустая строка.
+// Название поставщика данных пользователю не показываем (Сергей 15.10):
+// и в новых, и в старых закешированных текстах разбора.
+export function hideProviderName(text) {
+  return String(text ?? '')
+    .replace(/API[\s-]?Football(?:\s+FREE)?/giu, 'источник данных')
+    .replace(/(^|[^\p{L}\p{N}])API[\s-]?прогноз(?![\p{L}\p{N}])/giu, '$1внешний прогноз')
+    .replace(/(^|[^\p{L}\p{N}])Прогноз[\s-]API(?![\p{L}\p{N}])/gu, '$1Внешний прогноз')
+    .replace(/(^|[^\p{L}\p{N}])прогноз[\s-]API(?![\p{L}\p{N}])/gu, '$1внешний прогноз');
+}
+
+// Текст из разбора без ставочных фраз и названия поставщика: иначе пустая строка.
 export function neutralReasonText(text) {
   if (typeof text !== 'string') return '';
-  const clean = text.replace(/\s+/g, ' ').trim();
+  const clean = hideProviderName(text).replace(/\s+/g, ' ').trim();
   return clean && !isBettingText(clean) ? clean : '';
 }
 

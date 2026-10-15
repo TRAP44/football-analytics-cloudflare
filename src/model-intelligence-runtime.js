@@ -807,7 +807,7 @@ export function createModelIntelligenceRuntime(deps) {
         factors.push('Оба подтверждённых стартовых состава близки к сезонному ядру команд; сильной поправки по XI не требуется.');
       }
     }
-    if (!model?.probabilities) risks.push('API-Football не вернул процентный прогноз для этого матча.');
+    if (!model?.probabilities) risks.push('Внешний процентный прогноз для этого матча недоступен.');
     if ((homeForm?.overall?.sample || 0) < 4 || (awayForm?.overall?.sample || 0) < 4) risks.push('Небольшая выборка недавних матчей одной из команд.');
     if (confidence?.disagreement >= 10) risks.push('Источники заметно расходятся между собой — уверенность модели снижена.');
     if (minutesToKickoff !== null && minutesToKickoff <= 120 && !lineups?.home && !lineups?.away) risks.push('Подтверждённые стартовые составы ещё не доступны.');
