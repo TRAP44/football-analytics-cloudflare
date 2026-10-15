@@ -166,18 +166,20 @@ export function createPublisherRuntime(deps = {}) {
     return Number.isFinite(now) && now>=kickoff;
   }
 
+  // Пересланная карточка не обновляется, а карточка в кеше бота может отставать
+  // до 180 минут (ревью Codex #914) — поэтому минуту и счёт идущего матча не пишем:
+  // только время начала, свежий счёт друг увидит по ссылке. Итог завершённого
+  // матча окончательный — его показываем.
   function shareMatchState(card) {
-    const score=Number.isSafeInteger(card.goalsHome) && Number.isSafeInteger(card.goalsAway)
-      ? `${card.goalsHome}:${card.goalsAway}`
-      : '';
-    if (card.live) {
-      const minute=Number.isSafeInteger(card.elapsed) && card.elapsed>0 ? ` ${card.elapsed}′` : '';
-      return `🔴 Идёт матч${minute}${score?` · ${score}`:''}`;
+    if (card.finished) {
+      const score=Number.isSafeInteger(card.goalsHome) && Number.isSafeInteger(card.goalsAway)
+        ? ` · ${card.goalsHome}:${card.goalsAway}`
+        : '';
+      return `🏁 Матч завершён${score}`;
     }
-    if (card.finished) return `🏁 Матч завершён${score?` · ${score}`:''}`;
     const kickoff=moscowKickoff(card.date);
-    if (!kickoff) return '';
-    return kickoffPassed(card) ? `⏱ Начало: ${kickoff}` : `🗓 ${kickoff}`;
+    if (!kickoff) return card.live ? '⏱ Матч уже идёт' : '';
+    return card.live || kickoffPassed(card) ? `⏱ Начало: ${kickoff}` : `🗓 ${kickoff}`;
   }
 
   function shareAiLine(card, analysis) {

@@ -199,12 +199,13 @@ test('share card never shows betting markets: no «3+ гола», «обе за�
   assert.equal(isBettingText(sent[0].body.text),false);
 });
 
-test('live and finished matches show the score, not a stale pre-match verdict', async () => {
+test('live matches show only the kickoff, finished ones the final score, never a stale verdict', async () => {
   const analysis={aiInstructor:{betSignal:{code:'home'},confidenceScore:64}};
-  const live=harness({analysis,match:{fixtureId:FIXTURE,live:true,elapsed:61,goalsHome:1,goalsAway:0,homeName:'Интер',awayName:'Милан',league:'Serie A'}});
+  // Минуту и счёт идущего матча не пишем: карточка в кеше и пересланная копия устаревают (Codex #914).
+  const live=harness({analysis,now:Date.parse('2026-10-18T20:05:00Z'),match:{fixtureId:FIXTURE,date:'2026-10-18T19:00:00Z',live:true,elapsed:61,goalsHome:1,goalsAway:0,homeName:'Интер',awayName:'Милан',league:'Serie A'}});
   await live.publisher.sendBotFixtureShareCard(new Request('https://app.example/'),live.cfg,SHARER,SHARER,FIXTURE);
-  assert.match(live.sent[0].body.text,/🔴 Идёт матч 61′ · 1:0/);
-  assert.doesNotMatch(live.sent[0].body.text,/🧠 AI:/);
+  assert.match(live.sent[0].body.text,/⏱ Начало: 18\.10, 22:00 МСК/);
+  assert.doesNotMatch(live.sent[0].body.text,/61′|1:0|🧠 AI:/);
 
   const done=harness({analysis,match:{fixtureId:FIXTURE,finished:true,goalsHome:2,goalsAway:2,homeName:'Интер',awayName:'Милан',league:'Serie A'}});
   await done.publisher.sendBotFixtureShareCard(new Request('https://app.example/'),done.cfg,SHARER,SHARER,FIXTURE);
