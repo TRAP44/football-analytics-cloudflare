@@ -1106,10 +1106,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch116'),
+      import('./modules/match-center-view.js?v=6.120.0-launch117'),
       import('./modules/match-pulse.js?v=6.120.0-launch87'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch116'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch116'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch117'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch117'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1266,7 +1266,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch116').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch117').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -1523,8 +1523,16 @@ function humanizeTechnicalText(value) {
   return text.replace(/_/g, ' ').replace(/\s{2,}/g, ' ').trim();
 }
 
+// Название поставщика данных пользователю не показываем (Сергей 15.10).
+function hideProviderName(value) {
+  return String(value ?? '')
+    .replace(/API[\s-]?Football(?:\s+FREE)?/gi, 'источник данных')
+    .replace(/\bAPI[\s-]?прогноз\b/gi, 'внешний прогноз')
+    .replace(/\bПрогноз API\b/g, 'Внешний прогноз');
+}
+
 function publicText(value) {
-  const raw = String(value ?? '');
+  const raw = hideProviderName(value);
   const exact = {
     high: 'высокий', medium: 'средний', low: 'низкий',
     'shots on goal': 'Удары в створ',
@@ -2944,7 +2952,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch116');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch117');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3406,7 +3414,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch116').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch117').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -3465,9 +3473,9 @@ function renderMatches() {
     const filtered = !restrictedDate && state.filter !== 'all';
     const extra = filtered ? '<button id="showAllBtn" class="secondary-btn" type="button">Показать все матчи</button>' : '';
     $('matches').innerHTML = `<div class="empty match-empty-state">
-      <strong>${restrictedDate ? 'Дата недоступна для текущего API' : filtered ? 'По этому фильтру матчей нет' : 'Матчей на эту дату пока нет'}</strong>
+      <strong>${restrictedDate ? 'Дата пока недоступна' : filtered ? 'По этому фильтру матчей нет' : 'Матчей на эту дату пока нет'}</strong>
       <p>${restrictedDate
-        ? 'API-Football FREE не предоставляет эту дату. Она не загружалась повторно и не тратила лимит запросов.'
+        ? 'Матчи на эту дату пока не загружаются. Выберите сегодня или ближайший день.'
         : filtered ? 'Снимите фильтр или найдите нужную команду через поиск.'
           : 'Попробуйте поиск по команде или выберите соседнюю дату.'}</p>
       <div class="empty-actions">${extra}${restrictedDate
@@ -3583,7 +3591,7 @@ function renderTournamentStandings(data) {
           <td class="wide-stat">${Number(row.win)}</td><td class="wide-stat">${Number(row.draw)}</td><td class="wide-stat">${Number(row.lose)}</td><td>${Number(row.goalsFor)}:${Number(row.goalsAgainst)}</td><td>${standingFormHtml(row.form)}</td>
         </tr>`).join('')}</tbody>
       </table></div>
-      <p class="tiny table-note">Источник: ${escapeHtml(data.sourceMeta?.label || 'API-Football')}${data.sourceMeta?.fallback ? ' · резервный источник' : ''}. ${data.sourceMeta?.attribution ? escapeHtml(data.sourceMeta.attribution) + '. ' : ''}</p>
+      <p class="tiny table-note">Источник: ${escapeHtml(hideProviderName(data.sourceMeta?.label || 'источник данных'))}${data.sourceMeta?.fallback ? ' · резервный источник' : ''}. ${data.sourceMeta?.attribution ? escapeHtml(data.sourceMeta.attribution) + '. ' : ''}</p>
     </section>`).join('')}`;
   el.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({ id: Number(btn.dataset.openTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '' })));
 }
@@ -3687,7 +3695,7 @@ function seasonSplitCard(label, played, wins, draws, losses, ppg, gf, ga) {
 function teamPlayerSeasonStatsHtml(data = {}) {
   const p=data?.playerStats || {};
   const players=Array.isArray(p.players) ? p.players : [];
-  const sourceLabel=String(p.sourceMeta?.label || p.sourceMeta?.provider || '');
+  const sourceLabel=hideProviderName(p.sourceMeta?.label || p.sourceMeta?.provider || '');
   if (!p.available || !players.length) {
     const reason=String(p.reason || 'Статистика игроков сезона сейчас недоступна.');
     return `<section class="panel team-player-season-panel">
@@ -4378,7 +4386,7 @@ function playerSeasonStatProfile(data = {}, player = {}) {
       found: false,
       available: Boolean(stats.available),
       partial: Boolean(stats.partial),
-      sourceLabel: String(stats.sourceMeta?.label || stats.sourceMeta?.provider || ''),
+      sourceLabel: hideProviderName(stats.sourceMeta?.label || stats.sourceMeta?.provider || ''),
       reason: String(stats.reason || ''),
     };
   }
@@ -4392,7 +4400,7 @@ function playerSeasonStatProfile(data = {}, player = {}) {
   return {
     found: true,
     partial: Boolean(stats.partial || !stats.complete),
-    sourceLabel: String(stats.sourceMeta?.label || stats.sourceMeta?.provider || ''),
+    sourceLabel: hideProviderName(stats.sourceMeta?.label || stats.sourceMeta?.provider || ''),
     scope: String(stats.scope || ''),
     appearances: optionalMetric(found.games?.appearances),
     lineups: optionalMetric(found.games?.lineups),
@@ -5572,7 +5580,7 @@ async function loadAnalysisExplanation(fixtureId) {
   const root = $('matchExplanation');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch116');
+    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch117');
     const { loadMatchExplanation } = await matchExplanationModule;
     await loadMatchExplanation({
       root,
@@ -5592,7 +5600,7 @@ async function loadMatchQuestions(fixtureId) {
   const root = $('matchQuestions');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch116');
+    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch117');
     const { mountMatchQuestions } = await matchQuestionsModule;
     mountMatchQuestions({
       root,
@@ -5609,7 +5617,7 @@ async function loadMatchQuestions(fixtureId) {
 // «Обыграй AI»: прогноз в Штабе матча и таблица в Профиле — ленивый модуль.
 let beatAiModule = null;
 function loadBeatAiModule() {
-  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch116').catch(error => { beatAiModule = null; throw error; });
+  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch117').catch(error => { beatAiModule = null; throw error; });
   return beatAiModule;
 }
 async function mountBeatAi(m = {}) {
@@ -5644,7 +5652,7 @@ async function loadReferralInvitePanel() {
   const root = $('referralInvite');
   if (!root) return;
   try {
-    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch116');
+    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch117');
     const { loadReferralInvite } = await referralInviteModule;
     await loadReferralInvite({ root, api, escapeHtml, tg, toast });
   } catch {
@@ -5655,7 +5663,7 @@ async function loadReferralInvitePanel() {
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch116');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch117');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {
@@ -5883,7 +5891,7 @@ function providerCoverageHtml(reliability = {}) {
   const data = reliability && typeof reliability === 'object' && !Array.isArray(reliability) ? reliability : {};
   const features = data.features && typeof data.features === 'object' && !Array.isArray(data.features) ? data.features : {};
   // Коэффициенты не показываются пользователю (решение 11.10.2026).
-  const labels = { injuries:'Травмы', lineups:'Составы', predictions:'Прогноз API', h2h:'Очные встречи' };
+  const labels = { injuries:'Травмы', lineups:'Составы', predictions:'Внешний прогноз', h2h:'Очные встречи' };
   const states = {
     available:['✓','Получено'], empty_response:['○','Источник вернул пустой ответ'], skipped:['○','Запрос отложен'],
     rate_limited:['!','Лимит запросов'], plan_limited:['!','Недоступно на текущем тарифе источника'],
@@ -6121,7 +6129,7 @@ function dataProvenanceHtml(provenance = {}) {
   };
   const rows = Object.entries(labels).filter(([key]) => features[key]).map(([key,label]) => {
     const meta = features[key] || {};
-    const provider = meta.provider === 'api-football' ? 'API-Football' : String(meta.provider || '—');
+    const provider = hideProviderName(meta.provider === 'api-football' ? 'API-Football' : String(meta.provider || '—'));
     const age = Number.isFinite(Number(meta.ageSeconds)) ? ` · возраст ${Math.max(0,Math.round(Number(meta.ageSeconds)))} сек.` : '';
     return `<div class="provenance-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(provider)}</strong><small>${escapeHtml(stateLabels[meta.state] || meta.state || '—')}${escapeHtml(age)}</small></div>`;
   });
@@ -6570,7 +6578,7 @@ function updateConnectionBanner() {
       retry.disabled = retryRemaining > 0;
       retry.textContent = retryRemaining > 0 ? `Повторить через ${retryRemaining} с` : 'Повторить';
       text.textContent = retryRemaining > 0
-        ? `Источник API-Football временно ограничил запросы. Через ${retryRemaining} с можно нажать «Повторить»; загрузка не запускается автоматически.`
+        ? `Источник данных временно ограничил запросы. Через ${retryRemaining} с можно нажать «Повторить»; загрузка не запускается автоматически.`
         : 'Пауза закончилась. Нажмите «Повторить», чтобы запросить обновление.';
       if (retryRemaining > 0) {
         updateConnectionBanner.retryTimer = setTimeout(updateConnectionBanner, Math.min(1000, retryRemaining * 1000));

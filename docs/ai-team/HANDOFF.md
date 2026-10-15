@@ -14,6 +14,13 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-15 — Claude — Название поставщика данных скрыто от пользователя
+PR: ветка `claude/hide-provider-name`.
+Сделано: в Mini App `hideProviderName` (и внутри `publicText`) заменяет «API-Football»/«API прогноз»/«Прогноз API» на «источник данных»/«внешний прогноз»; поправлены подписи источника таблиц/игроков/сезона, блок происхождения данных, пустое состояние даты, баннер лимита. На сервере: фактор «Прогноз API-Football указывает: …» удалён (противоречил итогу: указывал одну команду, а проценты — другое), имя сигнала apiPrediction → «Внешний прогноз», тексты warning/reason в таблице турнира, сезонной статистике, составах и ленте без названия поставщика. Ревизия ассетов 6.120.0-launch117.
+Решения: админка и ops_events не тронуты — там название нужно для диагностики. В «Бэклог» первой строкой — упрощение штаба матча (скрины Сергея 15.10), ждёт «да» по составу вкладок.
+Проверки: Node 22 npm ci/check/lint, release 581/581, полный набор — провал только `test/bot-match-card.test.js` (в песочнице нет `@resvg/resvg-wasm`, падает и на main). Новый тест test/provider-name-hidden.test.js.
+
+
 ## 2026-10-15 — Claude — «Перелом матча» удалён целиком
 PR: [PR #905](https://github.com/TRAP44/football-analytics-cloudflare/pull/905), ветка `claude/remove-channel-swing-posts`.
 Сделано: удалены `src/match-swing-job.js` и его тест, задание `match_swing` в `scheduled-jobs.js`, проводка в `worker.js`/`operational-orchestration-runtime.js`, конфиги `matchSwingEnabled`/`channelSwingPostEnabled` и переменные `MATCH_SWING_ENABLED`/`CHANNEL_SWING_POST_ENABLED` (wrangler, .env.example), упоминание в тексте настроек бота. В «Бэклог» записаны идеи 1, 2, 3, 5 по порядку.

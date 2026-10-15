@@ -179,14 +179,14 @@ export function createTeamIntelligenceRuntime(deps) {
           ...stale,
           cached:true,
           stale:true,
-          warning:'Сезонная статистика показана из сохранённых данных: бережём лимит API-Football.',
+          warning:'Сезонная статистика показана из сохранённых данных: бережём лимит запросов.',
           provider:capabilities(),
         });
       }
       return json({
         available:false,
         quotaGuard:true,
-        reason:'Сезонная статистика временно не запрашивается: сохраняем остаток квоты API-Football.',
+        reason:'Сезонная статистика временно не запрашивается: сохраняем лимит запросов.',
         provider:capabilities(),
       });
     }
@@ -444,14 +444,14 @@ export function createTeamIntelligenceRuntime(deps) {
           ...stale,
           cached:true,
           stale:true,
-          warning:'Состав показан из сохранённых данных: бережём лимит API-Football.',
+          warning:'Состав показан из сохранённых данных: бережём лимит запросов.',
           provider:capabilities(),
         });
       }
       return json({
         available:false,
         quotaGuard:true,
-        reason:'Состав временно не запрашивается: сохраняем остаток квоты API-Football.',
+        reason:'Состав временно не запрашивается: сохраняем лимит запросов.',
         provider:capabilities(),
       });
     }

@@ -466,7 +466,7 @@ export function createProviderFixtureRuntime(deps) {
           ...previousPayload,
           cached:true,
           stale:true,
-          warning:'Показаны последние сохранённые данные: дата вне доступного диапазона API-Football FREE.',
+          warning:'Показаны последние сохранённые данные: эта дата сейчас не загружается.',
           sourceMeta:markCachedSourceMeta(
             previousPayload.sourceMeta || sourceMeta({provider:'api-football',label:'API-Football'}),
             {stale:true},
@@ -480,7 +480,7 @@ export function createProviderFixtureRuntime(deps) {
         restrictedDate:true,
         cached:false,
         stale:false,
-        warning:'Дата вне доступного диапазона API-Football FREE. Выберите сегодня или ближайший день.',
+        warning:'Матчи на эту дату пока не загружаются. Выберите сегодня или ближайший день.',
         sourceMeta:sourceMeta({provider:'api-football',label:'API-Football'}),
       });
     }

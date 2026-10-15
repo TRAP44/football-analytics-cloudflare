@@ -208,7 +208,7 @@ export function createTeamTournamentRuntime(deps) {
       },
       groups: normalizedGroups,
       standings,
-      reason: standings.length ? '' : 'API-Football не вернул таблицу для этого турнира и сезона.',
+      reason: standings.length ? '' : 'Таблица для этого турнира и сезона пока недоступна.',
       sourceMeta: sourceMeta({ provider:'api-football', label:'API-Football' }),
     };
   }
