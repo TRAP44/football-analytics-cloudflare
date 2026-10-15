@@ -67,7 +67,8 @@ export function scoreboardFixture(row, nowMs = Date.now()) {
 // (ревью Codex #919: одно сообщение на матч).
 export async function scoreboardRecipientIds(getCache, fixtureId, cfg) {
   const id = positiveId(fixtureId);
-  if (!id || typeof getCache !== 'function') return new Set();
+  // Табло выключено — обычные уведомления о голах возвращаются (ревью Codex #919).
+  if (!id || typeof getCache !== 'function' || cfg?.favoriteScoreboardEnabled === false) return new Set();
   let state = null;
   try { state = plainObject(await getCache(SCOREBOARD_CACHE_KEY(id), cfg)); } catch { return new Set(); }
   return new Set(Object.entries(plainObject(state?.users) || {})

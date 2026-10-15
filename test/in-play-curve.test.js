@@ -180,7 +180,8 @@ test('the in-play task runs with the other background tasks', () => {
   assert.match(jobs, /run\('in_play_timeline', \(\) => processInPlayTimeline\(cfg, scheduledAt\)\)/);
   assert.match(jobs, /tasks\.push\(\['in_play_timeline', inPlayTimelineTask\]\)/);
   // Уведомления о голах ждут точку с новым счётом.
-  assert.match(jobs, /Promise\.all\(\[importantChangeTask, inPlayTimelineTask\]\)\s*\.then\(\(\) => run\('smart_notifications'/);
+  // и живое табло (у кого оно есть, отдельный «Гол» не приходит).
+  assert.match(jobs, /Promise\.all\(\[importantChangeTask, inPlayTimelineTask, favoriteScoreboardTask\]\)\s*\.then\(\(\) => run\('smart_notifications'/);
   const worker = fs.readFileSync('src/worker.js', 'utf8');
   assert.match(worker, /createInPlayTimelineJob\(\{/);
 });

@@ -459,7 +459,12 @@ export function createScheduledJobsRuntime({
     const inPlayTimelineTask = typeof processInPlayTimeline === 'function'
       ? run('in_play_timeline', () => processInPlayTimeline(cfg, scheduledAt))
       : null;
-    const smartNotificationsTask = Promise.all([importantChangeTask, inPlayTimelineTask])
+    // Живое табло — после кривой (она обновляет пакет матчей дня) и ДО уведомлений
+    // о голах: те пропускают людей, у кого по матчу уже есть табло (ревью Codex #919).
+    const favoriteScoreboardTask = typeof processFavoriteScoreboards === 'function'
+      ? Promise.resolve(inPlayTimelineTask).then(() => run('favorite_scoreboard', () => processFavoriteScoreboards(cfg, scheduledAt)))
+      : null;
+    const smartNotificationsTask = Promise.all([importantChangeTask, inPlayTimelineTask, favoriteScoreboardTask])
       .then(() => run('smart_notifications', () => processSmartNotifications(cfg)));
     const digestWindow = isDailyDigestExecutionWindow(scheduledAt);
     const dailyDigestTask = digestWindow
@@ -478,10 +483,7 @@ export function createScheduledJobsRuntime({
     ];
     if (typeof processBotMatchCards==='function') tasks.push(['bot_match_cards', remindersTask.then(() => run('bot_match_cards', () => processBotMatchCards(cfg)))]);
     if (inPlayTimelineTask) tasks.push(['in_play_timeline', inPlayTimelineTask]);
-    // Живое табло любимых команд — после кривой по ходу матча: она обновляет пакет матчей дня.
-    if (typeof processFavoriteScoreboards === 'function') {
-      tasks.push(['favorite_scoreboard', Promise.resolve(inPlayTimelineTask).then(() => run('favorite_scoreboard', () => processFavoriteScoreboards(cfg, scheduledAt)))]);
-    }
+    if (favoriteScoreboardTask) tasks.push(['favorite_scoreboard', favoriteScoreboardTask]);
 
     if (scheduledAt.getUTCMinutes() % 15 === 0) {
       const monitorAfterReminders = remindersTask

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createFavoriteScoreboardJob, scoreboardFixture, scoreboardText } from '../src/favorite-scoreboard-job.js';
+import { createFavoriteScoreboardJob, scoreboardFixture, scoreboardRecipientIds, scoreboardText } from '../src/favorite-scoreboard-job.js';
 
 // Живое табло любимых команд (Сергей 15.10): одно сообщение на матч.
 
@@ -182,4 +182,10 @@ test('Telegram rate limit clears the «sending» mark and stops the run, so the 
   assert.deepEqual(store.get('scoreboard:7:v1').users, {});
   await job.processFavoriteScoreboards({}, new Date(NOW));
   assert.equal(Object.keys(store.get('scoreboard:7:v1').users).length, 2);
+});
+
+test('scoreboard recipients: active boards only, none while the feature is switched off', async () => {
+  const getCache = async () => ({ users: { 11: { messageId: 1 }, 12: { blocked: true }, 13: { pending: true } } });
+  assert.deepEqual([...await scoreboardRecipientIds(getCache, 7, {})].sort(), [11, 13]);
+  assert.deepEqual([...await scoreboardRecipientIds(getCache, 7, { favoriteScoreboardEnabled: false })], []);
 });
