@@ -17,6 +17,7 @@ export function createTelegramSearchRuntime(deps = {}) {
     freeQuotaHealthy,
     getCache,
     getHistory,
+    getStaleCache,
     loadPublicAiTrackRecord,
     loadSearchTeamMatches,
     normalizeSearchTeam,
@@ -592,6 +593,14 @@ export function createTelegramSearchRuntime(deps = {}) {
 
   function inlineStatus(match) {
     const score=inlineScore(match);
+    // Устаревший снимок ленты: минуту и счёт идущего матча не показываем,
+    // а если с начала прошло больше 2 ч 45 мин — только время начала.
+    if (match.inlineStale === true && match.finished !== true) {
+      const kickoff=Date.parse(safeText(match.date,80));
+      const elapsed=Number.isFinite(kickoff) ? Date.now()-kickoff : NaN;
+      if (elapsed>=0 && elapsed<165*60*1000) return '🔴 идёт сейчас';
+      return `🗓 ${inlineDate(match.date)}`;
+    }
     if (match.live === true) return `🔴 LIVE ${safeText(match.statusLabel,40,'идёт')}${score ? ` · ${score}` : ''}`;
     if (match.finished === true) return `Завершён${score ? ` · ${score}` : ''}`;
     return `🗓 ${inlineDate(match.date)}`;
@@ -638,12 +647,23 @@ export function createTelegramSearchRuntime(deps = {}) {
   async function inlineMatches(rawQuery, cfg) {
     const query=safeText(rawQuery,60);
     const day=safeText(optionalCall(todayUtc,''),20);
-    const payload=day ? plainObject(await optionalAsync(getCache,null,`matches:${day}:v6-integrity`,cfg)) : null;
-    const dayRows=rowsOrEmpty(payload?.matches,200).map(match=>validMatch(match)).filter(Boolean);
+    const key=`matches:${day}:v6-integrity`;
+    // Лента матчей живёт в кэше минуту и обновляется, когда её кто-то открывает.
+    // Для поиска подходит и последний снимок за день — иначе inline почти всегда пустой.
+    let payload=day ? plainObject(await optionalAsync(getCache,null,key,cfg)) : null;
+    if (!payload && day && typeof getStaleCache === 'function') payload=plainObject(await optionalAsync(getStaleCache,null,key,cfg));
+    const refreshed=Date.parse(safeText(payload?.refreshedAt || payload?.fetchedAt,80));
+    const stale=!Number.isFinite(refreshed) || Date.now()-refreshed>6*60*1000;
+    const dayRows=rowsOrEmpty(payload?.matches,200).map(match=>validMatch(match)).filter(Boolean)
+      .map(match=>stale ? {...match,inlineStale:true} : match);
     // Пустой запрос — главные матчи дня: лента уже отсортирована по важности.
     if (query.length < 2) {
+      const recent=match=>{
+        const kickoff=Date.parse(safeText(match.date,80));
+        return match.inlineStale !== true || !Number.isFinite(kickoff) || Date.now()-kickoff<165*60*1000;
+      };
       return dayRows
-        .filter(match=>match.finished !== true && match.lowPriority !== true)
+        .filter(match=>match.finished !== true && match.lowPriority !== true && recent(match))
         .sort((left,right)=>Number(right.live===true)-Number(left.live===true))
         .slice(0,INLINE_RESULTS_LIMIT);
     }

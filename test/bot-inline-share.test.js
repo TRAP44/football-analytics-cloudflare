@@ -9,21 +9,32 @@ import { TELEGRAM_BURST_POLICIES, createTelegramDedupeRuntime } from '../src/tel
 // карточка матча с кнопкой на разбор и ссылкой автора.
 
 const DAY = '2026-10-15';
+const MIN = 60 * 1000;
+const at = minutes => new Date(Date.now() + minutes * MIN).toISOString();
+// То же представление времени, что у бота: «сегодня, 22:00 МСК» или «17 окт, 22:00 МСК».
+function mskLabel(iso) {
+  const zone = { timeZone: 'Europe/Moscow' };
+  const day = d => new Intl.DateTimeFormat('ru-RU', { ...zone, day: 'numeric', month: 'short' }).format(d).replace('.', '');
+  const date = new Date(iso);
+  const time = new Intl.DateTimeFormat('ru-RU', { ...zone, hour: '2-digit', minute: '2-digit' }).format(date);
+  return `${day(date) === day(new Date()) ? 'сегодня' : day(date)}, ${time} МСК`;
+}
 const day = [
-  { fixtureId: 11, date: '2026-10-15T19:00:00Z', league: 'La Liga', live: false, finished: false,
+  { fixtureId: 11, date: at(120), league: 'La Liga', live: false, finished: false,
     home: { id: 541, name: 'Real Madrid', logo: 'https://media.example/541.png' }, away: { id: 529, name: 'Barcelona' } },
-  { fixtureId: 12, date: '2026-10-15T13:00:00Z', league: 'Serie A', live: true, finished: false, statusLabel: "63'",
+  { fixtureId: 12, date: at(-63), league: 'Serie A', live: true, finished: false, statusLabel: "63'",
     score: { home: 2, away: 1 }, home: { id: 489, name: 'AC Milan' }, away: { id: 497, name: 'AS Roma' } },
-  { fixtureId: 13, date: '2026-10-15T10:00:00Z', league: 'Premier League', live: false, finished: true,
+  { fixtureId: 13, date: at(-240), league: 'Premier League', live: false, finished: true,
     score: { home: 0, away: 0 }, home: { id: 42, name: 'Arsenal' }, away: { id: 49, name: 'Chelsea' } },
-  { fixtureId: 14, date: '2026-10-15T12:00:00Z', league: 'U19 League', live: false, finished: false, lowPriority: true,
+  { fixtureId: 14, date: at(30), league: 'U19 League', live: false, finished: false, lowPriority: true,
     home: { id: 7, name: 'Real Madrid U19' }, away: { id: 8, name: 'Getafe U19' } },
 ];
 
-function setup({ cache = {}, plan = null, remote = [] } = {}) {
+function setup({ cache = {}, plan = null, remote = [], staleFeed = null } = {}) {
   const calls = [];
   const deepLinks = [];
-  const store = { [`matches:${DAY}:v6-integrity`]: { matches: day }, ...cache };
+  const feedKey = `matches:${DAY}:v6-integrity`;
+  const store = { [feedKey]: staleFeed ? null : { matches: day, refreshedAt: at(-1) }, ...cache };
   const runtime = createTelegramSearchRuntime({
     apiFootball: async () => [],
     digestTime: () => '—',
@@ -37,6 +48,7 @@ function setup({ cache = {}, plan = null, remote = [] } = {}) {
     freeQuotaHealthy: () => true,
     getCache: async key => store[key] ?? null,
     getHistory: async () => [],
+    getStaleCache: async key => (key === feedKey ? staleFeed : null),
     loadPublicAiTrackRecord: async () => ({ available: false }),
     loadSearchTeamMatches: async () => ({ matches: remote }),
     normalizeSearchTeam: row => ({ id: Number(row?.id || 0), name: String(row?.name || ''), score: 200 }),
@@ -68,7 +80,7 @@ test('inline query returns a shareable match card with the author referral link'
   assert.equal(card.type, 'article');
   assert.equal(card.title, 'Real Madrid — Barcelona');
   assert.equal(card.thumbnail_url, 'https://media.example/541.png');
-  assert.match(card.description, /La Liga · сегодня, 22:00 МСК/);
+  assert.equal(card.description, `La Liga · ${mskLabel(day[0].date)}`);
   const text = card.input_message_content.message_text;
   assert.match(text, /<b>Real Madrid — Barcelona<\/b>/);
   assert.match(text, /Real Madrid 52% · ничья 25% · Barcelona 23%/);
@@ -119,4 +131,14 @@ test('inline queries are routed and rate-limited like other updates', () => {
   assert.deepEqual(TELEGRAM_BURST_POLICIES.inline, { limit: 20, windowMs: 10000, label: 'inline' });
   const dedupe = createTelegramDedupeRuntime({ runtimeMemory: { telegramBurst: new Map(), telegramUpdateDedupe: new Map() } });
   assert.equal(dedupe.telegramBurstKind({ inline_query: { id: '1', from: { id: 5 } } }), 'inline');
+});
+
+test('expired feed cache falls back to the day snapshot without stale minute or score', async () => {
+  const { calls, ask } = setup({ staleFeed: { matches: day, refreshedAt: at(-30) } });
+  await ask('');
+  const results = calls[0].payload.results;
+  assert.deepEqual(results.map(r => r.id), ['m12', 'm11']);
+  const live = results[0].input_message_content.message_text;
+  assert.match(live, /Serie A · 🔴 идёт сейчас/);
+  assert.doesNotMatch(live, /2:1|63/);
 });

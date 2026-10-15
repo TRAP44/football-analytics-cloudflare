@@ -1259,6 +1259,7 @@ function getTelegramSearchRuntime() {
       freeQuotaHealthy: (...args) => freeQuotaHealthy(...args),
       getCache: (...args) => getCache(...args),
       getHistory: (...args) => getHistory(...args),
+      getStaleCache: (...args) => getStaleCache(...args),
       loadPublicAiTrackRecord: (...args) => loadPublicAiTrackRecord(...args),
       loadSearchTeamMatches: (...args) => loadSearchTeamMatches(...args),
       normalizeSearchTeam: (...args) => normalizeSearchTeam(...args),
