@@ -14,6 +14,13 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-15 — Claude — Живое табло любимых команд
+PR: ветка `claude/favorite-live-scoreboard`.
+Сделано: `src/favorite-scoreboard-job.js` — задача `favorite_scoreboard` в scheduled-jobs после `in_play_timeline`. Берёт идущие (1H/HT/2H/ET/BT/P) и завершённые за 4 ч (FT/AET/PEN) матчи из кеша `provider-fixtures:<день>:v1` (вчерашний — в первые 4 ч UTC), болельщиков из `favorites` (`team_id in (...)`), фильтр `filterSmartNotificationRecipients(rows,'match.goal')`. Одна запись кеша `scoreboard:<fixture>:v1` с message_id каждого получателя: новое сообщение только для идущего матча, дальше `editMessageText` при изменении текста, после свистка — итог и `done`. 403/заблокировал бота — `blocked`, больше не пишем. Потолок 600 сообщений за запуск. Кнопка — `match:menu` (до конца) / `match:review` (итог). `FAVORITE_SCOREBOARD_ENABLED` (по умолчанию true) в `.env.example`.
+Решения: без новых запросов к источнику и без миграций; авторы голов не показываются (в пакете матчей дня нет событий) — можно добавить отдельно.
+Осталось / внимание: у кого идёт табло по матчу, отдельное уведомление о голе (`match.goal`) не отправляется (`loadScoreboardRecipients` в smart-notification-service). Лимит Telegram 429 — отметка снимается, запуск останавливается.
+Проверки: check/lint/verify:release, release, review-tail, isolated-load, полный набор (только bot-match-card — нет resvg). Новый test/favorite-scoreboard-job.test.js.
+
 ## 2026-10-15 — Claude — Бот: выбор любимых команд после /start
 PR: ветка `claude/bot-favorite-picker`.
 Сделано: `sendFavoritePicker` / `pickStartFavorite` (`telegram-bot-orchestration-runtime.js`): 15 клубов (ID сверены с лентой матчей 15.10: Реал 541, Барселона 529, Ман Сити 50, Ман Юнайтед 33, Ливерпуль 40, Арсенал 42, Челси 49, Бавария 157, ПСЖ 85, Ювентус 496, Интер 505, Милан 489, Зенит 596, Спартак 558, ЦСКА 555), callback `fav:pick:<id>` только добавляет (идемпотентно, в dedupe как idempotent mutation) и перерисовывает клавиатуру; `fav:done` → `sendBotFavoriteTeams`. /start без deep link в личке и «⭐ Мои команды» при пустом избранном показывают выбор.

@@ -43,6 +43,7 @@ import { createReferralRewardsRuntime } from './referral-rewards-runtime.js';
 import { createPrematchPredictionJob } from './prematch-prediction-job.js';
 import { createProviderStatusProbe } from './provider-status-probe.js';
 import { createInPlayTimelineJob } from './in-play-timeline-job.js';
+import { createFavoriteScoreboardJob, scoreboardRecipientIds } from './favorite-scoreboard-job.js';
 import { createBillingRuntime } from './billing-runtime.js';
 import { createBillingApiRuntime } from './billing-api-runtime.js';
 import { createClientTelemetryRuntime } from './client-telemetry-runtime.js';
@@ -614,6 +615,7 @@ const {
   telegramDedupeObservabilitySelfTest,
   enforceTelegramBurst,
 } = createServiceWiringRuntime({
+  loadScoreboardRecipients: (fixtureId, cfg) => scoreboardRecipientIds(getCache, fixtureId, cfg),
   SMART_NOTIFICATION_POLICY,
   bumpTelemetry: (...args) => bumpTelemetry(...args),
   bytesToHex,
@@ -1728,6 +1730,24 @@ function getInPlayTimelineJob() {
   return inPlayTimelineJob;
 }
 function processInPlayTimeline(...args) { return getInPlayTimelineJob().processInPlayTimeline(...args); }
+
+let favoriteScoreboardJob = null;
+function getFavoriteScoreboardJob() {
+  if (!favoriteScoreboardJob) {
+    favoriteScoreboardJob = createFavoriteScoreboardJob({
+      clock: () => Date.now(),
+      filterRecipients: (...args) => filterSmartNotificationRecipients(...args),
+      getCache,
+      hasSupabase,
+      recordOpsEvent,
+      setCache,
+      supaSelectPaged,
+      telegramApi: (...args) => telegramApi(...args),
+    });
+  }
+  return favoriteScoreboardJob;
+}
+function processFavoriteScoreboards(...args) { return getFavoriteScoreboardJob().processFavoriteScoreboards(...args); }
 
 
 
@@ -3283,6 +3303,7 @@ const {
   processLineupNotifications,
   processPostMatchReturns,
   processPrematchPredictions,
+  processFavoriteScoreboards,
   processInPlayTimeline,
   processSmartNotifications,
   productionSafetySnapshot,

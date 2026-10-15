@@ -49,6 +49,8 @@ export function createCommonInfrastructureRuntime(deps = {}) {
       tavilyKey: env.TAVILY_KEY || '',
       botToken: env.TELEGRAM_BOT_TOKEN || '',
       botMatchCardsEnabled: boolEnv(env.BOT_MATCH_CARDS_ENABLED, true),
+      // Живое табло любимых команд (Сергей 15.10); выключатель — FAVORITE_SCOREBOARD_ENABLED=false.
+      favoriteScoreboardEnabled: boolEnv(env.FAVORITE_SCOREBOARD_ENABLED, true),
       // Internal Node-only capability, not an operator-managed environment variable.
       botMatchCardRenderer: typeof env.botMatchCardRenderer === 'function' ? env.botMatchCardRenderer : null,
       publisherBotToken: env.TELEGRAM_PUBLISHER_BOT_TOKEN || '',

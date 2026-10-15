@@ -469,6 +469,7 @@ export function createSmartNotificationService({
   loadLineupSnapshot,
   getAnalysisTimelineSnapshots,
   loadLatestInPlayEstimate,
+  loadScoreboardRecipients,
   deliverSmartNotification,
   recordOpsEvent,
   maxFixturesPerRun = SMART_NOTIFICATION_POLICY.maxFixturesPerRun,
@@ -632,7 +633,14 @@ export function createSmartNotificationService({
     for (const [fixtureId, recipients] of groups) {
       const fixtureDate = Date.parse(recipients[0]?.fixture_date || '');
       const minutesToKickoff = Number.isFinite(fixtureDate) ? (fixtureDate - now) / 60000 : null;
-      const matchGoalAudience = await safeAudience(recipients, 'match.goal');
+      // У кого по этому матчу идёт живое табло — гол уже виден в нём, отдельное
+      // уведомление о голе не шлём (ревью Codex #919).
+      let scoreboardUsers = new Set();
+      if (typeof loadScoreboardRecipients === 'function') {
+        try { scoreboardUsers = await loadScoreboardRecipients(fixtureId, cfg) || new Set(); } catch { scoreboardUsers = new Set(); }
+      }
+      const matchGoalAudience = (await safeAudience(recipients, 'match.goal'))
+        .filter(row => !scoreboardUsers.has(Number(row?.telegram_id ?? row?.telegramId)));
       const playerAudience = await safeAudience(recipients, 'player.goal');
       const aiAudience = await safeAudience(recipients, 'ai.probability_change');
 
