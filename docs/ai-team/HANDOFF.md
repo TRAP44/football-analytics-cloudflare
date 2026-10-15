@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-15 — Claude — Шапка и нижняя полоса Telegram в цвет фона Mini App
-PR: ветка `claude/telegram-chrome-color`.
+PR: [PR #904](https://github.com/TRAP44/football-analytics-cloudflare/pull/904), ветка `claude/telegram-chrome-color`.
 Сделано: `applyInterfacePreferences` (public/modules/ui-preferences.js) берёт `--bg` с `body`, а не с `html`, и красит им шапку, фон и нижнюю полосу Telegram (`setBottomBarColor`, если клиент умеет). Ревизия ассетов launch115 → launch116. Тест в `test/interface-personalization.test.js`.
 Решения: причина серо-синей шапки — premium-оболочка рисует фон на `body` (#04060a), а на `html` в теме «системная» остаётся `var(--tg-theme-bg-color)` (цвет самого Telegram). Цвет передаётся только в виде #RRGGBB, иначе — `themeParams.bg_color` или #04060a.
 Проверки: Node 22 check/lint/release зелёные, полный набор — 1 провал `test/bot-match-card.test.js` (в песочнице npm не доустановил `@resvg/resvg-wasm`, к PR не относится; проверит CI).

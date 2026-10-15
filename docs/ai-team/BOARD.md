@@ -17,7 +17,7 @@
 
 ## На ревью
 
-- [ ] Шапка и нижняя полоса Telegram в цвет фона Mini App (как у Blum) — **Claude** — ветка `claude/telegram-chrome-color` — ревью: Codex
+- [ ] Шапка и нижняя полоса Telegram в цвет фона Mini App (как у Blum) — **Claude** — [PR #904](https://github.com/TRAP44/football-analytics-cloudflare/pull/904), ветка `claude/telegram-chrome-color` — ревью: Codex
 - [ ] Настоящая БД под HTTP-нагрузкой: отдельный Supabase/PostgREST, 10→50→100→1000 клиентов — **Codex** — [PR #900](https://github.com/TRAP44/football-analytics-cloudflare/pull/900), ветка `codex/real-database-http-load` — ревью: Claude.
 
 
