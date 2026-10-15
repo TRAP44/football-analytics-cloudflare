@@ -456,11 +456,7 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
       ].join('\n');
     }
     const outcome=plainObject(review.outcome) || {};
-    const marketLines=rowsOrEmpty(review.markets,8).map(item=>{
-      const row=plainObject(item) || {};
-      const probability=finiteNumber(row.probability);
-      return `${row.correct===true?'✓':'✕'} ${safeText(row.label,160,'Показатель')}: ${safeText(row.predicted,220,'—')}${probability!==null?` (${probability}%)`:''} → ${safeText(row.actual,220,'—')}`;
-    });
+    // Итоги «3+ гола» / «обе забьют» не показываем — это ставочные рынки (Сергей 15.10).
     const outcomeProbability=finiteNumber(outcome.probability);
     return [
       `🧠 <b>Итог AI · ${escapeHtml(home.name,120)} — ${escapeHtml(away.name,120)}</b>`,
@@ -469,7 +465,6 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
       `${outcome.correct===true?'✅':'❌'} <b>${escapeHtml(review.headline,500)}</b>`,
       `До матча: ${escapeHtml(outcome.predictedLabel || '—',220)}${outcomeProbability!==null?` · ${outcomeProbability}%`:''}`,
       `Факт: ${escapeHtml(outcome.actualLabel || '—',220)}`,
-      ...(marketLines.length ? ['', '<b>Голы:</b>', ...marketLines.map(line=>escapeHtml(line,1000))] : []),
       ...(evidence.length ? ['', '<b>Что видно по матчу:</b>', ...evidence.map(line=>escapeHtml(line,1000))] : []),
       '',
       escapeHtml(plainObject(review.calibration)?.note || '',800),

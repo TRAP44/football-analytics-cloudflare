@@ -14,6 +14,12 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-15 — Claude — Бот без «3+ гола» и «обе забьют»
+PR: [PR #912](https://github.com/TRAP44/football-analytics-cloudflare/pull/912), ветка `claude/bot-no-betting-markets` (основана на #911).
+Сделано: `botAiVerdictText` (`telegram-bot-ui-runtime.js`) — строка «⚽ Ожидаемые голы: А x.x — y.y Б» вместо процентов 3+ голов и «обе забьют»; «Итог AI» (`telegram-bot-orchestration-runtime.js`) — без блока «Голы:» из `review.markets`.
+Решения: сервер по-прежнему считает over25/btts и `review.markets` (админка, оценка модели), меняется только текст для пользователей.
+Проверки: Node 22 check/lint, release, полный набор (только bot-match-card — нет `@resvg/resvg-wasm`). Два новых теста.
+
 ## 2026-10-15 — Claude — Главная без лишнего: компактная лента, первый экран
 PR: [PR #911](https://github.com/TRAP44/football-analytics-cloudflare/pull/911), ветка `claude/compact-home-feed` (основана на #910).
 Сделано: `matchCardHtml` — одна строка `.match-row` (время/LIVE+турнир, команды строками со счётом, метки 🔔/👁/AI, стрелка); вся строка — кнопка `.match-row-open` с data-fixture/center/history-analysis, обработчик `bindMatchRows` зовёт контроллеры без кнопки (они переписывают textContent), загрузка — классом `is-opening`. Избранное/напоминание/«Следить» — в разборе и центре матча. `first-run-guide.js`: подсказка скрыта, если есть история; `#homeHero.is-compact` (без слогана и радара) для вернувшихся, вместе с ним скрыт `.mr-manifesto`. Строка лимита/Pass в разборе — только при `features.monetizationEnabled`.

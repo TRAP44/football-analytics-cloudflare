@@ -1150,18 +1150,15 @@ export function createTelegramBotUiRuntime(deps = {}) {
             : []),
         ];
 
+    // «3+ гола» и «обе забьют» — ставочные рынки (тотал, обе забьют); пользователю
+    // их не показываем (решение Сергея 15.10). Оставляем только ожидаемые голы.
     const goal=objectValue(source.goalModel) || {};
-    const over=finiteNumber(goal.over25);
-    const both=finiteNumber(goal.btts);
+    const homeExpected=finiteNumber(goal.homeExpected);
+    const awayExpected=finiteNumber(goal.awayExpected);
     const goalLines=[];
-    if (over!==null && over>=0 && over<=100) {
-      goalLines.push(over>=55
-        ? `⚽ Голы: результативная игра (3+) · ${Math.round(over)}%`
-        : over<=45
-          ? `⚽ Голы: скорее мало голов (до 2) · ${Math.round(100-over)}%`
-          : `⚽ Голы: 3+ гола — шансы равны · ${Math.round(over)}%`);
+    if (homeExpected!==null && awayExpected!==null && homeExpected>=0 && awayExpected>=0 && homeExpected<=10 && awayExpected<=10) {
+      goalLines.push(`⚽ Ожидаемые голы: ${escapeHtml(homeName,120)} ${homeExpected.toFixed(1)} — ${awayExpected.toFixed(1)} ${escapeHtml(awayName,120)}`);
     }
-    if (both!==null && both>=0 && both<=100) goalLines.push(`🥅 Забьют обе команды · ${Math.round(both)}%`);
 
     const reasons=[signal.reason,...(Array.isArray(ai.factors) ? ai.factors : [])]
       .map(value=>neutralReasonText(typeof value==='string' ? value : ''))
