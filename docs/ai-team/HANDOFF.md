@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-15 — Claude — Бот без «3+ гола» и «обе забьют»
-PR: [PR #912](https://github.com/TRAP44/football-analytics-cloudflare/pull/912), ветка `claude/bot-no-betting-markets` (основана на #911).
+PR: [PR #911](https://github.com/TRAP44/football-analytics-cloudflare/pull/911) — отдельный коммит; #912 закрыт и влит в #911, чтобы не ловить конфликты доски после squash.
 Сделано: `botAiVerdictText` (`telegram-bot-ui-runtime.js`) — строка «⚽ Ожидаемые голы: А x.x — y.y Б» вместо процентов 3+ голов и «обе забьют»; «Итог AI» (`telegram-bot-orchestration-runtime.js`) — без блока «Голы:» из `review.markets`.
 Решения: сервер по-прежнему считает over25/btts и `review.markets` (админка, оценка модели), меняется только текст для пользователей.
 Проверки: Node 22 check/lint, release, полный набор (только bot-match-card — нет `@resvg/resvg-wasm`). Два новых теста.
