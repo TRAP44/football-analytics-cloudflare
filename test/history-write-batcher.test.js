@@ -52,3 +52,13 @@ test('failed batch rejects every caller and clears its queue for the next write'
   assert.equal(calls,1);
   fail=false;await enqueue(cfg,row(101));assert.equal(calls,2);
 });
+
+test('queued history write keeps the connection identity captured when enqueued',async()=>{
+  const mutable={...cfg};let observed;
+  const enqueue=createHistoryWriteBatcher(async(config)=>{observed=config;});
+  const pending=enqueue(mutable,row(1));
+  mutable.supabaseUrl='https://other-project.test';mutable.supabaseKey='other-local-key';
+  await pending;
+  assert.equal(observed.supabaseUrl,cfg.supabaseUrl);
+  assert.equal(observed.supabaseKey,cfg.supabaseKey);
+});

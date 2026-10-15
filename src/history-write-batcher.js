@@ -27,7 +27,7 @@ export function createHistoryWriteBatcher(write) {
     const key=JSON.stringify([cfg.supabaseUrl,cfg.supabaseKey]);
     let group=groups.get(key);
     if(!group){
-      group={cfg,jobs:[],timer:null};groups.set(key,group);
+      group={cfg:{...cfg},jobs:[],timer:null};groups.set(key,group);
       group.timer=setTimeout(()=>flush(key,group),2);
     }
     return new Promise((resolve,reject)=>{
