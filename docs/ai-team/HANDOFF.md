@@ -14,6 +14,14 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-15 — Claude — Шапка и нижняя полоса Telegram в цвет фона Mini App
+PR: [PR #904](https://github.com/TRAP44/football-analytics-cloudflare/pull/904), ветка `claude/telegram-chrome-color`.
+Сделано: `applyInterfacePreferences` (public/modules/ui-preferences.js) берёт `--bg` с `body`, а не с `html`, и красит им шапку, фон и нижнюю полосу Telegram (`setBottomBarColor`, если клиент умеет). Ревизия ассетов launch115 → launch116. Тест в `test/interface-personalization.test.js`.
+Решения: причина серо-синей шапки — premium-оболочка рисует фон на `body` (#04060a), а на `html` в теме «системная» остаётся `var(--tg-theme-bg-color)` (цвет самого Telegram). Цвет передаётся только в виде #RRGGBB, иначе — `themeParams.bg_color` или #04060a.
+Проверки: Node 22 check/lint/release зелёные, полный набор — 1 провал `test/bot-match-card.test.js` (в песочнице npm не доустановил `@resvg/resvg-wasm`, к PR не относится; проверит CI).
+Осталось / внимание: `initTelegramWebApp` при старте ставит `secondary_bg_color` до применения темы — возможен короткий «мигающий» кадр; если будет заметно, стоит сразу ставить цвет фона.
+
+
 ## 2026-10-15 — Claude — Задача 2 закрыта
 PR: ветка `claude/board-drop-calc-time` (только документы).
 Решения: Сергей 15.10 отменил этап «единое время расчёта (рассчитано в ЧЧ:ММ) в штабе/карточках» — «пользователь не должен видеть этого». Строка удалена из «Бэклога», #899 перенесён в «Готово», в docs/PREMATCH_PROVIDER_BUDGET_RU.md отмечено решение.
