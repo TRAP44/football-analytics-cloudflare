@@ -48,7 +48,10 @@ function normalizeCard(match = {}) {
   };
 }
 
-function harness({ match, analysis } = {}) {
+// До назначенного начала тестового матча (18.10 19:00 UTC).
+const BEFORE_KICKOFF=Date.parse('2026-10-18T12:00:00Z');
+
+function harness({ match, analysis, now = BEFORE_KICKOFF, referralDown = false } = {}) {
   const memory={users:new Map()};
   const growth=createGrowthReferralRuntime({
     memory,
@@ -82,7 +85,8 @@ function harness({ match, analysis } = {}) {
     claimChannelPublishIdempotency:noop,
     cleanLaunchPart,
     completeChannelPublishIdempotency:noop,
-    ensureReferralCode:growth.ensureReferralCode,
+    // referralDown — как временный сбой Supabase: код не подтверждён, ссылка без него.
+    ensureReferralCode:referralDown ? async()=>'' : growth.ensureReferralCode,
     fixtureShareStartParam:links.fixtureShareStartParam,
     fixtureTelegramDeepLink:links.fixtureTelegramDeepLink,
     getCache:async()=>analysis ?? null,
@@ -108,6 +112,7 @@ function harness({ match, analysis } = {}) {
     telegramCampaignDeepLink:links.telegramCampaignDeepLink,
     telegramHtmlEscape:escapeHtml,
     telegramShareComposerUrl:links.telegramShareComposerUrl,
+    clock:()=>now,
   });
   return {growth,publisher,sent,events,cfg:{botToken:BOT_SECRET}};
 }
@@ -220,4 +225,27 @@ test('every bot match card offers «Поделиться матчем», and the
   const handler=update.slice(update.indexOf('const shareAction='),update.indexOf('const matchAction ='));
   assert.ok(handler.indexOf('await sendBotFixtureShareCard')<handler.indexOf("'answerCallbackQuery'"));
   assert.match(handler,/Перешлите карточку друзьям/);
+});
+
+test('kickoff passed but the cached card still says «not started»: no stale verdict (Codex #914)', async () => {
+  const analysis={aiInstructor:{betSignal:{code:'home'},confidenceScore:64}};
+  const stale=harness({analysis,now:Date.parse('2026-10-18T19:40:00Z')});
+  await stale.publisher.sendBotFixtureShareCard(new Request('https://app.example/'),stale.cfg,SHARER,SHARER,FIXTURE);
+  const text=stale.sent[0].body.text;
+  assert.doesNotMatch(text,/🧠 AI:/);
+  assert.doesNotMatch(text,/🗓/);
+  assert.match(text,/⏱ Начало: 18\.10, 22:00 МСК/);
+
+  const fresh=harness({analysis});
+  await fresh.publisher.sendBotFixtureShareCard(new Request('https://app.example/'),fresh.cfg,SHARER,SHARER,FIXTURE);
+  assert.match(fresh.sent[0].body.text,/🧠 AI: <b>Перевес Реал Мадрид<\/b>/);
+});
+
+test('without a referral code the card still works, and the tap does not promise a personal link', async () => {
+  const {publisher,sent,cfg}=harness({referralDown:true});
+  const result=await publisher.sendBotFixtureShareCard(new Request('https://app.example/'),cfg,SHARER,SHARER,FIXTURE);
+  assert.deepEqual(result,{ok:true,referral:false});
+  const start=deepLinkFrom(sent[0]).searchParams.get('start');
+  assert.match(start,new RegExp(`^fx${FIXTURE}__`));
+  assert.doesNotMatch(start,/__r[a-f0-9]{16}$/);
 });

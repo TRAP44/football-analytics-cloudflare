@@ -629,16 +629,20 @@ export function createTelegramUpdateProcessor(deps) {
       const fixtureId=positiveInteger(shareAction[1]);
       if (!fixtureId) return json({ok:false,error:'fixture_id_invalid'},400);
       // Карточка с личной ссылкой поделившегося (Сергей 15.10): подсказку показываем, когда она уже в чате.
-      let shared=false;
+      let shared=null;
       try {
-        await sendBotFixtureShareCard(request,cfg,callbackUserId,callbackChatId,fixtureId);
-        shared=true;
+        shared=await sendBotFixtureShareCard(request,cfg,callbackUserId,callbackChatId,fixtureId) || {ok:true,referral:false};
       } catch {
         await telegramApi('sendMessage',cfg,{chat_id:callbackChatId,text:'Не удалось подготовить карточку этого матча. Попробуйте ещё раз.'}).catch(()=>null);
       }
       await telegramApi('answerCallbackQuery',cfg,{
         callback_query_id:callbackId,
-        text:shared ? 'Перешлите карточку друзьям — ссылка в ней ваша' : 'Не получилось, попробуйте ещё раз',
+        // Про «вашу ссылку» — только если реф-код действительно в ней (ревью Codex #914).
+        text:!shared
+          ? 'Не получилось, попробуйте ещё раз'
+          : shared.referral===true
+            ? 'Перешлите карточку друзьям — ссылка в ней ваша'
+            : 'Карточка готова — перешлите её друзьям',
       }).catch(()=>null);
       return json({ok:true});
     }

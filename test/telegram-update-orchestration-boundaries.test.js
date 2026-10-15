@@ -435,3 +435,28 @@ test('bot tariffs and notifications send no Mini App button outside private chat
     assert.ok(message.text.length>0);
   }
 });
+
+test('share tap says «ваша ссылка» only when the card really carries a referral code (Codex #914)', async () => {
+  const toastFor=async shareResult=>{
+    const calls=[];
+    const processor=createTelegramUpdateProcessor(deps({
+      telegramApi:(method,_cfg,payload)=>{ calls.push({method,payload}); return {ok:true}; },
+      sendBotFixtureShareCard:async()=>{
+        if (shareResult instanceof Error) throw shareResult;
+        return shareResult;
+      },
+    }));
+    const result=await processor(request,{},{
+      callback_query:{id:'cb-share',data:'match:share:1234567',from:{id:7},message:{chat:{id:8}}},
+    });
+    assert.equal(result.status,200);
+    const answers=calls.filter(call=>call.method==='answerCallbackQuery');
+    assert.equal(answers.length,1);
+    return answers[0].payload.text;
+  };
+
+  assert.match(await toastFor({ok:true,referral:true}),/ссылка в ней ваша/);
+  assert.doesNotMatch(await toastFor({ok:true,referral:false}),/ваша/);
+  assert.doesNotMatch(await toastFor(undefined),/ваша/);
+  assert.match(await toastFor(new Error('down')),/Не получилось/);
+});

@@ -29,7 +29,8 @@ export function createPublisherRuntime(deps = {}) {
     telegramApi,
     telegramCampaignDeepLink,
     telegramHtmlEscape,
-    telegramShareComposerUrl
+    telegramShareComposerUrl,
+    clock = () => Date.now(),
   } = deps;
 
   for (const [name,fn] of Object.entries({
@@ -154,6 +155,17 @@ export function createPublisherRuntime(deps = {}) {
     }
   }
 
+  // Карточка матча в кеше бота живёт до 180 минут и после свистка может ещё говорить
+  // «не начался» (ревью Codex #914). Поэтому после назначенного времени начала
+  // предматчевый вывод не показываем, даже если сохранённый статус не обновился.
+  function kickoffPassed(card) {
+    const kickoff=Date.parse(safeText(card.date,80));
+    if (!Number.isFinite(kickoff)) return false;
+    let now=NaN;
+    try { now=Number(clock()); } catch {}
+    return Number.isFinite(now) && now>=kickoff;
+  }
+
   function shareMatchState(card) {
     const score=Number.isSafeInteger(card.goalsHome) && Number.isSafeInteger(card.goalsAway)
       ? `${card.goalsHome}:${card.goalsAway}`
@@ -164,12 +176,13 @@ export function createPublisherRuntime(deps = {}) {
     }
     if (card.finished) return `🏁 Матч завершён${score?` · ${score}`:''}`;
     const kickoff=moscowKickoff(card.date);
-    return kickoff ? `🗓 ${kickoff}` : '';
+    if (!kickoff) return '';
+    return kickoffPassed(card) ? `⏱ Начало: ${kickoff}` : `🗓 ${kickoff}`;
   }
 
   function shareAiLine(card, analysis) {
     // Предматчевый вывод во время и после матча устарел — тогда не показываем его.
-    if (card.live || card.finished) return '';
+    if (card.live || card.finished || kickoffPassed(card)) return '';
     const ai=plainObject(plainObject(analysis)?.aiInstructor) || {};
     const signal=plainObject(ai.betSignal) || {};
     const code=typeof signal.code === 'string' ? signal.code.trim().toLowerCase() : '';
