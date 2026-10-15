@@ -698,6 +698,10 @@ export function createTelegramSearchRuntime(deps = {}) {
     // Для поиска подходит и последний снимок за день — иначе inline почти всегда пустой.
     let payload=day ? plainObject(await optionalAsync(getCache,null,key,cfg)) : null;
     if (!payload && day && typeof getStaleCache === 'function') payload=plainObject(await optionalAsync(getStaleCache,null,key,cfg));
+    // Нет даже снимка ленты дня: пустой результат — «поиск недоступен», а не
+    // «матч не найден» (Issue #922).
+    const feedMissing=!payload;
+    const unavailable=()=>Object.assign(new Error('Лента матчей дня недоступна.'),{code:'INLINE_FEED_UNAVAILABLE'});
     const refreshed=Date.parse(safeText(payload?.refreshedAt || payload?.fetchedAt,80));
     const stale=!Number.isFinite(refreshed) || Date.now()-refreshed>6*60*1000;
     const dayRows=rowsOrEmpty(payload?.matches,200).map(match=>validMatch(match)).filter(Boolean)
@@ -722,6 +726,7 @@ export function createTelegramSearchRuntime(deps = {}) {
       const top=dayRows
         .filter(match=>open(match) && match.lowPriority !== true && !mine.includes(match))
         .sort((left,right)=>Number(eliteLive(right))-Number(eliteLive(left)));
+      if (feedMissing) throw unavailable();
       return [...mine,...top].slice(0,INLINE_RESULTS_LIMIT);
     }
 
@@ -750,6 +755,7 @@ export function createTelegramSearchRuntime(deps = {}) {
     }
     // Команда, которая сегодня не играет: ближайший матч у источника данных.
     if (!matches.length) matches=await botRemoteTeamMatches(parts,cfg);
+    if (!matches.length && feedMissing) throw unavailable();
     return matches.slice(0,INLINE_RESULTS_LIMIT);
   }
 
@@ -759,7 +765,8 @@ export function createTelegramSearchRuntime(deps = {}) {
     const userId=positiveSafeInteger(source?.from?.id);
     if (!queryId || !userId) throw inputError('Inline-запрос Telegram некорректен.','TELEGRAM_INLINE_INVALID');
 
-    const matches=await inlineMatches(source.query,cfg,userId).catch(()=>[]);
+    let unavailable=false;
+    const matches=await inlineMatches(source.query,cfg,userId).catch(()=>{ unavailable=true; return []; });
     const referralCode=typeof ensureReferralCode==='function'
       ? safeText(await optionalAsync(ensureReferralCode,'',userId,cfg),64)
       : '';
@@ -801,9 +808,10 @@ export function createTelegramSearchRuntime(deps = {}) {
     await telegramApi('answerInlineQuery',cfg,{
       inline_query_id:queryId,
       results,
-      cache_time:INLINE_CACHE_SECONDS,
+      // Сбой поиска не кешируем и не выдаём за «не найден».
+      cache_time:unavailable ? 0 : INLINE_CACHE_SECONDS,
       is_personal:true,
-      ...(results.length ? {} : {button:{text:'Матч не найден — открыть MatchRadar',start_parameter:'inline'}}),
+      ...(results.length ? {} : {button:{text:unavailable ? 'Поиск временно недоступен — открыть MatchRadar' : 'Матч не найден — открыть MatchRadar',start_parameter:'inline'}}),
     });
   }
 

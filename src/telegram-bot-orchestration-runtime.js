@@ -35,6 +35,7 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
     normalizeBotFixtureCard,
     publicSiteUrl,
     recordGrowthEvent,
+    recordOpsEvent,
     rememberBotFixtureCards,
     removeFavorite,
     telegramApi,
@@ -372,8 +373,7 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
       side(home.name || 'Хозяева',abs.home,lineups.home),
       '',
       side(away.name || 'Гости',abs.away,lineups.away),
-      '',
-      `AI-контекст: ${escapeHtml(impact.note || 'Проверяйте стартовые составы ближе к матчу.',800)}`,
+      ...(safeText(impact.note,800) ? ['', `AI-контекст: ${escapeHtml(impact.note,800)}`] : []),
     ].join('\n');
   }
 
@@ -490,10 +490,13 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
     }
 
     try {
-      if (selected !== 'review' && typeof markTelegramWebhookMutation==='function') {
+      // Итог и «Составы и потери» читают центр матча (общий кеш, лимиты источника),
+      // без полного AI-расчёта и AI-квоты (Issue #922).
+      const matchCenterOnly=selected === 'review' || selected === 'squads';
+      if (!matchCenterOnly && typeof markTelegramWebhookMutation==='function') {
         markTelegramWebhookMutation(cfg, 'analysis_quota_or_history');
       }
-      const data = selected === 'review'
+      const data = matchCenterOnly
         ? await botMatchCenterFixture(request, cfg, id)
         : await requireFunction('botAnalyzeFixture',botAnalyzeFixture)(request, cfg, uid, id);
       const root=plainObject(data);
@@ -535,11 +538,25 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
       const status=rawStatus!==null && Number.isInteger(rawStatus) && rawStatus>=400 && rawStatus<=599
         ? rawStatus
         : 500;
+      // Пользователю — короткий русский текст; детали ошибки — только в ops (Issue #922).
       const message=status===429
         ? 'Лимит AI-разборов или источника данных временно исчерпан. Попробуйте позже.'
         : status===409
           ? 'Данные матча сейчас противоречивы, поэтому AI-разбор временно заблокирован.'
-          : safeText(error?.message,500,'Не удалось получить AI-разбор матча.');
+          : selected === 'squads'
+            ? 'Составы сейчас не загрузились. Попробуйте чуть позже.'
+            : 'Не удалось получить AI-разбор матча. Попробуйте чуть позже.';
+      if (status>=500) {
+        backgroundCall(recordOpsEvent,cfg,{
+          severity:'warning',
+          source:'telegram_bot',
+          eventType:'bot_fixture_section_failed',
+          code:safeText(error?.code || plainObject(error?.payload)?.code,80) || 'BOT_FIXTURE_SECTION_FAILED',
+          message:safeText(error?.message,300,'Bot fixture section failed.'),
+          endpoint:'telegram:match_section',
+          meta:{fixtureId:id,section:selected,status},
+        });
+      }
       if (!suppressFallback && cid && typeof telegramApi==='function') {
         const fallbackPayload={chat_id:cid,text:`⚠️ ${message}`};
         const fullUrl=generatedWebAppUrl(telegramFullAnalysisUrl,request,id,'brief');
@@ -584,6 +601,18 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
     return {active:true,team:normalized};
   }
 
+  // Явное «Убрать из избранного» из карточки клуба (Issue #922): повтор безопасен.
+  async function removeBotFavorite(userId, teamId, cfg) {
+    const uid=positiveSafeInteger(userId);
+    const id=positiveSafeInteger(teamId);
+    if (!uid) throw statusError('Пользователь не определён.',400,'TELEGRAM_USER_INVALID');
+    if (!id) throw statusError('Команда не определена.',400,'TEAM_ID_INVALID');
+    const favorites=rowsOrEmpty(await requireFunction('getFavorites',getFavorites)(uid,cfg));
+    const current=plainObject(favorites.find(item=>positiveSafeInteger(plainObject(item)?.team_id)===id));
+    if (current) await requireFunction('removeFavorite',removeFavorite)(uid,id,cfg);
+    return {removed:Boolean(current),team:{id,name:safeText(current?.team_name,120,'Команда')}};
+  }
+
   // Выбор любимой команды сразу после /start (Сергей 15.10): без избранного боту
   // не о чем напоминать. ID клубов сверены с лентой матчей 15.10; в избранное
   // пишется название, как в данных (латиницей), на кнопках — по-русски.
@@ -620,7 +649,7 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
       parse_mode:'HTML',
       text:[
         '⭐ <b>За кем следите?</b>',
-        'Отметьте команды — пришлю их ближайшие матчи и напомню перед стартом.',
+        'Отметьте команды — их матчи будут в «Моих командах», а во время игры пришлю живой счёт (если уведомления о голах включены).',
         '',
         'Нет в списке? Напишите название клуба в чат.',
       ].join('\n'),
@@ -746,6 +775,7 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
     botPostMatchReviewText,
     sendBotFixtureSection,
     toggleBotFavorite,
+    removeBotFavorite,
     sendFavoritePicker,
     pickStartFavorite,
     configureFootballBot,

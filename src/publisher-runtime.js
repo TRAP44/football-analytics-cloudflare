@@ -191,9 +191,8 @@ export function createPublisherRuntime(deps = {}) {
     if (!SHARE_OUTCOME_SIGNALS.has(code)) return '';
     const verdict=neutralSignalText(code,{home:card.homeName,away:card.awayName});
     if (!verdict) return '';
-    const confidenceValue=finiteNumber(ai.confidenceScore,0,100);
-    const confidence=confidenceValue===null ? '' : ` · уверенность ${Math.round(confidenceValue)}/100`;
-    return `🧠 AI: <b>${telegramHtmlEscape(verdict)}</b>${confidence}`;
+    // Без технической шкалы уверенности (Issue #922).
+    return `🧠 AI: <b>${telegramHtmlEscape(verdict)}</b>`;
   }
 
   function fixtureShareCardText(match = {}, analysis = null, deepLinkUrl = '') {

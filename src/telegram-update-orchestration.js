@@ -1,6 +1,6 @@
 // Telegram update command/callback orchestration boundary for Issue #440.
 // All network, persistence, billing and product capabilities are injected by worker.js.
-import { BOT_DIGEST_BUTTONS, BOT_NOTIFICATIONS_TEXT, botPlansText } from './telegram-bot-plans.js';
+import { botDigestView, botPlansText } from './telegram-bot-plans.js';
 
 const REMOVED_MENU_LABELS = new Set([
   '📰 Новости', '💎 Тарифы',
@@ -48,6 +48,8 @@ export function createTelegramUpdateProcessor(deps) {
     pickStartFavorite,
     sendFavoriteTeamNews,
     toggleBotFavorite,
+    removeBotFavorite,
+    getBotDigestSubscription,
     loadBotFixtureCard,
     getFavorites,
     footballMatchActionKeyboard,
@@ -216,6 +218,21 @@ export function createTelegramUpdateProcessor(deps) {
     }
   }
 
+  // «Уведомления» с подтверждённым состоянием подборки; кнопка приложения — только
+  // в личном чате (web_app в группах Telegram не принимает).
+  function notificationsView(request, chatType, enabled) {
+    const view=botDigestView(enabled);
+    const url=chatType === 'private' ? safeWebAppUrl(request,{view:'profile',section:'notifications'}) : '';
+    return {
+      parse_mode:'HTML',
+      text:view.text,
+      reply_markup:{inline_keyboard:[
+        view.buttons.map(button=>({...button})),
+        ...(url ? [[{text:'⚙️ Настроить уведомления',web_app:{url}}]] : []),
+      ]},
+    };
+  }
+
   function safeBotKeyboard(request, chatId = 0) {
     try {
       const keyboard=footballBotKeyboard(request,chatId);
@@ -373,27 +390,23 @@ export function createTelegramUpdateProcessor(deps) {
     if (callbackChatId && !callbackUserId) {
       return json({ok:false,error:'telegram_user_invalid'},400);
     }
-    if (callbackChatId && data === 'digest:on') {
-      await setBotDigestSubscription(callbackUserId, callbackChatId, true, cfg, safeWebAppUrl(request));
-      backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'digest_opt_in',channel:'telegram'});
-      await telegramApi('answerCallbackQuery', cfg, { callback_query_id: callbackId, text: 'Утренняя подборка включена' });
-      const replyMarkup=safeBotKeyboard(request,callbackChatId);
-      await telegramApi('sendMessage', cfg, {
-        chat_id:callbackChatId,
-        text:'✅ Утренняя подборка включена. Примерно в 07:00 UTC будут приходить матчи дня и короткий блок важных футбольных новостей.',
-        ...(replyMarkup ? {reply_markup:replyMarkup} : {}),
-      });
-      return json({ ok: true });
-    }
-    if (callbackChatId && data === 'digest:off') {
-      await setBotDigestSubscription(callbackUserId, callbackChatId, false, cfg, safeWebAppUrl(request));
-      await telegramApi('answerCallbackQuery', cfg, { callback_query_id: callbackId, text: 'Утренняя подборка выключена' });
-      const replyMarkup=safeBotKeyboard(request,callbackChatId);
-      await telegramApi('sendMessage', cfg, {
-        chat_id:callbackChatId,
-        text:'🔕 Утренняя AI-подборка отключена.',
-        ...(replyMarkup ? {reply_markup:replyMarkup} : {}),
-      });
+    // Подборка (Issue #922): состояние подтверждается записью; сбой — не успех.
+    if (callbackChatId && (data === 'digest:on' || data === 'digest:off')) {
+      const enabled=data === 'digest:on';
+      try {
+        await setBotDigestSubscription(callbackUserId, callbackChatId, enabled, cfg, safeWebAppUrl(request));
+      } catch {
+        await swallowAsync(telegramApi,'answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Не удалось сохранить настройку подборки. Попробуйте ещё раз.',show_alert:true});
+        return json({ ok: true });
+      }
+      if (enabled) backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'digest_opt_in',channel:'telegram'});
+      await telegramApi('answerCallbackQuery', cfg, { callback_query_id: callbackId, text: enabled ? 'Утренняя подборка включена' : 'Утренняя подборка выключена' }).catch(()=>null);
+      const view=notificationsView(request,cb.message?.chat?.type,enabled);
+      const messageId=positiveInteger(cb.message?.message_id);
+      const edited=messageId
+        ? await telegramApi('editMessageText',cfg,{chat_id:callbackChatId,message_id:messageId,...view}).then(()=>true,error=>/not modified/i.test(String(error?.message || '')))
+        : false;
+      if (!edited) await telegramApi('sendMessage',cfg,{chat_id:callbackChatId,...view});
       return json({ ok: true });
     }
     if (callbackChatId && data === 'feed:today') {
@@ -587,7 +600,7 @@ export function createTelegramUpdateProcessor(deps) {
       } catch (error) {
         await swallowAsync(telegramApi,'answerCallbackQuery',cfg,{
           callback_query_id:callbackId,
-          text:boundedErrorText(error?.message,'Не удалось изменить избранное',160),
+          text:Number(error?.status)===409 ? 'Данные клуба устарели. Откройте карточку матча заново.' : 'Не удалось изменить избранное. Попробуйте ещё раз.',
           show_alert:true,
         });
       }
@@ -599,13 +612,40 @@ export function createTelegramUpdateProcessor(deps) {
         const result=await pickStartFavorite(cfg,callbackUserId,callbackChatId,cb.message?.message_id,positiveInteger(startPick[1]));
         await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:`★ ${textValue(result?.team?.label,40) || 'Команда'} — в «Моих командах»`}).catch(()=>null);
       } catch (error) {
-        await swallowAsync(telegramApi,'answerCallbackQuery',cfg,{callback_query_id:callbackId,text:boundedErrorText(error?.message,'Не удалось добавить команду',160),show_alert:true});
+        await swallowAsync(telegramApi,'answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Не удалось добавить команду. Попробуйте ещё раз.',show_alert:true});
       }
       return json({ok:true});
     }
     if (callbackChatId && data === 'fav:done') {
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Готово'}).catch(()=>null);
       await sendBotFavoriteTeams(request,cfg,callbackUserId,callbackChatId);
+      return json({ok:true});
+    }
+    // «Мои команды» (Issue #922): страницы, «➕ Добавить», «Убрать» — от callback.from.id.
+    const favoritePage=data.match(/^favorite:page:(\d{1,3})$/);
+    if (callbackChatId && favoritePage) {
+      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId}).catch(()=>null);
+      await sendBotFavoriteTeams(request,cfg,callbackUserId,callbackChatId,{page:Number(favoritePage[1]),messageId:positiveInteger(cb.message?.message_id)});
+      return json({ok:true});
+    }
+    if (callbackChatId && data === 'fav:add' && typeof sendFavoritePicker === 'function') {
+      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId}).catch(()=>null);
+      await sendFavoritePicker(request,cfg,callbackUserId,callbackChatId);
+      return json({ok:true});
+    }
+    const favoriteRemove=data.match(/^favorite:remove:(\d+)$/);
+    if (callbackChatId && favoriteRemove && typeof removeBotFavorite === 'function') {
+      const teamId=positiveInteger(favoriteRemove[1]);
+      if (!teamId) return json({ok:false,error:'team_id_invalid'},400);
+      let result=null;
+      try { result=plainObject(await removeBotFavorite(callbackUserId,teamId,cfg)); } catch {}
+      if (!result) {
+        await swallowAsync(telegramApi,'answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Не удалось убрать команду. Попробуйте ещё раз.',show_alert:true});
+        return json({ok:true});
+      }
+      const teamName=textValue(plainObject(result.team)?.name,40) || 'Команда';
+      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:result.removed ? `☆ ${teamName} убран из «Моих команд»` : 'Этой команды уже нет в «Моих командах»'}).catch(()=>null);
+      await sendBotFavoriteTeams(request,cfg,callbackUserId,callbackChatId,{page:0,messageId:positiveInteger(cb.message?.message_id)});
       return json({ok:true});
     }
     const favoriteAction=data.match(/^favorite:team:(\d+)$/);
@@ -849,28 +889,21 @@ export function createTelegramUpdateProcessor(deps) {
     return json({ok:true});
   }
 
-  if (chatId && (/^\/settings(?:@\w+)?(?:\s|$)/i.test(text) || text === '⚙️ Уведомления')) {
-    const url=msg?.chat?.type === 'private' ? safeWebAppUrl(request,{view:'profile',section:'notifications'}) : '';
-    await telegramApi('sendMessage',cfg,{
-      chat_id:chatId,
-      parse_mode:'HTML',
-      text:BOT_NOTIFICATIONS_TEXT,
-      reply_markup:{inline_keyboard:[
-        BOT_DIGEST_BUTTONS.map(button=>({...button})),
-        ...(url ? [[{text:'⚙️ Настроить уведомления',web_app:{url}}]] : []),
-      ]},
-    });
+  if (chatId && (/^\/settings(?:@\w+)?(?:\s|$)/i.test(text) || text === '⚙️ Уведомления' || text === '☀️ Утренняя подборка')) {
+    let enabled=null;
+    if (messageUserId && typeof getBotDigestSubscription === 'function') {
+      try {
+        const row=plainObject(await getBotDigestSubscription(messageUserId,cfg));
+        enabled=row ? row.enabled === true : false;
+      } catch {}
+    }
+    await telegramApi('sendMessage',cfg,{chat_id:chatId,...notificationsView(request,msg?.chat?.type,enabled)});
     return json({ok:true});
   }
 
   if (chatId && /^\/(?:search|ask)(?:@\w+)?(?:\s|$)/i.test(text)) {
     if (!messageUserId) return json({ok:false,error:'telegram_user_invalid'},400);
     await sendBotFootballSearch(request, cfg, messageUserId, chatId, text);
-    return json({ ok: true });
-  }
-
-  if (chatId && text === '☀️ Утренняя подборка') {
-    await sendDigestControls(request, cfg, chatId);
     return json({ ok: true });
   }
 

@@ -200,9 +200,10 @@ test('Telegram verdict renders skip state, referee and user-controlled text safe
   // Сценарии вместо ставочного вердикта: без «Лучше пропустить», «П1», «Тотал».
   assert.match(text, /AI · сценарии матча/);
   assert.match(text, /Без уверенного вывода/);
-  assert.match(text, /Неопределённость: Высокий/);
+  // Issue #922: без служебных шкал и пустых полей — сценарий и причина.
+  assert.match(text, /Почему: Нет выраженного перевеса\./);
+  assert.doesNotMatch(text, /Неопределённость|Уверенность модели|Качество данных|\/100|Судья/);
   assert.doesNotMatch(text, /Лучше пропустить|Пропустить ставку|П1|Тотал|Обе забьют|рынк/);
-  assert.match(text, /Судья: &lt;Ref&gt;/);
   assert.match(text, /&lt;Home &amp; Co&gt;/);
   assert.match(text, /Away &gt; Team/);
   assert.doesNotMatch(text, /<Home & Co>|<Ref>/);

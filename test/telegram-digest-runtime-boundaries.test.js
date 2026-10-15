@@ -563,9 +563,10 @@ test('favorite-team empty state stays short and retains the main keyboard',async
   const {api}=runtime({telegramApi:async(method,cfg,payload)=>sent.push(payload)});
   await api.sendBotFavoriteTeams({}, {},7,7);
   assert.match(sent[0].text,/Мои команды/);
-  assert.match(sent[0].text,/нажмите ☆/);
+  assert.match(sent[0].text,/Пока пусто/);
   assert.ok(sent[0].text.length<180);
-  assert.deepEqual(sent[0].reply_markup,{inline_keyboard:[]});
+  // Issue #922: пустое избранное — одна кнопка к выбору клубов.
+  assert.deepEqual(sent[0].reply_markup,{inline_keyboard:[[{text:'➕ Добавить команду',callback_data:'fav:add'}]]});
 });
 test('favorite club distinguishes finished games from LIVE and retains match actions',async()=>{
   const sent=[];

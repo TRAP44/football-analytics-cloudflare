@@ -510,7 +510,9 @@ test('fixture text and verdict escape untrusted HTML and reject coercive scores'
   assert.doesNotMatch(verdict,/Лучше пропустить|<Skip>|&lt;Skip&gt;|<P1>|&lt;P1&gt;/);
   assert.match(verdict,/Без уверенного вывода/);
   assert.match(verdict,/&lt;Home&gt;/);
-  assert.match(verdict,/· —/);
+  assert.match(verdict,/Почему: &lt;Reason&gt;/);
+  // Issue #922: пустых полей «· —» и служебных шкал нет.
+  assert.doesNotMatch(verdict,/· —|&lt;Trusted&gt;|Качество данных|Уверенность модели/);
 });
 
 test('worker explicitly wires the request factory into the extracted runtime', () => {
