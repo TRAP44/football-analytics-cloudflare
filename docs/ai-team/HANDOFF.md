@@ -14,6 +14,14 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-15 — Codex — Сокращение задержки готового разбора
+PR: ветка `codex/cached-analysis-latency`.
+Сделано: cached-ответ ждёт history и свежую quota metadata параллельно, затем запускает прежние growth/referral фоновые операции. История группируется по точным Supabase URL/key, до 100 callers/2 мс, подтверждение upsert ожидается каждым; дубликаты берут newest viewed_at, сортируются conflict keys. Failures каждого caller идут в старый индивидуальный retry. Unknown identity не группируется. In-memory/getHistory, квоты/оплата/access и API shapes сохранены; public/SQL без изменений.
+Замер: baseline p95 cached 5589 мс; только порядок — 5079; с batching три прогона 4268/4461/4502 мс (примерно 19–24% ниже). На те же 1000 cached requests DB REST 7000→6011, history REST 1000→11; все HTTP/DB 200/201. SQL подтвердил 10 000 users, 1000 history, 1160 full_ai events по четырём ступеням. Подробно docs/CACHED_ANALYSIS_LATENCY_RU.md. REST timing по операциям добавлен в harness; SQL evidence событий теперь обязательный.
+Проверки: Node 22 npm ci/check/lint, release 581/581, полный набор 4151/4151, security:privileged, Worker dry-run. Unit tests подтверждают параллельное ожидание, batch bounds/identity isolation/dedupe/ошибки и сохранённые индивидуальные retries.
+Решения / внимание: 2с пока не достигнуты, production capacity не подтверждена. Отдельный реальный PostgreSQL/PostgREST с прогретым синтетическим L1, Node composition; Cloudflare CPU и hosted Nano RTT/IO не измерены. Не спрашивать тарифы/перенос tokens повторно: Workers Free, Supabase Free/Nano, API-Football PRO известны. #900 слит и перенесён в «Готово». Открытые Claude #899/#901 не пересекаются с кодом; координационные файлы меняются только своей строкой/записью.
+
+
 ## 2026-10-15 — Codex — Настоящий PostgreSQL/PostgREST под HTTP-нагрузкой
 PR: [PR #900](https://github.com/TRAP44/football-analytics-cloudflare/pull/900), ветка `codex/real-database-http-load`.
 Сделано: локальный Docker стенд PostgreSQL 16.11 + PostgREST 16.4, pinned digests, UUID network/containers, loopback-only REST, БД без опубликованного порта. 39 настоящих fresh migrations, fingerprint совпадает с контрактом. 512 MiB/1 CPU/60 connections, REST pool 20. Настоящие HTTP-запросы к БД вместо заглушки; gateway только prefix/apikey-to-generated-JWT adapter. Standalone orchestrator запускает ramp 10→50→100→1000 и чистит только свои ресурсы; новый CI job без secrets.

@@ -1,3 +1,5 @@
+import {createHistoryWriteBatcher} from './history-write-batcher.js';
+
 function integerCandidate(value) {
   if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
   if (typeof value !== 'string') return null;
@@ -187,6 +189,8 @@ export function createUserHistoryService({
     }
   }
 
+  const persistHistory=createHistoryWriteBatcher((cfg,rows)=>supaUpsert(cfg,'analysis_history',rows,'telegram_id,fixture_id'));
+
   async function recordHistory(userId, payload, cfg) {
     const row=historyRow(userId,payload);
     if (!row) return;
@@ -194,7 +198,7 @@ export function createUserHistoryService({
     if (supabaseEnabled(cfg)) {
       try {
         if (typeof supaUpsert !== 'function') throw new Error('Analysis history persistence transport is unavailable.');
-        await supaUpsert(cfg,'analysis_history',row,'telegram_id,fixture_id');
+        await persistHistory(cfg,row);
       } catch (error) {
         noteTelemetry('analysisHistoryWriteErrors');
         noteTelemetry('analysisHistoryRetryPending');

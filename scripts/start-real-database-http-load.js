@@ -73,9 +73,10 @@ try {
   const file=join(directory,'status.json');
   writeFileSync(file,JSON.stringify({API_URL:'http://127.0.0.1:54321',SERVICE_ROLE_KEY:token}),{mode:0o600});
   await execute(process.execPath,['scripts/run-real-database-http-load.js',file],{quiet:true}).then(output=>console.log(output));
-  const evidence=JSON.parse(await query("select json_build_object('users', (select count(*) from public.users where telegram_id between 700000 and 709999),'history',(select count(*) from public.analysis_history where telegram_id between 700000 and 709999))::text;"));
+  const evidence=JSON.parse(await query("select json_build_object('users', (select count(*) from public.users where telegram_id between 700000 and 709999),'history',(select count(*) from public.analysis_history where telegram_id between 700000 and 709999),'fullAiEvents',(select count(*) from public.growth_events where telegram_id between 700000 and 709999 and event_name='full_ai'))::text;"));
   assert.equal(Number(evidence.users),10000,'HTTP load must persist all synthetic users in real PostgreSQL.');
   assert.ok(Number(evidence.history)>=1000,'Cached analyses must persist real history rows.');
+  assert.equal(Number(evidence.fullAiEvents),1160,'Deferred analytics must persist all events from the four ramp steps.');
   const summaryFile='load-results/real-database-http-summary.json';
   const summary=JSON.parse(readFileSync(summaryFile,'utf8'));
   summary.databaseEvidence={...evidence,migrations:plan.length,schemaFingerprint:fingerprint,postgres:'16.11',rest:'16.4',memoryMiB:512,cpuLimit:1,maxConnections:60,restPool:20};
