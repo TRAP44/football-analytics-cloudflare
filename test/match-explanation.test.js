@@ -51,7 +51,7 @@ test('fact catalog: canonical server texts and roles from validated data only', 
   assert.equal(byId.absences_away.text, 'Рома: 3 игрока вне заявки или под вопросом по данным источника.');
   assert.equal(byId.confidence_high.role, 'support');
   assert.equal(byId.lineups_pending.role, 'caveat');
-  assert.equal(byId.goals_high.text, 'Модель ждёт результативную игру: 3+ гола — 62%.');
+  assert.equal(byId.goals_high.text, 'Модель ждёт результативную игру.');
   for (const fact of facts) {
     assert.doesNotMatch(fact.text, /[Рр]ын(ок|к|оч)|оэффициент|ставк|П1|П2|ТБ|1X2/);
   }

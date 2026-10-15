@@ -545,3 +545,26 @@ test('Home priority styling remains compact, collapsible and mobile-safe',()=>{
   });
   assert.equal(result.match.fixtureId,1);
  });
+
+test('Home priority keeps headline-tournament matches visible right after LIVE',()=>{
+  const now=Date.UTC(2026,9,15,11,0,0);
+  const at=hours=>new Date(now+hours*60*60*1000).toISOString();
+  const lowerEarly={fixtureId:11,live:false,finished:false,date:at(1)};
+  const europaEvening={fixtureId:12,live:false,finished:false,featured:true,date:at(8)};
+  const topLeagueSoon={fixtureId:13,live:false,finished:false,isTop:true,date:at(2)};
+  const youthFeatured={fixtureId:14,live:false,finished:false,featured:true,youthReserve:true,date:at(8)};
+  const lowerLate={fixtureId:15,live:false,finished:false,date:at(9)};
+  const liveTop={fixtureId:16,live:true,finished:false,featured:true,date:at(-1)};
+
+  const sections=homeMatchSections(
+    [lowerEarly,europaEvening,topLeagueSoon,youthFeatured,lowerLate,liveTop],
+    now,
+  );
+
+  assert.deepEqual(
+    sections.map(section=>[section.key,section.matches.map(match=>match.fixtureId)]),
+    [['live',[16]],['top',[12,13]],['soon',[11]],['later',[14,15]]],
+  );
+  assert.equal(sections[1].label,'Главные матчи');
+  assert.match(app,/section\.key === 'later' \|\| section\.key === 'finished'/);
+});
