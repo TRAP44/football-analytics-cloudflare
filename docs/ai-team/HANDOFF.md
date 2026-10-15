@@ -14,6 +14,13 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-15 — Claude — Бот: карточка матча в любом чате (inline)
+PR: [PR #913](https://github.com/TRAP44/football-analytics-cloudflare/pull/913), ветка `claude/bot-inline-match-card`.
+Сделано: обработка `inline_query` — `answerBotInlineQuery` в `telegram-search-runtime.js`: до 5 карточек-статей (команды, турнир, время МСК / LIVE со счётом / итог), проценты AI только из сохранённого разбора (`prematchAnalysisCacheKey`, три исхода 0–100, сумма ≈ 100) и только до старта; кнопка «🧠 Открыть AI-разбор» — ссылка `fixtureTelegramDeepLink` с реф-кодом автора (campaign `inline_share`). Пустой запрос — главные матчи дня (LIVE первыми, без завершённых и низших лиг); основные составы выше юниорских; «Реал»/«Милан» — через `topTeamSearchPlan`, затем поиск команды у источника (те же квоты и кеш, что у поиска в боте). Нет результатов — кнопка в бота. `cache_time` 120 с, `is_personal`; лимит 20 inline-запросов/10 с на пользователя. Подсказка в /help. Событие роста `inline_search`.
+Решения: Сергей 15.10 — MatchRadar продукт для массы людей; выбраны 5 идей для бота и канала, inline первой, остальные 4 в «Бэклоге».
+Проверки: Node 22 check/lint/verify:release/security:privileged/security:scan/isolated-load, release 582/582, review-tail, полный набор 4130/4131 (падает только bot-match-card — нет `@resvg/resvg-wasm` в песочнице, как и на main). Новый test/bot-inline-share.test.js.
+Осталось / внимание: inline-режим включает Сергей в BotFather: `/setinline` → бот → подсказка «Команда или матч…». Без этого Telegram не присылает inline_query. Webhook без allowed_updates — inline_query придёт по умолчанию.
+
 ## 2026-10-15 — Claude — Бот без «3+ гола» и «обе забьют»
 PR: [PR #911](https://github.com/TRAP44/football-analytics-cloudflare/pull/911) — отдельный коммит; #912 закрыт и влит в #911, чтобы не ловить конфликты доски после squash.
 Сделано: `botAiVerdictText` (`telegram-bot-ui-runtime.js`) — строка «⚽ Ожидаемые голы: А x.x — y.y Б» вместо процентов 3+ голов и «обе забьют»; «Итог AI» (`telegram-bot-orchestration-runtime.js`) — без блока «Голы:» из `review.markets`.

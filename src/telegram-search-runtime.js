@@ -1,6 +1,7 @@
 import { botTeamPairLabel } from './bot-labels.js';
 
 import { neutralOutcomeText, neutralSignalText, publicSignalLabel } from './signal-wording.js';
+import { prematchAnalysisCacheKey } from './prematch-lineup-event.js';
 export function createTelegramSearchRuntime(deps = {}) {
   if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
     throw new TypeError('Telegram search runtime dependencies are required.');
@@ -9,6 +10,8 @@ export function createTelegramSearchRuntime(deps = {}) {
   const {
     apiFootball,
     digestTime,
+    ensureReferralCode,
+    fixtureTelegramDeepLink,
     footballMatchActionKeyboard,
     footballSearchHandoffKeyboard,
     freeQuotaHealthy,
@@ -565,6 +568,157 @@ export function createTelegramSearchRuntime(deps = {}) {
     });
   }
 
+  // Inline-режим (Сергей 15.10): `@MatchRadarBot Реал` в любом чате Telegram →
+  // карточка матча с кнопкой «Открыть AI-разбор». Карточку видят все в чате,
+  // кнопка ведёт в бота со ссылкой автора — главный бесплатный канал роста.
+  const INLINE_RESULTS_LIMIT=5;
+  const INLINE_CACHE_SECONDS=120;
+
+  function inlineDate(iso) {
+    const date=new Date(safeText(iso,80));
+    if (!Number.isFinite(date.getTime())) return 'время уточняется';
+    const zone={timeZone:'Europe/Moscow'};
+    const day=new Intl.DateTimeFormat('ru-RU',{...zone,day:'numeric',month:'short'}).format(date).replace('.','');
+    const today=new Intl.DateTimeFormat('ru-RU',{...zone,day:'numeric',month:'short'}).format(new Date()).replace('.','');
+    const time=new Intl.DateTimeFormat('ru-RU',{...zone,hour:'2-digit',minute:'2-digit'}).format(date);
+    return `${day===today ? 'сегодня' : day}, ${time} МСК`;
+  }
+
+  function inlineScore(match) {
+    const score=plainObject(match?.score) || {};
+    const goals=value=>Number.isInteger(value) && value>=0 && value<=99;
+    return goals(score.home) && goals(score.away) ? `${score.home}:${score.away}` : '';
+  }
+
+  function inlineStatus(match) {
+    const score=inlineScore(match);
+    if (match.live === true) return `🔴 LIVE ${safeText(match.statusLabel,40,'идёт')}${score ? ` · ${score}` : ''}`;
+    if (match.finished === true) return `Завершён${score ? ` · ${score}` : ''}`;
+    return `🗓 ${inlineDate(match.date)}`;
+  }
+
+  // Только проверенные проценты из сохранённого разбора: три исхода 0–100, сумма ≈ 100.
+  function inlineProbabilities(analysis) {
+    const p=plainObject(plainObject(analysis)?.probabilities);
+    if (!p) return null;
+    const values=['home','draw','away'].map(key=>finiteNumber(p[key]));
+    if (values.some(value=>value===null || value<0 || value>100)) return null;
+    if (Math.abs(values.reduce((sum,value)=>sum+value,0)-100)>3) return null;
+    const [home,draw,away]=values.map(value=>Math.round(value));
+    return {home,draw,away};
+  }
+
+  function inlineMessageText(match, probabilities) {
+    const home=safeText(match.home?.name,80,'Хозяева');
+    const away=safeText(match.away?.name,80,'Гости');
+    const lines=[
+      `⚽ <b>${telegramHtmlEscape(home)} — ${telegramHtmlEscape(away)}</b>`,
+      `${telegramHtmlEscape(safeText(match.league,80,'Футбол'))} · ${telegramHtmlEscape(inlineStatus(match))}`,
+    ];
+    if (probabilities && match.live !== true && match.finished !== true) {
+      lines.push('',
+        '🧠 <b>MatchRadar AI</b>',
+        `${telegramHtmlEscape(home)} ${probabilities.home}% · ничья ${probabilities.draw}% · ${telegramHtmlEscape(away)} ${probabilities.away}%`);
+    } else {
+      lines.push('','🧠 Полный AI-разбор матча — в MatchRadar.');
+    }
+    return lines.join('\n');
+  }
+
+  function inlineThumbnail(match) {
+    const raw=safeText(match.home?.logo,512);
+    try {
+      const url=new URL(raw);
+      return url.protocol==='https:' && !url.username && !url.password ? url.toString() : '';
+    } catch {
+      return '';
+    }
+  }
+
+  async function inlineMatches(rawQuery, cfg) {
+    const query=safeText(rawQuery,60);
+    const day=safeText(optionalCall(todayUtc,''),20);
+    const payload=day ? plainObject(await optionalAsync(getCache,null,`matches:${day}:v6-integrity`,cfg)) : null;
+    const dayRows=rowsOrEmpty(payload?.matches,200).map(match=>validMatch(match)).filter(Boolean);
+    // Пустой запрос — главные матчи дня: лента уже отсортирована по важности.
+    if (query.length < 2) {
+      return dayRows
+        .filter(match=>match.finished !== true && match.lowPriority !== true)
+        .sort((left,right)=>Number(right.live===true)-Number(left.live===true))
+        .slice(0,INLINE_RESULTS_LIMIT);
+    }
+    const parts=botSearchParts(query);
+    const pick=searchParts=>dayRows
+      .map(match=>({match,score:botMatchScore(match,searchParts)}))
+      .filter(item=>item.score>0)
+      // Основные составы выше юниорских и резервных с похожим названием.
+      .map(item=>({...item,score:item.score-(item.match.lowPriority===true ? 150 : 0)+(item.match.isTop===true ? 20 : 0)}))
+      .sort((left,right)=>right.score-left.score || safeText(left.match.date,80).localeCompare(safeText(right.match.date,80)))
+      .map(item=>item.match);
+    let matches=pick(parts);
+    // «Реал» → «Real Madrid»: названия в данных латиницей.
+    const plan=safeSearchPlan(parts.first);
+    if (!matches.length && plan.providerQuery && plan.providerQuery!==parts.first) {
+      matches=pick({...parts,query:plan.providerQuery,first:plan.providerQuery});
+    }
+    if (!matches.length) matches=await botRemoteTeamMatches(parts,cfg);
+    return matches.slice(0,INLINE_RESULTS_LIMIT);
+  }
+
+  async function answerBotInlineQuery(request, cfg, inlineQuery) {
+    const source=plainObject(inlineQuery);
+    const queryId=safeText(source?.id,120);
+    const userId=positiveSafeInteger(source?.from?.id);
+    if (!queryId || !userId) throw inputError('Inline-запрос Telegram некорректен.','TELEGRAM_INLINE_INVALID');
+
+    const matches=await inlineMatches(source.query,cfg).catch(()=>[]);
+    const referralCode=typeof ensureReferralCode==='function'
+      ? safeText(await optionalAsync(ensureReferralCode,'',userId,cfg),64)
+      : '';
+    const results=[];
+    for (const match of matches) {
+      const fixtureId=positiveSafeInteger(match.fixtureId);
+      if (!fixtureId || typeof fixtureTelegramDeepLink!=='function') continue;
+      const [link,analysis]=await Promise.all([
+        optionalAsync(fixtureTelegramDeepLink,null,cfg,fixtureId,{source:'social',campaign:'inline_share',content:'telegram',referralCode}),
+        optionalAsync(getCache,null,prematchAnalysisCacheKey(fixtureId),cfg),
+      ]);
+      const url=safeText(plainObject(link)?.url,2048);
+      if (!url) continue;
+      const home=safeText(match.home?.name,80,'Хозяева');
+      const away=safeText(match.away?.name,80,'Гости');
+      const thumbnail=inlineThumbnail(match);
+      results.push({
+        type:'article',
+        id:`m${fixtureId}`,
+        title:`${home} — ${away}`,
+        description:`${safeText(match.league,60,'Футбол')} · ${inlineStatus(match).replace(/^🗓 /,'')}`,
+        ...(thumbnail ? {thumbnail_url:thumbnail} : {}),
+        input_message_content:{
+          message_text:safeMessageText(inlineMessageText(match,inlineProbabilities(analysis))),
+          parse_mode:'HTML',
+          link_preview_options:{is_disabled:true},
+        },
+        reply_markup:{inline_keyboard:[[{text:'🧠 Открыть AI-разбор',url}]]},
+      });
+    }
+    if (results.length) {
+      backgroundCall(recordGrowthEvent,cfg,{
+        userId,
+        eventName:'inline_search',
+        channel:'telegram',
+        metadata:{results:results.length,empty:safeText(source.query,60).length<2},
+      });
+    }
+    await telegramApi('answerInlineQuery',cfg,{
+      inline_query_id:queryId,
+      results,
+      cache_time:INLINE_CACHE_SECONDS,
+      is_personal:true,
+      ...(results.length ? {} : {button:{text:'Матч не найден — открыть MatchRadar',start_parameter:'inline'}}),
+    });
+  }
+
   function lastAiVerdictText(row = {}) {
     const source=plainObject(row);
     const fixtureId=positiveSafeInteger(source?.fixture_id);
@@ -700,6 +854,8 @@ export function createTelegramSearchRuntime(deps = {}) {
     botCachedDayMatches,
     botRemoteTeamMatches,
     sendBotFootballSearch,
+    inlineMessageText,
+    answerBotInlineQuery,
     lastAiVerdictText,
     botAiTrackRecordText,
     sendBotAiTrackRecord,

@@ -4,6 +4,7 @@ export const TELEGRAM_BURST_POLICIES = Object.freeze({
   message: { limit: 10, windowMs: 10000, label: 'message' },
   callback: { limit: 16, windowMs: 10000, label: 'callback' },
   refresh: { limit: 4, windowMs: 30000, label: 'refresh' },
+  inline: { limit: 20, windowMs: 10000, label: 'inline' },
 });
 
 const TELEGRAM_DEDUPE_RISK = Object.freeze({
@@ -381,6 +382,7 @@ export function createTelegramDedupeRuntime(deps = {}) {
     const callback=textValue(update?.callback_query?.data);
     if (/^(?:news:refresh|news:team_refresh:|match:refresh:)/.test(callback) || /^news:impact:[^:]+:recheck:/.test(callback)) return 'refresh';
     if (update?.callback_query) return 'callback';
+    if (update?.inline_query) return 'inline';
     if (update?.message?.text) return 'message';
     return '';
   }
@@ -389,7 +391,7 @@ export function createTelegramDedupeRuntime(deps = {}) {
     const kind=telegramBurstKind(update);
     const policy=TELEGRAM_BURST_POLICIES[kind];
     if (!policy) return null;
-    const userId=positiveIdentifier(update?.callback_query?.from?.id ?? update?.message?.from?.id);
+    const userId=positiveIdentifier(update?.callback_query?.from?.id ?? update?.inline_query?.from?.id ?? update?.message?.from?.id);
     if (!userId) return null;
     const now=Date.now();
     const key=`${userId}:${policy.label}`;

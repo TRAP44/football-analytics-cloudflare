@@ -42,6 +42,7 @@ export function createTelegramUpdateProcessor(deps) {
     newsRelevantFixture,
     newsTeamToken,
     sendBotFootballSearch,
+    answerBotInlineQuery,
     sendFavoriteTeamNews,
     toggleBotFavorite,
     loadBotFixtureCard,
@@ -349,6 +350,14 @@ export function createTelegramUpdateProcessor(deps) {
       ...(ok ? {} : { error_message: errorMessage }),
     });
     return json({ ok: true });
+  }
+
+  // Inline-режим: `@MatchRadarBot Реал` в любом чате (Сергей 15.10).
+  if (update.inline_query) {
+    const inline=plainObject(update.inline_query);
+    if (!inline || !textValue(inline.id,120)) return json({ok:false,error:'inline_query_invalid'},400);
+    if (typeof answerBotInlineQuery === 'function') await answerBotInlineQuery(request,cfg,inline);
+    return json({ok:true});
   }
 
   if (update.callback_query) {
