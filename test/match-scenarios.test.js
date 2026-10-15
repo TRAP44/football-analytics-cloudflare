@@ -20,13 +20,14 @@ const neutralTextList=new Function('publicText',`${block('const SCENARIO_BETTING
 
 test('full analysis shows neutral labels and three tabs instead of bookmaker odds',()=>{
   const analysis=block('function renderAnalysis(d) {','\nfunction safeUrl');
-  assert.match(analysis,/<span>Хозяева<\/span><strong>\$\{pct\(p\.home\)\}/);
+  assert.match(analysis,/<span>Хозяева<\/span><strong>\$\{pct\(shownP\.home\)\}/);
   assert.deepEqual([...analysis.matchAll(/data-tab="(\w+)" type="button">([^<]+)</g)].map(x=>`${x[1]}:${x[2]}`),['brief:Главное','squads:Составы','form:Форма']);
   assert.doesNotMatch(analysis,/<span>П1<\/span>|<span>ТБ 2\.5<\/span>|<span>Обе забьют<\/span>|Коэффициенты П1|data-tab="market"|data-tab="model"/);
   assert.doesNotMatch(app,/function matchScenariosHtml\(|Сценарии матча/);
   const goals=block('function analysisGoalsHtml','\n}\n');
-  assert.match(goals,/3\+ гола в матче/);
-  assert.match(goals,/Забьют обе команды/);
+  // Сергей 15.10: никаких ставочных рынков — только ожидаемые голы.
+  assert.doesNotMatch(goals,/3\+ гола|[Оо]бе команды|over25|btts/);
+  assert.match(goals,/homeExpected/);
   const launch=block('async function openLaunchFixture','\n}\n');
   assert.match(launch,/normalizeAnalysisTab\(tab\)/);
 });

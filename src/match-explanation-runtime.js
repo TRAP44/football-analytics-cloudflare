@@ -214,9 +214,9 @@ export function buildExplanationFacts(payload = {}) {
 
   const over25 = finite(safeRead(plainObject(data.goalModel), 'over25'), 0, 100);
   if (over25 !== null && over25 >= 60) {
-    add('goals_high', 'caveat', `Модель ждёт результативную игру: 3+ гола — ${Math.round(over25)}%.`, 50);
+    add('goals_high', 'caveat', 'Модель ждёт результативную игру.', 50);
   } else if (over25 !== null && over25 <= 40) {
-    add('goals_low', 'caveat', `Модель ждёт закрытую игру: 3+ гола — только ${Math.round(over25)}%.`, 50);
+    add('goals_low', 'caveat', 'Модель ждёт закрытую игру с небольшим числом голов.', 50);
   }
 
   return facts.map(({ id, role, text, priority }) => ({ id, role, text, priority }));

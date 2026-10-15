@@ -16,7 +16,7 @@ test('the newest saved in-play point is shown, nothing else is computed', () => 
   const html = inPlayEstimateHtml(latestInPlayEstimate(timeline), { home: { name: 'Милан <b>' }, away: { name: 'Рома' } }, esc);
   assert.match(html, /Сейчас по ходу матча/);
   assert.match(html, /61′, счёт 1:0/);
-  assert.match(html, /76\.6%/);
+  assert.match(html, /<strong>77%<\/strong>/); // целые проценты (UX-ревью 15.10)
   assert.match(html, /Милан &lt;b&gt;/);
   assert.match(html, /что именно учитывается — в подписи к кривой ниже/);
 });

@@ -91,6 +91,6 @@ test('standings show points right after games played so they fit on a phone',()=
 test('team form uses neutral wording and badges instead of betting shorthand',()=>{
   const hub=block(app,'function renderTeamHub','\nasync function loadTeamHub');
   assert.doesNotMatch(hub,/<span>ОЗ<\/span>/);
-  assert.match(hub,/<span>Забивали обе<\/span>/);
+  assert.doesNotMatch(hub,/Забивали обе|bttsPct/);
   assert.match(hub,/class="team-hero-form">\$\{form\?\.form \? String\(form\.form\)\.slice\(-5\)\.split\(''\)\.map\(teamResultBadge\)/);
 });

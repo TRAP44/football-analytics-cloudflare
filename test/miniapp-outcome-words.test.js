@@ -14,9 +14,9 @@ test('outcome fallbacks use words instead of П1 / П2', () => {
   assert.doesNotMatch(timeline, /Вероятности П1/);
 });
 
-test('team form card names the goals metric without betting label', () => {
+test('team form card shows no totals metric at all (Сергей 15.10)', () => {
   assert.doesNotMatch(app, /<small>ТБ 2\.5<\/small>/);
-  assert.match(app, /<small>3\+ гола<\/small>/);
+  assert.doesNotMatch(app, /<small>3\+ гола<\/small>|over25Pct/);
 });
 
 test('match HQ no longer renders pre-match brief blocks with stored П1/П2 labels (Сергей 15.10)', () => {

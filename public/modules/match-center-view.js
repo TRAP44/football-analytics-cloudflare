@@ -1,5 +1,6 @@
 import { homeMatchScoreLabel } from './home-match-priority.js';
 import { lineupPitchViewHtml } from './lineup-pitch.js';
+import { wholePercentText, wholePercentTriple } from './probability-display.js';
 
 // «Штаб матча» — главный AI-экран MatchRadar.
 // Разметка вынесена из app.js в ленивый модуль: стартовый JS не растёт, а
@@ -55,11 +56,12 @@ export function inPlayEstimateHtml(estimate, match = {}, escapeHtml = value => S
     ['draw', 'Ничья'],
     ['away', String(match?.away?.name || 'Гости')],
   ];
+  const shown = wholePercentTriple(estimate);
   const when = [estimate.minute !== null ? `${estimate.minute}′` : '', estimate.score ? `счёт ${estimate.score}` : ''].filter(Boolean).join(', ');
   return `<section class="panel mr-inplay-now" aria-label="Оценка по ходу матча">
     <div class="mr-ai-card-head"><span class="mr-kicker">Сейчас по ходу матча</span>${when ? `<span class="mr-ai-card-conf">${escapeHtml(when)}</span>` : ''}</div>
-    <div class="mr-inplay-values">${rows.map(([key, label]) => `<div class="${key}"><span>${escapeHtml(label)}</span><strong>${estimate[key].toFixed(1)}%</strong></div>`).join('')}</div>
-    <div class="mr-inplay-bar" role="img" aria-label="${escapeHtml(rows.map(([key, label]) => `${label} ${estimate[key].toFixed(1)}%`).join(', '))}">${rows.map(([key]) => `<i class="${key}" style="flex-grow:${estimate[key]}"></i>`).join('')}</div>
+    <div class="mr-inplay-values">${rows.map(([key, label]) => `<div class="${key}"><span>${escapeHtml(label)}</span><strong>${wholePercentText(shown[key])}</strong></div>`).join('')}</div>
+    <div class="mr-inplay-bar" role="img" aria-label="${escapeHtml(rows.map(([key, label]) => `${label} ${wholePercentText(shown[key])}`).join(', '))}">${rows.map(([key]) => `<i class="${key}" style="flex-grow:${estimate[key]}"></i>`).join('')}</div>
     <p class="mr-ai-card-note">Предматчевый прогноз модели, пересчитанный по ходу матча; что именно учитывается — в подписи к кривой ниже. Обновляется раз в несколько минут.</p>
   </section>`;
 }

@@ -112,10 +112,21 @@ export function homeMatchScoreLabel(value) {
 function sectionDefinitions() {
   return [
     {key:'live',label:'Сейчас идут',tone:'live',matches:[]},
+    {key:'top',label:'Главные матчи',tone:'top',matches:[]},
     {key:'soon',label:'Скоро начнутся',tone:'soon',matches:[]},
     {key:'later',label:'Позже',tone:'later',matches:[]},
     {key:'finished',label:'Завершённые',tone:'finished',matches:[]},
   ];
+}
+
+// Матч топ-турнира (Лига Европы, АПЛ и т. п.) — по флагам из ленты сервера.
+// Такие матчи не прячем в свёрнутое «Позже» и ставим сразу после LIVE,
+// чтобы крупный матч вечера не терялся за ранним матчем низшей лиги.
+export function isHeadlineMatch(value) {
+  const match=plainObject(value);
+  if (!match) return false;
+  if (safeRead(match,'youthReserve')===true) return false;
+  return safeRead(match,'featured')===true || safeRead(match,'isTop')===true;
 }
 
 export function homeMatchSections(list,nowMs=Date.now()) {
@@ -134,7 +145,7 @@ export function homeMatchSections(list,nowMs=Date.now()) {
       continue;
     }
     if (evidence.finished) {
-      sections[3].matches.push(evidence.match);
+      sections[4].matches.push(evidence.match);
       continue;
     }
 
@@ -142,10 +153,12 @@ export function homeMatchSections(list,nowMs=Date.now()) {
     if (kickoffMs===null || now===null || kickoffMs<now) continue;
     const startsInMs=kickoffMs-now;
 
-    if (startsInMs<=SOON_WINDOW_MS) {
+    if (isHeadlineMatch(evidence.match)) {
       sections[1].matches.push(evidence.match);
-    } else {
+    } else if (startsInMs<=SOON_WINDOW_MS) {
       sections[2].matches.push(evidence.match);
+    } else {
+      sections[3].matches.push(evidence.match);
     }
   }
 

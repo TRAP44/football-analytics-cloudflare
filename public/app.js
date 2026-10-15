@@ -32,6 +32,7 @@ import {
   normalizePersonalSignalText,
 } from './modules/personal-feed.js';
 import { deriveMatchCockpit } from './modules/match-cockpit.js';
+import { wholePercentText, wholePercentTriple } from './modules/probability-display.js';
 import { renderFormIntelligence } from './modules/form-intelligence.js';
 import { createPlayerFollowModule } from './modules/player-follow.js';
 import {
@@ -1106,10 +1107,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch118'),
+      import('./modules/match-center-view.js?v=6.120.0-launch119'),
       import('./modules/match-pulse.js?v=6.120.0-launch87'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch118'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch118'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch119'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch119'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1266,7 +1267,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch118').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch119').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -2920,7 +2921,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch118');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch119');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3382,7 +3383,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch118').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch119').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -3844,7 +3845,7 @@ function renderTeamHub(data) {
   $('teamHero').innerHTML = `${stale}<section class="panel team-hero"><div class="team-hero-main"><div class="team-hero-logo">${team.logo ? `<img src="${safeUrl(team.logo)}" alt="">` : '⚽'}</div><div class="team-hero-copy"><span>СТРАНИЦА КОМАНДЫ</span><h2>${escapeHtml(team.name || 'Команда')}</h2><p>${comp ? `${escapeHtml(comp.name)} · ${escapeHtml(comp.country || '')}` : 'Турнир определяется по последним матчам'}</p></div><button id="teamFavoriteBtn" class="team-favorite-big ${fav ? 'active' : ''} ${favoritePending ? 'is-pending' : ''}" type="button" data-team-id="${Number(team.id)}" aria-pressed="${fav ? 'true' : 'false'}" aria-label="${fav ? 'Удалить команду из избранного' : 'Добавить команду в избранное'}" ${favoritePending ? 'disabled' : ''}>${fav ? '★' : '☆'}</button></div><div class="team-hero-stats"><div><span>Форма</span><strong class="team-hero-form">${form?.form ? String(form.form).slice(-5).split('').map(teamResultBadge).join('') || '—' : '—'}</strong></div><div><span>Очки / матч</span><strong>${form?.ppg ?? '—'}</strong></div><div><span>Голы</span><strong>${form ? `${form.gfAvg} / ${form.gaAvg}` : '—'}</strong></div><div><span>Место</span><strong>${standing?.rank ? `${standing.rank}` : '—'}</strong></div></div>${comp ? `<button id="teamTournamentBtn" class="secondary-btn team-tournament-btn" type="button">🏆 ${escapeHtml(comp.shortName || comp.name)} · открыть турнир</button>` : ''}</section>`;
   $('teamFavoriteBtn')?.addEventListener('click', async () => { await toggleFavorite({ id:Number(team.id), name:team.name||'', logo:team.logo||'' }); renderTeamHub(state.currentTeam?.data || data); });
   $('teamTournamentBtn')?.addEventListener('click', () => openTournamentFromTeam(false));
-  const formHtml = form ? `<section class="panel team-form-panel"><h2>📈 Последние ${russianCountLabel(form.sample || 0, 'матч', 'матча', 'матчей')}</h2><div class="team-form-line">${String(form.form || '').split('').map(teamResultBadge).join('')}</div><div class="team-kpi-grid"><div><span>Победы</span><strong>${Number(form.wins||0)}</strong></div><div><span>Ничьи</span><strong>${Number(form.draws||0)}</strong></div><div><span>Поражения</span><strong>${Number(form.losses||0)}</strong></div><div><span>Забивает</span><strong>${form.gfAvg ?? '—'}</strong></div><div><span>Пропускает</span><strong>${form.gaAvg ?? '—'}</strong></div><div><span>Забивали обе</span><strong>${Number.isFinite(Number(form.bttsPct)) && form.bttsPct !== null ? `${Number(form.bttsPct)}%` : '—'}</strong></div></div></section>` : '<section class="panel"><div class="empty compact-empty">Пока недостаточно завершённых матчей для формы.</div></section>';
+  const formHtml = form ? `<section class="panel team-form-panel"><h2>📈 Последние ${russianCountLabel(form.sample || 0, 'матч', 'матча', 'матчей')}</h2><div class="team-form-line">${String(form.form || '').split('').map(teamResultBadge).join('')}</div><div class="team-kpi-grid"><div><span>Победы</span><strong>${Number(form.wins||0)}</strong></div><div><span>Ничьи</span><strong>${Number(form.draws||0)}</strong></div><div><span>Поражения</span><strong>${Number(form.losses||0)}</strong></div><div><span>Забивает</span><strong>${form.gfAvg ?? '—'}</strong></div><div><span>Пропускает</span><strong>${form.gaAvg ?? '—'}</strong></div></div></section>` : '<section class="panel"><div class="empty compact-empty">Пока недостаточно завершённых матчей для формы.</div></section>';
   const nextHtml = next ? `<section class="panel next-team-match"><div class="mini-section-head"><strong>${next.live ? '🔴 Матч идёт' : '⏭ Ближайший матч'}</strong><span>${escapeHtml(dateTime(next.date))}</span></div>${teamMatchRow(next)}</section>` : '<section class="panel"><div class="empty compact-empty">Ближайший матч в доступном окне не найден.</div></section>';
   const positionHtml = standing ? `<section class="panel team-standing-card"><h2>🏆 Положение в турнире</h2><div class="team-standing-summary"><strong>${Number(standing.rank)} место</strong><span>${Number(standing.points)} очков · ${russianCountLabel(standing.played, 'матч', 'матча', 'матчей')} · ${Number(standing.goalsFor)}:${Number(standing.goalsAgainst)}</span></div></section>` : `<section class="panel team-standing-card"><h2>🏆 Положение в турнире</h2><p class="muted">Позиция появится после загрузки таблицы турнира. Так мы не делаем отдельный запрос к источнику данных автоматически.</p>${comp ? '<button id="teamStandingTableBtn" class="secondary-btn" type="button">Открыть турнирную таблицу</button>' : ''}</section>`;
   $('teamOverview').innerHTML = `${nextHtml}${formHtml}${positionHtml}`;
@@ -5018,7 +5019,6 @@ function postMatchReviewHtml(review = {}, match = {}) {
   const outcome=review.outcome || {};
   const score=review.score || {};
   const hit=Boolean(outcome.correct);
-  const markets=Array.isArray(review.markets)?review.markets:[];
   const quality=review.quality || {};
   const predictedText=postMatchOutcomeText(outcome.predictedLabel, outcome.predicted, match);
   const actualText=postMatchOutcomeText(outcome.actualLabel, outcome.actual, match);
@@ -5038,7 +5038,6 @@ function postMatchReviewHtml(review = {}, match = {}) {
       <div><span>До матча</span><strong>${escapeHtml(predictedText)}${probability===null?'':` · ${probability}%`}</strong><small>максимальная вероятность модели</small></div>
       <div><span>Факт</span><strong>${escapeHtml(actualText)} · ${scoreText}</strong><small>финальный результат</small></div>
     </div>
-    ${markets.length?`<div class="post-match-markets">${markets.map(x=>`<div class="${x.correct?'hit':'miss'}"><span>${x.correct?'✓':'✕'} ${escapeHtml(x.label || '')}</span><strong>${escapeHtml(x.predicted || '—')} → ${escapeHtml(x.actual || '—')}</strong><small>${Number.isFinite(Number(x.probability))?`до матча ${Number(x.probability)}%`:''}</small></div>`).join('')}</div>`:''}
     ${postMatchEvidenceHtml(review)}
     <div class="post-match-calibration">
       <span>Калибровка</span>
@@ -5297,7 +5296,7 @@ function renderHistory() {
   void ensureHistoryRenderer().then(module => module?.renderHistory());
 }
 
-function pct(v) { return Number.isFinite(Number(v)) ? `${Number(v).toFixed(1)}%` : '—'; }
+function pct(v) { return wholePercentText(v); }
 
 function formSequence(form) {
   if (!form) return '—';
@@ -5323,7 +5322,6 @@ function formCard(title, form) {
       <span><b>${o.ppg}</b><small>очки/матч</small></span>
       <span><b>${o.gfAvg}</b><small>забито</small></span>
       <span><b>${o.gaAvg}</b><small>пропущено</small></span>
-      <span><b>${o.over25Pct}%</b><small>3+ гола</small></span>
     </div>
     ${v?.sample ? `<p class="muted">${form.preferredVenue === 'home' ? 'Дома' : 'В гостях'}: ${v.ppg} очка/матч · выборка ${v.sample}</p>` : ''}
   </div>`;
@@ -5506,7 +5504,7 @@ async function loadAnalysisExplanation(fixtureId) {
   const root = $('matchExplanation');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch118');
+    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch119');
     const { loadMatchExplanation } = await matchExplanationModule;
     await loadMatchExplanation({
       root,
@@ -5526,7 +5524,7 @@ async function loadMatchQuestions(fixtureId) {
   const root = $('matchQuestions');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch118');
+    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch119');
     const { mountMatchQuestions } = await matchQuestionsModule;
     mountMatchQuestions({
       root,
@@ -5543,7 +5541,7 @@ async function loadMatchQuestions(fixtureId) {
 // «Обыграй AI»: прогноз в Штабе матча и таблица в Профиле — ленивый модуль.
 let beatAiModule = null;
 function loadBeatAiModule() {
-  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch118').catch(error => { beatAiModule = null; throw error; });
+  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch119').catch(error => { beatAiModule = null; throw error; });
   return beatAiModule;
 }
 async function mountBeatAi(m = {}) {
@@ -5578,7 +5576,7 @@ async function loadReferralInvitePanel() {
   const root = $('referralInvite');
   if (!root) return;
   try {
-    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch118');
+    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch119');
     const { loadReferralInvite } = await referralInviteModule;
     await loadReferralInvite({ root, api, escapeHtml, tg, toast });
   } catch {
@@ -5589,7 +5587,7 @@ async function loadReferralInvitePanel() {
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch118');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch119');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {
@@ -5777,14 +5775,10 @@ function kickoffHandoffHtml(handoff = {}, match = {}) {
 
 // Штаб матча, вкладка «Главное»: ожидаемые голы словами и процентами из
 // голевой модели, без пояснений про метод и качество выборки (Сергей 15.10).
+// «3+ гола» и «обе забьют» — по сути ставочные рынки (тотал, обе забьют);
+// в интерфейсе их нет (решение Сергея 15.10). Показываем только ожидаемые голы.
 function analysisGoalsHtml(goal, m = {}) {
   if (!goal) return '';
-  const row = (label, value) => {
-    const n = Number(value);
-    return Number.isFinite(n) && n >= 0 && n <= 100
-      ? `<div><span>${label}</span><strong>${pct(n)}</strong><div class="mini-progress"><i style="width:${clampPercent(n)}%"></i></div></div>`
-      : '';
-  };
   return `<section class="panel goal-visual-panel">
     <h2>⚽ Голы</h2>
     <div class="goal-score-visual">
@@ -5792,7 +5786,6 @@ function analysisGoalsHtml(goal, m = {}) {
       <div class="goal-divider">:</div>
       <div><span>${escapeHtml(m.away?.name || 'Гости')}</span><strong>${escapeHtml(goal.awayExpected ?? '—')}</strong></div>
     </div>
-    <div class="goal-market-grid">${row('3+ гола в матче', goal.over25)}${row('Забьют обе команды', goal.btts)}</div>
     <p class="tiny">Ожидаемые голы по недавней результативности команд.</p>
   </section>`;
 }
@@ -5869,6 +5862,7 @@ function renderAnalysis(d) {
   if (previousFixture && nextFixture && previousFixture !== nextFixture) state.currentAnalysisTab = 'brief';
   state.currentAnalysis = d;
   const p = d.probabilities || {};
+  const shownP = wholePercentTriple(p);
   const m = d.match || {};
   const homeLine = d.lineups?.home;
   const awayLine = d.lineups?.away;
@@ -5911,9 +5905,9 @@ function renderAnalysis(d) {
       </div>
 
       <div class="experience-prob-labels">
-        <div><span>Хозяева</span><strong>${pct(p.home)}</strong></div>
-        <div><span>Ничья</span><strong>${pct(p.draw)}</strong></div>
-        <div><span>Гости</span><strong>${pct(p.away)}</strong></div>
+        <div><span>Хозяева</span><strong>${pct(shownP.home)}</strong></div>
+        <div><span>Ничья</span><strong>${pct(shownP.draw)}</strong></div>
+        <div><span>Гости</span><strong>${pct(shownP.away)}</strong></div>
       </div>
       ${probabilityStrip(p)}
 

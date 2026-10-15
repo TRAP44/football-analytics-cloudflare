@@ -3410,7 +3410,8 @@ html {
   color:var(--brand-live);
   background:color-mix(in srgb,var(--brand-live) 10%,var(--surface));
 }
-.miniapp-public-shell .home-match-section--soon .home-match-section-head > strong{
+.miniapp-public-shell .home-match-section--soon .home-match-section-head > strong,
+.miniapp-public-shell .home-match-section--top .home-match-section-head > strong{
   color:var(--accent);
 }
 .miniapp-public-shell .home-match-section--finished{
