@@ -299,3 +299,41 @@ test('codex #845: the amber accent also applies on the admin page', () => {
   assert.match(shell, /html\[data-accent="system"\]\[data-theme="light"\] \{ --accent: #b45309; --accent-text: #ffffff; \}/);
   assert.match(shell, /html\[data-accent="system"\]\[data-theme="dark"\] \{ --accent: #fbbf24; --accent-text: #1a1203; \}/);
 });
+
+test('Telegram header and bottom bar take the painted body background, not the html variable', () => {
+  // html keeps Telegram's own grey-blue theme bg, while the premium shell paints body near-black.
+  const html = { dataset: {}, style: { setProperty() {}, removeProperty() {} }, id: 'html' };
+  const body = { id: 'body' };
+  const meta = { attrs: {}, setAttribute(name, value) { this.attrs[name] = value; } };
+  const colors = [];
+  const document = {
+    documentElement: html,
+    body,
+    querySelectorAll() { return []; },
+    getElementById() { return null; },
+    querySelector(selector) { return selector === 'meta[name="theme-color"]' ? meta : null; },
+  };
+  const window = {
+    matchMedia() { return { matches: false }; },
+    requestAnimationFrame(callback) { callback(); return 1; },
+    getComputedStyle(element) {
+      return { getPropertyValue(name) { return name === '--bg' ? (element === body ? ' #04060a' : '#17212b') : ''; } };
+    },
+  };
+  const tg = {
+    setHeaderColor(value) { colors.push(['header', value]); },
+    setBackgroundColor(value) { colors.push(['background', value]); },
+    setBottomBarColor(value) { colors.push(['bottom', value]); },
+  };
+  const controller = createInterfacePreferencesController({
+    document, window, tg,
+    state: { uiPreferences: { ...DEFAULT_UI_PREFERENCES } },
+    storage: { setItem() {} },
+    toast() {},
+  });
+
+  controller.applyInterfacePreferences();
+
+  assert.deepEqual(colors, [['header', '#04060a'], ['background', '#04060a'], ['bottom', '#04060a']]);
+  assert.equal(meta.attrs.content, '#04060a');
+});

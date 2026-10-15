@@ -62,10 +62,15 @@ export function createInterfacePreferencesController({
     if (advancedSummary) advancedSummary.textContent = advancedAppearanceLabel(prefs);
 
     window.requestAnimationFrame(() => {
-      const background = window.getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0b1220';
+      // The visible page background is painted on <body> (premium shell overrides --bg there),
+      // so Telegram's header/bottom bar must take the color from body, not from <html>.
+      const surface = document.body || document.documentElement;
+      const raw = window.getComputedStyle(surface).getPropertyValue('--bg').trim();
+      const background = /^#[0-9a-f]{6}$/i.test(raw) ? raw : (tg?.themeParams?.bg_color || '#04060a');
       document.querySelector('meta[name="theme-color"]')?.setAttribute('content', background);
       try { tg?.setHeaderColor(background); } catch {}
       try { tg?.setBackgroundColor(background); } catch {}
+      try { tg?.setBottomBarColor?.(background); } catch {}
     });
 
     if (announce) {
