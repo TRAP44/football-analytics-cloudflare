@@ -584,6 +584,77 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
     return {active:true,team:normalized};
   }
 
+  // Выбор любимой команды сразу после /start (Сергей 15.10): без избранного боту
+  // не о чем напоминать. ID клубов сверены с лентой матчей 15.10; в избранное
+  // пишется название, как в данных (латиницей), на кнопках — по-русски.
+  const START_TEAMS=Object.freeze([
+    [541,'Real Madrid','Реал'],[529,'Barcelona','Барселона'],[50,'Manchester City','Ман Сити'],
+    [33,'Manchester United','Ман Юнайтед'],[40,'Liverpool','Ливерпуль'],[42,'Arsenal','Арсенал'],
+    [49,'Chelsea','Челси'],[157,'Bayern München','Бавария'],[85,'Paris Saint Germain','ПСЖ'],
+    [496,'Juventus','Ювентус'],[505,'Inter','Интер'],[489,'AC Milan','Милан'],
+    [596,'Zenit','Зенит'],[558,'Spartak Moscow','Спартак'],[555,'CSKA Moscow','ЦСКА'],
+  ]);
+
+  function favoriteIdSet(rows) {
+    return new Set(rowsOrEmpty(rows).map(row=>positiveSafeInteger(plainObject(row)?.team_id)).filter(Boolean));
+  }
+
+  function favoritePickerKeyboard(selected = new Set()) {
+    const buttons=START_TEAMS.map(([id,,label])=>({
+      text:`${selected.has(id) ? '★' : '☆'} ${label}`,
+      callback_data:`fav:pick:${id}`,
+    }));
+    const rows=[];
+    for (let i=0;i<buttons.length;i+=3) rows.push(buttons.slice(i,i+3));
+    rows.push([{text:selected.size ? `✅ Готово · ${selected.size}` : '✅ Готово',callback_data:'fav:done'}]);
+    return {inline_keyboard:rows};
+  }
+
+  async function sendFavoritePicker(request, cfg, userId, chatId) {
+    const uid=positiveSafeInteger(userId);
+    const cid=chatIdValue(chatId);
+    if (!uid || !cid) throw statusError('Пользователь или чат не определён.',400,'TELEGRAM_USER_INVALID');
+    const selected=favoriteIdSet(await optionalAsync(getFavorites,[],uid,cfg));
+    await requireFunction('telegramApi',telegramApi)('sendMessage',cfg,{
+      chat_id:cid,
+      parse_mode:'HTML',
+      text:[
+        '⭐ <b>За кем следите?</b>',
+        'Отметьте команды — пришлю их ближайшие матчи и напомню перед стартом.',
+        '',
+        'Нет в списке? Напишите название клуба в чат.',
+      ].join('\n'),
+      reply_markup:favoritePickerKeyboard(selected),
+    });
+  }
+
+  // Нажатие только добавляет клуб (повтор безопасен); убрать — в «Мои команды».
+  async function pickStartFavorite(cfg, userId, chatId, messageId, teamId) {
+    const uid=positiveSafeInteger(userId);
+    const id=positiveSafeInteger(teamId);
+    const team=START_TEAMS.find(([teamIdValue])=>teamIdValue===id);
+    if (!uid || !team) throw statusError('Команда не определена.',400,'TEAM_ID_INVALID');
+    const selected=favoriteIdSet(await requireFunction('getFavorites',getFavorites)(uid,cfg));
+    let current=selected;
+    if (!selected.has(id)) {
+      await requireFunction('addFavorite',addFavorite)(uid,{
+        id,name:team[1],logo:`https://media.api-sports.io/football/teams/${id}.png`,
+      },cfg);
+      // Быстрые нажатия приходят параллельно: перечитываем избранное после записи,
+      // чтобы клавиатура показала все отмеченные клубы (ревью Codex #918).
+      current=favoriteIdSet(await optionalAsync(getFavorites,[],uid,cfg));
+      current.add(id);
+    }
+    const cid=chatIdValue(chatId);
+    const mid=positiveSafeInteger(messageId);
+    if (cid && mid) {
+      await optionalAsync(requireFunction('telegramApi',telegramApi),null,'editMessageReplyMarkup',cfg,{
+        chat_id:cid,message_id:mid,reply_markup:favoritePickerKeyboard(current),
+      });
+    }
+    return {team:{id,name:team[1],label:team[2]},count:current.size};
+  }
+
   async function configureFootballBot(request, cfg, chatId) {
     const cid=chatIdValue(chatId);
     if (!cid) throw statusError('Чат не определён.',400,'TELEGRAM_CHAT_INVALID');
@@ -675,6 +746,8 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
     botPostMatchReviewText,
     sendBotFixtureSection,
     toggleBotFavorite,
+    sendFavoritePicker,
+    pickStartFavorite,
     configureFootballBot,
     sendFootballBotHome,
     sendFootballBotHelp
