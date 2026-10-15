@@ -167,13 +167,25 @@ export function createQuotaUsageRuntime(deps = {}) {
   async function getQuota(userId, cfg) {
     const uid=positiveId(userId);
     if (uid === null) return {plan:'FREE',used:0,limit:0,left:0};
-    const user=await getUserRecord(uid,cfg);
+    // One current DB snapshot of plan and today's usage; no subscription cache.
+    // The existing FK lets PostgREST embed the day's row without a second trip.
+    const database=hasSupabase(cfg);
+    const user=database
+      ? await supaSelectOne(cfg,'users',{
+          telegram_id:`eq.${uid}`,
+          select:'plan,subscription_until,usage_daily(analyses)',
+          'usage_daily.usage_date':`eq.${todayUtc()}`,
+          'usage_daily.limit':'1',
+        })
+      : await getUserRecord(uid,cfg);
     let plan=normalizedPlan(user?.plan);
     if (plan !== 'FREE' && user?.subscription_until) {
       const expiresAt=Date.parse(typeof user.subscription_until === 'string' ? user.subscription_until : '');
       if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) plan='FREE';
     }
-    const used=await getUsage(uid,cfg);
+    const used=database
+      ? nonNegativeCount(Array.isArray(user?.usage_daily)?user.usage_daily[0]?.analyses:null) ?? 0
+      : await getUsage(uid,cfg);
     const limit=quotaLimit(cfg,plan) ?? 0;
     return {plan,used,limit,left:Math.max(0,limit-used)};
   }
