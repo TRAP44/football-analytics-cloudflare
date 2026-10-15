@@ -14,6 +14,14 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-15 — Claude — Задача 2: наблюдаемые матчи в приоритете
+PR: ветка `claude/prematch-reminder-priority`.
+Сделано: фон предматчевых прогнозов (`src/prematch-prediction-job.js`) читает `match_reminders` (enabled) для подходящих матчей и ставит их первыми: напоминание → избранные → главные → интерес/время. Матч с напоминанием выбирается и вне главных лиг; окно 20 мин – 36 ч и фильтры молодёжных/низших лиг действуют. В журнал запуска добавлено `watched`. Описание — этап 3 в docs/PREMATCH_PROVIDER_BUDGET_RU.md.
+Решения: «Следить» в Mini App хранится только на устройстве, поэтому серверный признак наблюдения — включённое напоминание. Чтение — `select fixture_id` по 200 id, максимум 1000 матчей, только Supabase; ошибка чтения не останавливает фон (прежний порядок). Бюджеты/perRun/потолки, миграции, public/ не менялись.
+Проверки: Node 22 npm ci/check/lint, release 580/580, полный набор 4136/4137 — единственный провал `test/bot-match-card.test.js` и на чистом main: в песочнице не скачался `@resvg/resvg-wasm` (нет сети к npm), к PR не относится; проверит CI.
+Осталось / внимание: единое время расчёта в штабе/допустимых карточках. Здоровье 15.10: ошибок вебхука нет, «Итоги дня» уходят (3/3); есть таймауты RPC Supabase у lease фоновых задач (claim/renew/complete, единицы за сутки).
+
+
 ## 2026-10-15 — Codex — Обследование инфраструктуры через GitHub
 PR: [PR #898](https://github.com/TRAP44/football-analytics-cloudflare/pull/898), ветка `codex/github-infrastructure-audit`.
 Сделано: ручной Audit Infrastructure Capacity использует существующие production secrets CF token/account и Supabase access token + vars project ref. Только main, checkout main, contents:read, отдельный шаг secrets, 4 фиксированных GET, timeout/redirect:error, безопасный Summary + JSON artifact 7 дней. Дополнен точный privileged allowlist и требование production environment для нового workflow. Код приложения/public/SQL не менялись.

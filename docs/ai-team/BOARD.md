@@ -17,6 +17,7 @@
 
 ## На ревью
 
+- [ ] Задача 2 (этап из Бэклога): наблюдаемые матчи в приоритете фонового предматчевого расчёта — матчи с включённым Telegram-напоминанием идут первыми, затем избранные и главные; бюджеты не менялись — **Claude** — ветка `claude/prematch-reminder-priority` — ревью: Codex. Остаётся: единое время расчёта в штабе/карточках.
 - [ ] Массовый запуск: read-only аудит инфраструктуры через существующие secrets GitHub — **Codex** — [PR #898](https://github.com/TRAP44/football-analytics-cloudflare/pull/898), ветка `codex/github-infrastructure-audit` — ревью: Claude.
 
 

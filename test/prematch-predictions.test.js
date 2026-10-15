@@ -71,7 +71,7 @@ function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-function job({ feed, predicted = [], snapshot = { plan: 'PRO',dailyLimit:7500,dailyRemaining:7400,updatedAt:new Date(NOW).toISOString() }, rpcAllowed = () => true, analyze, favorites = [], rateRows = [], raw = {}, staleRaw = {}, network = {}, extraCache = new Map(), lineupProbe, durableWrite=true, clock=()=>NOW } = {}) {
+function job({ feed, predicted = [], snapshot = { plan: 'PRO',dailyLimit:7500,dailyRemaining:7400,updatedAt:new Date(NOW).toISOString() }, rpcAllowed = () => true, analyze, favorites = [], reminders = [], remindersFail = false, rateRows = [], raw = {}, staleRaw = {}, network = {}, extraCache = new Map(), lineupProbe, durableWrite=true, clock=()=>NOW } = {}) {
   const calls = { analyzed: [], rpc: [], events: [], selects: [], cacheReads: [], network: [] };
   const rt = createPrematchPredictionJob({
     analyzeFixtureForSystem: async (fixtureId, cfg, options) => {
@@ -107,6 +107,10 @@ function job({ feed, predicted = [], snapshot = { plan: 'PRO',dailyLimit:7500,da
     supaSelectMany: async (_cfg, table, filters) => {
       calls.selects.push({ table, filters });
       if (table === 'favorites') return favorites.map(team_id => ({ team_id }));
+      if (table === 'match_reminders') {
+        if (remindersFail) throw new Error('supabase down');
+        return reminders.map(fixture_id => ({ fixture_id }));
+      }
       if (table === 'model_predictions') return predicted.map(fixture_id => ({ fixture_id }));
       if (table === 'provider_rate_windows') return rateRows;
       return [];
@@ -233,6 +237,33 @@ test('job: favorites of real users are prioritised over other main matches', asy
   const { rt, calls } = job({ feed, favorites: [21] });
   await rt.processPrematchPredictions({ prematchPredictionsPerRun: 1 }, at);
   assert.deepEqual(calls.analyzed, [2]);
+});
+
+test('candidates: a match with a Telegram reminder goes first, even outside top leagues', () => {
+  const feed = { matches: [match(1, 120, { isTop: true, interestScore: 99 }), match(2, 180), match(3, 200)] };
+  const rows = prematchCandidates([feed], new Set([31]), NOW, new Set([2]));
+  assert.deepEqual(rows.map(row => row.fixtureId), [2, 3, 1]);
+  assert.equal(rows[0].watched, true);
+  assert.deepEqual(prematchCandidates([feed], new Set(), NOW).map(row => row.fixtureId), [1], 'без напоминаний прежний отбор');
+  const youth = { matches: [match(4, 120, { youthReserve: true }), match(5, 10)] };
+  assert.deepEqual(prematchCandidates([youth], new Set(), NOW, new Set([4, 5])), [], 'напоминание не обходит фильтры окна и молодёжных');
+});
+
+test('job: reminded matches are prioritised and reported; lookup failure keeps the old order', async () => {
+  const feed = { matches: [match(1, 120, { isTop: true, interestScore: 99 }), match(2, 180), match(3, 240, { isTop: true })] };
+  const { rt, calls } = job({ feed, reminders: [2] });
+  const result = await rt.processPrematchPredictions({ prematchPredictionsPerRun: 1 }, at);
+  assert.deepEqual(calls.analyzed, [2]);
+  assert.equal(result.watched, 1);
+  assert.equal(calls.events[0].meta.watched, 1);
+  const lookup = calls.selects.find(row => row.table === 'match_reminders');
+  assert.equal(lookup.filters.enabled, 'eq.true');
+  assert.equal(lookup.filters.fixture_id, 'in.(1,2,3)');
+
+  const failed = job({ feed, reminders: [2], remindersFail: true });
+  const failedResult = await failed.rt.processPrematchPredictions({ prematchPredictionsPerRun: 1 }, at);
+  assert.deepEqual(failed.calls.analyzed, [1]);
+  assert.equal(failedResult.watched, 0);
 });
 
 function analysisRuntime(overrides = {}) {
