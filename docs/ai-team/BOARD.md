@@ -29,9 +29,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Безопасный повтор продления lease фонового задания при временном сбое — **Codex** — [PR #934](https://github.com/TRAP44/football-analytics-cloudflare/pull/934), ветка `codex/scheduled-lease-timeouts` — ревью: Claude. — добавлена настоящая DB-нагрузка1000lease, гонка40claim, HTTP1000clients и soak; отчёт docs/RELEASE_LOAD_2026_10_16_RU.md
+- [ ] Общий deadline RPC Supabase до конца body, без повторов неизвестных записей — **Codex** — [PR #935](https://github.com/TRAP44/football-analytics-cloudflare/pull/935), ветка `codex/rpc-body-deadline` — ревью Claude;4244теста и real DB-load прошли, CI ожидается.
+
 
 
 - [ ] LIVE-табло: аудит очереди, повторных уведомлений, 429 и таймаутов (Сергей 16.10) — гол не теряется, когда табло застыло (устаревшие данные или отложенная правка): подавление уведомления о голе только для актуального табло (`shown.h` + снимок ≤15 мин); удалённое человеком табло (`s:'g'`) возвращает уведомления о голах; пауза 429 от момента ответа; сбой сохранения отметок не сдвигает курсор мимо людей; отложенные правки в `deferred` — **Claude** — [PR #932](https://github.com/TRAP44/football-analytics-cloudflare/pull/932), ветка `claude/scoreboard-audit` — ревью: Codex
@@ -86,6 +88,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Безопасный повтор продления lease фонового задания при временном сбое — **Codex** — [PR #934](https://github.com/TRAP44/football-analytics-cloudflare/pull/934), ветка `codex/scheduled-lease-timeouts` — ревью: Claude. — добавлена настоящая DB-нагрузка1000lease, гонка40claim, HTTP1000clients и soak; отчёт docs/RELEASE_LOAD_2026_10_16_RU.md — слит 16.10, production deploy38920819068 success.
 
 - [x] Ограниченная очередь RPC лимитера с прежним общим дедлайном — **Codex** — [PR #933](https://github.com/TRAP44/football-analytics-cloudflare/pull/933), ветка `codex/rate-claim-admission` — ревью: Claude. — исправлены замечания по аренде/body/overflow, повторное ревью — слит 16.10
 
@@ -205,7 +209,6 @@
 
 ## Идеи / найдено по пути
 
-- [ ] Общий RPC transport: проверить deadline чтения body после headers для RPC вне rate-claim очереди; текущий #934 повторяет только завершившиеся transient-ошибкой renew — **Codex**.
 
 - [ ] Очередь RPC: защитить abort при отзыве аренды чужого контекста, чтобы исключение abort не мешало reject просроченной задачи — неблокирующее замечание Claude к #933; отдельная задача — **Codex**.
 
