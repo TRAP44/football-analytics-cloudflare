@@ -3,6 +3,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const WORKFLOW_SECRET_ALLOWLIST = Object.freeze({
+  '.github/workflows/live-usage-report.yml': new Set(['SUPABASE_URL','SUPABASE_SECRET_KEY','SUPABASE_SERVICE_ROLE_KEY']),
   '.github/workflows/backup-supabase.yml': new Set(['SUPABASE_DB_URL','BACKUP_ENCRYPTION_PASSPHRASE']),
   '.github/workflows/deploy-production.yml': new Set(['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','SUPABASE_ACCESS_TOKEN']),
   '.github/workflows/verify-production-migration.yml': new Set(['SUPABASE_ACCESS_TOKEN']),
@@ -20,6 +21,7 @@ export const WORKFLOW_SECRET_ALLOWLIST = Object.freeze({
 // Workflow с боевыми ключами приложения: каждая задача, читающая секреты,
 // обязана работать в своём окружении GitHub (секреты окружения + ограничение веток).
 const WORKFLOW_REQUIRED_ENVIRONMENT = Object.freeze({
+  '.github/workflows/live-usage-report.yml': 'background-jobs',
   '.github/workflows/audit-infrastructure-capacity.yml': 'production',
   '.github/workflows/cron-runner.yml': 'background-jobs',
 });
