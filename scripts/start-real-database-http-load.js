@@ -38,6 +38,19 @@ const asPostgres=(bin,args,options={})=>execute('runuser',['-u','postgres','--',
 const query=sql=>native
   ? execute(join(nativeBin,'psql'),['-h','127.0.0.1','-p',String(nativePort),'-U','postgres','-X','-q','-A','-t','-v','ON_ERROR_STOP=1','-d','isolated'],{input:sql})
   : docker(['exec','-i','-u','postgres',database,'psql','-h','127.0.0.1','-X','-q','-A','-t','-v','ON_ERROR_STOP=1','-d','isolated'],{input:sql});
+// GitHub: короткие итоги ступеней аннотациями (видны через API и в PR без
+// скачивания artifacts). Только числа и коды статусов, без адресов и ключей.
+function githubNotice(title,value){
+  if(process.env.GITHUB_ACTIONS==='true')console.log(`::notice title=${title}::${JSON.stringify(value)}`);
+}
+function githubStepNotices(){
+  for(const peak of [10,50,100,1000]){
+    let report;try{report=JSON.parse(readFileSync(`load-results/real-database-http-${peak}.json`,'utf8'));}catch{continue;}
+    const rows=Object.fromEntries((report.rows || []).map(row=>[row.name,{n:row.requests,status:row.httpStatus,p50:row.p50Ms,p95:row.p95Ms,db:row.dbRequests}]));
+    const ops=Object.fromEntries(Object.entries(report.dbOperationLatency || {}).map(([name,value])=>[name.replace('/rest/v1',''),[value.count,value.p50Ms,value.p95Ms]]));
+    githubNotice(`real-db peak ${peak}`,{passed:report.loadPassed,rows,ops,loopP95:report.eventLoopP95Ms,rss:report.rssMiB});
+  }
+}
 const created=[];let gateway;let nativeRest=null;let standProfile={postgres:'16.11',rest:'16.4',memoryMiB:512,cpuLimit:1,stand:'docker'};
 try {
   if (native) {
@@ -109,8 +122,13 @@ try {
   writeFileSync(file,JSON.stringify({API_URL:'http://127.0.0.1:54321',SERVICE_ROLE_KEY:token}),{mode:0o600});
   // Synthetic paid user: profile upserts must never overwrite billing fields.
   await query("insert into public.users(telegram_id,first_name,plan,subscription_until) values (700000,'Before load','PRO','2099-01-01T00:00:00Z');");
-  await execute(process.execPath,['scripts/run-real-database-http-load.js',file],{quiet:true}).then(output=>console.log(output));
+  try {
+    await execute(process.execPath,['scripts/run-real-database-http-load.js',file],{quiet:true}).then(output=>console.log(output));
+  } finally {
+    githubStepNotices();
+  }
   const evidence=JSON.parse(await query("select json_build_object('users', (select count(*) from public.users where telegram_id between 700000 and 709999),'history',(select count(*) from public.analysis_history where telegram_id between 700000 and 709999),'fullAiEvents',(select count(*) from public.growth_events where telegram_id between 700000 and 709999 and event_name='full_ai'))::text;"));
+  githubNotice('real-db evidence',evidence);
   assert.equal(Number(evidence.users),10000,'HTTP load must persist all synthetic users in real PostgreSQL.');
   assert.ok(Number(evidence.history)>=1000,'Cached analyses must persist real history rows.');
   assert.equal(Number(evidence.fullAiEvents),1160,'Deferred analytics must persist all events from the four ramp steps.');
