@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-16 — Codex — Общий дедлайн RPC до конца body
-PR: ветка `codex/rpc-body-deadline`.
+PR: [#935](https://github.com/TRAP44/football-analytics-cloudflare/pull/935), ветка `codex/rpc-body-deadline`.
 Сделано: rawRpc держит абсолютный монотонный deadline до JSON, отменяет transport/body и ограничивает ожидание Promise.race. Поздние headers/body не принимаются, timer очищается. Прежние timeout и родительский signal admission queue сохранены. Новых повторов RPC нет; только безопасный renew retry из #934 получает завершившуюся timeout-ошибку. Paths нагрузочного workflow включают supabase-client и новый тест.
 Проверки:7новых тестов,40профильных;3детерминированных assertion failures на прежнем main и0после фикса; Node22 ci/check/lint/security:privileged,release582/582,full4244/4244,Worker dry-run. Настоящий локальный workerd:body timeout715/712мс при700мс,затем40/40RPC200 со своими ID,2соединения закрыты,повторов/предупреждений контекста нет. Реальный disposable DB ramp10/50/100/1000:всеpass,пик11000HTTP200,p95cached2439мс,2085DBопераций;1000lease/200lostresponses/40claims→1owner прошли. Полный отчёт docs/RPC_BODY_DEADLINE_RU.md.
 Осталось / внимание:#934 слит и production deploy38920819068 success, своя строка перенесена в Готово. #924 открыт только по coordination docs, код не пересекается. Abort не гарантирует отмену SQL, неизвестный исход записи не повторяется. Не менялись UI/SQL/production-настройки. Production capacity и устойчивыйp95≤2с не подтверждены. Ревью Claude, merge Сергей.

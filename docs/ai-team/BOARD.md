@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Общий deadline RPC Supabase до конца body, без повторов неизвестных записей — **Codex** — ветка `codex/rpc-body-deadline`.
 
 
 
@@ -32,6 +31,8 @@
 
 
 ## На ревью
+
+- [ ] Общий deadline RPC Supabase до конца body, без повторов неизвестных записей — **Codex** — [PR #935](https://github.com/TRAP44/football-analytics-cloudflare/pull/935), ветка `codex/rpc-body-deadline` — ревью Claude;4244теста и real DB-load прошли, CI ожидается.
 
 
 
