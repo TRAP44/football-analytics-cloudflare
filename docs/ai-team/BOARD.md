@@ -31,7 +31,7 @@
 
 ## На ревью
 
-- [ ] Безопасный повтор продления lease фонового задания при временном сбое — **Codex** — [PR #934](https://github.com/TRAP44/football-analytics-cloudflare/pull/934), ветка `codex/scheduled-lease-timeouts` — ревью: Claude.
+- [ ] Безопасный повтор продления lease фонового задания при временном сбое — **Codex** — [PR #934](https://github.com/TRAP44/football-analytics-cloudflare/pull/934), ветка `codex/scheduled-lease-timeouts` — ревью: Claude. — добавлена настоящая DB-нагрузка1000lease, гонка40claim, HTTP1000clients и soak; отчёт docs/RELEASE_LOAD_2026_10_16_RU.md
 
 
 - [ ] LIVE-табло: аудит очереди, повторных уведомлений, 429 и таймаутов (Сергей 16.10) — гол не теряется, когда табло застыло (устаревшие данные или отложенная правка): подавление уведомления о голе только для актуального табло (`shown.h` + снимок ≤15 мин); удалённое человеком табло (`s:'g'`) возвращает уведомления о голах; пауза 429 от момента ответа; сбой сохранения отметок не сдвигает курсор мимо людей; отложенные правки в `deferred` — **Claude** — [PR #932](https://github.com/TRAP44/football-analytics-cloudflare/pull/932), ветка `claude/scoreboard-audit` — ревью: Codex

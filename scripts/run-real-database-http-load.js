@@ -30,3 +30,10 @@ for(const peak of [10,50,100,1000]) {
 const output={scope:'Disposable real Supabase/PostgreSQL/PostgREST, local HTTP/full Worker composition; not deployed Cloudflare or hosted Nano capacity',
   productionChanged:false,productionCapacityConfirmed:false,tariffs:{workers:'Free (owner confirmed)',supabase:'Free / Nano (owner screenshot)',apiFootball:'PRO (owner confirmed)'},reports};
 writeFileSync('load-results/real-database-http-summary.json',JSON.stringify(output,null,2)+'\n');
+
+if(!process.exitCode){
+  const report=execFileSync(process.execPath,['scripts/scheduled-lease-load-check.js',file],{env,encoding:'utf8',timeout:120000,maxBuffer:1024*1024});
+  output.scheduledLeaseLoad=JSON.parse(report.trim());
+  writeFileSync('load-results/real-database-http-summary.json',JSON.stringify(output,null,2)+'\n');
+  console.log(JSON.stringify({phase:'scheduled_lease_load_verified',...output.scheduledLeaseLoad}));
+}
