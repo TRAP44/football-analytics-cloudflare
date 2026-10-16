@@ -6,6 +6,7 @@
 // звёзд и без записей в user_entitlements. Все проверки и подсчёт лимита —
 // атомарно в базе (supabase_migration_v6_29_17.sql).
 
+import { createSupabaseCallBatcher } from './supabase-call-batcher.js';
 import { telegramBotStartUrl } from './telegram-primary-identity.js';
 
 export const REFERRAL_MONTHLY_CAP = 10;
@@ -68,6 +69,33 @@ export function createReferralRewardsRuntime(deps = {}) {
     }
   }
 
+  // A fresh read only filters definite non-referrals. All grants and caps stay
+  // in the existing atomic RPC; an unavailable/invalid read never skips it.
+  const referralAttributions = createSupabaseCallBatcher(async (cfg, ids) => {
+    const uniqueIds = [...new Set(ids)];
+    const keys = uniqueIds.map(id => `referral_attribution:${id}`);
+    const rows = await supaSelectMany(cfg, 'growth_events', {
+      event_name: 'eq.referred_first_open',
+      event_key: `in.(${keys.join(',')})`,
+    }, { limit: keys.length, select: 'telegram_id,event_key' });
+    if (!Array.isArray(rows)) throw new Error('Invalid referral attribution payload.');
+    const found = new Set();
+    for (const row of rows) {
+      const id = positiveId(row?.telegram_id);
+      if (!uniqueIds.includes(id) || row?.event_key !== `referral_attribution:${id}` || found.has(id)) {
+        throw new Error('Unexpected referral attribution row.');
+      }
+      found.add(id);
+    }
+    return ids.map(id => found.has(id));
+  });
+
+  async function definitelyNotReferred(id, cfg) {
+    if (typeof cfg?.supabaseUrl !== 'string' || !cfg.supabaseUrl || typeof cfg?.supabaseKey !== 'string' || !cfg.supabaseKey) return false;
+    try { return await referralAttributions(cfg, id) === false; }
+    catch { return false; }
+  }
+
   async function notifyReferrer(referrerId, cfg) {
     if (typeof telegramApi !== 'function' || !positiveId(referrerId)) return;
     try {
@@ -80,7 +108,7 @@ export function createReferralRewardsRuntime(deps = {}) {
 
   /**
    * После успешного разбора: начислить награды, если пользователь — новый
-   * приглашённый. Один вызов базы на пользователя в изоляте; повтор безопасен.
+   * приглашённый. Одна проверка на пользователя в изоляте; повтор безопасен.
    */
   async function grantReferralRewards(userId, cfg) {
     const id = positiveId(userId);
@@ -89,6 +117,7 @@ export function createReferralRewardsRuntime(deps = {}) {
     if (memory.referralRewardChecked.has(id)) return { granted: false, reason: 'already_checked' };
     if (memory.referralRewardChecked.size > 5000) memory.referralRewardChecked.clear();
     memory.referralRewardChecked.add(id);
+    if (await definitelyNotReferred(id, cfg)) return { granted: false, reason: 'not_referred' };
     let result;
     try {
       result = plainObject(await supaRpc(cfg, 'grant_referral_rewards', { p_referred_telegram_id: id, p_monthly_cap: REFERRAL_MONTHLY_CAP }));

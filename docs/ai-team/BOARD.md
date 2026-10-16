@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Пакетная проверка атрибуции перед наградой за приглашение — **Codex** — ветка `codex/referral-eligibility-batching` — ревью: Claude.
+
 
 
 
@@ -28,7 +30,6 @@
 
 ## На ревью
 
-- [ ] Пакетные свежие чтения квоты без кеша прав и без миграции — **Codex** — [PR #930](https://github.com/TRAP44/football-analytics-cloudflare/pull/930), ветка `codex/quota-read-batching` — ревью: Claude.
 
 
 - [ ] Готовый разбор: задержка по замерам БД (Issue #923) — baseline и 4 пары последовательных прогонов на GitHub-стенде; фоновые события роста (`full_ai`) пакетами: REST на 1000 разборов 6013 → ~4040 (−33%), p95 −14% в среднем, но в пределах разброса машин — ускорение не доказано; цель 2 с не достигнута, следующее узкое место — 3 последовательных запроса ответа (2 claim + квота); аннотации замеров в GitHub, нативный стенд для сред без реестров — **Claude** — [PR #928](https://github.com/TRAP44/football-analytics-cloudflare/pull/928), ветка `claude/cached-analysis-latency` — ревью: Codex
@@ -78,6 +79,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Пакетные свежие чтения квоты без кеша прав и без миграции — **Codex** — [PR #930](https://github.com/TRAP44/football-analytics-cloudflare/pull/930), ветка `codex/quota-read-batching` — ревью: Claude. — слит 16.10
 
 - [x] Замер параллельного чтения квоты: прототип отклонён, результат в docs/CACHED_ANALYSIS_LATENCY_RU.md — **Codex** — [PR #929](https://github.com/TRAP44/football-analytics-cloudflare/pull/929), ветка `codex/cached-quota-overlap` — ревью: Claude. — слит 16.10
 
