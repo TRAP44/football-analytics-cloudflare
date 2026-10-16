@@ -510,6 +510,7 @@ const {
   supaDelete,
   supaRpc,
 } = createSupabaseClient({
+  bumpTelemetry,
   fetchWithTimeout,
   redactMessage: redactOpsString,
 });

@@ -168,7 +168,8 @@ export function createCommonInfrastructureRuntime(deps = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new DOMException('timeout', 'AbortError')), Math.max(500, Number(timeoutMs || 8000)));
     try {
-      return await fetch(input, { ...init, signal: controller.signal });
+      const signal = init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal;
+      return await fetch(input, { ...init, signal });
     } catch (error) {
       if (error?.name === 'AbortError') {
         bumpTelemetry('upstreamTimeouts');

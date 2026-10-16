@@ -1,6 +1,6 @@
 import { createRpcAdmissionQueue } from './rpc-admission-queue.js';
 
-export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs } = {}) {
+export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs, bumpTelemetry = () => {} } = {}) {
   if (typeof fetchWithTimeout !== 'function') {
     throw new TypeError('createSupabaseClient requires fetchWithTimeout');
   }
@@ -309,15 +309,16 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs 
     }
   }
 
-  const rateClaims=createRpcAdmissionQueue();
+  const rateClaims=createRpcAdmissionQueue({onEvent:bumpTelemetry});
 
-  async function rawRpc(cfg, functionName, payload = {}, timeoutMs = 7000, extraHeaders = {}) {
+  async function rawRpc(cfg, functionName, payload = {}, timeoutMs = 7000, extraHeaders = {}, signal = undefined) {
     const rpcName = nonEmptyText(functionName);
     const url = restUrl(cfg, rpcName, { rpc:true });
     const response = await fetchWithTimeout(url, {
       method: 'POST',
       headers: supaRpcHeaders(cfg, extraHeaders),
       body: JSON.stringify(payload || {}),
+      ...(signal ? {signal} : {}),
     }, boundedInteger(timeoutMs, 7000, 500, 120000), `Supabase RPC ${rpcName}`);
     const body = await response.json().catch(() => null);
     if (!response.ok) {
@@ -340,7 +341,7 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs 
       const snapshot={...payload};
       const headers={...extraHeaders};
       return rateClaims(JSON.stringify([connection.supabaseUrl,connection.supabaseKey]),
-        remaining=>rawRpc(connection,functionName,snapshot,remaining,headers),boundedInteger(timeoutMs,7000,500,120000));
+        (remaining,signal)=>rawRpc(connection,functionName,snapshot,remaining,headers,signal),boundedInteger(timeoutMs,7000,500,120000),bucket);
     }
     return rawRpc(cfg,functionName,payload,timeoutMs,extraHeaders);
   }

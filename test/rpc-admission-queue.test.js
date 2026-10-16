@@ -35,7 +35,7 @@ test('capacity rejects without replay and distinct connections have independent 
  let release;const queue=createRpcAdmissionQueue({maxActive:1,maxQueued:1});
  const first=queue('p',()=>new Promise(resolve=>release=resolve),5000);
  const second=queue('p',async()=>{throw new Error('claim failed');},5000);const failed=assert.rejects(second,/claim failed/);
- await assert.rejects(queue('p',async()=>assert.fail('overflow'),5000),{code:'UPSTREAM_TIMEOUT'});
+ await assert.rejects(queue('p',async()=>assert.fail('overflow'),5000),{code:'RATE_CLAIM_ADMISSION_FULL'});
  assert.equal(await queue('other',async()=>77,5000),77);release();await first;await failed;
  assert.equal(await queue('p',async()=>88,5000),88);
 });
@@ -43,4 +43,36 @@ test('capacity rejects without replay and distinct connections have independent 
 test('a late successful transport cannot allow a request after its total deadline',async()=>{
  let clock=0;const queue=createRpcAdmissionQueue({now:()=>clock});
  await assert.rejects(queue('p',async()=>{clock=1801;return{allowed:true};},1800),{code:'UPSTREAM_TIMEOUT'});
+});
+
+test('a new caller reclaims an abandoned active lease even if its timer/finally never ran',async()=>{
+ let clock=0,signal;const events=[];const queue=createRpcAdmissionQueue({maxActive:1,now:()=>clock,onEvent:name=>events.push(name)});
+ const stuck=queue('p',async(_ms,s)=>{signal=s;return new Promise(()=>{});},1800);const rejected=assert.rejects(stuck,{code:'UPSTREAM_TIMEOUT'});
+ await turn();clock=2100;
+ assert.equal(await queue('p',async()=>77,1800),77);await rejected;
+ assert.equal(signal.aborted,true);assert.deepEqual(events,['rateClaimLeaseReaped']);
+});
+test('late finally after a reaped lease cannot release another active claim slot',async()=>{
+ let clock=0,oldRelease,newRelease,thirdStarted=false;const queue=createRpcAdmissionQueue({maxActive:1,now:()=>clock});
+ const old=queue('p',()=>new Promise(resolve=>oldRelease=resolve),1800);const failed=assert.rejects(old,{code:'UPSTREAM_TIMEOUT'});
+ await turn();clock=2100;
+ const next=queue('p',()=>new Promise(resolve=>newRelease=resolve),1800);await turn();await failed;
+ oldRelease();await turn();
+ const third=queue('p',async()=>{thirdStarted=true;},1800);await turn();assert.equal(thirdStarted,false);
+ newRelease();await next;await third;assert.equal(thirdStarted,true);
+});
+test('one hot bucket cannot fill all waiting capacity for other callers',async()=>{
+ let release;const queue=createRpcAdmissionQueue({maxActive:1,maxQueued:10,maxQueuedPerBucket:2});
+ const first=queue('p',()=>new Promise(resolve=>release=resolve),5000,'hot');
+ const hot=[queue('p',async()=>1,5000,'hot'),queue('p',async()=>2,5000,'hot')];
+ await assert.rejects(queue('p',async()=>assert.fail('bucket overflow'),5000,'hot'),{code:'RATE_CLAIM_BUCKET_FULL'});
+ const other=queue('p',async()=>3,5000,'other');await turn();release();await first;await Promise.all(hot);assert.equal(await other,3);
+});
+
+test('a live waiter arriving inside the expired lease grace period wakes without another arrival',async()=>{
+ let clock=0;const queue=createRpcAdmissionQueue({maxActive:1,leaseGraceMs:20,now:()=>clock});
+ const stuck=queue('p',()=>new Promise(()=>{}),600);const failed=assert.rejects(stuck,{code:'UPSTREAM_TIMEOUT'});
+ await turn();clock=610;
+ const fresh=queue('p',async()=>99,1800);clock=621;
+ assert.equal(await fresh,99);await failed;
 });
