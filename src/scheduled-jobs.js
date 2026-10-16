@@ -1,5 +1,3 @@
-import { isDailyDigestExecutionWindow } from './daily-digest-delivery.js';
-
 const GLOBAL_CRON_LEASE_SECONDS = 12 * 60;
 const GLOBAL_CRON_HEARTBEAT_INTERVAL_MS = Math.floor(GLOBAL_CRON_LEASE_SECONDS * 1000 / 3);
 const GLOBAL_CRON_RETENTION_SECONDS = 2 * 24 * 60 * 60;
@@ -466,11 +464,8 @@ export function createScheduledJobsRuntime({
       : null;
     const smartNotificationsTask = Promise.all([importantChangeTask, inPlayTimelineTask, favoriteScoreboardTask])
       .then(() => run('smart_notifications', () => processSmartNotifications(cfg)));
-    const digestWindow = isDailyDigestExecutionWindow(scheduledAt);
-    const dailyDigestTask = digestWindow
-      ? backtestTask.then(() => run('daily_digest', () => processDailyDigests(cfg, scheduledAt)))
-      : null;
-    const postMatchPrerequisite = dailyDigestTask || backtestTask;
+    // Morning picks and news were removed by product decision (16.10.2026).
+    const postMatchPrerequisite = backtestTask;
     const tasks = [
       ['reminders', remindersTask],
       ['lineup_notifications', lineupNotificationsTask],
@@ -491,7 +486,6 @@ export function createScheduledJobsRuntime({
       tasks.push(['production_monitor', monitorAfterReminders]);
     }
 
-    if (dailyDigestTask) tasks.push(['daily_digest', dailyDigestTask]);
 
     if (scheduledAt.getUTCHours() === 3 && scheduledAt.getUTCMinutes() < 15) {
       tasks.push(['ops_cleanup', runDailyTaskOnce('ops_cleanup', () => cleanupOpsEvents(cfg), cfg, scheduledAt, ownershipState)]);

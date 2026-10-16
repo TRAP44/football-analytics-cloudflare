@@ -53,25 +53,3 @@ export const BOT_NOTIFICATIONS_TEXT = [
   '',
   'Напоминания о матчах и события любимых команд и игроков настраиваются в приложении: Профиль → Уведомления.',
 ].join('\n');
-
-// Утренняя подборка (Issue #922): показываем подтверждённое состояние и одно
-// действие. enabled === null — состояние не прочитано, тогда обе кнопки.
-// Кнопки меняют только подборку, остальные уведомления не трогают.
-export function botDigestView(enabled) {
-  const state = enabled === true ? 'включена' : enabled === false ? 'выключена' : '';
-  const lines = [
-    BOT_NOTIFICATIONS_TEXT,
-    '',
-    state
-      ? `☀️ <b>Утренняя подборка: ${state}</b> — до 3 заметных матчей дня около 10:00 МСК.`
-      : '☀️ <b>Утренняя подборка</b> — до 3 заметных матчей дня около 10:00 МСК.',
-    'Кнопка ниже меняет только подборку — уведомления о матчах и командах остаются как есть.',
-  ];
-  const on = { text: '☀️ Включить подборку', callback_data: 'digest:on' };
-  const off = { text: '🔕 Выключить подборку', callback_data: 'digest:off' };
-  const buttons = enabled === true ? [off] : enabled === false ? [on] : [on, off];
-  return { text: lines.join('\n'), buttons };
-}
-
-// Совместимость: старый набор кнопок (обе), если состояние неизвестно.
-export const BOT_DIGEST_BUTTONS = Object.freeze(botDigestView(null).buttons.map(button => Object.freeze(button)));

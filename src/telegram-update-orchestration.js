@@ -1,6 +1,6 @@
 // Telegram update command/callback orchestration boundary for Issue #440.
 // All network, persistence, billing and product capabilities are injected by worker.js.
-import { botDigestView, botPlansText } from './telegram-bot-plans.js';
+import { BOT_NOTIFICATIONS_TEXT, botPlansText } from './telegram-bot-plans.js';
 
 const REMOVED_MENU_LABELS = new Set([
   '📰 Новости', '💎 Тарифы',
@@ -218,16 +218,15 @@ export function createTelegramUpdateProcessor(deps) {
     }
   }
 
-  // «Уведомления» с подтверждённым состоянием подборки; кнопка приложения — только
+  // Настройки уведомлений о матчах; кнопка приложения — только
   // в личном чате (web_app в группах Telegram не принимает).
-  function notificationsView(request, chatType, enabled) {
-    const view=botDigestView(enabled);
+  function notificationsView(request, chatType) {
+
     const url=chatType === 'private' ? safeWebAppUrl(request,{view:'profile',section:'notifications'}) : '';
     return {
       parse_mode:'HTML',
-      text:view.text,
+      text:BOT_NOTIFICATIONS_TEXT,
       reply_markup:{inline_keyboard:[
-        view.buttons.map(button=>({...button})),
         ...(url ? [[{text:'⚙️ Настроить уведомления',web_app:{url}}]] : []),
       ]},
     };
@@ -390,24 +389,9 @@ export function createTelegramUpdateProcessor(deps) {
     if (callbackChatId && !callbackUserId) {
       return json({ok:false,error:'telegram_user_invalid'},400);
     }
-    // Подборка (Issue #922): состояние подтверждается записью; сбой — не успех.
-    if (callbackChatId && (data === 'digest:on' || data === 'digest:off')) {
-      const enabled=data === 'digest:on';
-      try {
-        await setBotDigestSubscription(callbackUserId, callbackChatId, enabled, cfg, safeWebAppUrl(request));
-      } catch {
-        await swallowAsync(telegramApi,'answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Не удалось сохранить настройку подборки. Попробуйте ещё раз.',show_alert:true});
-        return json({ ok: true });
-      }
-      if (enabled) backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'digest_opt_in',channel:'telegram'});
-      await telegramApi('answerCallbackQuery', cfg, { callback_query_id: callbackId, text: enabled ? 'Утренняя подборка включена' : 'Утренняя подборка выключена' }).catch(()=>null);
-      const view=notificationsView(request,cb.message?.chat?.type,enabled);
-      const messageId=positiveInteger(cb.message?.message_id);
-      const edited=messageId
-        ? await telegramApi('editMessageText',cfg,{chat_id:callbackChatId,message_id:messageId,...view}).then(()=>true,error=>/not modified/i.test(String(error?.message || '')))
-        : false;
-      if (!edited) await telegramApi('sendMessage',cfg,{chat_id:callbackChatId,...view});
-      return json({ ok: true });
+    if (callbackChatId && /^(?:news:|ni:r:|digest:)/.test(data)) {
+      await swallowAsync(telegramApi,'answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Этот раздел больше недоступен.'});
+      return json({ok:true});
     }
     if (callbackChatId && data === 'feed:today') {
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Обновляю матчи…'}).catch(()=>null);
@@ -419,152 +403,7 @@ export function createTelegramUpdateProcessor(deps) {
       await sendBotDayMatches(request,cfg,callbackChatId,{liveOnly:true});
       return json({ok:true});
     }
-    const newsImpactAction=data.match(/^news:impact:(material|detail|stable|guarded|baseline_missing|unavailable):(squads|market|recheck|news|share):(\d+)$/);
-    const newsImpactRecoveryAction=data.match(/^ni:r:(material|detail|stable|guarded|baseline_missing|unavailable):(squads|market|recheck|news|share):(retry|retry_soon|retry_later|wait_quota_reset|open_full_ai):(\d+)$/);
-    if (callbackChatId && (newsImpactAction || newsImpactRecoveryAction)) {
-      const matched=newsImpactRecoveryAction || newsImpactAction;
-      const decision=textValue(safeCall(cleanNewsImpactDecisionCode,'',matched[1]),40);
-      const action=textValue(safeCall(cleanNewsImpactActionCode,'',matched[2]),40);
-      const recoveryCode=newsImpactRecoveryAction
-        ? textValue(safeCall(cleanNewsImpactRecoveryCode,'',matched[3]),40)
-        : '';
-      const fixtureId=positiveInteger(matched[newsImpactRecoveryAction ? 4 : 3]);
-      if (!decision || !action || !fixtureId || (newsImpactRecoveryAction && !recoveryCode)) {
-        return json({ok:false,error:'news_impact_action_invalid'},400);
-      }
-      if (recoveryCode) {
-        await swallowAsync(recordNewsImpactRecoveryAttempt,cfg,{
-          userId:callbackUserId,
-          fixtureId,
-          decision,
-          action,
-          recovery:recoveryCode,
-          channel:'telegram',
-        });
-      }
-      backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_impact_action',channel:'telegram',fixtureId,metadata:{decision,action,...(recoveryCode ? {recovery:recoveryCode} : {})}});
-      if (action==='news') {
-        await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Открываю новости…'}).catch(()=>null);
-        try {
-          await sendGeneralFootballNews(request,cfg,callbackUserId,callbackChatId,{force:false});
-          await swallowAsync(recordNewsImpactOutcome,cfg,{userId:callbackUserId,fixtureId,decision,action,channel:'telegram'});
-        } catch (error) {
-          await sendNewsImpactRecoveryMessage(request,cfg,{userId:callbackUserId,chatId:callbackChatId,fixtureId,decision,action,error,fallback:'provider_unavailable'});
-          return json({ok:true,recovered:true});
-        }
-        return json({ok:true});
-      }
-      if (action==='share') {
-        await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Готовлю ссылку…'}).catch(()=>null);
-        try {
-          await sendBotFixtureShareCard(request,cfg,callbackUserId,callbackChatId,fixtureId);
-          await swallowAsync(recordNewsImpactOutcome,cfg,{userId:callbackUserId,fixtureId,decision,action,channel:'telegram'});
-        } catch (error) {
-          await sendNewsImpactRecoveryMessage(request,cfg,{userId:callbackUserId,chatId:callbackChatId,fixtureId,decision,action,error,fallback:'telegram_delivery'});
-          return json({ok:true,recovered:true});
-        }
-        return json({ok:true});
-      }
-      await telegramApi('answerCallbackQuery',cfg,{
-        callback_query_id:callbackId,
-        text:action==='recheck'?'Перепроверяю AI…':'Собираю футбольные данные…',
-      }).catch(()=>null);
-      const delivery=await sendBotFixtureSection(request,cfg,callbackUserId,callbackChatId,fixtureId,action==='recheck'?'verdict':action,{suppressFallback:true});
-      if (!delivery?.ok) {
-        const error=Object.assign(
-          new Error(boundedErrorText(delivery?.message,'delivery_failed')),
-          {
-            status:nonNegativeInteger(delivery?.status),
-            code:textValue(delivery?.code).slice(0,80),
-          },
-        );
-        await sendNewsImpactRecoveryMessage(request,cfg,{userId:callbackUserId,chatId:callbackChatId,fixtureId,decision,action,error,fallback:'server_error'});
-        return json({ok:true,recovered:true});
-      }
-      await swallowAsync(recordNewsImpactOutcome,cfg,{userId:callbackUserId,fixtureId,decision,action,channel:'telegram'});
-      return json({ok:true});
-    }
-    if (callbackChatId && (data === 'news:general' || data === 'news:refresh')) {
-      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:data==='news:refresh'?'Обновляю новости…':'Открываю новости…'}).catch(()=>null);
-      await sendGeneralFootballNews(request,cfg,callbackUserId,callbackChatId,{force:data==='news:refresh'});
-      return json({ok:true});
-    }
-    const datedNewsAiMatchAction=data.match(/^news:ai_match:(\d+):(\d{8})$/);
-    const legacyNewsAiMatchAction=data.match(/^news:ai_match:(\d+)$/);
-    const newsAiMatchAction=datedNewsAiMatchAction || legacyNewsAiMatchAction;
-    if (callbackChatId && newsAiMatchAction) {
-      const fixtureId=positiveInteger(newsAiMatchAction[1]);
-      if (!fixtureId) return json({ok:false,error:'fixture_id_invalid'},400);
-      const newsPublishedAt=safeCall(newsPublishedAtFromDayToken,null,datedNewsAiMatchAction?.[2] || '');
-      backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_ai_intent',channel:'telegram',fixtureId,metadata:{mode:'direct_fixture',linking:'smart_fixture'}});
-      backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_return',channel:'telegram',fixtureId,metadata:{origin:'news_ai_cta'}});
-      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Сравниваю AI до и после новости…'}).catch(()=>null);
-      await sendBotFixtureMenu(request,cfg,callbackUserId,callbackChatId,fixtureId,{source:'news_impact',newsImpactDelta:Boolean(newsPublishedAt),newsPublishedAt});
-      return json({ok:true});
-    }
-    const datedNewsAiTeamAction=data.match(/^news:ai_team:([a-z0-9]{2,32}):(\d{8})$/);
-    const legacyNewsAiTeamAction=data.match(/^news:ai_team:([a-z0-9]{2,32})$/);
-    const newsAiTeamAction=datedNewsAiTeamAction || legacyNewsAiTeamAction;
-    if (callbackChatId && newsAiTeamAction) {
-      const team=newsTeamByToken(newsAiTeamAction[1]);
-      if (!team) {
-        await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Не удалось определить клуб',show_alert:true}).catch(()=>null);
-        return json({ok:true});
-      }
-      const publishedAt=safeCall(newsPublishedAtFromDayToken,null,datedNewsAiTeamAction?.[2] || '');
-      if (publishedAt) {
-        const canonical=textValue(team.canonical,80);
-        if (!canonical) return json({ok:false,error:'news_team_invalid'},400);
-        const parts={first:canonical,second:'',query:canonical,intent:'analysis'};
-        const matches=await swallowAsync(botRemoteTeamMatches,parts,cfg) || [];
-        const link=plainObject(safeCall(
-          newsRelevantFixture,
-          null,
-          {publishedAt,category:{code:'general'}},
-          Array.isArray(matches) ? matches : [],
-        ));
-        if (link?.fixture?.fixtureId) {
-          const fixtureId=positiveInteger(link.fixture.fixtureId);
-          if (!fixtureId) return json({ok:false,error:'fixture_id_invalid'},400);
-          backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_ai_intent',channel:'telegram',fixtureId,metadata:{mode:'team_smart_link',team:newsTeamToken(team),linking:'smart_fixture'}});
-          backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_return',channel:'telegram',fixtureId,metadata:{origin:'news_ai_smart_link'}});
-          await swallowAsync(telegramApi,'answerCallbackQuery',cfg,{callback_query_id:callbackId,text:`Нашёл релевантный матч ${textValue(team.canonical,80) || 'клуба'}`});
-          await sendBotFixtureMenu(request,cfg,callbackUserId,callbackChatId,fixtureId,{source:'news_impact',newsImpactDelta:true,newsPublishedAt:publishedAt});
-          return json({ok:true});
-        }
-      }
-      backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_ai_intent',channel:'telegram',metadata:{mode:'team_search',team:newsTeamToken(team)}});
-      const teamName=textValue(team.canonical,80);
-      if (!teamName) return json({ok:false,error:'news_team_invalid'},400);
-      await swallowAsync(telegramApi,'answerCallbackQuery',cfg,{callback_query_id:callbackId,text:`Ищу ближайший матч ${teamName}…`});
-      await sendBotFootballSearch(request,cfg,callbackUserId,callbackChatId,teamName);
-      return json({ok:true});
-    }
-    const newsMatchAction=data.match(/^news:match:(\d+)$/);
-    if (callbackChatId && newsMatchAction) {
-      const fixtureId=positiveInteger(newsMatchAction[1]);
-      if (!fixtureId) return json({ok:false,error:'fixture_id_invalid'},400);
-      backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_return',channel:'telegram',fixtureId,metadata:{origin:'team_news'}});
-      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Открываю матч из новости…'}).catch(()=>null);
-      await sendBotFixtureMenu(request,cfg,callbackUserId,callbackChatId,fixtureId);
-      return json({ok:true});
-    }
-    const newsTeamAction=data.match(/^news:team:(\d+)$/);
-    if (callbackChatId && newsTeamAction) {
-      const teamId=positiveInteger(newsTeamAction[1]);
-      if (!teamId) return json({ok:false,error:'team_id_invalid'},400);
-      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Ищу новости клуба…'}).catch(()=>null);
-      await sendFavoriteTeamNews(request,cfg,callbackUserId,callbackChatId,teamId,{force:false});
-      return json({ok:true});
-    }
-    const newsTeamRefresh=data.match(/^news:team_refresh:(\d+)$/);
-    if (callbackChatId && newsTeamRefresh) {
-      const teamId=positiveInteger(newsTeamRefresh[1]);
-      if (!teamId) return json({ok:false,error:'team_id_invalid'},400);
-      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:callbackId,text:'Обновляю новости клуба…'}).catch(()=>null);
-      await sendFavoriteTeamNews(request,cfg,callbackUserId,callbackChatId,teamId,{force:true});
-      return json({ok:true});
-    }
+
     const favoriteToggle=data.match(/^favorite:toggle:(\d+):(\d+)$/);
     if (callbackChatId && favoriteToggle) {
       const teamId=positiveInteger(favoriteToggle[1]), fixtureId=positiveInteger(favoriteToggle[2]);
@@ -802,7 +641,7 @@ export function createTelegramUpdateProcessor(deps) {
   // Сергей 13.10: одно меню из шести кнопок. Кнопки старой клавиатуры («Ещё», «Главное меню»,
   // «Последний разбор», «Протокол AI», «AI-подборка», «Найти матч») и команды /last, /track,
   // /picks убраны: отвечаем коротко и присылаем новое меню.
-  if (chatId && (REMOVED_MENU_LABELS.has(text) || /^\/(?:last|track|picks)(?:@\w+)?(?:\s|$)/i.test(text))) {
+  if (chatId && ((REMOVED_MENU_LABELS.has(text) || /^\/(?:news|digest|digest_off)(?:@\w+)?(?:\s|$)/i.test(text) || text === '📰 Новости' || text === '☀️ Утренняя подборка') || /^\/(?:last|track|picks)(?:@\w+)?(?:\s|$)/i.test(text))) {
     const replyMarkup=safeBotKeyboard(request,chatId);
     await telegramApi('sendMessage',cfg,{
       chat_id:chatId,
@@ -871,11 +710,6 @@ export function createTelegramUpdateProcessor(deps) {
     return json({ ok: true });
   }
 
-  if (chatId && text === '📰 Новости') {
-    if (!messageUserId) return json({ok:false,error:'telegram_user_invalid'},400);
-    await sendGeneralFootballNews(request,cfg,messageUserId,chatId,{force:false});
-    return json({ ok: true });
-  }
 
   if (chatId && (/^\/plans(?:@\w+)?(?:\s|$)/i.test(text) || text === '💎 Тарифы')) {
     // Кнопка web_app работает только в личном чате (ревью Codex #872).
@@ -890,46 +724,13 @@ export function createTelegramUpdateProcessor(deps) {
   }
 
   if (chatId && (/^\/settings(?:@\w+)?(?:\s|$)/i.test(text) || text === '⚙️ Уведомления' || text === '☀️ Утренняя подборка')) {
-    let enabled=null;
-    if (messageUserId && typeof getBotDigestSubscription === 'function') {
-      try {
-        const row=plainObject(await getBotDigestSubscription(messageUserId,cfg));
-        enabled=row ? row.enabled === true : false;
-      } catch {}
-    }
-    await telegramApi('sendMessage',cfg,{chat_id:chatId,...notificationsView(request,msg?.chat?.type,enabled)});
+    await telegramApi('sendMessage',cfg,{chat_id:chatId,...notificationsView(request,msg?.chat?.type)});
     return json({ok:true});
   }
 
   if (chatId && /^\/(?:search|ask)(?:@\w+)?(?:\s|$)/i.test(text)) {
     if (!messageUserId) return json({ok:false,error:'telegram_user_invalid'},400);
     await sendBotFootballSearch(request, cfg, messageUserId, chatId, text);
-    return json({ ok: true });
-  }
-
-  if (chatId && /^\/digest(?:@\w+)?(?:\s|$)/i.test(text)) {
-    const userId=telegramUserId(msg.from?.id);
-    if (!userId) return json({ok:false,error:'telegram_user_invalid'},400);
-    await setBotDigestSubscription(userId, chatId, true, cfg, safeWebAppUrl(request));
-    const replyMarkup=safeBotKeyboard(request,chatId);
-    await telegramApi('sendMessage', cfg, {
-      chat_id:chatId,
-      text:'✅ Утренняя подборка включена: матчи дня + главное в футболе.',
-      ...(replyMarkup ? {reply_markup:replyMarkup} : {}),
-    });
-    return json({ ok: true });
-  }
-
-  if (chatId && /^\/digest_off(?:@\w+)?(?:\s|$)/i.test(text)) {
-    const userId=telegramUserId(msg.from?.id);
-    if (!userId) return json({ok:false,error:'telegram_user_invalid'},400);
-    await setBotDigestSubscription(userId, chatId, false, cfg, safeWebAppUrl(request));
-    const replyMarkup=safeBotKeyboard(request,chatId);
-    await telegramApi('sendMessage', cfg, {
-      chat_id:chatId,
-      text:'🔕 Утренняя AI-подборка отключена.',
-      ...(replyMarkup ? {reply_markup:replyMarkup} : {}),
-    });
     return json({ ok: true });
   }
 

@@ -100,12 +100,7 @@ test('recognized clubs remain visible even when provider fixtures are empty',()=
   assert.match(globalSearchRenderer,/Распознано/);
 });
 
-test('news return loop remains separately measurable after module extraction',()=> {
-  assert.match(newsRuntime,/callback_data:`news:match:\$\{fixtureId\}`/);
-  assert.match(updateOrchestration,/eventName:'news_return'/);
-  assert.match(updateOrchestration,/origin:'team_news'/);
-  assert.match(growthRuntime,/returnLoop:\{newsOpen:newsOpen\.size,newsReturn:newsReturn\.size/);
-});
+
 
 test('launch funnel measures an ordered user journey and cannot report impossible conversion above 100%',()=> {
   const rows=[

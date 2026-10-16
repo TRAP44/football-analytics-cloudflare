@@ -484,15 +484,15 @@ test('07 UTC provider-heavy tasks remain serialized after backtest failure', asy
   const calls=[];
   const rt=runtime({
     settleBacktestDaily:async()=>{calls.push('backtest');throw new Error('backtest failed');},
-    processDailyDigests:async()=>{calls.push('daily_digest');return {sent:0};},
+    processDailyDigests:async()=>assert.fail('retired daily digest must never run'),
     processPostMatchReturns:async()=>{calls.push('post_match_return');return {checked:0,failed:0};},
   });
 
   const tasks=rt.api.buildScheduledTaskPlan({},new Date('2026-09-29T07:05:00.000Z'));
   const results=await rt.api.observeScheduledTasks({},tasks);
-  assert.deepEqual(calls,['backtest','daily_digest','post_match_return']);
+  assert.deepEqual(calls,['backtest','post_match_return']);
   assert.equal(results.find(row=>row.task==='backtest').status,'failed');
-  assert.equal(results.find(row=>row.task==='daily_digest').status,'ok');
+  assert.equal(results.some(row=>row.task==='daily_digest'),false);
   assert.equal(results.find(row=>row.task==='post_match_return').status,'ok');
 });
 
@@ -563,4 +563,15 @@ test('scheduled task normalization bounds public reason text and freezes the res
   });
   assert.equal(malformed.status,'degraded');
   assert.equal(malformed.ok,false);
+});
+
+test('every former morning digest slot omits the retired task and retains match notifications',async()=>{
+  for(let minute=0;minute<60;minute+=5){
+    const rt=runtime({processDailyDigests:async()=>assert.fail('retired news/digest delivery')});
+    const at=new Date(Date.UTC(2026,9,16,7,minute));
+    const results=await rt.api.observeScheduledTasks({},rt.api.buildScheduledTaskPlan({},at));
+    assert.equal(results.some(row=>row.task==='daily_digest'),false);
+    assert.equal(results.find(row=>row.task==='smart_notifications').status,'ok');
+    assert.equal(results.find(row=>row.task==='post_match_return').status,'ok');
+  }
 });

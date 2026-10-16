@@ -22,13 +22,7 @@ test('RC73 creates tracked callbacks and a tracked full-AI handoff',()=>{
   }
 });
 
-test('Telegram action tracking stores categorical decision/action and optional recovery only',()=>{
-  const event=/backgroundGrowthEvent\(cfg,\{userId:callbackUserId,eventName:'news_impact_action',channel:'telegram',fixtureId,metadata:\{([\s\S]*?)\}\}\);/.exec(telegramUpdate);
-  assert.ok(event,'Telegram News Impact action event missing');
-  assert.match(event[1],/decision,action/);
-  assert.match(event[1],/recovery/);
-  assert.doesNotMatch(event[1],/title|headline|url|query|content|error\.message|stack/);
-});
+
 
 test('Mini App carries decision attribution into full AI without article text',()=>{
   assert.match(analysisController,/newsImpactDecision:safeText\(/);

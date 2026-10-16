@@ -42,14 +42,7 @@ const growth=readRepoFile('src/growth-analytics-runtime.js');
 const app=readRepoFile('public/app.js')+'\n'+readRepoFile('public/modules/admin-launch-funnel.js');
 const worker=readRepoFile('src/worker.js');
 
-test('RC71 only requests News Impact recheck through explicit Telegram AI actions',()=>{
-  assert.match(telegramUpdate,/newsImpactDelta:Boolean\(newsPublishedAt\)/);
-  assert.match(telegramUpdate,/newsImpactDelta:true,newsPublishedAt:publishedAt/);
-  assert.match(telegramUpdate,/source:'news_impact'/);
 
-  assert.match(botUi,/newsImpactRecheck:true/);
-  assert.match(botUi,/newsPublishedAt:safeText\(opts\.newsPublishedAt,40\)/);
-});
 
 test('saved AI snapshot must predate the news before attribution is eligible',()=>{
   assert.match(analysisRuntime,/const previousGeneratedMs=Date\.parse/);

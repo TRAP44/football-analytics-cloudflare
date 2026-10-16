@@ -79,7 +79,6 @@ test('public feed remains behind access control and admin reminders stay off the
 test('startup graph defers profile-only and Match Center-only modules until their route boundary',()=>{
   const deferred = [
     'billing.js',
-    'digest-settings.js',
     'smart-notifications.js',
     'match-center-controller.js',
     'analysis-controller.js',
@@ -92,7 +91,7 @@ test('startup graph defers profile-only and Match Center-only modules until thei
     assert.match(app,new RegExp(`import\\('\\./modules/${moduleName.replace('.', '\\.')}(?:\\?[^']*)?'\\)`));
   }
   assert.match(app,/async function ensureBillingModule\(/);
-  assert.match(app,/async function ensureDigestSettingsModule\(/);
+  assert.doesNotMatch(app,/digest-settings\.js/);
   assert.match(app,/async function ensureSmartNotificationsModule\(/);
   assert.match(app,/async function ensureMatchCenterController\(/);
   assert.match(app,/async function ensureAnalysisController\(/);

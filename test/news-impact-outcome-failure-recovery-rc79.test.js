@@ -33,16 +33,7 @@ test('RC79 classifies known operational failures and recovery paths',()=>{
   }
 });
 
-test('RC79 does not count failed Telegram section delivery as a successful outcome',()=>{
-  assert.match(botOrchestration,/async function sendBotFixtureSection\([\s\S]{0,160}?options = \{\}/);
-  assert.match(botOrchestration,/return \{ok:true,status:200\}/);
-  assert.match(botOrchestration,/ok:false,[\s\S]{0,100}?status,[\s\S]{0,100}?code:/);
 
-  const deliveryStart=telegramUpdate.indexOf('const delivery=await sendBotFixtureSection');
-  const guard=telegramUpdate.indexOf('if (!delivery?.ok)',deliveryStart);
-  const outcome=telegramUpdate.indexOf('await swallowAsync(recordNewsImpactOutcome',guard);
-  assert.ok(deliveryStart>=0 && guard>deliveryStart && outcome>guard,'outcome must follow successful section guard');
-});
 
 test('RC79 exposes safe recovery in Telegram and Mini App',()=>{
   assert.match(recovery,/function newsImpactRecoveryKeyboard\(/);
