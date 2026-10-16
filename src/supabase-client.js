@@ -253,7 +253,9 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
     if (!response.ok) {
       const text = await response.text().catch(() => '');
       const detail = safeRedact(text, 180);
-      throw new Error(`Supabase ${tableName}: HTTP ${response.status}${detail ? ` — ${detail}` : ''}`);
+      const error = new Error(`Supabase ${tableName}: HTTP ${response.status}${detail ? ` — ${detail}` : ''}`);
+      error.httpStatus = response.status;
+      throw error;
     }
   }
 

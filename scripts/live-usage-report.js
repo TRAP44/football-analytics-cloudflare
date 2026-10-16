@@ -4,7 +4,8 @@ import {pathToFileURL} from 'node:url';
 const PAGE=250,MAX_PAGES=4;
 const OPERATIONS=['ai','match','live','search'];
 const COUNTERS=['sent','edited','closed','failed','unknown','unknownPending','deferred','staleSkipped','oldestWaitSec','telegramCalls'];
-const STOPS=new Set(['rate_limited','checkpoint_failed','favorites_lookup_failed','execution_budget']);
+const STOPS=new Set(['rate_limited','checkpoint_failed','favorites_lookup_failed']);
+const STAGES=['cacheMs','accessMs','fixtureMs','providersMs','enrichmentMs','persistenceMs','settlementMs'];
 const integer=value=>typeof value==='number' && Number.isSafeInteger(value) && value>=0 && value<=2_000_000_000 ? value
   : typeof value==='string' && /^\d{1,12}$/.test(value) && Number(value)<=2_000_000_000 ? Number(value) : null;
 const percentile=(values,p)=>values.length ? [...values].sort((a,b)=>a-b)[Math.ceil(values.length*p)-1] : null;
@@ -18,7 +19,7 @@ export function summarizeTimings(rows){
   }
   return {invalid,operations:Object.fromEntries(OPERATIONS.map(key=>{
     const values=groups[key];
-    return [key,{samples:values.length,p50Ms:percentile(values,.5),p95Ms:percentile(values,.95),maxMs:values.length?Math.max(...values):null,
+    return [key,{samples:values.length,p50Ms:values.length>=3?percentile(values,.5):null,p95Ms:values.length>=20?percentile(values,.95):null,maxMs:values.length?Math.max(...values):null,
       evidence:values.length>=20?'observed_sample':'insufficient_samples'}];
   }))};
 }
@@ -46,10 +47,32 @@ function summarizeErrors(rows){
   const counts={};let uncategorized=0;
   for(const row of rows){
     if(typeof row?.code!=='string'||! /^[A-Z][A-Z0-9_]{0,99}$/.test(row.code)){uncategorized++;continue;}
-    if(row.code.startsWith('DAILY_DIGEST_'))continue;
+    if(row.code.startsWith('DAILY_DIGEST_') || row.code==='ANALYSIS_SLOW_REQUEST')continue;
     counts[row.code]=(counts[row.code]||0)+1;
   }
-  return {sampleRows:rows.length,uncategorized,byCode:counts};
+  return {sampleRows:rows.filter(row=>row.code!=='ANALYSIS_SLOW_REQUEST').length,uncategorized,byCode:counts};
+}
+
+export function summarizeAnalysisDiagnostics(rows){
+  const timings=[],stages=Object.fromEntries(STAGES.map(key=>[key,[]]));
+  const failures={samples:0,byKind:{},byHttpStatus:{}};let invalidTimings=0;
+  for(const row of rows){
+    if(row.code==='CACHE_DB_WRITE'){
+      failures.samples++;
+      const kind=['http','timeout','transport_or_configuration','unknown'].includes(row.failureKind)?row.failureKind:'unknown';
+      failures.byKind[kind]=(failures.byKind[kind]||0)+1;
+      const status=integer(row.httpStatus),key=status>=400 && status<=599?String(status):'unknown';
+      failures.byHttpStatus[key]=(failures.byHttpStatus[key]||0)+1;
+    }
+    if(row.code!=='ANALYSIS_SLOW_REQUEST')continue;
+    const total=integer(row.duration_ms),values=STAGES.map(key=>integer(row[key]));
+    if(total===null || total<2000 || total>600000 || values.some(value=>value===null || value>600000) || Math.abs(values.reduce((sum,value)=>sum+value,0)-total)>7){invalidTimings++;continue;}
+    timings.push(total);
+    STAGES.forEach((key,index)=>{if(values[index]>0)stages[key].push(values[index]);});
+  }
+  const summary=values=>({samples:values.length,p50Ms:values.length>=3?percentile(values,.5):null,p95Ms:values.length>=20?percentile(values,.95):null,maxMs:values.length?Math.max(...values):null});
+  return {slowRequests:summary(timings),stages:Object.fromEntries(STAGES.map(key=>[key,summary(stages[key])])),invalidTimings,cacheWriteFailures:failures,
+    note:'Only slow server requests (>=2s), including failures; sampled/deduplicated ops rows, not all requests. Nonzero phase cohorts differ; percentiles cannot be summed. Missing historical failure metadata is unknown.'};
 }
 
 export async function collectLiveUsage({env={},fetchImpl=fetch,now=new Date()}={}){
@@ -80,10 +103,10 @@ export async function collectLiveUsage({env={},fetchImpl=fetch,now=new Date()}={
   // Sequential reads keep pressure bounded; at most 12 requests / 3000 rows total.
   const timings=await read('duration_ms,reason:metadata->>reason',{source:'eq.client',event_type:'eq.client_telemetry',code:'eq.OPERATION_TIMING'});
   const boards=await read(['code',...COUNTERS.map(x=>`${x}:metadata->>${x}`),'stopped:metadata->>stopped','capped:metadata->>capped'].join(','),{source:'eq.favorite_scoreboard',event_type:'eq.favorite_scoreboard_run',code:'in.(FAVORITE_SCOREBOARD_RUN,FAVORITE_SCOREBOARD_PARTIAL)'});
-  const errors=await read('code',{severity:'in.(warning,error,critical)'});
+  const errors=await read(['code','duration_ms','httpStatus:metadata->>httpStatus','failureKind:metadata->>failureKind',...STAGES.map(key=>`${key}:metadata->>${key}`)].join(','),{or:'(severity.in.(warning,error,critical),code.eq.ANALYSIS_SLOW_REQUEST)'});
   return {scope:'Read-only production observations, not a load test or capacity proof',window:{start,end,hours:6},
     coverage:{timings:{pages:timings.pages,truncated:timings.truncated},scoreboards:{pages:boards.pages,truncated:boards.truncated},errors:{pages:errors.pages,truncated:errors.truncated}},
-    timings:summarizeTimings(timings.rows),scoreboards:summarizeScoreboards(boards.rows),errors:summarizeErrors(errors.rows),
+    timings:summarizeTimings(timings.rows),scoreboards:summarizeScoreboards(boards.rows),errors:summarizeErrors(errors.rows),analysisDiagnostics:summarizeAnalysisDiagnostics(errors.rows),
     complete:![timings,boards,errors].some(x=>x.truncated),productionCapacityConfirmed:false,
     limitations:['Client timing is observational, may include failed operations, can be missing, and does not distinguish cache from fresh AI.',
       'Offset pagination is bounded and best effort, not a transactional snapshot; concurrent inserts can shift page boundaries.',
@@ -100,6 +123,7 @@ export function usageMarkdown(report){
     `LIVE: событий запусков ${report.scoreboards.runEvents}; частичных ${report.scoreboards.partialRuns}; ограниченных бюджетом ${report.scoreboards.cappedRuns}; ${JSON.stringify(report.scoreboards.totals)}.`,
     `Максимум oldestWaitSec: ${report.scoreboards.maxOldestWaitSec??'нет данных'}. Отложенные сообщения — сумма попыток, не число уникальных людей.`,
     `Ошибки/предупреждения по коду: ${JSON.stringify(report.errors.byCode)}.`,
+    `Диагностика медленных AI (не вся выборка запросов): ${JSON.stringify(report.analysisDiagnostics)}.`,
     '',...report.limitations.map(x=>'- '+x),'','Полная production-вместимость и своевременная доставка этим отчётом не подтверждаются.',''].join('\n');
 }
 

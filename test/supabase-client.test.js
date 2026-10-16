@@ -359,3 +359,10 @@ test('supabase RPC never retries a non-idempotent transport exception',async()=>
   );
   assert.equal(calls,1);
 });
+
+test('upsert HTTP failures expose structured numeric status for safe cache diagnostics',async()=>{
+  const client=createSupabaseClient({fetchWithTimeout:async()=>response({ok:false,status:503,text:'private upstream'})});
+  await assert.rejects(client.supaUpsert({supabaseUrl:'https://example.supabase.co',supabaseKey:'secret'},'analysis_cache',{cache_key:'x'},'cache_key'),error=>{
+    assert.equal(error.httpStatus,503);return true;
+  });
+});

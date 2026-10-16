@@ -282,3 +282,19 @@ test('durable cache writes confirm shared storage and never publish an L1 succes
   await local.api.setCache('normal:77',77,{ok:true},{},10);
   assert.equal(local.memory.cache.has('normal:77'),true,'existing best-effort callers keep local caching');
 });
+
+test('cache write diagnostics classify failures without copying messages, codes or names',async()=>{
+  for(const [error,expected] of [
+    [Object.assign(new Error('private token'),{httpStatus:503}),{httpStatus:503,failureKind:'http'}],
+    [Object.assign(new Error('private'),{code:'UPSTREAM_TIMEOUT'}),{httpStatus:null,failureKind:'timeout'}],
+    [new TypeError('private'),{httpStatus:null,failureKind:'transport_or_configuration'}],
+    [Object.assign(new Error('private'),{name:'private-name',httpStatus:'401',code:'private-code'}),{httpStatus:null,failureKind:'unknown'}],
+  ]){
+    const rt=runtime({hasSupabase:()=>true,supaUpsert:async()=>{throw error;}});
+    await rt.api.setCache('fixture:123:v1',123,{ok:true},{},20);
+    const meta=rt.ops[0].meta;
+    assert.equal(meta.httpStatus,expected.httpStatus);assert.equal(meta.failureKind,expected.failureKind);
+    assert.doesNotMatch(JSON.stringify(meta),/private|token|123/);
+    assert.deepEqual(await rt.api.getCache('fixture:123:v1',{}),{ok:true});
+  }
+});

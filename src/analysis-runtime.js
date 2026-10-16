@@ -1,3 +1,4 @@
+import {createAnalysisTiming} from './analysis-timing.js';
 import {prematchLineupEvent,analysisIncludesLineupEvent,completedPrematchLineupRefresh,prematchLineupRefreshKey,PREMATCH_LINEUP_RETENTION_MINUTES} from './prematch-lineup-event.js';
 import { NO_CLEAR_SIGNAL_LABEL, isBettingText, withPublicSignalLabel } from './signal-wording.js';
 // AI analysis orchestration extracted from worker.js.
@@ -66,6 +67,7 @@ export function createAnalysisRuntime(deps) {
     freeQuotaHealthy,
     getCache,
     getCacheEntry,
+    analysisTimingNow,
     getCalibrationProfile,
     getOddsSnapshots,
     getQuota,
@@ -616,6 +618,7 @@ export function createAnalysisRuntime(deps) {
     if (fixtureId === null) return json({error:'Некорректный номер матча.'},400);
     if (!system && userId === null) return json({error:'Пользователь не авторизован.'},401);
 
+    const timing=createAnalysisTiming({now:analysisTimingNow});
     const fireAndForget=(fn,...args)=>{
       try {
         const pending=fn(...args);
@@ -735,6 +738,7 @@ export function createAnalysisRuntime(deps) {
         meta:{fixtureId},
       }).catch(()=>null);
     }
+    timing.enter('access');
     const lineupRefresh=system && lineupEvent!==null;
     const lineupContext=staleBefore?.match || lineupEvent?.match;
     if (lineupRefresh && (!lineupContext || !prematchLineupEvent(lineupEvent,lineupContext))) {
@@ -992,6 +996,7 @@ export function createAnalysisRuntime(deps) {
     }
     let fixture;
     try {
+      timing.enter('fixture');
       fixture=objectValue(await loadProviderFixture(fixtureId,cfg));
     } catch (error) {
       const providerLimited=safePredicate(isFootballRateLimitError,error);
@@ -1154,6 +1159,7 @@ export function createAnalysisRuntime(deps) {
         ? 'publication_window'
         : canFetchLineups ? '' : 'quota_reserve';
   
+    timing.enter('providers');
     const [injuryResult,predictionResult,oddsResult,h2hResult]=await Promise.all([
       safeAnalysisProviderFetch({
         feature:'injuries',
@@ -1401,6 +1407,7 @@ export function createAnalysisRuntime(deps) {
       .filter(value=>value && !isBettingText(value));
     skipped.push(...providerReliability.warnings);
 
+    timing.enter('enrichment');
     const webPromise=tavilySearch(
       `${homeName} ${awayName} injuries team news probable lineups latest`,
       cfg,
@@ -2227,6 +2234,7 @@ export function createAnalysisRuntime(deps) {
     }
     if (lineupRefresh && !completedPrematchLineupRefresh(payload.prematchLineupRefresh,fixtureId)) return json({code:'LINEUP_REFRESH_SOURCE_UNAVAILABLE'},503);
     const durableLineupWrite=lineupRefresh || (system && completedPrematchLineupRefresh(payload.prematchLineupRefresh,fixtureId));
+    timing.enter('persistence');
     let cacheStored=true;
     try {
       const result=await setCache(cacheKey,fixtureId,payload,cfg,ttl,{requireDurable:durableLineupWrite});
@@ -2330,6 +2338,7 @@ export function createAnalysisRuntime(deps) {
       quota:responseQuota,
     }));
     } finally {
+      timing.enter('settlement');
       const disposition=usageCommitted ? 'commit' : 'refund';
 
       const logFinalizationFailure=async (code,error,meta={})=>{
@@ -2507,6 +2516,19 @@ export function createAnalysisRuntime(deps) {
         try { error.newsImpactRecovery=recovery; } catch {}
       }
       throw error;
+    } finally {
+      const measured=timing.finish();
+      if (!system && measured && typeof recordOpsEvent==='function') {
+        try {
+          const task=Promise.resolve(recordOpsEvent(cfg,{
+            severity:'info',source:'analysis',eventType:'analysis_slow_request',
+            code:'ANALYSIS_SLOW_REQUEST',message:'Slow analysis request stage timings (may include failed operations).',
+            ...measured,
+          })).catch(()=>null);
+          // Keep diagnostics off the response path in Workers; never affect quota/lock settlement.
+          if (typeof cfg?.waitUntil==='function') cfg.waitUntil(task);
+        } catch {}
+      }
     }
   }
 

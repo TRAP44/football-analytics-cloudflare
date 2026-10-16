@@ -3078,6 +3078,7 @@ function getAnalysisRuntime() {
       freeQuotaHealthy,
       getCache,
       getCacheEntry,
+      analysisTimingNow:()=>performance.now(),
       getCalibrationProfile,
       getOddsSnapshots,
       getQuota,

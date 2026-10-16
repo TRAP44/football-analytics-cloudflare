@@ -1,3 +1,10 @@
+// Only fixed classifications and HTTP status: never persist transport messages or URLs.
+export function cacheFailureMetadata(error) {
+  const httpStatus=Number.isInteger(error?.httpStatus) && error.httpStatus>=400 && error.httpStatus<=599 ? error.httpStatus : null;
+  const timeout=error?.name==='TimeoutError' || error?.name==='AbortError' || error?.code==='UPSTREAM_TIMEOUT';
+  return {httpStatus,failureKind:httpStatus ? 'http' : timeout ? 'timeout' : error instanceof TypeError ? 'transport_or_configuration' : 'unknown'};
+}
+
 function cacheOpsCategory(cacheKey) {
   const raw = String(cacheKey || '').trim();
   if (!raw) return 'unknown';
@@ -303,7 +310,7 @@ export function createSharedCacheRuntime({
       noteTelemetry('supabaseErrors');
       await emitOpsEvent(cfg, {
         severity: 'warning', source: 'cache', eventType: 'supabase_cache_write_fallback', code: 'CACHE_DB_WRITE',
-        message: 'Shared cache persistence failed; the local cache copy remains available.', meta: { cacheCategory: cacheOpsCategory(cacheKey), provider: provenance.provider, errorName: String(error?.name || 'Error').slice(0, 40) },
+        message: 'Shared cache persistence failed; the local cache copy remains available.', meta: { cacheCategory: cacheOpsCategory(cacheKey), provider: provenance.provider, ...cacheFailureMetadata(error) },
       });
       if (requireDurable) return false;
       // Cache persistence is an optimization. Do not fail a successful user request

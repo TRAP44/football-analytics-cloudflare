@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {collectLiveUsage,summarizeTimings,summarizeScoreboards,usageMarkdown} from '../scripts/live-usage-report.js';
+import {collectLiveUsage,summarizeTimings,summarizeScoreboards,summarizeAnalysisDiagnostics,usageMarkdown} from '../scripts/live-usage-report.js';
 import {auditWorkflow} from '../scripts/privileged-access-audit.js';
 const env={SUPABASE_URL:'https://example.supabase.co',SUPABASE_SECRET_KEY:'sb_secret_not_for_logs'};
 const now=new Date('2026-10-16T18:00:00Z');
@@ -72,4 +72,29 @@ test('report workflow is manual/main-only, uses existing protected environment a
   assert.match(source,/if: github.ref == 'refs\/heads\/main'/);assert.match(source,/environment: background-jobs/);
   assert.doesNotMatch(source,/TELEGRAM|API_FOOTBALL|TAVILY|contents: write|actions: write/);
   assert.ok(auditWorkflow(path,source.replace('environment: background-jobs','environment: other')).some(x=>x.type==='secret_environment_missing'));
+});
+
+
+test('diagnostics aggregate only validated stages and fixed cache failure classifications',()=>{
+  const stage={cacheMs:'2000',accessMs:'500',fixtureMs:'0',providersMs:'0',enrichmentMs:'0',persistenceMs:'0',settlementMs:'0'};
+  const report=summarizeAnalysisDiagnostics([
+    {code:'ANALYSIS_SLOW_REQUEST',duration_ms:2500,...stage},
+    {code:'ANALYSIS_SLOW_REQUEST',duration_ms:9000,...stage},
+    {code:'CACHE_DB_WRITE',httpStatus:'503',failureKind:'http',message:'private'},
+    {code:'CACHE_DB_WRITE',httpStatus:'private',failureKind:'private'},
+  ]);
+  assert.equal(report.slowRequests.samples,1);assert.equal(report.slowRequests.maxMs,2500);
+  assert.equal(report.slowRequests.p95Ms,null);assert.equal(report.slowRequests.p50Ms,null);
+  assert.equal(report.invalidTimings,1);
+  assert.deepEqual(report.cacheWriteFailures.byKind,{http:1,unknown:1});
+  assert.deepEqual(report.cacheWriteFailures.byHttpStatus,{'503':1,unknown:1});
+  assert.doesNotMatch(JSON.stringify(report),/private/);
+});
+
+test('sparse client timings cannot display a percentile as reliable evidence',()=>{
+  for(const count of [2,3,19,20]){
+    const r=summarizeTimings(Array.from({length:count},(_,i)=>({reason:'ai',duration_ms:(i+1)*100}))).operations.ai;
+    assert.equal(r.p50Ms===null,count<3);assert.equal(r.p95Ms===null,count<20);
+    assert.equal(r.maxMs,count*100);
+  }
 });
