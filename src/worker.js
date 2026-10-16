@@ -3077,6 +3077,7 @@ function getAnalysisRuntime() {
       fetchWithTimeout,
       freeQuotaHealthy,
       getCache,
+      getCacheEntry,
       getCalibrationProfile,
       getOddsSnapshots,
       getQuota,

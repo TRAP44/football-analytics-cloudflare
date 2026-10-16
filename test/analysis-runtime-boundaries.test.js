@@ -439,3 +439,52 @@ test('cached response starts history and quota together and schedules growth/ref
   assert.equal(events.filter(event=>event==='referral').length,1);
   await Promise.all(pending);
 });
+
+test('cold analysis reads the shared cache once and still enforces quota',async()=>{
+  for(const entry of [null,{payload:{generatedAt:new Date().toISOString(),match:{fixtureId:123,status:'NS'}},expired:true}]){
+    let reads=0;
+    const runtime=createAnalysisRuntime({
+      ...baseDeps(),
+      getCacheEntry:async(_key,_cfg,allowExpired)=>{reads++;assert.equal(allowExpired,true);return entry;},
+      getCache:async()=>assert.fail('duplicate fresh read'),
+      getStaleCache:async()=>assert.fail('duplicate stale read'),
+      analysisFreshness:()=>({needsRecheck:true}),
+      resolveUserEntitlements:async()=>({source:'free',access:{}}),
+      getQuota:async()=>({plan:'FREE',used:3,limit:3,left:0}),
+    });
+    const response=await runtime.apiAnalyze({json:async()=>({fixtureId:123})},{},{id:456});
+    assert.equal(reads,1);assert.equal(response.status,429);
+    assert.equal(response.body.code,'ANALYSIS_QUOTA_EXHAUSTED');
+  }
+});
+
+test('single-read cache outages fail soft without bypassing quota',async()=>{
+  const runtime=createAnalysisRuntime({
+    ...baseDeps(),getCacheEntry:async()=>{throw new Error('cache down');},
+    getCache:async()=>assert.fail('duplicate fresh read'),getStaleCache:async()=>assert.fail('duplicate stale read'),
+    resolveUserEntitlements:async()=>({source:'free',access:{}}),
+    getQuota:async()=>({plan:'FREE',used:3,limit:3,left:0}),
+  });
+  const response=await runtime.apiAnalyze({json:async()=>({fixtureId:123})},{},{id:456});
+  assert.equal(response.status,429);assert.equal(response.body.code,'ANALYSIS_QUOTA_EXHAUSTED');
+});
+
+test('single-read fresh cache keeps cached responses and fixture identity checks',async()=>{
+  for(const fixtureId of [123,999]){
+    let rejected=0;
+    const payload={generatedAt:new Date().toISOString(),match:{fixtureId,date:new Date(Date.now()+3600000).toISOString(),status:'NS'}};
+    const runtime=createAnalysisRuntime({
+      ...baseDeps(),getCacheEntry:async()=>({payload,expired:false}),
+      getCache:async()=>assert.fail('duplicate fresh read'),getStaleCache:async()=>assert.fail('duplicate stale read'),
+      analysisFreshness:()=>({needsRecheck:false,state:'fresh'}),newsImpactDeltaStatus:()=>null,
+      recordHistory:async()=>{},analysisResponsePayload:(value,meta)=>({...value,...meta}),
+      recordOpsEvent:async(_cfg,event)=>{if(event.code==='ANALYSIS_CACHE_INVALID')rejected++;},
+      resolveUserEntitlements:async()=>({source:'free',access:{}}),
+      getQuota:async()=>({plan:'FREE',used:3,limit:3,left:0}),
+    });
+    const response=await runtime.apiAnalyze({json:async()=>({fixtureId:123})},{},{id:456});
+    assert.equal(response.status,fixtureId===123?200:429);
+    if(fixtureId===123)assert.equal(response.body.cached,true);
+    assert.equal(rejected,fixtureId===123?0:1);
+  }
+});
