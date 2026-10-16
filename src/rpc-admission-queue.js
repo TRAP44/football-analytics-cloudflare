@@ -53,7 +53,9 @@ export function createRpcAdmissionQueue({ maxActive = 128, maxQueued = 2048, max
       clearTimeout(job.wakeTimer);
       if (!job.started) { const index=group.pending.indexOf(job); if(index>=0){group.pending.splice(index,1);uncount(job);} }
       const error=unavailable();
-      job.controller.abort(error);
+      // Cancellation may throw when reaping another Worker request's context.
+      // The local deadline must still reject, even if transport abort fails.
+      try { job.controller.abort(error); } catch {}
       rejectPermit(error);rejectTimeout(error);
     };
     job.start = () => {

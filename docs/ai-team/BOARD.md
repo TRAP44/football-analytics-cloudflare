@@ -30,9 +30,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Общий deadline RPC Supabase до конца body, без повторов неизвестных записей — **Codex** — [PR #935](https://github.com/TRAP44/football-analytics-cloudflare/pull/935), ветка `codex/rpc-body-deadline` — ревью Claude;4244теста и real DB-load прошли, CI ожидается.
+- [ ] Отказ просроченного RPC даже при исключении AbortController.abort — **Codex** — [PR #936](https://github.com/TRAP44/football-analytics-cloudflare/pull/936), ветка `codex/rpc-expiry-abort` — замечание Claude к #933;4246тестов/32load-сценария прошли, ревью Claude.
+
 
 
 
@@ -88,6 +90,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Общий deadline RPC Supabase до конца body, без повторов неизвестных записей — **Codex** — [PR #935](https://github.com/TRAP44/football-analytics-cloudflare/pull/935), ветка `codex/rpc-body-deadline` — ревью Claude без блокеров, 7 CI зелёные — слит 16.10; Quality main прошёл, production deploy38927527491 выполняется.
 
 - [x] Безопасный повтор продления lease фонового задания при временном сбое — **Codex** — [PR #934](https://github.com/TRAP44/football-analytics-cloudflare/pull/934), ветка `codex/scheduled-lease-timeouts` — ревью: Claude. — добавлена настоящая DB-нагрузка1000lease, гонка40claim, HTTP1000clients и soak; отчёт docs/RELEASE_LOAD_2026_10_16_RU.md — слит 16.10, production deploy38920819068 success.
 
@@ -210,7 +214,6 @@
 ## Идеи / найдено по пути
 
 
-- [ ] Очередь RPC: защитить abort при отзыве аренды чужого контекста, чтобы исключение abort не мешало reject просроченной задачи — неблокирующее замечание Claude к #933; отдельная задача — **Codex**.
 
 - Claude 16.10: job `runtime-load` (Isolated Load and Resilience) один раз упал на `isolated-load-check.js --full` у ветки, где менялся только скрипт замеров; локально тот же код проходит 32/32 — похоже на нестабильность по таймингу раннера. Временная ветка `claude/latency-baseline-probe` (baseline для #923) осталась — удалить её из среды Claude не дали права, можно удалить в GitHub.
 - Центр матча (LIVE-штаб, `match-center-view.js`) тоже местами перегружен: блок «О данных» с временем обновления и подсказка о качестве данных о потерях («очищено перед аналитикой · исключено: N») — можно упростить отдельной задачей (найдено 15.10 при упрощении штаба).

@@ -14,6 +14,13 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-16 — Codex — Отказ RPC при исключении отмены
+PR: [#936](https://github.com/TRAP44/football-analytics-cloudflare/pull/936), ветка `codex/rpc-expiry-abort`.
+Сделано: в job.expire исключение controller.abort больше не мешает rejectPermit/rejectTimeout. Ошибка транспорта не заменяет UPSTREAM_TIMEOUT и не прерывает reaping остальных active/pending; новые callers продолжают работу. Сами операции не повторяются, admission limits/deadline/lease grace не менялись. Paths нагрузочного workflow включают очередь и новый тест.
+Проверки:2новые fault-injection регрессии (lazy reaping active+pending и timer expiry с поздним completion);19профильных прошли. На прежнем main be70fefc первый тест воспроизводит assertion failure «foreign request context» при входе нового caller. Node22 npm ci/check/lint/security:privileged, release582/582, полный набор4246/4246, Worker dry-run;32сценария isolated-load --full прошли. Имитация abort ограничена UPSTREAM_TIMEOUT очереди, внутренние контроллеры Node test runner не затрагивает. Production/платежи/рассылки/API-Football не трогались.
+Осталось / внимание: закрывает неблокирующее замечание Claude к #933. Abort по-прежнему best effort, неизвестный результат SQL не повторяется. #935 слит с 7зелёными CI и ревью Claude без блокеров; своя строка перенесена в Готово. Main Quality прошёл, deploy #935 (38927527491) выполняется на момент записи. Hosted capacity не измерялась. Ревью Claude, merge Сергей.
+
+
 ## 2026-10-16 — Codex — Общий дедлайн RPC до конца body
 PR: [#935](https://github.com/TRAP44/football-analytics-cloudflare/pull/935), ветка `codex/rpc-body-deadline`.
 Сделано: rawRpc держит абсолютный монотонный deadline до JSON, отменяет transport/body и ограничивает ожидание Promise.race. Поздние headers/body не принимаются, timer очищается. Прежние timeout и родительский signal admission queue сохранены. Новых повторов RPC нет; только безопасный renew retry из #934 получает завершившуюся timeout-ошибку. Paths нагрузочного workflow включают supabase-client и новый тест.
