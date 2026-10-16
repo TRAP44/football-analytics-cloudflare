@@ -2,12 +2,15 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {randomUUID,randomBytes,createHmac} from 'node:crypto';
-import {mkdtempSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
+import {mkdtempSync,writeFileSync,readFileSync,rmSync,mkdirSync,chownSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createServer,request as httpRequest} from 'node:http';
 import {buildMigrationPlan} from './prepare-supabase-ci-migrations.js';
 
+const uid=name=>Number(execFileSync('id',['-u',name]).toString().trim());
+const gid=name=>Number(execFileSync('id',['-g',name]).toString().trim());
 const suffix=randomUUID(),network=`mr-load-${suffix}`,database=`mr-db-${suffix}`,rest=`mr-rest-${suffix}`;
 const directory=mkdtempSync(join(tmpdir(),'mr-load-'));
 const password=randomBytes(24).toString('hex'),secret=randomBytes(32).toString('hex');
@@ -24,14 +27,38 @@ function execute(command,args,{input='',env=process.env,quiet=false}={}) {
   });
 }
 const docker=(args,options={})=>execute('docker',['--host=unix:///var/run/docker.sock',...args],{...options,env:dockerEnv});
-const query=sql=>docker(['exec','-i','-u','postgres',database,'psql','-h','127.0.0.1','-X','-q','-A','-t','-v','ON_ERROR_STOP=1','-d','isolated'],{input:sql});
-const created=[];let gateway;
+// Native stand (Issue #923): when container registries are unreachable, the same
+// schema/runner use a local PostgreSQL 16 pinned to one CPU and a PostgREST binary.
+// REAL_DB_STAND=native POSTGREST_BIN=/path/postgrest; nothing is downloaded here.
+const native=process.env.REAL_DB_STAND==='native';
+const nativePort=54330;
+const nativeBin=process.env.PG_BIN_DIR || '/usr/lib/postgresql/16/bin';
+const nativeData=join(directory,'pgdata');
+const asPostgres=(bin,args,options={})=>execute('runuser',['-u','postgres','--',join(nativeBin,bin),...args],options);
+const query=sql=>native
+  ? execute(join(nativeBin,'psql'),['-h','127.0.0.1','-p',String(nativePort),'-U','postgres','-X','-q','-A','-t','-v','ON_ERROR_STOP=1','-d','isolated'],{input:sql})
+  : docker(['exec','-i','-u','postgres',database,'psql','-h','127.0.0.1','-X','-q','-A','-t','-v','ON_ERROR_STOP=1','-d','isolated'],{input:sql});
+const created=[];let gateway;let nativeRest=null;let standProfile={postgres:'16.11',rest:'16.4',memoryMiB:512,cpuLimit:1,stand:'docker'};
 try {
+  if (native) {
+    assert.ok(process.env.POSTGREST_BIN,'POSTGREST_BIN is required for the native stand.');
+    mkdirSync(nativeData,{recursive:true});chownSync(directory,uid('postgres'),gid('postgres'));chownSync(nativeData,uid('postgres'),gid('postgres'));
+    await asPostgres('initdb',['-D',nativeData,'-A','trust','-U','postgres','--no-sync']);
+    // One CPU for PostgreSQL like the container profile; memory is bounded by settings, not a cgroup.
+    const server=spawn('runuser',['-u','postgres','--','taskset','-c','0',join(nativeBin,'postgres'),'-D',nativeData,'-p',String(nativePort),
+      '-c','listen_addresses=127.0.0.1','-c',`unix_socket_directories=${directory}`,'-c','max_connections=60','-c','shared_buffers=128MB','-c','fsync=on'],{stdio:'ignore'});
+    created.push(['native-postgres',server]);
+    for(let attempt=0;attempt<60;attempt++){try{await execute(join(nativeBin,'psql'),['-h','127.0.0.1','-p',String(nativePort),'-U','postgres','-d','postgres','-c','select 1']);break;}catch{await new Promise(resolve=>setTimeout(resolve,250));}}
+    await execute(join(nativeBin,'psql'),['-h','127.0.0.1','-p',String(nativePort),'-U','postgres','-d','postgres','-c','create database isolated']);
+    const version=await query('show server_version;');
+    standProfile={postgres:version.split(' ')[0],rest:(await execute(process.env.POSTGREST_BIN,['--version'])).replace(/^PostgREST\s*/,''),memoryMiB:null,sharedBuffersMiB:128,cpuLimit:1,stand:'native'};
+  } else {
   await docker(['network','create',network]);created.push(['network','rm',network]);
   await docker(['run','-d','--name',database,'--network',network,'--memory','512m','--cpus','1',
     '-e',`POSTGRES_PASSWORD=${password}`,'-e','POSTGRES_DB=isolated',
     'postgres:16.11-bookworm@sha256:a2420e9555e2224583fe84d0bb3f0b967e69354ae3a0be55a9c14e251388c4eb',
     'postgres','-c','max_connections=60','-c','shared_buffers=128MB']);created.push(['rm','-f','-v',database]);
+  }
   let ready=false;
   for(let attempt=0;attempt<60;attempt++){try{await query('select 1;');ready=true;break;}catch{await new Promise(resolve=>setTimeout(resolve,250));}}
   assert.ok(ready,'Disposable PostgreSQL did not start.');
@@ -42,12 +69,20 @@ try {
   const contract=JSON.parse(readFileSync('release-contract.json','utf8'));
   const fingerprint=await query("select public.backend_schema_contract_v2()->>'fingerprint';");
   assert.equal(fingerprint,contract.databaseContract.freshInstallFingerprint,'Disposable DB schema contract must match release.');
-  console.log(JSON.stringify({phase:'database_ready',migrations:plan.length,schemaFingerprint:fingerprint,postgres:'16.11',memoryMiB:512,maxConnections:60,restPool:20}));
+  console.log(JSON.stringify({phase:'database_ready',migrations:plan.length,schemaFingerprint:fingerprint,...standProfile,maxConnections:60,restPool:20}));
+  if (native) {
+    nativeRest=spawn(process.env.POSTGREST_BIN,[],{stdio:'ignore',env:{...process.env,
+      PGRST_DB_URI:`postgres://authenticator:${password}@127.0.0.1:${nativePort}/isolated`,
+      PGRST_DB_SCHEMAS:'public',PGRST_DB_ANON_ROLE:'anon',PGRST_DB_POOL:'20',PGRST_JWT_SECRET:secret,
+      PGRST_SERVER_HOST:'127.0.0.1',PGRST_SERVER_PORT:'54320'}});
+    created.push(['native-rest',nativeRest]);
+  } else {
   await docker(['run','-d','--name',rest,'--network',network,'-p','127.0.0.1:54320:3000',
     '-e',`PGRST_DB_URI=postgres://authenticator:${password}@${database}:5432/isolated`,
     '-e','PGRST_DB_SCHEMAS=public','-e','PGRST_DB_ANON_ROLE=anon','-e','PGRST_DB_POOL=20',
     '-e',`PGRST_JWT_SECRET=${secret}`,
     'ghcr.io/supabase/postgrest@sha256:d155c6718ed9a9f990d159a2ab7c0a3f16944dbb6d0a0344557421042acfe0df']);created.push(['rm','-f','-v',rest]);
+  }
   const encoded=value=>Buffer.from(JSON.stringify(value)).toString('base64url');
   const unsigned=`${encoded({alg:'HS256',typ:'JWT'})}.${encoded({role:'service_role',exp:Math.floor(Date.now()/1000)+3600})}`;
   const token=`${unsigned}.${createHmac('sha256',secret).update(unsigned).digest('base64url')}`;
@@ -84,12 +119,20 @@ try {
   evidence.paidProfilePreserved=true;
   const summaryFile='load-results/real-database-http-summary.json';
   const summary=JSON.parse(readFileSync(summaryFile,'utf8'));
-  summary.databaseEvidence={...evidence,migrations:plan.length,schemaFingerprint:fingerprint,postgres:'16.11',rest:'16.4',memoryMiB:512,cpuLimit:1,maxConnections:60,restPool:20};
+  summary.databaseEvidence={...evidence,migrations:plan.length,schemaFingerprint:fingerprint,...standProfile,maxConnections:60,restPool:20};
   writeFileSync(summaryFile,JSON.stringify(summary,null,2)+'\n');
   console.log(JSON.stringify({phase:'database_persistence_verified',...evidence}));
 } catch(error) {console.error(safe(error.message));process.exitCode=1;}
 finally {
   if(gateway)await new Promise(resolve=>gateway.close(resolve));
-  for(const args of created.reverse())try{await docker(args);}catch{console.error('Owned disposable resource cleanup failed.');process.exitCode=1;}
+  for(const args of created.reverse()){
+    if(args[0]==='native-rest' || args[0]==='native-postgres'){
+      const child=args[1];
+      if(child.exitCode===null){const done=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGTERM');await Promise.race([done,new Promise(resolve=>setTimeout(resolve,10000))]);}
+      if(args[0]==='native-postgres')try{await asPostgres('pg_ctl',['-D',nativeData,'-m','fast','stop']);}catch{}
+      continue;
+    }
+    try{await docker(args);}catch{console.error('Owned disposable resource cleanup failed.');process.exitCode=1;}
+  }
   rmSync(directory,{recursive:true,force:true});
 }

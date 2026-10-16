@@ -709,6 +709,7 @@ const {
   supaDelete,
   supaPatch,
   supaSelectOne,
+  supaSelectMany,
   supaUpsert,
   validateTelegramInitData,
   withSingleFlight,
