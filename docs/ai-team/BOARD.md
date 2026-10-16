@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] AI: одно чтение свежего/устаревшего кеша вместо двух — **Codex** — `codex/analysis-cache-snapshot`; замеры и регрессии.
+
 
 
 
@@ -35,7 +37,6 @@
 
 ## На ревью
 
-- [ ] Агрегированный read-only отчёт реальных AI/LIVE после приглашения людей — **Codex** — [PR #938](https://github.com/TRAP44/football-analytics-cloudflare/pull/938), ветка `codex/live-usage-report`; существующие ops_events и секреты background-jobs, без новых рассылок/нагрузки. — ревью Claude;4246тестов прошли, production report после слияния.
 
 
 
@@ -93,6 +94,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Агрегированный read-only отчёт реальных AI/LIVE после приглашения людей — **Codex** — [PR #938](https://github.com/TRAP44/football-analytics-cloudflare/pull/938), ветка `codex/live-usage-report`; существующие ops_events и секреты background-jobs, без новых рассылок/нагрузки. — ревью Claude;4246тестов прошли, production report после слияния. — слит 16.10.
 
 - [x] Удалить новости и утреннюю подборку из бота и настроек — **Codex** — [PR #937](https://github.com/TRAP44/football-analytics-cloudflare/pull/937), ветка `codex/bot-without-news`; Сергей16.10: убрать оба целиком. — замечание Claude по digest SLO исправлено; нужны CI нового head и повторное ревью. — слит, production deploy38952195397 success.
 

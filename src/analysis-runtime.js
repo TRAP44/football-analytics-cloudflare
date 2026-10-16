@@ -65,6 +65,7 @@ export function createAnalysisRuntime(deps) {
     fetchWithTimeout,
     freeQuotaHealthy,
     getCache,
+    getCacheEntry,
     getCalibrationProfile,
     getOddsSnapshots,
     getQuota,
@@ -711,9 +712,18 @@ export function createAnalysisRuntime(deps) {
 
     try {
     const cacheKey=`fixture:${fixtureId}:v17-starting-xi-rc146`;
-    const cachedCandidate=await optionalAsync(getCache,cacheKey,cfg);
+    // One shared-cache read supplies both freshness and stale fallback. A cold
+    // miss must not pay for a second identical Supabase round trip.
+    const entry=typeof getCacheEntry==='function'
+      ? await optionalAsync(getCacheEntry,cacheKey,cfg,true)
+      : null;
+    const cachedCandidate=typeof getCacheEntry==='function'
+      ? (entry?.expired===false ? entry.payload : null)
+      : await optionalAsync(getCache,cacheKey,cfg);
     const cached=analysisCachePayload(cachedCandidate,fixtureId);
-    const staleCandidate=cached || await optionalAsync(getStaleCache,cacheKey,cfg);
+    const staleCandidate=typeof getCacheEntry==='function'
+      ? entry?.payload
+      : cached || await optionalAsync(getStaleCache,cacheKey,cfg);
     const staleBefore=analysisCachePayload(staleCandidate,fixtureId);
     if ((cachedCandidate && !cached) || (staleCandidate && !staleBefore)) {
       await recordOpsEvent(cfg,{
