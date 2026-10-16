@@ -87,9 +87,12 @@ for (const concurrency of levels) {
   }
 }
 for (const concurrency of levels) {
-  let state=null,sideEffects=0;
+  let state=null,sideEffects=0,claimArrivals=0,releaseClaimBarrier;
+  const allClaimsArrived=new Promise(resolve=>{releaseClaimBarrier=resolve;});
   const coordinator={
     async claim() {
+      claimArrivals++;
+      if(claimArrivals===concurrency)releaseClaimBarrier();
       if (state) return {claimed:false,state,reason:'duplicate_'+state};
       state='inflight';return {claimed:true,state,reason:'claimed',leaseToken:'isolated-lease-token-0001'};
     },
@@ -99,7 +102,16 @@ for (const concurrency of levels) {
   const run=()=>{
     const request=new Request('https://isolated.invalid/api/runtime-controls',{method:'POST',headers:{'content-type':'application/json'},body:'{"maintenanceMode":false}'});
     return runSensitiveMutationWithReplay({request,url:new URL(request.url),user:{id:7},memory:{},coordinator,
-      handler:async()=>{sideEffects++;await sleep(10);return {status:200};}});
+      handler:async()=>{
+        sideEffects++;
+        // Keep the winner in flight until every contender reached claim. A
+        // fixed 10ms sleep alone races request parsing on slower CI machines.
+        await new Promise((resolve,reject)=>{
+          const timer=setTimeout(()=>reject(new Error('Mutation claim barrier did not receive every contender')),5000);
+          allClaimsArrived.then(()=>{clearTimeout(timer);resolve();});
+        });
+        await sleep(10);return {status:200};
+      }});
   };
   const started=performance.now();
   const results=await Promise.all(Array.from({length:concurrency},run));
