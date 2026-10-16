@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Агрегированный read-only отчёт реальных AI/LIVE после приглашения людей — **Codex** — ветка `codex/live-usage-report`; существующие ops_events и секреты background-jobs, без новых рассылок/нагрузки.
 
 
 
@@ -35,6 +34,8 @@
 
 
 ## На ревью
+
+- [ ] Агрегированный read-only отчёт реальных AI/LIVE после приглашения людей — **Codex** — [PR #938](https://github.com/TRAP44/football-analytics-cloudflare/pull/938), ветка `codex/live-usage-report`; существующие ops_events и секреты background-jobs, без новых рассылок/нагрузки. — ревью Claude;4246тестов прошли, production report после слияния.
 
 
 
