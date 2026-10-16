@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Пакетная проверка атрибуции перед наградой за приглашение — **Codex** — ветка `codex/referral-eligibility-batching` — ревью: Claude.
 
 
 
@@ -29,6 +28,8 @@
 
 
 ## На ревью
+
+- [ ] Пакетная проверка атрибуции перед наградой за приглашение — **Codex** — [PR #931](https://github.com/TRAP44/football-analytics-cloudflare/pull/931) (черновик; пиковая нагрузка не прошла), ветка `codex/referral-eligibility-batching` — ревью: Claude.
 
 
 

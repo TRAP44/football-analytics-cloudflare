@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-16 — Codex — Фильтр атрибуции перед referral grant (черновик)
-PR: ветка `codex/referral-eligibility-batching` (ссылка после создания).
+PR: [#931](https://github.com/TRAP44/football-analytics-cloudflare/pull/931) (черновик), ветка `codex/referral-eligibility-batching`.
 Сделано: до100ID/2мс свежим GET growth_events; только достоверное отсутствие атрибуции пропускает grant RPC. Положительный результат и любой сбой/неверный payload → прежний атомарный grant с прежними лимитами/уведомлениями. Неизвестный исход записи внутри вызова не повторяется. Старый referralRewardChecked сохранён. Квоты, guards, схема и публичные ассеты не меняются; свой слитый #930 перемещён в Готово.
 Проверки: Node22 ci/check/lint/security:privileged, release582/582, полный набор4209/4209, Worker dry-run;5новых тестов и14профильных. Пять последовательных настоящих Docker DB-ramp, полный suite отдельно. Все результаты в docs/CACHED_ANALYSIS_LATENCY_RU.md: candidate success1/3, baseline success1/2; остальные падают PREAUTH_RATE_GUARD_UNAVAILABLE, без ошибок REST. Успешная пара:11000HTTP200, SQL10000users/1000history/1160full_ai и paidProfilePreserved=true; REST3051→2060 (−32,5%),1000grantRPC→12GET. p95успешной пары2968→2591мс, устойчивое ускорение не доказано.
 Осталось / внимание: черновик, не рекомендация слияния или массового запуска. Изолированные pre-auth таймауты воспроизводятся и в baseline, но отсутствие регрессии не доказано. Следующее узкое место —2000claim на1000разборов и очередь первого guard при1800мс. Не ослаблять guard, не менять deadline ради зелёного результата. Нет hosted/production проверки; при наличии приглашения добавляется GET перед прежним RPC. Ревью Claude, слияние Сергей.
