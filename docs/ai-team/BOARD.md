@@ -24,11 +24,13 @@
 
 
 
+
 ## На ревью
+
+- [ ] Замер параллельного чтения квоты: прототип отклонён, результат в docs/CACHED_ANALYSIS_LATENCY_RU.md — **Codex** — [PR #929](https://github.com/TRAP44/football-analytics-cloudflare/pull/929), ветка `codex/cached-quota-overlap` — ревью: Claude.
 
 - [ ] Готовый разбор: задержка по замерам БД (Issue #923) — baseline и 4 пары последовательных прогонов на GitHub-стенде; фоновые события роста (`full_ai`) пакетами: REST на 1000 разборов 6013 → ~4040 (−33%), p95 −14% в среднем, но в пределах разброса машин — ускорение не доказано; цель 2 с не достигнута, следующее узкое место — 3 последовательных запроса ответа (2 claim + квота); аннотации замеров в GitHub, нативный стенд для сред без реестров — **Claude** — [PR #928](https://github.com/TRAP44/football-analytics-cloudflare/pull/928), ветка `claude/cached-analysis-latency` — ревью: Codex
 - [ ] Бот: кнопки и сценарии (Issue #922) — «Мои команды» страницами по 10 с «➕ Добавить» и «☆ Убрать»; «Составы и потери» из центра матча без AI-квоты; короткие ошибки без HTTP/Supabase (детали — в ops); web_app-кнопки в группах и каналах → ссылка в бота; выбор клубов не обещает напоминаний; подборка показывает состояние и одно действие, сбой записи — не успех; AI-ответ без «уверенность /100» и «качество данных %»; inline отличает «поиск недоступен» от «не найден» — **Claude** — [PR #927](https://github.com/TRAP44/football-analytics-cloudflare/pull/927), ветка `claude/bot-buttons-fixes` — ревью: Codex — слит 16.10
-- [ ] Mini App: ошибка загрузки «Мои команды» с повтором и сохранением списка — **Codex** — [PR #926](https://github.com/TRAP44/football-analytics-cloudflare/pull/926), ветка `codex/my-teams-load-recovery` — ревью: Claude.
 
 
 - [ ] LIVE-табло: надёжность (Issue #921) — свежесть снимка ≤10 мин без отката счёта, pending/unknown без повторной отправки и с обычными уведомлениями о голах, курсор по favorites, честная очередь, пачки отметок, пауза по 429, одна ops-запись; замер 1000/10000 и схема таблицы `scoreboard_deliveries` (миграция — отдельная подзадача) в `docs/LIVE_SCOREBOARD_RU.md` — **Claude** — [PR #925](https://github.com/TRAP44/football-analytics-cloudflare/pull/925), ветка `claude/scoreboard-reliability` — ревью: Codex — слит 15.10
@@ -44,7 +46,6 @@
 - [ ] Бот без ставочных рынков: в AI-вердикте вместо «3+ гола · N%» и «Забьют обе команды · N%» — ожидаемые голы; в «Итог AI» после матча убран блок «Голы:» с итогами этих рынков (в Mini App — #910) — **Claude** — [PR #911](https://github.com/TRAP44/football-analytics-cloudflare/pull/911) (вместе с главной), ветка `claude/compact-home-feed` — ревью: Codex
 - [ ] Mini App, главная без лишнего (Сергей 15.10: «убрать лишнее и ненужную инфу»): карточка ленты — одна строка как в SIGNAL V2 (время/LIVE, команды, счёт), вся строка открывает матч; две звезды, «Следить» и «30 мин.» ушли внутрь матча (в ленте только метки 🔔/👁/AI); вернувшимся (есть история или закрыт «Быстрый старт») — без слогана «Читай игру» и без блока «Чем отличается»; в разборе нет строки про лимит/Pass, пока платежи выключены — **Claude** — [PR #911](https://github.com/TRAP44/football-analytics-cloudflare/pull/911), ветка `claude/compact-home-feed` — ревью: Codex
 - [ ] Mini App, быстрые правки после UX-ревью: (1) топ-турниры — в раскрытой секции «Главные матчи» сразу после LIVE, а не в свёрнутом «Позже»; (2) убраны «3+ гола», «Забьют обе команды», «Забивали обе» и итоги этих рынков после матча (решение Сергея: никаких ставочных рынков); (3) исходы и оценка по ходу матча — целыми процентами, сумма ровно 100 — **Claude** — [PR #910](https://github.com/TRAP44/football-analytics-cloudflare/pull/910), ветка `claude/miniapp-quick-ux` — ревью: Codex
-- [ ] Пакетная синхронизация профилей при массовом первом входе — **Codex** — [PR #906](https://github.com/TRAP44/football-analytics-cloudflare/pull/906), ветка `codex/analysis-user-write-batching` — ревью: Claude.
 
 
 - [ ] Шапка и нижняя полоса Telegram в цвет фона Mini App (как у Blum) — **Claude** — [PR #904](https://github.com/TRAP44/football-analytics-cloudflare/pull/904), ветка `claude/telegram-chrome-color` — ревью: Codex
@@ -75,6 +76,10 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Mini App: ошибка загрузки «Мои команды» с повтором и сохранением списка — **Codex** — [PR #926](https://github.com/TRAP44/football-analytics-cloudflare/pull/926), ветка `codex/my-teams-load-recovery` — ревью: Claude. — слит.
+
+- [x] Пакетная синхронизация профилей при массовом первом входе — **Codex** — [PR #906](https://github.com/TRAP44/football-analytics-cloudflare/pull/906), ветка `codex/analysis-user-write-batching` — ревью: Claude. — слит.
 
 - [x] Упростить штаб матча (Сергей 15.10: «тонна странной инфы») — данные открыты сразу, 3 вкладки: Главное (что важно, голы, судья, кнопка «Обновить разбор» только когда нужно) · Составы (составы, кто не сыграет) · Форма (форма, последние матчи, место в таблице, очные встречи). Убраны «Почему модель пришла к этим процентам», «Сценарии», «Как голосуют источники», полнота данных, неопределённость, «п.п.», «Матч за 15 секунд», «Сравнение», «Модель», «Контекст»/паспорт данных — **Claude** — [PR #908](https://github.com/TRAP44/football-analytics-cloudflare/pull/908), ветка `claude/simplify-match-hq` — ревью: Codex — слит 15.10.
 - [x] Не показывать пользователю название поставщика данных (Сергей 15.10): «API-Football», «Прогноз API», «API Prediction» заменены на «источник данных»/«внешний прогноз», убран противоречивый фактор «Прогноз API-Football указывает: …» — **Claude** — [PR #907](https://github.com/TRAP44/football-analytics-cloudflare/pull/907), ветка `claude/hide-provider-name` — ревью: Codex. — слит 15.10.
