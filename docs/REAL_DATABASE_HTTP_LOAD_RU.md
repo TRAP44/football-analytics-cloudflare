@@ -60,4 +60,6 @@ node scripts/start-real-database-http-load.js
 
 В GitHub предыдущая попытка real-database-http наткнулась на `toomanyrequests: Data limit exceeded` public ECR, до HTTP-нагрузки. Тот же pinned PostgREST SHA256 проверен в официальном ghcr.io/supabase/postgrest, откуда теперь запускается стенд; digest не меняется. Независимый повтор старого job уже прошёл, но новая привязка убирает зависимость от quota ECR.
 
+Если реестры контейнеров недоступны (облачная среда разработки): `REAL_DB_STAND=native POSTGREST_BIN=/путь/postgrest node scripts/start-real-database-http-load.js` — локальный PostgreSQL 16 (`PG_BIN_DIR`, по умолчанию /usr/lib/postgresql/16/bin) на одном CPU и бинарник PostgREST; скрипт ничего не скачивает, схема и проверки те же. Ресурсы такого стенда записываются в `databaseEvidence` (`stand:'native'`), с docker-стендом их не сравнивать. В GitHub Actions итоги ступеней и SQL evidence выводятся аннотациями `real-db peak N` / `real-db evidence`.
+
 Последующее сокращение задержки готового разбора и очереди истории: [CACHED_ANALYSIS_LATENCY_RU.md](CACHED_ANALYSIS_LATENCY_RU.md).

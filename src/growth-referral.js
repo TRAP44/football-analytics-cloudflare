@@ -1,4 +1,5 @@
 import { bytesToHex } from './crypto-utils.js';
+import { createSupabaseCallBatcher } from './supabase-call-batcher.js';
 
 // Bounded growth/referral domain extracted from worker.js for Issue #440.
 // Persistence, user lookup, metadata sanitization and clock are injected by the composition root.
@@ -10,6 +11,7 @@ export function createGrowthReferralRuntime(deps = {}) {
     supaPatch,
     supaUpsert,
     supaSelectOne,
+    supaSelectMany,
     supaDelete,
     safeOpsMetadata,
     redactOpsString,
@@ -19,6 +21,55 @@ export function createGrowthReferralRuntime(deps = {}) {
     splitLaunchReferralParts,
     clock = () => Date.now(),
   } = deps;
+
+  // Issue #923: фоновые события роста (full_ai и т. п.) на пике занимали пул БД
+  // двумя запросами на событие — чтение атрибуции пользователя и вставка строки.
+  // Однотипные вызовы одного окна (2 мс, до 100) идут одним REST-запросом; каждый
+  // caller ждёт подтверждения базы, при ошибке пакета — прежний индивидуальный вызов.
+  const ATTRIBUTION_COLUMNS='telegram_id,acquisition_source,acquisition_campaign,acquisition_content';
+  const attributionBatch=createSupabaseCallBatcher(async (cfg,ids)=>{
+    const unique=[...new Set(ids)].sort((a,b)=>a-b);
+    const rows=await supaSelectMany(cfg,'users',{telegram_id:`in.(${unique.join(',')})`},{limit:unique.length,select:ATTRIBUTION_COLUMNS});
+    if (!Array.isArray(rows)) throw new Error('Attribution batch returned an invalid payload.');
+    const byId=new Map(rows.map(row=>[positiveSafeInteger(plainObject(row)?.telegram_id),row]));
+    return ids.map(id=>byId.get(id) || null);
+  });
+  const growthInsertBatch=createSupabaseCallBatcher(async (cfg,rows)=>{
+    // Стабильный порядок строк — как у пакетной истории.
+    const payload=[...rows].sort((a,b)=>a.telegram_id-b.telegram_id || String(a.created_at).localeCompare(String(b.created_at)));
+    await supaUpsert(cfg,'growth_events',payload.length===1 ? payload[0] : payload);
+    return rows.map(()=>true);
+  });
+  const canBatch=cfg=>typeof supaSelectMany==='function' && supabaseMode(cfg)===true;
+
+  async function storedAttributionUser(id,cfg) {
+    if (canBatch(cfg)) {
+      try { return await attributionBatch(cfg,id); }
+      catch { /* пакет не прочитался — прежнее индивидуальное чтение */ }
+    }
+    return await safeAsyncCall(getUserRecord,id,cfg);
+  }
+
+  // Повтор по одному — только если база точно отклонила пакет (HTTP 4xx от
+  // PostgREST: транзакция откатилась). Таймаут, обрыв, 5xx/шлюз — исход неизвестен:
+  // у этих событий нет event_key, и повтор мог бы задвоить уже записанные строки
+  // (ревью Codex #928). Тогда событие не подтверждается — как и прежняя одиночная
+  // запись без повтора.
+  function definitelyRejected(error) {
+    const status=Number(String(error?.message || '').match(/\bHTTP (\d{3})\b/)?.[1]);
+    return Number.isInteger(status) && status>=400 && status<500 && status!==408;
+  }
+
+  async function insertGrowthRow(cfg,row) {
+    if (canBatch(cfg)) {
+      try { await growthInsertBatch(cfg,row); return; }
+      catch (error) {
+        if (!definitelyRejected(error)) throw error;
+        // Пакет откатился целиком — каждая строка пишется отдельно, как раньше.
+      }
+    }
+    await supaUpsert(cfg,'growth_events',row);
+  }
 
   if (!memory || typeof memory!=='object' || Array.isArray(memory)) {
     throw new TypeError('Growth referral runtime requires memory state.');
@@ -435,8 +486,9 @@ export function createGrowthReferralRuntime(deps = {}) {
       const explicitAttribution=plainObject(
         safeRead(input,'attribution'),
       );
-      const storedUser=plainObject(
-        await safeAsyncCall(getUserRecord,id,cfg),
+      // Атрибуция нужна только для явного отсутствия explicitAttribution.
+      const storedUser=explicitAttribution ? null : plainObject(
+        await storedAttributionUser(id,cfg),
       );
       const attr=explicitAttribution
         ? acquisitionFromUser({
@@ -490,7 +542,7 @@ export function createGrowthReferralRuntime(deps = {}) {
             }
           }
         } else {
-          await supaUpsert(cfg,'growth_events',row);
+          await insertGrowthRow(cfg,row);
         }
       } else if (dedupeKey) {
         if (!(memory.growthEventKeys instanceof Set)) {

@@ -17,6 +17,7 @@ export function createAuthGrowthWiringRuntime(deps = {}) {
     supaDelete,
     supaPatch,
     supaSelectOne,
+    supaSelectMany,
     supaUpsert,
     validateTelegramInitData,
     withSingleFlight
@@ -55,6 +56,7 @@ export function createAuthGrowthWiringRuntime(deps = {}) {
     supaPatch,
     supaUpsert,
     supaSelectOne,
+    supaSelectMany,
     supaDelete,
     safeOpsMetadata,
     redactOpsString,
