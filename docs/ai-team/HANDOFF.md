@@ -14,6 +14,12 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-16 — Codex — Проверен и отклонён quota-prefetch после #928
+PR: ветка `codex/cached-quota-overlap`, только документы.
+Сделано: локально проверен read-only getQuota параллельно с account guard после остальных ранних guards, request-scoped WeakMap, без dispatch при отказе guard и без изменения reserve.32профильных теста проходили. Четыре последовательных настоящих DB-ramp: prototype/baseline/prototype/baseline. p95cached3855/3733/3789/3551мс; все HTTP200, SQL10000/1000/1160, paidProfilePreserved=true. Прототип целиком убран до PR, runtime/tests не меняются.
+Решение: p95 прототипа в среднем3822 против3642мс baseline, число DB-операций то же. Выигрыш не подтверждён; cached-ответ всё равно ждёт history после account guard. Не добавлять лишнее чтение БД до account denial без доказанной пользы. Полная таблица в docs/CACHED_ANALYSIS_LATENCY_RU.md.
+Осталось / внимание: #928 слит, production deploy38889471590 success, hosted capacity не проверена. Workers Free/Supabase Free-Nano/API-Football PRO7500 известны. Свои #906/#926 перемещены в Готово; чужие строки не менялись. Открытый #924 только coordination docs, обе записи сохранять.
+
 ## 2026-10-16 — Claude — Готовый разбор: замеры и пакетные события роста (#923)
 PR: [#928](https://github.com/TRAP44/football-analytics-cloudflare/pull/928), ветка `claude/cached-analysis-latency`.
 Сделано: baseline свежего main и 4 пары чередующихся последовательных прогонов на GitHub-стенде (real-database-http). Узкое место по операциям: фоновый `recordGrowthEvent` на каждый разбор делал `GET users` ради атрибуции и `POST growth_events`. Теперь оба пакетами (`src/supabase-call-batcher.js`: окно 2 мс, до 100, одна identity Supabase; каждый caller ждёт подтверждения; ошибка пакета → прежний индивидуальный вызов). REST на 1000 разборов 6013 → ~4040; все HTTP 200, evidence 10000/1000/1160, paidProfilePreserved. `start-real-database-http-load.js`: аннотации `real-db peak N`/`real-db evidence` в GitHub и режим `REAL_DB_STAND=native`. Таблица прогонов — `docs/CACHED_ANALYSIS_LATENCY_RU.md`.
