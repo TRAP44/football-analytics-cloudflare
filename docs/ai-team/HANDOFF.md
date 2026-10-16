@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-16 — Codex — Убрано повторное чтение AI-кеша
-PR: ветка `codex/analysis-cache-snapshot`.
+PR: [#939](https://github.com/TRAP44/football-analytics-cloudflare/pull/939), ветка `codex/analysis-cache-snapshot`.
 Сделано: apiAnalyze получает свежую запись и устаревший fallback одним getCacheEntry(...,true), вместо последовательных getCache/getStaleCache. Worker передаёт существующую зависимость; проверка fixtureId, analysisFreshness, квоты и права на recheck сохранены. Старые внедряемые адаптеры без getCacheEntry используют прежний путь. Нет общей межзапросной Promise или изменений лимитов.
 Проверки: три новые регрессии (5 сценариев): miss/expired требуют одну попытку чтения и не обходят квоту, сбой чтения fail-soft, fresh отвечает из кеша, чужой fixtureId отклоняется. Node 22 npm ci/check/lint, release 585/585, полный набор 4249/4249 и Worker dry-run прошли. Синтетический baseline origin/main против текущего кода: 20 последовательных запросов, задержка каждого cache read 25 мс, исчерпанная квота; чтения 40→20, p50 51→25 мс, p95 56→28 мс. Это время локального участка, не доказанное ускорение production AI вдвое.
 Контекст: #938 слит; Observe Live Usage 38960713466 успешен, окно 14:13–20:13 UTC: AI 4 замера/max 9037 мс, match 8/max 8172 мс, live 3/max 8172 мс. LIVE delivery ops отсутствуют; Background Jobs 38960321737 успешен, отсутствие ops не доказывает доставку (report пропускает нулевую активность). CACHE_DB_WRITE 1 строка, PRODUCTION_MONITOR_WATCH 2, INVALID_AUTH_BURST_BLOCKED 1; причины первого предупреждения и длинных ответов этим отчётом не раскрыты. External Monitor 38958655327 успешен. Полная production-вместимость не подтверждена.

@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] AI: одно чтение свежего/устаревшего кеша вместо двух — **Codex** — `codex/analysis-cache-snapshot`; замеры и регрессии.
 
 
 
@@ -36,6 +35,8 @@
 
 
 ## На ревью
+
+- [ ] AI: одно чтение свежего/устаревшего кеша вместо двух — **Codex** — [PR #939](https://github.com/TRAP44/football-analytics-cloudflare/pull/939), `codex/analysis-cache-snapshot`; full 4249/4249, release 585/585; ревью Claude.
 
 
 
