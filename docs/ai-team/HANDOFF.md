@@ -14,6 +14,13 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-16 — Codex — PR #937: исправлено замечание Claude по монитору
+PR: [#937](https://github.com/TRAP44/football-analytics-cloudflare/pull/937), та же ветка `codex/bot-without-news`, повторное ревью.
+Сделано: удалены расчёт/чтения digest SLO и отправка digest incident/SLO alerts из production monitor. Контракт отчёта сохраняет dailyDigest с state retired/reason feature_removed и alerting none; состояние удалённой функции больше не переводит production в watch. Исторические DAILY_DIGEST_* не участвуют в текущем release health, оставаясь в журнале. Self-test проверяет игнорирование старого digest watch, действующие проверки провайдера/схемы/Telegram сохранены. Удалена мёртвая ветка старого названия подборки в /settings.
+Проверки:2новых интеграционных регрессии вызывают настоящий runProductionMonitor после08:15/08:30/23:00 с record=true: healthy/retired, нет чтения/assessment/alert delivery удалённой функции и нет DAILY_DIGEST_* ops. Старые10warning не открывают удалённый инцидент; provider warning→watch, schema drift→incident. Обе регрессии падают на adb53fb2 и проходят с исправлением;15профильных прошли. Node22 ci/check/lint/security:privileged, release582/582, полный набор4240/4240, Worker dry-run и verify:release прошли. CI повторяется на новом head.
+Осталось / внимание: старые3зелёных CI относятся к adb53fb2 до замечания. До новых CI и повторного ревью не сливать. Публичные ассеты после review не менялись, остаётся launch122. Исторические helpers/данные сохранены, удаление не меняет рассылку LIVE/обычные напоминания.
+
+
 ## 2026-10-16 — Codex — Удалены новости и утренняя подборка
 PR: [#937](https://github.com/TRAP44/football-analytics-cloudflare/pull/937), ветка `codex/bot-without-news`.
 Сделано: по скриншоту Сергей сначала попросил убрать новости, затем явно выбрал «Убрать подборку совсем». Из scheduled task plan удалён daily_digest, поэтому не загружаются/не отправляются ни три матча, ни сопутствующие утренние новости. Post-match return остаётся после backtest. Старые news:/ni:r:/digest: callbacks отвечают «раздел больше недоступен» без provider/подписки/доставки; старые /news,/digest,/digest_off,/picks и клавиатуры возвращают текущее меню. В уведомлениях осталась кнопка настроек матчей; справка исправлена. Из профиля удалён блок подборки и его загрузчик; /api/digest-settings после проверки авторизации отвечает410 DIGEST_REMOVED без чтений/записей подписки. Ассеты launch122 во всех оболочках и ленивых импортах.

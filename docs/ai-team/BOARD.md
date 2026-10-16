@@ -34,7 +34,7 @@
 
 ## На ревью
 
-- [ ] Удалить новости и утреннюю подборку из бота и настроек — **Codex** — [PR #937](https://github.com/TRAP44/football-analytics-cloudflare/pull/937), ветка `codex/bot-without-news`; Сергей16.10: убрать оба целиком. — ревью Claude;4238тестов и browser smoke прошли.
+- [ ] Удалить новости и утреннюю подборку из бота и настроек — **Codex** — [PR #937](https://github.com/TRAP44/football-analytics-cloudflare/pull/937), ветка `codex/bot-without-news`; Сергей16.10: убрать оба целиком. — замечание Claude по digest SLO исправлено; нужны CI нового head и повторное ревью.
 
 
 

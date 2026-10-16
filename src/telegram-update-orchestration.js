@@ -723,7 +723,7 @@ export function createTelegramUpdateProcessor(deps) {
     return json({ok:true});
   }
 
-  if (chatId && (/^\/settings(?:@\w+)?(?:\s|$)/i.test(text) || text === '⚙️ Уведомления' || text === '☀️ Утренняя подборка')) {
+  if (chatId && (/^\/settings(?:@\w+)?(?:\s|$)/i.test(text) || text === '⚙️ Уведомления')) {
     await telegramApi('sendMessage',cfg,{chat_id:chatId,...notificationsView(request,msg?.chat?.type)});
     return json({ok:true});
   }

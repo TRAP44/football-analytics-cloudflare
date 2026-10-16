@@ -140,7 +140,6 @@ export function createProductionMonitorRuntime(deps) {
     const releaseState = String(source.releaseState || 'healthy');
     const providerHealth = String(source.providerHealth || 'waiting');
     const providerSloState = String(source.providerSloState || 'collecting');
-    const dailyDigestSloState = String(source.dailyDigestSloState || 'collecting');
     const telegramDedupeState = String(source.telegramDedupeState || 'healthy');
     const persistent = source.persistent === undefined || source.persistent === true;
     const authFailureCount=source.supabaseAuthFailures ?? 0;
@@ -161,7 +160,6 @@ export function createProductionMonitorRuntime(deps) {
       || !persistent
       || ['critical','warning'].includes(providerHealth)
       || ['watch','incident'].includes(providerSloState)
-      || dailyDigestSloState === 'watch'
     ) {
       return { state: 'watch', label: 'Production работает, но нужен контроль' };
     }
@@ -184,7 +182,7 @@ export function createProductionMonitorRuntime(deps) {
     const providerSloWatch = productionMonitorState({
       supabaseOk:true, schemaOk:true, releaseState:'healthy', providerHealth:'ok', providerSloState:'incident', telegramDedupeState:'healthy', persistent:true,
     });
-    const digestSloWatch = productionMonitorState({
+    const retiredDigestHealthy = productionMonitorState({
       supabaseOk:true, schemaOk:true, releaseState:'healthy', providerHealth:'ok', providerSloState:'healthy', dailyDigestSloState:'watch', telegramDedupeState:'healthy', persistent:true,
     });
     const telegramIncident = productionMonitorState({
@@ -194,77 +192,21 @@ export function createProductionMonitorRuntime(deps) {
       supabaseOk: true, schemaOk: true, supabaseAuthFailures:1, releaseState:'healthy', providerHealth:'ok', telegramDedupeState:'healthy', persistent:true,
     });
   
-    const digestRun=(date,time='07:55:00Z')=>({
-      created_at:`${date}T${time}`,
-      severity:'info',
-      source:'telegram',
-      event_type:'daily_digest',
-      code:'DAILY_DIGEST_RUN_OK',
-      metadata:{date,sent:100,claimed:100,remaining:0,failed:0,completionRate:1},
-    });
-    const digestHealthyAssessment=assessDailyDigestReliabilitySlo([
-      digestRun('2026-09-27','07:50:00Z'),
-      digestRun('2026-09-28','07:50:00Z'),
-      digestRun('2026-09-29','07:55:00Z'),
-    ],{nowMs:Date.parse('2026-09-29T08:15:00Z')});
-    const digestBeforeCutoff=assessDailyDigestReliabilitySlo([],{nowMs:Date.parse('2026-09-29T08:14:59Z')});
-    const digestMissing=assessDailyDigestReliabilitySlo([],{nowMs:Date.parse('2026-09-29T08:15:00Z')});
-    const firstWatch=planDailyDigestReliabilitySloEvent(digestMissing,[]);
-    const firstWatchRow={
-      created_at:'2026-09-29T08:15:00Z',
-      severity:firstWatch.severity,
-      source:firstWatch.source,
-      event_type:firstWatch.eventType,
-      code:firstWatch.code,
-      metadata:firstWatch.meta,
-    };
-    const repeatedWatch=planDailyDigestReliabilitySloEvent(
-      assessDailyDigestReliabilitySlo([],{nowMs:Date.parse('2026-09-29T08:30:00Z')}),
-      [firstWatchRow],
-    );
-    const lateRunAssessment=assessDailyDigestReliabilitySlo([
-      digestRun('2026-09-29','08:20:00Z'),
-    ],{nowMs:Date.parse('2026-09-29T08:30:00Z')});
-    const recovery=planDailyDigestReliabilitySloEvent(lateRunAssessment,[firstWatchRow]);
-    const recoveryRow={
-      created_at:'2026-09-29T08:30:00Z',
-      severity:recovery.severity,
-      source:recovery.source,
-      event_type:recovery.eventType,
-      code:recovery.code,
-      metadata:recovery.meta,
-    };
-    const postRecovery=planDailyDigestReliabilitySloEvent(lateRunAssessment,[firstWatchRow,recoveryRow]);
-    const newDayMissing=assessDailyDigestReliabilitySlo([],{nowMs:Date.parse('2026-09-30T08:15:00Z')});
-    const newDayWatch=planDailyDigestReliabilitySloEvent(newDayMissing,[firstWatchRow]);
-  
-    const digestSloContract={
-      healthy:digestHealthyAssessment.state==='healthy',
-      cutoff:digestBeforeCutoff.state==='collecting' && digestBeforeCutoff.reason==='before_delivery_window_completion',
-      missingRun:digestMissing.state==='watch' && digestMissing.reason==='missing_run' && firstWatch.action==='record',
-      repeatedWatchSuppressed:repeatedWatch.action==='none' && repeatedWatch.reason==='watch_episode_already_recorded',
-      recovered:recovery.action==='record' && recovery.code==='DAILY_DIGEST_SLO_RECOVERED' && recovery.meta?.reason==='missing_run_recovered',
-      recoveryDeduplicated:postRecovery.action==='none',
-      newDayReset:newDayWatch.action==='record' && newDayWatch.code==='DAILY_DIGEST_SLO_MISSING_RUN',
-    };
-  
     return {
       pass: healthy.state === 'healthy'
         && drift.state === 'incident'
         && schemaUnavailable.state === 'watch'
         && watch.state === 'watch'
         && providerSloWatch.state === 'watch'
-        && digestSloWatch.state === 'watch'
+        && retiredDigestHealthy.state === 'healthy'
         && telegramIncident.state === 'incident'
-        && authIncident.state === 'incident'
-        && Object.values(digestSloContract).every(Boolean),
+        && authIncident.state === 'incident',
       healthy: healthy.state,
       drift: drift.state,
       schemaUnavailable: schemaUnavailable.state,
       watch: watch.state,
       providerSloWatch:providerSloWatch.state,
-      digestSloWatch:digestSloWatch.state,
-      digestSloContract,
+      retiredDigestHealthy:retiredDigestHealthy.state,
       telegramIncident: telegramIncident.state,
       authIncident: authIncident.state,
     };
@@ -288,8 +230,6 @@ export function createProductionMonitorRuntime(deps) {
       providerAlertLedger,
       providerAlertContract,
       providerAlertDestinations,
-      digestReliabilitySource,
-      digestSloSource,
     ] = await Promise.all([
       probeSupabaseConfirmed(cfg),
       probeSupabaseSchemaDriftConfirmed(cfg),
@@ -300,8 +240,6 @@ export function createProductionMonitorRuntime(deps) {
       readProviderIncidentAlertDeliveries(cfg,168),
       readProviderIncidentAlertDeliveryContract(cfg),
       providerIncidentAlertDestinations(cfg),
-      readDailyDigestOpsEvents(cfg,new Date(now.getTime()-7*24*3600_000).toISOString(),now.toISOString(),1000),
-      readDailyDigestSloEvents(cfg,new Date(now.getTime()-30*24*3600_000).toISOString(),now.toISOString(),100),
     ]);
   
     const activeReleaseIdentity=currentReleaseIdentity(cfg);
@@ -309,6 +247,7 @@ export function createProductionMonitorRuntime(deps) {
       item?.source !== 'monitor'
       && item?.source !== 'release_regression'
       && item?.source !== 'release_regression_alert'
+      && !/^DAILY_DIGEST_/.test(String(item?.code || ''))
     );
     const releaseScope=scopeOpsEventsToDeployment(
       releaseMetricItems,
@@ -357,26 +296,9 @@ export function createProductionMonitorRuntime(deps) {
           destinations:providerAlertDestinations,
         })
       : { action:'none', reason:'read_only_monitor' };
-    const digestIncident = buildDailyDigestIncidentReport(
-      source.items.filter(item => item?.source === 'telegram' && item?.event_type === 'daily_digest'),
-      { nowMs:now.getTime() },
-    );
-    const digestReliabilitySlo=assessDailyDigestReliabilitySlo(
-      digestReliabilitySource.items,
-      {
-        nowMs:now.getTime(),
-        days:7,
-        evidenceComplete:Boolean(digestReliabilitySource.persistent && !digestReliabilitySource.truncated),
-      },
-    );
-    const digestReliabilitySloEvent=options.record !== false
-      ? planDailyDigestReliabilitySloEvent(digestReliabilitySlo,digestSloSource.items)
-      : {action:'none',reason:'read_only_monitor'};
-    const digestAlertCandidate = options.record !== false
-      ? planDailyDigestIncidentAlert(digestIncident, providerAlertLedger.items, {
-          destinations:providerAlertDestinations,
-        })
-      : { action:'none', reason:'read_only_monitor' };
+    // Retired with the morning digest: do not read, assess or alert on its SLO.
+    const digestIncident={state:'retired',status:'retired',reason:'feature_removed',diagnostics:{}};
+    const digestReliabilitySlo={state:'retired',reason:'feature_removed',code:'DAILY_DIGEST_RETIRED'};
     const securityAssessment=assessSecuritySignals(source.items,{nowMs:now.getTime(),windowMinutes:15});
     const securityIncident=securityIncidentTimeline(securityAssessment,source.items,{nowMs:now.getTime()});
     const securityAlertCandidate=options.record !== false
@@ -402,14 +324,6 @@ export function createProductionMonitorRuntime(deps) {
           blockedCandidate:true,
         }
       : incidentAlertCandidate;
-    const digestAlertPlan = digestAlertCandidate.action === 'send' && !incidentAlertPersistenceReady
-      ? {
-          ...digestAlertCandidate,
-          action:'none',
-          reason:'persistent_ledger_unavailable',
-          blockedCandidate:true,
-        }
-      : digestAlertCandidate;
     const securityAlertPlan = securityAlertCandidate.action === 'send' && !incidentAlertPersistenceReady
       ? {
           ...securityAlertCandidate,
@@ -524,10 +438,10 @@ export function createProductionMonitorRuntime(deps) {
         incident:digestIncident,
         reliabilitySlo:digestReliabilitySlo,
         alerting:{
-          configured:Boolean(cfg.botToken && (cfg.adminTelegramIds || []).length),
-          persistent:incidentAlertPersistenceReady,
-          nextAction:digestAlertPlan.action === 'send' ? digestAlertPlan.kind : 'none',
-          reason:digestAlertPlan.reason || '',
+          configured:false,
+          persistent:false,
+          nextAction:'none',
+          reason:'feature_removed',
         },
       },
       security:{
@@ -549,9 +463,9 @@ export function createProductionMonitorRuntime(deps) {
         providerAlertLedgerRows:Number(providerAlertLedger.items?.length || 0),
         providerAlertLedgerStatus:String(providerAlertLedger.status || ''),
         providerAlertContractStatus:String(providerAlertContract.status || ''),
-        dailyDigestReliabilityPersistent:Boolean(digestReliabilitySource.persistent),
-        dailyDigestReliabilityEvents:Number(digestReliabilitySource.items?.length || 0),
-        dailyDigestSloPersistent:Boolean(digestSloSource.persistent),
+        dailyDigestReliabilityPersistent:false,
+        dailyDigestReliabilityEvents:0,
+        dailyDigestSloPersistent:false,
         migrationReady:Boolean(source.migrationReady && providerSloSource.migrationReady && providerAlertLedger.persistent && providerAlertContract.ok),
         supabaseAuthFailuresCurrentRelease:supabaseAuthFailures,
         releaseExactEvents:Number(releaseScope.counts.exact || 0),
@@ -775,80 +689,6 @@ export function createProductionMonitorRuntime(deps) {
       await Promise.allSettled(alertEvents.map(event => recordOpsEvent(cfg,event)));
     }
   
-  
-    if (options.record !== false && digestAlertPlan.blockedCandidate) {
-      await recordOpsEvent(cfg,{
-        severity:'error',
-        source:'digest_alert',
-        eventType:'alert_delivery',
-        code:'DAILY_DIGEST_INCIDENT_ALERT_PERSISTENCE_FAILED',
-        message:'Persistent alert delivery claim is unavailable; daily digest admin alert was suppressed.',
-        endpoint:'cron:production-monitor',
-        meta:{
-          incidentId:digestAlertPlan.incidentId || null,
-          alertKind:String(digestAlertPlan.kind || ''),
-          deliveryKey:String(digestAlertPlan.alertKey || digestAlertPlan.deliveryKey || ''),
-          reason:'persistent_ledger_unavailable',
-        },
-      }).catch(()=>{});
-    }
-  
-    if (options.record !== false && digestAlertPlan.action === 'send') {
-      let digestDelivery;
-      try {
-        digestDelivery = await deliverOperationalIncidentAlert({
-          plan:digestAlertPlan,
-          text:formatDailyDigestIncidentAlert(digestAlertPlan),
-          adminTelegramIds:cfg.adminTelegramIds || [],
-          claimDelivery:input => claimProviderIncidentAlertDelivery(cfg,input),
-          beginDelivery:input => beginProviderIncidentAlertDeliverySend(cfg,input),
-          finalizeDelivery:input => finalizeProviderIncidentAlertDelivery(cfg,input),
-          sendMessage:(chatId,text) => sendTelegramMessage(chatId,text,cfg),
-          nowMs:now.getTime(),
-        });
-      } catch (error) {
-        digestDelivery = {
-          ok:false,
-          outcomes:(digestAlertPlan.targetDeliveries || []).map(target => ({
-            slot:Number(target?.slot),
-            state:'persistence_failure',
-            claimAcquired:false,
-            reason:redactOpsString(error?.message || error,160),
-            attempts:0,
-          })),
-          deliveredSlots:[],
-          failedSlots:(digestAlertPlan.targetDeliveries || []).map(target => Number(target?.slot)),
-          recipientCount:(digestAlertPlan.targetDeliveries || []).length,
-        };
-      }
-  
-      const firstClaims=(digestDelivery.outcomes || []).filter(item => item?.claimAcquired && Number(item?.attempts || 0) === 1);
-      if (firstClaims.length) {
-        await recordOpsEvent(cfg,{
-          severity:digestAlertPlan.kind === 'recovery' ? 'info' : 'warning',
-          source:'telegram',
-          eventType:'daily_digest_incident',
-          code:digestAlertPlan.kind === 'recovery' ? 'DAILY_DIGEST_INCIDENT_RECOVERED' : 'DAILY_DIGEST_INCIDENT_OPENED',
-          message:digestAlertPlan.kind === 'recovery'
-            ? 'Daily digest operational incident recovered.'
-            : 'Daily digest operational incident opened from backlog/stuck-delivery health thresholds.',
-          endpoint:'cron:production-monitor',
-          meta:{
-            incidentId:digestAlertPlan.incidentId || null,
-            date:digestAlertPlan.incident?.date || null,
-            alertKind:digestAlertPlan.kind,
-            diagnostics:digestAlertPlan.incident?.diagnostics || {},
-          },
-        }).catch(()=>{});
-      }
-  
-      const digestAlertEvents=dailyDigestIncidentAlertOpsEvents(digestAlertPlan,digestDelivery);
-      await Promise.allSettled(digestAlertEvents.map(event => recordOpsEvent(cfg,event)));
-    }
-  
-    if (options.record !== false && digestReliabilitySloEvent.action === 'record') {
-      await recordOpsEvent(cfg,digestReliabilitySloEvent).catch(()=>{});
-    }
   
     if (options.record !== false && schemaDrift.recovered) {
       await recordOpsEvent(cfg, {
