@@ -250,6 +250,8 @@ export function createScheduledLeaseRuntime({
   supaRpc,
   recordOpsEvent=async()=>{},
   redactOpsString=value=>typeof value === 'string' ? value : '',
+  now=()=>Date.now(),
+  sleepMs=ms=>new Promise(resolve=>setTimeout(resolve,ms)),
 } = {}) {
   if (typeof hasSupabase!=='function') throw new TypeError('hasSupabase is required');
   if (typeof supaRpc!=='function') throw new TypeError('supaRpc is required');
@@ -313,13 +315,40 @@ export function createScheduledLeaseRuntime({
     const token=cleanLeaseToken(source.leaseToken);
     const ttl=boundedLeaseSeconds(leaseSeconds);
 
+    let attempts=0;
+    const transient=error=>['UPSTREAM_TIMEOUT','HTTP_408','HTTP_502','HTTP_503','HTTP_504','PGRST000','PGRST001','PGRST002','PGRST003','ECONNRESET','ETIMEDOUT','EAI_AGAIN'].includes(error?.code || error?.cause?.code)
+      || (error instanceof TypeError && /fetch|network/i.test(error.message));
+    const retryHasTime=()=>{
+      const until=typeof source.lockedUntil==='string' ? Date.parse(source.lockedUntil) : NaN;
+      return Number.isFinite(until) && until-now()>5000;
+    };
     try {
-      const raw=await supaRpc(cfg,'renew_scheduled_job',{
-        p_job_key:jobKey,
-        p_lease_token:token,
-        p_lease_seconds:ttl,
-      },1800);
-      return normalizeRenewal(raw,{jobKey,groupKey});
+      let raw;
+      try {
+        attempts++;
+        raw=await supaRpc(cfg,'renew_scheduled_job',{
+          p_job_key:jobKey,p_lease_token:token,p_lease_seconds:ttl,
+        },1800);
+      } catch(error) {
+        // Renew is owner-token scoped and monotonic in SQL. Claim/settlement
+        // writes have different unknown-outcome semantics and are never replayed.
+        if(!transient(error) || !retryHasTime())throw error;
+        await sleepMs(150);
+        if(!retryHasTime())throw error;
+        attempts++;
+        raw=await supaRpc(cfg,'renew_scheduled_job',{
+          p_job_key:jobKey,p_lease_token:token,p_lease_seconds:ttl,
+        },1800);
+      }
+      const result=normalizeRenewal(raw,{jobKey,groupKey});
+      if(attempts>1 && result.renewed===true){
+        await safeRecord(cfg,{
+          severity:'info',source:'cron',eventType:'scheduled_lease',code:'SCHEDULED_LEASE_RENEW_RECOVERED',
+          message:'Scheduled execution lease renewal recovered after a transient RPC failure.',
+          meta:{jobKey,groupKey,attempts},
+        });
+      }
+      return result;
     } catch (error) {
       await safeRecord(cfg,{
         severity:'error',
@@ -329,7 +358,7 @@ export function createScheduledLeaseRuntime({
         message:safeRedact(redactOpsString,typeof error?.message === 'string' ? error.message : 'scheduled lease error',240),
         endpoint:'cron',
         transitionKey:`scheduled-lease-renew-failed:${groupKey || 'scheduled'}:${new Date().toISOString().slice(0,13)}`,
-        meta:{jobKey,groupKey},
+        meta:{jobKey,groupKey,attempts},
       });
       return {
         renewed:false,

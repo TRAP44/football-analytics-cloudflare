@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Безопасный повтор продления lease фонового задания при временном сбое — **Codex** — ветка `codex/scheduled-lease-timeouts` — ревью: Claude.
+
 
 
 
@@ -30,7 +32,6 @@
 
 ## На ревью
 
-- [ ] Ограниченная очередь RPC лимитера с прежним общим дедлайном — **Codex** — [PR #933](https://github.com/TRAP44/football-analytics-cloudflare/pull/933), ветка `codex/rate-claim-admission` — ревью: Claude. — исправлены замечания по аренде/body/overflow, повторное ревью
 
 - [ ] LIVE-табло: аудит очереди, повторных уведомлений, 429 и таймаутов (Сергей 16.10) — гол не теряется, когда табло застыло (устаревшие данные или отложенная правка): подавление уведомления о голе только для актуального табло (`shown.h` + снимок ≤15 мин); удалённое человеком табло (`s:'g'`) возвращает уведомления о голах; пауза 429 от момента ответа; сбой сохранения отметок не сдвигает курсор мимо людей; отложенные правки в `deferred` — **Claude** — [PR #932](https://github.com/TRAP44/football-analytics-cloudflare/pull/932), ветка `claude/scoreboard-audit` — ревью: Codex
 - [ ] Пакетная проверка атрибуции перед наградой за приглашение — **Codex** — [PR #931](https://github.com/TRAP44/football-analytics-cloudflare/pull/931) (черновик; пиковая нагрузка не прошла), ветка `codex/referral-eligibility-batching` — ревью: Claude.
@@ -84,6 +85,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Ограниченная очередь RPC лимитера с прежним общим дедлайном — **Codex** — [PR #933](https://github.com/TRAP44/football-analytics-cloudflare/pull/933), ветка `codex/rate-claim-admission` — ревью: Claude. — исправлены замечания по аренде/body/overflow, повторное ревью — слит 16.10
 
 - [x] Пакетная проверка атрибуции перед наградой за приглашение — **Codex** — [PR #931](https://github.com/TRAP44/football-analytics-cloudflare/pull/931), ветка `codex/referral-eligibility-batching` — ревью: Claude. — слит 16.10
 
@@ -200,6 +203,8 @@
 - [x] Настройка совместной работы Claude + Codex — **Claude** — [PR #793](https://github.com/TRAP44/football-analytics-cloudflare/pull/793)
 
 ## Идеи / найдено по пути
+
+- [ ] Очередь RPC: защитить abort при отзыве аренды чужого контекста, чтобы исключение abort не мешало reject просроченной задачи — неблокирующее замечание Claude к #933; отдельная задача — **Codex**.
 
 - Claude 16.10: job `runtime-load` (Isolated Load and Resilience) один раз упал на `isolated-load-check.js --full` у ветки, где менялся только скрипт замеров; локально тот же код проходит 32/32 — похоже на нестабильность по таймингу раннера. Временная ветка `claude/latency-baseline-probe` (baseline для #923) осталась — удалить её из среды Claude не дали права, можно удалить в GitHub.
 - Центр матча (LIVE-штаб, `match-center-view.js`) тоже местами перегружен: блок «О данных» с временем обновления и подсказка о качестве данных о потерях («очищено перед аналитикой · исключено: N») — можно упростить отдельной задачей (найдено 15.10 при упрощении штаба).
