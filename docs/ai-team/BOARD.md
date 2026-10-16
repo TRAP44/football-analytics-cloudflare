@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Диагностика записи кеша и стадий медленного AI — **Codex** — `codex/ai-latency-diagnostics`; без сырых ошибок/идентификаторов.
 
 
 
@@ -37,6 +36,8 @@
 
 
 ## На ревью
+
+- [ ] Диагностика записи кеша и стадий медленного AI — **Codex** — [PR #940](https://github.com/TRAP44/football-analytics-cloudflare/pull/940), `codex/ai-latency-diagnostics`; 4256/4256, release 586/586, без сырых ошибок/идентификаторов; ревью Claude.
 
 
 
