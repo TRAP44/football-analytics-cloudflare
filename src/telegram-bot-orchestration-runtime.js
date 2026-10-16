@@ -237,11 +237,6 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
     const ai=plainObject(root.aiInstructor) || {};
     const signal=plainObject(ai.betSignal) || {};
     const verdict=plainObject(ai.verdict) || {};
-    const trust=plainObject(ai.dataTrust) || {};
-    const confidenceScore=finiteNumber(ai.confidenceScore);
-    const trustNumber=finiteNumber(trust.score);
-    const confidence=confidenceScore!==null ? `${Math.round(confidenceScore)}/100` : '—';
-    const trustScore=trustNumber!==null ? `${Math.round(trustNumber)}%` : '—';
     const skip=safeText(signal.code,32)==='skip';
     const fallbackFreshness={state:'unknown',label:'—',reason:'',ageMinutes:0,needsRecheck:false};
     const freshness=plainObject(root.freshness)
@@ -257,7 +252,12 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
     const reasonText=[signal.reason,ai.riskNote,...(Array.isArray(ai.factors) ? ai.factors : [])]
       .map(value=>neutralReasonText(typeof value==='string' ? value : ''))
       .find(Boolean) || '';
-    const freshIcon=freshness.needsRecheck===true?'🟠':safeText(freshness.state,32)==='started'?'⚪':'🟢';
+    // Issue #922 (ревью Codex #927): без служебных шкал (уверенность /100, качество
+    // данных %, «Свежесть: — · 0 мин»); остаётся только существенное предупреждение.
+    const freshnessWarning=freshness.needsRecheck===true
+      ? `🟠 ${escapeHtml(safeText(freshness.label,160,'Данные стоит перепроверить'),160)}${safeText(freshness.reason,800) ? `: ${escapeHtml(freshness.reason,800)}` : ''}`
+      : '';
+    const outcomeText=neutralOutcomeText(verdict.outcome,{home:home.name,away:away.name});
     const recheck=plainObject(root.recheck) || {};
     const delta=recheck.performed===true ? plainObject(recheck.delta) : null;
     const newsImpact=plainObject(root.newsImpact);
@@ -290,8 +290,6 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
           newsDecision?.action ? `Что делать: ${safeText(newsDecision.action,500)}` : '',
         ].filter(Boolean)
       : [];
-    const ageMinutes=finiteNumber(freshness.ageMinutes);
-    const ageText=ageMinutes!==null && ageMinutes>=0 ? Math.round(ageMinutes) : 0;
 
     return [
       '🧠 <b>MatchRadar AI · короткая оценка</b>',
@@ -300,18 +298,14 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
       handoffLocked
         ? `⏱ <b>Предматчевый вывод зафиксирован: ${escapeHtml(signalText || NO_CLEAR_SIGNAL_LABEL,240)}</b>`
         : `🎯 ${skip ? '<b>Уверенного вывода нет — исход матча открыт</b>' : `<b>${escapeHtml(signalText || 'Изучить матч',240)}</b>`}`,
-      `📊 Исход по модели: ${escapeHtml(neutralOutcomeText(verdict.outcome,{home:home.name,away:away.name}) || '—',240)}`,
-      `🧠 Уверенность: ${escapeHtml(ai.confidenceLabel || '—',120)} · ${confidence}`,
-      `⚠️ Неопределённость: ${escapeHtml(ai.riskLabel || '—',120)}`,
-      `🗂 Данные: ${escapeHtml(trust.label || '—',160)} · ${trustScore}`,
-      `${freshIcon} Свежесть: <b>${escapeHtml(freshness.label || '—',160)}</b> · ${ageText} мин.`,
+      outcomeText ? `📊 Исход по модели: ${escapeHtml(outcomeText,240)}` : null,
       '',
       handoffLocked
         ? `До старта AI объяснял вывод так: ${escapeHtml(reasonText || 'по доступным предматчевым данным',800)}`
         : `Почему: ${escapeHtml(reasonText || 'Оцениваю доступные данные матча.',800)}`,
-      freshness.reason ? `Свежесть: ${escapeHtml(freshness.reason,800)}` : '',
-      safeText(handoff.state,32)==='imminent' ? `⏳ ${escapeHtml(handoff.label,160)}: ${escapeHtml(handoff.reason,800)}` : '',
-      handoffLocked ? `➡️ ${escapeHtml(handoff.reason,800)}` : '',
+      freshnessWarning || null,
+      safeText(handoff.state,32)==='imminent' ? `⏳ ${escapeHtml(handoff.label,160)}: ${escapeHtml(handoff.reason,800)}` : null,
+      handoffLocked ? `➡️ ${escapeHtml(handoff.reason,800)}` : null,
       ...(newsImpactLines.length ? ['', '📰 <b>News Impact Delta</b>', ...newsImpactLines.map(line=>escapeHtml(line,1200))] : []),
       ...(deltaLines.length ? ['', '🔄 <b>Что изменилось после перепроверки</b>', ...deltaLines.map(line=>escapeHtml(line,1200))] : []),
       '',

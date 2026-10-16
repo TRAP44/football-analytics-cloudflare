@@ -269,6 +269,8 @@ test('inline: an unavailable search is not shown as «Матч не найден
       getStaleCache: async () => null,
       todayUtc: () => '2026-10-15',
       loadSearchTeamMatches: async () => ({ matches: [] }),
+      freeQuotaHealthy: () => true,
+      apiFootball: async () => [],
       searchText: value => String(value).toLowerCase(),
       topTeamSearchPlan: query => ({ providerQuery: query, candidates: [], resolved: false, best: null }),
       normalizeSearchTeam: row => row,
@@ -284,4 +286,89 @@ test('inline: an unavailable search is not shown as «Матч не найден
   const none = await answer({ 'matches:2026-10-15:v6-integrity': { matches: [], refreshedAt: new Date().toISOString() } });
   assert.equal(none.button.text, 'Матч не найден — открыть MatchRadar');
   assert.ok(none.cache_time > 0);
+});
+
+// Ревью Codex #927.
+
+test('real sendBotFixtureMenu handoff: no confidence /100, data quality % or empty freshness', async () => {
+  const handoff = createTelegramBotOrchestrationRuntime({ telegramHtmlEscape: value => String(value) });
+  const match = { fixtureId: 7, date: '2099-10-20T18:00:00Z', status: 'NS', home: { id: 1, name: 'Home' }, away: { id: 2, name: 'Away' }, league: 'L' };
+  const analysis = {
+    match,
+    aiInstructor: {
+      betSignal: { code: 'home', reason: 'Хозяева сильнее по форме.' },
+      verdict: { outcome: 'П1 · 52%' },
+      confidenceScore: 62, confidenceLabel: 'Средняя', riskLabel: 'Высокий',
+      dataTrust: { score: 44, label: 'Ограниченные данные' },
+    },
+  };
+  const send = async (extra = {}) => {
+    const sent = [];
+    const ui = createTelegramBotUiRuntime(proxy({
+      telegramWebAppUrl: (_req, params) => `https://app.example/?${new URLSearchParams(params)}`,
+      telegramFullAnalysisUrl: (_req, id, tab) => `https://app.example/?fixtureId=${id}&action=analysis&tab=${tab}`,
+      telegramHtmlEscape: value => String(value),
+      isLiveStatus: status => status === '1H',
+      isFinishedStatus: status => status === 'FT',
+      statusLabel: status => status,
+      createRequest: (url, init) => new Request(url, init),
+      markTelegramWebhookMutation: () => true,
+      getCache: async key => (key === 'bot:fixture-card:7:v2' ? { match } : null),
+      getFavorites: async () => [],
+      apiAnalyze: async () => new Response(JSON.stringify({ ...analysis, ...extra }), { status: 200 }),
+      botAiHandoffText: data => handoff.botAiHandoffText(data),
+      telegramApi: async (method, _cfg, payload) => { sent.push({ method, payload }); return {}; },
+    }));
+    assert.equal(await ui.sendBotFixtureMenu(new Request('https://app.example/telegram'), {}, 77, 77, 7), true);
+    return sent.find(c => c.method === 'sendMessage').payload.text;
+  };
+  const text = await send();
+  assert.match(text, /короткая оценка/);
+  assert.match(text, /Почему: Хозяева сильнее по форме\./);
+  assert.doesNotMatch(text, /\/100|44%|Уверенность|Неопределённость|Данные: |Свежесть|мин\./);
+  // Существенное предупреждение о данных остаётся — без шкал.
+  const stale = await send({ freshness: { state: 'stale', label: 'Данные устарели', reason: 'Составы изменились после разбора.', needsRecheck: true, ageMinutes: 300 } });
+  assert.match(stale, /🟠 Данные устарели: Составы изменились после разбора\./);
+  assert.doesNotMatch(stale, /300 мин|\/100/);
+});
+
+test('inline with a day feed: a failing provider search is «temporarily unavailable», not «not found»', async () => {
+  let providerCalls = 0;
+  const answer = async ({ apiFootball, loadSearchTeamMatches = async () => ({ matches: [] }), quota = true }) => {
+    const calls = [];
+    const runtime = createTelegramSearchRuntime(proxy({
+      getCache: async key => (key === 'matches:2026-10-15:v6-integrity' ? { matches: [], refreshedAt: new Date().toISOString() } : null),
+      getStaleCache: async () => null,
+      todayUtc: () => '2026-10-15',
+      freeQuotaHealthy: () => quota,
+      apiFootball: async (...args) => { providerCalls += 1; return apiFootball(...args); },
+      loadSearchTeamMatches,
+      searchText: value => String(value).toLowerCase(),
+      topTeamSearchPlan: query => ({ providerQuery: query, candidates: [], resolved: false, best: null }),
+      normalizeSearchTeam: row => ({ id: Number(row?.team?.id || row?.id || 0), name: String(row?.team?.name || row?.name || ''), score: 200 }),
+      rankTeamDiscoveryMatches: matches => matches,
+      telegramApi: async (method, _cfg, payload) => { calls.push(payload); return {}; },
+    }));
+    await runtime.answerBotInlineQuery({ url: 'https://app.example/telegram' }, {}, { id: 'q1', from: { id: 77 }, query: 'Zzzz United' });
+    return calls[0];
+  };
+  const timeout = await answer({ apiFootball: async () => { throw Object.assign(new Error('API-Football /teams timeout'), { code: 'UPSTREAM_TIMEOUT' }); } });
+  assert.equal(timeout.button.text, 'Поиск временно недоступен — открыть MatchRadar');
+  assert.equal(timeout.cache_time, 0);
+  assert.equal(providerCalls, 1, 'no extra provider calls');
+
+  const matchesDown = await answer({
+    apiFootball: async () => [{ id: 9, name: 'Zzzz United' }],
+    loadSearchTeamMatches: async () => { throw new Error('fixtures timeout'); },
+  });
+  assert.equal(matchesDown.button.text, 'Поиск временно недоступен — открыть MatchRadar');
+  assert.equal(matchesDown.cache_time, 0);
+
+  const limited = await answer({ apiFootball: async () => [], quota: false });
+  assert.equal(limited.button.text, 'Поиск временно недоступен — открыть MatchRadar', 'provider budget guard is respected, not bypassed');
+  assert.equal(providerCalls, 2, 'no provider call when the budget guard blocks the search');
+
+  const empty = await answer({ apiFootball: async () => [] });
+  assert.equal(empty.button.text, 'Матч не найден — открыть MatchRadar');
+  assert.ok(empty.cache_time > 0);
 });

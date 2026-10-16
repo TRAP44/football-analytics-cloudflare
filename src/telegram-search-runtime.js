@@ -358,18 +358,30 @@ export function createTelegramSearchRuntime(deps = {}) {
       .map(item=>item.match);
   }
 
-  async function botRemoteTeamMatches(parts, cfg) {
+  // strict (inline-поиск, ревью Codex #927): сбой, таймаут или ограничение источника
+  // не превращаются в пустой список — ошибка поднимается, чтобы ответить «поиск
+  // недоступен», а не «матч не найден». Лишних запросов к источнику нет.
+  async function botRemoteTeamMatches(parts, cfg, options = {}) {
+    const strict=plainObject(options)?.strict===true;
     const source=plainObject(parts) || {};
     const query=safeText(source.first,60);
     if (!query) return [];
+    const searchUnavailable=(code,cause)=>Object.assign(new Error('Поиск у источника данных временно недоступен.'),{code,cause});
+    const call=async (fn,fallback,...args)=>{
+      if (!strict) return optionalAsync(fn,fallback,...args);
+      if (typeof fn!=='function') return fallback;
+      try { return await fn(...args); }
+      catch (error) { throw searchUnavailable('INLINE_REMOTE_SEARCH_FAILED',error); }
+    };
 
     const plan=safeSearchPlan(query);
     const bestScore=finiteNumber(plan.best?.score) ?? 0;
     const highIntent=bestScore >= 170;
-    if (
-      (query.length < 3 && bestScore < 280)
-      || (!quotaHealthy(10,2) && !(highIntent && quotaHealthy(2,1)))
-    ) return [];
+    if (query.length < 3 && bestScore < 280) return [];
+    if (!quotaHealthy(10,2) && !(highIntent && quotaHealthy(2,1))) {
+      if (strict) throw searchUnavailable('INLINE_REMOTE_SEARCH_LIMITED');
+      return [];
+    }
 
     const providerQuery=safeText(plan.providerQuery,60,query) || query;
     const q=normalizedSearch(providerQuery,60);
@@ -382,7 +394,7 @@ export function createTelegramSearchRuntime(deps = {}) {
 
     if (!teams.length) {
       const providerRows=rowsOrEmpty(
-        await optionalAsync(apiFootball,[], '/teams',{search:providerQuery},cfg),
+        await call(apiFootball,[], '/teams',{search:providerQuery},cfg),
         100,
       );
       teams=providerRows
@@ -419,7 +431,7 @@ export function createTelegramSearchRuntime(deps = {}) {
     const team=teams[0];
     if (!team) return [];
     const discovery=plainObject(
-      await optionalAsync(loadSearchTeamMatches,null,team,cfg,{secondQuery:safeText(source.second,60)}),
+      await call(loadSearchTeamMatches,null,team,cfg,{secondQuery:safeText(source.second,60)}),
     );
     return rowsOrEmpty(discovery?.matches,20)
       .map(match=>validMatch(match))
@@ -754,7 +766,7 @@ export function createTelegramSearchRuntime(deps = {}) {
           || safeText(left.date,80).localeCompare(safeText(right.date,80)));
     }
     // Команда, которая сегодня не играет: ближайший матч у источника данных.
-    if (!matches.length) matches=await botRemoteTeamMatches(parts,cfg);
+    if (!matches.length) matches=await botRemoteTeamMatches(parts,cfg,{strict:true});
     if (!matches.length && feedMissing) throw unavailable();
     return matches.slice(0,INLINE_RESULTS_LIMIT);
   }
