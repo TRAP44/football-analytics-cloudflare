@@ -51,6 +51,8 @@ function githubStepNotices(){
     githubNotice(`real-db peak ${peak}`,{passed:report.loadPassed,rows,ops,loopP95:report.eventLoopP95Ms,rss:report.rssMiB});
   }
 }
+const claimRttMs=Number(process.env.REAL_DB_CLAIM_RTT_MS || 0);
+assert.ok(Number.isSafeInteger(claimRttMs) && claimRttMs>=0 && claimRttMs<=1000,'Invalid synthetic claim RTT.');
 const created=[];let gateway;let nativeRest=null;let standProfile={postgres:'16.11',rest:'16.4',memoryMiB:512,cpuLimit:1,stand:'docker'};
 try {
   if (native) {
@@ -82,7 +84,7 @@ try {
   const contract=JSON.parse(readFileSync('release-contract.json','utf8'));
   const fingerprint=await query("select public.backend_schema_contract_v2()->>'fingerprint';");
   assert.equal(fingerprint,contract.databaseContract.freshInstallFingerprint,'Disposable DB schema contract must match release.');
-  console.log(JSON.stringify({phase:'database_ready',migrations:plan.length,schemaFingerprint:fingerprint,...standProfile,maxConnections:60,restPool:20}));
+  console.log(JSON.stringify({phase:'database_ready',migrations:plan.length,schemaFingerprint:fingerprint,...standProfile,maxConnections:60,restPool:20,claimRttMs}));
   if (native) {
     nativeRest=spawn(process.env.POSTGREST_BIN,[],{stdio:'ignore',env:{...process.env,
       PGRST_DB_URI:`postgres://authenticator:${password}@127.0.0.1:${nativePort}/isolated`,
@@ -107,7 +109,8 @@ try {
     const headers={...req.headers};
     if(req.headers.apikey===token)headers.authorization=`Bearer ${token}`;
     const upstream=httpRequest({host:'127.0.0.1',port:54320,path:req.url.slice('/rest/v1'.length),method:req.method,headers},response=>{
-      res.writeHead(response.statusCode,response.headers);response.pipe(res);
+      const forward=()=>{if(res.destroyed){response.destroy();return;}res.writeHead(response.statusCode,response.headers);response.pipe(res);};
+      if(claimRttMs && req.url.split('?')[0]==='/rest/v1/rpc/claim_provider_request')setTimeout(forward,claimRttMs);else forward();
     });upstream.on('error',()=>{res.writeHead(502);res.end();});req.pipe(upstream);
   });
   await new Promise((resolve,reject)=>{gateway.once('error',reject);gateway.listen(54321,'127.0.0.1',resolve);});
@@ -137,7 +140,7 @@ try {
   evidence.paidProfilePreserved=true;
   const summaryFile='load-results/real-database-http-summary.json';
   const summary=JSON.parse(readFileSync(summaryFile,'utf8'));
-  summary.databaseEvidence={...evidence,migrations:plan.length,schemaFingerprint:fingerprint,...standProfile,maxConnections:60,restPool:20};
+  summary.databaseEvidence={...evidence,migrations:plan.length,schemaFingerprint:fingerprint,...standProfile,maxConnections:60,restPool:20,claimRttMs};
   writeFileSync(summaryFile,JSON.stringify(summary,null,2)+'\n');
   console.log(JSON.stringify({phase:'database_persistence_verified',...evidence}));
 } catch(error) {console.error(safe(error.message));process.exitCode=1;}

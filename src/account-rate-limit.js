@@ -192,6 +192,10 @@ export async function enforceDistributedAccountRateLimit({
       throw new Error('Distributed account limiter returned an invalid allowed flag.');
     }
   } catch (error) {
+    if (error?.code === 'RATE_CLAIM_ADMISSION_FULL' || error?.code === 'RATE_CLAIM_BUCKET_FULL') {
+      safeTelemetry(bumpTelemetry,'distributedBurstAdmissionBlocks');
+      return json({error:'Сервис занят. Повторите немного позже.',code:'ACCOUNT_RATE_GUARD_BUSY',retryAfter:1},503,{'retry-after':'1'});
+    }
     safeTelemetry(bumpTelemetry,'distributedBurstFallbacks');
     const now=Date.now();
     const previousRaw=safeMemoryRead(memory,'distributedRouteGuardWarningAt');

@@ -27,7 +27,10 @@
 
 
 
+
 ## На ревью
+
+- [ ] Ограниченная очередь RPC лимитера с прежним общим дедлайном — **Codex** — [PR #933](https://github.com/TRAP44/football-analytics-cloudflare/pull/933), ветка `codex/rate-claim-admission` — ревью: Claude. — исправлены замечания по аренде/body/overflow, повторное ревью
 
 - [ ] LIVE-табло: аудит очереди, повторных уведомлений, 429 и таймаутов (Сергей 16.10) — гол не теряется, когда табло застыло (устаревшие данные или отложенная правка): подавление уведомления о голе только для актуального табло (`shown.h` + снимок ≤15 мин); удалённое человеком табло (`s:'g'`) возвращает уведомления о голах; пауза 429 от момента ответа; сбой сохранения отметок не сдвигает курсор мимо людей; отложенные правки в `deferred` — **Claude** — [PR #932](https://github.com/TRAP44/football-analytics-cloudflare/pull/932), ветка `claude/scoreboard-audit` — ревью: Codex
 - [ ] Пакетная проверка атрибуции перед наградой за приглашение — **Codex** — [PR #931](https://github.com/TRAP44/football-analytics-cloudflare/pull/931) (черновик; пиковая нагрузка не прошла), ветка `codex/referral-eligibility-batching` — ревью: Claude.
@@ -81,6 +84,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Пакетная проверка атрибуции перед наградой за приглашение — **Codex** — [PR #931](https://github.com/TRAP44/football-analytics-cloudflare/pull/931), ветка `codex/referral-eligibility-batching` — ревью: Claude. — слит 16.10
 
 - [x] Пакетные свежие чтения квоты без кеша прав и без миграции — **Codex** — [PR #930](https://github.com/TRAP44/football-analytics-cloudflare/pull/930), ветка `codex/quota-read-batching` — ревью: Claude. — слит 16.10
 

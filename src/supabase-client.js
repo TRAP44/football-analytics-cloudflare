@@ -1,4 +1,6 @@
-export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs } = {}) {
+import { createRpcAdmissionQueue } from './rpc-admission-queue.js';
+
+export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs, bumpTelemetry = () => {} } = {}) {
   if (typeof fetchWithTimeout !== 'function') {
     throw new TypeError('createSupabaseClient requires fetchWithTimeout');
   }
@@ -307,13 +309,16 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs 
     }
   }
 
-  async function supaRpc(cfg, functionName, payload = {}, timeoutMs = 7000, extraHeaders = {}) {
+  const rateClaims=createRpcAdmissionQueue({onEvent:bumpTelemetry});
+
+  async function rawRpc(cfg, functionName, payload = {}, timeoutMs = 7000, extraHeaders = {}, signal = undefined) {
     const rpcName = nonEmptyText(functionName);
     const url = restUrl(cfg, rpcName, { rpc:true });
     const response = await fetchWithTimeout(url, {
       method: 'POST',
       headers: supaRpcHeaders(cfg, extraHeaders),
       body: JSON.stringify(payload || {}),
+      ...(signal ? {signal} : {}),
     }, boundedInteger(timeoutMs, 7000, 500, 120000), `Supabase RPC ${rpcName}`);
     const body = await response.json().catch(() => null);
     if (!response.ok) {
@@ -326,6 +331,19 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs 
       throw error;
     }
     return Array.isArray(body) && body.length === 1 ? body[0] : body;
+  }
+
+  function supaRpc(cfg, functionName, payload = {}, timeoutMs = 7000, extraHeaders = {}) {
+    const bucket=payload?.p_bucket_key;
+    if(functionName==='claim_provider_request' && typeof bucket==='string' && /^(preauth:|route:)/.test(bucket)
+      && typeof cfg?.supabaseUrl==='string' && cfg.supabaseUrl && typeof cfg?.supabaseKey==='string' && cfg.supabaseKey){
+      const connection={...cfg};
+      const snapshot={...payload};
+      const headers={...extraHeaders};
+      return rateClaims(JSON.stringify([connection.supabaseUrl,connection.supabaseKey]),
+        (remaining,signal)=>rawRpc(connection,functionName,snapshot,remaining,headers,signal),boundedInteger(timeoutMs,7000,500,120000),bucket);
+    }
+    return rawRpc(cfg,functionName,payload,timeoutMs,extraHeaders);
   }
 
   return {

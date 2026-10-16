@@ -247,8 +247,9 @@ test('audit: native external fetch ownership stays inside the shared timeout tra
   assert.match(replayTransport,/finally \{\s*clearTimeout\(timer\)/);
   assert.match(
     infrastructureSource,
-    /async function fetchWithTimeout\([\s\S]*?return await fetch\(input, \{ \.\.\.init, signal: controller\.signal \}\)/,
+    /async function fetchWithTimeout\([\s\S]*?return await fetch\(input, \{ \.\.\.init, signal \}\)/,
   );
+  assert.match(infrastructureSource,/const signal = init\.signal \? AbortSignal\.any\(\[controller\.signal, init\.signal\]\) : controller\.signal/);
   assert.match(telemetrySource,/fetchWithTimeout\(url,/);
 });
 
