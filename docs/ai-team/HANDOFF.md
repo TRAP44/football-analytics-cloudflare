@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-16 — Codex — Проверен и отклонён quota-prefetch после #928
-PR: ветка `codex/cached-quota-overlap`, только документы.
+PR: [PR #929](https://github.com/TRAP44/football-analytics-cloudflare/pull/929), ветка `codex/cached-quota-overlap`, только документы.
 Сделано: локально проверен read-only getQuota параллельно с account guard после остальных ранних guards, request-scoped WeakMap, без dispatch при отказе guard и без изменения reserve.32профильных теста проходили. Четыре последовательных настоящих DB-ramp: prototype/baseline/prototype/baseline. p95cached3855/3733/3789/3551мс; все HTTP200, SQL10000/1000/1160, paidProfilePreserved=true. Прототип целиком убран до PR, runtime/tests не меняются.
 Решение: p95 прототипа в среднем3822 против3642мс baseline, число DB-операций то же. Выигрыш не подтверждён; cached-ответ всё равно ждёт history после account guard. Не добавлять лишнее чтение БД до account denial без доказанной пользы. Полная таблица в docs/CACHED_ANALYSIS_LATENCY_RU.md.
 Осталось / внимание: #928 слит, production deploy38889471590 success, hosted capacity не проверена. Workers Free/Supabase Free-Nano/API-Football PRO7500 известны. Свои #906/#926 перемещены в Готово; чужие строки не менялись. Открытый #924 только coordination docs, обе записи сохранять.
