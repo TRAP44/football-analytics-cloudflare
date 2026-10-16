@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-16 — Claude — Готовый разбор: замеры и пакетные события роста (#923)
-PR: ветка `claude/cached-analysis-latency`.
+PR: [#928](https://github.com/TRAP44/football-analytics-cloudflare/pull/928), ветка `claude/cached-analysis-latency`.
 Сделано: baseline свежего main и 4 пары чередующихся последовательных прогонов на GitHub-стенде (real-database-http). Узкое место по операциям: фоновый `recordGrowthEvent` на каждый разбор делал `GET users` ради атрибуции и `POST growth_events`. Теперь оба пакетами (`src/supabase-call-batcher.js`: окно 2 мс, до 100, одна identity Supabase; каждый caller ждёт подтверждения; ошибка пакета → прежний индивидуальный вызов). REST на 1000 разборов 6013 → ~4040; все HTTP 200, evidence 10000/1000/1160, paidProfilePreserved. `start-real-database-http-load.js`: аннотации `real-db peak N`/`real-db evidence` в GitHub и режим `REAL_DB_STAND=native`. Таблица прогонов — `docs/CACHED_ANALYSIS_LATENCY_RU.md`.
 Решения: p95 в среднем 5168 → 4449 мс, p50 4056 → 4199 мс; разброс машин GitHub больше эффекта — ускорение не заявлено. Нативный стенд облачной среды (2 vCPU) отдаёт 503 уже в baseline — как доказательство не используется.
 Осталось / внимание: цель 2 с не достигнута. Следующее измеренное узкое место — три последовательных запроса ответа: pre-auth claim → account claim → чтение квоты (~0,7–1,1 с каждый на пике). Варианты: один RPC на два claim (миграция, только после «да» Сергея) или чтение квоты параллельно с account claim (без миграции). Worker dry-run локально не запустился (нет доступа к npm registry в этой сессии) — его выполняет CI Quality.
