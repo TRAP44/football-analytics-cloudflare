@@ -195,7 +195,8 @@ test('share card never shows betting markets: no «3+ гола», «обе за�
 
   const {publisher,sent,cfg}=harness({analysis:{aiInstructor:{betSignal:{code:'home',label:'П1'},confidenceScore:64.4}}});
   await publisher.sendBotFixtureShareCard(new Request('https://app.example/'),cfg,SHARER,SHARER,FIXTURE);
-  assert.match(sent[0].body.text,/🧠 AI: <b>Перевес Реал Мадрид<\/b> · уверенность 64\/100/);
+  assert.match(sent[0].body.text,/🧠 AI: <b>Перевес Реал Мадрид<\/b>\n/);
+  assert.doesNotMatch(sent[0].body.text,/уверенность|\/100/,'no technical confidence scale (Issue #922)');
   assert.equal(isBettingText(sent[0].body.text),false);
 });
 

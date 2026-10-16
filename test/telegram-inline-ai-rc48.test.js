@@ -14,14 +14,13 @@ test('telegram match buttons answer inline instead of forcing the mini app',()=>
   assert.match(worker,/function sendBotFixtureSection/);
 });
 
-test('telegram AI verdict includes skip confidence risk and data quality',()=> {
+// Issue #922: короткий ответ — сценарий и причина, без служебных шкал.
+test('telegram AI verdict is scenario and reason without technical scales',()=> {
   assert.match(worker,/function botAiVerdictText/);
   assert.match(worker,/AI · сценарии матча/);
   assert.doesNotMatch(worker,/Лучше пропустить/);
-  assert.match(worker,/Качество данных/);
-  assert.match(worker,/Уверенность/);
-  assert.match(worker,/Неопределённость/);
-  assert.match(worker,/Судья/);
+  assert.doesNotMatch(worker,/🗂 Качество данных|🧠 Уверенность модели|🧑‍⚖️ Судья/);
+  assert.match(worker,/Почему: /);
 });
 
 test('telegram sections reuse the protected analysis pipeline',()=> {

@@ -1,3 +1,4 @@
+import { chatSafeTelegramBody } from './telegram-chat-markup.js';
 import {
   NEWS_IMPACT_ACTION_WINDOW_MINUTES,
   NEWS_IMPACT_FAILURE_CODES,
@@ -857,7 +858,16 @@ function billingPlanConfig(...args) { return getBillingRuntime().billingPlanConf
 function invoiceSignature(...args) { return getBillingRuntime().invoiceSignature(...args); }
 function makeInvoicePayload(...args) { return getBillingRuntime().makeInvoicePayload(...args); }
 function parseInvoicePayload(...args) { return getBillingRuntime().parseInvoicePayload(...args); }
-function telegramApi(...args) { return getBillingRuntime().telegramApi(...args); }
+// web_app-кнопки в группах и каналах → ссылка в бота (Issue #922).
+function groupChatBotLink(cfg, fixtureId) {
+  return fixtureId
+    ? fixtureTelegramDeepLink(cfg, fixtureId, { source: 'social', campaign: 'group_chat', content: 'button' }).then(link => link?.url || '')
+    : telegramBotUsername(cfg).then(username => (username ? `https://t.me/${username}` : ''));
+}
+async function telegramApi(method, cfg, body, ...rest) {
+  const safeBody = await chatSafeTelegramBody(method, body, fixtureId => groupChatBotLink(cfg, fixtureId));
+  return getBillingRuntime().telegramApi(method, cfg, safeBody, ...rest);
+}
 function updateUserSubscription(...args) { return getBillingRuntime().updateUserSubscription(...args); }
 function saveBillingPayment(...args) { return getBillingRuntime().saveBillingPayment(...args); }
 function findRefundableBillingCharge(...args) { return getBillingRuntime().findRefundableBillingCharge(...args); }
@@ -955,6 +965,7 @@ function getTelegramBotUiRuntime() {
       newsImpactDecisionCard,
       newsImpactDecisionKeyboard,
       recordGrowthEvent,
+      recordOpsEvent,
       setCache,
       statusLabel,
       telegramApi,
@@ -1150,6 +1161,7 @@ function getTelegramBotOrchestrationRuntime() {
       normalizeBotFixtureCard: (...args) => normalizeBotFixtureCard(...args),
       publicSiteUrl: (...args) => publicSiteUrl(...args),
       recordGrowthEvent: (...args) => recordGrowthEvent(...args),
+      recordOpsEvent: (...args) => recordOpsEvent(...args),
       rememberBotFixtureCards: (...args) => rememberBotFixtureCards(...args),
       removeFavorite: (...args) => removeFavorite(...args),
       telegramApi: (...args) => telegramApi(...args),
@@ -1169,6 +1181,7 @@ function botMatchCenterFixture(...args) { return getTelegramBotOrchestrationRunt
 function botPostMatchReviewText(...args) { return getTelegramBotOrchestrationRuntime().botPostMatchReviewText(...args); }
 function sendBotFixtureSection(...args) { return getTelegramBotOrchestrationRuntime().sendBotFixtureSection(...args); }
 function toggleBotFavorite(...args) { return getTelegramBotOrchestrationRuntime().toggleBotFavorite(...args); }
+function removeBotFavorite(...args) { return getTelegramBotOrchestrationRuntime().removeBotFavorite(...args); }
 function configureFootballBot(...args) { return getTelegramBotOrchestrationRuntime().configureFootballBot(...args); }
 function sendFootballBotHome(...args) { return getTelegramBotOrchestrationRuntime().sendFootballBotHome(...args); }
 function sendFavoritePicker(...args) { return getTelegramBotOrchestrationRuntime().sendFavoritePicker(...args); }
@@ -3392,6 +3405,8 @@ const {
   telegramWebAppUrl,
   todayUtc,
   toggleBotFavorite,
+  removeBotFavorite,
+  getBotDigestSubscription,
   topProbabilityValue,
   updateUserSubscription,
   upsertUser,

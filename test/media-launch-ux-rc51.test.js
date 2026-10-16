@@ -61,7 +61,9 @@ test('favorites toggle directly on the match card and refresh the keyboard',()=>
 
 test('empty favorites state tells the user exactly how to start',()=> {
   assert.match(digest,/⭐ <b>Мои команды<\/b>/);
-  assert.match(digest,/нажмите ☆ рядом с командой/);
+  // Issue #922: пустое избранное — кнопка «➕ Добавить команду» (выбор клубов).
+  assert.match(digest,/Пока пусто\. Добавьте клубы/);
+  assert.match(digest,/callback_data:'fav:add'/);
   assert.doesNotMatch(digest,/Добавление клубов в избранное перенесём/);
 });
 

@@ -195,7 +195,9 @@ test('fallback still sends when full-analysis URL factory throws', async () => {
   assert.equal(result.status,503);
   assert.equal(sent.length,1);
   assert.equal(sent[0].reply_markup,undefined);
-  assert.match(sent[0].text,/upstream fail/);
+  // Issue #922: внутренние детали ошибки пользователю не показываем.
+  assert.doesNotMatch(sent[0].text,/upstream fail/);
+  assert.match(sent[0].text,/Не удалось получить AI-разбор матча/);
 });
 
 test('toggle favorite rejects invalid identity before storage reads', async () => {

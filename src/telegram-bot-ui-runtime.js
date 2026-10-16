@@ -17,6 +17,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
     newsImpactDecisionCard,
     newsImpactDecisionKeyboard,
     recordGrowthEvent,
+    recordOpsEvent,
     setCache,
     statusLabel,
     telegramApi,
@@ -895,11 +896,16 @@ export function createTelegramBotUiRuntime(deps = {}) {
         ? 'Короткий AI-разбор сейчас недоступен из-за лимита. Матч выбран — можно повторить позже.'
         : status===409
           ? 'Данные матча сейчас противоречивы, поэтому AI временно не строит вывод.'
-          : safeText(
-              error?.message,
-              600,
-              'Не удалось собрать короткую AI-оценку.',
-            );
+          // Внутренние детали (HTTP, база, источник) пользователю не показываем (Issue #922).
+          : 'Не удалось собрать короткую AI-оценку. Попробуйте чуть позже.';
+      if (status===0 || status>=500) {
+        backgroundCall(recordOpsEvent,cfg,{
+          severity:'warning',source:'telegram_bot',eventType:'bot_quick_ai_failed',
+          code:safeText(error?.code,80) || 'BOT_QUICK_AI_FAILED',
+          message:safeText(error?.message,300,'Bot quick AI failed.'),
+          endpoint:'telegram:match_menu',meta:{status},
+        });
+      }
 
       await telegramApi('sendMessage',cfg,{
         chat_id:chat,
@@ -1077,52 +1083,9 @@ export function createTelegramBotUiRuntime(deps = {}) {
     const match=objectValue(source.match) || {};
     const ai=objectValue(source.aiInstructor) || {};
     const signal=objectValue(ai.betSignal) || {};
-    const trust=objectValue(ai.dataTrust) || {};
-    const refereeHistory=objectValue(ai.refereeHistory);
-    const refereeProfile=objectValue(ai.refereeProfile);
-
-    let referee='ещё не назначен';
-    if (refereeHistory?.available===true) {
-      const name=safeText(
-        refereeHistory.name
-          ?? refereeProfile?.name
-          ?? match.referee,
-        120,
-        'Судья',
-      );
-      const style=safeText(
-        refereeHistory.styleLabel,
-        120,
-        'стиль уточняется',
-      );
-      const avg=finiteNumber(refereeHistory.avgYellow);
-      referee=`${name} · ${style}${avg!==null && avg>=0 && avg<=20
-        ? ` · ${Math.round(avg*10)/10} жёлт./матч`
-        : ''}`;
-    } else {
-      referee=safeText(
-        refereeProfile?.name ?? ai.referee ?? match.referee,
-        180,
-        'ещё не назначен',
-      );
-    }
 
     const skip=safeText(signal.code,24).toLowerCase()==='skip';
     const headline='🧠 <b>AI · сценарии матча</b>';
-
-    const confidenceValue=finiteNumber(ai.confidenceScore);
-    const confidence=confidenceValue!==null
-      && confidenceValue>=0
-      && confidenceValue<=100
-        ? `${Math.round(confidenceValue)}/100`
-        : '—';
-
-    const trustValue=finiteNumber(trust.score);
-    const trustScore=trustValue!==null
-      && trustValue>=0
-      && trustValue<=100
-        ? `${Math.round(trustValue)}%`
-        : '—';
 
     const home=objectValue(match.home);
     const away=objectValue(match.away);
@@ -1168,21 +1131,16 @@ export function createTelegramBotUiRuntime(deps = {}) {
       .map(value=>neutralReasonText(typeof value==='string' ? value : ''))
       .filter(Boolean);
 
+    // Короткий ответ (Issue #922): сценарий и причина. Служебные шкалы
+    // (уверенность /100, качество данных %) и пустые поля не показываем.
     return [
       headline,
       `<b>${escapeHtml(homeName,120)} — ${escapeHtml(awayName,120)}</b>`,
       '',
       ...scenarioLines,
       ...goalLines,
-      `🧠 Уверенность модели: <b>${escapeHtml(ai.confidenceLabel,120) || '—'}</b> · ${confidence}`,
-      `⚠️ Неопределённость: ${escapeHtml(ai.riskLabel,120) || '—'}`,
-      `🗂 Качество данных: <b>${escapeHtml(trust.label,120) || '—'}</b> · ${trustScore}`,
-      `🧑‍⚖️ Судья: ${escapeHtml(referee,360)}`,
-      '',
-      `Почему: ${escapeHtml(reasons[0],900) || 'Оцениваю доступные данные матча.'}`,
-      skip
-        ? 'Уверенного вывода нет — исход матча открыт.'
-        : 'Перед стартом стоит проверить стартовые составы.',
+      ...(reasons[0] ? ['', `Почему: ${escapeHtml(reasons[0],900)}`] : []),
+      ...(skip ? ['Уверенного вывода нет — исход матча открыт.'] : []),
       '',
       '<i>Сценарии — оценка модели по данным матча, а не гарантия результата.</i>',
     ].join('\n');

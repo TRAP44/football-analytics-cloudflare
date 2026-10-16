@@ -358,18 +358,30 @@ export function createTelegramSearchRuntime(deps = {}) {
       .map(item=>item.match);
   }
 
-  async function botRemoteTeamMatches(parts, cfg) {
+  // strict (inline-поиск, ревью Codex #927): сбой, таймаут или ограничение источника
+  // не превращаются в пустой список — ошибка поднимается, чтобы ответить «поиск
+  // недоступен», а не «матч не найден». Лишних запросов к источнику нет.
+  async function botRemoteTeamMatches(parts, cfg, options = {}) {
+    const strict=plainObject(options)?.strict===true;
     const source=plainObject(parts) || {};
     const query=safeText(source.first,60);
     if (!query) return [];
+    const searchUnavailable=(code,cause)=>Object.assign(new Error('Поиск у источника данных временно недоступен.'),{code,cause});
+    const call=async (fn,fallback,...args)=>{
+      if (!strict) return optionalAsync(fn,fallback,...args);
+      if (typeof fn!=='function') return fallback;
+      try { return await fn(...args); }
+      catch (error) { throw searchUnavailable('INLINE_REMOTE_SEARCH_FAILED',error); }
+    };
 
     const plan=safeSearchPlan(query);
     const bestScore=finiteNumber(plan.best?.score) ?? 0;
     const highIntent=bestScore >= 170;
-    if (
-      (query.length < 3 && bestScore < 280)
-      || (!quotaHealthy(10,2) && !(highIntent && quotaHealthy(2,1)))
-    ) return [];
+    if (query.length < 3 && bestScore < 280) return [];
+    if (!quotaHealthy(10,2) && !(highIntent && quotaHealthy(2,1))) {
+      if (strict) throw searchUnavailable('INLINE_REMOTE_SEARCH_LIMITED');
+      return [];
+    }
 
     const providerQuery=safeText(plan.providerQuery,60,query) || query;
     const q=normalizedSearch(providerQuery,60);
@@ -382,7 +394,7 @@ export function createTelegramSearchRuntime(deps = {}) {
 
     if (!teams.length) {
       const providerRows=rowsOrEmpty(
-        await optionalAsync(apiFootball,[], '/teams',{search:providerQuery},cfg),
+        await call(apiFootball,[], '/teams',{search:providerQuery},cfg),
         100,
       );
       teams=providerRows
@@ -419,7 +431,7 @@ export function createTelegramSearchRuntime(deps = {}) {
     const team=teams[0];
     if (!team) return [];
     const discovery=plainObject(
-      await optionalAsync(loadSearchTeamMatches,null,team,cfg,{secondQuery:safeText(source.second,60)}),
+      await call(loadSearchTeamMatches,null,team,cfg,{secondQuery:safeText(source.second,60)}),
     );
     return rowsOrEmpty(discovery?.matches,20)
       .map(match=>validMatch(match))
@@ -698,6 +710,10 @@ export function createTelegramSearchRuntime(deps = {}) {
     // Для поиска подходит и последний снимок за день — иначе inline почти всегда пустой.
     let payload=day ? plainObject(await optionalAsync(getCache,null,key,cfg)) : null;
     if (!payload && day && typeof getStaleCache === 'function') payload=plainObject(await optionalAsync(getStaleCache,null,key,cfg));
+    // Нет даже снимка ленты дня: пустой результат — «поиск недоступен», а не
+    // «матч не найден» (Issue #922).
+    const feedMissing=!payload;
+    const unavailable=()=>Object.assign(new Error('Лента матчей дня недоступна.'),{code:'INLINE_FEED_UNAVAILABLE'});
     const refreshed=Date.parse(safeText(payload?.refreshedAt || payload?.fetchedAt,80));
     const stale=!Number.isFinite(refreshed) || Date.now()-refreshed>6*60*1000;
     const dayRows=rowsOrEmpty(payload?.matches,200).map(match=>validMatch(match)).filter(Boolean)
@@ -722,6 +738,7 @@ export function createTelegramSearchRuntime(deps = {}) {
       const top=dayRows
         .filter(match=>open(match) && match.lowPriority !== true && !mine.includes(match))
         .sort((left,right)=>Number(eliteLive(right))-Number(eliteLive(left)));
+      if (feedMissing) throw unavailable();
       return [...mine,...top].slice(0,INLINE_RESULTS_LIMIT);
     }
 
@@ -749,7 +766,8 @@ export function createTelegramSearchRuntime(deps = {}) {
           || safeText(left.date,80).localeCompare(safeText(right.date,80)));
     }
     // Команда, которая сегодня не играет: ближайший матч у источника данных.
-    if (!matches.length) matches=await botRemoteTeamMatches(parts,cfg);
+    if (!matches.length) matches=await botRemoteTeamMatches(parts,cfg,{strict:true});
+    if (!matches.length && feedMissing) throw unavailable();
     return matches.slice(0,INLINE_RESULTS_LIMIT);
   }
 
@@ -759,7 +777,8 @@ export function createTelegramSearchRuntime(deps = {}) {
     const userId=positiveSafeInteger(source?.from?.id);
     if (!queryId || !userId) throw inputError('Inline-запрос Telegram некорректен.','TELEGRAM_INLINE_INVALID');
 
-    const matches=await inlineMatches(source.query,cfg,userId).catch(()=>[]);
+    let unavailable=false;
+    const matches=await inlineMatches(source.query,cfg,userId).catch(()=>{ unavailable=true; return []; });
     const referralCode=typeof ensureReferralCode==='function'
       ? safeText(await optionalAsync(ensureReferralCode,'',userId,cfg),64)
       : '';
@@ -801,9 +820,10 @@ export function createTelegramSearchRuntime(deps = {}) {
     await telegramApi('answerInlineQuery',cfg,{
       inline_query_id:queryId,
       results,
-      cache_time:INLINE_CACHE_SECONDS,
+      // Сбой поиска не кешируем и не выдаём за «не найден».
+      cache_time:unavailable ? 0 : INLINE_CACHE_SECONDS,
       is_personal:true,
-      ...(results.length ? {} : {button:{text:'Матч не найден — открыть MatchRadar',start_parameter:'inline'}}),
+      ...(results.length ? {} : {button:{text:unavailable ? 'Поиск временно недоступен — открыть MatchRadar' : 'Матч не найден — открыть MatchRadar',start_parameter:'inline'}}),
     });
   }
 

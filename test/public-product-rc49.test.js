@@ -32,7 +32,9 @@ test('telegram search shares the same canonical club resolution',()=> {
   const search=fs.readFileSync('src/telegram-search-runtime.js','utf8');
   assert.match(search,/const plan=safeSearchPlan\(query\)/);
   assert.match(search,/optionalCall\(topTeamSearchPlan,null,query\)/);
-  assert.match(search,/optionalAsync\(apiFootball,\[\], '\/teams',\{search:providerQuery\}/);
+  // strict-режим inline (ревью Codex #927) пробрасывает сбой источника, иначе — optionalAsync.
+  assert.match(search,/call\(apiFootball,\[\], '\/teams',\{search:providerQuery\}/);
+  assert.match(search,/if \(!strict\) return optionalAsync\(fn,fallback,\.\.\.args\)/);
   assert.match(search,/normalizeSearchTeam\(row,query,plan\.candidates\)/);
 });
 

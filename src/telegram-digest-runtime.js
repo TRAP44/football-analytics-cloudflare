@@ -885,26 +885,63 @@ export function createTelegramDigestRuntime(deps = {}) {
     return matches;
   }
   
-  async function sendBotFavoriteTeams(request,cfg,userId,chatId) {
-    const favorites=rowsOf(await getFavorites(userId,cfg));
-    if (!favorites.length) {
-      await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'⭐ <b>Мои команды</b>\n\nДобавьте клуб: откройте матч в миниапке и нажмите ☆ рядом с командой.',parse_mode:'HTML',reply_markup:footballBotKeyboard(request,chatId)});
-      return;
+  // «Мои команды» (Issue #922): все клубы страницами по 10, «➕ Добавить» и
+  // «Убрать» в карточке клуба. Листание правит то же сообщение.
+  const FAVORITES_PAGE_SIZE=10;
+  function favoriteTeamsView(favorites,page) {
+    const valid=favorites.filter(x=>positiveSafeInteger(x?.team_id));
+    if (!valid.length) {
+      return {
+        text:'⭐ <b>Мои команды</b>\n\nПока пусто. Добавьте клубы — их матчи будут здесь.',
+        reply_markup:{inline_keyboard:[[{text:'➕ Добавить команду',callback_data:'fav:add'}]]},
+      };
     }
-    const rows=favorites.slice(0,12).map(x=>[{text:`⭐ ${shortBotLabel(x.team_name,32) || 'Команда'}`,callback_data:`favorite:team:${Number(x.team_id)}`}]);
-    await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'⭐ Мои команды\n\nВыберите клуб — покажу его ближайшие матчи прямо в чате.',reply_markup:{inline_keyboard:rows}});
+    const pages=Math.ceil(valid.length/FAVORITES_PAGE_SIZE);
+    const current=Math.min(Math.max(0,Number.isSafeInteger(page) ? page : 0),pages-1);
+    const rows=valid.slice(current*FAVORITES_PAGE_SIZE,(current+1)*FAVORITES_PAGE_SIZE)
+      .map(x=>[{text:`⭐ ${shortBotLabel(x.team_name,32) || 'Команда'}`,callback_data:`favorite:team:${Number(x.team_id)}`}]);
+    if (pages>1) {
+      const nav=[];
+      if (current>0) nav.push({text:'‹ Назад',callback_data:`favorite:page:${current-1}`});
+      nav.push({text:`${current+1} / ${pages}`,callback_data:`favorite:page:${current}`});
+      if (current<pages-1) nav.push({text:'Дальше ›',callback_data:`favorite:page:${current+1}`});
+      rows.push(nav);
+    }
+    rows.push([{text:'➕ Добавить команду',callback_data:'fav:add'}]);
+    return {
+      text:`⭐ <b>Мои команды</b> · ${valid.length}\n\nВыберите клуб — покажу его ближайшие матчи. Убрать клуб можно в его карточке.`,
+      reply_markup:{inline_keyboard:rows},
+    };
   }
-  
+
+  async function sendBotFavoriteTeams(request,cfg,userId,chatId,options={}) {
+    const favorites=rowsOf(await getFavorites(userId,cfg));
+    const page=Number.isSafeInteger(options?.page) ? options.page : 0;
+    const view=favoriteTeamsView(favorites,page);
+    const messageId=positiveSafeInteger(options?.messageId);
+    if (messageId) {
+      try {
+        await telegramApi('editMessageText',cfg,{chat_id:chatId,message_id:messageId,parse_mode:'HTML',...view});
+        return;
+      } catch (error) {
+        // То же содержимое — не ошибка; иначе (старое сообщение) — отправляем новое.
+        if (/not modified/i.test(String(error?.message || ''))) return;
+      }
+    }
+    await telegramApi('sendMessage',cfg,{chat_id:chatId,parse_mode:'HTML',...view});
+  }
+
   async function sendBotFavoriteTeamMatches(request,cfg,userId,chatId,teamId) {
     const id=positiveSafeInteger(teamId);
+    const back=[{text:'‹ Мои команды',callback_data:'favorite:page:0'}];
     if (!id) {
-      await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'Команда не найдена в вашем избранном.'});
+      await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'Команда не найдена в вашем избранном.',reply_markup:{inline_keyboard:[back]}});
       return;
     }
     const favorites=rowsOf(await getFavorites(userId,cfg));
     const team=favorites.find(x=>positiveSafeInteger(x?.team_id)===id);
     if (!team) {
-      await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'Команда не найдена в вашем избранном.'});
+      await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'Команда не найдена в вашем избранном.',reply_markup:{inline_keyboard:[back]}});
       return;
     }
     const matches=await botTeamIdMatches(id,cfg);
@@ -913,7 +950,9 @@ export function createTelegramDigestRuntime(deps = {}) {
       ? matches.map((m,i)=>`${i+1}. <b>${telegramHtmlEscape(m.homeName)} — ${telegramHtmlEscape(m.awayName)}</b> · ${(m.live || m.finished) && Number.isSafeInteger(m.goalsHome) && Number.isSafeInteger(m.goalsAway) ? `${m.goalsHome}:${m.goalsAway} · ` : ''}${m.live ? `LIVE · ${telegramHtmlEscape(botLiveMark(m))}` : m.finished ? `Завершён · ${digestTime(m.date)}` : digestTime(m.date)}`).join('\n')
       : 'Матчи клуба пока недоступны. Попробуйте обновить позже.';
     const buttons=rows.length?rows:[[{text:'🔄 Повторить',callback_data:`favorite:team:${id}`}]];
-    buttons.push([{text:'📰 Новости клуба',callback_data:`news:team:${Number(teamId)}`}]);
+    // Новости клуба убраны (Сергей 15.10: плохой источник); старые кнопки news:team работают.
+    buttons.push([{text:'☆ Убрать из избранного',callback_data:`favorite:remove:${id}`}]);
+    buttons.push(back);
     await telegramApi('sendMessage',cfg,{chat_id:chatId,parse_mode:'HTML',text:`⭐ <b>${telegramHtmlEscape(team.team_name || 'Команда')}</b>\n\n${body}`,reply_markup:{inline_keyboard:buttons}});
   }
   
