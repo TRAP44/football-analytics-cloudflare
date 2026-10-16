@@ -810,6 +810,7 @@ function getQuotaUsageRuntime() {
       redactOpsString,
       supaRpc,
       supaSelectOne,
+      supaSelectMany,
       todayUtc
     });
   }
