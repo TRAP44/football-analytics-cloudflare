@@ -437,62 +437,14 @@ test('initial database error renders recovery state instead of a false disabled 
   assert.match(root.innerHTML,/Повторить/);
 });
 
-test('authenticated digest API uses the existing subscription store and strict boolean writes',async()=>{
-  const digest=digestRuntime();
-  const {api,calls,telegram}=userDataRuntime({digest});
-  const request=url=>({
-    method:'PUT',
-    url,
-    json:async()=>({enabled:true}),
-  });
-
-  const unauthenticated=await api.apiDigestSettings(
-    {method:'GET',url:'https://app.test/api/digest-settings'},
-    {},
-    {id:false},
-  );
-  assert.equal(unauthenticated.status,401);
-  assert.equal(
-    telegram.memory.botDigestSubscriptions.size,
-    0,
-  );
-
-  const invalid=await api.apiDigestSettings(
-    {
-      method:'PUT',
-      url:'https://app.test/api/digest-settings',
-      json:async()=>({enabled:'true'}),
-    },
-    {},
-    {id:777},
-  );
-  assert.equal(invalid.status,400);
-  assert.equal(calls.setDigest.length,0);
-
-  const saved=await api.apiDigestSettings(
-    request('https://app.test/api/digest-settings'),
-    {},
-    {id:777},
-  );
-  assert.equal(saved.status,200);
-  assert.equal(saved.body.ok,true);
-  assert.equal(saved.body.settings.enabled,true);
-  assert.equal(saved.body.settings.configured,true);
-  assert.equal(saved.body.settings.delivery.hourUtc,7);
-  assert.equal(saved.body.settings.plan,'PRO');
-  assert.deepEqual(saved.body.settings.favoriteTeams,[
-    {teamId:40,teamName:'Liverpool'},
-  ]);
-  assert.equal(calls.setDigest.length,1);
-  assert.equal(telegram.memory.botDigestSubscriptions.get(777).enabled,true);
-
-  const loaded=await api.apiDigestSettings(
-    {method:'GET',url:'https://app.test/api/digest-settings'},
-    {},
-    {id:777},
-  );
-  assert.equal(loaded.status,200);
-  assert.equal(loaded.body.settings.enabled,true);
+test('retired digest API preserves authentication and refuses every method without store writes',async()=>{
+  const {api,calls,telegram}=userDataRuntime({digest:digestRuntime()});
+  assert.equal((await api.apiDigestSettings({method:'GET'},{},{id:false})).status,401);
+  for(const method of ['GET','PUT','POST','DELETE']){
+    const result=await api.apiDigestSettings({method,json:async()=>({enabled:true})},{},{id:777});
+    assert.equal(result.status,410);assert.equal(result.body.code,'DIGEST_REMOVED');
+  }
+  assert.equal(calls.setDigest.length,0);assert.equal(telegram.memory.botDigestSubscriptions.size,0);
 });
 
 test('persistent digest subscription boundary validates rows before delivery',async()=>{
@@ -621,29 +573,10 @@ test('daily digest delivery uses claim-arm-send-complete state transitions',asyn
   assert.equal(memory.botDigestSubscriptions.get(123).delivery_locked_until,null);
 });
 
-test('Profile surface exposes Russian Digest controls and narrow mobile layouts',()=>{
+test('Profile no longer renders or loads the removed morning digest',()=>{
   const html=fs.readFileSync('public/index.html','utf8');
   const app=fs.readFileSync('public/app.js','utf8');
-  const styles=fs.readFileSync('public/styles.css','utf8');
-  const moduleSource=fs.readFileSync('public/modules/digest-settings.js','utf8');
-
-  assert.match(html,/id="digestSettingsRoot"/);
-  assert.match(app,/createDigestSettingsModule/);
-  assert.match(app,/loadDigestSettings\(\)/);
-  assert.match(moduleSource,/☀️ Утренняя подборка/);
-  assert.match(moduleSource,/Получать подборку/);
-  assert.match(moduleSource,/По вашему местному времени/);
-  assert.match(moduleSource,/Время доставки задаётся автоматически/);
-  assert.match(moduleSource,/Базовая подборка доступна/);
-  assert.doesNotMatch(
-    moduleSource,
-    /Проверяем текущую подписку|текущей серверной доставке|серверное окно доставки/,
-  );
-  assert.doesNotMatch(moduleSource,/07:00–07:55 UTC/);
-  assert.doesNotMatch(
-    moduleSource,
-    /⭐ Любимые команды|digest-favorites|digest-team-chips|Любимые команды уже связаны/,
-  );
-  assert.match(styles,/@media \(max-width: 430px\)[\s\S]*?\.digest-settings-grid/);
-  assert.match(styles,/@media \(max-width: 360px\)[\s\S]*?\.digest-settings-head/);
+  assert.doesNotMatch(html,/digestSettingsRoot|digest-settings-panel/);
+  assert.doesNotMatch(app,/ensureDigestSettingsModule|loadDigestSettings|renderDigestSettings/);
+  assert.match(html,/smartNotificationsRoot/);
 });

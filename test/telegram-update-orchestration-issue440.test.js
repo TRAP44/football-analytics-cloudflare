@@ -91,7 +91,7 @@ test('Telegram update processor rejects checkout when monetization is paused', a
   assert.equal(calls[0]?.body?.ok,false);
 });
 
-test('Telegram digest callback delegates persistence and delivery through injected capabilities', async()=>{
+test('retired Telegram digest callback acknowledges without persistence or delivery', async()=>{
   const events=[];
   const processor=createTelegramUpdateProcessor(deps({
     setBotDigestSubscription:async(...args)=>events.push(['digest',...args.slice(0,3)]),
@@ -100,8 +100,10 @@ test('Telegram digest callback delegates persistence and delivery through inject
   const update={callback_query:{id:'cb-2',data:'digest:on',from:{id:77},message:{chat:{id:88}}}};
   const result=await processor(request,{},update);
   assert.deepEqual(result.body,{ok:true});
-  assert.deepEqual(events[0].slice(0,4),['digest',77,88,true]);
-  assert.equal(events.filter(x=>x[0]==='api').length,2);
+  assert.equal(events.length,1);
+  assert.equal(events[0][0],'api');
+  assert.equal(events[0][1],'answerCallbackQuery');
+  assert.match(events[0][2].text,/больше недоступен/);
 });
 
 test('Telegram successful payment is delegated without embedding billing state in orchestration', async()=>{

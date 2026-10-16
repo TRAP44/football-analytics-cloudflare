@@ -539,21 +539,7 @@ test('morning news cache is optional, sanitized and reports degraded source stat
   assert.doesNotMatch(text,/возможное влияние|Веб-источник|Источник:|Blocked morning item/);
 });
 
-test('Telegram navigation owns news while Mini App remains intentionally separate',()=>{
-  assert.match(orchestration,/text === '📰 Новости'/);
-  assert.match(orchestration,/sendGeneralFootballNews/);
-  assert.match(orchestration,/^\s*const newsTeamAction=/m);
-  assert.doesNotMatch(html,/id="newsView"/);
 
-  assert.match(
-    digestRuntimeSource,
-    /currentMorningFootballNews\(cfg\)\.catch\(\(\)=>\(\{/,
-  );
-  assert.match(
-    digestRuntimeSource,
-    /sendNews:newsText[\s\S]{0,180}?telegramApi\('sendMessage'/,
-  );
-});
 
 test('morning cache filters previews before selecting three actual news stories',async()=>{
   const {api,cache}=harness();

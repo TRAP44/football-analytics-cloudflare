@@ -31,15 +31,16 @@
 
 
 
+
 ## На ревью
 
-- [ ] Отказ просроченного RPC даже при исключении AbortController.abort — **Codex** — [PR #936](https://github.com/TRAP44/football-analytics-cloudflare/pull/936), ветка `codex/rpc-expiry-abort` — замечание Claude к #933;4246тестов/32load-сценария прошли, ревью Claude.
+- [ ] Удалить новости и утреннюю подборку из бота и настроек — **Codex** — [PR #937](https://github.com/TRAP44/football-analytics-cloudflare/pull/937), ветка `codex/bot-without-news`; Сергей16.10: убрать оба целиком. — замечание Claude по digest SLO исправлено; нужны CI нового head и повторное ревью.
+
 
 
 
 
 - [ ] LIVE-табло: аудит очереди, повторных уведомлений, 429 и таймаутов (Сергей 16.10) — гол не теряется, когда табло застыло (устаревшие данные или отложенная правка): подавление уведомления о голе только для актуального табло (`shown.h` + снимок ≤15 мин); удалённое человеком табло (`s:'g'`) возвращает уведомления о голах; пауза 429 от момента ответа; сбой сохранения отметок не сдвигает курсор мимо людей; отложенные правки в `deferred` — **Claude** — [PR #932](https://github.com/TRAP44/football-analytics-cloudflare/pull/932), ветка `claude/scoreboard-audit` — ревью: Codex
-- [ ] Пакетная проверка атрибуции перед наградой за приглашение — **Codex** — [PR #931](https://github.com/TRAP44/football-analytics-cloudflare/pull/931) (черновик; пиковая нагрузка не прошла), ветка `codex/referral-eligibility-batching` — ревью: Claude.
 
 
 
@@ -90,6 +91,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Отказ просроченного RPC даже при исключении AbortController.abort — **Codex** — [PR #936](https://github.com/TRAP44/football-analytics-cloudflare/pull/936), ветка `codex/rpc-expiry-abort` — замечание Claude к #933;4246тестов/32load-сценария прошли, ревью Claude. — слит, deploy38935145546 success.
 
 - [x] Общий deadline RPC Supabase до конца body, без повторов неизвестных записей — **Codex** — [PR #935](https://github.com/TRAP44/football-analytics-cloudflare/pull/935), ветка `codex/rpc-body-deadline` — ревью Claude без блокеров, 7 CI зелёные — слит 16.10; Quality main прошёл, production deploy38927527491 выполняется.
 

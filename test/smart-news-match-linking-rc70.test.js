@@ -66,12 +66,3 @@ test('RC70 injury and referee stories explain distinct factors to recheck',()=>{
   assert.match(api.newsFixtureChangeGuide({category:{code:'referee'}},link),/карточки/);
   assert.match(api.newsFixtureTimingLabel(link),/после новости/);
 });
-
-test('RC70 news conversion keeps safe dated and legacy callback branches',()=>{
-  const sources=worker+'\n'+orchestration+newsSource;
-  assert.match(sources,/datedNewsAiTeamAction=data\.match/);
-  assert.match(sources,/legacyNewsAiTeamAction=data\.match/);
-  assert.match(sources,/mode:'team_smart_link'/);
-  assert.match(sources,/origin:'news_ai_smart_link'/);
-  assert.match(app,/smart fixture/);
-});

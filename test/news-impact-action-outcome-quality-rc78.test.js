@@ -11,26 +11,7 @@ const telegramUpdate=fs.readFileSync('src/telegram-update-orchestration.js','utf
 const growth=fs.readFileSync('src/growth-analytics-runtime.js','utf8');
 const admin=fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
 
-test('RC78 records outcomes only after successful delivery paths',()=>{
-  assert.match(recovery,/eventName:'news_impact_outcome'/);
 
-  const newsStart=telegramUpdate.indexOf("if (action==='news')");
-  const newsDelivery=telegramUpdate.indexOf('await sendGeneralFootballNews',newsStart);
-  const newsOutcome=telegramUpdate.indexOf('await swallowAsync(recordNewsImpactOutcome',newsDelivery);
-  assert.ok(newsStart>=0 && newsDelivery>newsStart && newsOutcome>newsDelivery,'news outcome must follow delivery');
-
-  const shareStart=telegramUpdate.indexOf("if (action==='share')");
-  const shareDelivery=telegramUpdate.indexOf('await sendBotFixtureShareCard',shareStart);
-  const shareOutcome=telegramUpdate.indexOf('await swallowAsync(recordNewsImpactOutcome',shareDelivery);
-  assert.ok(shareStart>=0 && shareDelivery>shareStart && shareOutcome>shareDelivery,'share outcome must follow delivery');
-
-  const sectionStart=telegramUpdate.indexOf('const delivery=await sendBotFixtureSection');
-  const sectionGuard=telegramUpdate.indexOf('if (!delivery?.ok)',sectionStart);
-  const sectionOutcome=telegramUpdate.indexOf('await swallowAsync(recordNewsImpactOutcome',sectionGuard);
-  assert.ok(sectionStart>=0 && sectionGuard>sectionStart && sectionOutcome>sectionGuard,'section outcome must follow successful-delivery guard');
-
-  assert.match(analysis,/await recordTrackedFullAiOutcome\('fresh'\)/);
-});
 
 test('RC78 outcome correlation is ordered and fixture-scoped',()=>{
   assert.match(recovery,/function newsImpactJourneyKey\(/);

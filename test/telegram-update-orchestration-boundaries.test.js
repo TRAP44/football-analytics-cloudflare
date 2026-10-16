@@ -173,7 +173,7 @@ test('Telegram API dependency may return synchronously without breaking swallowe
   assert.equal(calls[0].method,'answerCallbackQuery');
 });
 
-test('digest mutation never receives an untrusted cross-origin Web App URL', async () => {
+test('retired digest callback never persists even with an untrusted Web App URL', async () => {
   const writes=[];
   const processor=createTelegramUpdateProcessor(deps({
     telegramWebAppUrl:()=> 'https://evil.example/phish',
@@ -190,10 +190,7 @@ test('digest mutation never receives an untrusted cross-origin Web App URL', asy
   });
 
   assert.equal(result.status,200);
-  assert.equal(writes.length,1);
-  assert.equal(writes[0][0],7);
-  assert.equal(writes[0][1],8);
-  assert.equal(writes[0][4],'');
+  assert.equal(writes.length,0);
 });
 
 test('malformed payment refund and subscription payloads fail closed', async () => {
@@ -295,8 +292,8 @@ test('Telegram callback fixture and team identifiers fail closed before handlers
       message:{chat:{id:8}},
     },
   });
-  assert.equal(invalidTeam.status,400);
-  assert.equal(invalidTeam.body.error,'team_id_invalid');
+  assert.equal(invalidTeam.status,200);
+  assert.deepEqual(invalidTeam.body,{ok:true});
   assert.equal(fixtureCalls,0);
   assert.equal(teamCalls,0);
 });
@@ -321,7 +318,7 @@ test('subscription identity mismatch never mutates subscription state', async ()
   assert.equal(mutations,0);
 });
 
-test('nonessential news outcome tracking cannot turn a delivered action into recovery', async () => {
+test('retired news action neither delivers news nor enters recovery', async () => {
   let recoveries=0;
   let deliveries=0;
   const processor=createTelegramUpdateProcessor(deps({
@@ -341,7 +338,7 @@ test('nonessential news outcome tracking cannot turn a delivered action into rec
 
   assert.equal(result.status,200);
   assert.deepEqual(result.body,{ok:true});
-  assert.equal(deliveries,1);
+  assert.equal(deliveries,0);
   assert.equal(recoveries,0);
 });
 
@@ -415,8 +412,8 @@ test('bot notifications open the notification block of the profile', async () =>
     assert.match(message.text,/Профиль → Уведомления/);
     assert.doesNotMatch(message.text,/Итоги дня/);
     const rows=message.reply_markup.inline_keyboard;
-    assert.deepEqual(rows[0].map(button=>button.callback_data),['digest:on','digest:off']);
-    const url=new URL(rows[1][0].web_app.url);
+    assert.ok(rows.flat().every(button=>!button.callback_data?.startsWith('digest:')));
+    const url=new URL(rows[0][0].web_app.url);
     assert.equal(url.searchParams.get('section'),'notifications');
   }
 });

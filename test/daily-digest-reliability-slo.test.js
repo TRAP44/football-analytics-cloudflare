@@ -376,7 +376,7 @@ test('digest history reader distinguishes exact cap from real truncation',async(
   }
 });
 
-test('production monitor propagates digest SLO watch state and its built-in lifecycle drill passes',()=>{
+test('production monitor ignores retired digest watch state and its built-in drill passes',()=>{
   const runtime=createProductionMonitorRuntime({
     assessDailyDigestReliabilitySlo,
     planDailyDigestReliabilitySloEvent,
@@ -404,8 +404,9 @@ test('production monitor propagates digest SLO watch state and its built-in life
   });
 
   assert.equal(healthy.state,'healthy');
-  assert.equal(watch.state,'watch');
+  assert.equal(watch.state,'healthy');
   assert.equal(runtime.productionMonitorSelfTest().pass,true);
+  assert.equal(runtime.productionMonitorSelfTest().retiredDigestHealthy,'healthy');
 });
 
 test('admin monitor renders digest reliability only as aggregate operational data',()=>{

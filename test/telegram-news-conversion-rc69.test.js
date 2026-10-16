@@ -22,20 +22,6 @@ test('RC69 keeps news in Telegram and adds per-item AI conversion actions',()=>{
   assert.equal(direct.inline_keyboard[0][1].callback_data,'news:ai_match:998877');
 });
 
-test('news intent resolves known clubs without storing arbitrary headline text',()=>{
-  const runtime=workerRuntime.getFootballNewsRuntime();
-  const hint=runtime.newsTeamHint({title:'Барселона объявила состав на матч',content:'Private arbitrary headline text'});
-  assert.equal(hint.canonical,'Barcelona');
-  assert.equal(hint.token,'barcelona');
-  assert.equal(runtime.newsTeamToken(hint),'barcelona');
-  assert.equal(runtime.newsTeamByToken(hint.token).canonical,'Barcelona');
-  assert.equal(runtime.newsTeamByToken('unknownclub'),null);
-  assert.equal(runtime.newsTeamHint({title:'Unrelated story'}),null);
-  assert.match(readContractSource(new URL('../src/telegram-update-orchestration.js', import.meta.url), 'utf8'),/eventName:'news_ai_intent'/);
-  const event=/backgroundGrowthEvent\(cfg,\{userId:callbackUserId,eventName:'news_ai_intent',[\s\S]{0,280}?metadata:\{([^}]*)\}/.exec(worker);
-  assert.ok(event,'news AI intent event missing');
-  assert.doesNotMatch(event[1],/title|content|query|url/);
-});
 
 test('news copy explains why the item matters and what AI will check',()=>{
   assert.match(readContractSource(new URL('../src/football-news-runtime.js', import.meta.url), 'utf8'),/🧠 Что проверить:/);
@@ -44,16 +30,7 @@ test('news copy explains why the item matters and what AI will check',()=>{
   assert.match(readContractSource(new URL('../src/football-news-runtime.js', import.meta.url), 'utf8'),/needs_confirmation/);
 });
 
-test('direct club news can open the known fixture without repeated search',()=>{
-  assert.match(worker,/news:ai_match:\(\\d\+\)/);
-  assert.match(worker,/origin:'news_ai_cta'/);
-  assert.match(worker,/sendBotFixtureMenu\(request,cfg,callbackUserId,callbackChatId,fixtureId\)/);
-});
 
-test('general news team CTA falls back to the existing match search flow',()=>{
-  assert.match(worker,/news:ai_team:\(\[a-z0-9\]\{2,32\}\)/);
-  assert.match(worker,/sendBotFootballSearch\(request,cfg,callbackUserId,callbackChatId,teamName\)/);
-});
 
 test('launch analytics exposes news AI intent and RC69 deterministic health',()=>{
   assert.match(readContractSource(new URL('../src/growth-analytics-runtime.js', import.meta.url), 'utf8'),/aiIntent:newsAiIntent\.size/);

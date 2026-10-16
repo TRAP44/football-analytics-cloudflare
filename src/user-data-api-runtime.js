@@ -447,47 +447,10 @@ export function createUserDataApiRuntime(deps) {
   }
   
   async function apiDigestSettings(request, cfg, user) {
-    const telegramId=positiveId(user?.id);
-    if (!telegramId) return json({error:'Сессия Telegram не подтверждена.',code:'DIGEST_AUTH_REQUIRED'},401);
-  
-    if (request.method === 'GET') {
-      const [row,quota,favorites]=await Promise.all([
-        getBotDigestSubscription(telegramId,cfg),
-        getQuota(telegramId,cfg),
-        getFavorites(telegramId,cfg),
-      ]);
-      return json({settings:publicDigestSettings(row,quota?.plan,favorites)});
-    }
-  
-    if (request.method === 'PUT' || request.method === 'POST') {
-      let body={};
-      try { body=await request.json(); } catch {
-        return json({error:'Некорректное тело запроса.',code:'DIGEST_INVALID_JSON'},400);
-      }
-      if (typeof body?.enabled !== 'boolean') {
-        return json({error:'Поле enabled должно быть true или false.',code:'DIGEST_INVALID_ENABLED'},400);
-      }
-      const appUrl=publicSiteUrl(request,'/');
-      const row=await setBotDigestSubscription(telegramId,telegramId,body.enabled,cfg,appUrl);
-      const [quota,favorites]=await Promise.all([
-        getQuota(telegramId,cfg),
-        getFavorites(telegramId,cfg),
-      ]);
-      void Promise.resolve(recordOpsEvent(cfg,{
-        severity:'info',
-        source:'telegram',
-        eventType:'digest_subscription',
-        code:body.enabled?'DIGEST_SUBSCRIPTION_ENABLED':'DIGEST_SUBSCRIPTION_DISABLED',
-        message:body.enabled?'Mini App digest subscription enabled.':'Mini App digest subscription disabled.',
-        endpoint:'/api/digest-settings',
-        meta:{channel:'miniapp',enabled:body.enabled,plan:safeText(quota?.plan,40) || 'FREE'},
-      })).catch(()=>null);
-      return json({ok:true,settings:publicDigestSettings(row,quota?.plan,favorites)});
-    }
-  
-    return json({error:'Метод не поддерживается.'},405);
+    if (!positiveId(user?.id)) return json({error:'Сессия Telegram не подтверждена.',code:'DIGEST_AUTH_REQUIRED'},401);
+    return json({error:'Утренняя подборка больше недоступна.',code:'DIGEST_REMOVED'},410);
   }
-  
+
   function publicReminder(row = {}) {
     const source=plainObject(row) || {};
     const reminderMinutes=integerCandidate(source.remind_before_minutes);

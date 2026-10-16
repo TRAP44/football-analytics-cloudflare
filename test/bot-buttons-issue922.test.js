@@ -8,7 +8,6 @@ import { createTelegramBotUiRuntime } from '../src/telegram-bot-ui-runtime.js';
 import { createTelegramUpdateProcessor } from '../src/telegram-update-orchestration.js';
 import { createTelegramSearchRuntime } from '../src/telegram-search-runtime.js';
 import { chatAllowsWebApp, chatSafeTelegramBody } from '../src/telegram-chat-markup.js';
-import { botDigestView } from '../src/telegram-bot-plans.js';
 
 // Кнопки и сценарии Telegram-бота (Issue #922).
 
@@ -231,34 +230,20 @@ test('favorite picker no longer promises an automatic reminder', async () => {
   assert.match(calls[0].text, /живой счёт/);
 });
 
-test('digest controls show the confirmed state with one action; a failed save is not a success', async () => {
-  assert.deepEqual(botDigestView(true).buttons.map(b => b.callback_data), ['digest:off']);
-  assert.deepEqual(botDigestView(false).buttons.map(b => b.callback_data), ['digest:on']);
-  assert.deepEqual(botDigestView(null).buttons.map(b => b.callback_data), ['digest:on', 'digest:off']);
-  assert.match(botDigestView(true).text, /Утренняя подборка: включена/);
-  assert.match(botDigestView(true).text, /меняет только подборку/);
-
-  const settings = processor({ getBotDigestSubscription: async () => ({ enabled: true }) });
-  await settings.run(request, {}, { message: { chat: { id: 42, type: 'private' }, from: { id: 7 }, text: '⚙️ Уведомления' } });
-  const shown = settings.sent.find(c => c.method === 'sendMessage').payload;
-  assert.match(shown.text, /включена/);
-  assert.deepEqual(shown.reply_markup.inline_keyboard[0], [{ text: '🔕 Выключить подборку', callback_data: 'digest:off' }]);
-
-  const saved = [];
-  const ok = processor({ setBotDigestSubscription: async (...args) => { saved.push(args.slice(0, 3)); } });
-  await ok.run(request, {}, callback('digest:off'));
-  assert.deepEqual(saved, [[7, 42, false]]);
-  const edit = ok.sent.find(c => c.method === 'editMessageText').payload;
-  assert.equal(edit.message_id, 100);
-  assert.match(edit.text, /выключена/);
-  assert.deepEqual(edit.reply_markup.inline_keyboard[0].map(b => b.callback_data), ['digest:on']);
-
-  const broken = processor({ setBotDigestSubscription: async () => { throw new Error('Supabase bot_digest_subscriptions: HTTP 503'); } });
-  await broken.run(request, {}, callback('digest:on'));
-  const alert = broken.sent.find(c => c.method === 'answerCallbackQuery').payload;
-  assert.equal(alert.show_alert, true);
-  assert.match(alert.text, /Не удалось сохранить/);
-  assert.ok(!broken.sent.some(c => c.method === 'editMessageText' || c.method === 'sendMessage'), 'no success message after a failed save');
+test('notifications retain match settings while retired news and digest buttons never fetch or subscribe', async () => {
+  const settings=processor({getBotDigestSubscription:async()=>assert.fail('retired setting read')});
+  await settings.run(request,{}, {message:{chat:{id:42,type:'private'},from:{id:7},text:'⚙️ Уведомления'}});
+  const shown=settings.sent.find(c=>c.method==='sendMessage').payload;
+  assert.match(shown.text,/Уведомления/);
+  assert.ok(shown.reply_markup.inline_keyboard.flat().some(b=>b.web_app));
+  assert.doesNotMatch(JSON.stringify(shown),/digest:|подборк|news:/);
+  for(const data of ['digest:on','digest:off','news:general','news:refresh','news:team:40','news:ai_match:77','news:impact:material:news:77','ni:r:material:news:retry:77']){
+    const h=processor({setBotDigestSubscription:async()=>assert.fail('retired subscription write'),sendGeneralFootballNews:async()=>assert.fail('news fetch'),sendFavoriteTeamNews:async()=>assert.fail('club news fetch'),sendBotFixtureMenu:async()=>assert.fail('retired news action')});
+    await h.run(request,{},callback(data));
+    assert.equal(h.sent.length,1,data);
+    assert.equal(h.sent[0].method,'answerCallbackQuery');
+    assert.match(h.sent[0].payload.text,/больше недоступен/);
+  }
 });
 
 test('inline: an unavailable search is not shown as «Матч не найден» and is not cached', async () => {
@@ -371,4 +356,14 @@ test('inline with a day feed: a failing provider search is «temporarily unavail
   const empty = await answer({ apiFootball: async () => [] });
   assert.equal(empty.button.text, 'Матч не найден — открыть MatchRadar');
   assert.ok(empty.cache_time > 0);
+});
+
+test('removed news and digest commands return the current menu without provider or subscription work',async()=>{
+  for(const text of ['/news','/digest','/digest_off','/picks','📰 Новости','☀️ Утренняя подборка','🧠 AI-подборка']){
+    const h=processor({setBotDigestSubscription:async()=>assert.fail('subscription mutation'),sendGeneralFootballNews:async()=>assert.fail('news request'),sendDailyPicks:async()=>assert.fail('picks delivery'),sendBotFootballSearch:async()=>assert.fail('retired command must not become search')});
+    await h.run(request,{}, {message:{chat:{id:42,type:'private'},from:{id:7},text}});
+    assert.equal(h.sent.length,1,text);
+    assert.equal(h.sent[0].method,'sendMessage');
+    assert.match(h.sent[0].payload.text,/Меню обновлено/);
+  }
 });
