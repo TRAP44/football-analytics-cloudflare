@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Ограниченная очередь RPC лимитера с прежним общим дедлайном — **Codex** — ветка `codex/rate-claim-admission` — ревью: Claude.
 
 
 
@@ -30,6 +29,8 @@
 
 
 ## На ревью
+
+- [ ] Ограниченная очередь RPC лимитера с прежним общим дедлайном — **Codex** — [PR #933](https://github.com/TRAP44/football-analytics-cloudflare/pull/933), ветка `codex/rate-claim-admission` — ревью: Claude.
 
 
 
