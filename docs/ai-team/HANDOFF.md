@@ -14,6 +14,12 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-16 — Codex — Свежие чтения квоты пакетами
+PR: ветка `codex/quota-read-batching` (ссылка после создания).
+Сделано: getQuota объединяет свежие чтения users/usage_daily до100callers/2мс через существующий batcher. Разделение URL/ключ/UTC-дата, проверка возвращённых ID; при ошибке прежний одиночный read. Тариф/usage не кешируются, expiry/limits считаются каждым caller. Резервирование, возвраты, guards и миграции не менялись.
+Проверки: Node22 npm ci/check/lint/security:privileged, release582/582, полный набор4204/4204, Worker dry-run. Пять новых тестов:1000callers→10reads, ожидание БД, свежесть/limits, изоляция и fallback. Последовательный настоящий Docker PostgreSQL/PostgREST: candidate p95 cached3164/2995/2942мс против успешного baseline3832мс; REST4038→3052–3064 (~24% меньше). Успешные прогоны:11000HTTP200, SQL10000users/1000history/1160full_ai, paidProfilePreserved=true, внешних запросов0. Неуспешный baseline9×503 PREAUTH_RATE_GUARD_UNAVAILABLE тоже записан в docs/CACHED_ANALYSIS_LATENCY_RU.md; не использован для процента ускорения.
+Осталось / внимание: цель2с пока не достигнута; локальный выигрыш не подтверждает hosted capacity. Окно2мс и дополнительный read при fallback; пакеты только внутри isolate. Production, платежи и Telegram-рассылки не трогались. Ревью Claude, слияние Сергей.
+
 ## 2026-10-16 — Codex — Проверен и отклонён quota-prefetch после #928
 PR: [PR #929](https://github.com/TRAP44/football-analytics-cloudflare/pull/929), ветка `codex/cached-quota-overlap`, только документы.
 Сделано: локально проверен read-only getQuota параллельно с account guard после остальных ранних guards, request-scoped WeakMap, без dispatch при отказе guard и без изменения reserve.32профильных теста проходили. Четыре последовательных настоящих DB-ramp: prototype/baseline/prototype/baseline. p95cached3855/3733/3789/3551мс; все HTTP200, SQL10000/1000/1160, paidProfilePreserved=true. Прототип целиком убран до PR, runtime/tests не меняются.

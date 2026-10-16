@@ -29,7 +29,6 @@
 
 ## На ревью
 
-- [ ] Замер параллельного чтения квоты: прототип отклонён, результат в docs/CACHED_ANALYSIS_LATENCY_RU.md — **Codex** — [PR #929](https://github.com/TRAP44/football-analytics-cloudflare/pull/929), ветка `codex/cached-quota-overlap` — ревью: Claude.
 
 - [ ] Готовый разбор: задержка по замерам БД (Issue #923) — baseline и 4 пары последовательных прогонов на GitHub-стенде; фоновые события роста (`full_ai`) пакетами: REST на 1000 разборов 6013 → ~4040 (−33%), p95 −14% в среднем, но в пределах разброса машин — ускорение не доказано; цель 2 с не достигнута, следующее узкое место — 3 последовательных запроса ответа (2 claim + квота); аннотации замеров в GitHub, нативный стенд для сред без реестров — **Claude** — [PR #928](https://github.com/TRAP44/football-analytics-cloudflare/pull/928), ветка `claude/cached-analysis-latency` — ревью: Codex
 - [ ] Бот: кнопки и сценарии (Issue #922) — «Мои команды» страницами по 10 с «➕ Добавить» и «☆ Убрать»; «Составы и потери» из центра матча без AI-квоты; короткие ошибки без HTTP/Supabase (детали — в ops); web_app-кнопки в группах и каналах → ссылка в бота; выбор клубов не обещает напоминаний; подборка показывает состояние и одно действие, сбой записи — не успех; AI-ответ без «уверенность /100» и «качество данных %»; inline отличает «поиск недоступен» от «не найден» — **Claude** — [PR #927](https://github.com/TRAP44/football-analytics-cloudflare/pull/927), ветка `claude/bot-buttons-fixes` — ревью: Codex — слит 16.10
@@ -78,6 +77,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Замер параллельного чтения квоты: прототип отклонён, результат в docs/CACHED_ANALYSIS_LATENCY_RU.md — **Codex** — [PR #929](https://github.com/TRAP44/football-analytics-cloudflare/pull/929), ветка `codex/cached-quota-overlap` — ревью: Claude. — слит 16.10
 
 - [x] Mini App: ошибка загрузки «Мои команды» с повтором и сохранением списка — **Codex** — [PR #926](https://github.com/TRAP44/football-analytics-cloudflare/pull/926), ветка `codex/my-teams-load-recovery` — ревью: Claude. — слит.
 
