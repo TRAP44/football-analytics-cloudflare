@@ -84,7 +84,9 @@ function send(index,path,body){return new Promise((resolve,reject)=>{
   const headers={'x-telegram-init-data':identities[index],'cf-connecting-ip':`10.${Math.floor(index/65536)%256}.${Math.floor(index/256)%256}.${index%256}`};
   if(body)headers['content-type']='application/json';
   const req=httpRequest({host:'127.0.0.1',port,path,method:body?'POST':'GET',headers,agent,timeout:30000},res=>{
-    let raw='';res.on('data',chunk=>raw+=chunk);res.on('end',()=>{try{resolve({status:res.statusCode,ms:performance.now()-started,body:((value)=>({cached:value.cached,fixtureId:value.matches?.[0]?.fixtureId}))(JSON.parse(raw))});}catch{reject(new Error('Malformed local HTTP response'));}});
+    let raw='';res.on('data',chunk=>raw+=chunk);res.on('end',()=>{try{resolve({status:res.statusCode,ms:performance.now()-started,body:((value)=>({cached:value.cached,fixtureId:value.matches?.[0]?.fixtureId,
+      // Только публичный код причины (#928): без тела ответа, адресов и секретов.
+      code:typeof value.code==='string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(value.code) ? value.code : ''}))(JSON.parse(raw))});}catch{reject(new Error('Malformed local HTTP response'));}});
   });req.on('error',reject);req.on('timeout',()=>req.destroy(new Error('local HTTP timeout')));req.end(body?JSON.stringify(body):undefined);
 });}
 async function run(name,count,path,body){
@@ -97,11 +99,12 @@ async function run(name,count,path,body){
   }
   await Promise.allSettled([...pending]);
   const codes={};for(const r of responses)codes[r.status]=(codes[r.status] || 0)+1;
+  const errorCodes={};for(const r of responses)if(r.status!==200){const key=`${r.status} ${r.body.code || 'NO_CODE'}`;errorCodes[key]=(errorCodes[key] || 0)+1;}
   if(!realDatabase)assert.equal(codes[200],count,`${name}: unexpected HTTP status ${JSON.stringify(codes)}`);
   if(body)assert.ok(responses.filter(r=>r.status===200).every(r=>r.body.cached===true),'all seeded analyses must remain cached');
   else assert.ok(responses.filter(r=>r.status===200).every(r=>r.body.fixtureId===fixtureId),'fixture identity preserved');
   const times=responses.map(r=>r.ms).sort((a,b)=>a-b);
-  rows.push({name,requests:count,parallelClientCap:concurrency,httpStatus:codes,durationMs:Math.round(performance.now()-started),
+  rows.push({name,requests:count,parallelClientCap:concurrency,httpStatus:codes,errorCodes,durationMs:Math.round(performance.now()-started),
     p50Ms:+times[Math.ceil(count*.5)-1].toFixed(2),p95Ms:+times[Math.ceil(count*.95)-1].toFixed(2),
     dbRequests:stats.dbRequests-before.dbRequests,modelLookups:stats.modelLookups-before.modelLookups});
 }

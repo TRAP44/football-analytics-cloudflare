@@ -50,10 +50,23 @@ export function createGrowthReferralRuntime(deps = {}) {
     return await safeAsyncCall(getUserRecord,id,cfg);
   }
 
+  // Повтор по одному — только если база точно отклонила пакет (HTTP 4xx от
+  // PostgREST: транзакция откатилась). Таймаут, обрыв, 5xx/шлюз — исход неизвестен:
+  // у этих событий нет event_key, и повтор мог бы задвоить уже записанные строки
+  // (ревью Codex #928). Тогда событие не подтверждается — как и прежняя одиночная
+  // запись без повтора.
+  function definitelyRejected(error) {
+    const status=Number(String(error?.message || '').match(/\bHTTP (\d{3})\b/)?.[1]);
+    return Number.isInteger(status) && status>=400 && status<500 && status!==408;
+  }
+
   async function insertGrowthRow(cfg,row) {
     if (canBatch(cfg)) {
       try { await growthInsertBatch(cfg,row); return; }
-      catch { /* пакет не записался — прежняя индивидуальная запись ниже */ }
+      catch (error) {
+        if (!definitelyRejected(error)) throw error;
+        // Пакет откатился целиком — каждая строка пишется отдельно, как раньше.
+      }
     }
     await supaUpsert(cfg,'growth_events',row);
   }

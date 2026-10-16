@@ -79,11 +79,11 @@ test('100 full_ai events → one attribution read and one insert, attribution ke
   assert.equal(rows.find(r => r.telegram_id === 700002).source, 'ads');
 });
 
-test('batch failures fall back to the previous individual read and insert', async () => {
+test('a batch the database definitely rejected (HTTP 4xx) falls back to individual read and insert', async () => {
   let insertBatchFailed = false;
   const { growth, calls } = runtime({
     selectMany: () => { throw new Error('read batch down'); },
-    upsert: rows => { if (Array.isArray(rows)) { insertBatchFailed = true; throw new Error('insert batch down'); } return null; },
+    upsert: rows => { if (Array.isArray(rows)) { insertBatchFailed = true; throw new Error('Supabase growth_events: HTTP 400 — invalid row'); } return null; },
   });
   const results = await Promise.all([1, 2, 3].map(i => growth.recordGrowthEvent(cfgA, { userId: 700000 + i, eventName: 'full_ai', channel: 'miniapp' })));
   assert.deepEqual(results, [true, true, true]);
@@ -102,4 +102,31 @@ test('events with a dedupe key or explicit attribution keep their own path', asy
   calls.selectMany.length = 0;
   await growth.recordGrowthEvent(cfgA, { userId: 8, eventName: 'match_open', attribution: { source: 'ads', campaign: 'x' } });
   assert.equal(calls.selectMany.length, 0, 'no attribution read when it is explicit');
+});
+
+// Ревью Codex #928: неизвестный исход пакета не повторяется — без дублей событий.
+test('COMMIT succeeded but the response was lost: no retry, no duplicate events', async () => {
+  for (const lost of ['Response lost after COMMIT', 'Supabase growth_events timeout', 'Supabase growth_events: HTTP 503 — upstream', 'Supabase growth_events: HTTP 408 — timeout']) {
+    const stored = [];
+    const { growth, calls } = runtime({
+      selectMany: () => [],
+      upsert: rows => { stored.push(...(Array.isArray(rows) ? rows : [rows])); throw new Error(lost); },
+    });
+    const results = await Promise.all([1, 2].map(i => growth.recordGrowthEvent(cfgA, { userId: i, eventName: 'full_ai', channel: 'miniapp' })));
+    assert.deepEqual(results, [false, false], `${lost}: the outcome is unknown, so it is not confirmed`);
+    assert.equal(calls.upsert.length, 1, `${lost}: exactly one write attempt`);
+    assert.deepEqual(stored.map(row => row.telegram_id), [1, 2], `${lost}: one row per caller, no duplicates`);
+    assert.ok(stored.every(row => row.event_key === null));
+  }
+});
+
+test('referral/dedupe-key events keep their own conflict handling', async () => {
+  const { growth, calls } = runtime({
+    selectMany: () => [],
+    upsert: () => { throw new Error('Supabase growth_events: HTTP 409 — duplicate key'); },
+  });
+  // supaSelectOne → null: конфликт не подтверждён, событие не засчитывается, как раньше.
+  assert.equal(await growth.recordGrowthEvent(cfgA, { userId: 9, eventName: 'referral_open', eventKey: 'referral_open:9' }), false);
+  assert.equal(calls.upsert.length, 1);
+  assert.ok(!Array.isArray(calls.upsert[0].rows));
 });

@@ -46,7 +46,7 @@ function githubNotice(title,value){
 function githubStepNotices(){
   for(const peak of [10,50,100,1000]){
     let report;try{report=JSON.parse(readFileSync(`load-results/real-database-http-${peak}.json`,'utf8'));}catch{continue;}
-    const rows=Object.fromEntries((report.rows || []).map(row=>[row.name,{n:row.requests,status:row.httpStatus,p50:row.p50Ms,p95:row.p95Ms,db:row.dbRequests}]));
+    const rows=Object.fromEntries((report.rows || []).map(row=>[row.name,{n:row.requests,status:row.httpStatus,errors:row.errorCodes,p50:row.p50Ms,p95:row.p95Ms,db:row.dbRequests}]));
     const ops=Object.fromEntries(Object.entries(report.dbOperationLatency || {}).map(([name,value])=>[name.replace('/rest/v1',''),[value.count,value.p50Ms,value.p95Ms]]));
     githubNotice(`real-db peak ${peak}`,{passed:report.loadPassed,rows,ops,loopP95:report.eventLoopP95Ms,rss:report.rssMiB});
   }
