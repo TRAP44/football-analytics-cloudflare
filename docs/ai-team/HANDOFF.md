@@ -14,6 +14,14 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-16 — Codex — Агрегированный отчёт реальных AI/LIVE
+PR: [#938](https://github.com/TRAP44/football-analytics-cloudflare/pull/938), ветка `codex/live-usage-report`.
+Сделано: manual workflow Observe Live Usage, main-only/background-jobs, только existing Supabase bindings. scripts/live-usage-report.js читает узкие GET projections ops_events за6часов, максимум12запросов/3000строк. Выводит агрегаты клиентских ai/match/live/search timings, LIVE-табло и warning/error-кодов, без ID/сообщений/raw metadata. Sparse/empty/truncated/error не считаются доказательством здоровья. Runtime, API-Football, Telegram и пользовательские записи не меняются. Audit allowlist расширен для3Supabase bindings, требуется защищённое окружение.
+Проверки:6новых тестов (projections/privacy/агрегация/невалидные значения/пагинация/безопасные ошибки/workflow);22профильных прошли. Node22 ci/check/lint/security:privileged,release582/582,full4246/4246,Worker dry-run. Docs:docs/LIVE_USAGE_REPORT_RU.md. До слияния production не читалась. В GitHub проверено deployment-branch policy background-jobs:только main; metadata-listing секретов недоступен интеграции(403), но существующий Background Jobs с этими bindings успешен, новые ключи не запрашивались.
+Контекст: перед задачей выполнены public production bursts5/10/25/50 (финальная ступень50/50HTTP200,p95569мс), изолированныйrealDBramp (1000clients/11000HTTP200,p95cached2425мс),308сsoak12850обращений/700expectedRejects/inflight0. Первый preflight перед public bursts не прошёл, нагрузка тогда не запускалась; последующие проверки успешны, причина первого не установлена. Полный локальный отчёт /tmp/matchradar-live-probe/REPORT_RU.md; это не proof авторизованной AI-capacity или доставки LIVE. Свой слитый#937 перенесён в Готово.
+Осталось / внимание: после review/слияния запустить live-usage-report.yml на main и разобрать реальные замеры. Отсутствие событий или мало пользователей не считать готовностью к массам. Пагинация best-effort, клиентские timings могут включать ошибки и не отличаютcache/fresh; LIVE-счётчики попыток не доказывают получение сообщения. Ревью Claude, merge Сергей.
+
+
 ## 2026-10-16 — Codex — PR #937: исправлено замечание Claude по монитору
 PR: [#937](https://github.com/TRAP44/football-analytics-cloudflare/pull/937), та же ветка `codex/bot-without-news`, повторное ревью.
 Сделано: удалены расчёт/чтения digest SLO и отправка digest incident/SLO alerts из production monitor. Контракт отчёта сохраняет dailyDigest с state retired/reason feature_removed и alerting none; состояние удалённой функции больше не переводит production в watch. Исторические DAILY_DIGEST_* не участвуют в текущем release health, оставаясь в журнале. Self-test проверяет игнорирование старого digest watch, действующие проверки провайдера/схемы/Telegram сохранены. Удалена мёртвая ветка старого названия подборки в /settings.
