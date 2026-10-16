@@ -1,3 +1,5 @@
+import { createSupabaseCallBatcher } from './supabase-call-batcher.js';
+
 export function createQuotaUsageRuntime(deps = {}) {
   if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
     throw new TypeError('Quota usage runtime dependencies are required.');
@@ -12,6 +14,7 @@ export function createQuotaUsageRuntime(deps = {}) {
     redactOpsString,
     supaRpc,
     supaSelectOne,
+    supaSelectMany,
     todayUtc
   } = deps;
 
@@ -59,6 +62,41 @@ export function createQuotaUsageRuntime(deps = {}) {
     const raw=cfg?.limits?.[plan] ?? cfg?.limits?.FREE;
     const limit=integerCandidate(raw);
     return limit !== null && limit > 0 ? limit : null;
+  }
+
+  // Fresh reads only, coalesced for at most 2 ms. Each caller still computes its
+  // own limit and expiry; reservations/refunds never use this batch.
+  const quotaUsers=createSupabaseCallBatcher(async(cfg,items)=>{
+    const dates=[...new Set(items.map(item=>item.date))];
+    const found=new Map();
+    for(const date of dates){
+      const ids=[...new Set(items.filter(item=>item.date===date).map(item=>item.uid))];
+      const rows=await supaSelectMany(cfg,'users',{
+        telegram_id:`in.(${ids.join(',')})`,
+        'usage_daily.usage_date':`eq.${date}`,
+        'usage_daily.limit':'1',
+      },{limit:ids.length,select:'telegram_id,plan,subscription_until,usage_daily(analyses)'});
+      if(!Array.isArray(rows))throw new Error('Quota batch returned an invalid payload.');
+      for(const row of rows){
+        const id=positiveId(row?.telegram_id);
+        if(id===null || !ids.includes(id) || found.has(`${date}:${id}`))throw new Error('Quota batch returned an unexpected user.');
+        found.set(`${date}:${id}`,row);
+      }
+    }
+    return items.map(item=>found.get(`${item.date}:${item.uid}`) || null);
+  });
+
+  async function quotaUser(uid,cfg,date){
+    if(typeof supaSelectMany==='function' && typeof cfg?.supabaseUrl==='string' && cfg.supabaseUrl && typeof cfg?.supabaseKey==='string' && cfg.supabaseKey){
+      try{return await quotaUsers(cfg,{uid,date});}
+      catch{/* A failed read can safely fall back to the original single read. */}
+    }
+    return supaSelectOne(cfg,'users',{
+      telegram_id:`eq.${uid}`,
+      select:'plan,subscription_until,usage_daily(analyses)',
+      'usage_daily.usage_date':`eq.${date}`,
+      'usage_daily.limit':'1',
+    });
   }
 
   async function getUsage(userId, cfg) {
@@ -171,12 +209,7 @@ export function createQuotaUsageRuntime(deps = {}) {
     // The existing FK lets PostgREST embed the day's row without a second trip.
     const database=hasSupabase(cfg);
     const user=database
-      ? await supaSelectOne(cfg,'users',{
-          telegram_id:`eq.${uid}`,
-          select:'plan,subscription_until,usage_daily(analyses)',
-          'usage_daily.usage_date':`eq.${todayUtc()}`,
-          'usage_daily.limit':'1',
-        })
+      ? await quotaUser(uid,cfg,todayUtc())
       : await getUserRecord(uid,cfg);
     let plan=normalizedPlan(user?.plan);
     if (plan !== 'FREE' && user?.subscription_until) {
