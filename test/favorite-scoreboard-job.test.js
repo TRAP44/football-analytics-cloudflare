@@ -228,7 +228,7 @@ test('users with goal alerts off get nothing; FAVORITE_SCOREBOARD_ENABLED=false 
   assert.deepEqual([...await scoreboardRecipientIds(getCache, 7, { favoriteScoreboardEnabled: false })], []);
 });
 
-test('blocked users are not retried; a deleted message closes the board without a new one', async () => {
+test('blocked users are not retried; a deleted message is not re-sent (state g: goal alerts come back)', async () => {
   const h = createScoreboardHarness({
     favorites: fans(2, 596, 11),
     telegram: (method, payload) => {
@@ -243,7 +243,7 @@ test('blocked users are not retried; a deleted message closes the board without 
   h.setFixtures([fixtureRow({ elapsed: 20, home: 1 })]);
   await h.run();
   assert.equal(h.board(7, 11).s, 'b');
-  assert.equal(h.board(7, 12).s, 'd');
+  assert.equal(h.board(7, 12).s, 'g');
   const calls = h.counters.telegram;
   h.tick();
   h.setFixtures([fixtureRow({ elapsed: 30, home: 2 })]);

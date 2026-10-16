@@ -67,13 +67,15 @@ export function textHash(value) {
 }
 
 // Компактная запись получателя: m — message_id, h — отпечаток текста, a — время
-// последнего действия, s — 'p' (pending/unknown), 'b' (blocked), 'd' (done).
+// последнего действия, s — 'p' (pending/unknown), 'b' (blocked), 'd' (done),
+// 'g' (gone: человек удалил сообщение до конца матча — табло не шлём заново, а
+// уведомления о голах возвращаются).
 // Старый формат (#919: messageId/text/pending/blocked/done) читается так же.
 export function normalizeBoard(value) {
   const source = plainObject(value);
   if (!source) return null;
   const m = positiveId(source.m ?? source.messageId);
-  const s = source.s === 'p' || source.pending ? 'p' : source.s === 'b' || source.blocked ? 'b' : source.s === 'd' || source.done ? 'd' : '';
+  const s = source.s === 'p' || source.pending ? 'p' : source.s === 'b' || source.blocked ? 'b' : source.s === 'g' ? 'g' : source.s === 'd' || source.done ? 'd' : '';
   const h = typeof source.h === 'string' ? source.h : typeof source.text === 'string' ? textHash(source.text) : '';
   const a = Number.isFinite(Number(source.a ?? source.at)) ? Number(source.a ?? source.at) : 0;
   if (!m && !s) return null;
@@ -82,8 +84,12 @@ export function normalizeBoard(value) {
 
 // Подтверждённое работающее табло: есть message_id и оно не заблокировано.
 export function boardIsActive(board) {
-  return Boolean(board?.m) && board.s !== 'b' && board.s !== 'p';
+  return Boolean(board?.m) && board.s !== 'b' && board.s !== 'p' && board.s !== 'g';
 }
+
+// Сколько табло считается живым для подавления уведомлений о голе: снимок
+// не старше 10 мин + интервал cron 5 мин (аудит 16.10).
+export const SUPPRESS_MAX_AGE_MS = SNAPSHOT_MAX_AGE_MS + 5 * 60_000;
 
 export function scoreboardFixture(row, nowMs = Date.now()) {
   const item = plainObject(row) || {};
@@ -114,17 +120,26 @@ export function scoreboardFixture(row, nowMs = Date.now()) {
   };
 }
 
-// Кому по матчу уже идёт подтверждённое табло — им не нужно отдельное
-// уведомление о голе. Pending/unknown сюда не входят: такой человек получает
-// обычные уведомления (Issue #921).
-export async function scoreboardRecipientIds(getCache, fixtureId, cfg) {
+// Кому по матчу уже идёт подтверждённое и актуальное табло — им не нужно
+// отдельное уведомление о голе. Не входят (получают обычные уведомления):
+// pending/unknown (Issue #921), удалённые табло, табло с устаревшим текстом
+// (правка отложена) и все табло матча, если свежих данных нет дольше
+// SUPPRESS_MAX_AGE_MS — иначе гол терялся бы и в табло, и в уведомлениях.
+export async function scoreboardRecipientIds(getCache, fixtureId, cfg, nowMs = Date.now()) {
   const id = positiveId(fixtureId);
   // Табло выключено — обычные уведомления о голах возвращаются (ревью Codex #919).
   if (!id || typeof getCache !== 'function' || cfg?.favoriteScoreboardEnabled === false) return new Set();
   let state = null;
   try { state = plainObject(await getCache(SCOREBOARD_CACHE_KEY(id), cfg)); } catch { return new Set(); }
+  const shown = plainObject(state?.shown);
+  const current = typeof shown?.h === 'string' ? shown.h : '';
+  const freshAt = Number(shown?.f);
+  if (!current || !Number.isFinite(freshAt) || nowMs - freshAt > SUPPRESS_MAX_AGE_MS) return new Set();
   return new Set(Object.entries(plainObject(state?.users) || {})
-    .filter(([, value]) => boardIsActive(normalizeBoard(value)))
+    .filter(([, value]) => {
+      const board = normalizeBoard(value);
+      return boardIsActive(board) && board.h === current;
+    })
     .map(([userId]) => positiveId(Number(userId)))
     .filter(Boolean));
 }
@@ -335,7 +350,9 @@ export function createFavoriteScoreboardJob(deps = {}) {
       const body = scoreboardText(match);
       states.set(match.fixtureId, {
         match, boards, body, hash: textHash(body), markup: scoreboardKeyboard(match),
-        shown: shown ? { f: Number(shown.f) || 0, final: shown.final === true } : { f: 0, final: false },
+        shown: shown
+          ? { f: Number(shown.f) || 0, final: shown.final === true, ...(typeof shown.h === 'string' ? { h: shown.h } : {}) }
+          : { f: 0, final: false },
         changed: false,
       });
     }
@@ -389,6 +406,13 @@ export function createFavoriteScoreboardJob(deps = {}) {
           summary.staleSkipped += waiting;
           summary.staleMatches += 1;
         }
+      }
+      // Актуальный текст и время снимка — для подавления уведомлений о голе: табло
+      // считается живым, пока данные свежие, даже если текст не менялся (перерыв).
+      if (show && Object.values(boards).some(boardIsActive)
+        && (entry.shown.h !== hash || match.fetchedAt > entry.shown.f)) {
+        entry.shown = { ...entry.shown, h: hash, f: Math.max(entry.shown.f, match.fetchedAt) };
+        entry.changed = true;
       }
       const users = new Set([...(usersByTeam.get(match.homeId) || []), ...(usersByTeam.get(match.awayId) || [])]);
       if (Object.keys(boards).length || users.size) summary.matches += 1;
@@ -473,9 +497,11 @@ export function createFavoriteScoreboardJob(deps = {}) {
     const retryNew = [];
     const markRateLimit = async error => {
       const seconds = Number(error?.retryAfter);
-      const until = at + (Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 3600) * 1000 : 60_000);
+      // retry_after отсчитывается от ответа Telegram, а не от начала запуска (аудит 16.10).
+      const limitedAt = now();
+      const until = limitedAt + (Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 3600) * 1000 : 60_000);
       summary.stopped = 'rate_limited';
-      summary.retryAfterSec = Math.round((until - at) / 1000);
+      summary.retryAfterSec = Math.round((until - limitedAt) / 1000);
       if (await writeJson(SCOREBOARD_PAUSE_KEY, 0, { until }, cfg)) summary.dbWrites += 1;
     };
     const saveEntry = async entry => {
@@ -510,6 +536,10 @@ export function createFavoriteScoreboardJob(deps = {}) {
         for (const userId of batch) boards[userId] = { a: claimedAt, s: 'p' };
         if (!await saveEntry(entry)) {
           for (const userId of batch) delete boards[userId];
+          // Отметки не сохранились — ничего не отправлено; эти люди остаются в
+          // очереди, курсор их не пропускает (аудит 16.10).
+          retryNew.push(...batch);
+          unsentClaims += batch.length;
           summary.failed += 1;
           summary.stopped = 'checkpoint_failed';
           break;
@@ -551,7 +581,7 @@ export function createFavoriteScoreboardJob(deps = {}) {
             }
           }
         }
-        entry.shown = { f: Math.max(entry.shown.f, match.fetchedAt), final: entry.shown.final || match.final };
+        entry.shown = { f: Math.max(entry.shown.f, match.fetchedAt), final: entry.shown.final || match.final, h: hash };
         if (!await saveEntry(entry)) {
           summary.failed += 1;
           summary.stopped = 'checkpoint_failed';
@@ -577,17 +607,19 @@ export function createFavoriteScoreboardJob(deps = {}) {
           boards[item.userId] = { ...board, a: now(), s: 'b' };
           summary.blocked += 1;
         } else if (kind === 'gone') {
-          // Сообщение удалено или слишком старое — закрываем табло без новых сообщений.
-          boards[item.userId] = { ...board, a: now(), s: 'd' };
-          summary.failed += 1;
+          // Человек удалил сообщение: нового табло не шлём, но и уведомления о
+          // голах ему возвращаются (до аудита 16.10 он терял их до конца матча).
+          boards[item.userId] = { ...board, a: now(), s: match.final ? 'd' : 'g' };
+          summary.gone = (summary.gone || 0) + 1;
         } else {
           // Правку можно безопасно повторить в следующем запуске.
           summary.failed += 1;
+          unsentClaims += 1;
           if (kind === 'rate_limited') await markRateLimit(error);
           continue;
         }
       }
-      entry.shown = { f: Math.max(entry.shown.f, match.fetchedAt), final: entry.shown.final || match.final };
+      entry.shown = { f: Math.max(entry.shown.f, match.fetchedAt), final: entry.shown.final || match.final, h: hash };
       entry.changed = true;
     }
 
