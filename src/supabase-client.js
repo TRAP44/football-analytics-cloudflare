@@ -1,6 +1,6 @@
 import { createRpcAdmissionQueue } from './rpc-admission-queue.js';
 
-export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs, bumpTelemetry = () => {} } = {}) {
+export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs, bumpTelemetry = () => {}, now = () => performance.now() } = {}) {
   if (typeof fetchWithTimeout !== 'function') {
     throw new TypeError('createSupabaseClient requires fetchWithTimeout');
   }
@@ -314,23 +314,51 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
   async function rawRpc(cfg, functionName, payload = {}, timeoutMs = 7000, extraHeaders = {}, signal = undefined) {
     const rpcName = nonEmptyText(functionName);
     const url = restUrl(cfg, rpcName, { rpc:true });
-    const response = await fetchWithTimeout(url, {
-      method: 'POST',
-      headers: supaRpcHeaders(cfg, extraHeaders),
-      body: JSON.stringify(payload || {}),
-      ...(signal ? {signal} : {}),
-    }, boundedInteger(timeoutMs, 7000, 500, 120000), `Supabase RPC ${rpcName}`);
-    const body = await response.json().catch(() => null);
-    if (!response.ok) {
-      const message = typeof body?.message === 'string' ? safeRedact(body.message, 180) : '';
-      const error = new Error(`Supabase RPC ${rpcName}: HTTP ${response.status}${message ? ` — ${message}` : ''}`);
-      error.code = typeof body?.code === 'string' && body.code.trim()
-        ? body.code.trim()
-        : `HTTP_${response.status}`;
-      error.detail = body?.details ?? null;
-      throw error;
+    const budget = boundedInteger(timeoutMs, 7000, 500, 120000);
+    const deadline = now() + budget;
+    const controller = new AbortController();
+    const rpcSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    const timeoutError = Object.assign(new Error(`Supabase RPC ${rpcName}: response deadline exceeded.`), {
+      code: 'UPSTREAM_TIMEOUT', source: `Supabase RPC ${rpcName}`,
+    });
+    const checkDeadline = () => {
+      if (now() >= deadline || rpcSignal.aborted) throw rpcSignal.reason || timeoutError;
+    };
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(timeoutError);
+        try { controller.abort(timeoutError); } catch {}
+      }, budget);
+    });
+    // The transport helper ends its timer at headers. Keep one absolute RPC
+    // deadline through body parsing, even if a transport ignores cancellation.
+    const operation = (async () => {
+      const response = await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: supaRpcHeaders(cfg, extraHeaders),
+        body: JSON.stringify(payload || {}),
+        signal: rpcSignal,
+      }, budget, `Supabase RPC ${rpcName}`);
+      checkDeadline();
+      const body = await response.json().catch(() => null);
+      checkDeadline();
+      if (!response.ok) {
+        const message = typeof body?.message === 'string' ? safeRedact(body.message, 180) : '';
+        const error = new Error(`Supabase RPC ${rpcName}: HTTP ${response.status}${message ? ` — ${message}` : ''}`);
+        error.code = typeof body?.code === 'string' && body.code.trim()
+          ? body.code.trim()
+          : `HTTP_${response.status}`;
+        error.detail = body?.details ?? null;
+        throw error;
+      }
+      return Array.isArray(body) && body.length === 1 ? body[0] : body;
+    })();
+    try {
+      return await Promise.race([operation, timeout]);
+    } finally {
+      clearTimeout(timer);
     }
-    return Array.isArray(body) && body.length === 1 ? body[0] : body;
   }
 
   function supaRpc(cfg, functionName, payload = {}, timeoutMs = 7000, extraHeaders = {}) {
