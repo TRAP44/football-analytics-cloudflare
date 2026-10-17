@@ -1,4 +1,4 @@
-import {launchChromeWithRetry,stopChrome,Cdp} from './bottom-nav-render-smoke.js';
+import {launchChromeWithRetry,stopChrome,Cdp,browserExecutable} from './bottom-nav-render-smoke.js';
 import {createServer} from 'node:http';
 import {readFile,rm} from 'node:fs/promises';
 import path from 'node:path';
@@ -42,7 +42,7 @@ const server=createServer(async(req,res)=>{
  }catch{res.statusCode=404;res.end('not found');}
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-const launched=await launchChromeWithRetry(process.env.CHROME_BIN||'chromium');
+const launched=await launchChromeWithRetry(browserExecutable());
 let cdp;
 try{
  const endpoint='http://127.0.0.1:'+launched.debugPort;

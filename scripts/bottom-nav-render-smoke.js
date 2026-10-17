@@ -19,7 +19,7 @@ const EXPECTED_ASSET_REVISION = (() => {
   return FRONTEND_ASSET_REVISION;
 })();
 
-function browserExecutable() {
+export function browserExecutable() {
   const candidates = [
     process.env.CHROME_BIN,
     'google-chrome',
