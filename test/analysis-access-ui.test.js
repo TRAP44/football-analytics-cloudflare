@@ -314,7 +314,7 @@ test('analysis controller validates entitlement snapshot fixture IDs before call
   ]]);
 });
 
-test('successful Pass analysis snapshots entitlement before and after server consumption', async () => {
+test('successful Pass analysis renders confirmed server access without entitlement round trips', async () => {
   const apiCalls=[];
   const passBefore={
     entitlement:entitlement({
@@ -339,7 +339,7 @@ test('successful Pass analysis snapshots entitlement before and after server con
         return entitlementReads===1 ? passBefore : passAfter;
       }
       if (path==='/api/analyze') {
-        return {match:{fixtureId:777},quota:{plan:'FREE',used:3,limit:3,left:0}};
+        return {match:{fixtureId:777},quota:{plan:'FREE',used:3,limit:3,left:0},accessSnapshot:{before:passBefore,after:passAfter}};
       }
       return {};
     },
@@ -347,9 +347,9 @@ test('successful Pass analysis snapshots entitlement before and after server con
 
   await controller.analyzeMatch(777,null,{recheck:false});
 
-  assert.equal(entitlementReads,2);
-  assert.equal(apiCalls[1].path,'/api/analyze');
-  assert.deepEqual(JSON.parse(apiCalls[1].options.body),{
+  assert.equal(entitlementReads,0);
+  assert.equal(apiCalls[0].path,'/api/analyze');
+  assert.deepEqual(JSON.parse(apiCalls[0].options.body),{
     fixtureId:777,
     origin:'miniapp',
     recheck:false,

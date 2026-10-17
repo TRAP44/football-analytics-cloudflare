@@ -25,7 +25,7 @@ const UNAVAILABLE = Object.freeze({
 });
 
 export function matchQuestionsShellHtml(escapeHtml) {
-  return `<div class="match-explanation-head"><span>💬 Спросить про матч</span><small>Ответ — только из данных матча</small></div>
+  return `<div class="match-explanation-head"><button type="button" class="match-question-start" data-question-start>💬 Спросить про матч</button><small>Ответ — только из данных матча</small></div>
     <div class="match-question-presets" role="group" aria-label="Готовые вопросы">${PRESETS.map(([id, label]) => `<button type="button" class="match-question-chip" data-question-preset="${escapeHtml(id)}">${escapeHtml(label)}</button>`).join('')}</div>
     <form class="match-question-form" data-question-form>
       <input type="text" name="question" maxlength="${MAX_LENGTH}" autocomplete="off" placeholder="Свой вопрос, например: кто опаснее в атаке?" aria-label="Вопрос про матч">
@@ -63,6 +63,9 @@ export function matchQuestionAnswerHtml(data, escapeHtml) {
 export function mountMatchQuestions({ root, fixtureId, api, escapeHtml, isCurrent = () => true } = {}) {
   const id = Number(fixtureId);
   if (!root || !Number.isSafeInteger(id) || id <= 0 || typeof api !== 'function') return false;
+  if (root.dataset.questionsMounted === 'true' && Number(root.dataset.fixture) === id) return true;
+  root.dataset.fixture = String(id);
+  root.dataset.questionsMounted = 'true';
   root.innerHTML = matchQuestionsShellHtml(escapeHtml);
   root.hidden = false;
   const answer = root.querySelector('[data-question-answer]');
@@ -89,6 +92,7 @@ export function mountMatchQuestions({ root, fixtureId, api, escapeHtml, isCurren
     answer.innerHTML = matchQuestionAnswerHtml(data, escapeHtml);
   }
 
+  root.querySelector('[data-question-start]')?.addEventListener('click', () => ask({ preset: 'why' }));
   root.querySelectorAll('[data-question-preset]').forEach(button => {
     button.addEventListener('click', () => ask({ preset: button.dataset.questionPreset }));
   });

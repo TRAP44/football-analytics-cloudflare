@@ -1,3 +1,4 @@
+import {analysisAccessSnapshot} from './analysis-access-snapshot.js';
 import {withAnalysisWebBudget} from './analysis-web-budget.js';
 import {createAnalysisTiming} from './analysis-timing.js';
 import {prematchLineupEvent,analysisIncludesLineupEvent,completedPrematchLineupRefresh,prematchLineupRefreshKey,PREMATCH_LINEUP_RETENTION_MINUTES} from './prematch-lineup-event.js';
@@ -2328,6 +2329,7 @@ export function createAnalysisRuntime(deps) {
       cached:false,
       stale:false,
       persistence:{cacheStored},
+      accessSnapshot:analysisAccessSnapshot(entitlementBefore,passUsageReservation,{passAccess,freeRecheck}),
       recheck:{
         requested:recheckRequested,
         performed:shouldPerformRecheck,

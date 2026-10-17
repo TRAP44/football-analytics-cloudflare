@@ -53,6 +53,7 @@ jobs:
       - name: Run review-tail regression tests
         run: npm run test:review-tail
       - run: node scripts/bottom-nav-render-smoke.js
+      - run: node scripts/match-questions-browser-smoke.js
       - run: npm run verify:release
       - run: node scripts/isolated-load-check.js
       - run: npm run verify:worker

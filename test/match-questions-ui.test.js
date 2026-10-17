@@ -10,6 +10,7 @@ test('shell: four ready questions, bounded input, honest note', () => {
   assert.equal((html.match(/data-question-preset=/g) || []).length, 4);
   for (const label of ['Почему такой прогноз?', 'Что может изменить исход?', 'Кто в форме?', 'Что с составами и потерями?']) assert.ok(html.includes(label), label);
   assert.match(html, /maxlength="200"/);
+  assert.match(html, /<button[^>]*type="button"[^>]*data-question-start/);
   assert.match(html, /Ставки не подсказываем/);
   assert.doesNotMatch(html, /коэффициент|П1|П2|1X2/);
 });

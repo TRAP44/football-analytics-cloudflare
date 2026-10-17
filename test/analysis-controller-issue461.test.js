@@ -271,6 +271,7 @@ test('successful analysis validates identity and preserves access/telemetry life
       if (url==='/api/analyze') {
         return {
           match:{fixtureId:7},
+          accessSnapshot:{before:{entitlement:{source:'pass'}},after:{entitlement:{source:'pass'}}},
           quota:{remaining:1},
           provider:{
             visibility:'admin',
@@ -295,7 +296,7 @@ test('successful analysis validates identity and preserves access/telemetry life
     apiCalls.filter(
       ([url])=>url.startsWith('/api/entitlements?'),
     ).length,
-    2,
+    0,
   );
   const analyzeCall=apiCalls.find(
     ([url])=>url==='/api/analyze',
@@ -556,4 +557,14 @@ test('app keeps only lazy analysis composition while controller owns lifecycle',
   assert.match(module,/await api\('\/api\/analyze'/);
   assert.match(module,/const ownsAnalysisView=/);
   assert.match(module,/safeCall\(showPaywall,id\)/);
+});
+
+test('a cached result renders without waiting for an unavailable entitlement endpoint',async()=>{
+  const {controller,calls}=makeController({api:async(path)=>{
+    if(path.startsWith('/api/entitlements'))return await new Promise(()=>{});
+    if(path==='/api/analyze')return {match:{fixtureId:7},cached:true,quota:{plan:'FREE',used:1,limit:3,left:2}};
+    throw new Error('unexpected request');
+  }});
+  await controller.analyzeMatch(7,null,{});
+  assert.ok(calls.some(row=>row[0]==='render-analysis'));
 });
