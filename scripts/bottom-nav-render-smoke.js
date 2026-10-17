@@ -19,7 +19,7 @@ const EXPECTED_ASSET_REVISION = (() => {
   return FRONTEND_ASSET_REVISION;
 })();
 
-function browserExecutable() {
+export function browserExecutable() {
   const candidates = [
     process.env.CHROME_BIN,
     'google-chrome',
@@ -118,7 +118,7 @@ async function waitForDevToolsPort(profileDir, chrome, stderrText, attempts = 10
   );
 }
 
-async function stopChrome(chrome) {
+export async function stopChrome(chrome) {
   if (!chrome || chrome.exitCode !== null) return;
   chrome.kill('SIGTERM');
   await Promise.race([
@@ -214,7 +214,7 @@ export async function launchChromeWithRetry(executable, attempts = 3, runtime = 
   throw new Error(`Chrome startup failed after ${totalAttempts} attempts: ${lastError?.message || lastError || 'unknown error'}`);
 }
 
-class Cdp {
+export class Cdp {
   constructor(url) {
     this.nextId = 1;
     this.pending = new Map();

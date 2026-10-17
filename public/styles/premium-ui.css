@@ -2691,3 +2691,14 @@ html[data-theme] body.miniapp-public-shell .mr-hero.is-compact .mr-hero-radar { 
 
 /* Блок «Чем отличается MatchRadar» — знакомство; вернувшимся не показываем. */
 html[data-theme] body.miniapp-public-shell #homeHero.is-compact ~ .mr-manifesto { display: none; }
+
+/* The title is an action: request the ready explanation without opening a keyboard. */
+html[data-theme] body.miniapp-public-shell .match-question-start {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: 12px; background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--accent); font: inherit; font-weight: 800; cursor: pointer; text-align: left;
+}
+html[data-theme] body.miniapp-public-shell .match-question-start:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+html[data-theme] body.miniapp-public-shell .match-questions[aria-busy="true"] .match-question-start { opacity: .55; pointer-events: none; }
+html[data-theme] body.miniapp-public-shell .mr-hq-hero .center-hero-actions > .center-pass-btn { grid-column: 1 / -1; width: 100%; }

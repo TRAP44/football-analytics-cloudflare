@@ -327,8 +327,6 @@ export function createAnalysisController({
       }
       setButtonState(button,{text:'⏳ Собираю данные…'});
 
-      const entitlementBefore=
-        await loadAnalysisAccessSnapshot(id);
       const rawData=await api('/api/analyze',{
         method:'POST',
         body:JSON.stringify(analysisPayload(id,options)),
@@ -339,22 +337,21 @@ export function createAnalysisController({
       }
       const data=safeShallowCopy(rawData);
 
-      const beforeEntitlement=plainObject(
-        safeRead(entitlementBefore,'entitlement'),
-      );
-      const entitlementAfter=
-        safeRead(beforeEntitlement,'source')==='pass'
-          ? await loadAnalysisAccessSnapshot(id)
-          : entitlementBefore;
-
-      const accessUsage=safeCall(buildAccessUsage,{
+      const accessSnapshot=plainObject(safeRead(data,'accessSnapshot'));
+      const entitlementBefore=plainObject(safeRead(accessSnapshot,'before'));
+      const entitlementAfter=plainObject(safeRead(accessSnapshot,'after')) || entitlementBefore;
+      const beforeEntitlement=plainObject(safeRead(entitlementBefore,'entitlement'));
+      // Cached/free-recheck labels come from the result itself. Older responses
+      // without server access metadata must not invent which Pass was charged.
+      const knownAccess=Boolean(accessSnapshot || data.cached===true || data.recheck?.free===true);
+      const accessUsage=knownAccess ? safeCall(buildAccessUsage,{
         analysis:data,
         entitlementBefore:entitlementBefore || {},
         entitlementAfter:
           entitlementAfter || entitlementBefore || {},
         profile:plainObject(safeRead(state,'profile')) || {},
         fixtureId:id,
-      });
+      }) : null;
       data.accessUsage=accessUsage ?? null;
 
       if (safeRead(beforeEntitlement,'source')==='pass') {
