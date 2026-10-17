@@ -242,3 +242,30 @@ test('provider caches only canonical fixture identifiers from validated network 
   assert.equal(calls.cacheWrites[0][0],'provider-feature:events:123:v5.0');
   assert.equal(calls.cacheWrites[0][2].fixtureId,123);
 });
+
+test('provider features use one cache read for a cold miss and keep quota-denied requests off the API',async()=>{
+  for(const allowed of [true,false]){
+    let reads=0;
+    const {runtime,calls}=makeRuntime({
+      getCacheEntry:async(_key,_cfg,allowExpired)=>{reads++;assert.equal(allowExpired,true);return null;},
+      providerFeaturePolicy:()=>({allowed,reason:allowed?'':'quota_reserve',ttlSeconds:45}),
+    });
+    const result=await runtime.providerFeatureFetch({feature:'events',path:'/fixtures/events',fixtureId:123,params:{fixture:123},cfg:{}});
+    assert.equal(reads,1);assert.equal(calls.api,allowed?1:0);
+    assert.equal(result.meta.source,allowed?'network':'skipped');
+  }
+});
+
+test('a single provider cache row preserves fresh hits and untrusted stale fallbacks',async()=>{
+  for(const expired of [false,true]){
+    let reads=0;
+    const {runtime,calls}=makeRuntime({
+      getCacheEntry:async()=>{reads++;return {expired,expiresAt:new Date(Date.now()+(expired?-60000:60000)).toISOString(),payload:{fixtureId:123,feature:'events',data:[{id:1}],provider:'api-football',fetchedAt:new Date().toISOString()}};},
+      providerFeaturePolicy:()=>({allowed:false,reason:'quota_reserve',ttlSeconds:45}),
+    });
+    const result=await runtime.providerFeatureFetch({feature:'events',path:'/fixtures/events',fixtureId:123,params:{fixture:123},cfg:{}});
+    assert.equal(reads,1);assert.equal(calls.api,0);assert.deepEqual(result.data,[{id:1}]);
+    assert.equal(result.meta.source,expired?'stale':'cache');
+    if(expired){assert.equal(result.meta.available,false);assert.equal(result.meta.usable,false);}
+  }
+});
