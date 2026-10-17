@@ -488,3 +488,23 @@ test('single-read fresh cache keeps cached responses and fixture identity checks
     assert.equal(rejected,fixtureId===123?0:1);
   }
 });
+
+test('slow cached analysis reports one bounded phase event through waitUntil without awaiting it',async()=>{
+  let at=0;const events=[],pending=[];
+  const payload={generatedAt:new Date().toISOString(),match:{fixtureId:123,date:new Date(Date.now()+3600000).toISOString(),status:'NS'}};
+  let finish;
+  const runtime=createAnalysisRuntime({
+    ...baseDeps(),analysisTimingNow:()=>at,
+    getCacheEntry:async()=>{at=2400;return {payload,expired:false};},
+    analysisFreshness:()=>({needsRecheck:false,state:'fresh'}),newsImpactDeltaStatus:()=>null,
+    recordHistory:async()=>{},analysisResponsePayload:(value,meta)=>({...value,...meta}),
+    getQuota:async()=>({plan:'FREE',used:0,limit:3,left:3}),
+    recordOpsEvent:(_cfg,event)=>{events.push(event);return new Promise(resolve=>{finish=resolve;});},
+  });
+  const result=await runtime.apiAnalyze({json:async()=>({fixtureId:123})},{waitUntil:task=>pending.push(task)},{id:456});
+  assert.equal(result.status,200);assert.equal(events.length,1);assert.equal(pending.length,1);
+  assert.equal(events[0].code,'ANALYSIS_SLOW_REQUEST');assert.equal(events[0].durationMs,2400);
+  assert.equal(events[0].meta.cacheMs,2400);
+  assert.doesNotMatch(JSON.stringify(events[0]),/fixtureId|userId|generatedAt/);
+  finish();await pending[0];
+});

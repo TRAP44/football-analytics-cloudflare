@@ -34,9 +34,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] AI: одно чтение свежего/устаревшего кеша вместо двух — **Codex** — [PR #939](https://github.com/TRAP44/football-analytics-cloudflare/pull/939), `codex/analysis-cache-snapshot`; full 4249/4249, release 585/585; ревью Claude.
+- [ ] Диагностика записи кеша и стадий медленного AI — **Codex** — [PR #940](https://github.com/TRAP44/football-analytics-cloudflare/pull/940), `codex/ai-latency-diagnostics`; 4256/4256, release 586/586, без сырых ошибок/идентификаторов; ревью Claude.
+
 
 
 
@@ -95,6 +97,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] AI: одно чтение свежего/устаревшего кеша вместо двух — **Codex** — [PR #939](https://github.com/TRAP44/football-analytics-cloudflare/pull/939), `codex/analysis-cache-snapshot`; full 4249/4249, release 585/585; ревью Claude. — слит.
 
 - [x] Агрегированный read-only отчёт реальных AI/LIVE после приглашения людей — **Codex** — [PR #938](https://github.com/TRAP44/football-analytics-cloudflare/pull/938), ветка `codex/live-usage-report`; существующие ops_events и секреты background-jobs, без новых рассылок/нагрузки. — ревью Claude;4246тестов прошли, production report после слияния. — слит 16.10.
 
