@@ -1165,7 +1165,7 @@ export function createAnalysisRuntime(deps) {
         : canFetchLineups ? '' : 'quota_reserve';
   
     timing.enter('providers');
-    const [injuryResult,predictionResult,oddsResult,h2hResult]=await Promise.all([
+    const [injuryResult,predictionResult,oddsResult,h2hResult,lineupResult]=await Promise.all([
       safeAnalysisProviderFetch({
         feature:'injuries',
         path:'/injuries',
@@ -1198,18 +1198,18 @@ export function createAnalysisRuntime(deps) {
         allowed:canFetchH2H,
         skipReason:h2hSkipReason,
       }),
+      confirmedLineupEvent
+        ? {data:confirmedLineupEvent.snapshot.data,meta:{feature:'lineups',provider:'api-football',source:'cache',fetchedAt:confirmedLineupEvent.snapshot.fetchedAt,ageSeconds:Math.floor((Date.now()-Date.parse(confirmedLineupEvent.snapshot.fetchedAt))/1000),expiresAt:new Date(Date.parse(confirmedLineupEvent.snapshot.fetchedAt)+300000).toISOString(),available:true,usableForConfidence:true,state:'available',stale:false}}
+        : safeAnalysisProviderFetch({
+        feature:'lineups',
+        path:'/fixtures/lineups',
+        params:{fixture:fixtureId},
+        fixtureId,
+        cfg,
+        allowed:canFetchLineups,
+        skipReason:lineupSkipReason,
+        }),
     ]);
-    const lineupResult=confirmedLineupEvent
-      ? {data:confirmedLineupEvent.snapshot.data,meta:{feature:'lineups',provider:'api-football',source:'cache',fetchedAt:confirmedLineupEvent.snapshot.fetchedAt,ageSeconds:Math.floor((Date.now()-Date.parse(confirmedLineupEvent.snapshot.fetchedAt))/1000),expiresAt:new Date(Date.parse(confirmedLineupEvent.snapshot.fetchedAt)+300000).toISOString(),available:true,usableForConfidence:true,state:'available',stale:false}}
-      : await safeAnalysisProviderFetch({
-      feature:'lineups',
-      path:'/fixtures/lineups',
-      params:{fixture:fixtureId},
-      fixtureId,
-      cfg,
-      allowed:canFetchLineups,
-      skipReason:lineupSkipReason,
-    });
 
     const injuries=rowsOrEmpty(injuryResult.data,500);
     const predictions=rowsOrEmpty(predictionResult.data,50);
@@ -1432,6 +1432,59 @@ export function createAnalysisRuntime(deps) {
         : Promise.resolve(null),
     ]);
 
+    // Season cache decisions do not depend on web news or recent-form reads.
+    const canFetchSeasonStrength=Boolean(
+      detailedCoverage
+      && paid
+      && healthyFree
+      && leagueId
+      && season,
+    );
+    const seasonComparisonPromise=comparisonPromise.then(async comparisonRows=>{
+      const [homeStandingRaw,awayStandingRaw,homeTeamIntelligenceRaw,awayTeamIntelligenceRaw]=comparisonRows;
+      const homeStanding=objectValue(homeStandingRaw);
+      const awayStanding=objectValue(awayStandingRaw);
+      const homeTeamIntelligence=objectValue(homeTeamIntelligenceRaw) || {};
+      const awayTeamIntelligence=objectValue(awayTeamIntelligenceRaw) || {};
+      const cachedHomeSeasonStats=objectValue(homeTeamIntelligence.stats);
+      const cachedAwaySeasonStats=objectValue(awayTeamIntelligence.stats);
+      const [homeSeasonFreshRaw,awaySeasonFreshRaw]=await Promise.all([
+        cachedHomeSeasonStats
+          ? Promise.resolve(null)
+          : optionalAsync(loadSeasonStatsForAnalysis,{
+              teamId:homeId,
+              teamName:homeName,
+              teamLogo:safeText(fixture?.teams?.home?.logo,500),
+              leagueId,
+              leagueName,
+              leagueLogo:safeText(fixture?.league?.logo,500),
+              country:safeText(fixture?.league?.country,120),
+              season,
+              cfg,
+              allowNetwork:canFetchSeasonStrength,
+            }),
+        cachedAwaySeasonStats
+          ? Promise.resolve(null)
+          : optionalAsync(loadSeasonStatsForAnalysis,{
+              teamId:awayId,
+              teamName:awayName,
+              teamLogo:safeText(fixture?.teams?.away?.logo,500),
+              leagueId,
+              leagueName,
+              leagueLogo:safeText(fixture?.league?.logo,500),
+              country:safeText(fixture?.league?.country,120),
+              season,
+              cfg,
+              allowNetwork:canFetchSeasonStrength,
+            }),
+      ]);
+      const homeSeasonStats=cachedHomeSeasonStats
+        || objectValue(homeSeasonFreshRaw);
+      const awaySeasonStats=cachedAwaySeasonStats
+        || objectValue(awaySeasonFreshRaw);
+      return {homeStanding,awayStanding,homeTeamIntelligence,awayTeamIntelligence,homeSeasonStats,awaySeasonStats};
+    });
+
     const webPromise=tavilySearch(
       `${homeName} ${awayName} injuries team news probable lineups latest`,
       cfg,
@@ -1482,54 +1535,7 @@ export function createAnalysisRuntime(deps) {
       sample:0,
     };
 
-    const [homeStandingRaw,awayStandingRaw,homeTeamIntelligenceRaw,awayTeamIntelligenceRaw]=await comparisonPromise;
-    const homeStanding=objectValue(homeStandingRaw);
-    const awayStanding=objectValue(awayStandingRaw);
-    const homeTeamIntelligence=objectValue(homeTeamIntelligenceRaw) || {};
-    const awayTeamIntelligence=objectValue(awayTeamIntelligenceRaw) || {};
-    const cachedHomeSeasonStats=objectValue(homeTeamIntelligence.stats);
-    const cachedAwaySeasonStats=objectValue(awayTeamIntelligence.stats);
-    const canFetchSeasonStrength=Boolean(
-      detailedCoverage
-      && paid
-      && healthyFree
-      && leagueId
-      && season,
-    );
-    const [homeSeasonFreshRaw,awaySeasonFreshRaw]=await Promise.all([
-      cachedHomeSeasonStats
-        ? Promise.resolve(null)
-        : optionalAsync(loadSeasonStatsForAnalysis,{
-            teamId:homeId,
-            teamName:homeName,
-            teamLogo:safeText(fixture?.teams?.home?.logo,500),
-            leagueId,
-            leagueName,
-            leagueLogo:safeText(fixture?.league?.logo,500),
-            country:safeText(fixture?.league?.country,120),
-            season,
-            cfg,
-            allowNetwork:canFetchSeasonStrength,
-          }),
-      cachedAwaySeasonStats
-        ? Promise.resolve(null)
-        : optionalAsync(loadSeasonStatsForAnalysis,{
-            teamId:awayId,
-            teamName:awayName,
-            teamLogo:safeText(fixture?.teams?.away?.logo,500),
-            leagueId,
-            leagueName,
-            leagueLogo:safeText(fixture?.league?.logo,500),
-            country:safeText(fixture?.league?.country,120),
-            season,
-            cfg,
-            allowNetwork:canFetchSeasonStrength,
-          }),
-    ]);
-    const homeSeasonStats=cachedHomeSeasonStats
-      || objectValue(homeSeasonFreshRaw);
-    const awaySeasonStats=cachedAwaySeasonStats
-      || objectValue(awaySeasonFreshRaw);
+    const {homeStanding,awayStanding,homeTeamIntelligence,awayTeamIntelligence,homeSeasonStats,awaySeasonStats}=await seasonComparisonPromise;
     if (paid && detailedCoverage && (!homeSeasonStats || !awaySeasonStats)) {
       skipped.push('Сезонная сила команд рассчитана частично: статистика сезона одной из команд пока недоступна.');
     }

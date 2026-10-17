@@ -751,76 +751,6 @@ export function createMatchCenterRuntime(deps) {
       ...safeProviderDataState(rows,{attempted:true,feature}),
     });
 
-    if (events.length) {
-      featureMeta.events=embeddedMeta('events',events);
-    } else if (live || finished) {
-      const eventContext={
-        mode:centerMode,
-        limitedCoverage,
-        preserveAiBudget:budgetProfile.paid!==true,
-      };
-      const result=await safeProviderFeatureFetch({
-        feature:'events',
-        path:'/fixtures/events',
-        params:{fixture:fixtureId},
-        fixtureId,
-        cfg,
-        context:eventContext,
-      });
-      events=rowsOrEmpty(result.data,1000);
-      featureMeta.events=result.meta;
-
-      // FREE intentionally skips the API-Football events call and tries the
-      // secondary source instead. Paid plans also retain the secondary fallback
-      // when the primary endpoint is empty or degraded.
-      if (!events.length && !limitedCoverage) {
-        const secondaryEvents=objectValue(
-          await optionalAsync(secondaryOpenLigaEvents,fixture,cfg,eventContext),
-        );
-        if (secondaryEvents?.available===true) {
-          events=rowsOrEmpty(secondaryEvents.events,1000);
-          featureMeta.events=objectValue(secondaryEvents.meta)
-            || unavailableFeatureMeta('events','secondary_meta_invalid');
-        } else {
-          featureMeta.events={
-            ...objectValue(result.meta),
-            fallbackProvider:'openligadb',
-            fallbackReason:safeText(secondaryEvents?.reason,120),
-          };
-        }
-      }
-    }
-
-    if (statistics.length) {
-      featureMeta.statistics=embeddedMeta('statistics',statistics);
-    } else if (live || finished) {
-      const result=await safeProviderFeatureFetch({
-        feature:'statistics',
-        path:'/fixtures/statistics',
-        params:{fixture:fixtureId},
-        fixtureId,
-        cfg,
-        context:{mode:centerMode,limitedCoverage},
-      });
-      statistics=rowsOrEmpty(result.data,200);
-      featureMeta.statistics=result.meta;
-    }
-
-    if (playerRows.length) {
-      featureMeta.players=embeddedMeta('players',playerRows);
-    } else if (live || finished) {
-      const result=await safeProviderFeatureFetch({
-        feature:'players',
-        path:'/fixtures/players',
-        params:{fixture:fixtureId},
-        fixtureId,
-        cfg,
-        context:{mode:centerMode,limitedCoverage},
-      });
-      playerRows=rowsOrEmpty(result.data,1000);
-      featureMeta.players=result.meta;
-    }
-
     const kickoffRaw=safeText(fixture?.fixture?.date,80);
     const kickoffMsCenter=kickoffRaw ? Date.parse(kickoffRaw) : NaN;
     const minutesToKickoffCenter=Number.isFinite(kickoffMsCenter)
@@ -832,33 +762,121 @@ export function createMatchCenterRuntime(deps) {
       && minutesToKickoffCenter>=-300
     );
 
-    if (lineupRows.length) {
-      featureMeta.lineups=embeddedMeta('lineups',lineupRows);
-    } else if (lineupsWindow) {
-      const result=await safeProviderFeatureFetch({
-        feature:'lineups',
-        path:'/fixtures/lineups',
-        params:{fixture:fixtureId},
-        fixtureId,
-        cfg,
-        context:{mode:centerMode,limitedCoverage},
-      });
-      lineupRows=rowsOrEmpty(result.data,50);
-      featureMeta.lineups=result.meta;
-    }
+    // Independent feature reads used to wait for one another. Keep at most
+    // three active so slow endpoints overlap without flooding the DB/provider.
+    // Each task retains the existing cache, quota policy and source validation.
+    const featureTasks=[
+      async()=>{
+        if (events.length) {
+          featureMeta.events=embeddedMeta('events',events);
+        } else if (live || finished) {
+          const eventContext={
+            mode:centerMode,
+            limitedCoverage,
+            preserveAiBudget:budgetProfile.paid!==true,
+          };
+          const result=await safeProviderFeatureFetch({
+            feature:'events',
+            path:'/fixtures/events',
+            params:{fixture:fixtureId},
+            fixtureId,
+            cfg,
+            context:eventContext,
+          });
+          events=rowsOrEmpty(result.data,1000);
+          featureMeta.events=result.meta;
 
-    if (!finished) {
-      const result=await safeProviderFeatureFetch({
-        feature:'injuries',
-        path:'/injuries',
-        params:{fixture:fixtureId},
-        fixtureId,
-        cfg,
-        context:{mode:centerMode,limitedCoverage},
-      });
-      injuryRows=rowsOrEmpty(result.data,500);
-      featureMeta.injuries=result.meta;
-    }
+          // FREE intentionally skips the API-Football events call and tries the
+          // secondary source instead. Paid plans also retain the secondary fallback
+          // when the primary endpoint is empty or degraded.
+          if (!events.length && !limitedCoverage) {
+            const secondaryEvents=objectValue(
+              await optionalAsync(secondaryOpenLigaEvents,fixture,cfg,eventContext),
+            );
+            if (secondaryEvents?.available===true) {
+              events=rowsOrEmpty(secondaryEvents.events,1000);
+              featureMeta.events=objectValue(secondaryEvents.meta)
+                || unavailableFeatureMeta('events','secondary_meta_invalid');
+            } else {
+              featureMeta.events={
+                ...objectValue(result.meta),
+                fallbackProvider:'openligadb',
+                fallbackReason:safeText(secondaryEvents?.reason,120),
+              };
+            }
+          }
+        }
+      },
+      async()=>{
+        if (statistics.length) {
+          featureMeta.statistics=embeddedMeta('statistics',statistics);
+        } else if (live || finished) {
+          const result=await safeProviderFeatureFetch({
+            feature:'statistics',
+            path:'/fixtures/statistics',
+            params:{fixture:fixtureId},
+            fixtureId,
+            cfg,
+            context:{mode:centerMode,limitedCoverage},
+          });
+          statistics=rowsOrEmpty(result.data,200);
+          featureMeta.statistics=result.meta;
+        }
+      },
+      async()=>{
+        if (playerRows.length) {
+          featureMeta.players=embeddedMeta('players',playerRows);
+        } else if (live || finished) {
+          const result=await safeProviderFeatureFetch({
+            feature:'players',
+            path:'/fixtures/players',
+            params:{fixture:fixtureId},
+            fixtureId,
+            cfg,
+            context:{mode:centerMode,limitedCoverage},
+          });
+          playerRows=rowsOrEmpty(result.data,1000);
+          featureMeta.players=result.meta;
+        }
+      },
+      async()=>{
+        if (lineupRows.length) {
+          featureMeta.lineups=embeddedMeta('lineups',lineupRows);
+        } else if (lineupsWindow) {
+          const result=await safeProviderFeatureFetch({
+            feature:'lineups',
+            path:'/fixtures/lineups',
+            params:{fixture:fixtureId},
+            fixtureId,
+            cfg,
+            context:{mode:centerMode,limitedCoverage},
+          });
+          lineupRows=rowsOrEmpty(result.data,50);
+          featureMeta.lineups=result.meta;
+        }
+      },
+      async()=>{
+        if (!finished) {
+          const result=await safeProviderFeatureFetch({
+            feature:'injuries',
+            path:'/injuries',
+            params:{fixture:fixtureId},
+            fixtureId,
+            cfg,
+            context:{mode:centerMode,limitedCoverage},
+          });
+          injuryRows=rowsOrEmpty(result.data,500);
+          featureMeta.injuries=result.meta;
+        }
+      }
+    ];
+    let nextFeature=0;
+    await Promise.all(Array.from({length:3},async()=>{
+      while (nextFeature<featureTasks.length) {
+        const task=featureTasks[nextFeature++];
+        await task();
+      }
+    }));
 
     let liveOdds=null;
     let liveOddsQuality={

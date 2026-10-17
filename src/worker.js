@@ -2566,6 +2566,7 @@ function getMatchQuestionRuntime() {
       clock: () => Date.now(),
       getCache,
       getHistory,
+      userHasAnalyzedFixture,
       getStaleCache,
       hasSupabase,
       json,

@@ -60,7 +60,7 @@ export function matchQuestionAnswerHtml(data, escapeHtml) {
   return `${head}<p class="match-question-empty">${escapeHtml(text)}</p>${remaining}`;
 }
 
-export function mountMatchQuestions({ root, fixtureId, api, escapeHtml, isCurrent = () => true } = {}) {
+export function mountMatchQuestions({ root, fixtureId, api, escapeHtml, presetAnswers = null, isCurrent = () => true } = {}) {
   const id = Number(fixtureId);
   if (!root || !Number.isSafeInteger(id) || id <= 0 || typeof api !== 'function') return false;
   if (root.dataset.questionsMounted === 'true' && Number(root.dataset.fixture) === id) return true;
@@ -75,6 +75,13 @@ export function mountMatchQuestions({ root, fixtureId, api, escapeHtml, isCurren
 
   async function ask(body) {
     if (busy || !answer) return;
+    const prepared=Number(presetAnswers?.fixtureId)===id && body.preset
+      ? presetAnswers?.presets?.[body.preset] : null;
+    if (prepared?.available===true && (prepared.answer==='not_in_data'
+      || (prepared.answer==='facts' && validItems(prepared.items).length))) {
+      answer.innerHTML=matchQuestionAnswerHtml({...prepared,question:PRESETS.find(([key])=>key===body.preset)?.[1]},escapeHtml);
+      return;
+    }
     busy = true;
     root.setAttribute('aria-busy', 'true');
     answer.innerHTML = '<p class="match-question-empty">Ищу в данных матча…</p>';

@@ -1,3 +1,5 @@
+import {presetAnswerIds} from './match-question-presets.js';
+export {presetAnswerIds} from './match-question-presets.js';
 // Задача 6: «Спросить про матч».
 //
 // Ответ — только выбор фактов из того же серверного каталога, что и у
@@ -70,21 +72,6 @@ export function isBettingQuestion(text) {
   return typeof text === 'string' && (BETTING_QUESTION.test(text) || isBettingText(text));
 }
 
-/** Готовые подсказки — детерминированный выбор фактов по ролям и типам. */
-export function presetAnswerIds(preset, facts = []) {
-  const list = Array.isArray(facts) ? facts : [];
-  const byPriority = rows => rows.slice().sort((a, b) => b.priority - a.priority);
-  const pick = rows => byPriority(rows).slice(0, MAX_ANSWER_FACTS).map(fact => fact.id);
-  if (preset === 'why') {
-    const lead = list.filter(fact => fact.id === 'model_lead' || fact.id === 'model_balance').slice(0, 1);
-    if (!lead.length) return [];
-    return [lead[0].id, ...pick(list.filter(fact => fact.role === 'support')).slice(0, MAX_ANSWER_FACTS - 1)];
-  }
-  if (preset === 'risk') return pick(list.filter(fact => fact.role === 'risk' || fact.role === 'caveat'));
-  if (preset === 'form') return pick(list.filter(fact => /^form_|^h2h$/.test(fact.id)));
-  if (preset === 'squad') return pick(list.filter(fact => /^lineups_|^absences_/.test(fact.id)));
-  return [];
-}
 
 function extractModelText(result) {
   if (typeof result === 'string') return result;
@@ -155,6 +142,7 @@ export function createMatchQuestionRuntime(deps = {}) {
     getStaleCache,
     setCache,
     getHistory,
+    userHasAnalyzedFixture,
     hasSupabase,
     supaRpc,
     supaSelectMany,
@@ -326,13 +314,15 @@ export function createMatchQuestionRuntime(deps = {}) {
     }
 
     // Как и объяснение: только по сохранённому анализу из истории пользователя.
-    let history;
+    let ownsAnalysis=false;
     try {
-      history = await getHistory(userId, cfg, { strict: true });
+      ownsAnalysis=typeof userHasAnalyzedFixture==='function'
+        ? await userHasAnalyzedFixture(userId,fixtureId,cfg,{strict:true})===true
+        : (await getHistory(userId,cfg,{strict:true})).some(row=>positiveId(safeRead(row,'fixture_id'))===fixtureId);
     } catch {
       return json({ error: 'История анализов временно недоступна.', code: 'HISTORY_UNAVAILABLE' }, 503);
     }
-    if (!Array.isArray(history) || !history.some(row => positiveId(safeRead(row, 'fixture_id')) === fixtureId)) {
+    if (!ownsAnalysis) {
       return json({ available: false, reason: 'not_in_history', code: 'QUESTION_NOT_IN_HISTORY' }, 404);
     }
 

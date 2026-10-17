@@ -508,3 +508,45 @@ test('slow cached analysis reports one bounded phase event through waitUntil wit
   assert.doesNotMatch(JSON.stringify(events[0]),/fixtureId|userId|generatedAt/);
   finish();await pending[0];
 });
+
+function deferredValue(){let resolve;const promise=new Promise(done=>{resolve=done;});return {promise,resolve};}
+function freshProviderDeps(overrides={}){
+  return {...baseDeps(),
+    getCache:async()=>null,getStaleCache:async()=>null,
+    claimDistributedAnalysisLock:async()=>({claimed:true}),releaseDistributedAnalysisLock:async()=>{},
+    loadProviderFixture:async()=>({fixture:{id:123,date:new Date(Date.now()+3600000).toISOString(),status:{short:'NS'}},league:{id:39,season:2026,name:'Premier League'},teams:{home:{id:1,name:'Home'},away:{id:2,name:'Away'}}}),
+    validateFixtureIntegrity:()=>({quarantine:false,issues:[],warnings:[]}),
+    isYouthReserveMatch:()=>false,isLiveStatus:()=>false,isFinishedStatus:()=>false,
+    memory:{provider:{plan:'PRO'}},freeQuotaHealthy:()=>true,
+    analysisProviderFetch:async()=>({data:[],meta:{}}),
+    recordOpsEvent:async()=>{},...overrides};
+}
+
+test('fresh AI requests lineups before unrelated provider requests have finished',async()=>{
+  const gate=deferredValue();const lineupStarted=deferredValue();const called=[];
+  const rt=createAnalysisRuntime(freshProviderDeps({analysisProviderFetch:async request=>{
+    called.push(request.feature);if(request.feature==='lineups')lineupStarted.resolve(request);
+    await gate.promise;return {data:[],meta:{}};
+  }}));
+  const response=rt.analyzeFixtureForSystem(123,{});
+  // A scheduling deadline makes the old serial lineup phase fail without hanging.
+  let timer;try{
+    const request=await Promise.race([lineupStarted.promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('lineups waited for other features')),500);})]);
+    assert.equal(request.allowed,true);assert.equal(called.length,5);
+  }finally{clearTimeout(timer);gate.resolve();}
+  const result=await response;assert.equal(result.body.code,'ANALYSIS_MODEL_INVALID');
+});
+
+test('season data starts once its cache decision is ready while recent form is still pending',async()=>{
+  const gate=deferredValue();const seasonStarted=deferredValue();let formPending=0;
+  const rt=createAnalysisRuntime(freshProviderDeps({
+    getRecentTeamForm:async()=>{formPending++;await gate.promise;return null;},
+    getCache:async key=>{if(key.startsWith('analysis:team-season:'))seasonStarted.resolve();return null;},
+  }));
+  const response=rt.analyzeFixtureForSystem(123,{});
+  let timer;try{
+    await Promise.race([seasonStarted.promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('season data waited for recent form')),500);})]);
+    assert.equal(formPending,2);
+  }finally{clearTimeout(timer);gate.resolve();}
+  const result=await response;assert.equal(result.body.code,'ANALYSIS_MODEL_INVALID');
+});

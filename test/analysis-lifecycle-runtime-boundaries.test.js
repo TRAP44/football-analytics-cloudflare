@@ -345,3 +345,17 @@ test('worker keeps lifecycle dependencies explicit', () => {
   assert.match(source,/snapshot_order_invalid/);
   assert.match(source,/return Object\.freeze\(\{/);
 });
+
+test('delivered full analyses rebuild prepared answers from their own facts without mutating shared cache',()=>{
+  const runtime=createAnalysisLifecycleRuntime(deps());
+  const stored=snapshot({matchQuestions:{fixtureId:999,presets:{why:{answer:'forged'}}}});
+  const original=structuredClone(stored);
+  for(const cached of [false,true]){
+    const result=runtime.analysisResponsePayload(stored,{cached,matchQuestions:{fixtureId:999}});
+    assert.equal(result.matchQuestions.fixtureId,71);
+    assert.equal(result.matchQuestions.presets.why.answer,'facts');
+    assert.equal(result.matchQuestions.presets.why.source,'preset');
+    assert.ok(result.matchQuestions.presets.why.items[0].text.includes('50%'));
+    assert.deepEqual(stored,original);
+  }
+});
