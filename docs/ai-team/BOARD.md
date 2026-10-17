@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Ускорение AI: ограничить ожидание необязательного веб-поиска и перекрыть независимые чтения кеша — **Codex** — `codex/analysis-response-speed`.
+
 
 
 
@@ -37,7 +39,6 @@
 
 ## На ревью
 
-- [ ] Диагностика записи кеша и стадий медленного AI — **Codex** — [PR #940](https://github.com/TRAP44/football-analytics-cloudflare/pull/940), `codex/ai-latency-diagnostics`; 4256/4256, release 586/586, без сырых ошибок/идентификаторов; ревью Claude.
 
 
 
@@ -97,6 +98,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Диагностика записи кеша и стадий медленного AI — **Codex** — [PR #940](https://github.com/TRAP44/football-analytics-cloudflare/pull/940), `codex/ai-latency-diagnostics`; 4256/4256, release 586/586, без сырых ошибок/идентификаторов; ревью Claude. — слит, deploy успешен.
 
 - [x] AI: одно чтение свежего/устаревшего кеша вместо двух — **Codex** — [PR #939](https://github.com/TRAP44/football-analytics-cloudflare/pull/939), `codex/analysis-cache-snapshot`; full 4249/4249, release 585/585; ревью Claude. — слит.
 
