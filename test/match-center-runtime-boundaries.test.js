@@ -693,3 +693,29 @@ test('worker keeps Match Center composition explicit and runtime export frozen',
   assert.match(source,/lineupsConfirmed:lineupTrusted/);
   assert.match(source,/return Object\.freeze\(\{apiMatchCenter\}\)/);
 });
+
+test('cold live features overlap with a hard limit of three and retain fail-soft results',async()=>{
+  let active=0,peak=0;const pending=new Map();const called=[];
+  const rt=createMatchCenterRuntime(baseDeps({
+    loadProviderFixture:async()=>fixture({fixture:{id:123,date:'2030-01-01T12:00:00Z',status:{short:'1H',elapsed:20}}}),
+    providerFeatureFetch:async({feature})=>{
+      active++;peak=Math.max(peak,active);called.push(feature);
+      await new Promise(resolve=>pending.set(feature,resolve));active--;
+      if(feature==='statistics')throw new Error('one endpoint unavailable');
+      return {data:[],meta:unavailableMeta(feature)};
+    },
+  }));
+  const response=rt.apiMatchCenter(request(),{});
+  const flush=()=>new Promise(resolve=>setImmediate(resolve));
+  for(let i=0;i<10 && called.length<3;i++)await flush();
+  assert.deepEqual(called,['events','statistics','players']);
+  assert.equal(peak,3);assert.equal(active,3);
+  pending.get('statistics')();await flush();
+  assert.equal(called[3],'lineups');assert.equal(active,3);
+  pending.get('players')();await flush();
+  assert.equal(called[4],'injuries');assert.equal(active,3);
+  for(const resolve of pending.values())resolve();
+  const result=await response;
+  assert.equal(result.status,200);assert.equal(result.body.mode,'live');
+  assert.equal(peak,3);assert.equal(active,0);assert.equal(called.length,5);
+});

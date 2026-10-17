@@ -1,3 +1,4 @@
+import {buildMatchQuestionPresets} from '../src/match-question-presets.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -32,7 +33,7 @@ function payload(overrides = {}) {
 const json = (body, status = 200) => ({ status, body });
 const request = body => new Request('https://x.test/api/match-question', { method: 'POST', body: typeof body === 'string' ? body : JSON.stringify(body) });
 
-function runtime({ history = [{ fixture_id: 77 }], analysis = payload(), cached = null, ai, rpc, controls, serviceRows = [] } = {}) {
+function runtime({ history = [{ fixture_id: 77 }], analysis = payload(), cached = null, ai, rpc, controls, serviceRows = [], ownership } = {}) {
   const calls = { ai: 0, rpc: [], setCache: [], historyOptions: null };
   const cache = new Map();
   if (analysis) cache.set(EXPLANATION_ANALYSIS_CACHE_KEY(77), analysis);
@@ -41,6 +42,7 @@ function runtime({ history = [{ fixture_id: 77 }], analysis = payload(), cached 
     getCache: async key => (key.startsWith('ask:') ? cached : cache.get(key) || null),
     getStaleCache: async () => null,
     setCache: async (key, fixtureId, value) => { calls.setCache.push({ key, fixtureId, value }); },
+    userHasAnalyzedFixture: ownership===undefined ? undefined : async (userId,fixtureId,_cfg,options)=>{ calls.ownership={userId,fixtureId,options}; if(ownership instanceof Error) throw ownership; return ownership; },
     getHistory: async (_u, _c, options) => { calls.historyOptions = options; if (history instanceof Error) throw history; return history; },
     hasSupabase: () => true,
     supaRpc: async (_cfg, name, params) => { calls.rpc.push({ name, params }); return rpc ? rpc(params) : { allowed: true, count: 3, limit: params.p_limit }; },
@@ -251,4 +253,43 @@ test('AI switch off: presets still work, free-text questions are refused even fr
   assert.equal(own.body.reason, 'ai_disabled');
   assert.equal(calls.ai, 0);
   assert.equal(calls.rpc.length, 0);
+});
+
+
+test('delivered analysis contains all prepared questions from exactly the same fact catalog',()=>{
+  const data=payload();const prepared=buildMatchQuestionPresets(data);
+  assert.equal(prepared.fixtureId,77);
+  const facts=buildExplanationFacts(data);
+  for(const preset of ['why','risk','form','squad']){
+    const result=prepared.presets[preset];
+    assert.equal(result.available,true);
+    assert.equal(result.source,'preset');
+    assert.ok(result.items.length>0,preset);
+    const ids=presetAnswerIds(preset,facts);
+    assert.deepEqual(result.items.map(item=>item.text),ids.map(id=>facts.find(fact=>fact.id===id).text));
+  }
+  assert.equal(buildMatchQuestionPresets({match:{fixtureId:true}}),null);
+  const empty=buildMatchQuestionPresets({match:{fixtureId:77}});
+  assert.equal(empty.presets.why.answer,'not_in_data');
+  assert.deepEqual(empty.presets.why.items,[]);
+});
+
+test('question ownership uses the exact user and fixture even outside the last 20 history rows',async()=>{
+  const {rt,cfg,calls}=runtime({history:[],ownership:true});
+  const result=await rt.apiMatchQuestion(request({fixtureId:77,preset:'form'}),cfg,user);
+  assert.equal(result.status,200);
+  assert.equal(result.body.answer,'facts');
+  assert.equal(calls.historyOptions,null,'recent history list must not be the access gate');
+  assert.deepEqual(calls.ownership,{userId:5,fixtureId:77,options:{strict:true}});
+  assert.equal(calls.ai,0);
+});
+
+test('exact ownership still fails closed for a stranger or a storage outage',async()=>{
+  for(const [ownership,status] of [[false,404],[new Error('storage down'),503]]){
+    const {rt,cfg,calls}=runtime({ownership});
+    const result=await rt.apiMatchQuestion(request({fixtureId:77,question:'Кто в форме?'}),cfg,user);
+    assert.equal(result.status,status);
+    assert.equal(calls.ai,0);
+    assert.deepEqual(calls.rpc,[]);
+  }
 });

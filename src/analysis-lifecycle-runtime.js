@@ -1,3 +1,4 @@
+import {buildMatchQuestionPresets} from './match-question-presets.js';
 import { neutralSignalText } from './signal-wording.js';
 
 // Analysis freshness, kickoff handoff and recheck-delta lifecycle extracted from worker.js.
@@ -784,6 +785,7 @@ export function createAnalysisLifecycleRuntime(deps) {
       freshness:analysisFreshness(source),
       kickoffHandoff:analysisKickoffHandoff(source),
       ...additions,
+      matchQuestions:buildMatchQuestionPresets(source),
     };
   }
 

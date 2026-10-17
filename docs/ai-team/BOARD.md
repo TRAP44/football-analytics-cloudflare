@@ -37,9 +37,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Открытие AI без отдельного запроса доступа и рабочее действие «Спросить про матч» — **Codex** — [PR #942](https://github.com/TRAP44/football-analytics-cloudflare/pull/942), `codex/analysis-ui-requests`; 4267/4267 и браузерные клики/ответы проверены, независимое ревью без блокеров.
+- [ ] Исправить готовые вопросы AI без ложного требования истории; ускорить матч-центр и AI ограниченным параллелизмом, без дополнительных запросов — **Codex** — [PR #950](https://github.com/TRAP44/football-analytics-cloudflare/pull/950), `codex/match-center-parallel-data`; локально4274/4274, browser/независимое ревью прошли, CI ожидается.
+
 
 
 
@@ -101,6 +103,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Открытие AI без отдельного запроса доступа и рабочее действие «Спросить про матч» — **Codex** — [PR #942](https://github.com/TRAP44/football-analytics-cloudflare/pull/942), `codex/analysis-ui-requests`; 4267/4267 и браузерные клики/ответы проверены, независимое ревью без блокеров. — слит и опубликован.
 
 - [x] Ускорение AI: ограничить ожидание необязательного веб-поиска и перекрыть независимые чтения кеша — **Codex** — [PR #941](https://github.com/TRAP44/football-analytics-cloudflare/pull/941), `codex/analysis-response-speed`; 4263/4263, независимое ревью без блокеров; CI и применение по разрешению Сергея. — слит, production 4101c635 проверен.
 
