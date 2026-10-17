@@ -1,3 +1,4 @@
+import {withAnalysisWebBudget} from './analysis-web-budget.js';
 import {createAnalysisTiming} from './analysis-timing.js';
 import {prematchLineupEvent,analysisIncludesLineupEvent,completedPrematchLineupRefresh,prematchLineupRefreshKey,PREMATCH_LINEUP_RETENTION_MINUTES} from './prematch-lineup-event.js';
 import { NO_CLEAR_SIGNAL_LABEL, isBettingText, withPublicSignalLabel } from './signal-wording.js';
@@ -523,51 +524,54 @@ export function createAnalysisRuntime(deps) {
     }
 
     try {
-      const response=await fetchWithTimeout('https://api.tavily.com/search',{
-        method:'POST',
-        headers:{
-          authorization:`Bearer ${token}`,
-          'content-type':'application/json',
-        },
-        body:JSON.stringify({
-          query:normalized,
-          search_depth:'basic',
-          topic:'news',
-          include_answer:true,
-          include_published_date:true,
-          safe_search:true,
-          max_results:5,
-        }),
-      },7000,'Tavily search');
+      return await withAnalysisWebBudget(async(signal,budget)=>{
+        const response=await fetchWithTimeout('https://api.tavily.com/search',{
+          method:'POST',
+          signal,
+          headers:{
+            authorization:`Bearer ${token}`,
+            'content-type':'application/json',
+          },
+          body:JSON.stringify({
+            query:normalized,
+            search_depth:'basic',
+            topic:'news',
+            include_answer:true,
+            include_published_date:true,
+            safe_search:true,
+            max_results:5,
+          }),
+        },budget,'Tavily search');
 
-      if (!response?.ok) {
+        if (!response?.ok) {
+          return {
+            available:false,
+            answer:'',
+            results:[],
+            reason:`http_${nonNegativeSafeInteger(response?.status,999) ?? 0}`,
+          };
+        }
+
+        const data=objectValue(await response.json().catch(()=>null)) || {};
+        const results=rowsOrEmpty(data.results,5).map(item=>{
+          const row=objectValue(item) || {};
+          return {
+            title:safeText(row.title,200),
+            url:safeHttpUrl(row.url,1000),
+            content:safeText(row.content,1200),
+            publishedAt:safeText(row.published_date,80),
+            score:finiteNumber(row.score),
+          };
+        }).filter(item=>item.title || item.url || item.content);
+
+        const answer=safeText(data.answer,2400);
         return {
-          available:false,
-          answer:'',
-          results:[],
-          reason:`http_${nonNegativeSafeInteger(response?.status,999) ?? 0}`,
+          available:Boolean(answer || results.length),
+          answer,
+          results,
+          reason:'',
         };
-      }
-
-      const data=objectValue(await response.json().catch(()=>null)) || {};
-      const results=rowsOrEmpty(data.results,5).map(item=>{
-        const row=objectValue(item) || {};
-        return {
-          title:safeText(row.title,200),
-          url:safeHttpUrl(row.url,1000),
-          content:safeText(row.content,1200),
-          publishedAt:safeText(row.published_date,80),
-          score:finiteNumber(row.score),
-        };
-      }).filter(item=>item.title || item.url || item.content);
-
-      const answer=safeText(data.answer,2400);
-      return {
-        available:Boolean(answer || results.length),
-        answer,
-        results,
-        reason:'',
-      };
+      });
     } catch (error) {
       return {
         available:false,
@@ -1408,6 +1412,25 @@ export function createAnalysisRuntime(deps) {
     skipped.push(...providerReliability.warnings);
 
     timing.enter('enrichment');
+    // Match Comparison only reuses already cached deep team data.
+    const leagueId=positiveSafeInteger(fixture?.league?.id) || 0;
+    const season=safeSeason(fixture?.league?.season);
+    const comparisonCompetition={leagueId,season};
+    const comparisonPromise=Promise.all([
+      leagueId && season
+        ? optionalAsync(cachedTeamStanding,homeId,comparisonCompetition,cfg)
+        : Promise.resolve(null),
+      leagueId && season
+        ? optionalAsync(cachedTeamStanding,awayId,comparisonCompetition,cfg)
+        : Promise.resolve(null),
+      leagueId && season
+        ? optionalAsync(cachedTeamIntelligenceForAnalysis,homeId,leagueId,season,cfg)
+        : Promise.resolve(null),
+      leagueId && season
+        ? optionalAsync(cachedTeamIntelligenceForAnalysis,awayId,leagueId,season,cfg)
+        : Promise.resolve(null),
+    ]);
+
     const webPromise=tavilySearch(
       `${homeName} ${awayName} injuries team news probable lineups latest`,
       cfg,
@@ -1458,29 +1481,7 @@ export function createAnalysisRuntime(deps) {
       sample:0,
     };
 
-    // Match Comparison only reuses already cached deep team data.
-    const leagueId=positiveSafeInteger(fixture?.league?.id) || 0;
-    const season=safeSeason(fixture?.league?.season);
-    const comparisonCompetition={leagueId,season};
-    const [
-      homeStandingRaw,
-      awayStandingRaw,
-      homeTeamIntelligenceRaw,
-      awayTeamIntelligenceRaw,
-    ]=await Promise.all([
-      leagueId && season
-        ? optionalAsync(cachedTeamStanding,homeId,comparisonCompetition,cfg)
-        : Promise.resolve(null),
-      leagueId && season
-        ? optionalAsync(cachedTeamStanding,awayId,comparisonCompetition,cfg)
-        : Promise.resolve(null),
-      leagueId && season
-        ? optionalAsync(cachedTeamIntelligenceForAnalysis,homeId,leagueId,season,cfg)
-        : Promise.resolve(null),
-      leagueId && season
-        ? optionalAsync(cachedTeamIntelligenceForAnalysis,awayId,leagueId,season,cfg)
-        : Promise.resolve(null),
-    ]);
+    const [homeStandingRaw,awayStandingRaw,homeTeamIntelligenceRaw,awayTeamIntelligenceRaw]=await comparisonPromise;
     const homeStanding=objectValue(homeStandingRaw);
     const awayStanding=objectValue(awayStandingRaw);
     const homeTeamIntelligence=objectValue(homeTeamIntelligenceRaw) || {};

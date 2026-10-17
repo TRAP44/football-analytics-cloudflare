@@ -410,7 +410,10 @@ export function createProviderDataRuntime(deps) {
     };
     const cacheKey = providerCacheKey(safeFeature, safeFixtureId, true);
 
-    const freshEntry = await getCacheEntry(cacheKey, cfg, false).catch(() => null);
+    // One row supplies both the fresh result and the stale fallback. Cold
+    // match-center features must not each repeat the same Supabase read.
+    const cacheEntry = await getCacheEntry(cacheKey, cfg, true).catch(() => null);
+    const freshEntry = cacheEntry?.expired === false ? cacheEntry : null;
     const fresh = providerCacheEnvelope(freshEntry?.payload, safeFixtureId, safeFeature);
     if (fresh) {
       providerFeatureCounter(safeFeature, 'cache');
@@ -430,7 +433,7 @@ export function createProviderDataRuntime(deps) {
       };
     }
 
-    const staleEntry = await getCacheEntry(cacheKey, cfg, true).catch(() => null);
+    const staleEntry = cacheEntry;
     const stale = providerCacheEnvelope(staleEntry?.payload, safeFixtureId, safeFeature);
 
     if (!policy.allowed) {
