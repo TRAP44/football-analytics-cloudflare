@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import worker from '../scripts/fixtures/match-chat-remote-worker.js';
-import {summarizeChatProbe} from '../scripts/verify-match-chat-remote.js';
+import {summarizeChatProbe,safeProbeReport} from '../scripts/verify-match-chat-remote.js';
 import {EXPLANATION_MODEL} from '../src/match-explanation-runtime.js';
 import {auditWorkflow} from '../scripts/privileged-access-audit.js';
 
@@ -33,4 +33,10 @@ test('real-model verification is main-only, manual, production-protected and sco
   assert.match(text,/workflow_dispatch:/);assert.match(text,/if: github.ref == 'refs\/heads\/main'/);
   assert.match(text,/environment: production/);assert.match(text,/persist-credentials: false/);
   assert.doesNotMatch(text,/TELEGRAM_BOT_TOKEN|SUPABASE_SECRET_KEY|wrangler deploy|pull_request_target/);
+});
+
+test('persisted probe report excludes arbitrary remote text and fields',()=>{
+  const report=safeProbeReport({model:'untrusted',modelFailure:'secret',items:[{id:'form_home',text:'untrusted'}],extra:'secret'});
+  assert.equal(report.model,'unexpected');assert.equal(report.modelFailure,'none');
+  assert.equal(report.passed,false);assert.doesNotMatch(JSON.stringify(report),/untrusted|secret/);
 });

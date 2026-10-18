@@ -17,6 +17,17 @@ export function summarizeChatProbe(result){
     && result.items.some(item=>item.id==='form_home')
     && result.items.every(item=>typeof item.text==='string' && /Home FC|Away FC/.test(item.text));
 }
+// Persist only locally defined verdicts, never strings returned by the HTTP probe.
+export function safeProbeReport(result){
+  return {
+    model:result?.model===EXPLANATION_MODEL?'current':result?.model==='@cf/meta/llama-3.1-8b-instruct-fp8-fast'?'previous':'unexpected',
+    passed:summarizeChatProbe(result),
+    modelCalledOnce:result?.modelCalls===1,
+    modelFailure:result?.modelFailure==='model_unavailable'?'model_unavailable':result?.modelFailure==='binding_error'?'binding_error':'none',
+    aiFacts:result?.available===true && result?.answer==='facts' && result?.source==='ai',
+    homeFormSelected:Array.isArray(result?.items) && result.items.some(item=>item.id==='form_home')
+  };
+}
 export async function verifyMatchChatRemote(env=process.env){
   if(!env.CLOUDFLARE_API_TOKEN || !env.CLOUDFLARE_ACCOUNT_ID)throw new Error('Existing Cloudflare workflow credentials are required.');
   const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
@@ -43,10 +54,10 @@ export async function verifyMatchChatRemote(env=process.env){
       try{
         const response=await fetch(base+'/probe',{method:'POST',headers:{'content-type':'application/json','x-probe-key':nonce},body:JSON.stringify({variant}),signal:AbortSignal.timeout(12000)});
         if(!response.ok){report[variant]={failure:'probe_http_error',status:response.status};continue;}
-        report[variant]=await response.json();
+        report[variant]=safeProbeReport(await response.json());
       }catch{report[variant]={failure:'probe_transport_error'};}
     }
-    report.success=summarizeChatProbe(report.current);
+    report.success=report.current?.passed===true;
     return report;
   }finally{
     if(child && child.exitCode===null){
