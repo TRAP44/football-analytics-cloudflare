@@ -292,10 +292,10 @@ export function createProviderFixtureRuntime(deps) {
     return null;
   }
   
-  async function loadProviderFixture(fixtureId,cfg) {
+  async function loadProviderFixture(fixtureId,cfg,{forceRefresh=false}={}) {
     const id=positiveSafeInteger(fixtureId);
     if (!id) return null;
-    const cached=await cachedProviderFixture(id,cfg);
+    const cached=forceRefresh ? null : await cachedProviderFixture(id,cfg);
     if (cached) return cached;
     const rows=providerRows(await apiFootball('/fixtures',{id},cfg),'fixture-by-id');
     const fixture=rows.find(row=>positiveSafeInteger(row?.fixture?.id)===id) || null;

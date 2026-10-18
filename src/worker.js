@@ -2587,6 +2587,7 @@ let matchPicksRuntime = null;
 function getMatchPicksRuntime() {
   if (!matchPicksRuntime) {
     matchPicksRuntime = createMatchPicksRuntime({
+      loadProviderFixture,
       clock: () => Date.now(),
       hasSupabase,
       json,

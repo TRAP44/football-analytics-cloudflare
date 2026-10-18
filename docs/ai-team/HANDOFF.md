@@ -14,6 +14,15 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-18 — Codex — Актуальный cutoff пользовательского прогноза и fault-проверка
+PR: ветка `codex/match-pick-live-cutoff` (поверх #956 до его слияния).
+Сделано: GET проверяет состояние fixture через существующий loader; POST обходит fixture cache (`forceRefresh`) и проверяет реальный шлюз API-Football до записи. Только NS с будущим min(model kickoff,current kickoff) разрешает выбор. LIVE/FT/PST и более раннее начало закрывают его; outage/ограничение/невалидный ID/date/status → 503 и ноль upserts. Исходный закрытый snapshot не открывается заново. Нет обхода API_FOOTBALL_BASE_URL, quota/cooldown/singleflight; сохранение добавляет одну логическую проверку /fixtures (gateway retries по прежней политике), GET переиспользует кеш. Нет SQL/public/новых секретов.
+Проверки: исходные и новые тесты cutoff, LIVE, раньше/позже, quota outage, wrong identity, deadline crossing during fetch; provider loader bypass/cache/restrictions. Независимый Codex reviewer без блокеров, 15 pick tests. Не Claude. Ограничение: проверка и DB upsert не атомарны; pre-existing race при пересечении kickoff во время записи не устранена этой прикладной проверкой. Сохранённый исторический более ранний cutoff отдельно не защёлкивается — cutoff ограничен immutable model и текущим provider fixture.
+Fault-аудит без реальных отправок: 76 tests scoreboard/reminders/chat/startup прошли (429, deleted/frozen board, mark failures, unknown outcomes, AI отказ/лимит/grounding); ещё17 network/team recovery tests прошли. Actual app function/listeners VM: offline без запросов, active center refresh без AI analyze, auto debounce, возврат после61с, failure сохраняет экран, последующее восстановление feed — PASS. Это не проверка телефона/production Telegram доставки.
+Старые pending: daily выбирает вчера, но отдельный runSettlementWatchdog сканирует историю и умеет recovery; актуальность двух старых строк в production не подтверждена. Не выполнять повторную массовую фиксацию без свежего отчёта.
+Финальные локальные проверки: Node22 npm ci/check/lint, release674/674, full4326/4326, Worker dry-run. Осталось: CI, применение #956 и этого исправления; production latency и full Telegram session не измерены.
+
+
 ## 2026-10-18 — Codex — Цена подписки сохраняется при повторной смене тарифов
 PR: [#956](https://github.com/TRAP44/football-analytics-cloudflare/pull/956), ветка `codex/subscription-renewal-price`.
 Сделано: новые счета fa2 подписывают исходную сумму вместе с user/plan/nonce. Precheckout по-прежнему требует текущую цену и дополнительно подписанную сумму; successful payment и Stars sync принимают исходную подписанную цену. Legacy fa1: current/default либо строго совпадающий сохранённый paid XTR invoice/user/plan/amount; ошибка хранилища закрывает доступ. Проверки refunded-charge replay сохранены. Без SQL/новых секретов/публичных ассетов.

@@ -96,8 +96,8 @@ export function scorePicks(picks = [], settled = new Map()) {
 }
 
 export function createMatchPicksRuntime(deps = {}) {
-  const { clock, hasSupabase, json, supaSelectMany, supaUpsert } = deps;
-  for (const [name, fn] of Object.entries({ hasSupabase, json, supaSelectMany, supaUpsert })) {
+  const { clock, hasSupabase, json, loadProviderFixture, supaSelectMany, supaUpsert } = deps;
+  for (const [name, fn] of Object.entries({ hasSupabase, json, loadProviderFixture, supaSelectMany, supaUpsert })) {
     if (typeof fn !== 'function') throw new TypeError(`Match picks runtime requires ${name}.`);
   }
   const now = () => {
@@ -170,6 +170,22 @@ export function createMatchPicksRuntime(deps = {}) {
     };
   }
 
+  async function currentPickState(model,pickRow,cfg,{forceRefresh=false}={}) {
+    const initial=pickState(model,pickRow,now());
+    // Already closed snapshots never reopen after a postponement.
+    if (!initial.open) return initial;
+    const row=await loadProviderFixture(initial.fixtureId,cfg,{forceRefresh});
+    const fixture=plainObject(row?.fixture);
+    const kickoff=Date.parse(String(fixture?.date || ''));
+    if (positiveId(fixture?.id)!==initial.fixtureId || !Number.isFinite(kickoff)
+      || typeof fixture?.status?.short!=='string' || !fixture.status.short.trim()) {
+      throw new Error('Current fixture unavailable.');
+    }
+    const cutoff=Math.min(Date.parse(initial.kickoffAt),kickoff);
+    const state=pickState(model,pickRow,now());
+    return {...state,open:state.open && fixture.status.short==='NS' && cutoff>now(),kickoffAt:new Date(cutoff).toISOString()};
+  }
+
   // GET /api/match-pick?fixtureId= — прогноз пользователя, выбор AI и итог.
   async function apiMatchPickGet(request, cfg, user) {
     const userId = positiveId(safeRead(user, 'id'));
@@ -186,7 +202,7 @@ export function createMatchPicksRuntime(deps = {}) {
       const model = await prediction(fixtureId, cfg);
       if (!model || !outcome(safeRead(model, 'predicted_outcome'))) return json({ available: false, reason: 'no_model_prediction', fixtureId });
       const picks = await supaSelectMany(cfg, 'match_picks', { telegram_id: `eq.${userId}`, fixture_id: `eq.${fixtureId}` }, { limit: 1, select: 'pick' });
-      return json(pickState(model, Array.isArray(picks) ? picks[0] : null, now()));
+      return json(await currentPickState(model,Array.isArray(picks) ? picks[0] : null,cfg));
     } catch {
       return json({ available: false, reason: 'temporarily_unavailable' }, 503);
     }
@@ -207,12 +223,14 @@ export function createMatchPicksRuntime(deps = {}) {
       if (!model || !outcome(safeRead(model, 'predicted_outcome'))) {
         return json({ error: 'В этом матче AI не делал прогноз до начала — сыграть с ним не получится.', code: 'NO_MODEL_PREDICTION' }, 409);
       }
+      let state;
+      try { state=await currentPickState(model,null,cfg,{forceRefresh:true}); }
+      catch { return json({error:'Не удалось проверить начало матча. Попробуйте позже.',code:'PICK_STATUS_UNAVAILABLE'},503); }
       const nowMs = now();
-      const state = pickState(model, null, nowMs);
       if (!state.open) {
         // Показываем уже сохранённый прогноз, а не «нет прогноза».
         const existing = await supaSelectMany(cfg, 'match_picks', { telegram_id: `eq.${userId}`, fixture_id: `eq.${fixtureId}` }, { limit: 1, select: 'pick' }).catch(() => []);
-        return json({ error: 'Матч уже начался — прогноз больше не меняется.', code: 'PICK_LOCKED', ...pickState(model, Array.isArray(existing) ? existing[0] : null, nowMs) }, 409);
+        return json({ error: 'Матч уже начался — прогноз больше не меняется.', code: 'PICK_LOCKED', ...state,pick:outcome(Array.isArray(existing) ? existing[0]?.pick : null) }, 409);
       }
       await supaUpsert(cfg, 'match_picks', {
         telegram_id: userId,
