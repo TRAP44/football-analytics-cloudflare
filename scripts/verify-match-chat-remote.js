@@ -38,7 +38,9 @@ export async function verifyMatchChatRemote(env=process.env){
   try{
     const config=path.join(dir,'wrangler.json');
     await writeFile(config,JSON.stringify({name:'matchradar-chat-verification',main:path.join(root,'scripts/fixtures/match-chat-remote-worker.js'),compatibility_date:'2026-09-16',ai:{binding:'AI',remote:true},vars:{PROBE_NONCE:nonce}}));
-    child=spawn(path.join(root,'node_modules/.bin/wrangler'),['dev','--local','--config',config,'--ip','127.0.0.1','--port',String(port),'--log-level','error'],{cwd:dir,env:{...env,WRANGLER_SEND_METRICS:'false'},stdio:['ignore','pipe','pipe']});
+    // Default dev runs code locally while allowing the configured remote AI binding.
+    // --local explicitly disables remote bindings in Wrangler, including AI.
+    child=spawn(path.join(root,'node_modules/.bin/wrangler'),['dev','--config',config,'--ip','127.0.0.1','--port',String(port),'--log-level','error'],{cwd:dir,env:{...env,WRANGLER_SEND_METRICS:'false'},stdio:['ignore','pipe','pipe']});
     child.stdout.on('data',data=>{output=(output+String(data)).slice(-12000);});
     child.stderr.on('data',data=>{output=(output+String(data)).slice(-12000);});
     let spawnError=false;child.on('error',()=>{spawnError=true;});

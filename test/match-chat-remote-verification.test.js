@@ -40,3 +40,11 @@ test('persisted probe report excludes arbitrary remote text and fields',()=>{
   assert.equal(report.model,'unexpected');assert.equal(report.modelFailure,'none');
   assert.equal(report.passed,false);assert.doesNotMatch(JSON.stringify(report),/untrusted|secret/);
 });
+
+test('verification permits remote bindings while serving the fixture only on loopback',()=>{
+  const script=fs.readFileSync('scripts/verify-match-chat-remote.js','utf8');
+  const invocation=script.match(/child=spawn\([^;]+/s)?.[0];
+  assert.ok(invocation);assert.doesNotMatch(invocation,/['"]--local['"]|['"]--remote['"]/);
+  assert.match(invocation,/['"]--ip['"],['"]127\.0\.0\.1['"]/);
+  assert.match(script,/ai:\{binding:'AI',remote:true\}/);
+});
