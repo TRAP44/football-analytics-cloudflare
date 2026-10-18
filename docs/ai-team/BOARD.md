@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Мгновенный контекст матча, повторное открытие без ожидания и защита поздних ответов — **Codex** — `codex/instant-match-opening`.
 
 
 
@@ -50,6 +49,8 @@
 
 
 ## На ревью
+
+- [ ] Мгновенный контекст матча, повторное открытие без ожидания и защита поздних ответов — **Codex** — `codex/instant-match-opening`. — [PR #961](https://github.com/TRAP44/football-analytics-cloudflare/pull/961).
 
 
 
