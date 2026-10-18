@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Ускорить критический путь свежего AI-разбора: независимые обогащения параллельно, без потери данных/квоты — **Codex** — `codex/analysis-critical-path`.
+
 
 
 
@@ -48,7 +50,6 @@
 
 ## На ревью
 
-- [ ] Быстрые LIVE-уведомления между пятиминутными запусками и свежие наблюдения — **Codex** — `codex/live-notification-fast-window`. — [PR #959](https://github.com/TRAP44/football-analytics-cloudflare/pull/959).
 
 
 
@@ -120,6 +121,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Быстрые LIVE-уведомления между пятиминутными запусками и свежие наблюдения — **Codex** — `codex/live-notification-fast-window`. — [PR #959](https://github.com/TRAP44/football-analytics-cloudflare/pull/959). — опубликован, три естественных minute ticks OK.
 
 - [x] Личные уведомления: избранные команды + наблюдение, все карточки, короткие события и согласованный итог — **Codex** — `codex/personal-match-notifications`. — [PR #958](https://github.com/TRAP44/football-analytics-cloudflare/pull/958). — опубликован, deploy39149377760/external39149568393 прошли.
 

@@ -1378,13 +1378,12 @@ export function createMatchCenterRuntime(deps) {
       } catch {}
     }
 
-    const prematchCandidate=live
-      ? await optionalAsync(
-          getStaleCache,
-          `fixture:${fixtureId}:v17-starting-xi-rc146`,
-          cfg,
-        )
-      : null;
+    // These read-only snapshots depend on the match, not on each other.
+    const timelineMatch={fixtureId,date:kickoffRaw,status,elapsed};
+    const [prematchCandidate,timelineCandidate]=await Promise.all([
+      live ? optionalAsync(getStaleCache,`fixture:${fixtureId}:v17-starting-xi-rc146`,cfg) : null,
+      optionalAsync(loadFixtureAiTimeline,{fixtureId,match:timelineMatch,events:formattedEvents,cfg}),
+    ]);
     const prematchAnalysis=live
       ? prematchAnalysisPayload(prematchCandidate,fixtureId)
       : null;
@@ -1399,18 +1398,7 @@ export function createMatchCenterRuntime(deps) {
       });
     }
 
-    const timelineMatch={
-      fixtureId,
-      date:kickoffRaw,
-      status,
-      elapsed,
-    };
-    let aiTimeline=objectValue(await optionalAsync(loadFixtureAiTimeline,{
-      fixtureId,
-      match:timelineMatch,
-      events:formattedEvents,
-      cfg,
-    }));
+    let aiTimeline=objectValue(timelineCandidate);
     if (!aiTimeline) {
       try {
         aiTimeline=objectValue(buildAiTimeline({

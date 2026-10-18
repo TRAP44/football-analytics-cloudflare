@@ -562,3 +562,42 @@ test('cold analysis overlaps current entitlements and quota reads before any res
   assert.deepEqual(started,['entitlements','quota']);resolveEntitlements({source:'free',access:{}});
   const result=await pending;assert.equal(result.status,429);
 });
+
+
+test('player roles and calibration do not wait for pending form or season reads',async()=>{
+  const gate=deferredValue();const roles=deferredValue();let forms=0,seasons=0,calibration=0,roleCount=0;
+  const runtime=createAnalysisRuntime(freshProviderDeps({
+    getRecentTeamForm:async()=>{forms++;await gate.promise;return null;},
+    getCache:async key=>{if(key.startsWith('analysis:team-season:')){seasons++;await gate.promise;}return null;},
+    getCalibrationProfile:async()=>{calibration++;await gate.promise;return null;},
+    hydratePlayerRolesForAnalysis:async()=>{if(++roleCount===2)roles.resolve();return null;},
+  }));
+  const pending=runtime.analyzeFixtureForSystem(123,{});
+  let timer;try{
+    await Promise.race([roles.promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('roles waited for unrelated enrichment')),500);})]);
+    assert.equal(forms,2);assert.equal(seasons,2);assert.equal(calibration,1);
+  }finally{clearTimeout(timer);gate.resolve();}
+  const response=await pending;assert.equal(response.body.code,'ANALYSIS_MODEL_INVALID');
+});
+
+
+test('parallel enrichment preserves market read-before-write and completes a valid analysis on optional failures',async()=>{
+  const marketGate=deferredValue();const roleStarted=deferredValue();const order=[];
+  const runtime=createAnalysisRuntime(freshProviderDeps({
+    oddsMarketForTrustedAnalytics:()=>({source:'fixture'}),
+    getOddsSnapshots:async()=>{order.push('read');await marketGate.promise;return [];},
+    saveOddsSnapshot:async()=>{order.push('write');throw Error('optional cache write failed');},
+    getCalibrationProfile:async()=>{throw Error('optional calibration unavailable');},
+    hydratePlayerRolesForAnalysis:async()=>{roleStarted.resolve();return null;},
+    blendProbabilitySignals:()=>({probabilities:{home:45,draw:30,away:25},signals:[]}),
+    applyAbsenceAdjustment:p=>p,applyLineupStrengthAdjustment:p=>p,
+    outcomeName:()=> 'Home',setCache:async()=>true,
+  }));
+  const pending=runtime.analyzeFixtureForSystem(123,{});
+  let timer;try{
+    await Promise.race([roleStarted.promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('roles waited for market history')),500);})]);
+    assert.deepEqual(order,['read']);
+  }finally{clearTimeout(timer);marketGate.resolve();}
+  const result=await pending;assert.equal(result.status,200);assert.deepEqual(order,['read','write']);
+  assert.deepEqual(result.body.probabilities,{home:45,draw:30,away:25});
+});

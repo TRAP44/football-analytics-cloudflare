@@ -14,6 +14,15 @@ PR: ссылка или ветка
 
 ---
 
+
+## 2026-10-18 — Codex — Критический путь свежего анализа и LIVE-центра
+PR: ветка `codex/analysis-critical-path`.
+Сделано: независимые market-history/calibration параллельно обогащению, roles ждут только cached intelligence и готовые lineups/absences вместо form/web/fresh season. В LIVE-центре prematch cache и timeline параллельно. Read-before-write market сохранён, все результаты дожидаются ответа; history/quota/lock/finalization/settlement не выносились в фон, public/SQL/secrets не менялись.
+Замер: реальные main/branch modules, fixed40ms artificial I/O,5пар HTTP200; analysis median173→90мс, LIVE81→41мс, те же calls и тестовые45/30/25. Это изолированное подтверждение снятия serial ожиданий, не production speed/capacity; документ REQUEST_PERFORMANCE_RU.md.
+Контекст: #959 опубликован08633111, deploy39157364291/external39157510977/естественный cron39157551951 success (ticks19:12/13/14UTC). Его строка перенесена в Готово. Report39157366924:40pending>24ч, oldest2026-09-23, не фиксировать результаты вслепую;1AI timing8391мс без phase metadata, delivery activity не доказана. Старый cron39157165472:in_play_timeline failed/cache read; следующий зелёный не доказывает исправление первопричины.
+Проверки: Node22 npm ci/check/lint, release694/694, full4350/4350, Worker dry-run; независимый Codex (не Claude),46профильных тестов и ревью без блокеров. Осталось: CI, PR и публикация по прежнему разрешению Сергея. Реальная Telegram user session и production speed не измерены.
+
+
 ## 2026-10-18 — Codex — Дополнительные LIVE ticks в тёплом GitHub runner
 PR: [#959](https://github.com/TRAP44/football-analytics-cloudflare/pull/959), ветка `codex/live-notification-fast-window`.
 Сделано: полный dispatch/cron остаётся5мин, уже запущенный runner после полного прохода использует остаток окна для minute LIVE ticks (до4, без новых workflows). Только активные матчи с реальным clock, до2fixtures; soft admission budget20с, отдельные LIVE курсоры, та же cron-global lease с minute job key. Без AI/lineups/day/scoreboard fanout. Короткие уведомления в полном проходе больше не ждут unrelated цепочку. Репозиторная переменная LIVE_NOTIFICATIONS_FAST_ENABLED=false отключает extra ticks без деплоя; пусто — включены.
