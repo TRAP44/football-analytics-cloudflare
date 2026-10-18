@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Надёжное подтверждение завершения cron после таймаута и сверка причин старых pending — **Codex** — `codex/scheduled-completion-reconcile`.
 
 
 
@@ -51,6 +50,8 @@
 
 
 ## На ревью
+
+- [ ] Надёжное подтверждение завершения cron после таймаута и сверка причин старых pending — **Codex** — `codex/scheduled-completion-reconcile`. — [PR #962](https://github.com/TRAP44/football-analytics-cloudflare/pull/962).
 
 
 

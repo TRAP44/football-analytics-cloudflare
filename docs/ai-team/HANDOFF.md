@@ -18,7 +18,7 @@ PR: ссылка или ветка
 
 
 ## 2026-10-19 — Codex — Проверка результата completion после таймаута
-PR: ветка `codex/scheduled-completion-reconcile`.
+PR: [#962](https://github.com/TRAP44/football-analytics-cloudflare/pull/962), ветка `codex/scheduled-completion-reconcile`.
 Сделано: owner/group-scoped bounded readonly reconciliation для transient completion errors. Ужеdone подтверждается без повторногоRPC; running+lease>3с даётодинretry; второйunknown проверяетсяread, безтретьегоRPC. Claim/release/business jobs/Telegram не replay. Wire через существующий Supabaseclient, узкаяпроекцияmax1 и1800мсreaddeadline. НовыхSQL/secrets/publicнет.
 Отчёт: readonly autoSettlementRecovery flag+watchdog state безid/error/action/token; цельобъяснить40старыхpending, не фиксироватьбезисточника. Максимум28GET/7категорий. НезависимоеCodexreview безблокеров/20профильныхtests. Node22 npm ci/check/lint, release694/694, full4361/4361, verify:release и Worker dry-run прошли.
 Наблюдения:39172701206 —40pending, oldest2026-09-23; completioncodesпо2. Последниезавершённыеcronзелёные. Verify Match Chat39172714416 success(actualhandler/realAI/fixeddata), referee/missing/goals/form/withinOneSecond=true, неполныйTelegramauth/новыйAIразбор. Историческиепричиныcompletion пока неполностьюдоказаны, исправленconfirmedunknownoutcomepath.
