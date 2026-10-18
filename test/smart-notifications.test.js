@@ -488,7 +488,7 @@ test('capability snapshots are frozen and enforce FREE versus paid categories',(
   }).reason,'preference_master_disabled');
 });
 
-test('users with a live scoreboard for the match get no separate goal alert (one message per match)', async () => {
+test('a silent scoreboard update does not suppress the requested short goal notification', async () => {
   const originalNow = Date.now;
   Date.now = () => Date.parse('2026-10-01T12:20:00.000Z');
   try {
@@ -508,7 +508,7 @@ test('users with a live scoreboard for the match get no separate goal alert (one
       recordOpsEvent:async()=>{},
     });
     await service.processSmartNotifications({botToken:'token'});
-    assert.deepEqual(deliveries.filter(d=>d.eventType==='match.goal').map(d=>d.row.telegram_id), [2]);
+    assert.deepEqual(deliveries.filter(d=>d.eventType==='match.goal').map(d=>d.row.telegram_id), [1,2]);
   } finally {
     Date.now = originalNow;
   }

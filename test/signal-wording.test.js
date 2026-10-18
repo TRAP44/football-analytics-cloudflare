@@ -48,7 +48,7 @@ test('user-facing code no longer tells people to bet or skip a bet',()=>{
   assert.match(fs.readFileSync('src/user-data-api-runtime.js','utf8'),/publicSignalLabel\(safeText\(row\.ai_signal_label,160\)\)/);
   assert.match(fs.readFileSync('src/telegram-search-runtime.js','utf8'),/publicSignalLabel\(safeText\(source\.ai_signal_label,300\)\)/);
   // Бот после матча и в поиске показывает нейтральный вывод по коду сигнала, а не сохранённую метку.
-  assert.match(fs.readFileSync('src/post-match-return-runtime.js','utf8'),/neutralSignalText\(history\.ai_signal_code/);
+  assert.doesNotMatch(fs.readFileSync('src/post-match-return-runtime.js','utf8'),/history\.ai_signal_label|history\.ai_signal_code/);
   assert.match(fs.readFileSync('src/telegram-search-runtime.js','utf8'),/neutralSignalText\(source\.ai_signal_code/);
   assert.match(fs.readFileSync('src/analysis-runtime.js','utf8'),/withPublicSignalLabel\(objectValue\(analysisResponsePayload/);
 });

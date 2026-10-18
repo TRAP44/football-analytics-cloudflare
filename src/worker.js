@@ -617,6 +617,8 @@ const {
   telegramDedupeObservabilitySelfTest,
   enforceTelegramBurst,
 } = createServiceWiringRuntime({
+  setCache: (...args) => setCache(...args),
+  getCache: (...args) => getCache(...args),
   loadScoreboardRecipients: (fixtureId, cfg) => scoreboardRecipientIds(getCache, fixtureId, cfg),
   SMART_NOTIFICATION_POLICY,
   bumpTelemetry: (...args) => bumpTelemetry(...args),
