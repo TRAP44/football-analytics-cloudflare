@@ -98,7 +98,7 @@ test('recipient progress does not skip fixtures deferred by the fixture limit',(
  supaSelectPaged:async(_cfg,table)=>({rows:table==='favorites'?[favorite()]:[]}),filterRecipients:async rows=>({rows}),loadFavoritePlayersByUser:async()=>new Map(),
  deliverSmartNotification:async input=>{sent.add(input.row.fixture_id);return {state:'sent'};},recordOpsEvent:async()=>{},
  });
- for(let i=0;i<5;i++)await service.processSmartNotifications({botToken:'test'});
+ for(let i=0;i<5;i++){const result=await service.processSmartNotifications({botToken:'test'});if(result.truncated)assert.equal(result.status,'degraded','a bounded page is not a hard failure');}
  assert.equal(sent.size,8,'all deferred fixtures eventually reach delivery');
 }));
 

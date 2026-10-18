@@ -913,7 +913,7 @@ export function createSmartNotificationService({
       try{await setCache(fixtureCursorKey,0,groups.filter(([id])=>!deferredFixtures.has(id)).at(-1)[0],cfg,60);}
       catch{summary.failed+=1;}
     }
-    if(liveOnly && summary.truncated && !summary.failed && !summary.unknown){summary.status='degraded';summary.reason='bounded_live_tick';}
+    if(summary.truncated && !summary.failed && !summary.unknown){summary.status='degraded';summary.reason=liveOnly?'bounded_live_tick':'bounded_notification_page';}
     summary.ok = !(summary.failed || summary.unknown || summary.truncated);
     if (summary.sent || summary.failed || summary.unknown || summary.truncated || summary.blockedByEntitlement || summary.blockedByPreference) {
       await recordOpsEvent?.(cfg, {
