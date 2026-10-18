@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Подписки: исходная цена продления после повторной смены тарифов — **Codex** — `codex/subscription-renewal-price`.
 
 
 
@@ -45,6 +44,8 @@
 
 
 ## На ревью
+
+- [ ] Подписки: исходная цена продления после повторной смены тарифов — **Codex** — `codex/subscription-renewal-price`. — [PR #956](https://github.com/TRAP44/football-analytics-cloudflare/pull/956).
 
 
 

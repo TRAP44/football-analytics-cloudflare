@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-18 — Codex — Цена подписки сохраняется при повторной смене тарифов
-PR: ветка `codex/subscription-renewal-price`.
+PR: [#956](https://github.com/TRAP44/football-analytics-cloudflare/pull/956), ветка `codex/subscription-renewal-price`.
 Сделано: новые счета fa2 подписывают исходную сумму вместе с user/plan/nonce. Precheckout по-прежнему требует текущую цену и дополнительно подписанную сумму; successful payment и Stars sync принимают исходную подписанную цену. Legacy fa1: current/default либо строго совпадающий сохранённый paid XTR invoice/user/plan/amount; ошибка хранилища закрывает доступ. Проверки refunded-charge replay сохранены. Без SQL/новых секретов/публичных ассетов.
 Проверки: реальные HMAC tamper/wrong user/wrong amount; legacy renewal после 499→599, подмена полей исходного платежа, persistent lookup/error, Stars history signed price. Независимое Codex review без блокеров, 37 профильных проверок (не Claude). Реальные покупки не выполнялись. Полный первый запуск выявил два устаревших source-contract regex; обновлены на новую строгую проверку, assertions не удалены.
 Контекст: #955 уже слит, опубликован; real AI39132291915, deploy39132436531, external39132626031 прошли. Его строка перемещена в Готово. Следующие отдельные задачи: cutoff «Обыграй AI» по актуальному fixture, fault-аудит LIVE/network/chat. Старые pending в production ещё не подтверждены.
