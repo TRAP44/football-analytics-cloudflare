@@ -1,7 +1,13 @@
+import {withRequestDeadline} from './request-deadline.js';
 const JOB_KEY_RE=/^[A-Za-z0-9._:@/-]{1,180}$/;
 const GROUP_KEY_RE=/^[A-Za-z0-9._:@/-]{1,120}$/;
 const LEASE_TOKEN_RE=/^[A-Za-z0-9._:-]{16,80}$/;
 const MAX_TIMESTAMP_MS=8.64e15;
+
+function transientLeaseError(error) {
+  return ['UPSTREAM_TIMEOUT','HTTP_408','HTTP_502','HTTP_503','HTTP_504','PGRST000','PGRST001','PGRST002','PGRST003','ECONNRESET','ETIMEDOUT','EAI_AGAIN'].includes(error?.code || error?.cause?.code)
+    || (error instanceof TypeError && /fetch|network/i.test(error.message));
+}
 
 function plainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
@@ -248,6 +254,7 @@ function normalizeRenewal(raw={},fallback={}) {
 export function createScheduledLeaseRuntime({
   hasSupabase,
   supaRpc,
+  readScheduledJob,
   recordOpsEvent=async()=>{},
   redactOpsString=value=>typeof value === 'string' ? value : '',
   now=()=>Date.now(),
@@ -316,8 +323,6 @@ export function createScheduledLeaseRuntime({
     const ttl=boundedLeaseSeconds(leaseSeconds);
 
     let attempts=0;
-    const transient=error=>['UPSTREAM_TIMEOUT','HTTP_408','HTTP_502','HTTP_503','HTTP_504','PGRST000','PGRST001','PGRST002','PGRST003','ECONNRESET','ETIMEDOUT','EAI_AGAIN'].includes(error?.code || error?.cause?.code)
-      || (error instanceof TypeError && /fetch|network/i.test(error.message));
     const retryHasTime=()=>{
       const until=typeof source.lockedUntil==='string' ? Date.parse(source.lockedUntil) : NaN;
       return Number.isFinite(until) && until-now()>5000;
@@ -331,8 +336,8 @@ export function createScheduledLeaseRuntime({
         },1800);
       } catch(error) {
         // Renew is owner-token scoped and monotonic in SQL. Claim/settlement
-        // writes have different unknown-outcome semantics and are never replayed.
-        if(!transient(error) || !retryHasTime())throw error;
+        // writes have different unknown-outcome semantics and are never blindly replayed.
+        if(!transientLeaseError(error) || !retryHasTime())throw error;
         await sleepMs(150);
         if(!retryHasTime())throw error;
         attempts++;
@@ -477,6 +482,18 @@ export function createScheduledLeaseRuntime({
     }
   }
 
+  async function reconcileCompletion(cfg,source) {
+    if (typeof readScheduledJob!=='function') return null;
+    const row=plainObject(await withRequestDeadline(
+      ()=>readScheduledJob(cfg,source.jobKey),
+      {budgetMs:1800,source:'Scheduled completion reconciliation'},
+    ));
+    if (!row || row.lease_token!==source.leaseToken || row.group_key!==source.groupKey) return null;
+    if (row.status==='done') return 'done';
+    const until=typeof row.locked_until==='string' ? Date.parse(row.locked_until) : NaN;
+    return row.status==='running' && Number.isFinite(until) && until-now()>3000 ? 'running' : null;
+  }
+
   async function settleScheduledJob(cfg,claim,rpcName,eventCode,severity) {
     const source=plainObject(claim);
     if (!source || source.claimed !== true) return false;
@@ -492,10 +509,27 @@ export function createScheduledLeaseRuntime({
     const groupKey=cleanLeasePart(source.groupKey,'group');
     const token=cleanLeaseToken(source.leaseToken);
     try {
-      return await supaRpc(cfg,rpcName,{
-        p_job_key:jobKey,
-        p_lease_token:token,
-      },1800) === true;
+      const complete=()=>supaRpc(cfg,rpcName,{p_job_key:jobKey,p_lease_token:token},1800);
+      try { return await complete() === true; }
+      catch (error) {
+        if (rpcName!=='complete_scheduled_job' || !transientLeaseError(error)) throw error;
+        // A timeout may mean the write committed. Read the exact owner before
+        // considering one retry; never release/reclaim or rerun completed work.
+        let state=await reconcileCompletion(cfg,source);
+        if (state==='running') {
+          try { if (await complete() === true) state='done'; }
+          catch (retryError) { if (!transientLeaseError(retryError)) throw retryError; }
+          if (state!=='done') state=await reconcileCompletion(cfg,source);
+        }
+        if (state!=='done') throw error;
+        await safeRecord(cfg,{
+          severity:'info',source:'cron',eventType:'scheduled_lease',
+          code:'SCHEDULED_LEASE_COMPLETE_RECOVERED',
+          message:'Scheduled completion confirmed after a transient transport failure.',
+          meta:{jobKey,groupKey},
+        });
+        return true;
+      }
     } catch (error) {
       await safeRecord(cfg,{
         severity,

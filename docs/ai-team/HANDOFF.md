@@ -16,6 +16,15 @@ PR: ссылка или ветка
 
 
 
+
+## 2026-10-19 — Codex — Проверка результата completion после таймаута
+PR: ветка `codex/scheduled-completion-reconcile`.
+Сделано: owner/group-scoped bounded readonly reconciliation для transient completion errors. Ужеdone подтверждается без повторногоRPC; running+lease>3с даётодинretry; второйunknown проверяетсяread, безтретьегоRPC. Claim/release/business jobs/Telegram не replay. Wire через существующий Supabaseclient, узкаяпроекцияmax1 и1800мсreaddeadline. НовыхSQL/secrets/publicнет.
+Отчёт: readonly autoSettlementRecovery flag+watchdog state безid/error/action/token; цельобъяснить40старыхpending, не фиксироватьбезисточника. Максимум28GET/7категорий. НезависимоеCodexreview безблокеров/20профильныхtests. Node22 npm ci/check/lint, release694/694, full4361/4361, verify:release и Worker dry-run прошли.
+Наблюдения:39172701206 —40pending, oldest2026-09-23; completioncodesпо2. Последниезавершённыеcronзелёные. Verify Match Chat39172714416 success(actualhandler/realAI/fixeddata), referee/missing/goals/form/withinOneSecond=true, неполныйTelegramauth/новыйAIразбор. Историческиепричиныcompletion пока неполностьюдоказаны, исправленconfirmedunknownoutcomepath.
+Контекст: #961 опубликован0975dd83, deploy39171450883/external39171639248 success, перенесёнвГотово. Осталось:CI/merge/publish, новыйreportдляреальногосостоянияавтовосстановления, затемсверкастарыхрезультатов. Секретынезапрашивать, использоватьprotectedworkflows.
+
+
 ## 2026-10-19 — Codex — Быстрый показ и повторное открытие матч-центра
 PR: [#961](https://github.com/TRAP44/football-analytics-cloudflare/pull/961), ветка `codex/instant-match-opening`.
 Сделано: preload толькоcontroller после feed, выбранные команды в loadingcontext до API/extras; recent6RAMsnapshots и current snapshot рендерятся до await при generatedAt TTL15sLIVE/60supcoming+beforekickoff/300finished. Invalid/future dates и mismatched ID/mode не допускаются, admin payload не попадает в map. Серверный refresh остаётся на каждом открытии, AI grants не кешируются; новые provider calls/persistentcache не добавлены. Frontend launch128, HTML surfaces и dynamicURLs обновлены.
