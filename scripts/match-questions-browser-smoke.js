@@ -1,3 +1,4 @@
+import {issueMatchQuestionAccess} from '../src/match-question-access.js';
 import {buildMatchQuestionPresets} from '../src/match-question-presets.js';
 import {launchChromeWithRetry,stopChrome,Cdp,browserExecutable} from './bottom-nav-render-smoke.js';
 import {createServer} from 'node:http';
@@ -5,6 +6,8 @@ import {readFile,rm} from 'node:fs/promises';
 import path from 'node:path';
 
 const prepared=buildMatchQuestionPresets({match:{fixtureId:123,home:{name:'Chelsea'},away:{name:'Everton'}},probabilities:{home:54,draw:25,away:21},recentForm:{home:{overall:{sample:5,wins:4,draws:1,losses:0}}},absences:{home:[],away:[]},lineupQuality:{bothConfirmed:false}});
+
+const receipt=await issueMatchQuestionAccess('browser-fixture-secret',1,123);
 
 const scenario=`<!doctype html><html data-theme="dark"><head><link rel="stylesheet" href="/styles/premium-ui.css"></head><body class="miniapp-public-shell">
 <section class="mr-hq-hero" style="width:320px"><div class="center-hero-actions"><button>Обновить</button><button>Поделиться</button><button class="center-pass-btn">Pass на матч</button></div></section>
@@ -23,7 +26,7 @@ try {
  instantRoot.remove();
  const root=document.getElementById('questions');let requests=[],reply;
  const api=async(url,options)=>{if(url!=='/api/match-question')throw Error('wrong endpoint');requests.push(JSON.parse(options.body));return await new Promise(resolve=>{reply=resolve;});};
- const mount=id=>mountMatchQuestions({root,fixtureId:id,api,escapeHtml:value=>String(value).replaceAll('<','&lt;'),isCurrent:()=>true});
+ const mount=id=>mountMatchQuestions({root,fixtureId:id,accessReceipt:id===123 ? '${receipt}' : null,api,escapeHtml:value=>String(value).replaceAll('<','&lt;'),isCurrent:()=>true});
  const flush=()=>new Promise(resolve=>setTimeout(resolve,0));
  const facts=text=>({available:true,answer:'facts',items:[{role:'lead',connector:'Вывод:',text}]});
  mount(123);root.querySelector('[data-question-start]').click();
@@ -32,6 +35,7 @@ try {
  if(!root.querySelector('[data-question-answer]').textContent.includes('Chelsea'))throw Error('same-analysis redraw lost answer');
  root.querySelector('input').value='Кто в форме?';root.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
  if(requests[1].question!=='Кто в форме?')throw Error('typed question did not submit');
+ if(requests[1].accessReceipt!=='${receipt}')throw Error('text question lost its delivered-analysis receipt');
  reply(facts('Форма команды'));await flush();
  if(!root.querySelector('[data-question-answer]').textContent.includes('Форма команды'))throw Error('typed answer invisible');
  root.querySelector('[data-question-start]').click();const oldReply=reply;

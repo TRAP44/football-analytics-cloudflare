@@ -1,3 +1,4 @@
+import {issueMatchQuestionAccess} from './match-question-access.js';
 import {analysisAccessSnapshot} from './analysis-access-snapshot.js';
 import {withAnalysisWebBudget} from './analysis-web-budget.js';
 import {createAnalysisTiming} from './analysis-timing.js';
@@ -623,6 +624,11 @@ export function createAnalysisRuntime(deps) {
     if (fixtureId === null) return json({error:'Некорректный номер матча.'},400);
     if (!system && userId === null) return json({error:'Пользователь не авторизован.'},401);
 
+    const responseWithQuestionAccess=async(payload,extra)=>{
+      let receipt=null;
+      if(!system){try{receipt=await issueMatchQuestionAccess(cfg?.botToken,userId,fixtureId);}catch{}}
+      return safeAnalysisResponsePayload(payload,{...extra,...(receipt ? {questionAccess:receipt} : {})});
+    };
     const timing=createAnalysisTiming({now:analysisTimingNow});
     const fireAndForget=(fn,...args)=>{
       try {
@@ -808,7 +814,7 @@ export function createAnalysisRuntime(deps) {
         await recordTrackedFullAiOutcome('cached');
         if (trackFullAi) fireAndForget(recordGrowthEvent,cfg,{userId,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,freshness:safeText(previousFreshness?.state,40) || 'fresh'}});
         scheduleReferralReward();
-        return json(safeAnalysisResponsePayload(cached,{cached:true,stale:false,recheck:{requested:recheckRequested,performed:false,free:false,reasonCode:recheckReasonCode},newsImpact,quota}));
+        return json(await responseWithQuestionAccess(cached,{cached:true,stale:false,recheck:{requested:recheckRequested,performed:false,free:false,reasonCode:recheckReasonCode},newsImpact,quota}));
       }
     }
   
@@ -829,7 +835,7 @@ export function createAnalysisRuntime(deps) {
       // Сбой хранилища истории не должен превращать бесплатную перепроверку
       // в платную: показываем сохранённый анализ без нового расчёта.
       await recordTrackedFullAiOutcome('stale_history_unavailable');
-      return json(safeAnalysisResponsePayload(staleBefore,{
+      return json(await responseWithQuestionAccess(staleBefore,{
         cached:true,
         stale:true,
         warning:'Перепроверка временно недоступна: не удалось проверить историю анализов. Показан последний сохранённый анализ, лимит не списан.',
@@ -878,7 +884,7 @@ export function createAnalysisRuntime(deps) {
     if (!analysisLock.claimed && analysisLock.unavailable) {
       if (staleBefore) {
         await safeRecordHistory(staleBefore);
-        return json(safeAnalysisResponsePayload(staleBefore,{cached:true,stale:true,warning:'Координация нового AI-расчёта временно недоступна. Показан последний сохранённый анализ.',retryAfter:5,quota:quotaBefore}));
+        return json(await responseWithQuestionAccess(staleBefore,{cached:true,stale:true,warning:'Координация нового AI-расчёта временно недоступна. Показан последний сохранённый анализ.',retryAfter:5,quota:quotaBefore}));
       }
       return await trackedFullAiFailureResponse({error:'Координация AI-расчёта временно недоступна. Повторите через несколько секунд.',code:'ANALYSIS_COORDINATION_DEGRADED',retryAfter:5,quota:quotaBefore},503,'analysis_coordination_degraded',{'retry-after':'5'});
     }
@@ -908,12 +914,12 @@ export function createAnalysisRuntime(deps) {
         }
         await recordTrackedFullAiOutcome('shared');
         scheduleReferralReward();
-        return json(safeAnalysisResponsePayload(joined,{cached:true,stale:false,sharedJoin:true,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_shared' : (previousFreshness?.reasonCode || 'shared_compute')},quota:await quotaSnapshotForResponse(userId,cfg,quotaBefore)}));
+        return json(await responseWithQuestionAccess(joined,{cached:true,stale:false,sharedJoin:true,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_shared' : (previousFreshness?.reasonCode || 'shared_compute')},quota:await quotaSnapshotForResponse(userId,cfg,quotaBefore)}));
       }
       if (staleBefore) {
         await safeRecordHistory(staleBefore);
         await recordTrackedFullAiOutcome('stale_pending');
-        return json(safeAnalysisResponsePayload(staleBefore,{cached:true,stale:true,sharedJoinPending:true,warning:'Свежий расчёт этого матча уже выполняется. Пока показан последний сохранённый анализ.',retryAfter:5,recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:'shared_compute_pending'},quota:quotaBefore}));
+        return json(await responseWithQuestionAccess(staleBefore,{cached:true,stale:true,sharedJoinPending:true,warning:'Свежий расчёт этого матча уже выполняется. Пока показан последний сохранённый анализ.',retryAfter:5,recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:'shared_compute_pending'},quota:quotaBefore}));
       }
       return await trackedFullAiFailureResponse({error:'AI-разбор этого матча уже рассчитывается для других пользователей. Повторите через несколько секунд.',code:'ANALYSIS_WARMING',retryAfter:5,quota:quotaBefore},429,'analysis_warming',{'retry-after':'5'});
     }
@@ -1019,7 +1025,7 @@ export function createAnalysisRuntime(deps) {
           });
         }
         await recordTrackedFullAiOutcome('stale');
-        return json(safeAnalysisResponsePayload(staleBefore,{
+        return json(await responseWithQuestionAccess(staleBefore,{
           cached:true,
           stale:true,
           warning:providerLimited
@@ -2331,7 +2337,7 @@ export function createAnalysisRuntime(deps) {
       responseQuotaFallback,
     );
     usageCommitted=true;
-    return json(safeAnalysisResponsePayload(payload,{
+    return json(await responseWithQuestionAccess(payload,{
       cached:false,
       stale:false,
       persistence:{cacheStored},

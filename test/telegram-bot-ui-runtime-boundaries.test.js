@@ -571,3 +571,16 @@ test('bot AI verdict shows expected goals, not totals or both-teams-score market
   const missing=api.botAiVerdictText({match:{home:{name:'A'},away:{name:'B'}},goalModel:{over25:70}});
   assert.doesNotMatch(missing,/Ожидаемые голы|3\+|70%/);
 });
+
+
+test('cold LIVE card persists callback data once and before sending its buttons',async()=>{
+  const writes=[];let sent=false;
+  const {api}=runtime({
+    loadProviderFixture:async()=>providerFixture({fixture:{id:123,date:'2030-01-01T12:00:00Z',status:{short:'1H',elapsed:20}}}),
+    setCache:async key=>{writes.push(key);return true;},
+    telegramApi:async()=>{assert.equal(writes.length,3);sent=true;return {ok:true};},
+  });
+  assert.equal(await api.sendBotFixtureMenu(request,{},7,700,123),true);
+  assert.equal(sent,true);assert.equal(writes.length,3);
+  assert.equal(writes.filter(key=>key.startsWith('bot:fixture-card:')).length,1);
+});

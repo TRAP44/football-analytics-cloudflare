@@ -629,7 +629,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
     };
   }
 
-  async function loadBotFixtureCard(fixtureId,cfg) {
+  async function loadBotFixtureCard(fixtureId,cfg,{remember=true}={}) {
     const id=positiveSafeInteger(fixtureId);
     if (id===null) return null;
 
@@ -647,7 +647,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
     if (objectValue(analyzed?.match)) {
       const card=normalizeBotFixtureCard(analyzed.match);
       if (validBotFixtureCard(card,id)) {
-        await rememberBotFixtureCards([card],cfg);
+        if(remember)await rememberBotFixtureCards([card],cfg);
         return card;
       }
     }
@@ -663,7 +663,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
 
     const card=normalizeBotFixtureCard(fixture);
     if (!validBotFixtureCard(card,id)) return null;
-    await rememberBotFixtureCards([card],cfg);
+    if(remember)await rememberBotFixtureCards([card],cfg);
     return card;
   }
 
@@ -746,7 +746,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
     });
 
     const [match,favoriteRows]=await Promise.all([
-      loadBotFixtureCard(id,cfg),
+      loadBotFixtureCard(id,cfg,{remember:false}),
       optionalAsync(getFavorites,user,cfg),
     ]);
     const favorites=rowsOrEmpty(favoriteRows,500);
@@ -760,6 +760,8 @@ export function createTelegramBotUiRuntime(deps = {}) {
       return false;
     }
 
+    // Team-card cache is required by favorite callbacks. Persist it once
+    // before delivering buttons; the loader skipped its duplicate writes.
     await rememberBotFixtureCards([match],cfg);
 
     if (match.live || match.finished) {
@@ -814,7 +816,9 @@ export function createTelegramBotUiRuntime(deps = {}) {
         ? analyzedCandidate
         : match;
 
-      await rememberBotFixtureCards([analyzedMatch],cfg);
+      if(JSON.stringify(analyzedMatch)!==JSON.stringify(match)){
+        await rememberBotFixtureCards([analyzedMatch],cfg);
+      }
 
       backgroundCall(recordGrowthEvent,cfg,{
         userId:user,

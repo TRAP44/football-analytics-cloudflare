@@ -1,0 +1,60 @@
+import {issueMatchQuestionAccess} from '../../src/match-question-access.js';
+// Isolated local verification Worker. Not deployed or routed in production.
+import {createMatchQuestionRuntime} from '../../src/match-question-runtime.js';
+import {EXPLANATION_MODEL,EXPLANATION_ANALYSIS_CACHE_KEY} from '../../src/match-explanation-runtime.js';
+const fixtureId=77;
+const analysis={
+  analysisVersion:'remote-verification',
+  match:{fixtureId,home:{name:'Home FC'},away:{name:'Away FC'}},
+  probabilities:{home:54,draw:25,away:21},
+  recentForm:{home:{overall:{sample:5,wins:4,draws:1,losses:0}},away:{overall:{sample:5,wins:1,draws:1,losses:3}}},
+};
+export default {
+  async fetch(request,env){
+    const url=new URL(request.url);
+    if(request.method==='GET' && url.pathname==='/ready')return Response.json({ready:true});
+    if(request.method!=='POST' || url.pathname!=='/probe' || !env.PROBE_NONCE || request.headers.get('x-probe-key')!==env.PROBE_NONCE){
+      return Response.json({error:'not_found'},{status:404});
+    }
+    const input=await request.json().catch(()=>null);
+    if(!['previous','current'].includes(input?.variant))return Response.json({error:'invalid_variant'},{status:400});
+    const model=input.variant==='previous' ? '@cf/meta/llama-3.1-8b-instruct-fp8-fast' : EXPLANATION_MODEL;
+    let modelFailure=null;
+    let modelCalls=0;
+    const rt=createMatchQuestionRuntime({
+      json:(body,status=200)=>Response.json(body,{status}),
+      getCache:async key=>key===EXPLANATION_ANALYSIS_CACHE_KEY(fixtureId) ? analysis : null,
+      getCacheEntry:async()=>({payload:analysis,expired:false}),
+      getStaleCache:async()=>null,setCache:async()=>true,
+      getHistory:async()=>[],userHasAnalyzedFixture:async()=>{throw Error('Isolated history unavailable fixture');},
+      hasSupabase:()=>true,supaSelectMany:async()=>[],
+      supaRpc:async()=>({allowed:true,count:1}),
+      loadRuntimeControls:async()=>({value:{analysisEnabled:true,aiEnabled:true}}),
+      // A fixed fixture and in-memory admission exercise the actual handler;
+      // they do not impersonate a Telegram session or touch a user's quota.
+      clock:()=>Date.parse('2026-10-18T12:30:00Z'),memory:{},
+    });
+    const accessReceipt=await issueMatchQuestionAccess(env.PROBE_NONCE,1,fixtureId,Date.parse('2026-10-18T12:30:00Z'));
+    const start=performance.now();
+    const response=await rt.apiMatchQuestion(new Request('https://fixture.invalid/api/match-question',{
+      method:'POST',body:JSON.stringify({fixtureId,accessReceipt,question:'У какой команды лучше результаты последних матчей?'}),
+    }),{
+      botToken:env.PROBE_NONCE,matchQuestionsEnabled:true,matchQuestionsDailyLimit:500,matchQuestionsUserHourlyLimit:10,
+      workersAi:{run:async(_requestedModel,payload)=>{
+        modelCalls++;
+        try{return await env.AI.run(model,payload);}catch(error){
+          const message=String(error?.message || '');
+          modelFailure=/not found|not available|no such|model.*not|could not find/i.test(message) ? 'model_unavailable' : 'binding_error';
+          throw error;
+        }
+      }},
+    },{id:1});
+    const body=await response.json();
+    return Response.json({
+      variant:input.variant,model,httpStatus:response.status,modelCalls,modelFailure,
+      durationMs:Math.round(performance.now()-start),available:body.available===true,
+      answer:body.answer || null,source:body.source || null,reason:body.reason || null,
+      items:Array.isArray(body.items) ? body.items.map(({id,role,connector,text})=>({id,role,connector,text})) : [],
+    });
+  },
+};

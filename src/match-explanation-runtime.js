@@ -10,7 +10,7 @@
 
 import { claimDailyBudget } from './daily-budget-claim.js';
 
-export const EXPLANATION_MODEL = '@cf/meta/llama-3.1-8b-instruct-fp8-fast';
+export const EXPLANATION_MODEL = '@cf/meta/llama-3.1-8b-instruct-fp8';
 export const EXPLANATION_VERSION = 'v1';
 export const EXPLANATION_ANALYSIS_CACHE_KEY = fixtureId => `fixture:${fixtureId}:v17-starting-xi-rc146`;
 
