@@ -92,6 +92,7 @@ function makeController(overrides={}) {
     toast:
       overrides.toast
       || (message=>calls.push(['toast',message])),
+    now:overrides.now || (()=>Date.now()),
     performanceNow:
       overrides.performanceNow
       || (()=>123),
@@ -519,4 +520,83 @@ test('app composition root delegates mutable Match Center coordination',()=>{
   assert.match(module,/\/api\/match-center\?/);
   assert.match(module,/function scheduleLiveRefresh\(/);
   assert.match(module,/async function openMatchCenter\(/);
+});
+
+
+test('opening shows selected feed teams before either API or modules settle',async()=>{
+  const network=deferred(),extras=deferred();
+  const state=baseState();state.matches=[{fixtureId:7,home:{name:'Home'},away:{name:'Away'}}];
+  const h=makeController({state,api:()=>network.promise,ensureMatchCenterExtras:()=>extras.promise});
+  const pending=h.controller.openMatchCenter(7,null);
+  assert.equal(h.calls.find(x=>x[0]==='journey')[2].title,'Home — Away');
+  network.resolve({mode:'upcoming',match:{fixtureId:7}});extras.resolve();await pending;
+});
+
+test('recent center reopens synchronously while still refreshing, then expires',async()=>{
+  let clock=Date.parse('2030-01-01T10:00:00Z'),blocked=false;const network=deferred();
+  const h=makeController({now:()=>clock,api:async url=>{
+    if(blocked)return network.promise;
+    return {mode:'live',generatedAt:new Date(clock).toISOString(),match:{fixtureId:Number(new URL(url,'https://example.test').searchParams.get('fixtureId'))}};
+  }});
+  await h.controller.openMatchCenter(7,null);await h.controller.openMatchCenter(8,null);
+  h.calls.length=0;blocked=true;
+  const pending=h.controller.openMatchCenter(7,null);
+  assert.equal(h.calls.find(x=>x[0]==='render')[1].match.fixtureId,7);
+  network.resolve({mode:'live',generatedAt:new Date(clock).toISOString(),match:{fixtureId:7}});await pending;
+  h.state.currentCenter={mode:'live',match:{fixtureId:8}};clock+=16000;h.calls.length=0;
+  await h.controller.openMatchCenter(7,null);
+  assert.equal(h.calls.find(x=>x[0]==='journey')[1],'loading');
+});
+
+test('late response after modules wait cannot replace a newer match or AI action',async()=>{
+  const extras=deferred();const h=makeController({ensureMatchCenterExtras:()=>extras.promise,api:async url=>({mode:'upcoming',match:{fixtureId:Number(new URL(url,'https://example.test').searchParams.get('fixtureId'))}})});
+  const first=h.controller.openMatchCenter(7,null);await new Promise(setImmediate);
+  const second=h.controller.openMatchCenter(8,null);extras.resolve();await Promise.all([first,second]);
+  assert.equal(h.state.currentCenter.match.fixtureId,8);
+  assert.deepEqual(h.calls.filter(x=>x[0]==='render').map(x=>x[1].match.fixtureId),[8]);
+  const network=deferred();const ai=makeController({api:()=>network.promise});
+  const pending=ai.controller.openMatchCenter(7,null);ai.state.analysisRequestSeq++;
+  network.resolve({mode:'upcoming',match:{fixtureId:7}});await pending;
+  assert.equal(ai.state.currentCenter,null);
+});
+
+test('A B A navigation starts a new A request instead of joining the superseded one',async()=>{
+  const calls=[];const h=makeController({api:url=>{const gate=deferred();calls.push({id:Number(new URL(url,'https://example.test').searchParams.get('fixtureId')),gate});return gate.promise;}});
+  const a=h.controller.openMatchCenter(7,null),b=h.controller.openMatchCenter(8,null),again=h.controller.openMatchCenter(7,null);
+  assert.deepEqual(calls.map(x=>x.id),[7,8,7]);
+  for(const row of calls)row.gate.resolve({mode:'upcoming',match:{fixtureId:row.id}});
+  await Promise.all([a,b,again]);assert.equal(h.state.currentCenter.match.fixtureId,7);
+});
+
+
+test('current snapshots also respect freshness and upcoming kickoff before immediate display',async()=>{
+  const clock=Date.parse('2030-01-01T10:00:00Z');
+  for(const [mode,age,date,expected] of [
+    ['live',1000,null,true],['live',16000,null,false],
+    ['upcoming',1000,'2030-01-01T10:10:00Z',true],
+    ['upcoming',1000,'2030-01-01T09:59:00Z',false],
+    ['upcoming',61000,'2030-01-01T10:10:00Z',false],
+    ['finished',301000,null,false],
+  ]){
+    const state=baseState();state.currentCenter={mode,generatedAt:new Date(clock-age).toISOString(),match:{fixtureId:7,date}};
+    const network=deferred(),extras=deferred();const h=makeController({state,now:()=>clock,api:()=>network.promise,ensureMatchCenterExtras:()=>extras.promise});
+    const pending=h.controller.openMatchCenter(7,null);
+    assert.equal(h.calls.some(x=>x[0]==='render'),expected,`${mode}/${age}/${date}`);
+    network.resolve({mode:'finished',match:{fixtureId:7}});extras.resolve();await pending;
+  }
+});
+
+test('recent snapshot cache evicts old entries, excludes admin payloads and respects navigation away',async()=>{
+  const clock=Date.parse('2030-01-01T10:00:00Z');const h=makeController({now:()=>clock,api:async url=>{
+    const id=Number(new URL(url,'https://example.test').searchParams.get('fixtureId'));
+    return {mode:'live',generatedAt:new Date(clock).toISOString(),match:{fixtureId:id},...(id===2?{provider:{visibility:'admin'}}:{})};
+  }});
+  for(let id=1;id<=8;id++)await h.controller.openMatchCenter(id,null);
+  for(const id of [1,2]){
+    h.calls.length=0;const task=h.controller.openMatchCenter(id,null);
+    assert.equal(h.calls.some(x=>x[0]==='render'),false);await task;
+  }
+  const network=deferred();const away=makeController({api:()=>network.promise});
+  const task=away.controller.openMatchCenter(7,null);away.setView('profileView');network.resolve({mode:'live',match:{fixtureId:7}});await task;
+  assert.equal(away.state.currentCenter,null);
 });

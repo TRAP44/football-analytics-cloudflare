@@ -118,14 +118,14 @@ test('reopening the same Match Center renders warm data while the refresh and de
   const end=matchCenterController.indexOf('return Object.freeze',start);
   assert.ok(start>=0 && end>start);
   const center=matchCenterController.slice(start,end);
-  const warm=center.indexOf('const reusableCenter=previousFixtureId===id');
+  const warm=center.indexOf('const reusableCenter=recentCenter(id,previousFixtureId===id');
   const extras=center.indexOf('const extrasPromise=Promise.resolve()');
   const request=center.indexOf('requestMatchCenter(id)');
   const render=center.indexOf('safeCall(renderCenter,reusableCenter)');
   const refreshed=center.indexOf('const data=await centerLoad');
-  assert.ok(warm>=0 && extras>warm && request>extras && render>request && refreshed>render);
+  assert.ok(warm>=0 && render>warm && extras>render && request>extras && refreshed>request);
   assert.match(center,/const centerLoad=Promise\.all\(\[\s*requestMatchCenter\(id\),\s*extrasPromise,/);
-  assert.match(center,/const reusableCenter=previousFixtureId===id/);
+  assert.match(center,/const reusableCenter=recentCenter\(id,previousFixtureId===id/);
   assert.match(app,/async function openMatchCenter\(fixtureId, btn\)[\s\S]*?ensureMatchCenterController\(\)/);
 });
 

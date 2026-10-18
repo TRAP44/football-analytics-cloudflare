@@ -15,6 +15,15 @@ PR: ссылка или ветка
 ---
 
 
+
+## 2026-10-19 — Codex — Быстрый показ и повторное открытие матч-центра
+PR: ветка `codex/instant-match-opening`.
+Сделано: preload толькоcontroller после feed, выбранные команды в loadingcontext до API/extras; recent6RAMsnapshots и current snapshot рендерятся до await при generatedAt TTL15sLIVE/60supcoming+beforekickoff/300finished. Invalid/future dates и mismatched ID/mode не допускаются, admin payload не попадает в map. Серверный refresh остаётся на каждом открытии, AI grants не кешируются; новые provider calls/persistentcache не добавлены. Frontend launch128, HTML surfaces и dynamicURLs обновлены.
+Надёжность: navigation+analysisSeq+view guards после async modules и в catch, stale errors не возвращают старую страницу; A B A не joins superseded A. Existing current reuse тоже приведён кTTL после замечания reviewer. Нормальный in-flight dedupe сохранён.
+Проверки:37focused, независимый Codex (не Claude) финальныйreview без блокеров/19controller tests. Node22 npm ci/check/lint, release694/694, full4356/4356, verify:release, Worker dry-run прошли. Chromium320–1280/light+dark/first-run PASS с настроенным session proxy (первый direct запуск зависал на внешнем Telegram SDK). Осталось CI/merge/deploy по разрешению Сергея. Public renderer layout не менялся, нет SQL/секретов/Telegram send. Это уменьшение ожидания до первого содержимого, не обещание ускорения сетевого API или нового AI расчёта.
+Контекст: #960 опубликован1aed2418, deploy39163327774 и monitor39163485082 success, перенесён в Готово. Свежий read-only39166280811:match1sample1808ms,AI2samples max8391ms, отдельная новая AI длительность неизвестна; не называть её8391. Старые40pending и croncache/lease ошибки остаются отдельными вопросами, результаты вслепую не фиксировать.
+
+
 ## 2026-10-18 — Codex — Критический путь свежего анализа и LIVE-центра
 PR: [#960](https://github.com/TRAP44/football-analytics-cloudflare/pull/960), ветка `codex/analysis-critical-path`.
 Сделано: независимые market-history/calibration параллельно обогащению, roles ждут только cached intelligence и готовые lineups/absences вместо form/web/fresh season. В LIVE-центре prematch cache и timeline параллельно. Read-before-write market сохранён, все результаты дожидаются ответа; history/quota/lock/finalization/settlement не выносились в фон, public/SQL/secrets не менялись.
