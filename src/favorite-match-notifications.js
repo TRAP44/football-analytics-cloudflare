@@ -2,7 +2,7 @@
 const LIVE=new Set(['1H','HT','2H','ET','BT','P','INT','LIVE']);
 const id=value=>{const n=typeof value==='string' && /^\d+$/.test(value)?Number(value):value;return Number.isSafeInteger(n)&&n>0?n:0;};
 const text=value=>typeof value==='string'?value.replace(/[\u0000-\u001f]/g,' ').trim().slice(0,100):'';
-export function favoriteMatchRecipients(favorites,batches,now=Date.now(),limit=1000,cursor=null,wrap=true){
+export function favoriteMatchRecipients(favorites,batches,now=Date.now(),limit=1000,cursor=null,wrap=true,liveOnly=false){
   const byTeam=new Map();
   for(const row of Array.isArray(favorites)?favorites:[]){
     const user=id(row?.telegram_id),team=id(row?.team_id);if(!user||!team)continue;
@@ -21,6 +21,10 @@ export function favoriteMatchRecipients(favorites,batches,now=Date.now(),limit=1
       if(!fixtureId||!Number.isFinite(kickoff)||kickoff<now-4*3600_000)continue;
       const future=code==='NS'&&kickoff>now&&new Date(kickoff+3*3600_000).toISOString().slice(0,10)===today;
       if(!future&&!LIVE.has(code))continue;
+      if(liveOnly){
+        const raw=fixture.status?.elapsed;const minute=raw===null||raw===undefined||raw===''||typeof raw==='boolean'?NaN:Number(raw);
+        if(future||!Number.isInteger(minute)||minute<0||minute>150)continue;
+      }
       const homeId=id(item?.teams?.home?.id),awayId=id(item?.teams?.away?.id);
       if(!homeId||!awayId)continue;
       for(const teamId of [homeId,awayId])for(const [user,name] of byTeam.get(teamId)||[]){
@@ -48,6 +52,7 @@ export function recentNotificationMinutes(batches,now=Date.now()){
     const at=Date.parse(batch?.fetchedAt||'');
     if(!Number.isFinite(at)||now-at>10*60000||at>now+60000||!Array.isArray(batch.fixtures))continue;
     for(const row of batch.fixtures){
+      if(!LIVE.has(row?.fixture?.status?.short))continue;
       const raw=row?.fixture?.status?.elapsed,fixtureId=id(row?.fixture?.id);
       if(!fixtureId||raw===null||raw===undefined||raw===''||typeof raw==='boolean')continue;
       const minute=Number(raw);if(!Number.isInteger(minute)||minute<0||minute>150)continue;

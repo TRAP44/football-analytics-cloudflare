@@ -179,9 +179,8 @@ test('the in-play task runs with the other background tasks', () => {
   const jobs = fs.readFileSync('src/scheduled-jobs.js', 'utf8');
   assert.match(jobs, /run\('in_play_timeline', \(\) => processInPlayTimeline\(cfg, scheduledAt\)\)/);
   assert.match(jobs, /tasks\.push\(\['in_play_timeline', inPlayTimelineTask\]\)/);
-  // Уведомления о голах ждут точку с новым счётом.
-  // и живое табло (у кого оно есть, отдельный «Гол» не приходит).
-  assert.match(jobs, /Promise\.all\(\[importantChangeTask, inPlayTimelineTask, favoriteScoreboardTask\]\)\s*\.then\(\(\) => run\('smart_notifications'/);
+  // Короткие уведомления больше не зависят от AI-кривой и табло.
+  assert.match(jobs, /const smartNotificationsTask = run\('smart_notifications', \(\) => processSmartNotifications\(cfg\)\)/);
   const worker = fs.readFileSync('src/worker.js', 'utf8');
   assert.match(worker, /createInPlayTimelineJob\(\{/);
 });

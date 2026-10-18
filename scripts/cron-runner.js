@@ -188,16 +188,16 @@ export function degradedWarnings(tasks = []) {
     .map(row => `::warning title=Фоновая задача ${String(row.task).slice(0, 60)}::частичный сбой${row.reason ? `: ${String(row.reason).slice(0, 160)}` : ''}`);
 }
 
-export async function runCron({ worker, env, nowMs = Date.now(), timeoutMs = RUN_TIMEOUT_MS } = {}) {
+export async function runCron({ worker, env, nowMs = Date.now(), timeoutMs = RUN_TIMEOUT_MS,liveOnly=false } = {}) {
   const pending = [];
   const ctx = {
     waitUntil(promise) { pending.push(Promise.resolve(promise)); },
     passThroughOnException() {},
   };
-  const scheduledTime = cronSlot(nowMs);
+  const scheduledTime = liveOnly?Math.floor(nowMs/60000)*60000:cronSlot(nowMs);
   let timer = null;
   const work = (async () => {
-    const returned = await worker.scheduled({ scheduledTime, cron: '*/5 * * * *', noRetry() {} }, env, ctx);
+    const returned = await worker.scheduled({ scheduledTime, cron: '*/5 * * * *', ...(liveOnly?{liveNotificationsOnly:true}:{}), noRetry() {} }, env, ctx);
     // Обработчик отдаёт работу в waitUntil; ждём, пока она завершится целиком
     // (в том числе то, что добавилось по ходу).
     const settled = [];
@@ -218,6 +218,21 @@ export async function runCron({ worker, env, nowMs = Date.now(), timeoutMs = RUN
   } finally {
     clearTimeout(timer);
   }
+}
+
+// Reuse this already-started runner; do not dispatch a full workflow per minute.
+export async function runLiveWindow({runTick,now=Date.now,wait=ms=>new Promise(resolve=>setTimeout(resolve,ms)),endMs,enabled=true}={}){
+  const results=[];
+  if(!enabled||typeof runTick!=='function'||!Number.isFinite(endMs))return results;
+  for(let count=0;count<4;count++){
+    const next=(Math.floor(now()/60000)+1)*60000;
+    if(next+30000>=endMs)break;
+    await wait(Math.max(0,next-now()));
+    if(now()+30000>=endMs)break;
+    const result=await runTick(now());results.push(result);
+    if(result?.failed)break;
+  }
+  return results;
 }
 
 // Журнал исходящих запросов для диагностики: только метод, сервис, путь без
@@ -278,6 +293,16 @@ async function main() {
   console.log(`cron-runner: слот ${new Date(result.scheduledTime).toISOString()}`);
   for (const row of result.tasks) {
     console.log(redact(`  ${row.task || '—'}: ${row.status}${row.reason ? ` (${row.reason.slice(0, 200)})` : ''}`));
+  }
+  if(!result.failed && result.tasks.some(row=>row.task==='smart_notifications')){
+    const ticks=await runLiveWindow({endMs:result.scheduledTime+SLOT_MS,
+      enabled:String(process.env.LIVE_NOTIFICATIONS_FAST_ENABLED||'true').trim().toLowerCase()==='true',
+      runTick:nowMs=>runCron({worker,env,nowMs,liveOnly:true})});
+    for(const tick of ticks){
+      console.log(`live-tick: ${new Date(tick.scheduledTime).toISOString()}`);
+      for(const row of tick.tasks)console.log(redact(`  ${row.task}: ${row.status}${row.reason?` (${row.reason.slice(0,200)})`:''}`));
+      if(tick.failed)result.failed=true;
+    }
   }
   // Частичный сбой задачи (например, часть доставок в Telegram не прошла —
   // пользователь заблокировал бота) — предупреждение в Actions, а не красный

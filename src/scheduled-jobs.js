@@ -441,29 +441,27 @@ export function createScheduledJobsRuntime({
     return result;
   }
 
-  function buildScheduledTaskPlan(cfg, scheduledAt, ownershipState) {
+  function buildScheduledTaskPlan(cfg, scheduledAt, ownershipState,liveOnly=false) {
     const normalizedDate=scheduledDate(scheduledAt);
     if (!normalizedDate) throw new TypeError('scheduledAt is invalid');
     scheduledAt=normalizedDate;
     const run=(task,runner)=>runOwnedTask(task,runner,ownershipState);
+    if(liveOnly)return [['live_notifications',run('live_notifications',()=>processSmartNotifications(cfg,{liveOnly:true,maxFixtures:2,timeBudgetMs:20000}))]];
     const backtestTask = run('backtest', () => settleBacktestDaily(cfg));
     const remindersTask = run('reminders', () => processDueReminders(cfg));
     const lineupNotificationsTask = remindersTask
       .then(() => run('lineup_notifications', () => processLineupNotifications(cfg)));
     const importantChangeTask = lineupNotificationsTask
       .then(() => run('important_change_notifications', () => processImportantChangeNotifications(cfg)));
-    // Задача 3 (часть 2): точки кривой по ходу матча — до уведомлений о голах,
-    // чтобы в уведомлении была оценка уже с новым счётом.
+    // Кривая и табло обновляются независимо от коротких уведомлений.
     const inPlayTimelineTask = typeof processInPlayTimeline === 'function'
       ? run('in_play_timeline', () => processInPlayTimeline(cfg, scheduledAt))
       : null;
-    // Живое табло — после кривой (она обновляет пакет матчей дня) и ДО уведомлений
-    // о голах: те пропускают людей, у кого по матчу уже есть табло (ревью Codex #919).
+    // Табло использует пакет матчей дня, обновлённый кривой.
     const favoriteScoreboardTask = typeof processFavoriteScoreboards === 'function'
       ? Promise.resolve(inPlayTimelineTask).then(() => run('favorite_scoreboard', () => processFavoriteScoreboards(cfg, scheduledAt)))
       : null;
-    const smartNotificationsTask = Promise.all([importantChangeTask, inPlayTimelineTask, favoriteScoreboardTask])
-      .then(() => run('smart_notifications', () => processSmartNotifications(cfg)));
+    const smartNotificationsTask = run('smart_notifications', () => processSmartNotifications(cfg));
     // Morning picks and news were removed by product decision (16.10.2026).
     const postMatchPrerequisite = backtestTask;
     const tasks = [
@@ -568,7 +566,8 @@ export function createScheduledJobsRuntime({
       return [failed];
     }
 
-    const jobKey=scheduledRunKey(scheduledAt);
+    const liveOnly=controller?.liveNotificationsOnly===true && cfg?.cronRunner==='github-actions';
+    const jobKey=liveOnly?`cron-live:${scheduledAt.toISOString()}`:scheduledRunKey(scheduledAt);
     let claim={
       claimed:true,
       persistent:false,
@@ -644,7 +643,7 @@ export function createScheduledJobsRuntime({
     }
 
     try {
-      const tasks=buildScheduledTaskPlan(cfg,scheduledAt,heartbeat.state);
+      const tasks=buildScheduledTaskPlan(cfg,scheduledAt,heartbeat.state,liveOnly);
       const results=await observeScheduledTasks(cfg,tasks);
       await heartbeat.stop();
 

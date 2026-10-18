@@ -98,7 +98,7 @@ test('recipient progress does not skip fixtures deferred by the fixture limit',(
  supaSelectPaged:async(_cfg,table)=>({rows:table==='favorites'?[favorite()]:[]}),filterRecipients:async rows=>({rows}),loadFavoritePlayersByUser:async()=>new Map(),
  deliverSmartNotification:async input=>{sent.add(input.row.fixture_id);return {state:'sent'};},recordOpsEvent:async()=>{},
  });
- for(let i=0;i<5;i++)await service.processSmartNotifications({botToken:'test'});
+ for(let i=0;i<5;i++){const result=await service.processSmartNotifications({botToken:'test'});if(result.truncated)assert.equal(result.status,'degraded','a bounded page is not a hard failure');}
  assert.equal(sent.size,8,'all deferred fixtures eventually reach delivery');
 }));
 
@@ -107,4 +107,28 @@ test('yellow-card catch-up uses a fresh real match clock and never treats null a
  assert.equal(recentNotificationMinutes([batch([fixture('2H',80)])],now).get(100),70);
  assert.equal(recentNotificationMinutes([batch([fixture('HT',null)])],now).size,0);
  assert.equal(recentNotificationMinutes([{...batch([fixture('2H',80)]),fetchedAt:new Date(now-11*60000).toISOString()}],now).size,0);
+});
+
+test('fast LIVE mode excludes future/AI/player jobs and keeps normal discovery cursors separate',()=>fixed(async()=>{
+ const written=[],deliveries=[];let guarded=0;
+ const live=fixture(),future=fixture('NS',null,'2026-10-18T18:00:00Z');future.fixture.id=101;
+ const service=createSmartNotificationService({hasSupabase:()=>true,loadRuntimeControls:async()=>({value:{remindersEnabled:true}}),
+ getCache:async key=>key==='provider-fixtures:2026-10-18:v1'?batch([live,future]):null,setCache:async key=>written.push(key),
+ supaSelectPaged:async(_cfg,table)=>({rows:table==='favorites'?[favorite()]:[]}),filterRecipients:async rows=>({rows}),
+ prepareLiveNotificationConfig:async cfg=>{guarded++;return {...cfg,guarded:true};},
+ loadFavoritePlayersByUser:async()=>assert.fail('not a fast job'),loadLineupSnapshot:async()=>assert.fail('not a fast job'),getAnalysisTimelineSnapshots:async()=>assert.fail('not a fast job'),
+ loadLiveNotificationSnapshot:async(_id,cfg)=>{assert.equal(cfg.guarded,true);return {trusted:true,stale:false,events:[{minute:20,type:'Goal',detail:'Normal Goal',teamId:11,playerId:10,eventKey:'goal'}]};},
+ deliverSmartNotification:async input=>{deliveries.push(input);return {state:'sent'};},recordOpsEvent:async()=>{},
+ });
+ await service.processSmartNotifications({botToken:'test'},{liveOnly:true});
+ assert.equal(guarded,1);assert.deepEqual(deliveries.map(x=>x.eventType),['match.goal']);
+ assert.ok(written.length>0);assert.ok(written.every(key=>key.includes(':live-')));
+}));
+
+test('LIVE discovery filters future pairs before its limit so future matches cannot pin the LIVE cursor',()=>{
+ const favorites=Array.from({length:1100},(_,i)=>favorite(i+1));favorites.push(favorite(1101,33));
+ const upcoming=fixture('NS',null,'2026-10-18T18:00:00Z');
+ const active=fixture();active.fixture.id=200;active.teams.home.id=33;active.teams.away.id=44;
+ const result=favoriteMatchRecipients(favorites,[batch([upcoming,active])],now,1000,null,false,true);
+ assert.deepEqual(result.rows.map(x=>x.telegram_id),[1101]);assert.equal(result.cursor.userId,1101);
 });

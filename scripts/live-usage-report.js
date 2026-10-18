@@ -1,4 +1,4 @@
-// Only bounded GET projections of ops_events. Never select messages, user IDs or raw metadata.
+// Only bounded GET projections of operational events and public fixture kickoff dates. Never select messages, user IDs or raw metadata.
 import {mkdirSync,writeFileSync,appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 const PAGE=250,MAX_PAGES=4;
@@ -43,6 +43,13 @@ export function summarizeScoreboards(rows){
     note:'Counters count attempts across runs; deferred is not a unique backlog. Successful Telegram API calls do not prove reading or timely delivery.'};
 }
 
+export function summarizeAlerts(rows){
+  const counters=['sent','duplicate','failed','unknown','fixturesChecked','checked'];
+  const totals=Object.fromEntries(counters.map(key=>[key,0]));let invalidCounters=0;
+  for(const row of rows)for(const key of counters){const value=integer(row?.[key]);if(value===null)invalidCounters++;else totals[key]+=value;}
+  return {runEvents:rows.length,totals,invalidCounters,evidence:rows.length?'observed_activity':'no_activity_evidence',note:'Persisted aggregate run events, not unique deliveries or proof that a user read the message.'};
+}
+
 function summarizeErrors(rows){
   const counts={};let uncategorized=0;
   for(const row of rows){
@@ -82,12 +89,13 @@ export async function collectLiveUsage({env={},fetchImpl=fetch,now=new Date()}={
   if(base.protocol!=='https:' || base.username || base.password || base.search || base.hash || base.pathname!=='/' || !base.hostname.endsWith('.supabase.co') || typeof key!=='string' || !key.trim())throw new Error('Existing Supabase configuration is required.');
   if(!(now instanceof Date)||!Number.isFinite(now.getTime()))throw new Error('Invalid observation time.');
   const end=now.toISOString(),start=new Date(now.getTime()-6*3600000).toISOString();
-  async function read(select,filters){
+  async function read(select,filters,table='ops_events'){
     const rows=[];let pages=0;
     for(let page=0;page<MAX_PAGES;page++){
-      const url=new URL('/rest/v1/ops_events',base);
-      for(const [name,value] of Object.entries({select,...filters,order:'created_at.desc',limit:String(PAGE),offset:String(page*PAGE)}))url.searchParams.set(name,value);
-      url.searchParams.set('and',`(created_at.gte.${start},created_at.lte.${end})`);
+      if(!['ops_events','model_predictions'].includes(table))throw new Error('Invalid observation table.');
+      const url=new URL(`/rest/v1/${table}`,base);
+      for(const [name,value] of Object.entries({select,...filters,order:table==='model_predictions'?'kickoff_at.asc':'created_at.desc',limit:String(PAGE),offset:String(page*PAGE)}))url.searchParams.set(name,value);
+      if(table==='ops_events')url.searchParams.set('and',`(created_at.gte.${start},created_at.lte.${end})`);
       let result;
       try{
         const response=await fetchImpl(url,{method:'GET',redirect:'error',headers:{apikey:key,Accept:'application/json'},signal:AbortSignal.timeout(10000)});
@@ -100,14 +108,19 @@ export async function collectLiveUsage({env={},fetchImpl=fetch,now=new Date()}={
     }
     return {rows,pages,truncated:true};
   }
-  // Sequential reads keep pressure bounded; at most 12 requests / 3000 rows total.
+  // Sequential reads keep pressure bounded; at most20requests /5000rows total.
   const timings=await read('duration_ms,reason:metadata->>reason',{source:'eq.client',event_type:'eq.client_telemetry',code:'eq.OPERATION_TIMING'});
   const boards=await read(['code',...COUNTERS.map(x=>`${x}:metadata->>${x}`),'stopped:metadata->>stopped','capped:metadata->>capped'].join(','),{source:'eq.favorite_scoreboard',event_type:'eq.favorite_scoreboard_run',code:'in.(FAVORITE_SCOREBOARD_RUN,FAVORITE_SCOREBOARD_PARTIAL)'});
   const errors=await read(['code','duration_ms','httpStatus:metadata->>httpStatus','failureKind:metadata->>failureKind',...STAGES.map(key=>`${key}:metadata->>${key}`)].join(','),{or:'(severity.in.(warning,error,critical),code.eq.ANALYSIS_SLOW_REQUEST)'});
+  const alerts=await read('code,sent:metadata->>sent,duplicate:metadata->>duplicate,failed:metadata->>failed,unknown:metadata->>unknown,fixturesChecked:metadata->>fixturesChecked,checked:metadata->>checked',{source:'eq.smart_notifications',event_type:'eq.smart_notification_scheduler',code:'in.(SMART_NOTIFICATION_RUN_OK,SMART_NOTIFICATION_RUN_DEGRADED)'});
+  const pending=await read('kickoff_at',{status:'eq.pending',kickoff_at:`lt.${new Date(now.getTime()-86400000).toISOString()}`},'model_predictions');
+  const dates=pending.rows.map(row=>typeof row.kickoff_at==='string'&&/^\d{4}-\d{2}-\d{2}T/.test(row.kickoff_at)?Date.parse(row.kickoff_at):NaN);
+  const validDates=dates.filter(Number.isFinite);
+  const pendingResults={olderThan24hAtLeast:pending.rows.length,oldestKickoffDay:validDates.length?new Date(Math.min(...validDates)).toISOString().slice(0,10):null,invalidRows:dates.length-validDates.length,truncated:pending.truncated,note:'Old pending includes postponed matches; no result is inferred or written.'};
   return {scope:'Read-only production observations, not a load test or capacity proof',window:{start,end,hours:6},
-    coverage:{timings:{pages:timings.pages,truncated:timings.truncated},scoreboards:{pages:boards.pages,truncated:boards.truncated},errors:{pages:errors.pages,truncated:errors.truncated}},
-    timings:summarizeTimings(timings.rows),scoreboards:summarizeScoreboards(boards.rows),errors:summarizeErrors(errors.rows),analysisDiagnostics:summarizeAnalysisDiagnostics(errors.rows),
-    complete:![timings,boards,errors].some(x=>x.truncated),productionCapacityConfirmed:false,
+    coverage:{timings:{pages:timings.pages,truncated:timings.truncated},scoreboards:{pages:boards.pages,truncated:boards.truncated},errors:{pages:errors.pages,truncated:errors.truncated},pending:{pages:pending.pages,truncated:pending.truncated},alerts:{pages:alerts.pages,truncated:alerts.truncated}},
+    timings:summarizeTimings(timings.rows),scoreboards:summarizeScoreboards(boards.rows),errors:summarizeErrors(errors.rows),analysisDiagnostics:summarizeAnalysisDiagnostics(errors.rows),pendingResults,alerts:summarizeAlerts(alerts.rows),
+    complete:![timings,boards,errors,pending,alerts].some(x=>x.truncated),productionCapacityConfirmed:false,
     limitations:['Client timing is observational, may include failed operations, can be missing, and does not distinguish cache from fresh AI.',
       'Offset pagination is bounded and best effort, not a transactional snapshot; concurrent inserts can shift page boundaries.',
       'No user identifiers are queried: sample counts are events, not unique people.',
@@ -120,6 +133,8 @@ export function usageMarkdown(report){
     `Полнота выборки: ${report.complete?'лимит страниц не достигнут':'ограниченная выборка — достигнут лимит страниц'}`,'',
     '| Операция | Замеры | p50, мс | p95, мс | Данные |','|---|---:|---:|---:|---|',
     ...OPERATIONS.map(key=>{const x=report.timings.operations[key];return `| ${key} | ${x.samples} | ${x.p50Ms??'—'} | ${x.p95Ms??'—'} | ${x.evidence} |`;}),'',
+    `Старые pending (старше24ч, нижняя граница при ограничении): ${report.pendingResults?.olderThan24hAtLeast??'не проверено'}; самая ранняя дата: ${report.pendingResults?.oldestKickoffDay??'нет данных'}. Результаты не изменялись.`,
+    `Короткие уведомления: ${JSON.stringify(report.alerts)}.`,
     `LIVE: событий запусков ${report.scoreboards.runEvents}; частичных ${report.scoreboards.partialRuns}; ограниченных бюджетом ${report.scoreboards.cappedRuns}; ${JSON.stringify(report.scoreboards.totals)}.`,
     `Максимум oldestWaitSec: ${report.scoreboards.maxOldestWaitSec??'нет данных'}. Отложенные сообщения — сумма попыток, не число уникальных людей.`,
     `Ошибки/предупреждения по коду: ${JSON.stringify(report.errors.byCode)}.`,

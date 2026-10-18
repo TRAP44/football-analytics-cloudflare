@@ -1,4 +1,4 @@
-// Only the prematch background job uses this budget. Interactive requests
+// Prematch jobs and extra LIVE notification ticks share this budget. Interactive requests
 // never receive its internal admission capability.
 export const PREMATCH_PROVIDER_BUDGET_PREFIX='prematch-provider-requests';
 export const PREMATCH_PRO_DAILY_LIMIT=7500;

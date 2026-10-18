@@ -461,6 +461,7 @@ function lineupPlayerIds(team = {}) {
 
 export function createSmartNotificationService({
   hasSupabase,
+  prepareLiveNotificationConfig,
   getCache,
   setCache,
   loadRuntimeControls,
@@ -488,7 +489,11 @@ export function createSmartNotificationService({
     return await filterRecipients(rows, eventType, cfg);
   }
 
-  async function processSmartNotifications(cfg) {
+  async function processSmartNotifications(cfg,{liveOnly=false,maxFixtures=2,timeBudgetMs=20000}={}) {
+    const startedAt=Date.now();
+    const exhausted=()=>liveOnly && Date.now()-startedAt>=timeBudgetMs;
+    const recipientCursorKey=liveOnly?'smart-notifications:live-favorite-recipient-cursor:v1':'smart-notifications:favorite-recipient-cursor:v1';
+    const fixtureCursorKey=liveOnly?'smart-notifications:live-fixture-cursor:v1':'smart-notifications:fixture-cursor:v1';
     if (!hasSupabase?.(cfg) || !cfg?.botToken) {
       return { ok: true, checked: 0, fixturesChecked: 0, sent: 0, duplicate: 0, cooldown: 0, failed: 0, unknown: 0 };
     }
@@ -542,7 +547,7 @@ export function createSmartNotificationService({
     if(typeof getCache==='function'){
       try{
         const [cursor,...batches]=await Promise.all([
-          getCache('smart-notifications:favorite-recipient-cursor:v1',cfg),
+          getCache(recipientCursorKey,cfg),
           ...[-1,0,1].map(offset=>getCache(`provider-fixtures:${new Date(now+offset*86400_000).toISOString().slice(0,10)}:v1`,cfg)),
         ]);
         recentMinutes=recentNotificationMinutes(batches,now);
@@ -553,10 +558,10 @@ export function createSmartNotificationService({
           return page;
         };
         let followed=await readFavorites(cursor);
-        favorites=favoriteMatchRecipients(followed.rows,batches,now,1000,cursor,false);
+        favorites=favoriteMatchRecipients(followed.rows,batches,now,1000,cursor,false,liveOnly);
         if(!favorites.rows.length && cursor && !followed.truncated){
           followed=await readFavorites(null);
-          favorites=favoriteMatchRecipients(followed.rows,batches,now,1000,null,false);
+          favorites=favoriteMatchRecipients(followed.rows,batches,now,1000,null,false,liveOnly);
         }
         if(!favorites.cursor && followed.truncated){
           const uid=positiveSafeInteger(followed.rows.at(-1)?.telegram_id);
@@ -574,13 +579,13 @@ export function createSmartNotificationService({
       if(existing)combined.set(key,{...existing,_favoriteTeams:row._favoriteTeams,_favoriteOpponent:row._favoriteOpponent,_favoriteToday:row._favoriteToday});
       else combined.set(key,row);
     }
-    const rows = [...combined.values()];
+    const rows = [...combined.values()].filter(row=>!liveOnly || recentMinutes.has(Number(row.fixture_id)) && Date.parse(row.fixture_date)<=now);
     const groupedRows = groupByFixture(rows);
-    const fixtureLimit = positiveSafeInteger(maxFixturesPerRun)
-      || SMART_NOTIFICATION_POLICY.maxFixturesPerRun;
+    const fixtureLimit = liveOnly?Math.min(2,positiveSafeInteger(maxFixtures)||2):(positiveSafeInteger(maxFixturesPerRun)
+      || SMART_NOTIFICATION_POLICY.maxFixturesPerRun);
     let entries=[...groupedRows.entries()];
     if(typeof getCache==='function'&&typeof setCache==='function'&&entries.length>fixtureLimit){
-      const cursor=positiveSafeInteger(await getCache('smart-notifications:fixture-cursor:v1',cfg).catch(()=>null));
+      const cursor=positiveSafeInteger(await getCache(fixtureCursorKey,cfg).catch(()=>null));
       entries.sort((a,b)=>a[0]-b[0]);
       const next=entries.findIndex(([id])=>id>cursor);
       if(next>0)entries=[...entries.slice(next),...entries.slice(0,next)];
@@ -604,8 +609,16 @@ export function createSmartNotificationService({
       truncated,
     };
 
+    if(liveOnly && exhausted())return {...summary,skipped:'live_discovery_budget'};
+    if(liveOnly && groups.length){
+      if(typeof prepareLiveNotificationConfig!=='function')return {...summary,skipped:'live_budget_unavailable'};
+      const guarded=await prepareLiveNotificationConfig(cfg).catch(()=>null);
+      if(!guarded)return {...summary,skipped:'live_provider_reserve'};
+      cfg=guarded;
+    }
+    const deferredFixtures=new Set();
     let favoritesByUser = new Map();
-    if (typeof loadFavoritePlayersByUser === 'function') {
+    if (!liveOnly && typeof loadFavoritePlayersByUser === 'function') {
       try {
         const loadedFavorites = await loadFavoritePlayersByUser(rows.filter(row=>!row._favoriteOnly), cfg);
         if (loadedFavorites instanceof Map) favoritesByUser = loadedFavorites;
@@ -655,6 +668,7 @@ export function createSmartNotificationService({
       }
     };
     const safeDeliver = async input => {
+      if(exhausted()){deferredFixtures.add(Number(input?.row?.fixture_id));summary.truncated=true;return;}
       try {
         if (typeof deliverSmartNotification !== 'function') {
           throw new Error('smart notification delivery unavailable');
@@ -678,11 +692,12 @@ export function createSmartNotificationService({
     };
 
     for (const [fixtureId, recipients] of groups) {
+      if(exhausted()){deferredFixtures.add(fixtureId);summary.truncated=true;continue;}
       const fixtureDate = Date.parse(recipients[0]?.fixture_date || '');
       const minutesToKickoff = Number.isFinite(fixtureDate) ? (fixtureDate - now) / 60000 : null;
       // An edited scoreboard is silent in Telegram: send the short goal alert too.
       const matchGoalAudience = await safeAudience(recipients, 'match.goal');
-      const explicitRecipients=recipients.filter(row=>!row._favoriteOnly);
+      const explicitRecipients=liveOnly?[]:recipients.filter(row=>!row._favoriteOnly);
       const playerAudience = await safeAudience(explicitRecipients, 'player.goal');
       const aiAudience = await safeAudience(explicitRecipients, 'ai.probability_change');
       for(const row of recipients.filter(row=>row._favoriteToday)){
@@ -695,6 +710,7 @@ export function createSmartNotificationService({
       }
 
 
+      if(exhausted()){deferredFixtures.add(fixtureId);summary.truncated=true;continue;}
       if (minutesToKickoff !== null && minutesToKickoff <= 5 && minutesToKickoff >= -240
           && (matchGoalAudience.length || playerAudience.length)) {
         let snapshot = null;
@@ -880,7 +896,7 @@ export function createSmartNotificationService({
     }
 
     if(Object.hasOwn(favorites,'cursor') && typeof setCache==='function'){
-      const processed=new Set(groups.map(([fixtureId])=>fixtureId));
+      const processed=new Set(groups.map(([fixtureId])=>fixtureId).filter(id=>!deferredFixtures.has(id)));
       let progress=null,complete=true;
       for(const row of favorites.rows){
         if(!processed.has(row.fixture_id)){complete=false;break;}
@@ -889,14 +905,15 @@ export function createSmartNotificationService({
       // Never move a recipient page past a fixture deferred by the run limit.
       const nextCursor=complete ? (favorites.cursor||{userId:0,fixtureId:0}) : progress;
       if(nextCursor){
-        try{await setCache('smart-notifications:favorite-recipient-cursor:v1',0,nextCursor,cfg,60);}
+        try{await setCache(recipientCursorKey,0,nextCursor,cfg,60);}
         catch{summary.failed+=1;}
       }
     }
-    if(groups.length && typeof setCache==='function'){
-      try{await setCache('smart-notifications:fixture-cursor:v1',0,groups.at(-1)[0],cfg,60);}
+    if(groups.some(([id])=>!deferredFixtures.has(id)) && typeof setCache==='function'){
+      try{await setCache(fixtureCursorKey,0,groups.filter(([id])=>!deferredFixtures.has(id)).at(-1)[0],cfg,60);}
       catch{summary.failed+=1;}
     }
+    if(summary.truncated && !summary.failed && !summary.unknown){summary.status='degraded';summary.reason=liveOnly?'bounded_live_tick':'bounded_notification_page';}
     summary.ok = !(summary.failed || summary.unknown || summary.truncated);
     if (summary.sent || summary.failed || summary.unknown || summary.truncated || summary.blockedByEntitlement || summary.blockedByPreference) {
       await recordOpsEvent?.(cfg, {
