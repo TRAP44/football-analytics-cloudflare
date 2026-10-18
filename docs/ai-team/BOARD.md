@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Исправить запуск реальной проверки AI: убрать отключающий remote bindings флаг Wrangler; повторить service verification — **Codex** — `codex/match-chat-remote-binding`.
 
 
 
@@ -42,6 +41,8 @@
 
 
 ## На ревью
+
+- [ ] Исправить запуск реальной проверки AI: убрать отключающий remote bindings флаг Wrangler; повторить service verification — **Codex** — [PR #952](https://github.com/TRAP44/football-analytics-cloudflare/pull/952), `codex/match-chat-remote-binding`.
 
 
 

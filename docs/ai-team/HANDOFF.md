@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-18 — Codex — Remote AI проверка: Wrangler --local отключал binding
-PR: ветка `codex/match-chat-remote-binding`.
+PR: [#952](https://github.com/TRAP44/football-analytics-cloudflare/pull/952), ветка `codex/match-chat-remote-binding`.
 Сделано: #951 слит как e5b20961, все четыре PR gates прошли. Verify Match Chat 39113243156 завершился отказом old/current binding, но это не доказывает отказ реального AI: pinned Wrangler 4.149.0 при args.local выставляет dev.remote=false и пропускает remote proxy session. Удалён --local: обычный dev исполняет fixture локально, разрешая ai.remote=true; loopback, nonce, отсутствие production endpoint и main-only workflow сохранены. Добавлен контракт на этот существенный CLI режим.
 Проверка: npm ci/check/lint, release621/621, full4291/4291; независимый reviewer проверил pinned Wrangler и 5 harness tests, блокеров нет. После merge повторить реальный probe. Production Telegram end-to-end всё ещё не подтверждён. Не называть чат рабочим до успешного remote handler результата. Модельные ошибки первого прогона не считать доказанной причиной production проблемы.
 Решение: это исправление нашего verification harness, не очередной тест вместо ускорения: продуктовые исправления уже в #951. Сергей ранее разрешил применять проверенные исправления без повторного ручного merge.
