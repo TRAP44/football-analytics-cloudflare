@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createSettlementRuntime} from '../src/settlement-runtime.js';
 import {settlementDependencies} from '../test-support/runtime-deps.js';
 import {runCron} from '../scripts/cron-runner.js';
-function harness({maintenance=false,remaining=7000,truncated=false,verified=true,circuit=false}={}){
+function harness({maintenance=false,remaining=7000,truncated=false,verified=true,circuit=false,auditFail=false}={}){
   const calls=[],audits=[];
   const rows=Array.from({length:45},(_,i)=>({fixture_id:i+1,status:'pending',kickoff_at:new Date(Date.now()-(i+2)*86400000).toISOString()}));
   const controls={autoSettlementRecoveryEnabled:false,maintenanceMode:maintenance,revision:1};
@@ -17,7 +17,7 @@ function harness({maintenance=false,remaining=7000,truncated=false,verified=true
     supaSelectPaged:async(_cfg,table,filter)=>{assert.deepEqual(filter,{status:'eq.pending'});return {rows,truncated};},
     supaSelectMany:async()=>[],supaSelectOne:async()=>circuit?{consecutive_failures:3,circuit_open_until:new Date(Date.now()+3600000).toISOString(),last_status:'failed'}:null,
     supaInsertIgnore:async(_cfg,table,row)=>{calls.push(table);audits.push(row);},
-    supaPatch:async(_cfg,table)=>{calls.push(table);},supaUpsert:async(_cfg,table)=>{calls.push(table);},
+    supaPatch:async(_cfg,table)=>{calls.push(table);if(auditFail && table==='prediction_integrity_actions')throw Error('audit unavailable');},supaUpsert:async(_cfg,table)=>{calls.push(table);},
     loadProviderFixturesForDate:async()=>{calls.push('fixtures');return [];},
     loadRuntimeControls:async()=>({source:verified?'supabase':'memory',value:controls}),stalePredictionCandidates:r=>r,
     providerSnapshot:()=>snapshot,loadSharedProviderState:async()=>{},probeProviderStatus:async()=>snapshot,
@@ -64,5 +64,15 @@ test('runtime and circuit blocks are explicit skipped results rather than a clai
   for(const [opts,reason] of [[{verified:false},'runtime_unverified'],[{circuit:true},'circuit_open']]){
     const h=harness(opts);const result=await h.rt.runSettlementWatchdog({cronRunner:'github-actions',supabaseUrl:'https://example.supabase.co',apiFootballKey:'test'},{manual:true});
     assert.equal(result.skipped,reason);assert.equal(h.calls.includes('fixtures'),false);assert.equal(h.calls.includes('model_predictions'),false);
+  }
+});
+
+
+test('missing provider finals and an unfinished audit remain degraded without invented results',async()=>{
+  for(const auditFail of [false,true]){
+    const h=harness({auditFail});const result=await h.rt.runSettlementWatchdog({cronRunner:'github-actions',supabaseUrl:'https://example.supabase.co',apiFootballKey:'test'},{manual:true});
+    assert.equal(result.status,'degraded');assert.equal(result.settledCount,0);assert.equal(result.skippedCount,40);
+    assert.equal(result.reason,auditFail?'manual_recovery_audit_pending':'manual_recovery_partial');
+    assert.equal(h.calls.filter(x=>x==='fixtures').length,40);assert.equal(h.calls.includes('model_predictions'),false);
   }
 });

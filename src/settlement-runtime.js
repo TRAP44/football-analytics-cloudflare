@@ -2130,7 +2130,7 @@ export function createSettlementRuntime(deps) {
           ...executionResult,
           auditPending: true,
         }, cfg, 1440).catch(() => null);
-        return { ok: true, ...baseMeta, actionId, ...executionResult, auditPending: true };
+        return { ok: true, ...baseMeta, actionId, ...executionResult, auditPending: true,...(manual?{status:'degraded',reason:'manual_recovery_audit_pending'}:{} ) };
       }
       await noteSettlementWatchdogOutcome(cfg, 'failed', { actionId, error: redactOpsString(error?.message || error, 180) }).catch(() => null);
       const failurePatch = {

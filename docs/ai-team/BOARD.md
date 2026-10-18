@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Разовая сверка40pending с официальным источником без включения автоматического восстановления — **Codex** — `codex/manual-pending-recovery`.
 
 
 
@@ -52,6 +51,8 @@
 
 
 ## На ревью
+
+- [ ] Разовая сверка40pending с официальным источником без включения автоматического восстановления — **Codex** — `codex/manual-pending-recovery`. — [PR #963](https://github.com/TRAP44/football-analytics-cloudflare/pull/963).
 
 
 
