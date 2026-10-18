@@ -8,11 +8,12 @@ const NOW = Date.parse('2026-10-12T12:00:00.000Z');
 const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const json = (body, status = 200) => ({ status, body });
 
-function harness({ predictions = {}, picks = [], users = [], clock = NOW } = {}) {
+function harness({ predictions = {}, picks = [], users = [], clock = NOW, fixtureLoader = null } = {}) {
   const upserts = [];
   const selects = [];
   const rt = createMatchPicksRuntime({
-    clock: () => clock,
+    clock: () => typeof clock === 'function' ? clock() : clock,
+    loadProviderFixture:fixtureLoader || (async id=>({fixture:{id,date:predictions[id]?.kickoff_at,status:{short:'NS'}}})),
     hasSupabase: () => true,
     json,
     supaSelectMany: async (_cfg, table, filters, options) => {
@@ -239,4 +240,57 @@ test('wiring: routes, rate limits, UI mount points and the private table migrati
   assert.match(sql, /grant select, insert, update, delete on table public\.match_picks to service_role;/);
   assert.equal(sql.match(/'sensitive_mutation_idempotency',\n {6}'match_picks'\n {4}\)/g)?.length, 3, 'legacy v1 fingerprint excludes the table');
   assert.doesNotMatch(sql, /drop /i);
+});
+
+test('earlier kickoff and LIVE status lock picks even while immutable model snapshot is future',async()=>{
+  for(const fixture of [
+    {id:7,date:'2026-10-12T11:00:00Z',status:{short:'NS'}},
+    {id:7,date:upcoming.kickoff_at,status:{short:'1H'}},
+    {id:7,date:upcoming.kickoff_at,status:{short:'PST'}},
+    {id:7,date:upcoming.kickoff_at,status:{short:'FT'}},
+  ]) {
+    const h=harness({predictions:{7:upcoming},picks:[{telegram_id:5,fixture_id:7,pick:'away'}],fixtureLoader:async()=>({fixture})});
+    const read=await h.rt.apiMatchPickGet(get(7),{},user);
+    assert.equal(read.body.open,false);
+    const save=await h.rt.apiMatchPickSave(post({fixtureId:7,pick:'home'}),{},user);
+    assert.equal(save.status,409);assert.equal(save.body.open,false);assert.equal(save.body.pick,'away');
+    assert.equal(h.upserts.length,0);
+  }
+});
+
+test('saving forces current fixture verification; earlier future kickoff is persisted as cutoff',async()=>{
+  const calls=[];
+  const h=harness({predictions:{7:upcoming},fixtureLoader:async(id,cfg,options)=>{
+    calls.push(options);return {fixture:{id,date:'2026-10-12T13:00:00Z',status:{short:'NS'}}};
+  }});
+  assert.equal((await h.rt.apiMatchPickGet(get(7),{},user)).body.kickoffAt,'2026-10-12T13:00:00.000Z');
+  assert.equal((await h.rt.apiMatchPickSave(post({fixtureId:7,pick:'draw'}),{},user)).status,200);
+  assert.deepEqual(calls,[{forceRefresh:false},{forceRefresh:true}]);
+  assert.equal(h.upserts[0].row.kickoff_at,'2026-10-12T13:00:00.000Z');
+});
+
+test('unavailable, mismatched or malformed current fixture never permits saving',async()=>{
+  for(const fixtureLoader of [async()=>null,async()=>{throw new Error('provider quota');},
+    async()=>({fixture:{id:8,date:upcoming.kickoff_at,status:{short:'NS'}}}),
+    async()=>({fixture:{id:7,date:'invalid',status:{short:'NS'}}}),
+    async()=>({fixture:{id:7,date:upcoming.kickoff_at}})]) {
+    const h=harness({predictions:{7:upcoming},fixtureLoader});
+    assert.equal((await h.rt.apiMatchPickGet(get(7),{},user)).status,503);
+    const save=await h.rt.apiMatchPickSave(post({fixtureId:7,pick:'draw'}),{},user);
+    assert.equal(save.status,503);assert.equal(save.body.code,'PICK_STATUS_UNAVAILABLE');
+    assert.equal(h.upserts.length,0);
+  }
+});
+
+test('source delay crossing kickoff locks pick and later postponement cannot reopen snapshot',async()=>{
+  let at=NOW;let calls=0;
+  const h=harness({predictions:{7:upcoming},clock:()=>at,fixtureLoader:async()=>{
+    calls++;at=Date.parse(upcoming.kickoff_at);
+    return {fixture:{id:7,date:upcoming.kickoff_at,status:{short:'NS'}}};
+  }});
+  assert.equal((await h.rt.apiMatchPickSave(post({fixtureId:7,pick:'draw'}),{},user)).status,409);
+  assert.equal(h.upserts.length,0);
+  const later=harness({predictions:{7:upcoming},clock:Date.parse(upcoming.kickoff_at),fixtureLoader:async()=>{throw new Error('must not reopen');}});
+  assert.equal((await later.rt.apiMatchPickSave(post({fixtureId:7,pick:'home'}),{},user)).status,409);
+  assert.equal(calls,1);
 });

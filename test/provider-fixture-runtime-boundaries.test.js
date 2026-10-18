@@ -343,3 +343,18 @@ test('team discovery never reuses a cache envelope belonging to a different team
   assert.deepEqual(rows.map(x=>x.fixture.id),[55]);
   assert.equal(calls.length,2);
 });
+
+test('forced fixture verification bypasses a cached prematch row and propagates source restrictions',async()=>{
+  const old=fixture(123,'NS');const live=fixture(123,'1H',5);let calls=0;
+  const runtime=createProviderFixtureRuntime(deps({
+    getCache:async key=>key==='provider-fixture:123:v1' ? {fixtureId:123,fixture:old,fetchedAt:new Date().toISOString()} : null,
+    apiFootball:async(path,params)=>{assert.equal(path,'/fixtures');assert.deepEqual(params,{id:123});calls++;return [live];},
+  }));
+  assert.equal((await runtime.loadProviderFixture(123,{})).fixture.status.short,'NS');assert.equal(calls,0);
+  assert.equal((await runtime.loadProviderFixture(123,{},{forceRefresh:true})).fixture.status.short,'1H');assert.equal(calls,1);
+  const limited=createProviderFixtureRuntime(deps({
+    getCache:async()=>({fixtureId:123,fixture:old,fetchedAt:new Date().toISOString()}),
+    apiFootball:async()=>{throw Object.assign(new Error('source limited'),{code:'FOOTBALL_RATE_LIMIT'});},
+  }));
+  await assert.rejects(limited.loadProviderFixture(123,{},{forceRefresh:true}),/source limited/);
+});
