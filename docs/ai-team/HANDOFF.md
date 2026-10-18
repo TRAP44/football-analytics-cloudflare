@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-18 — Codex — Дополнительные LIVE ticks в тёплом GitHub runner
-PR: ветка `codex/live-notification-fast-window`.
+PR: [#959](https://github.com/TRAP44/football-analytics-cloudflare/pull/959), ветка `codex/live-notification-fast-window`.
 Сделано: полный dispatch/cron остаётся5мин, уже запущенный runner после полного прохода использует остаток окна для minute LIVE ticks (до4, без новых workflows). Только активные матчи с реальным clock, до2fixtures; soft admission budget20с, отдельные LIVE курсоры, та же cron-global lease с minute job key. Без AI/lineups/day/scoreboard fanout. Короткие уведомления в полном проходе больше не ждут unrelated цепочку. Репозиторная переменная LIVE_NOTIFICATIONS_FAST_ENABLED=false отключает extra ticks без деплоя; пусто — включены.
 Бюджеты: каждая реальная extra API попытка через прежний Supabase relay/gateway вызывает существующий prematchProviderClaim. Делит prematch-provider-requests allowance с предматчевым фоном:25%, максимум1875 при PRO7500; при оставшейся половине квоты/неподтверждённом снимке/ошибке claim — отказ. Статус snapshot восстанавливается существующим /status. User quota/history не трогаются. SQL/public/secrets не менялись.
 Наблюдения: read-only Observe Live Usage39152358565 — нет новых клиентских AI timings/scoreboard событий, один INVALID_AUTH_BURST_BLOCKED; этого недостаточно для выводов о скорости/доставке. Последние6 обычных cron успешны, запускаются5мин, полный workflow около1мин. Отчёт расширен narrow GET kickoff-only pending>24h (только число/старая дата) и фиксированными counters smart notifications; без ID/сообщений/фиксации результатов. После merge обязательно повторить отчёт.

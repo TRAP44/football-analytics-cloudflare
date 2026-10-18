@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Быстрые LIVE-уведомления между пятиминутными запусками и свежие наблюдения — **Codex** — `codex/live-notification-fast-window`.
 
 
 
@@ -48,6 +47,8 @@
 
 
 ## На ревью
+
+- [ ] Быстрые LIVE-уведомления между пятиминутными запусками и свежие наблюдения — **Codex** — `codex/live-notification-fast-window`. — [PR #959](https://github.com/TRAP44/football-analytics-cloudflare/pull/959).
 
 
 
