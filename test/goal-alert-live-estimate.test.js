@@ -50,11 +50,11 @@ test('a red-card alert needs an estimate that already counts the dismissal for t
   assert.equal(inPlayEstimateLine(row, { ...estimate, reds: { home: 'x', away: 0 } }, [goal], NOW), '');
 });
 
-test('the alert asks for the estimate once per fixture and only when there is a goal or red card', async () => {
+test('short event alerts omit model estimates and avoid an extra estimate lookup', async () => {
   const fs = await import('node:fs');
   const source = fs.readFileSync('src/smart-notification-service.js', 'utf8');
-  assert.match(source, /snapshotEvents\.some\(event => matchEventType\(event\)\)/);
-  assert.match(source, /text: matchEventMessage\(row, event, basicType, inPlayEstimateLine\(row, estimate, snapshotEvents\)\)/);
+  assert.doesNotMatch(source, /await loadLatestInPlayEstimate\(/);
+  assert.match(source, /text: matchEventMessage\(row, event, basicType\)/);
   const wiring = fs.readFileSync('src/service-wiring-runtime.js', 'utf8');
   assert.match(wiring, /loadLatestInPlayEstimate: getLatestInPlayEstimate/);
   const worker = fs.readFileSync('src/worker.js', 'utf8');

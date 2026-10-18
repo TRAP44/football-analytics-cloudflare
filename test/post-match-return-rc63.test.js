@@ -17,7 +17,7 @@ test('RC63 selects only analyzed matches old enough to be finished',()=> {
 
 test('return message compares pre-match model with final fact',()=> {
   assert.match(returns,/function postMatchReturnMessage\(/);
-  assert.match(returns,/Матч завершён · MatchRadar AI/);
+  assert.match(returns,/Матч завершён<\/b>/);
   assert.match(returns,/Исход модели/);
   assert.match(returns,/Открыть итог AI/);
   assert.match(returns,/match:return_review:/);
@@ -125,4 +125,17 @@ test('RC63 return filtering and prediction lookup reject invalid collection entr
   assert.equal(result.rows[0].telegram_id,42);
   await runtime.loadPostMatchReturnPredictions([true,[],{},0],{});
   assert.equal(predictionQueries,0);
+});
+
+test('compact final result names the predicted team, keeps buttons and escapes Telegram HTML',()=>{
+ const escape=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+ const runtime=createPostMatchReturnRuntime({telegramHtmlEscape:escape,actualOutcomeFromGoals:(h,a)=>h===a?'draw':h>a?'home':'away'});
+ const history={fixture_id:77,home_name:'Leeds',away_name:'Manchester United',league_name:'Premier <League>'};
+ const prediction={predicted_outcome:'home',actual_outcome:'draw',actual_home_goals:1,actual_away_goals:1,correct:true};
+ const message=runtime.postMatchReturnMessage(history,prediction);
+ assert.equal(message.text,'🏁 <b>Матч завершён</b>\n<b>Premier &lt;League&gt;</b>\n<b>Leeds — Manchester United · 1:1</b>\n📊 Исход модели: <b>Победа Leeds</b>\n❌ Главный исход не совпал.\n\nБольше матчей в MatchRadar AI');
+ assert.equal(message.replyMarkup.inline_keyboard.length,2);
+ assert.equal(message.replyMarkup.inline_keyboard[1][1].callback_data,'postmatch:return:off');
+ assert.match(runtime.postMatchReturnMessage(history,{...prediction,predicted_outcome:'draw'}).text,/Исход модели: <b>Ничья<\/b>\n✅/);
+ assert.match(runtime.postMatchReturnMessage(history,{...prediction,predicted_outcome:'away'}).text,/Победа Manchester United/);
 });

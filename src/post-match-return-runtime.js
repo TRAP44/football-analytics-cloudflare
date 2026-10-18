@@ -1,4 +1,3 @@
-import { neutralSignalText } from './signal-wording.js';
 export function createPostMatchReturnRuntime(deps = {}) {
   const {
     APP_VERSION,
@@ -81,23 +80,17 @@ export function createPostMatchReturnRuntime(deps = {}) {
     const awayGoals=Number(prediction.actual_away_goals);
     const predicted=String(prediction.predicted_outcome || '');
     const actual=String(prediction.actual_outcome || actualOutcomeFromGoals(homeGoals,awayGoals));
-    const predictedLabel=postMatchOutcomeLabel(predicted);
-    const actualLabel=postMatchOutcomeLabel(actual);
-    const probability=postMatchPredictionProbability(prediction,predicted);
-    const correct=prediction.correct===true || (predicted && predicted===actual);
-    // Нейтральный вывод по коду сигнала, а не сохранённая ставочная метка.
-    const signal=neutralSignalText(history.ai_signal_code,{home,away});
+    const predictedLabel=predicted==='home' ? `Победа ${home}` : predicted==='away' ? `Победа ${away}` : predicted==='draw' ? 'Ничья' : '';
+    const correct=Boolean(predicted && predicted===actual);
     const text=[
-      '🏁 <b>Матч завершён · MatchRadar AI</b>',
+      '🏁 <b>Матч завершён</b>',
+      history.league_name ? `<b>${telegramHtmlEscape(history.league_name)}</b>` : '',
       `<b>${telegramHtmlEscape(home)} — ${telegramHtmlEscape(away)} · ${homeGoals}:${awayGoals}</b>`,
-      history.league_name ? telegramHtmlEscape(history.league_name) : '',
+      predictedLabel ? `📊 Исход модели: <b>${telegramHtmlEscape(predictedLabel)}</b>` : '',
+      predictedLabel ? (correct ? '✅ Главный исход совпал.' : '❌ Главный исход не совпал.') : '',
       '',
-      signal ? `🧠 До матча: <b>${telegramHtmlEscape(signal)}</b>` : '',
-      `📊 Исход модели: <b>${telegramHtmlEscape(predictedLabel)}</b>${probability===null?'':` · ${probability}%`} → факт <b>${telegramHtmlEscape(actualLabel)}</b>`,
-      correct ? '✅ Главный исход совпал.' : '❌ Главный исход не совпал.',
-      '',
-      'Откройте итог AI — сверю исход, голы и фактический контекст матча.',
-    ].filter(Boolean).join('\n');
+      'Больше матчей в MatchRadar AI',
+    ].filter((value,index,array)=>value || (index>0 && array[index-1])).join('\n');
     return {
       text,
       replyMarkup:{inline_keyboard:[

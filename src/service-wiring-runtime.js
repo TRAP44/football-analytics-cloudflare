@@ -21,6 +21,8 @@ export function createServiceWiringRuntime(deps = {}) {
     enc,
     fetchWithTimeout,
     getAnalysisTimelineSnapshots,
+    getCache,
+    setCache,
     getLatestInPlayEstimate,
     loadScoreboardRecipients,
     getOddsSnapshots,
@@ -215,6 +217,8 @@ export function createServiceWiringRuntime(deps = {}) {
     processSmartNotifications,
   } = createSmartNotificationService({
     hasSupabase,
+    getCache,
+    setCache,
     loadRuntimeControls,
     supaSelectPaged,
     filterRecipients: filterSmartNotificationRecipients,

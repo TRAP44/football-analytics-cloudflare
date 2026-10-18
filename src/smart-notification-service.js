@@ -1,3 +1,4 @@
+import {favoriteMatchRecipients,recentNotificationMinutes} from './favorite-match-notifications.js';
 import {
   SMART_NOTIFICATION_POLICY,
   notificationCategory,
@@ -267,6 +268,7 @@ function isRedCard(event = {}) {
 function matchEventType(event = {}) {
   if (isGoal(event)) return 'match.goal';
   if (isRedCard(event)) return 'match.red_card';
+  if (String(event.type || '').toLowerCase()==='card' && String(event.detail || '').toLowerCase().includes('yellow')) return 'match.yellow_card';
   return '';
 }
 
@@ -338,8 +340,8 @@ export function inPlayEstimateLine(row, estimate, events = [], now = Date.now())
     + `${row?.home_name || 'Хозяева'} ${percent(values[0])} · Ничья ${percent(values[1])} · ${row?.away_name || 'Гости'} ${percent(values[2])}`;
 }
 
-function matchEventMessage(row, event, eventType, estimateLine = '') {
-  const title = eventType === 'match.goal' ? '⚽ Гол' : '🟥 Красная карточка';
+function matchEventMessage(row, event, eventType) {
+  const title = eventType === 'match.goal' ? '⚽ Гол' : eventType === 'match.yellow_card' ? '🟨 Жёлтая карточка' : '🟥 Красная карточка';
   const actor = String(event.playerName || event.player || '').trim();
   const team = String(event.teamName || '').trim();
   return [
@@ -348,9 +350,7 @@ function matchEventMessage(row, event, eventType, estimateLine = '') {
     `${row?.home_name || 'Хозяева'} — ${row?.away_name || 'Гости'}`,
     [minuteLabel(event), team].filter(Boolean).join(' · '),
     actor,
-    estimateLine,
-    '',
-    'Откройте MatchRadar, чтобы увидеть обновлённый контекст матча.',
+
   ].filter(Boolean).join('\n');
 }
 
@@ -461,6 +461,8 @@ function lineupPlayerIds(team = {}) {
 
 export function createSmartNotificationService({
   hasSupabase,
+  getCache,
+  setCache,
   loadRuntimeControls,
   supaSelectPaged,
   filterRecipients,
@@ -534,12 +536,57 @@ export function createSmartNotificationService({
       return { ok: false, checked: 0, fixturesChecked: 0, sent: 0, duplicate: 0, cooldown: 0, failed: 1, unknown: 0 };
     }
 
-    const rows = asRows(page?.rows);
+    let favorites={rows:[],truncated:false};
+    let favoriteReadFailed=false;
+    let recentMinutes=new Map();
+    if(typeof getCache==='function'){
+      try{
+        const [cursor,...batches]=await Promise.all([
+          getCache('smart-notifications:favorite-recipient-cursor:v1',cfg),
+          ...[-1,0,1].map(offset=>getCache(`provider-fixtures:${new Date(now+offset*86400_000).toISOString().slice(0,10)}:v1`,cfg)),
+        ]);
+        recentMinutes=recentNotificationMinutes(batches,now);
+        const readFavorites=async start=>{
+          const uid=positiveSafeInteger(start?.userId);
+          const page=await supaSelectPaged(cfg,'favorites',uid?{telegram_id:`gte.${uid}`}:{}, {pageSize:1000,maxRows:10000,order:'telegram_id.asc,team_id.asc'});
+          if(!Array.isArray(page?.rows))throw new Error('Favorite notification audience unavailable.');
+          return page;
+        };
+        let followed=await readFavorites(cursor);
+        favorites=favoriteMatchRecipients(followed.rows,batches,now,1000,cursor,false);
+        if(!favorites.rows.length && cursor && !followed.truncated){
+          followed=await readFavorites(null);
+          favorites=favoriteMatchRecipients(followed.rows,batches,now,1000,null,false);
+        }
+        if(!favorites.cursor && followed.truncated){
+          const uid=positiveSafeInteger(followed.rows.at(-1)?.telegram_id);
+          if(uid)favorites.cursor={userId:uid,fixtureId:0};
+        }
+        favorites.truncated ||= Boolean(followed?.truncated);
+        // A team opt-out applies to automatic favorite discovery only.
+        favorites.rows=asRows((await audience(favorites.rows,'team.match_day',cfg))?.rows);
+      }catch{favoriteReadFailed=true;favorites={rows:[],truncated:false};}
+    }
+    const combined=new Map(asRows(page?.rows).map(row=>[`${row.telegram_id}:${row.fixture_id}`,row]));
+    for(const row of favorites.rows){
+      const key=`${row.telegram_id}:${row.fixture_id}`;
+      const existing=combined.get(key);
+      if(existing)combined.set(key,{...existing,_favoriteTeams:row._favoriteTeams,_favoriteOpponent:row._favoriteOpponent,_favoriteToday:row._favoriteToday});
+      else combined.set(key,row);
+    }
+    const rows = [...combined.values()];
     const groupedRows = groupByFixture(rows);
     const fixtureLimit = positiveSafeInteger(maxFixturesPerRun)
       || SMART_NOTIFICATION_POLICY.maxFixturesPerRun;
-    const groups = [...groupedRows.entries()].slice(0, fixtureLimit);
-    const truncated = Boolean(page?.truncated || groupedRows.size > groups.length);
+    let entries=[...groupedRows.entries()];
+    if(typeof getCache==='function'&&typeof setCache==='function'&&entries.length>fixtureLimit){
+      const cursor=positiveSafeInteger(await getCache('smart-notifications:fixture-cursor:v1',cfg).catch(()=>null));
+      entries.sort((a,b)=>a[0]-b[0]);
+      const next=entries.findIndex(([id])=>id>cursor);
+      if(next>0)entries=[...entries.slice(next),...entries.slice(0,next)];
+    }
+    const groups = entries.slice(0, fixtureLimit);
+    const truncated = Boolean(page?.truncated || favorites.truncated || groupedRows.size > groups.length);
 
     const summary = {
       ok: true,
@@ -549,7 +596,7 @@ export function createSmartNotificationService({
       duplicate: 0,
       cooldown: 0,
       retryPending: 0,
-      failed: 0,
+      failed: favoriteReadFailed ? 1 : 0,
       unknown: 0,
       blockedByPreference: 0,
       blockedByEntitlement: 0,
@@ -560,7 +607,7 @@ export function createSmartNotificationService({
     let favoritesByUser = new Map();
     if (typeof loadFavoritePlayersByUser === 'function') {
       try {
-        const loadedFavorites = await loadFavoritePlayersByUser(rows, cfg);
+        const loadedFavorites = await loadFavoritePlayersByUser(rows.filter(row=>!row._favoriteOnly), cfg);
         if (loadedFavorites instanceof Map) favoritesByUser = loadedFavorites;
         else summary.failed += 1;
       } catch (error) {
@@ -633,16 +680,20 @@ export function createSmartNotificationService({
     for (const [fixtureId, recipients] of groups) {
       const fixtureDate = Date.parse(recipients[0]?.fixture_date || '');
       const minutesToKickoff = Number.isFinite(fixtureDate) ? (fixtureDate - now) / 60000 : null;
-      // У кого по этому матчу идёт живое табло — гол уже виден в нём, отдельное
-      // уведомление о голе не шлём (ревью Codex #919).
-      let scoreboardUsers = new Set();
-      if (typeof loadScoreboardRecipients === 'function') {
-        try { scoreboardUsers = await loadScoreboardRecipients(fixtureId, cfg) || new Set(); } catch { scoreboardUsers = new Set(); }
+      // An edited scoreboard is silent in Telegram: send the short goal alert too.
+      const matchGoalAudience = await safeAudience(recipients, 'match.goal');
+      const explicitRecipients=recipients.filter(row=>!row._favoriteOnly);
+      const playerAudience = await safeAudience(explicitRecipients, 'player.goal');
+      const aiAudience = await safeAudience(explicitRecipients, 'ai.probability_change');
+      for(const row of recipients.filter(row=>row._favoriteToday)){
+        const at=new Date(row.fixture_date).toLocaleTimeString('ru-RU',{timeZone:'Europe/Moscow',hour:'2-digit',minute:'2-digit'});
+        await safeDeliver({row,eventType:'team.match_day',category:'teams',
+          text:[row._favoriteTeams.length>1?'⭐ Любимые команды сегодня играют':`⭐ Любимая команда ${row._favoriteTeams[0]} сегодня играет`,
+            row._favoriteTeams.length>1?`${row.home_name} — ${row.away_name}`:`Соперник: ${row._favoriteOpponent}`,`${row.league_name} · ${at} МСК`].join('\n'),
+          dedupeKey:smartNotificationDedupeKey({fixtureId,eventType:'team.match_day',eventKey:'today'}),
+        });
       }
-      const matchGoalAudience = (await safeAudience(recipients, 'match.goal'))
-        .filter(row => !scoreboardUsers.has(Number(row?.telegram_id ?? row?.telegramId)));
-      const playerAudience = await safeAudience(recipients, 'player.goal');
-      const aiAudience = await safeAudience(recipients, 'ai.probability_change');
+
 
       if (minutesToKickoff !== null && minutesToKickoff <= 5 && minutesToKickoff >= -240
           && (matchGoalAudience.length || playerAudience.length)) {
@@ -665,14 +716,6 @@ export function createSmartNotificationService({
         if (snapshot?.trusted === true && snapshot?.stale !== true) {
           const elapsed = minutesToKickoff < 0 ? Math.max(0, Math.floor(-minutesToKickoff)) : 0;
           const snapshotEvents = notificationEventsFromSnapshot(snapshot, { elapsed });
-          let estimate = null;
-          if (typeof loadLatestInPlayEstimate === 'function' && snapshotEvents.some(event => matchEventType(event))) {
-            try {
-              estimate = await loadLatestInPlayEstimate(fixtureId, cfg);
-            } catch {
-              estimate = null;
-            }
-          }
           for (const event of snapshotEvents) {
             const basicType = matchEventType(event);
             if (basicType) {
@@ -680,6 +723,8 @@ export function createSmartNotificationService({
                 ? matchGoalAudience
                 : await safeAudience(recipients, basicType);
               for (const row of eligible) {
+                if(basicType==='match.yellow_card' && (!recentMinutes.has(fixtureId) || integerCandidate(event.minute)===null || event.minute<recentMinutes.get(fixtureId)))continue;
+                if(row._favoriteOnly && (row._favoriteMinMinute===null || integerCandidate(event.minute)===null || event.minute<row._favoriteMinMinute))continue;
                 const dedupeKey = smartNotificationDedupeKey({
                   fixtureId,
                   eventType: basicType,
@@ -689,7 +734,7 @@ export function createSmartNotificationService({
                   row,
                   eventType: basicType,
                   category: notificationCategory(basicType),
-                  text: matchEventMessage(row, event, basicType, inPlayEstimateLine(row, estimate, snapshotEvents)),
+                  text: matchEventMessage(row, event, basicType),
                   dedupeKey,
                 });
               }
@@ -834,6 +879,24 @@ export function createSmartNotificationService({
       }
     }
 
+    if(Object.hasOwn(favorites,'cursor') && typeof setCache==='function'){
+      const processed=new Set(groups.map(([fixtureId])=>fixtureId));
+      let progress=null,complete=true;
+      for(const row of favorites.rows){
+        if(!processed.has(row.fixture_id)){complete=false;break;}
+        progress={userId:row.telegram_id,fixtureId:row.fixture_id};
+      }
+      // Never move a recipient page past a fixture deferred by the run limit.
+      const nextCursor=complete ? (favorites.cursor||{userId:0,fixtureId:0}) : progress;
+      if(nextCursor){
+        try{await setCache('smart-notifications:favorite-recipient-cursor:v1',0,nextCursor,cfg,60);}
+        catch{summary.failed+=1;}
+      }
+    }
+    if(groups.length && typeof setCache==='function'){
+      try{await setCache('smart-notifications:fixture-cursor:v1',0,groups.at(-1)[0],cfg,60);}
+      catch{summary.failed+=1;}
+    }
     summary.ok = !(summary.failed || summary.unknown || summary.truncated);
     if (summary.sent || summary.failed || summary.unknown || summary.truncated || summary.blockedByEntitlement || summary.blockedByPreference) {
       await recordOpsEvent?.(cfg, {
