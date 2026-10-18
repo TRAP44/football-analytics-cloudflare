@@ -14,6 +14,14 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-18 — Codex — Remote AI проверка: Wrangler --local отключал binding
+PR: ветка `codex/match-chat-remote-binding`.
+Сделано: #951 слит как e5b20961, все четыре PR gates прошли. Verify Match Chat 39113243156 завершился отказом old/current binding, но это не доказывает отказ реального AI: pinned Wrangler 4.149.0 при args.local выставляет dev.remote=false и пропускает remote proxy session. Удалён --local: обычный dev исполняет fixture локально, разрешая ai.remote=true; loopback, nonce, отсутствие production endpoint и main-only workflow сохранены. Добавлен контракт на этот существенный CLI режим.
+Проверка: npm ci/check/lint, release621/621, full4291/4291; независимый reviewer проверил pinned Wrangler и 5 harness tests, блокеров нет. После merge повторить реальный probe. Production Telegram end-to-end всё ещё не подтверждён. Не называть чат рабочим до успешного remote handler результата. Модельные ошибки первого прогона не считать доказанной причиной production проблемы.
+Решение: это исправление нашего verification harness, не очередной тест вместо ускорения: продуктовые исправления уже в #951. Сергей ранее разрешил применять проверенные исправления без повторного ручного merge.
+Осталось: повторить Verify Match Chat, проверить фактический AI ответ, deploy и public hashes. Если реальная модель отказывает, продолжать диагностику.
+
+
 ## 2026-10-18 — Codex — Текстовый вопрос после выдачи анализа и ускорение бота
 PR: [#951](https://github.com/TRAP44/football-analytics-cloudflare/pull/951), ветка `codex/match-chat-service`.
 Проблема: #950 подтвердил inline presets, но не реальный вызов Workers AI. Сергей просит довести именно собственный вопрос и ускорить бот. Каталог Cloudflare на проверке перенаправляет страницу `llama-3.1-8b-instruct-fp8-fast` на `/models/?unavailable=...`; существующая страница — `llama-3.1-8b-instruct-fp8`. Константа модели исправлена; реальный API-вызов до merge ещё не подтверждён.
