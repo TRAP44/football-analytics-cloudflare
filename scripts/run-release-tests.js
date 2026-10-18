@@ -3,6 +3,8 @@ import { spawnSync } from 'node:child_process';
 
 const RELEASE_TESTS = Object.freeze([
   'test/access-control.test.js',
+  'test/common-request-budgets.test.js',
+  'test/request-deadline.test.js',
   'test/analysis-context-runtime-boundaries.test.js',
   'test/analysis-lifecycle-runtime-boundaries.test.js',
   'test/analysis-quality-runtime-boundaries.test.js',

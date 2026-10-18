@@ -235,7 +235,7 @@ test('reminder mutations are deduplicated, fail closed on controls and validate 
 
 test('transient profile refresh failure preserves the last authenticated profile without coercing error metadata',()=>{
   const block=app.match(
-    /async function loadProfile\(\)[\s\S]*?\n}\n\nfunction isAdmin/,
+    /async function loadProfile\(\{bootstrap=false\}=\{\}\)[\s\S]*?\n}\n\nfunction isAdmin/,
   );
   assert.ok(block,'loadProfile must exist');
   const source=block[0];

@@ -26,7 +26,7 @@ test('supabase client sends opaque secret keys only through apikey', async () =>
   assert.equal(row.id, 1);
   assert.equal(calls[0].init.headers.apikey, 'sb_secret_example');
   assert.equal('authorization' in calls[0].init.headers, false);
-  assert.equal(calls[0].timeoutMs, 7000);
+  assert.ok(calls[0].timeoutMs>0 && calls[0].timeoutMs<=7000);
   assert.match(calls[0].url, /\/rest\/v1\/users/);
 });
 
@@ -365,4 +365,28 @@ test('upsert HTTP failures expose structured numeric status for safe cache diagn
   await assert.rejects(client.supaUpsert({supabaseUrl:'https://example.supabase.co',supabaseKey:'secret'},'analysis_cache',{cache_key:'x'},'cache_key'),error=>{
     assert.equal(error.httpStatus,503);return true;
   });
+});
+
+test('Supabase read retry uses the remaining budget, including backoff and JSON',async()=>{
+  let clock=0;const budgets=[];
+  const client=createSupabaseClient({now:()=>clock,sleepMs:async ms=>{clock+=ms;},fetchWithTimeout:async(_url,_init,budget)=>{
+    budgets.push(budget);if(budgets.length===1){clock=4000;return response({ok:false,status:503});}
+    return {ok:true,json:async()=>{clock=6900;return [{id:1}];}};
+  }});
+  assert.deepEqual(await client.supaSelectOne({supabaseUrl:'https://example.test',supabaseKey:'test'},'users',{}),{id:1});
+  assert.deepEqual(budgets,[7000,2820]);
+});
+
+test('Supabase cannot hang on JSON or error bodies after headers, even if a transport ignores abort',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const cfg={supabaseUrl:'https://example.test',supabaseKey:'test'};
+  for(const write of [false,true]){
+    let signal;let finish;
+    const body=new Promise(resolve=>{finish=resolve;});
+    const client=createSupabaseClient({fetchWithTimeout:async(_url,init)=>{signal=init.signal;return {ok:!write,status:write?500:200,json:()=>body,text:()=>body};}});
+    const pending=write ? client.supaPatch(cfg,'users',{id:'eq.1'},{plan:'FREE'}) : client.supaSelectMany(cfg,'users',{});
+    await new Promise(setImmediate);t.mock.timers.tick(7000);
+    await assert.rejects(pending,error=>error.code==='UPSTREAM_TIMEOUT');assert.equal(signal.aborted,true);
+    finish(write ? 'late error' : []);await new Promise(setImmediate);
+  }
 });

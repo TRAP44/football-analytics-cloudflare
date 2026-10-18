@@ -550,3 +550,15 @@ test('season data starts once its cache decision is ready while recent form is s
   }finally{clearTimeout(timer);gate.resolve();}
   const result=await response;assert.equal(result.body.code,'ANALYSIS_MODEL_INVALID');
 });
+
+test('cold analysis overlaps current entitlements and quota reads before any reservation',async()=>{
+  const started=[];let resolveEntitlements;
+  const runtime=createAnalysisRuntime({...baseDeps(),getCache:async()=>null,getStaleCache:async()=>null,
+    resolveUserEntitlements:async()=>{started.push('entitlements');return new Promise(resolve=>{resolveEntitlements=resolve;});},
+    getQuota:async()=>{started.push('quota');return {plan:'FREE',used:3,limit:3,left:0};},
+    reserveAnalysisQuota:async()=>{throw Error('exhausted user must not reserve');},
+  });
+  const pending=runtime.apiAnalyze({json:async()=>({fixtureId:123})},{},{id:456});await new Promise(setImmediate);
+  assert.deepEqual(started,['entitlements','quota']);resolveEntitlements({source:'free',access:{}});
+  const result=await pending;assert.equal(result.status,429);
+});

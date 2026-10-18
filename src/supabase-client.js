@@ -1,3 +1,4 @@
+import {withRequestDeadline} from './request-deadline.js';
 import { createRpcAdmissionQueue } from './rpc-admission-queue.js';
 
 export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs, bumpTelemetry = () => {}, now = () => performance.now() } = {}) {
@@ -112,28 +113,47 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
       && /(?:^|[;,\s])error=PGRST303(?:[;,\s]|$)/i.test(proxyStatus);
   }
 
-  async function supaReadFetch(url, init, timeoutMs, source, cfg = null) {
-    let lastResponse = null;
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      try {
-        const response = await fetchWithTimeout(url, init, timeoutMs, source);
-        lastResponse = response;
-        const retryableStatus = retryableReadStatuses.has(Number(response?.status || 0));
-        const transientSecretAuth = isTransientSecretReadAuthResponse(response, cfg);
-        if ((!retryableStatus && !transientSecretAuth) || attempt === 1) return response;
-      } catch (error) {
-        if (attempt === 1) throw error;
-      }
-      await sleep(180 * (attempt + 1));
-    }
-    return lastResponse;
+  function withinDeadline(source,budget,operation){
+    return withRequestDeadline(({signal,check,remaining})=>operation({
+      check,remaining,
+      fetchResponse:async(url,init={})=>{
+        check();
+        const response=await fetchWithTimeout(url,{...init,signal},remaining(),source);
+        check();return response;
+      },
+    }),{source,budgetMs:budget,now});
   }
 
-  async function supaIdempotentUpsertFetch(url, init, timeoutMs, source, cfg = null) {
-    const response = await fetchWithTimeout(url, init, timeoutMs, source);
-    if (!isTransientSecretReadAuthResponse(response, cfg)) return response;
-    await sleep(180);
-    return await fetchWithTimeout(url, init, timeoutMs, source);
+  async function supaReadData(url,init,timeoutMs,source,cfg=null){
+    return withinDeadline(source,timeoutMs,async({fetchResponse,check,remaining})=>{
+      for(let attempt=0;attempt<2;attempt++){
+        let response;
+        try{response=await fetchResponse(url,init);}catch(error){
+          check();if(attempt===1)throw error;
+          if(remaining()<=180)throw error;
+          await sleep(180);check();continue;
+        }
+        const retryable=retryableReadStatuses.has(Number(response?.status || 0)) || isTransientSecretReadAuthResponse(response,cfg);
+        if(retryable && attempt===0 && remaining()>180){
+          try{Promise.resolve(response.body?.cancel?.()).catch(()=>{});}catch{}
+          await sleep(180);check();continue;
+        }
+        const body=response.ok ? await response.json() : await response.text().catch(()=>'');
+        check();return {response,body};
+      }
+    });
+  }
+
+  async function supaWriteFetch(url,init,timeoutMs,source,cfg=null,retryAuth=false){
+    return withinDeadline(source,timeoutMs,async({fetchResponse,check,remaining})=>{
+      let response=await fetchResponse(url,init);
+      if(retryAuth && isTransientSecretReadAuthResponse(response,cfg) && remaining()>180){
+        try{Promise.resolve(response.body?.cancel?.()).catch(()=>{});}catch{}
+        await sleep(180);check();response=await fetchResponse(url,init);
+      }
+      const text=response.ok ? '' : await response.text().catch(()=>'');
+      check();return {ok:response.ok,status:response.status,text:async()=>text};
+    });
   }
 
   function hasSupabase(cfg) {
@@ -184,9 +204,9 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
     url.searchParams.set('select', '*');
     url.searchParams.set('limit', '1');
     applyQueryParams(url, params, tableName);
-    const response = await supaReadFetch(url, { headers: supaHeaders(cfg) }, 7000, `Supabase ${tableName}`, cfg);
+    const {response,body} = await supaReadData(url, { headers: supaHeaders(cfg) }, 7000, `Supabase ${tableName}`, cfg);
     if (!response.ok) throw new Error(`Supabase ${tableName}: HTTP ${response.status}`);
-    const rows = responseArray(await response.json(), tableName);
+    const rows = responseArray(body, tableName);
     return rows[0] ?? null;
   }
 
@@ -200,13 +220,13 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
     url.searchParams.set('limit', String(safeLimit));
     if (safeOrder) url.searchParams.set('order', safeOrder);
     applyQueryParams(url, params, tableName);
-    const response = await supaReadFetch(url, { headers: supaHeaders(cfg) }, 7000, `Supabase ${tableName}`, cfg);
+    const {response,body} = await supaReadData(url, { headers: supaHeaders(cfg) }, 7000, `Supabase ${tableName}`, cfg);
     if (!response.ok) {
-      const text = await response.text().catch(() => '');
+      const text = body;
       const detail = safeRedact(text, 160);
       throw new Error(`Supabase ${tableName}: HTTP ${response.status}${detail ? ` — ${detail}` : ''}`);
     }
-    return responseArray(await response.json(), tableName);
+    return responseArray(body, tableName);
   }
 
   async function supaSelectPaged(cfg, table, params = {}, { pageSize = 500, maxRows = 5000, order = '' } = {}) {
@@ -245,11 +265,11 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
     const url = restUrl(cfg, tableName);
     const conflict = nonEmptyText(onConflict);
     if (conflict) url.searchParams.set('on_conflict', conflict);
-    const response = await supaIdempotentUpsertFetch(url, {
+    const response = await supaWriteFetch(url, {
       method: 'POST',
       headers: supaHeaders(cfg, { Prefer: 'resolution=merge-duplicates,return=minimal' }),
       body: JSON.stringify(Array.isArray(rows) ? rows : [rows]),
-    }, 7000, `Supabase ${tableName}`, cfg);
+    }, 7000, `Supabase ${tableName}`, cfg,true);
     if (!response.ok) {
       const text = await response.text().catch(() => '');
       const detail = safeRedact(text, 180);
@@ -264,7 +284,7 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
     const url = restUrl(cfg, tableName);
     const conflict = nonEmptyText(onConflict);
     if (conflict) url.searchParams.set('on_conflict', conflict);
-    const response = await fetchWithTimeout(url, {
+    const response = await supaWriteFetch(url, {
       method: 'POST',
       headers: supaHeaders(cfg, { Prefer: 'resolution=ignore-duplicates,return=minimal' }),
       body: JSON.stringify(Array.isArray(rows) ? rows : [rows]),
@@ -282,7 +302,7 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
     if (!filterEntries.length) throw new TypeError(`Supabase ${tableName}: PATCH requires at least one filter.`);
     const url = restUrl(cfg, tableName);
     for (const [key, value] of filterEntries) url.searchParams.set(key, value);
-    const response = await fetchWithTimeout(url, {
+    const response = await supaWriteFetch(url, {
       method: 'PATCH',
       headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
       body: JSON.stringify(patch || {}),
@@ -300,7 +320,7 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
     if (!filterEntries.length) throw new TypeError(`Supabase ${tableName}: DELETE requires at least one filter.`);
     const url = restUrl(cfg, tableName);
     for (const [key, value] of filterEntries) url.searchParams.set(key, value);
-    const response = await fetchWithTimeout(url, {
+    const response = await supaWriteFetch(url, {
       method: 'DELETE',
       headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
     }, 7000, `Supabase ${tableName}`);

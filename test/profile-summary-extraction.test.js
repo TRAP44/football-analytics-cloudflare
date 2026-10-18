@@ -282,3 +282,11 @@ test('stale avatar load or error cannot change the latest profile image state',(
   images[1].emit('load');
   assert.equal(elements.get('avatar').classList.contains('has-photo'),true);
 });
+
+test('bootstrap profile never presents unloaded personal counts as zero',()=>{
+  const state={profile:{bootstrap:true,user:{},quota:{},stats:null},favorites:[],favoritePlayers:[],reminders:[]};
+  const r=createModule({state});r.module.renderProfileSummary();
+  assert.equal(r.elements.get('favoriteCount').textContent,'—');assert.equal(r.elements.get('reminderCount').textContent,'—');
+  state.favoritesLoaded=true;state.remindersLoaded=true;r.module.renderProfileSummary();
+  assert.equal(r.elements.get('favoriteCount').textContent,'0');assert.equal(r.elements.get('reminderCount').textContent,'0');
+});

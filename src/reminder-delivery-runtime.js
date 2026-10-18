@@ -1,3 +1,4 @@
+import {withRequestDeadline} from './request-deadline.js';
 // Telegram delivery and reminder-reliability schema helpers extracted from worker.js.
 export function createReminderDeliveryRuntime(deps) {
   if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
@@ -23,7 +24,9 @@ export function createReminderDeliveryRuntime(deps) {
     }
   
     try {
+      const {r,body}=await withRequestDeadline(async({signal,remaining,check})=>{
       const r = await fetchWithTimeout(`https://api.telegram.org/bot${cfg.botToken}/sendMessage`, {
+        signal,
         method:'POST',
         headers:{ 'content-type':'application/json' },
         body:JSON.stringify({
@@ -33,9 +36,9 @@ export function createReminderDeliveryRuntime(deps) {
           ...(options.parseMode ? { parse_mode:String(options.parseMode) } : {}),
           ...(options.replyMarkup ? { reply_markup:options.replyMarkup } : {}),
         }),
-      },7000,'Telegram sendMessage');
-  
-      const body = await r.json().catch(() => null);
+      },remaining(),'Telegram sendMessage');
+      check();const body=await r.json().catch(()=>null);check();return {r,body};
+      },{budgetMs:7000,source:'Telegram sendMessage'});
       const ok = Boolean(r.ok && body?.ok !== false);
       return {
         ok,

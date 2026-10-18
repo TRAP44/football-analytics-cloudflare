@@ -35,7 +35,7 @@ test('RC123 defers public match-feed work until access-control bootstrap complet
   const end=app.indexOf('const api = createApiClient',start);
   assert.ok(start>=0 && end>start);
   const startup=app.slice(start,end);
-  const profile=startup.indexOf('loadProfile().catch(()=>null)');
+  const profile=startup.indexOf('loadProfile({bootstrap:true}).catch(()=>null)');
   const access=startup.indexOf('if (state.closedBetaBlocked) return false');
   const feed=startup.indexOf('const startupTasks = [loadFavorites(), loadMatches({ snapshotFastPath:true })]');
   assert.ok(profile>=0 && access>profile && feed>access);

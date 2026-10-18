@@ -139,12 +139,13 @@ export function createUserDataApiRuntime(deps) {
     const userId=positiveId(user?.id);
     if (!userId) return json({error:'Сессия Telegram не подтверждена.',code:'AUTH_REQUIRED'},401);
 
+    const bootstrap=new URL(request.url).searchParams.get('bootstrap')==='1';
     const [rawQuota, rawRecord, rawFavorites, rawFavoritePlayers, rawReminders, preferences] = await Promise.all([
       getQuota(userId, cfg),
       getUserRecord(userId, cfg),
-      getFavorites(userId, cfg),
-      getFavoritePlayers(userId, cfg),
-      getReminders(userId, cfg),
+      bootstrap ? [] : getFavorites(userId, cfg),
+      bootstrap ? [] : getFavoritePlayers(userId, cfg),
+      bootstrap ? [] : getReminders(userId, cfg),
       getPreferences(userId, cfg),
     ]);
     const quota=plainObject(rawQuota) || {};
@@ -178,7 +179,7 @@ export function createUserDataApiRuntime(deps) {
         runtime:publicRuntimeControls(),
       },
       preferences,
-      stats:{favorites:favorites.length,favoritePlayers:favoritePlayers.length,reminders:reminders.length},
+      ...(bootstrap ? {bootstrap:true,stats:null} : {stats:{favorites:favorites.length,favoritePlayers:favoritePlayers.length,reminders:reminders.length}}),
     });
   }
   

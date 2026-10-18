@@ -143,6 +143,7 @@ export function createApiClient(deps) {
     throw new TypeError('API client requires explicit runtime dependencies.');
   }
   const validationSession=phase5SessionToken();
+  const now=typeof deps.now==='function' ? deps.now : ()=>performance.now();
 
   function apiPath(value) {
     if (typeof value !== 'string' || value.length < 5 || value.length > 2048) return '';
@@ -177,8 +178,10 @@ export function createApiClient(deps) {
   const isGet=method === 'GET';
   const timeoutMs=timeoutValue(options.timeoutMs);
   const retryable = isGet && options.retry !== false;
-  const dedupe = isGet && options.dedupe !== false;
-  const requestKey=`${method}:${safePath}`;
+  const dedupe = isGet && options.dedupe !== false && !options.signal && !options.headers;
+  const requestKey=`${method}:${safePath}:${timeoutMs}:${retryable}`;
+  if(!isGet)inflightGetRequests.clear();
+  const deadline=now()+timeoutMs;
 
   if (dedupe && inflightGetRequests.has(requestKey)) {
     state.clientPerf.deduped += 1;
@@ -188,24 +191,37 @@ export function createApiClient(deps) {
   const task = (async () => {
     let attempt = 0;
     while (true) {
-      const started = performance.now();
+      const started = now();
       state.clientPerf.requests += 1;
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(new DOMException('timeout', 'AbortError')), timeoutMs);
-      const headers = new Headers(options.headers || {});
-      headers.set('Content-Type', 'application/json');
-      if (tg?.initData) headers.set('x-telegram-init-data', tg.initData);
-      if (validationSession) headers.set('x-phase5-session', validationSession);
+      let rejectDeadline;
+      const deadlinePromise=new Promise((_,reject)=>{rejectDeadline=reject;});
+      const timeout = setTimeout(() => {
+        const error=new DOMException('timeout','AbortError');controller.abort(error);rejectDeadline(error);
+      }, Math.max(1,Math.ceil(deadline-now())));
+      const cancel=()=>{const error=new DOMException('cancelled','AbortError');controller.abort(error);rejectDeadline(error);};
+      options.signal?.addEventListener('abort',cancel,{once:true});
       try {
+        const headers = new Headers(options.headers || {});
+        headers.set('Content-Type', 'application/json');
+        if (tg?.initData) headers.set('x-telegram-init-data', tg.initData);
+        if (validationSession) headers.set('x-phase5-session', validationSession);
         const { timeoutMs: _timeoutMs, retry: _retry, dedupe: _dedupe, ...fetchOptions } = options;
-        const response=await fetch(safePath,{...fetchOptions,method,headers,signal:controller.signal});
+        const {response,data}=await Promise.race([
+          (async()=>{
+            if(options.signal?.aborted || now()>=deadline)throw new DOMException('cancelled or timed out','AbortError');
+            const response=await fetch(safePath,{...fetchOptions,method,headers,signal:controller.signal});
+            const data=await response.json().catch(()=>({}));
+            if(controller.signal.aborted || options.signal?.aborted || now()>=deadline)throw new DOMException('cancelled or timed out','AbortError');
+            return {response,data};
+          })(),deadlinePromise,
+        ]);
         const serverVersion = String(response.headers.get('x-app-version') || '');
         if (serverVersion) observeServerVersion(serverVersion, response);
         if (state.compatibilityBlocked) {
           showBootRecovery({ blocking: true, title: 'Нужно обновить приложение', text: state.compatibilityReason });
           throw Object.assign(new Error(state.compatibilityReason), { status: 426, payload: { category: 'compatibility' } });
         }
-        const data = await response.json().catch(() => ({}));
         const runtimeFromPayload = data?.runtime || data?.dataCapabilities?.runtime || data?.features?.runtime || null;
         if (runtimeFromPayload) {
           state.runtimeStatus = runtimeFromPayload;
@@ -229,19 +245,24 @@ export function createApiClient(deps) {
           if (retryable && attempt < 1 && [502, 503, 504].includes(response.status) && !['maintenance','feature_disabled'].includes(String(data.category || ''))) throw Object.assign(error, { transient: true });
           throw error;
         }
-        const elapsed = Math.round(performance.now() - started);
+        const elapsed = Math.round(now() - started);
         state.clientPerf.completed += 1;
         state.clientPerf.lastMs = elapsed;
         state.clientPerf.totalMs += elapsed;
         noteRequestSuccess();
         return data;
       } catch (error) {
+        if(options.signal?.aborted){
+          state.clientPerf.cancelled=(Number(state.clientPerf.cancelled)||0)+1;
+          throw Object.assign(new Error('Запрос отменён.'),{name:'AbortError',status:499,payload:{category:'cancelled'}});
+        }
         const aborted = error?.name === 'AbortError';
         const transient = Boolean(error?.transient) || aborted || (!error?.status && navigator.onLine !== false);
-        if (retryable && attempt < 1 && transient) {
+        const retryDelay=350+Math.floor(Math.random()*250);
+        if (retryable && attempt < 1 && transient && !options.signal?.aborted && deadline-now()>retryDelay) {
           attempt += 1;
           state.clientPerf.retries += 1;
-          await new Promise(resolve => setTimeout(resolve, 350 + Math.floor(Math.random() * 250)));
+          await new Promise(resolve => setTimeout(resolve,retryDelay));
           continue;
         }
         state.clientPerf.failed += 1;
@@ -257,12 +278,13 @@ export function createApiClient(deps) {
         throw finalError;
       } finally {
         clearTimeout(timeout);
+        options.signal?.removeEventListener('abort',cancel);
       }
     }
   })();
 
   if (dedupe) inflightGetRequests.set(requestKey, task);
   try { return await task; }
-  finally { if (dedupe && inflightGetRequests.get(requestKey) === task) inflightGetRequests.delete(requestKey); }
+  finally { if(!isGet)inflightGetRequests.clear(); if (dedupe && inflightGetRequests.get(requestKey) === task) inflightGetRequests.delete(requestKey); }
   };
 }

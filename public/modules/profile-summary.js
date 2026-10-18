@@ -21,9 +21,9 @@ export function createProfileSummaryModule({
     const stats=object(source.stats);
     const count=value=>typeof value==='number' && Number.isSafeInteger(value) && value>=0 ? value : null;
     const displayCount=value=>value===null ? '—' : String(value);
-    const favoriteCount=count(stats.favorites) ?? (Array.isArray(state.favorites) ? state.favorites.length : null);
-    const favoritePlayerCountValue=count(stats.favoritePlayers) ?? (Array.isArray(state.favoritePlayers) ? state.favoritePlayers.length : null);
-    const reminderCount=count(stats.reminders) ?? (Array.isArray(state.reminders) ? state.reminders.length : null);
+    const favoriteCount=count(stats.favorites) ?? (Array.isArray(state.favorites) && (source.bootstrap!==true || state.favoritesLoaded===true) ? state.favorites.length : null);
+    const favoritePlayerCountValue=count(stats.favoritePlayers) ?? (Array.isArray(state.favoritePlayers) && (source.bootstrap!==true || state.favoritePlayersLoaded===true) ? state.favoritePlayers.length : null);
+    const reminderCount=count(stats.reminders) ?? (Array.isArray(state.reminders) && (source.bootstrap!==true || state.remindersLoaded===true) ? state.reminders.length : null);
     const quotaLeft=count(quota.left);
     const quotaLimit=count(quota.limit);
     const quotaUsed=count(quota.used);

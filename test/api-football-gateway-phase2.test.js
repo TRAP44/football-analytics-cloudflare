@@ -466,3 +466,19 @@ test('background admission runs before transport, including retry attempts, and 
   await gateway.apiFootballNetwork('/status',{},cfg);
   assert.equal(claims,2,'status is a free provider probe');
 });
+
+test('API-Football stalled JSON uses the total budget and never starts another attempt after expiry',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});let calls=0,finish;
+  const {gateway}=runtime({fetchWithTimeout:async()=>{calls++;return {ok:true,status:200,headers:new Headers(),json:()=>new Promise(resolve=>{finish=resolve;})};}});
+  const pending=gateway.apiFootball('/fixtures',{}, {apiFootballKey:'fixture'},{timeoutMs:1000});
+  await new Promise(setImmediate);t.mock.timers.tick(1000);
+  await assert.rejects(pending,error=>error.code==='UPSTREAM_TIMEOUT');finish({response:[]});await new Promise(setImmediate);assert.equal(calls,1);
+});
+
+test('API-Football cannot send late network work when a budget claim finishes after the request deadline',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});let release,calls=0;
+  const {gateway}=runtime({hasSupabase:()=>true,supaRpc:()=>new Promise(resolve=>{release=resolve;}),fetchWithTimeout:async()=>{calls++;return new Response('{}');}});
+  const pending=gateway.apiFootball('/fixtures',{}, {apiFootballKey:'fixture'},{timeoutMs:1000});
+  await new Promise(setImmediate);t.mock.timers.tick(1000);await assert.rejects(pending,error=>error.code==='UPSTREAM_TIMEOUT');
+  release({allowed:true});await new Promise(setImmediate);assert.equal(calls,0);
+});

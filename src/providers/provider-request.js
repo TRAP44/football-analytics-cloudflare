@@ -1,3 +1,4 @@
+import {withRequestDeadline} from '../request-deadline.js';
 function providerLabel(value) {
   return String(value || 'provider').trim() || 'provider';
 }
@@ -116,10 +117,11 @@ export function createProviderRequestBoundary({
       ? Math.max(0, Math.min(2, Math.floor(parsedRetries)))
       : 1;
 
-    return await withSingleFlight(safeRequestKey(url, normalizedProvider, operation), async () => {
+    return await withSingleFlight(safeRequestKey(url, normalizedProvider, operation), () => withRequestDeadline(async ({signal,remaining,check}) => {
       let lastError = null;
 
       for (let attempt = 0; attempt <= attemptsAllowed; attempt += 1) {
+        check();
         const attemptNumber = attempt + 1;
         const startedAt = now();
         bumpTelemetry('providerRequests');
@@ -127,9 +129,10 @@ export function createProviderRequestBoundary({
         let response;
         try {
           response = await fetchWithTimeout(url, {
-            method: 'GET',
+            method: 'GET',signal,
             headers: { accept: 'application/json', ...headers },
-          }, timeoutMs, normalizedProvider);
+          }, remaining(), normalizedProvider);
+          check();
         } catch (cause) {
           const latencyMs = Math.max(0, now() - startedAt);
           bumpTelemetry('providerErrors');
@@ -144,7 +147,7 @@ export function createProviderRequestBoundary({
             { provider: normalizedProvider, operation, cause },
           );
           lastError = error;
-          const canRetry = attempt < attemptsAllowed;
+          const canRetry = attempt < attemptsAllowed && remaining()>180*attemptNumber;
           await observe(cfg,{
             provider: normalizedProvider,
             operation,
@@ -198,7 +201,7 @@ export function createProviderRequestBoundary({
             { provider: normalizedProvider, operation, status: response.status },
           );
           lastError = error;
-          const canRetry = attempt < attemptsAllowed && retryableStatus(response.status);
+          const canRetry = attempt < attemptsAllowed && retryableStatus(response.status) && remaining()>180*attemptNumber;
           await observe(cfg,{
             provider: normalizedProvider,
             operation,
@@ -222,6 +225,7 @@ export function createProviderRequestBoundary({
         let payload;
         try {
           payload = await response.json();
+          check();
         } catch (cause) {
           bumpTelemetry('providerErrors');
           const error = providerRequestError(
@@ -278,7 +282,7 @@ export function createProviderRequestBoundary({
         'PROVIDER_HTTP_ERROR',
         { provider: normalizedProvider, operation },
       );
-    });
+    },{budgetMs:timeoutMs,source:normalizedProvider,error:providerRequestError(`${normalizedProvider}: timeout`,'PROVIDER_TIMEOUT',{provider:normalizedProvider,operation})}));
   }
 
   return Object.freeze({ providerRequestJson });
