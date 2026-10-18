@@ -114,6 +114,7 @@ export function createMatchCenterController({
   apiErrorCategory,
   friendlyErrorMessage,
   toast,
+  now = () => Date.now(),
   performanceNow = () => globalThis.performance?.now?.() ?? Date.now(),
   setTimer = (fn, ms) => setTimeout(fn, ms),
   clearTimer = handle => clearTimeout(handle),
@@ -172,6 +173,8 @@ export function createMatchCenterController({
 
   const inFlight=new Map();
   let requestSeq=0;
+  let openSeq=0;
+  const recentCenters=new Map();
   let liveRefreshTimer=null;
   let liveRefreshWasActive=false;
 
@@ -225,9 +228,9 @@ export function createMatchCenterController({
     if (!id) return null;
     const key=String(id);
     const existing=inFlight.get(key);
-    if (existing) {
+    if (existing && existing.seq===requestSeq) {
       incrementDeduped();
-      return await existing;
+      return await existing.task;
     }
 
     const seq=++requestSeq;
@@ -262,11 +265,12 @@ export function createMatchCenterController({
       }
     })();
 
-    inFlight.set(key,task);
+    const entry={seq,task};
+    inFlight.set(key,entry);
     try {
       return await task;
     } finally {
-      if (inFlight.get(key)===task) {
+      if (inFlight.get(key)===entry) {
         inFlight.delete(key);
       }
     }
@@ -412,6 +416,40 @@ export function createMatchCenterController({
     return liveRefreshWasActive;
   }
 
+  function recentCenter(id,candidate=null) {
+    const data=candidate || recentCenters.get(id);
+    if (!data) return null;
+    const generated=Date.parse(safeText(safeRead(data,'generatedAt'),80));
+    const clock=safeCall(now);
+    const mode=matchCenterResponseMode(data);
+    if (!mode || responseFixtureId(data)!==id) return null;
+    const age=clock-generated;
+    const ttl=mode==='live'?15000:mode==='upcoming'?60000:300000;
+    const kickoff=Date.parse(safeText(safeRead(safeRead(data,'match'),'date'),80));
+    if (!Number.isFinite(age) || age<0 || age>ttl
+      || (mode==='upcoming' && (!Number.isFinite(kickoff) || kickoff<=clock))) {
+      recentCenters.delete(id);
+      return null;
+    }
+    return data;
+  }
+
+  function openingContext(id) {
+    const matches=safeRead(state,'matches');
+    const match=Array.isArray(matches)
+      ? matches.find(row=>positiveId(safeRead(row,'fixtureId'))===id)
+      : null;
+    const home=safeText(safeRead(safeRead(match,'home'),'name'),100);
+    const away=safeText(safeRead(safeRead(match,'away'),'name'),100);
+    return home && away ? {
+      title:`${home} — ${away}`,
+      message:'Загружаем события и статистику…',
+    } : {
+      title:'Открываем матч',
+      message:'Загружаем счёт, события и доступную статистику.',
+    };
+  }
+
   async function openMatchCenter(fixtureId,button) {
     const id=positiveId(fixtureId);
     if (!id) {
@@ -419,6 +457,7 @@ export function createMatchCenterController({
       return;
     }
 
+    const navigation=++openSeq;
     const previousFixtureId=currentCenterFixtureId();
     if (previousFixtureId && previousFixtureId!==id) {
       // A scheduled refresh for the previously open LIVE fixture must not
@@ -432,6 +471,10 @@ export function createMatchCenterController({
         Number.isSafeInteger(seq) && seq>=0 ? seq+1 : 1;
     }
 
+    const expectedAnalysisSeq=safeRead(state,'analysisRequestSeq');
+    let targetView=currentView();
+    const isCurrent=()=>navigation===openSeq && currentView()===targetView
+      && safeRead(state,'analysisRequestSeq')===expectedAnalysisSeq;
     const sourceView=currentView();
     if (sourceView!=='analysisView') {
       state.analysisBackView=sourceView;
@@ -446,22 +489,22 @@ export function createMatchCenterController({
       typeof timingValue==='number' && Number.isFinite(timingValue)
         ? timingValue
         : Date.now();
-    const reusableCenter=previousFixtureId===id
+    const reusableCenter=recentCenter(id,previousFixtureId===id
       ? safeRead(state,'currentCenter')
-      : null;
+      : null);
 
     setButton(button,{
       disabled:true,
       text:'⏳ Загружаю матч…',
     });
     safeCall(showView,'analysisView');
+    targetView=currentView();
 
-    if (!reusableCenter) {
-      safeCall(renderJourney,'loading',{
-        title:'Открываем матч',
-        message:
-          'Загружаем счёт, события и доступную статистику.',
-      });
+    if (reusableCenter) {
+      // The view has already been loaded for a previously rendered snapshot.
+      safeCall(renderCenter,reusableCenter);
+    } else {
+      safeCall(renderJourney,'loading',openingContext(id));
     }
 
     try {
@@ -473,13 +516,13 @@ export function createMatchCenterController({
         extrasPromise,
       ]).then(([data])=>data);
 
-      await extrasPromise;
-      if (reusableCenter) {
-        safeCall(renderCenter,reusableCenter);
-      }
-
       const data=await centerLoad;
-      if (!data) return;
+      if (!data || !isCurrent()) return;
+      if (safeRead(plainObject(safeRead(data,'provider')),'visibility')!=='admin') {
+        recentCenters.delete(id);
+        recentCenters.set(id,data);
+        if (recentCenters.size>6) recentCenters.delete(recentCenters.keys().next().value);
+      }
       state.currentCenter=data;
       safeCall(renderCenter,data);
       safeCall(productAction,'match_open',sourceView);
@@ -490,6 +533,7 @@ export function createMatchCenterController({
         safeCall(timing,'live',timingStartedAt,sourceView);
       }
     } catch (error) {
+      if (!isCurrent()) return;
       safeCall(actionError,'match',error,sourceView);
       const category=safeCall(errorCategory,error);
       const previous=currentCenterFixtureId()===id

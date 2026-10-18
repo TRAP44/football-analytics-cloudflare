@@ -191,8 +191,8 @@ test('Match Center preserves the originating view across degraded provider failu
 
   const request=block(matchCenterController,'async function requestMatchCenter','function isActiveLiveFixture');
   assert.match(request,/const existing=inFlight\.get\(key\)/);
-  assert.match(request,/if \(existing\)/);
-  assert.match(request,/inFlight\.set\(key,task\)/);
+  assert.match(request,/if \(existing && existing\.seq===requestSeq\)/);
+  assert.match(request,/inFlight\.set\(key,entry\)/);
   assert.match(request,/inFlight\.delete\(key\)/);
 });
 
