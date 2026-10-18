@@ -601,3 +601,12 @@ test('a fast tick cannot overlap the normal scheduled execution lease',async()=>
  const result=await rt.api.executeScheduledRun(tick,cfg);assert.equal(result[0].status,'skipped');assert.equal(live,0);
  release({ok:true});await pending;await rt.api.executeScheduledRun(tick,cfg);assert.equal(live,1);
 });
+
+test('manual recovery profiles share cron-global ownership and run no notification or AI tasks',async()=>{
+  for(const mode of ['preview','apply']){
+    const args=[];const h=runtime({runSettlementWatchdog:async(_cfg,opts)=>{args.push(opts);return {ok:true};}});
+    const result=await h.api.executeScheduledRun({scheduledTime:Date.parse('2026-10-19T04:00:00Z'),settlementRecoveryMode:mode},{cronRunner:'github-actions'});
+    assert.deepEqual(result.map(x=>x.task),['settlement_recovery']);
+    assert.equal(args[0].manual,true);assert.equal(args[0].preview,mode==='preview');assert.equal(args[0].canContinue(),true);
+  }
+});

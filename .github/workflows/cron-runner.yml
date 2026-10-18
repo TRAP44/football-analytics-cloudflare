@@ -12,6 +12,12 @@ name: Background Jobs
 
 on:
   workflow_dispatch:
+    inputs:
+      settlement_recovery:
+        description: 'Разовая сверка старых прогнозов; off сохраняет обычный cron'
+        type: choice
+        options: ['off', 'preview', 'apply']
+        default: off
   schedule:
     # GitHub запускает расписание с задержкой; скрипт сам относит запуск к
     # 5-минутному слоту, а общая блокировка не даёт задачам выполниться дважды.
@@ -40,6 +46,7 @@ jobs:
       BETA_TELEGRAM_IDS: ${{ secrets.BETA_TELEGRAM_IDS }}
       BETA_ACCESS_ENABLED: ${{ secrets.BETA_ACCESS_ENABLED }}
       PREMATCH_PREDICTIONS_ENABLED: ${{ vars.PREMATCH_PREDICTIONS_ENABLED }}
+      SETTLEMENT_RECOVERY_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.settlement_recovery != 'off' && inputs.settlement_recovery || '' }}
       LIVE_NOTIFICATIONS_FAST_ENABLED: ${{ vars.LIVE_NOTIFICATIONS_FAST_ENABLED }}
       FAVORITE_SCOREBOARD_ENABLED: ${{ vars.FAVORITE_SCOREBOARD_ENABLED }}
       API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}

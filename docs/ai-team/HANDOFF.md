@@ -17,6 +17,15 @@ PR: ссылка или ветка
 
 
 
+
+## 2026-10-19 — Codex — Разовая сверка старых pending без переключения auto recovery
+PR: ветка `codex/manual-pending-recovery`.
+Сделано: choice off(default)/preview/apply в существующем protected main-only Background Jobs. Отдельный профиль внутри той же cron-globallease/heartbeat, толькоwatchdog, безnotify/AI/otherjobs; bootstrap не запускает unrelated quota reconciliation. Preview — числовая сводка pending, apply — существующие source+settlement/schema/runtime/circuit/auditguards, effective manual opt-in толькодляэтогозапуска, DBautoFlag не меняется.
+Ограничения: manualpending-onlyscan, cap40fixtures/40dates (normal20/5безизменений), auditIDs cap40, runtimeverified/maintenance/failclosed/scantruncation/halfquota reserve; before eachdate/finalsettle ownership+120sbudget+reserve. Blockedskipped,partialdegraded. НетnewHTTProute/SQL/public/secret/Telegramsend. Документ MANUAL_PENDING_RECOVERY_RU.md.
+Проверки:51focusedpassed; reviewerCodex(неClaude) выявилblocked-resultok, исправленвactualbranch/retry_exhausted, финально6manualtests/review безблокеров. Node22 npm ci/check/lint, release694/694, full4368/4368, privilegedaudit/verify:release/Workerdry-run прошли. Первыйfull1старыйsourceexpectation adjacency workflow_dispatch/schedule — обновлёнподinputs безудаленияmain/env/pinnedactionsзащит.
+Контекст: #962 опубликован4d58ef00, deploy39173810068/external39173959678 success; report39173812212:40pending, auto=false,lastStatusnever,circuitfalse; перенесёнвГотово. RealAIchat39172714416 successfixeddata/realbinding, неfullTelegramsession. Осталось:finalchecks/CI/merge, preview, applyповыданномупоручениюСергея, freshreport; не включатьautomaticflag и не выдумыватьитоги.
+
+
 ## 2026-10-19 — Codex — Проверка результата completion после таймаута
 PR: [#962](https://github.com/TRAP44/football-analytics-cloudflare/pull/962), ветка `codex/scheduled-completion-reconcile`.
 Сделано: owner/group-scoped bounded readonly reconciliation для transient completion errors. Ужеdone подтверждается без повторногоRPC; running+lease>3с даётодинretry; второйunknown проверяетсяread, безтретьегоRPC. Claim/release/business jobs/Telegram не replay. Wire через существующий Supabaseclient, узкаяпроекцияmax1 и1800мсreaddeadline. НовыхSQL/secrets/publicнет.

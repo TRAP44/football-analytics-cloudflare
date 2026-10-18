@@ -1,6 +1,7 @@
 // Settlement and prediction-integrity runtime extracted from worker.js.
 // Provider, Supabase and runtime-control capabilities remain injected by the composition root.
 import { ensureProviderSnapshot } from './provider-status-probe.js';
+import {prematchProviderBudget} from './prematch-provider-budget.js';
 
 export function createSettlementRuntime(deps) {
   if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
@@ -1367,9 +1368,9 @@ export function createSettlementRuntime(deps) {
     return bytesToHex(new Uint8Array(digest)).slice(0, 32);
   }
 
-  async function loadPredictionRemediationRows(cfg, maxRows = 5000) {
+  async function loadPredictionRemediationRows(cfg, maxRows = 5000, onlyPending = false) {
     if (hasSupabase(cfg)) {
-      return await supaSelectPaged(cfg, 'model_predictions', {}, {
+      return await supaSelectPaged(cfg, 'model_predictions', onlyPending?{status:'eq.pending'}:{}, {
         pageSize: 1000,
         maxRows,
         order: 'kickoff_at.desc',
@@ -1708,7 +1709,7 @@ export function createSettlementRuntime(deps) {
       fixture_ids:(Array.isArray(action.fixtureIds) ? action.fixtureIds : [])
         .map(positiveSafeInteger)
         .filter(id=>id!==null)
-        .slice(0,20),
+        .slice(0,40),
       detail:plainObject(action.detail) || {},
     };
     if (hasSupabase(cfg)) await supaInsertIgnore(cfg, 'prediction_integrity_actions', row, 'action_id');
@@ -1740,7 +1741,7 @@ export function createSettlementRuntime(deps) {
     return publicRemediationAction(row);
   }
 
-  async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
+  async function buildModelRemediationReport(cfg, { maxRows = 5000, manualBatch = false } = {}) {
     if (!hasSupabase(cfg) && !cfg.devMode) {
       return { available: false, reason: 'Supabase не настроен: восстановление требует постоянную базу данных.' };
     }
@@ -1755,11 +1756,11 @@ export function createSettlementRuntime(deps) {
       hasSupabase(cfg) ? loadSettlementReliability(cfg).catch(() => normalizeSettlementReliability()) : Promise.resolve(normalizeSettlementReliability()),
       loadRuntimeControls(cfg),
     ]);
-    const loaded = await loadPredictionRemediationRows(cfg, maxRows);
+    const loaded = await loadPredictionRemediationRows(cfg, maxRows,manualBatch);
     const settled = loaded.rows.filter(row => row.status === 'settled');
     const pending = loaded.rows.filter(row => row.status === 'pending');
     const candidates = stalePredictionCandidates(pending);
-    const batch = selectRemediationBatch(candidates);
+    const batch = selectRemediationBatch(candidates,manualBatch?40:20,manualBatch?40:5);
     const candidateToken = await remediationFingerprint(batch.selected);
     let recentActions = [];
     if (schema.ok) recentActions = await loadRemediationActions(cfg, 10).catch(() => []);
@@ -1917,9 +1918,16 @@ export function createSettlementRuntime(deps) {
     return freeQuotaHealthy(15, 4);
   }
 
-  async function runSettlementWatchdog(cfg) {
+  async function runSettlementWatchdog(cfg,{manual=false,preview=false,canContinue=()=>true}={}) {
+    if ((manual || preview) && cfg?.cronRunner!=='github-actions') return {skipped:'manual_recovery_runner_required'};
     if (!hasSupabase(cfg)) return { skipped: 'no_persistent_database' };
-    const markerKey = `settlement-watchdog:${todayUtc()}:v1`;
+    const markerKey = manual?`settlement-manual:${crypto.randomUUID()}`:`settlement-watchdog:${todayUtc()}:v1`;
+    if (preview) {
+      const report=await buildModelRemediationReport(cfg,{maxRows:5000,manualBatch:true});
+      return {ok:report.available===true && report.schemaReady===true,reason:'manual_recovery_preview',
+        stalePending:report.recovery?.stalePending,selectedCount:report.recovery?.selectedCount,
+        providerCalls:report.recovery?.estimatedProviderCalls,scanTruncated:report.scan?.truncated===true};
+    }
     const runLedgerSchema = await probeSettlementRunLedgerSchema(cfg);
     if (!runLedgerSchema.ok) return { skipped: 'run_ledger_schema_missing', status: runLedgerSchema.status };
     const reconciliation = await reconcileInterruptedSettlementActions(cfg);
@@ -1939,12 +1947,18 @@ export function createSettlementRuntime(deps) {
       }).catch(() => null);
       return { skipped: 'run_in_progress', activeRuns: ledgerAfter.active.length };
     }
-    if (await getCache(markerKey, cfg)) return { skipped: 'already_checked', date: todayUtc(), reconciledInterrupted: reconciliation.reconciled.length };
+    if (!manual && await getCache(markerKey, cfg)) return { skipped: 'already_checked', date: todayUtc(), reconciledInterrupted: reconciliation.reconciled.length };
   
-    const report = await buildModelRemediationReport(cfg, { maxRows: 5000 });
+    const report = await buildModelRemediationReport(cfg, { maxRows: 5000, manualBatch:manual });
     const runtimeState = await loadRuntimeControls(cfg);
     const runtime = runtimeState.value || DEFAULT_RUNTIME_CONTROLS;
-    const decision = settlementWatchdogDecision(report, runtime, {
+    // Explicit protected workflow invocation is a one-off manual action; never
+    // persist or enable the automatic runtime setting.
+    if (manual && (runtime.maintenanceMode===true || runtime.controlPlaneFailClosed===true)) return {skipped:'manual_recovery_paused'};
+    if (manual && report.scan?.truncated) return {skipped:'manual_recovery_scan_truncated'};
+    await ensureSettlementProviderSnapshot(cfg);
+    if (manual && !prematchProviderBudget(providerSnapshot()).allowed) return {skipped:'manual_recovery_provider_reserve'};
+    const decision = settlementWatchdogDecision(report, manual?{...runtime,autoSettlementRecoveryEnabled:true}:runtime, {
       schemaReady: Boolean(report?.watchdog?.schemaReady),
       runtimeVerified: runtimeState.source === 'supabase',
       providerReady: Boolean(cfg.apiFootballKey),
@@ -1958,6 +1972,7 @@ export function createSettlementRuntime(deps) {
       providerCalls: decision.providerCalls,
       scanTruncated: Boolean(report?.scan?.truncated),
       autoRecoveryEnabled: Boolean(runtime.autoSettlementRecoveryEnabled),
+      manual:manual===true,
       runtimeVerified: runtimeState.source === 'supabase',
       runtimeRevision: Number(runtime.revision || 1),
       circuitOpen: Boolean(report?.watchdog?.reliability?.circuitOpen),
@@ -1997,7 +2012,7 @@ export function createSettlementRuntime(deps) {
       if (decision.state !== 'quota_guard') {
         await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta }, cfg, 1440).catch(() => null);
       }
-      return { ok: true, ...baseMeta };
+      return { ok: true, ...baseMeta,...(manual?{skipped:decision.state}:{} ) };
     }
   
     const currentIds=[...new Set(
@@ -2024,18 +2039,20 @@ export function createSettlementRuntime(deps) {
         meta: { ...baseMeta, retryOfActionId: retry.retryOfActionId, maxAttempts: SETTLEMENT_RUN_MAX_ATTEMPTS },
       }).catch(() => null);
       await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta, state: 'retry_exhausted' }, cfg, 1440).catch(() => null);
-      return { ok: true, ...baseMeta, state: 'retry_exhausted', retryOfActionId: retry.retryOfActionId };
+      return { ok: true, ...baseMeta, state: 'retry_exhausted', retryOfActionId: retry.retryOfActionId,...(manual?{skipped:'retry_exhausted'}:{} ) };
     }
     const actionId = crypto.randomUUID();
-    const reason = 'Плановое восстановление ожидающих результатов';
+    const reason = manual?'Разовая сверка ожидающих результатов из защищённого GitHub workflow':'Плановое восстановление ожидающих результатов';
+    const admissionUntil=Date.now()+120000;
+    const admit=()=>{if(manual && (!canContinue() || Date.now()>admissionUntil || !prematchProviderBudget(providerSnapshot()).allowed))throw Object.assign(new Error('Manual recovery stopped before new work'),{code:'MANUAL_RECOVERY_STOPPED'});};
     let auditStarted = false;
     let executionResult = null;
   
     try {
       await recordRemediationAction(cfg, null, {
         actionId,
-        actionType: 'auto_recover',
-        triggerSource: 'cron',
+        actionType: manual?'recover':'auto_recover',
+        triggerSource: manual?'admin':'cron',
         status: 'started',
         reason,
         attemptNo: retry.attemptNo,
@@ -2059,9 +2076,11 @@ export function createSettlementRuntime(deps) {
       auditStarted = true;
   
       for (const date of dates) {
+        admit();
         const rows = await loadProviderFixturesForDate(date, cfg);
         fixtures.push(...rows.filter(fixture => fixtureSet.has(fixtureIdentity(fixture))));
       }
+      admit();
       const settlement = await settlePredictionsFromFixtures(fixtures, cfg);
       const after = await supaSelectMany(cfg, 'model_predictions', { fixture_id: `in.(${currentIds.join(',')})` }, { limit: currentIds.length + 2 });
       const settledCount = after.filter(row => row.status === 'settled').length;
@@ -2092,7 +2111,7 @@ export function createSettlementRuntime(deps) {
         meta: { ...baseMeta, actionId, settledCount, skippedCount },
       }).catch(() => null);
       await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta, actionId, settledCount, skippedCount, status }, cfg, 1440).catch(() => null);
-      return { ok: true, ...baseMeta, actionId, settledCount, skippedCount, status };
+      return { ok: true, ...baseMeta, actionId, settledCount, skippedCount, status:manual && skippedCount?'degraded':status,...(manual && skippedCount?{reason:'manual_recovery_partial'}:{} ) };
     } catch (error) {
       if (executionResult) {
         await noteSettlementWatchdogOutcome(cfg, executionResult.status, { actionId }).catch(() => null);
@@ -2132,8 +2151,8 @@ export function createSettlementRuntime(deps) {
       } else {
         await recordRemediationAction(cfg, null, {
           actionId,
-          actionType: 'auto_recover',
-          triggerSource: 'cron',
+          actionType: manual?'recover':'auto_recover',
+          triggerSource: manual?'admin':'cron',
           status: 'failed',
           reason,
           attemptNo: retry.attemptNo,

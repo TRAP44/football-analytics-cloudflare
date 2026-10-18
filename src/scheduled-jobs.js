@@ -441,11 +441,12 @@ export function createScheduledJobsRuntime({
     return result;
   }
 
-  function buildScheduledTaskPlan(cfg, scheduledAt, ownershipState,liveOnly=false) {
+  function buildScheduledTaskPlan(cfg, scheduledAt, ownershipState,liveOnly=false,recoveryMode='') {
     const normalizedDate=scheduledDate(scheduledAt);
     if (!normalizedDate) throw new TypeError('scheduledAt is invalid');
     scheduledAt=normalizedDate;
     const run=(task,runner)=>runOwnedTask(task,runner,ownershipState);
+    if(recoveryMode)return [['settlement_recovery',run('settlement_recovery',()=>runSettlementWatchdog(cfg,{manual:true,preview:recoveryMode==='preview',canContinue:()=>!ownershipState?.lost}))]];
     if(liveOnly)return [['live_notifications',run('live_notifications',()=>processSmartNotifications(cfg,{liveOnly:true,maxFixtures:2,timeBudgetMs:20000}))]];
     const backtestTask = run('backtest', () => settleBacktestDaily(cfg));
     const remindersTask = run('reminders', () => processDueReminders(cfg));
@@ -567,7 +568,8 @@ export function createScheduledJobsRuntime({
     }
 
     const liveOnly=controller?.liveNotificationsOnly===true && cfg?.cronRunner==='github-actions';
-    const jobKey=liveOnly?`cron-live:${scheduledAt.toISOString()}`:scheduledRunKey(scheduledAt);
+    const recoveryMode=cfg?.cronRunner==='github-actions' && ['preview','apply'].includes(controller?.settlementRecoveryMode)?controller.settlementRecoveryMode:'';
+    const jobKey=recoveryMode?`settlement-${recoveryMode}:${scheduledAt.toISOString()}`:liveOnly?`cron-live:${scheduledAt.toISOString()}`:scheduledRunKey(scheduledAt);
     let claim={
       claimed:true,
       persistent:false,
@@ -643,7 +645,7 @@ export function createScheduledJobsRuntime({
     }
 
     try {
-      const tasks=buildScheduledTaskPlan(cfg,scheduledAt,heartbeat.state,liveOnly);
+      const tasks=buildScheduledTaskPlan(cfg,scheduledAt,heartbeat.state,liveOnly,recoveryMode);
       const results=await observeScheduledTasks(cfg,tasks);
       await heartbeat.stop();
 

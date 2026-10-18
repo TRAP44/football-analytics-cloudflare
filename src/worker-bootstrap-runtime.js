@@ -833,7 +833,7 @@ export function createWorkerBootstrapRuntime(deps = {}) {
   
       {
         const scheduledAt=new Date(timestamp);
-        if (scheduledAt.getUTCMinutes() % 15 === 0) {
+        if (scheduledAt.getUTCMinutes() % 15 === 0 && !(cfg?.cronRunner==='github-actions' && ['preview','apply'].includes(controller?.settlementRecoveryMode))) {
           const reconciliation=Promise.resolve()
             .then(()=>reconcileAnalysisUsageReservations(cfg))
             .catch(async error=>{
