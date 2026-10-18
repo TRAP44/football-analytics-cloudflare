@@ -53,7 +53,7 @@ export async function verifyMatchChatRemote(env=process.env){
     for(const variant of ['previous','current']){
       try{
         const response=await fetch(base+'/probe',{method:'POST',headers:{'content-type':'application/json','x-probe-key':nonce},body:JSON.stringify({variant}),signal:AbortSignal.timeout(12000)});
-        if(!response.ok){report[variant]={failure:'probe_http_error',status:response.status};continue;}
+        if(!response.ok){report[variant]={failure:'probe_http_error'};continue;}
         report[variant]=safeProbeReport(await response.json());
       }catch{report[variant]={failure:'probe_transport_error'};}
     }
