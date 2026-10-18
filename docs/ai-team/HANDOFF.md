@@ -16,7 +16,7 @@ PR: ссылка или ветка
 
 
 ## 2026-10-18 — Codex — Критический путь свежего анализа и LIVE-центра
-PR: ветка `codex/analysis-critical-path`.
+PR: [#960](https://github.com/TRAP44/football-analytics-cloudflare/pull/960), ветка `codex/analysis-critical-path`.
 Сделано: независимые market-history/calibration параллельно обогащению, roles ждут только cached intelligence и готовые lineups/absences вместо form/web/fresh season. В LIVE-центре prematch cache и timeline параллельно. Read-before-write market сохранён, все результаты дожидаются ответа; history/quota/lock/finalization/settlement не выносились в фон, public/SQL/secrets не менялись.
 Замер: реальные main/branch modules, fixed40ms artificial I/O,5пар HTTP200; analysis median173→90мс, LIVE81→41мс, те же calls и тестовые45/30/25. Это изолированное подтверждение снятия serial ожиданий, не production speed/capacity; документ REQUEST_PERFORMANCE_RU.md.
 Контекст: #959 опубликован08633111, deploy39157364291/external39157510977/естественный cron39157551951 success (ticks19:12/13/14UTC). Его строка перенесена в Готово. Report39157366924:40pending>24ч, oldest2026-09-23, не фиксировать результаты вслепую;1AI timing8391мс без phase metadata, delivery activity не доказана. Старый cron39157165472:in_play_timeline failed/cache read; следующий зелёный не доказывает исправление первопричины.
