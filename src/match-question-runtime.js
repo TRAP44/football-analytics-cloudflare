@@ -1,3 +1,4 @@
+import {buildMatchQuestionFacts,directMatchQuestionTopic} from './match-question-facts.js';
 import {verifyMatchQuestionAccess} from './match-question-access.js';
 import {presetAnswerIds} from './match-question-presets.js';
 export {presetAnswerIds} from './match-question-presets.js';
@@ -14,13 +15,12 @@ import { claimDailyBudget, peekDailyBudget } from './daily-budget-claim.js';
 import {
   EXPLANATION_ANALYSIS_CACHE_KEY,
   EXPLANATION_MODEL,
-  buildExplanationFacts,
   composeExplanation,
   explanationCatalogHash,
 } from './match-explanation-runtime.js';
 import { isBettingText } from './signal-wording.js';
 
-export const QUESTION_VERSION = 'v1';
+export const QUESTION_VERSION = 'v2';
 export const QUESTION_MAX_LENGTH = 200;
 const QUESTION_MIN_LENGTH = 3;
 const MAX_ANSWER_FACTS = 3;
@@ -89,7 +89,7 @@ function extractModelText(result) {
 }
 
 /**
- * Строгий разбор ответа LLM: только объект ровно с полем factIds — массив из
+ * Строгий разбор ответа LLM: объект ровно с полем factIds либо JSON-массив из
  * 0–3 уникальных известных ID. Пустой массив — «в данных этого нет». Любое
  * отклонение (свободный текст, лишние поля, чужие ID) — null.
  */
@@ -105,8 +105,8 @@ export function parseQuestionSelection(result, facts = []) {
   } catch {
     return null;
   }
-  if (!plainObject(parsed) || Object.keys(parsed).length !== 1 || !Array.isArray(parsed.factIds)) return null;
-  const ids = parsed.factIds;
+  const ids=Array.isArray(parsed) ? parsed : plainObject(parsed) && Object.keys(parsed).length===1 ? parsed.factIds : null;
+  if(!Array.isArray(ids))return null;
   if (ids.length > MAX_ANSWER_FACTS) return null;
   const known = new Set(list.map(fact => fact.id));
   if (!ids.every(id => typeof id === 'string' && known.has(id))) return null;
@@ -359,7 +359,7 @@ export function createMatchQuestionRuntime(deps = {}) {
     if (!plainObject(payload) || positiveId(safeRead(plainObject(payload.match), 'fixtureId')) !== fixtureId) {
       return json({ available: false, reason: 'analysis_unavailable' });
     }
-    const facts = buildExplanationFacts(payload);
+    const facts = buildMatchQuestionFacts(payload);
 
     if (preset) {
       const ids = presetAnswerIds(preset, facts);
@@ -370,6 +370,13 @@ export function createMatchQuestionRuntime(deps = {}) {
     // Переключатель AI в админке: готовые подсказки работают, свой вопрос — нет,
     // в том числе из кеша прежних ответов AI (ревью Codex #863).
     if (!aiEnabled) return json({ available: false, reason: 'ai_disabled' });
+    const directTopic=directMatchQuestionTopic(question.text);
+    if(directTopic){
+      const ids=facts.filter(fact=>fact.id===directTopic).map(fact=>fact.id);
+      if(ids.length)return answer(base,'facts',facts,ids,{source:'data'});
+      const missing={id:directTopic,role:'caveat',text:directTopic==='referee' ? 'В этом разборе главный судья пока не указан.' : 'В этом разборе стадион пока не указан.'};
+      return answer(base,'facts',[missing],[directTopic],{source:'data'});
+    }
     const hash = await explanationCatalogHash(facts);
     const analysisVersion = String(safeRead(payload, 'analysisVersion') || 'unknown').replace(/[^\w.-]/g, '').slice(0, 40) || 'unknown';
     const cacheKey = `ask:${QUESTION_VERSION}:${fixtureId}:${analysisVersion}:${hash}:${await sha256Short(question.normalized)}`;
@@ -389,6 +396,10 @@ export function createMatchQuestionRuntime(deps = {}) {
       if (selection.reason === 'user_limit' || selection.reason === 'daily_limit') {
         return json({ available: false, reason: selection.reason, ...remaining });
       }
+      const normalized=question.normalized;
+      const knownPreset=Object.entries(QUESTION_PRESETS).find(([,label])=>normalizeQuestion(label)?.normalized===normalized)?.[0];
+      const fallbackIds=knownPreset ? presetAnswerIds(knownPreset,facts) : [];
+      if(fallbackIds.length)return answer(base,'facts',facts,fallbackIds,{source:'data',...remaining});
       return json({ available: false, reason: 'ai_unavailable', ...remaining });
     }
     const cacheWrite=Promise.resolve().then(()=>setCache(cacheKey,fixtureId,{factIds:selection.ids,model:EXPLANATION_MODEL},cfg,ANSWER_CACHE_MINUTES)).catch(()=>null);

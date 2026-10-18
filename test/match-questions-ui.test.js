@@ -11,7 +11,7 @@ test('shell: four ready questions, bounded input, honest note', () => {
   for (const label of ['Почему такой прогноз?', 'Что может изменить исход?', 'Кто в форме?', 'Что с составами и потерями?']) assert.ok(html.includes(label), label);
   assert.match(html, /maxlength="200"/);
   assert.match(html, /<button[^>]*type="button"[^>]*data-question-start/);
-  assert.match(html, /Ставки не подсказываем/);
+  assert.match(html, /Ответы основаны на данных этого матча/);
   assert.doesNotMatch(html, /коэффициент|П1|П2|1X2/);
 });
 
@@ -26,6 +26,7 @@ test('answers: server facts only, "not in the data", refusal and limits', () => 
   }, esc);
   assert.match(facts, /«Кто в форме\?»/);
   assert.match(facts, /Милан: 4 победы/);
+  assert.doesNotMatch(facts,/Это подкрепляет|<ol|<b>Риск/);
   assert.doesNotMatch(facts, /выдумка/, 'unknown roles are dropped');
   assert.doesNotMatch(facts, /<img/);
   assert.match(facts, /Осталось своих вопросов в этот час: 4/);

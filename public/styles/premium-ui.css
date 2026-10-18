@@ -2702,3 +2702,14 @@ html[data-theme] body.miniapp-public-shell .match-question-start {
 html[data-theme] body.miniapp-public-shell .match-question-start:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 html[data-theme] body.miniapp-public-shell .match-questions[aria-busy="true"] .match-question-start { opacity: .55; pointer-events: none; }
 html[data-theme] body.miniapp-public-shell .mr-hq-hero .center-hero-actions > .center-pass-btn { grid-column: 1 / -1; width: 100%; }
+
+html[data-theme] body.miniapp-public-shell .match-question-response {
+  padding: 12px 14px;
+  border-left: 2px solid var(--accent, #ffc21c);
+  border-radius: 0 12px 12px 0;
+  background: rgba(255, 194, 28, .05);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+html[data-theme] body.miniapp-public-shell .match-question-response p { margin: 0; }
+html[data-theme] body.miniapp-public-shell .match-question-response p + p { margin-top: 8px; }

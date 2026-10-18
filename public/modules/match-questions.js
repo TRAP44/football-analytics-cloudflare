@@ -25,14 +25,14 @@ const UNAVAILABLE = Object.freeze({
 });
 
 export function matchQuestionsShellHtml(escapeHtml) {
-  return `<div class="match-explanation-head"><button type="button" class="match-question-start" data-question-start>💬 Спросить про матч</button><small>Ответ — только из данных матча</small></div>
+  return `<div class="match-explanation-head"><button type="button" class="match-question-start" data-question-start>💬 Спросить про матч</button><small>О судье, форме, составах и прогнозе</small></div>
     <div class="match-question-presets" role="group" aria-label="Готовые вопросы">${PRESETS.map(([id, label]) => `<button type="button" class="match-question-chip" data-question-preset="${escapeHtml(id)}">${escapeHtml(label)}</button>`).join('')}</div>
     <form class="match-question-form" data-question-form>
-      <input type="text" name="question" maxlength="${MAX_LENGTH}" autocomplete="off" placeholder="Свой вопрос, например: кто опаснее в атаке?" aria-label="Вопрос про матч">
+      <input type="text" name="question" maxlength="${MAX_LENGTH}" autocomplete="off" placeholder="Свой вопрос, например: кто главный судья?" aria-label="Вопрос про матч">
       <button type="submit" class="match-question-submit">Спросить</button>
     </form>
     <div class="match-question-answer" data-question-answer aria-live="polite"></div>
-    <p class="match-explanation-note">AI только выбирает подходящие факты из данных матча. Ставки не подсказываем.</p>`;
+    <p class="match-explanation-note">Ответы основаны на данных этого матча.</p>`;
 }
 
 function validItems(items) {
@@ -51,7 +51,7 @@ export function matchQuestionAnswerHtml(data, escapeHtml) {
   if (data?.available === true) {
     const items = validItems(data.items);
     if (data.answer === 'facts' && items.length) {
-      return `${head}<ol class="match-explanation-list">${items.map(item => `<li class="is-${escapeHtml(item.role)}"><b>${escapeHtml(item.connector.trim().slice(0, 40))}</b> ${escapeHtml(item.text.trim().slice(0, 300))}</li>`).join('')}</ol>${remaining}`;
+      return `${head}<div class="match-question-response">${items.map(item => `<p>${escapeHtml(item.text.trim().slice(0, 300))}</p>`).join('')}</div>${remaining}`;
     }
     if (data.answer === 'refused') return `${head}<p class="match-question-empty">Ставки мы не подсказываем. Могу рассказать, что важно в этом матче по данным.</p>${remaining}`;
     return `${head}<p class="match-question-empty">В данных этого матча ответа на этот вопрос нет.</p>${remaining}`;

@@ -40,9 +40,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Вернуть подтверждённую настоящим binding быструю модель; перепроверить полный текстовый вопрос и публикацию — **Codex** — [PR #953](https://github.com/TRAP44/football-analytics-cloudflare/pull/953), `codex/match-chat-verified-model`.
+- [ ] Вопросы по фактам матча (судья, полная форма и потери), осмысленные подсказки и быстрый показ ленты при входе — **Codex** — [PR #954](https://github.com/TRAP44/football-analytics-cloudflare/pull/954), `codex/match-chat-grounded-startup`.
+
 
 
 
@@ -108,6 +110,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Вернуть подтверждённую настоящим binding быструю модель; перепроверить полный текстовый вопрос и публикацию — **Codex** — [PR #953](https://github.com/TRAP44/football-analytics-cloudflare/pull/953), `codex/match-chat-verified-model`. — слит и опубликован; real service probe39114320518 успешен.
 
 - [x] Исправить запуск реальной проверки AI: убрать отключающий remote bindings флаг Wrangler; повторить service verification — **Codex** — [PR #952](https://github.com/TRAP44/football-analytics-cloudflare/pull/952), `codex/match-chat-remote-binding`. — слит; remote вызов включён и реально выполнен.
 
