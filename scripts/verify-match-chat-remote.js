@@ -20,10 +20,13 @@ export function summarizeChatProbe(result){
 // Persist only locally defined verdicts, never strings returned by the HTTP probe.
 export function safeProbeReport(result){
   return {
-    model:result?.model===EXPLANATION_MODEL?'current':result?.model==='@cf/meta/llama-3.1-8b-instruct-fp8-fast'?'previous':'unexpected',
+    model:result?.model===EXPLANATION_MODEL?'current':result?.model==='@cf/meta/llama-3.1-8b-instruct-fp8'?'previous':'unexpected',
     passed:summarizeChatProbe(result),
     modelCalledOnce:result?.modelCalls===1,
     modelFailure:result?.modelFailure==='model_unavailable'?'model_unavailable':result?.modelFailure==='binding_error'?'binding_error':'none',
+    invalidResponse:result?.reason==='invalid_response',
+    timedOutOrInferenceFailed:result?.reason==='ai_error' || result?.reason==='ai_unavailable',
+    withinOneSecond:typeof result?.durationMs==='number' && result.durationMs<1000,
     aiFacts:result?.available===true && result?.answer==='facts' && result?.source==='ai',
     homeFormSelected:Array.isArray(result?.items) && result.items.some(item=>item.id==='form_home')
   };

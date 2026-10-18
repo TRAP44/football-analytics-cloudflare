@@ -8,7 +8,7 @@ import {auditWorkflow} from '../scripts/privileged-access-audit.js';
 
 test('remote harness calls the actual handler, checks grounded facts and isolates the previous model',async()=>{
   const calls=[];const env={PROBE_NONCE:'local-fixture-only',AI:{run:async(model,input)=>{
-    calls.push({model,input});if(model.endsWith('fp8-fast'))throw Error('model not found');
+    calls.push({model,input});if(model!==EXPLANATION_MODEL)throw Error('model not found');
     return {response:'{"factIds":["form_home","form_away"]}'};
   }}};
   for(const variant of ['previous','current']){

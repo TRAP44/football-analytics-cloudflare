@@ -14,6 +14,13 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-18 — Codex — Выбор модели по настоящему ответу, а не каталогу
+PR: [#953](https://github.com/TRAP44/football-analytics-cloudflare/pull/953), ветка `codex/match-chat-verified-model`.
+Факты: #951 опубликован workflow39113479394, launch125 public assets совпадают побайтно. #952 слит 1d136821 и исправил remote probe. Настоящие прогоны39113816570 и39113873409 дважды показали: fp8-fast возвращает aiFacts=true/homeFormSelected=true без modelFailure; fp8 не даёт пригодного ответа при тех же вопросе/fixture/таймауте4с. Каталожный unavailable redirect НЕ доказательство отказа fast API. Нашу замену модели в #951 откатываем по реальным результатам.
+Сделано: shared EXPLANATION_MODEL возвращён на реально ответивший fp8-fast. previous вариант harness теперь сравнивает неудачную замену fp8 с текущим fast; добавлены фиксированные булевы диагностические признаки, произвольные HTTP строки по-прежнему не сохраняются. HMAC, доступ, бюджеты, parser known IDs, таймаут4с и продуктовые ускорения #951 сохранены.
+Осталось: локальные gates/независимое ревью, CI/merge, Verify Match Chat на текущей модели должен явно пройти, затем publish и внешний монитор. Не называть чат рабочим на основании старой версии сравнения; production Telegram auth/живой пользователь не проверены этим fixture probe. Сергей ранее разрешил применять исправления без повторного ручного merge.
+
+
 ## 2026-10-18 — Codex — Remote AI проверка: Wrangler --local отключал binding
 PR: [#952](https://github.com/TRAP44/football-analytics-cloudflare/pull/952), ветка `codex/match-chat-remote-binding`.
 Сделано: #951 слит как e5b20961, все четыре PR gates прошли. Verify Match Chat 39113243156 завершился отказом old/current binding, но это не доказывает отказ реального AI: pinned Wrangler 4.149.0 при args.local выставляет dev.remote=false и пропускает remote proxy session. Удалён --local: обычный dev исполняет fixture локально, разрешая ai.remote=true; loopback, nonce, отсутствие production endpoint и main-only workflow сохранены. Добавлен контракт на этот существенный CLI режим.
