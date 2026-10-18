@@ -118,31 +118,56 @@ export function createBillingRuntime(deps = {}) {
     return bytesToHex(await hmacSha256(enc.encode(botToken), base)).slice(0, 24);
   }
   
-  async function makeInvoicePayload(userId, plan, botToken) {
+  async function makeInvoicePayload(userId, plan, botToken, stars = null) {
     const uid=positiveInt(userId);
     const planCfg=billingPlanConfig(plan,{});
     const token=typeof botToken === 'string' ? botToken : '';
     if (uid === null || !planCfg || !token) throw new TypeError('Invalid subscription invoice parameters.');
     const nonceBytes=crypto.getRandomValues(new Uint8Array(6));
     const nonce=bytesToHex(nonceBytes);
-    const base=`fa1|${uid}|${planCfg.key}|${nonce}`;
+    const amount=stars === null ? null : positiveInt(stars);
+    if (stars !== null && amount === null) throw new TypeError('Invalid subscription invoice price.');
+    const base=amount === null ? `fa1|${uid}|${planCfg.key}|${nonce}` : `fa2|${uid}|${planCfg.key}|${nonce}|${amount}`;
     return `${base}|${await invoiceSignature(base,token)}`;
   }
   
   async function parseInvoicePayload(payload, botToken) {
     if (typeof payload !== 'string' || payload.length > 512 || typeof botToken !== 'string' || !botToken) return null;
     const parts=payload.split('|');
-    if (parts.length !== 5 || parts[0] !== 'fa1') return null;
-    const [,uidRaw,planRaw,nonce,sig]=parts;
+    const priced=parts[0] === 'fa2';
+    if (!(priced ? parts.length === 6 : parts[0] === 'fa1' && parts.length === 5)) return null;
+    const [,uidRaw,planRaw,nonce]=parts;
+    const sig=parts.at(-1);
+    const stars=priced ? positiveInt(parts[4]) : null;
+    if (priced && (stars === null || String(stars)!==parts[4])) return null;
     const uid=positiveInt(uidRaw);
     const plan=safeText(planRaw,24).toUpperCase();
     if (uid === null || !Object.hasOwn(BILLING_PLANS,plan) || !/^[0-9a-f]{12}$/i.test(nonce) || !/^[0-9a-f]{24}$/i.test(sig)) return null;
-    const base = `fa1|${uid}|${plan}|${nonce}`;
+    const base = priced ? `fa2|${uid}|${plan}|${nonce}|${stars}` : `fa1|${uid}|${plan}|${nonce}`;
     const expected = await invoiceSignature(base, botToken);
     if (!constantTimeEqual(expected.toLowerCase(), sig.toLowerCase())) return null;
-    return { userId: uid, plan, nonce };
+    return { userId: uid, plan, nonce, ...(priced ? {stars} : {}) };
   }
   
+  // Only a signed invoice price or a persisted paid transaction for this exact
+  // legacy subscription can establish an amount outside current/default prices.
+  async function subscriptionAmountAccepted(subscription, payload, amount, cfg) {
+    const price=positiveInt(amount);
+    const planCfg=billingPlanConfig(subscription.plan,cfg);
+    if (!price || !planCfg) return false;
+    if (subscription.stars !== undefined) return subscription.stars === price;
+    if (planAcceptedStars(planCfg).has(price)) return true;
+    const matches=row=>row && positiveInt(row.telegram_id)===subscription.userId
+      && row.plan===subscription.plan && row.invoice_payload===payload
+      && row.currency==='XTR' && row.status==='paid' && positiveInt(row.stars_amount)===price;
+    if (!hasSupabase(cfg)) return [...memory.billingPayments.values()].some(matches);
+    const row=await supaSelectOne(cfg,'billing_payments',{
+      telegram_id:`eq.${subscription.userId}`,plan:`eq.${subscription.plan}`,
+      invoice_payload:`eq.${payload}`,currency:'eq.XTR',status:'eq.paid',stars_amount:`eq.${price}`,
+    });
+    return Boolean(matches(row));
+  }
+
   async function telegramApi(method, cfg, body = {}) {
     const safeMethod=safeText(method,80);
     if (!/^[A-Za-z][A-Za-z0-9]{0,79}$/.test(safeMethod)) {
@@ -333,7 +358,7 @@ export function createBillingRuntime(deps = {}) {
       const planCfg = billingPlanConfig(subscription.plan, cfg);
       // Telegram мог одобрить платёж до деплоя, а продление идёт по цене
       // исходной подписки — см. planAcceptedStars.
-      if (!planCfg || !planAcceptedStars(planCfg).has(amount)) return false;
+      if (!planCfg || !await subscriptionAmountAccepted(subscription,payment.invoice_payload,amount,cfg)) return false;
   
       const expiresUnix=unixSeconds(payment.subscription_expiration_date,null)
         ?? (paidAt+SUBSCRIPTION_PERIOD_SECONDS);
@@ -477,7 +502,7 @@ export function createBillingRuntime(deps = {}) {
       const parsed = await parseInvoicePayload(source.invoice_payload, cfg.botToken);
       if (!parsed || positiveInt(parsed.userId)!==uid) continue;
       const planCfg = billingPlanConfig(parsed.plan, cfg);
-      if (!planCfg || !planAcceptedStars(planCfg).has(positiveInt(item.amount))) continue;
+      if (!planCfg || !await subscriptionAmountAccepted(parsed,source.invoice_payload,positiveInt(item.amount),cfg)) continue;
       const period=positiveInt(source.subscription_period) ?? SUBSCRIPTION_PERIOD_SECONDS;
       const itemDate=unixSeconds(item.date,null);
       if (itemDate===null) continue;
