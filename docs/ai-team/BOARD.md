@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] «Обыграй AI»: закрытие по актуальному началу/статусу, отказ при недоступном источнике — **Codex** — `codex/match-pick-live-cutoff`.
 
 
 
@@ -47,7 +46,8 @@
 
 ## На ревью
 
-- [ ] Подписки: исходная цена продления после повторной смены тарифов — **Codex** — `codex/subscription-renewal-price`. — [PR #956](https://github.com/TRAP44/football-analytics-cloudflare/pull/956).
+- [ ] «Обыграй AI»: закрытие по актуальному началу/статусу, отказ при недоступном источнике — **Codex** — `codex/match-pick-live-cutoff`. — [PR #957](https://github.com/TRAP44/football-analytics-cloudflare/pull/957).
+
 
 
 
@@ -116,6 +116,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Подписки: исходная цена продления после повторной смены тарифов — **Codex** — `codex/subscription-renewal-price`. — [PR #956](https://github.com/TRAP44/football-analytics-cloudflare/pull/956). — CI прошёл, слит.
 
 - [x] Общая оптимизация запросов приложения: бюджеты retry/body, bootstrap profile, чтение прав/квоты и защита от stale in-flight — **Codex** — [PR #955](https://github.com/TRAP44/football-analytics-cloudflare/pull/955), `codex/app-request-efficiency`. — опубликован, real AI и внешний монитор прошли.
 
