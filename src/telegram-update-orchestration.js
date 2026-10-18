@@ -613,7 +613,7 @@ export function createTelegramUpdateProcessor(deps) {
     const eventAttribution=startParam ? launchIntent : attribution;
     const launchFixtureId=positiveInteger(launchIntent.fixtureId);
     backgroundGrowthEvent(cfg,{userId,eventName:'bot_start',channel:'telegram',attribution:eventAttribution,fixtureId:launchFixtureId || null,metadata:{attributed:Boolean(startParam),fixtureDeepLink:launchFixtureId>0,referralStatus:referral.status}});
-    await configureFootballBot(request, cfg, chatId);
+    const botSetup=swallowAsync(configureFootballBot,request,cfg,chatId);
     if (launchFixtureId>0) {
       backgroundGrowthEvent(cfg,{
         userId,
@@ -626,10 +626,10 @@ export function createTelegramUpdateProcessor(deps) {
       });
       backgroundGrowthEvent(cfg,{userId,eventName:'fixture_deep_link_open',channel:'telegram',fixtureId:launchFixtureId,attribution:launchIntent,metadata:{startParam}});
       await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'⚡ Ссылка ведёт прямо на матч. Загружаю AI-разбор без повторного поиска…'}).catch(()=>null);
-      await sendBotFixtureMenu(request,cfg,userId,chatId,launchFixtureId,{attribution:launchIntent,source:'deep_link'});
+      await Promise.all([sendBotFixtureMenu(request,cfg,userId,chatId,launchFixtureId,{attribution:launchIntent,source:'deep_link'}),botSetup]);
       return json({ok:true});
     }
-    await sendFootballBotHome(request, cfg, chatId, msg.from || {});
+    await Promise.all([sendFootballBotHome(request,cfg,chatId,msg.from || {}),botSetup]);
     // Новичок без избранного сразу выбирает команды (Сергей 15.10) — только в личке.
     if (msg?.chat?.type === 'private' && typeof sendFavoritePicker === 'function') {
       const favorites=await swallowAsync(getFavorites,userId,cfg);
@@ -735,8 +735,7 @@ export function createTelegramUpdateProcessor(deps) {
   }
 
   if (chatId && /^(?:меню|главное меню|старт)$/i.test(text)) {
-    await configureFootballBot(request, cfg, chatId);
-    await sendFootballBotHome(request, cfg, chatId, msg.from || {});
+    await Promise.all([configureFootballBot(request,cfg,chatId),sendFootballBotHome(request,cfg,chatId,msg.from || {})]);
     return json({ ok: true });
   }
 

@@ -678,25 +678,45 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
     return {team:{id,name:team[1],label:team[2]},count:current.size};
   }
 
-  async function configureFootballBot(request, cfg, chatId) {
+  // Cache only completed/global setup or a short in-flight marker, never a
+  // cross-request Promise. Per-chat WebApp menu configuration is always kept.
+  const globalBotSetup=new Map();
+  async function configureFootballBot(request,cfg,chatId){
     const cid=chatIdValue(chatId);
-    if (!cid) throw statusError('Чат не определён.',400,'TELEGRAM_CHAT_INVALID');
+    if(!cid)throw statusError('Чат не определён.',400,'TELEGRAM_CHAT_INVALID');
     const api=requireFunction('telegramApi',telegramApi);
     const appUrl=generatedHttpsUrl(telegramWebAppUrl,request);
     const call=(method,payload)=>Promise.resolve().then(()=>api(method,cfg,payload));
-    const calls=[
-      call('setMyCommands', { commands: BOT_COMMANDS }),
-      call('setMyName', { name: 'MatchRadar AI' }),
-      call('setMyShortDescription', { short_description: 'Матчи, LIVE и AI-разбор — быстро и по делу.' }),
-      call('setMyDescription', { description: 'Футбольный AI-ассистент: ближайшие матчи ваших команд, LIVE и короткий разбор того, что меняет матч. Напишите название клуба — и начнём.' }),
-    ];
-    if (appUrl) {
-      calls.push(call('setChatMenuButton', {
-        chat_id:cid,
-        menu_button:{type:'web_app',text:'⚽ MatchRadar AI',web_app:{url:appUrl}},
-      }));
+    let botKey='';
+    if(typeof cfg?.botToken==='string' && cfg.botToken){
+      const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(cfg.botToken));
+      botKey=Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
     }
-    return Promise.allSettled(calls);
+    const previous=botKey ? globalBotSetup.get(botKey) : null;
+    const needsGlobalSetup=!previous || previous.expiresAt<=Date.now();
+    let marker=null;
+    const calls=[];
+    if(needsGlobalSetup){
+      if(botKey){
+        marker={expiresAt:Date.now()+30_000};
+        globalBotSetup.delete(botKey);globalBotSetup.set(botKey,marker);
+        while(globalBotSetup.size>16)globalBotSetup.delete(globalBotSetup.keys().next().value);
+      }
+      calls.push(
+        call('setMyCommands', { commands: BOT_COMMANDS }),
+        call('setMyName', { name: 'MatchRadar AI' }),
+        call('setMyShortDescription',{short_description:'Матчи, LIVE и AI-разбор — быстро и по делу.'}),
+        call('setMyDescription',{description:'Футбольный AI-ассистент: ближайшие матчи ваших команд, LIVE и короткий разбор того, что меняет матч. Напишите название клуба — и начнём.'}),
+      );
+    }
+    if(appUrl)calls.push(call('setChatMenuButton',{chat_id:cid,menu_button:{type:'web_app',text:'⚽ MatchRadar AI',web_app:{url:appUrl}}}));
+    const results=await Promise.allSettled(calls);
+    if(botKey && marker && globalBotSetup.get(botKey)===marker){
+      if(results.slice(0,4).every(result=>result.status==='fulfilled' && result.value?.ok!==false)){
+        marker.expiresAt=Date.now()+3_600_000;
+      }else globalBotSetup.delete(botKey);
+    }
+    return results;
   }
 
   async function sendFootballBotHome(request, cfg, chatId, telegramUser = {}) {

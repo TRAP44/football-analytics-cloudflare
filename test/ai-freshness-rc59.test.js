@@ -211,7 +211,7 @@ test('server only bypasses cached analysis for a real freshness, news-impact or 
   );
   assert.match(
     analysisRuntime,
-    /if \(cached && !needsFreshnessRecheck && !lineupRefresh\)[\s\S]*?if \(!newsImpactEligible\)[\s\S]*?safeAnalysisResponsePayload\(cached,/,
+    /if \(cached && !needsFreshnessRecheck && !lineupRefresh\)[\s\S]*?if \(!newsImpactEligible\)[\s\S]*?responseWithQuestionAccess\(cached,/,
   );
 });
 

@@ -57,7 +57,7 @@ test('RC106 favorite mutation rerenders an open analysis',()=>{
 test('RC106 keeps cached Telegram brief to full analysis quota-safe and history read-only',()=>{
   const analyzeStart=worker.indexOf('async function apiAnalyze');
   const cached=worker.indexOf('if (cached && !needsFreshnessRecheck && !lineupRefresh)',analyzeStart);
-  const cachedReturn=worker.indexOf('return json(safeAnalysisResponsePayload(cached',cached);
+  const cachedReturn=worker.indexOf('return json(await responseWithQuestionAccess(cached',cached);
   const reserve=worker.indexOf('usageReservation=objectValue(await reserveAnalysisQuota(userId,cfg));',analyzeStart);
   assert.ok(cached>analyzeStart && cachedReturn>cached && reserve>cachedReturn);
 

@@ -2565,6 +2565,7 @@ function getMatchQuestionRuntime() {
       bumpTelemetry,
       clock: () => Date.now(),
       getCache,
+      getCacheEntry,
       getHistory,
       userHasAnalyzedFixture,
       getStaleCache,

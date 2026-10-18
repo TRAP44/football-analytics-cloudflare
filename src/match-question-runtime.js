@@ -1,3 +1,4 @@
+import {verifyMatchQuestionAccess} from './match-question-access.js';
 import {presetAnswerIds} from './match-question-presets.js';
 export {presetAnswerIds} from './match-question-presets.js';
 // Задача 6: «Спросить про матч».
@@ -139,6 +140,7 @@ export function createMatchQuestionRuntime(deps = {}) {
   const {
     json,
     getCache,
+    getCacheEntry,
     getStaleCache,
     setCache,
     getHistory,
@@ -223,8 +225,17 @@ export function createMatchQuestionRuntime(deps = {}) {
     const ai = cfg?.workersAi;
     if (!ai || typeof ai.run !== 'function') return { ids: null, reason: 'no_binding' };
     const serviceLimit = cfg?.matchQuestionsDailyLimit;
+    let budgetRead=null;
+    let budgetHour=-1;
+    const serviceBudgetRows=async(...args)=>{
+      const hour=Math.floor(nowMs()/3_600_000);
+      if(budgetRead && budgetHour===hour)return budgetRead;
+      const rows=await supaSelectMany(...args);
+      budgetHour=hour;budgetRead=rows;
+      return rows;
+    };
     const peek = storageReady(cfg)
-      ? await peekDailyBudget({ cfg, supaSelectMany, prefix: 'ai-ask-global', limit: serviceLimit, now: nowMs })
+      ? await peekDailyBudget({ cfg, supaSelectMany:serviceBudgetRows, prefix: 'ai-ask-global', limit: serviceLimit, now: nowMs })
       : { available: false, reason: 'budget_unavailable' };
     if (peek.available !== true) {
       const exhausted = peek.reason === 'daily_limit';
@@ -237,7 +248,7 @@ export function createMatchQuestionRuntime(deps = {}) {
       telemetry('matchQuestionUserLimited');
       return { ids: null, reason: 'user_limit', remaining: 0 };
     }
-    const service = await claimDailyBudget({ cfg, supaRpc, supaSelectMany, prefix: 'ai-ask-global', limit: serviceLimit, now: nowMs });
+    const service = await claimDailyBudget({ cfg, supaRpc, supaSelectMany:serviceBudgetRows, prefix: 'ai-ask-global', limit: serviceLimit, now: nowMs });
     if (service.allowed !== true) {
       const exhausted = service.reason === 'daily_limit';
       telemetry(exhausted ? 'matchQuestionDailyLimited' : 'matchQuestionBudgetUnavailable');
@@ -314,32 +325,37 @@ export function createMatchQuestionRuntime(deps = {}) {
     }
 
     // Как и объяснение: только по сохранённому анализу из истории пользователя.
+    const refused=question && isBettingQuestion(question.text);
+    const key=EXPLANATION_ANALYSIS_CACHE_KEY(fixtureId);
+    // Both reads are independent; neither grants access on its own. Wait for
+    // strict ownership before exposing any facts or using model/budget slots.
+    const payloadRead=refused ? Promise.resolve(null) : (async()=>{
+      try {
+        if(typeof getCacheEntry==='function')return (await getCacheEntry(key,cfg,true))?.payload || null;
+        return (await getCache(key,cfg)) || (await getStaleCache(key,cfg));
+      }catch{return null;}
+    })();
     let ownsAnalysis=false;
-    try {
-      ownsAnalysis=typeof userHasAnalyzedFixture==='function'
-        ? await userHasAnalyzedFixture(userId,fixtureId,cfg,{strict:true})===true
-        : (await getHistory(userId,cfg,{strict:true})).some(row=>positiveId(safeRead(row,'fixture_id'))===fixtureId);
-    } catch {
-      return json({ error: 'История анализов временно недоступна.', code: 'HISTORY_UNAVAILABLE' }, 503);
-    }
+    let payload=null;
+    const ownershipRead=async()=>{
+      if(await verifyMatchQuestionAccess(body.accessReceipt,cfg?.botToken,userId,fixtureId,nowMs()))return true;
+      if(typeof userHasAnalyzedFixture==='function')return await userHasAnalyzedFixture(userId,fixtureId,cfg,{strict:true})===true;
+      const rows=await getHistory(userId,cfg,{strict:true});
+      return Array.isArray(rows) && rows.some(row=>positiveId(safeRead(row,'fixture_id'))===fixtureId);
+    };
+    try {[ownsAnalysis,payload]=await Promise.all([ownershipRead(),payloadRead]);}
+    catch{return json({error:'История анализов временно недоступна.',code:'HISTORY_UNAVAILABLE'},503);}
     if (!ownsAnalysis) {
       return json({ available: false, reason: 'not_in_history', code: 'QUESTION_NOT_IN_HISTORY' }, 404);
     }
 
     const base = { fixtureId, question: preset ? QUESTION_PRESETS[preset] : question.text };
     // Ставки — отказ до любых данных и LLM.
-    if (question && isBettingQuestion(question.text)) {
+    if (refused) {
       telemetry('matchQuestionBettingRefused');
       return answer(base, 'refused', [], [], { source: 'rule' });
     }
 
-    let payload = null;
-    try {
-      const key = EXPLANATION_ANALYSIS_CACHE_KEY(fixtureId);
-      payload = (await getCache(key, cfg)) || (await getStaleCache(key, cfg));
-    } catch {
-      payload = null;
-    }
     if (!plainObject(payload) || positiveId(safeRead(plainObject(payload.match), 'fixtureId')) !== fixtureId) {
       return json({ available: false, reason: 'analysis_unavailable' });
     }
@@ -375,9 +391,11 @@ export function createMatchQuestionRuntime(deps = {}) {
       }
       return json({ available: false, reason: 'ai_unavailable', ...remaining });
     }
-    try {
-      await setCache(cacheKey, fixtureId, { factIds: selection.ids, model: EXPLANATION_MODEL }, cfg, ANSWER_CACHE_MINUTES);
-    } catch {}
+    const cacheWrite=Promise.resolve().then(()=>setCache(cacheKey,fixtureId,{factIds:selection.ids,model:EXPLANATION_MODEL},cfg,ANSWER_CACHE_MINUTES)).catch(()=>null);
+    if(typeof cfg?.waitUntil==='function'){
+      try {cfg.waitUntil(cacheWrite);}catch{await cacheWrite;}
+    }else await cacheWrite;
+
     return answer(base, selection.ids.length ? 'facts' : 'not_in_data', facts, selection.ids, { source: 'ai', ...remaining });
   }
 

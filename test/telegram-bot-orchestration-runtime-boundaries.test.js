@@ -259,3 +259,29 @@ test('bot post-match review does not list totals or both-teams-score markets (С
   assert.doesNotMatch(source,/review\.markets/);
   assert.doesNotMatch(source,/<b>Голы:<\/b>/);
 });
+
+
+test('a burst of starts configures global bot metadata once and every chat menu separately',async()=>{
+  const methods=[];let release;const gate=new Promise(r=>{release=r;});
+  const {api}=runtime({telegramApi:async(method,_cfg,payload)=>{methods.push({method,payload});if(method!=='setChatMenuButton')await gate;return {ok:true};}});
+  const cfg={botToken:'test-bot-identity-a'};
+  const requests=Array.from({length:50},(_,i)=>api.configureFootballBot(request,cfg,i+1));
+  for(let i=0;i<20 && methods.length<54;i++)await new Promise(r=>setImmediate(r));
+  assert.equal(methods.filter(row=>row.method==='setMyCommands').length,1);
+  assert.equal(methods.filter(row=>row.method==='setChatMenuButton').length,50);
+  release();await Promise.all(requests);
+  await api.configureFootballBot(request,cfg,51);
+  assert.equal(methods.filter(row=>row.method==='setMyCommands').length,1);
+  assert.equal(methods.filter(row=>row.method==='setChatMenuButton').length,51);
+  await api.configureFootballBot(request,{botToken:'test-bot-identity-b'},52);
+  assert.equal(methods.filter(row=>row.method==='setMyCommands').length,2);
+});
+
+test('failed global setup is retried and is never cached as success',async()=>{
+  let attempts=0;let fail=true;
+  const {api}=runtime({telegramApi:async method=>{if(method==='setMyCommands'){attempts++;if(fail)throw Error('Telegram unavailable');}return {ok:true};}});
+  const cfg={botToken:'test-bot-identity-a'};
+  await api.configureFootballBot(request,cfg,1);fail=false;
+  await api.configureFootballBot(request,cfg,1);await api.configureFootballBot(request,cfg,1);
+  assert.equal(attempts,2);
+});

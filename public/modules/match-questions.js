@@ -60,7 +60,7 @@ export function matchQuestionAnswerHtml(data, escapeHtml) {
   return `${head}<p class="match-question-empty">${escapeHtml(text)}</p>${remaining}`;
 }
 
-export function mountMatchQuestions({ root, fixtureId, api, escapeHtml, presetAnswers = null, isCurrent = () => true } = {}) {
+export function mountMatchQuestions({ root, fixtureId, api, escapeHtml, presetAnswers = null, accessReceipt = null, isCurrent = () => true } = {}) {
   const id = Number(fixtureId);
   if (!root || !Number.isSafeInteger(id) || id <= 0 || typeof api !== 'function') return false;
   if (root.dataset.questionsMounted === 'true' && Number(root.dataset.fixture) === id) return true;
@@ -87,7 +87,7 @@ export function mountMatchQuestions({ root, fixtureId, api, escapeHtml, presetAn
     answer.innerHTML = '<p class="match-question-empty">Ищу в данных матча…</p>';
     let data = null;
     try {
-      data = await api('/api/match-question', { method: 'POST', body: JSON.stringify({ fixtureId: id, ...body }), retry: false, timeoutMs: 9000 });
+      data = await api('/api/match-question', { method: 'POST', body: JSON.stringify({ fixtureId: id, ...body, ...(typeof accessReceipt==='string' && accessReceipt.length<=100 ? {accessReceipt} : {}) }), retry: false, timeoutMs: 9000 });
     } catch (error) {
       const reason = error?.payload?.reason || (Number(error?.status) === 404 ? 'not_in_history' : Number(error?.status) === 429 ? 'rate_limited' : '');
       data = { available: false, reason };

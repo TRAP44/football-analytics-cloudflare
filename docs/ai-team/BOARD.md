@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Текстовые вопросы по матчу: проверить и исправить полный серверный путь Workers AI; ускорить ответы Telegram-бота без потери проверок — **Codex** — `codex/match-chat-service`.
+
 
 
 
@@ -40,7 +42,6 @@
 
 ## На ревью
 
-- [ ] Исправить готовые вопросы AI без ложного требования истории; ускорить матч-центр и AI ограниченным параллелизмом, без дополнительных запросов — **Codex** — [PR #950](https://github.com/TRAP44/football-analytics-cloudflare/pull/950), `codex/match-center-parallel-data`; локально4274/4274, browser/независимое ревью прошли, CI ожидается.
 
 
 
@@ -103,6 +104,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Исправить готовые вопросы AI без ложного требования истории; ускорить матч-центр и AI ограниченным параллелизмом, без дополнительных запросов — **Codex** — [PR #950](https://github.com/TRAP44/football-analytics-cloudflare/pull/950), `codex/match-center-parallel-data`; локально4274/4274, browser/независимое ревью прошли, CI, merge и production deploy прошли.
 
 - [x] Открытие AI без отдельного запроса доступа и рабочее действие «Спросить про матч» — **Codex** — [PR #942](https://github.com/TRAP44/football-analytics-cloudflare/pull/942), `codex/analysis-ui-requests`; 4267/4267 и браузерные клики/ответы проверены, независимое ревью без блокеров. — слит и опубликован.
 

@@ -470,3 +470,14 @@ test('old «⚽ Матчи» / «🔴 LIVE» / «📰 Новости» buttons l
   await processor(request,{},{message:{chat:{id:42,type:'private'},from:{id:7},text:'📰 Новости'}});
   assert.match(sent[0].payload.text,/Меню обновлено/);
 });
+
+
+test('home reply starts before independent bot profile setup finishes',async()=>{
+  for(const text of ['/start','меню']){
+    let release;let sent=false;const gate=new Promise(r=>{release=r;});
+    const processor=createTelegramUpdateProcessor(deps({configureFootballBot:async()=>gate,sendFootballBotHome:async()=>{sent=true;}}));
+    const result=processor(request,{},{message:{from:{id:7},chat:{id:8,type:'group'},text}});
+    await new Promise(r=>setImmediate(r));assert.equal(sent,true,text);
+    release();assert.equal((await result).status,200);
+  }
+});

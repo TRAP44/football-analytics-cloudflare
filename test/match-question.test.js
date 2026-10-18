@@ -1,3 +1,4 @@
+import {issueMatchQuestionAccess} from '../src/match-question-access.js';
 import {buildMatchQuestionPresets} from '../src/match-question-presets.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -33,7 +34,7 @@ function payload(overrides = {}) {
 const json = (body, status = 200) => ({ status, body });
 const request = body => new Request('https://x.test/api/match-question', { method: 'POST', body: typeof body === 'string' ? body : JSON.stringify(body) });
 
-function runtime({ history = [{ fixture_id: 77 }], analysis = payload(), cached = null, ai, rpc, controls, serviceRows = [], ownership } = {}) {
+function runtime({ history = [{ fixture_id: 77 }], analysis = payload(), cached = null, ai, rpc, controls, serviceRows = [], ownership, depsOverrides = {} } = {}) {
   const calls = { ai: 0, rpc: [], setCache: [], historyOptions: null };
   const cache = new Map();
   if (analysis) cache.set(EXPLANATION_ANALYSIS_CACHE_KEY(77), analysis);
@@ -59,6 +60,7 @@ function runtime({ history = [{ fixture_id: 77 }], analysis = payload(), cached 
     bumpTelemetry: () => {},
     clock: () => Date.parse('2026-10-11T12:30:00.000Z'),
     memory: {},
+    ...depsOverrides,
   });
   const cfg = {
     workersAi: ai === null ? null : { run: async (model, input) => { calls.ai += 1; calls.input = input; return ai ? ai() : { response: '{"factIds":["form_home","form_away"]}' }; } },
@@ -292,4 +294,74 @@ test('exact ownership still fails closed for a stranger or a storage outage',asy
     assert.equal(calls.ai,0);
     assert.deepEqual(calls.rpc,[]);
   }
+});
+
+
+test('text question reads its analysis once in parallel with strict ownership',async()=>{
+  let releaseOwner,releaseCache;const started=[];
+  const {rt,cfg,calls}=runtime({depsOverrides:{
+    userHasAnalyzedFixture:async()=>{started.push('owner');await new Promise(r=>{releaseOwner=r;});return true;},
+    getCacheEntry:async(_key,_cfg,allowExpired)=>{assert.equal(allowExpired,true);started.push('cache');await new Promise(r=>{releaseCache=r;});return {payload:payload(),expired:true};},
+  }});
+  const response=rt.apiMatchQuestion(request({fixtureId:77,question:'У кого лучше форма?'}),cfg,user);
+  await new Promise(r=>setImmediate(r));assert.deepEqual(started.sort(),['cache','owner']);
+  assert.equal(calls.ai,0);releaseCache();releaseOwner();
+  const result=await response;assert.equal(result.body.answer,'facts');assert.equal(calls.ai,1);
+});
+
+test('text question reuses one same-hour budget read but keeps both atomic claims',async()=>{
+  const {rt,cfg,calls}=runtime();
+  const result=await rt.apiMatchQuestion(request({fixtureId:77,question:'Кто опаснее?'}),cfg,user);
+  assert.equal(result.body.source,'ai');
+  assert.equal(calls.selects.filter(row=>row.table==='provider_rate_windows').length,1);
+  assert.equal(calls.rpc.length,2);
+  assert.match(calls.rpc[0].params.p_bucket_key,/^ai-ask:user:/);
+  assert.match(calls.rpc[1].params.p_bucket_key,/^ai-ask-global:h12$/);
+});
+
+test('budget snapshot is discarded when the UTC hour changes before service claim',async()=>{
+  let at=Date.parse('2026-10-11T12:30:00Z');
+  const {rt,cfg,calls}=runtime({depsOverrides:{clock:()=>at},rpc:params=>{
+    if(params.p_bucket_key.startsWith('ai-ask:user:'))at+=3_600_000;
+    return {allowed:true,count:1};
+  }});
+  const result=await rt.apiMatchQuestion(request({fixtureId:77,question:'Кто опаснее?'}),cfg,user);
+  assert.equal(result.body.source,'ai');
+  assert.equal(calls.selects.filter(row=>row.table==='provider_rate_windows').length,2);
+  assert.equal(calls.rpc[1].params.p_bucket_key,'ai-ask-global:h13');
+});
+
+test('non-critical answer cache write stays alive without delaying delivery',async()=>{
+  let release;const tasks=[];let written=false;
+  const {rt,cfg}=runtime({depsOverrides:{setCache:async()=>{await new Promise(r=>{release=r;});written=true;}}});
+  cfg.waitUntil=promise=>tasks.push(promise);
+  let timer;const response=await Promise.race([
+    rt.apiMatchQuestion(request({fixtureId:77,question:'Кто опаснее?'}),cfg,user),
+    new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('response waited for cache write')),500);}),
+  ]).finally(()=>clearTimeout(timer));
+  assert.equal(response.body.answer,'facts');assert.equal(written,false);assert.equal(tasks.length,1);
+  release();await Promise.all(tasks);assert.equal(written,true);
+});
+
+
+test('a delivered-analysis receipt supports text questions while history persistence is unavailable',async()=>{
+  const secret='isolated-question-fixture-secret';const at=Date.parse('2026-10-11T12:30:00Z');
+  const receipt=await issueMatchQuestionAccess(secret,5,77,at);
+  const {rt,cfg,calls}=runtime({depsOverrides:{userHasAnalyzedFixture:async()=>assert.fail('receipt should avoid history round trip')}});
+  cfg.botToken=secret;
+  const result=await rt.apiMatchQuestion(request({fixtureId:77,question:'У кого лучше форма?',accessReceipt:receipt}),cfg,user);
+  assert.equal(result.body.source,'ai');assert.equal(calls.ai,1);assert.equal(calls.rpc.length,2);
+});
+
+test('a receipt for a different user cannot bypass ownership and valid receipts cannot bypass budgets',async()=>{
+  const secret='isolated-question-fixture-secret';const at=Date.parse('2026-10-11T12:30:00Z');
+  const wrong=await issueMatchQuestionAccess(secret,6,77,at);
+  const denied=runtime({ownership:false});denied.cfg.botToken=secret;
+  const result=await denied.rt.apiMatchQuestion(request({fixtureId:77,question:'У кого лучше форма?',accessReceipt:wrong}),denied.cfg,user);
+  assert.equal(result.status,404);assert.equal(denied.calls.ai,0);
+  const limited=runtime({ownership:false,serviceRows:[{bucket_key:'ai-ask-global:h12',window_started_at:'2026-10-11T12:00:00Z',request_count:500}]});
+  limited.cfg.botToken=secret;
+  const valid=await issueMatchQuestionAccess(secret,5,77,at);
+  const capped=await limited.rt.apiMatchQuestion(request({fixtureId:77,question:'У кого лучше форма?',accessReceipt:valid}),limited.cfg,user);
+  assert.equal(capped.body.reason,'daily_limit');assert.equal(limited.calls.ai,0);assert.equal(limited.calls.rpc.length,0);
 });
