@@ -1,3 +1,4 @@
+import {withRequestDeadline} from './request-deadline.js';
 import { passAcceptedStars } from './entitlements.js';
 export function createBillingRuntime(deps = {}) {
   if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
@@ -155,13 +156,16 @@ export function createBillingRuntime(deps = {}) {
       throw error;
     }
   
-    let r;
+    let r,data;
     try {
-      r = await fetchWithTimeout(`https://api.telegram.org/bot${cfg.botToken}/${safeMethod}`, {
-        method: 'POST',
+      ({response:r,data}=await withRequestDeadline(async({signal,remaining,check})=>{
+      const response = await fetchWithTimeout(`https://api.telegram.org/bot${cfg.botToken}/${safeMethod}`, {
+        method: 'POST',signal,
         headers: body instanceof FormData ? undefined : { 'content-type': 'application/json' },
         body: body instanceof FormData ? body : JSON.stringify(body || {}),
-      }, 8000, `Telegram ${safeMethod}`);
+      }, remaining(), `Telegram ${safeMethod}`);
+      check();const data=await response.json().catch(()=>({}));check();return {response,data};
+      },{budgetMs:8000,source:`Telegram ${safeMethod}`}));
     } catch (cause) {
       const timedOut = String(cause?.code || '') === 'UPSTREAM_TIMEOUT';
       const error = new Error(cause?.message || (timedOut ? `Telegram ${safeMethod} timeout` : `Telegram ${safeMethod} network error`));
@@ -170,7 +174,6 @@ export function createBillingRuntime(deps = {}) {
       throw error;
     }
   
-    const data = await r.json().catch(() => ({}));
     if (!r.ok || !data?.ok) {
       const status=nonNegativeInt(r?.status) ?? 0;
       const error = new Error(data?.description || `Telegram ${safeMethod}: HTTP ${status}`);

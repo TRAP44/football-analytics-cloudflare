@@ -1,3 +1,4 @@
+import {withRequestDeadline} from './request-deadline.js';
 // Phase 2 API-Football gateway boundary.
 // Owns API-Football transport, provider cooldown/quota protection and bounded retry semantics.
 // Provider state, telemetry, persistence and network primitives remain injected by the composition root.
@@ -323,6 +324,7 @@ export function createApiFootballGateway({
     }
 
     await loadSharedProviderState(cfg);
+    options.deadlineContext?.check();
 
     const dailyReserve = dailyReserveDecision(options);
     if (dailyReserve.blocked) {
@@ -372,7 +374,9 @@ export function createApiFootballGateway({
       }
     }
 
+    options.deadlineContext?.check();
     const distributedBudget=await claimDistributedProviderBudget(cfg);
+    options.deadlineContext?.check();
     if (!distributedBudget.allowed) {
       const retryAfter=Math.max(1,Number(distributedBudget.retryAfter || 60));
       bumpTelemetry('quotaBlocks');
@@ -395,10 +399,12 @@ export function createApiFootballGateway({
     }
 
     await paceProviderRequest();
+    options.deadlineContext?.check();
     if (typeof cfg.prematchProviderClaim==='function' && path!=='/status') {
       await cfg.prematchProviderClaim(path);
     }
 
+    options.deadlineContext?.check();
     noteProviderSend();
     const startedAt = Date.now();
     const attempt = Math.max(1, Number(options.attempt || 1));
@@ -410,8 +416,10 @@ export function createApiFootballGateway({
     let r;
     try {
       r = await fetchWithTimeout(url, {
+        signal:options.deadlineContext?.signal,
         headers: { 'x-apisports-key': cfg.apiFootballKey, Accept: 'application/json' },
-      }, Number(options.timeoutMs || 10000), 'API-Football');
+      }, options.deadlineContext?.remaining() ?? Number(options.timeoutMs || 10000), 'API-Football');
+      options.deadlineContext?.check();
     } catch (error) {
       const durationMs = Date.now() - startedAt;
       const timedOut = String(error?.code || '') === 'UPSTREAM_TIMEOUT';
@@ -519,6 +527,7 @@ export function createApiFootballGateway({
     let body;
     try {
       body = await r.json();
+      options.deadlineContext?.check();
     } catch (error) {
       memory.provider.lastError = 'invalid_json';
       bumpTelemetry('apiErrors');
@@ -731,25 +740,26 @@ export function createApiFootballGateway({
     const policy=providerTransportPolicy(options);
     return await withSingleFlight(
       providerRequestKey(path, params, policy),
-      async () => {
+      () => withRequestDeadline(async (deadlineContext) => {
         const retries = policy.transportRetries;
         const runTransportAttempts = async (attemptOffset) => {
           const maxAttempts = retries + 1 + attemptOffset;
           let lastError = null;
           for (let attempt = 0; attempt <= retries; attempt += 1) {
             try {
+              deadlineContext.check();
               return await apiFootballNetwork(path, params, cfg, {
                 ...options,
                 responseType:policy.responseType,
                 transportRetries:policy.transportRetries,
-                timeoutMs:policy.timeoutMs,
+                timeoutMs:policy.timeoutMs,deadlineContext,
                 allowDailyReserve:policy.allowDailyReserve,
                 attempt: attempt + 1 + attemptOffset,
                 maxAttempts,
               });
             } catch (error) {
               lastError = error;
-              if (attempt >= retries || !isRetryableFootballTransportError(error)) throw error;
+              if (attempt >= retries || !isRetryableFootballTransportError(error) || deadlineContext.remaining()<=180*(attempt+1)) throw error;
               bumpTelemetry('providerRetries');
               await sleepMs(180 * (attempt + 1));
             }
@@ -760,12 +770,12 @@ export function createApiFootballGateway({
           return await runTransportAttempts(0);
         } catch (error) {
           // A per-second burst rejection is retried once after a short pause (no shared cooldown is set).
-          if (error?.burst !== true) throw error;
+          if (error?.burst !== true || deadlineContext.remaining()<=BURST_RETRY_DELAY_MS) throw error;
           bumpTelemetry('providerRetries');
           await sleepMs(BURST_RETRY_DELAY_MS);
           return await runTransportAttempts(1);
         }
-      },
+      },{budgetMs:policy.timeoutMs,source:'API-Football'}),
     );
   }
 

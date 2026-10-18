@@ -401,16 +401,15 @@ export function createEntitlementService({
   }
 
   async function resolveUserEntitlements(userId, fixtureId, cfg, now = Date.now()) {
-    const record = await getUserRecord(userId, cfg);
-    let entitlements = [];
-    let storeAvailable = true;
-    try {
-      entitlements = await listUserEntitlements(userId, cfg);
-    } catch {
-      // Fail closed for temporary Pass access without breaking the pre-existing
-      // FREE / PRO / PREMIUM subscription path during migration or DB incidents.
-      storeAvailable = false;
-    }
+    const [record, entitlementRead] = await Promise.all([
+      getUserRecord(userId,cfg),
+      Promise.resolve().then(()=>listUserEntitlements(userId,cfg))
+        .then(rows=>({rows,available:true}),()=>({rows:[],available:false})),
+    ]);
+    const entitlements=entitlementRead.rows;
+    // A failed Pass read never grants temporary access; subscription checks
+    // still use the current user record. No cross-request permissions cache.
+    const storeAvailable=entitlementRead.available;
     return {
       ...resolveEntitlementAccess({
         plan: record?.plan || 'FREE',

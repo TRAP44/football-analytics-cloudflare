@@ -818,9 +818,11 @@ export function createAnalysisRuntime(deps) {
       }
     }
   
-    const entitlementBefore=(system ? null : objectValue(
-      await optionalAsync(resolveUserEntitlements,userId,fixtureId,cfg),
-    )) || {source:'free',access:{},passes:{}};
+    const [entitlementRead,quotaRead]=system ? [null,null] : await Promise.all([
+      optionalAsync(resolveUserEntitlements,userId,fixtureId,cfg),
+      optionalAsync(getQuota,userId,cfg),
+    ]);
+    const entitlementBefore=objectValue(entitlementRead) || {source:'free',access:{},passes:{}};
     const activePasses=Array.isArray(objectValue(entitlementBefore.passes)?.active)
       ? entitlementBefore.passes.active
       : [];
@@ -841,14 +843,14 @@ export function createAnalysisRuntime(deps) {
         warning:'Перепроверка временно недоступна: не удалось проверить историю анализов. Показан последний сохранённый анализ, лимит не списан.',
         retryAfter:30,
         recheck:{requested:recheckRequested,performed:false,free:false,reasonCode:'history_unavailable'},
-        quota:await quotaSnapshotForResponse(userId,cfg,null),
+        quota:quotaSnapshot(quotaRead,null),
       }));
     }
 
     let quotaBefore=null;
     if (!system) {
     try {
-      quotaBefore=quotaSnapshot(await getQuota(userId,cfg),null);
+      quotaBefore=quotaSnapshot(quotaRead,null);
     } catch {
       quotaBefore=null;
     }

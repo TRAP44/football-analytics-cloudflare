@@ -156,7 +156,8 @@ test('concurrent identical provider calls deduplicate through the real infrastru
     ),
   ]);
 
-  assert.deepEqual(fetchCalls,[8000]);
+  assert.equal(fetchCalls.length,1);
+  assert.ok(fetchCalls[0]>0 && fetchCalls[0]<=8000);
   assert.equal(counters.singleflightJoins,1);
   assert.equal(memory.inflight.size,0);
 });
@@ -179,7 +180,9 @@ test('concurrent calls with different timeout policy never inherit each other',a
     ),
   ]);
 
-  assert.deepEqual(fetchCalls.sort((a,b)=>a-b),[8000,10000]);
+  assert.equal(fetchCalls.length,2);
+  assert.ok(fetchCalls[0]>0 && fetchCalls[0]<=8000);
+  assert.ok(fetchCalls[1]>8000 && fetchCalls[1]<=10000);
   assert.equal(counters.singleflightJoins,undefined);
 });
 

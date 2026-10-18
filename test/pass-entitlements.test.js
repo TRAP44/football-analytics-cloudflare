@@ -500,3 +500,14 @@ test('modular billing runtime reuses Telegram Stars transport and keeps monetiza
   assert.equal(release.productionSchema, '6.29');
   assert.equal(release.latestMigration, 'supabase/migrations/supabase_migration_v6_29_17.sql');
 });
+
+test('entitlement plan and Pass reads overlap while a failed Pass read remains closed',async()=>{
+  let resolveUser;const started=[];
+  const service=createEntitlementService({memory:{userEntitlements:new Map()},hasSupabase:()=>true,
+    supaSelectMany:async()=>{started.push('passes');throw Error('store down');},supaRpc:async()=>{},
+    getUserRecord:async()=>{started.push('user');return new Promise(resolve=>{resolveUser=resolve;});},markWebhookMutation:()=>{},
+  });
+  const result=service.resolveUserEntitlements(42,777,{},NOW);await new Promise(setImmediate);
+  assert.deepEqual(started,['user','passes']);resolveUser({plan:'FREE'});
+  const value=await result;assert.equal(value.store.available,false);assert.equal(value.access.expandedAi,false);
+});

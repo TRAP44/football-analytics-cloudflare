@@ -616,3 +616,15 @@ test('Telegram photo multipart preserves binary upload and normal messages keep 
   assert.equal(captured[1].headers['content-type'],'application/json');
   assert.deepEqual(JSON.parse(captured[1].body),{chat_id:7,text:'Матчи'});
 });
+
+test('Telegram stalled JSON times out without retrying or accepting a late side effect',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});let finish,calls=0,effects=0,signal;
+  const {runtime}=baseBillingHarness({markTelegramWebhookEffect:()=>{effects++;},fetchWithTimeout:async(_url,init)=>{
+    calls++;signal=init.signal;return {ok:true,status:200,json:()=>new Promise(resolve=>{finish=resolve;})};
+  }});
+  const pending=runtime.telegramApi('sendMessage',{botToken:'test-token'},{chat_id:7,text:'fixture'});
+  await new Promise(setImmediate);t.mock.timers.tick(8000);
+  await assert.rejects(pending,error=>error.code==='TELEGRAM_TIMEOUT');assert.equal(signal.aborted,true);
+  finish({ok:true,result:{message_id:1}});await new Promise(setImmediate);
+  assert.equal(calls,1);assert.equal(effects,0);
+});

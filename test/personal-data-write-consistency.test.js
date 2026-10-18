@@ -191,3 +191,16 @@ test('current app manifest exposes personal-data write consistency contracts', (
   assert.match(appCapabilities, /reminderWriteConfirmation:true/);
   assert.match(appCapabilities, /readWriteRaceGuard:true/);
 });
+
+test('bootstrap profile keeps current auth/quota/preferences but does not read decorative collections',async()=>{
+  const calls=[];
+  const tracked=name=>async()=>{calls.push(name);return [];};
+  const api=apiRuntime({getFavorites:tracked('favorites'),getFavoritePlayers:tracked('players'),getReminders:tracked('reminders'),getQuota:async()=>({plan:'PRO',left:12}),getPreferences:async()=>({defaultFilter:'live'})});
+  const boot=await api.apiMe(new Request('https://example.test/api/me?bootstrap=1'),{}, {id:42});
+  assert.equal(boot.body.bootstrap,true);assert.equal(boot.body.stats,null);assert.equal(boot.body.quota.plan,'PRO');
+  assert.equal(boot.body.preferences.defaultFilter,'live');assert.deepEqual(calls,[]);
+  const full=await api.apiMe(new Request('https://example.test/api/me'),{}, {id:42});
+  assert.deepEqual(calls.sort(),['favorites','players','reminders']);assert.equal(full.body.bootstrap,undefined);
+  assert.deepEqual(full.body.stats,{favorites:0,favoritePlayers:0,reminders:0});
+  assert.equal((await api.apiMe(new Request('https://example.test/api/me?bootstrap=1'),{},null)).status,401);
+});

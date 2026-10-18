@@ -41,9 +41,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Вопросы по фактам матча (судья, полная форма и потери), осмысленные подсказки и быстрый показ ленты при входе — **Codex** — [PR #954](https://github.com/TRAP44/football-analytics-cloudflare/pull/954), `codex/match-chat-grounded-startup`.
+- [ ] Общая оптимизация запросов приложения: бюджеты retry/body, bootstrap profile, чтение прав/квоты и защита от stale in-flight — **Codex** — [PR #955](https://github.com/TRAP44/football-analytics-cloudflare/pull/955), `codex/app-request-efficiency`.
+
 
 
 
@@ -110,6 +112,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Вопросы по фактам матча (судья, полная форма и потери), осмысленные подсказки и быстрый показ ленты при входе — **Codex** — [PR #954](https://github.com/TRAP44/football-analytics-cloudflare/pull/954), `codex/match-chat-grounded-startup`. — слит/опубликован; расширенный real AI probe39115942261 успешен.
 
 - [x] Вернуть подтверждённую настоящим binding быструю модель; перепроверить полный текстовый вопрос и публикацию — **Codex** — [PR #953](https://github.com/TRAP44/football-analytics-cloudflare/pull/953), `codex/match-chat-verified-model`. — слит и опубликован; real service probe39114320518 успешен.
 
