@@ -71,7 +71,7 @@ test('public feed remains behind access control and admin reminders stay off the
   const blocked=startup.indexOf('if (state.closedBetaBlocked) return false');
   const publicBatch=startup.indexOf('const startupTasks = [loadFavorites(), loadMatches({ snapshotFastPath:true })]');
   assert.ok(blocked>=0 && publicBatch>blocked);
-  const batch=startup.slice(publicBatch,startup.indexOf('await Promise.allSettled(startupTasks)',publicBatch));
+  const batch=startup.slice(publicBatch,startup.indexOf('await Promise.allSettled([startupTasks[1]])',publicBatch));
   assert.doesNotMatch(batch,/loadReminders/);
   assert.match(startup,/if \(!state\.remindersLoaded\) tasks\.push\(loadReminders\(\)\)/);
 });

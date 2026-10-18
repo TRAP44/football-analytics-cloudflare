@@ -1,3 +1,4 @@
+import {createMatchQuestionRuntime} from '../src/match-question-runtime.js';
 import {issueMatchQuestionAccess} from '../src/match-question-access.js';
 import {buildMatchQuestionPresets} from '../src/match-question-presets.js';
 import {launchChromeWithRetry,stopChrome,Cdp,browserExecutable} from './bottom-nav-render-smoke.js';
@@ -7,6 +8,13 @@ import path from 'node:path';
 
 const prepared=buildMatchQuestionPresets({match:{fixtureId:123,home:{name:'Chelsea'},away:{name:'Everton'}},probabilities:{home:54,draw:25,away:21},recentForm:{home:{overall:{sample:5,wins:4,draws:1,losses:0}}},absences:{home:[],away:[]},lineupQuality:{bothConfirmed:false}});
 
+let realHandlerCalls=0;
+const runtime=createMatchQuestionRuntime({
+ json:(body,status=200)=>Response.json(body,{status}),
+ getCache:async()=>({match:{fixtureId:123,referee:'Michael Oliver'}}),getStaleCache:async()=>null,setCache:async()=>true,
+ getHistory:async()=>[{fixture_id:123}],hasSupabase:()=>true,supaSelectMany:async()=>[],supaRpc:async()=>{throw Error('direct question must not consume budget');},
+ loadRuntimeControls:async()=>({value:{analysisEnabled:true,aiEnabled:true}}),memory:{},
+});
 const receipt=await issueMatchQuestionAccess('browser-fixture-secret',1,123);
 
 const scenario=`<!doctype html><html data-theme="dark"><head><link rel="stylesheet" href="/styles/premium-ui.css"></head><body class="miniapp-public-shell">
@@ -46,6 +54,13 @@ try {
  if(!root.textContent.includes('Новый матч'))throw Error('new match answer missing');
  const grid=document.querySelector('.center-hero-actions').getBoundingClientRect(),pass=document.querySelector('.center-pass-btn').getBoundingClientRect();
  if(Math.abs(pass.width-grid.width)>1 || Math.abs(pass.left-grid.left)>1)throw Error('Pass is not centered/full width');
+ const integrated=document.createElement('section');document.body.append(integrated);
+ mountMatchQuestions({root:integrated,fixtureId:123,api:async(url,options)=>{const response=await fetch(url,options);if(!response.ok)throw Error('handler HTTP '+response.status);return response.json();},escapeHtml:value=>String(value).replaceAll('<','&lt;')});
+ integrated.querySelector('input').value='Кто главный судья ?';
+ integrated.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+ for(let attempt=0;attempt<100 && !integrated.textContent.includes('Главный судья — Michael Oliver.');attempt++)await new Promise(resolve=>setTimeout(resolve,20));
+ if(!integrated.querySelector('[data-question-answer]').textContent.includes('Главный судья — Michael Oliver.'))throw Error('screenshot question failed through actual handler');
+ if(integrated.querySelector('[data-question-answer]').textContent.includes('Это подкрепляет'))throw Error('robotic connector remains');
  document.body.dataset.testStatus='passed';
 } catch(error){document.body.dataset.testStatus='failed';document.body.dataset.testError=error.message;}
 </script></body></html>`;
@@ -53,6 +68,13 @@ const root=path.resolve('public');
 const server=createServer(async(req,res)=>{
  try{
   const pathname=new URL(req.url,'http://localhost').pathname;
+  if(pathname==='/api/match-question' && req.method==='POST'){
+   let body='';for await(const chunk of req)body+=chunk;
+   const response=await runtime.apiMatchQuestion(new Request('https://fixture.invalid/api/match-question',{method:'POST',body}),{
+    matchQuestionsEnabled:true,workersAi:{run:async()=>{throw Error('direct question must not call AI');}},
+   },{id:1});realHandlerCalls++;
+   res.statusCode=response.status;res.setHeader('Content-Type','application/json');res.end(await response.text());return;
+  }
   if(pathname==='/test'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(scenario);return;}
   const file=path.resolve(root,'.'+pathname);if(!file.startsWith(root+path.sep))throw Error('path');
   res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/plain');res.end(await readFile(file));
@@ -73,6 +95,7 @@ try{
   if(result?.status)break;
   await new Promise(resolve=>setTimeout(resolve,100));
  }
+ if(realHandlerCalls!==1)throw Error('actual screenshot handler was not exercised exactly once');
  if(result?.status!=='passed')throw Error('Rendered question flow failed: '+JSON.stringify(result));
- console.log('Rendered questions passed: immediate server-prepared answers without history/API, start action, same-analysis remount, typed question, stale reply isolation, Pass alignment.');
+ console.log('Rendered questions passed: immediate server-prepared answers without history/API, start action, same-analysis remount, typed question, actual referee handler round trip, stale reply isolation, Pass alignment.');
 }finally{cdp?.socket.close();await stopChrome(launched.chrome);server.close();await rm(launched.profileDir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}

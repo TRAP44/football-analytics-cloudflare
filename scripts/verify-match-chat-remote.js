@@ -13,7 +13,7 @@ async function freePort(){
 }
 export function summarizeChatProbe(result){
   return result?.model===EXPLANATION_MODEL && result?.available===true && result?.answer==='facts' && result?.source==='ai'
-    && result?.modelCalls===1 && Array.isArray(result?.items) && result.items.length>0
+    && result?.modelCalls===2 && result?.checks?.referee===true && result?.checks?.missingReferee===true && result?.checks?.goals===true && Array.isArray(result?.items) && result.items.length>0
     && result.items.some(item=>item.id==='form_home')
     && result.items.every(item=>typeof item.text==='string' && /Home FC|Away FC/.test(item.text));
 }
@@ -22,7 +22,10 @@ export function safeProbeReport(result){
   return {
     model:result?.model===EXPLANATION_MODEL?'current':result?.model==='@cf/meta/llama-3.1-8b-instruct-fp8'?'previous':'unexpected',
     passed:summarizeChatProbe(result),
-    modelCalledOnce:result?.modelCalls===1,
+    modelCallsExpected:result?.modelCalls===2,
+    refereeAnswered:result?.checks?.referee===true,
+    missingRefereeHandled:result?.checks?.missingReferee===true,
+    goalsAnsweredByAi:result?.checks?.goals===true,
     modelFailure:result?.modelFailure==='model_unavailable'?'model_unavailable':result?.modelFailure==='binding_error'?'binding_error':'none',
     invalidResponse:result?.reason==='invalid_response',
     timedOutOrInferenceFailed:result?.reason==='ai_error' || result?.reason==='ai_unavailable',

@@ -1,4 +1,5 @@
-import {buildExplanationFacts,composeExplanation} from './match-explanation-runtime.js';
+import {buildMatchQuestionFacts} from './match-question-facts.js';
+import {composeExplanation} from './match-explanation-runtime.js';
 
 const MAX_ANSWER_FACTS=3;
 
@@ -12,8 +13,8 @@ export function presetAnswerIds(preset, facts = []) {
     if (!lead.length) return [];
     return [lead[0].id, ...pick(list.filter(fact => fact.role === 'support')).slice(0, MAX_ANSWER_FACTS - 1)];
   }
-  if (preset === 'risk') return pick(list.filter(fact => fact.role === 'risk' || fact.role === 'caveat'));
-  if (preset === 'form') return pick(list.filter(fact => /^form_|^h2h$/.test(fact.id)));
+  if (preset === 'risk') return pick(list.filter(fact => fact.role === 'risk' || ['lineups_pending','goals_high','goals_low'].includes(fact.id)));
+  if (preset === 'form') return pick(list.filter(fact => /^form_/.test(fact.id)));
   if (preset === 'squad') return pick(list.filter(fact => /^lineups_|^absences_/.test(fact.id)));
   return [];
 }
@@ -25,7 +26,7 @@ export function buildMatchQuestionPresets(payload) {
   const rawId=payload?.match?.fixtureId;
   const fixtureId=typeof rawId==='number' || (typeof rawId==='string' && /^\d+$/.test(rawId)) ? Number(rawId) : 0;
   if (!Number.isSafeInteger(fixtureId) || fixtureId<=0) return null;
-  const facts=buildExplanationFacts(payload);
+  const facts=buildMatchQuestionFacts(payload);
   const presets={};
   for (const preset of ['why','risk','form','squad']) {
     const items=composeExplanation(facts,presetAnswerIds(preset,facts));
