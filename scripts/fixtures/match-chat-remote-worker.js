@@ -18,7 +18,7 @@ export default {
     }
     const input=await request.json().catch(()=>null);
     if(!['previous','current'].includes(input?.variant))return Response.json({error:'invalid_variant'},{status:400});
-    const model=input.variant==='previous' ? '@cf/meta/llama-3.1-8b-instruct-fp8-fast' : EXPLANATION_MODEL;
+    const model=input.variant==='previous' ? '@cf/meta/llama-3.1-8b-instruct-fp8' : EXPLANATION_MODEL;
     let modelFailure=null;
     let modelCalls=0;
     const rt=createMatchQuestionRuntime({
