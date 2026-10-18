@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Подписки: исходная цена продления после повторной смены тарифов — **Codex** — `codex/subscription-renewal-price`.
+
 
 
 
@@ -44,7 +46,6 @@
 
 ## На ревью
 
-- [ ] Общая оптимизация запросов приложения: бюджеты retry/body, bootstrap profile, чтение прав/квоты и защита от stale in-flight — **Codex** — [PR #955](https://github.com/TRAP44/football-analytics-cloudflare/pull/955), `codex/app-request-efficiency`.
 
 
 
@@ -112,6 +113,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Общая оптимизация запросов приложения: бюджеты retry/body, bootstrap profile, чтение прав/квоты и защита от stale in-flight — **Codex** — [PR #955](https://github.com/TRAP44/football-analytics-cloudflare/pull/955), `codex/app-request-efficiency`. — опубликован, real AI и внешний монитор прошли.
 
 - [x] Вопросы по фактам матча (судья, полная форма и потери), осмысленные подсказки и быстрый показ ленты при входе — **Codex** — [PR #954](https://github.com/TRAP44/football-analytics-cloudflare/pull/954), `codex/match-chat-grounded-startup`. — слит/опубликован; расширенный real AI probe39115942261 успешен.
 

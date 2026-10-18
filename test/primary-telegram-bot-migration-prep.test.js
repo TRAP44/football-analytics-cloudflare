@@ -134,7 +134,7 @@ test('webhook, start attribution, reminders, billing and Mini App URL contracts 
   assert.match(serviceWiring,/sendTelegramMessage,/);
   assert.match(reminderDeliveryService,/async function processDueReminders\(cfg\)/);
   assert.match(reminderDeliveryService,/sendTelegramMessage\(positiveSafeInteger\(row\.telegram_id\), text, cfg\)/);
-  assert.match(billingApi,/makeInvoicePayload\(user\.id, plan, cfg\.botToken\)/);
+  assert.match(billingApi,/makeInvoicePayload\(user\.id, plan, cfg\.botToken, planCfg\.stars\)/);
   assert.match(telegramLinks,/function telegramWebAppUrl\(request, params = \{\}\)/);
   assert.match(telegramLinks,/url\.pathname = '\/'/);
 });

@@ -214,7 +214,7 @@ export function createBillingApiRuntime(deps = {}) {
       return json({ error: quota.plan === plan ? 'Этот тариф уже активен.' : 'Сначала отключите автопродление текущего тарифа и дождитесь окончания оплаченного периода.' }, 409);
     }
   
-    const payload = await makeInvoicePayload(user.id, plan, cfg.botToken);
+    const payload = await makeInvoicePayload(user.id, plan, cfg.botToken, planCfg.stars);
     const invoiceUrl = await telegramApi('createInvoiceLink', cfg, {
       title: planCfg.title,
       description: planCfg.description,

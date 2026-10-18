@@ -354,7 +354,8 @@ export function createTelegramUpdateProcessor(deps) {
           (parsed
             && samePositiveInteger(parsed.userId,checkoutUserId)
             && planCfg
-            && samePositiveInteger(planCfg.stars,checkoutAmount))
+            && samePositiveInteger(planCfg.stars,checkoutAmount)
+            && (parsed.stars === undefined || samePositiveInteger(parsed.stars,checkoutAmount)))
           || (pass
             && samePositiveInteger(pass.userId,checkoutUserId)
             && passCfg?.saleReady === true

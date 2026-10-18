@@ -628,3 +628,65 @@ test('Telegram stalled JSON times out without retrying or accepting a late side 
   finish({ok:true,result:{message_id:1}});await new Promise(setImmediate);
   assert.equal(calls,1);assert.equal(effects,0);
 });
+
+test('signed invoice retains its purchase price across changes; amount tampering is rejected',async()=>{
+  const {createHmac}=await import('node:crypto');
+  const h=baseBillingHarness({hmacSha256:async(key,message)=>createHmac('sha256',key).update(message).digest()});
+  const cfg={botToken:'test-key',starsPrices:{PRO:599}};
+  const payload=await h.runtime.makeInvoicePayload(505,'PRO',cfg.botToken,499);
+  assert.equal((await h.runtime.parseInvoicePayload(payload,cfg.botToken)).stars,499);
+  assert.equal(await h.runtime.parseInvoicePayload(payload.replace('|499|','|599|'),cfg.botToken),null);
+  const payment={currency:'XTR',total_amount:499,invoice_payload:payload,telegram_payment_charge_id:'signed-renewal',is_recurring:true};
+  assert.equal(await h.runtime.applySuccessfulPayment(505,payment,cfg),true);
+  assert.equal(h.memory.billingPayments.get('signed-renewal').stars_amount,499);
+  assert.equal(await h.runtime.applySuccessfulPayment(505,{...payment,total_amount:599,telegram_payment_charge_id:'wrong-amount'},cfg),false);
+  assert.equal(await h.runtime.applySuccessfulPayment(506,{...payment,telegram_payment_charge_id:'wrong-user'},cfg),false);
+});
+
+test('legacy renewal trusts a persisted purchase only for the same user, invoice, plan, currency and paid amount',async()=>{
+  const h=baseBillingHarness();const uid=505;
+  const payload=await h.runtime.makeInvoicePayload(uid,'PRO','test-key');
+  const cfg={botToken:'test-key',starsPrices:{PRO:499}};
+  const payment={currency:'XTR',total_amount:499,invoice_payload:payload,telegram_payment_charge_id:'legacy-original',is_recurring:true};
+  assert.equal(await h.runtime.applySuccessfulPayment(uid,payment,cfg),true);
+  const changed={...cfg,starsPrices:{PRO:599}};
+  assert.equal(await h.runtime.applySuccessfulPayment(uid,{...payment,telegram_payment_charge_id:'legacy-renewal'},changed),true);
+  h.memory.billingPayments.delete('legacy-renewal');
+  const row=h.memory.billingPayments.get('legacy-original');
+  for(const patch of [{telegram_id:506},{invoice_payload:'other'},{plan:'PREMIUM'},{currency:'USD'},{status:'refunded'},{stars_amount:498}]){
+    h.memory.billingPayments.set('legacy-original',{...row,...patch});
+    assert.equal(await h.runtime.applySuccessfulPayment(uid,{...payment,telegram_payment_charge_id:'must-not-activate'},changed),false);
+  }
+});
+
+test('Stars history sync accepts a signed historical subscription price after tariff changes',async()=>{
+  const now=Math.floor(Date.now()/1000);const pages=[[]];const history=telegramHistoryFetch(pages);
+  const h=baseBillingHarness({fetchWithTimeout:history.fetchWithTimeout});
+  const payload=await h.runtime.makeInvoicePayload(505,'PRO','test-key',499);
+  pages[0]=[{id:'signed-sync',amount:499,date:now,source:{type:'user',transaction_type:'invoice_payment',user:{id:505},invoice_payload:payload,subscription_period:SUBSCRIPTION_PERIOD_SECONDS}}];
+  const result=await h.runtime.syncBillingFromStars(505,{botToken:'test-key',starsPrices:{PRO:599}});
+  assert.equal(result.subscriptionSynced,true);
+  assert.equal(h.memory.billingPayments.get('signed-sync').stars_amount,499);
+});
+
+test('legacy price lookup fails closed on persistent store errors',async()=>{
+  const h=baseBillingHarness({hasSupabase:()=>true,supaSelectOne:async(_cfg,_table,filters)=>{
+    if(filters.invoice_payload) throw new Error('store unavailable');
+    return null;
+  }});
+  const payload=await h.runtime.makeInvoicePayload(505,'PRO','test-key');
+  await assert.rejects(h.runtime.applySuccessfulPayment(505,{currency:'XTR',total_amount:499,invoice_payload:payload,telegram_payment_charge_id:'legacy-store-error'},{botToken:'test-key',starsPrices:{PRO:599}}),/store unavailable/);
+});
+
+test('legacy persistent lookup is scoped to exact paid invoice and user',async()=>{
+  let saved=null;let lookedUp=null;
+  const h=baseBillingHarness({hasSupabase:()=>true,supaSelectOne:async(_cfg,table,filters)=>{
+    if(!filters.invoice_payload) return null;
+    lookedUp={table,filters};
+    return {telegram_id:505,plan:'PRO',invoice_payload:filters.invoice_payload.slice(3),currency:'XTR',status:'paid',stars_amount:499};
+  },supaUpsert:async(_cfg,table,row)=>{if(table==='billing_payments')saved=row;}});
+  const payload=await h.runtime.makeInvoicePayload(505,'PRO','test-key');
+  assert.equal(await h.runtime.applySuccessfulPayment(505,{currency:'XTR',total_amount:499,invoice_payload:payload,telegram_payment_charge_id:'persistent-renewal'},{botToken:'test-key',starsPrices:{PRO:599}}),true);
+  assert.deepEqual(lookedUp,{table:'billing_payments',filters:{telegram_id:'eq.505',plan:'eq.PRO',invoice_payload:`eq.${payload}`,currency:'eq.XTR',status:'eq.paid',stars_amount:'eq.499'}});
+  assert.equal(saved.stars_amount,499);
+});
