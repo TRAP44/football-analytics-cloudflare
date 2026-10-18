@@ -1425,6 +1425,20 @@ export function createAnalysisRuntime(deps) {
     const leagueId=positiveSafeInteger(fixture?.league?.id) || 0;
     const season=safeSeason(fixture?.league?.season);
     const comparisonCompetition={leagueId,season};
+    const calibrationPromise=optionalAsync(getCalibrationProfile,cfg);
+    const marketMovementPromise=(async()=>{
+      const previousMarketSnapshots=analysisMarket
+        ? rowsOrEmpty(await optionalAsync(getOddsSnapshots,fixtureId,cfg,8),20)
+        : [];
+      let marketMovement=null;
+      try {
+        marketMovement=objectValue(buildOddsMovement(previousMarketSnapshots,analysisMarket));
+      } catch {}
+      if (analysisMarket) {
+        try { await saveOddsSnapshot(fixtureId,analysisMarket,cfg); } catch {}
+      }
+      return marketMovement;
+    })();
     const comparisonPromise=Promise.all([
       leagueId && season
         ? optionalAsync(cachedTeamStanding,homeId,comparisonCompetition,cfg)
@@ -1524,42 +1538,19 @@ export function createAnalysisRuntime(deps) {
       safeText(fixture?.fixture?.referee,180),
       cfg,
     );
-    const [webRaw,homeFormRaw,awayFormRaw,refereeHistoryRaw]=await Promise.all([
+    const enrichmentPromise=Promise.all([
       webPromise,
       homeFormPromise,
       awayFormPromise,
       refereeHistoryPromise,
     ]);
-    const web=objectValue(webRaw) || {
-      available:false,
-      answer:'',
-      results:[],
-      reason:'unavailable',
-    };
-    const homeForm=objectValue(homeFormRaw);
-    const awayForm=objectValue(awayFormRaw);
-    const refereeHistory=objectValue(refereeHistoryRaw) || {
-      available:false,
-      sample:0,
-    };
 
-    const {homeStanding,awayStanding,homeTeamIntelligence,awayTeamIntelligence,homeSeasonStats,awaySeasonStats}=await seasonComparisonPromise;
-    if (paid && detailedCoverage && (!homeSeasonStats || !awaySeasonStats)) {
-      skipped.push('Сезонная сила команд рассчитана частично: статистика сезона одной из команд пока недоступна.');
-    }
+    // Player roles need cached intelligence, not fresh season stats or web/form.
+    const [,,homeTeamIntelligenceRaw,awayTeamIntelligenceRaw]=await comparisonPromise;
+    const homeTeamIntelligence=objectValue(homeTeamIntelligenceRaw) || {};
+    const awayTeamIntelligence=objectValue(awayTeamIntelligenceRaw) || {};
     const cachedHomePlayerStats=objectValue(homeTeamIntelligence.playerStats);
     const cachedAwayPlayerStats=objectValue(awayTeamIntelligence.playerStats);
-
-    const previousMarketSnapshots=analysisMarket
-      ? rowsOrEmpty(await optionalAsync(getOddsSnapshots,fixtureId,cfg,8),20)
-      : [];
-    let marketMovement=null;
-    try {
-      marketMovement=objectValue(buildOddsMovement(previousMarketSnapshots,analysisMarket));
-    } catch {}
-    if (analysisMarket) {
-      try { await saveOddsSnapshot(fixtureId,analysisMarket,cfg); } catch {}
-    }
 
     const featureTrusted=feature=>{
       const meta=objectValue(analysisFeatureMeta?.[feature]);
@@ -1629,6 +1620,25 @@ export function createAnalysisRuntime(deps) {
         maxPages:roleHydrationMaxPages,
       }),
     ]);
+    const [webRaw,homeFormRaw,awayFormRaw,refereeHistoryRaw]=await enrichmentPromise;
+    const web=objectValue(webRaw) || {
+      available:false,
+      answer:'',
+      results:[],
+      reason:'unavailable',
+    };
+    const homeForm=objectValue(homeFormRaw);
+    const awayForm=objectValue(awayFormRaw);
+    const refereeHistory=objectValue(refereeHistoryRaw) || {
+      available:false,
+      sample:0,
+    };
+
+    const {homeStanding,awayStanding,homeSeasonStats,awaySeasonStats}=await seasonComparisonPromise;
+    const marketMovement=await marketMovementPromise;
+    if (paid && detailedCoverage && (!homeSeasonStats || !awaySeasonStats)) {
+      skipped.push('Сезонная сила команд рассчитана частично: статистика сезона одной из команд пока недоступна.');
+    }
     const homeRoleHydration=objectValue(homeRoleRaw) || {
       playerStats:null,
       source:'unavailable',
@@ -1715,7 +1725,7 @@ export function createAnalysisRuntime(deps) {
     } catch {}
 
     const calibrationProfile=calibrationProfileValue(
-      await optionalAsync(getCalibrationProfile,cfg),
+      await calibrationPromise,
     );
 
     let baselineBlend;

@@ -719,3 +719,19 @@ test('cold live features overlap with a hard limit of three and retain fail-soft
   assert.equal(result.status,200);assert.equal(result.body.mode,'live');
   assert.equal(peak,3);assert.equal(active,0);assert.equal(called.length,5);
 });
+
+test('live match center reads prematch analysis and AI timeline concurrently',async()=>{
+  let release;const gate=new Promise(resolve=>{release=resolve;});
+  let timelineStarted;const started=new Promise(resolve=>{timelineStarted=resolve;});let prematchStarted=false;
+  const runtime=createMatchCenterRuntime(baseDeps({
+    loadProviderFixture:async()=>fixture({fixture:{id:123,date:new Date(Date.now()-1800000).toISOString(),status:{short:'1H',elapsed:30}}}),
+    getStaleCache:async key=>{if(key.startsWith('fixture:')){prematchStarted=true;await gate;}return null;},
+    loadFixtureAiTimeline:async()=>{timelineStarted();return {points:[]};},
+  }));
+  const pending=runtime.apiMatchCenter(request(),{});
+  let timer;try{
+    await Promise.race([started,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('AI timeline waited for prematch snapshot')),500);})]);
+    assert.equal(prematchStarted,true);
+  }finally{clearTimeout(timer);release();}
+  assert.equal((await pending).status,200);
+});
