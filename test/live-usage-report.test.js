@@ -13,6 +13,15 @@ test('live usage reads only bounded narrow GET projections and emits sanitized a
     calls.push({url,init});
     assert.equal(init.method,'GET');assert.equal(init.redirect,'error');assert.equal(init.headers.apikey,env.SUPABASE_SECRET_KEY);
     assert.equal(url.searchParams.get('limit'),'250');
+    if(url.pathname==='/rest/v1/runtime_controls'){
+      assert.equal(url.searchParams.get('select'),'auto_settlement_recovery_enabled');
+      assert.equal(url.searchParams.get('id'),'eq.global');assert.equal(url.searchParams.has('and'),false);
+      return response([{auto_settlement_recovery_enabled:false,private:'do not copy'}]);
+    }
+    if(url.pathname==='/rest/v1/settlement_watchdog_state'){
+      assert.equal(url.searchParams.get('select'),'consecutive_failures,circuit_open_until,last_run_at,last_status');
+      return response([{consecutive_failures:2,circuit_open_until:null,last_run_at:'2026-10-16T04:00:00Z',last_status:'failed',last_error:'do not copy'}]);
+    }
     if(url.pathname==='/rest/v1/model_predictions'){
       assert.equal(url.searchParams.get('select'),'kickoff_at');assert.equal(url.searchParams.get('status'),'eq.pending');
       assert.equal(url.searchParams.get('kickoff_at'),'lt.2026-10-15T18:00:00.000Z');assert.equal(url.searchParams.has('and'),false);
@@ -26,7 +35,9 @@ test('live usage reads only bounded narrow GET projections and emits sanitized a
     if(select.includes('telegramCalls'))return response([{code:'FAVORITE_SCOREBOARD_PARTIAL',sent:'1',edited:'2',closed:'0',failed:'1',unknown:'0',deferred:'3',staleSkipped:'0',oldestWaitSec:'90',telegramCalls:'4',stopped:'rate_limited',telegram_id:123}]);
     return response([{code:'UPSTREAM_TIMEOUT'},{code:'UPSTREAM_TIMEOUT'},{code:'DAILY_DIGEST_SLO_MISSING_RUN'},{code:'private lower-case text'}]);
   }});
-  assert.equal(calls.length,5);
+  assert.equal(calls.length,7);
+  assert.equal(report.settlementRecovery.automaticEnabled,false);assert.equal(report.settlementRecovery.consecutiveFailures,2);assert.equal(report.settlementRecovery.circuitOpen,false);
+  assert.doesNotMatch(JSON.stringify(report.settlementRecovery),/do not copy|last_error/);
   assert.equal(report.alerts.totals.sent,2);assert.equal(report.alerts.runEvents,1);
   assert.equal(report.pendingResults.olderThan24hAtLeast,2);assert.equal(report.pendingResults.oldestKickoffDay,'2026-09-23');assert.equal(report.complete,true);
   assert.equal(report.timings.operations.ai.p50Ms,1000);assert.equal(report.timings.operations.ai.p95Ms,1900);
@@ -55,7 +66,7 @@ test('large observation sets stop at four pages per category and explicitly repo
     const offset=Number(url.searchParams.get('offset'));assert.ok([0,250,500,750].includes(offset));
     return response(Array.from({length:250},()=>({code:'UPSTREAM_TIMEOUT',reason:'ai',duration_ms:500})));
   }});
-  assert.equal(count,20);assert.equal(report.complete,false);
+  assert.equal(count,28);assert.equal(report.complete,false);
   for(const coverage of Object.values(report.coverage)){assert.equal(coverage.pages,4);assert.equal(coverage.truncated,true);}
   assert.equal(report.timings.operations.ai.samples,1000);
 });

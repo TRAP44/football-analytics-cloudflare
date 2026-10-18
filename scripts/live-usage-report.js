@@ -92,9 +92,9 @@ export async function collectLiveUsage({env={},fetchImpl=fetch,now=new Date()}={
   async function read(select,filters,table='ops_events'){
     const rows=[];let pages=0;
     for(let page=0;page<MAX_PAGES;page++){
-      if(!['ops_events','model_predictions'].includes(table))throw new Error('Invalid observation table.');
+      if(!['ops_events','model_predictions','runtime_controls','settlement_watchdog_state'].includes(table))throw new Error('Invalid observation table.');
       const url=new URL(`/rest/v1/${table}`,base);
-      for(const [name,value] of Object.entries({select,...filters,order:table==='model_predictions'?'kickoff_at.asc':'created_at.desc',limit:String(PAGE),offset:String(page*PAGE)}))url.searchParams.set(name,value);
+      for(const [name,value] of Object.entries({select,...filters,order:table==='model_predictions'?'kickoff_at.asc':table==='ops_events'?'created_at.desc':'id.asc',limit:String(PAGE),offset:String(page*PAGE)}))url.searchParams.set(name,value);
       if(table==='ops_events')url.searchParams.set('and',`(created_at.gte.${start},created_at.lte.${end})`);
       let result;
       try{
@@ -114,13 +114,27 @@ export async function collectLiveUsage({env={},fetchImpl=fetch,now=new Date()}={
   const errors=await read(['code','duration_ms','httpStatus:metadata->>httpStatus','failureKind:metadata->>failureKind',...STAGES.map(key=>`${key}:metadata->>${key}`)].join(','),{or:'(severity.in.(warning,error,critical),code.eq.ANALYSIS_SLOW_REQUEST)'});
   const alerts=await read('code,sent:metadata->>sent,duplicate:metadata->>duplicate,failed:metadata->>failed,unknown:metadata->>unknown,fixturesChecked:metadata->>fixturesChecked,checked:metadata->>checked',{source:'eq.smart_notifications',event_type:'eq.smart_notification_scheduler',code:'in.(SMART_NOTIFICATION_RUN_OK,SMART_NOTIFICATION_RUN_DEGRADED)'});
   const pending=await read('kickoff_at',{status:'eq.pending',kickoff_at:`lt.${new Date(now.getTime()-86400000).toISOString()}`},'model_predictions');
+  const controls=await read('auto_settlement_recovery_enabled',{id:'eq.global'},'runtime_controls');
+  const watchdog=await read('consecutive_failures,circuit_open_until,last_run_at,last_status',{id:'eq.global'},'settlement_watchdog_state');
+  const control=controls.rows.length===1?controls.rows[0]:null;
+  const reliability=watchdog.rows.length===1?watchdog.rows[0]:null;
+  const circuit=typeof reliability?.circuit_open_until==='string'?Date.parse(reliability.circuit_open_until):NaN;
+  const lastRun=typeof reliability?.last_run_at==='string'?Date.parse(reliability.last_run_at):NaN;
+  const settlementRecovery={
+    automaticEnabled:typeof control?.auto_settlement_recovery_enabled==='boolean'?control.auto_settlement_recovery_enabled:null,
+    consecutiveFailures:integer(reliability?.consecutive_failures),
+    circuitOpen:reliability && reliability.circuit_open_until===null?false:Number.isFinite(circuit)?circuit>now.getTime():null,
+    lastRunDay:Number.isFinite(lastRun)?new Date(lastRun).toISOString().slice(0,10):null,
+    lastStatus:['ok','failed','partial','completed','running','never','blocked','idle'].includes(reliability?.last_status)?reliability.last_status:'unknown',
+    note:'Read-only state; disabled recovery is not enabled automatically and pending results are never inferred.',
+  };
   const dates=pending.rows.map(row=>typeof row.kickoff_at==='string'&&/^\d{4}-\d{2}-\d{2}T/.test(row.kickoff_at)?Date.parse(row.kickoff_at):NaN);
   const validDates=dates.filter(Number.isFinite);
   const pendingResults={olderThan24hAtLeast:pending.rows.length,oldestKickoffDay:validDates.length?new Date(Math.min(...validDates)).toISOString().slice(0,10):null,invalidRows:dates.length-validDates.length,truncated:pending.truncated,note:'Old pending includes postponed matches; no result is inferred or written.'};
   return {scope:'Read-only production observations, not a load test or capacity proof',window:{start,end,hours:6},
-    coverage:{timings:{pages:timings.pages,truncated:timings.truncated},scoreboards:{pages:boards.pages,truncated:boards.truncated},errors:{pages:errors.pages,truncated:errors.truncated},pending:{pages:pending.pages,truncated:pending.truncated},alerts:{pages:alerts.pages,truncated:alerts.truncated}},
-    timings:summarizeTimings(timings.rows),scoreboards:summarizeScoreboards(boards.rows),errors:summarizeErrors(errors.rows),analysisDiagnostics:summarizeAnalysisDiagnostics(errors.rows),pendingResults,alerts:summarizeAlerts(alerts.rows),
-    complete:![timings,boards,errors,pending,alerts].some(x=>x.truncated),productionCapacityConfirmed:false,
+    coverage:{timings:{pages:timings.pages,truncated:timings.truncated},scoreboards:{pages:boards.pages,truncated:boards.truncated},errors:{pages:errors.pages,truncated:errors.truncated},pending:{pages:pending.pages,truncated:pending.truncated},alerts:{pages:alerts.pages,truncated:alerts.truncated},controls:{pages:controls.pages,truncated:controls.truncated},watchdog:{pages:watchdog.pages,truncated:watchdog.truncated}},
+    timings:summarizeTimings(timings.rows),scoreboards:summarizeScoreboards(boards.rows),errors:summarizeErrors(errors.rows),analysisDiagnostics:summarizeAnalysisDiagnostics(errors.rows),pendingResults,settlementRecovery,alerts:summarizeAlerts(alerts.rows),
+    complete:![timings,boards,errors,pending,alerts,controls,watchdog].some(x=>x.truncated),productionCapacityConfirmed:false,
     limitations:['Client timing is observational, may include failed operations, can be missing, and does not distinguish cache from fresh AI.',
       'Offset pagination is bounded and best effort, not a transactional snapshot; concurrent inserts can shift page boundaries.',
       'No user identifiers are queried: sample counts are events, not unique people.',
@@ -138,6 +152,7 @@ export function usageMarkdown(report){
     `LIVE: событий запусков ${report.scoreboards.runEvents}; частичных ${report.scoreboards.partialRuns}; ограниченных бюджетом ${report.scoreboards.cappedRuns}; ${JSON.stringify(report.scoreboards.totals)}.`,
     `Максимум oldestWaitSec: ${report.scoreboards.maxOldestWaitSec??'нет данных'}. Отложенные сообщения — сумма попыток, не число уникальных людей.`,
     `Ошибки/предупреждения по коду: ${JSON.stringify(report.errors.byCode)}.`,
+    `Контроль старых результатов: ${JSON.stringify(report.settlementRecovery)}.`,
     `Диагностика медленных AI (не вся выборка запросов): ${JSON.stringify(report.analysisDiagnostics)}.`,
     '',...report.limitations.map(x=>'- '+x),'','Полная production-вместимость и своевременная доставка этим отчётом не подтверждаются.',''].join('\n');
 }
