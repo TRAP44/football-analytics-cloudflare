@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-18 — Codex — Текстовый вопрос после выдачи анализа и ускорение бота
-PR: ветка `codex/match-chat-service`, ссылка после создания.
+PR: [#951](https://github.com/TRAP44/football-analytics-cloudflare/pull/951), ветка `codex/match-chat-service`.
 Проблема: #950 подтвердил inline presets, но не реальный вызов Workers AI. Сергей просит довести именно собственный вопрос и ускорить бот. Каталог Cloudflare на проверке перенаправляет страницу `llama-3.1-8b-instruct-fp8-fast` на `/models/?unavailable=...`; существующая страница — `llama-3.1-8b-instruct-fp8`. Константа модели исправлена; реальный API-вызов до merge ещё не подтверждён.
 Сделано: выданный полный анализ несёт короткий HMAC receipt на вопросы (30 минут, user+fixture+purpose, ключ cfg.botToken). Выдаётся только при delivery из apiAnalyze/history-analysis, после обычных проверок/расчёта; не записывается в общий payload или history. Это не доступ к генерации, оплате или recheck. Frontend launch125 отправляет receipt только в POST body. Вопрос проверяет runtime controls, receipt/strict history fallback, fixture payload и прежние атомарные бюджеты. Валидный receipt устраняет лишнее чтение истории и отказ при pending/failed записи уже выданного анализа. Invalid/expired/cross-user/cross-fixture — обычный строгий ownership, не bypass.
 Ускорение чата: payload читается одним getCacheEntry параллельно с ownership; snapshot дневного бюджета переиспользуется только внутри одного запроса/UTC-часа между peek и atomic claim, rollover перечитывает. Derived answer cache сохраняется через execution-context waitUntil, при отсутствии контекста ожидается как раньше. Модель продолжает выбирать только известные IDs проверенного каталога, свободного текста модели в UI нет.

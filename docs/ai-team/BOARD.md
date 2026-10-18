@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Текстовые вопросы по матчу: проверить и исправить полный серверный путь Workers AI; ускорить ответы Telegram-бота без потери проверок — **Codex** — `codex/match-chat-service`.
 
 
 
@@ -41,6 +40,8 @@
 
 
 ## На ревью
+
+- [ ] Текстовые вопросы по матчу: проверить и исправить полный серверный путь Workers AI; ускорить ответы Telegram-бота без потери проверок — **Codex** — [PR #951](https://github.com/TRAP44/football-analytics-cloudflare/pull/951), `codex/match-chat-service`; локально 4289/4289, browser и независимое ревью прошли; real remote AI check после merge.
 
 
 
