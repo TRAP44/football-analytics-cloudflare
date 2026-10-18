@@ -14,6 +14,16 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-18 — Codex — Дополнительные LIVE ticks в тёплом GitHub runner
+PR: ветка `codex/live-notification-fast-window`.
+Сделано: полный dispatch/cron остаётся5мин, уже запущенный runner после полного прохода использует остаток окна для minute LIVE ticks (до4, без новых workflows). Только активные матчи с реальным clock, до2fixtures; soft admission budget20с, отдельные LIVE курсоры, та же cron-global lease с minute job key. Без AI/lineups/day/scoreboard fanout. Короткие уведомления в полном проходе больше не ждут unrelated цепочку. Репозиторная переменная LIVE_NOTIFICATIONS_FAST_ENABLED=false отключает extra ticks без деплоя; пусто — включены.
+Бюджеты: каждая реальная extra API попытка через прежний Supabase relay/gateway вызывает существующий prematchProviderClaim. Делит prematch-provider-requests allowance с предматчевым фоном:25%, максимум1875 при PRO7500; при оставшейся половине квоты/неподтверждённом снимке/ошибке claim — отказ. Статус snapshot восстанавливается существующим /status. User quota/history не трогаются. SQL/public/secrets не менялись.
+Наблюдения: read-only Observe Live Usage39152358565 — нет новых клиентских AI timings/scoreboard событий, один INVALID_AUTH_BURST_BLOCKED; этого недостаточно для выводов о скорости/доставке. Последние6 обычных cron успешны, запускаются5мин, полный workflow около1мин. Отчёт расширен narrow GET kickoff-only pending>24h (только число/старая дата) и фиксированными counters smart notifications; без ID/сообщений/фиксации результатов. После merge обязательно повторить отчёт.
+Проверки: cadence/slot-end/toggle/failure, fresh provider reserve и atomic quarter claim, no-overlap/duplicate lease, немедленный старт short alerts при зависших других задачах; fast mode не запускает day/AI/player jobs и не меняет обычные курсоры. Reviewer Codex (не Claude) нашёл future-pair cursor starvation — исправлен до лимита, regression1100future+laterLIVE; финально без блокеров,39профильных тестов. Старый source-contract ожидал предыдущую цепочку — обновлён на независимый запуск, тесты runtime добавлены. Реальные Telegram сообщения для теста не отправлялись.
+Пределы: целевая частота тёплого процесса, не SLA60с; GitHub стартует с задержкой, fallback полный5мин остаётся. Soft budget не отменяет уже запущенный запрос, unknown delivery не повторяется. Обычные фоновые задачи вне prematch/extra-LIVE не переведены на новый quarter allowance. AI code не менялся без новых замеров. #958 опубликован и перенесён в Готово.
+Локально Node22 npm ci/check/lint, release691/691, full4347/4347, Worker dry-run прошли. Осталось: CI, merge/publish по разрешению Сергея, новый read-only отчёт и наблюдение естественного Background Jobs на новом main.
+
+
 ## 2026-10-18 — Codex — Короткие персональные уведомления по избранному
 PR: [#958](https://github.com/TRAP44/football-analytics-cloudflare/pull/958), ветка `codex/personal-match-notifications`.
 Сделано: итог по утверждённому Сергеем шаблону (жирные турнир/команды/счёт, команда исходного прогноза, честное совпадение, короткая подпись); все прежние кнопки сохранены. Goal/red тексты без процентов/оценки модели/лишнего CTA; жёлтые добавлены по явному ответу Сергея «Все жёлтые и красные». Редактирование табло молчит в Telegram, поэтому больше не подавляет отдельный короткий goal alert.

@@ -1,6 +1,7 @@
 export function createServiceWiringRuntime(deps = {}) {
   const {
     SMART_NOTIFICATION_POLICY,
+    prepareLiveNotificationConfig,
     bumpTelemetry,
     bytesToHex,
     createEntitlementService,
@@ -216,6 +217,7 @@ export function createServiceWiringRuntime(deps = {}) {
   const {
     processSmartNotifications,
   } = createSmartNotificationService({
+    prepareLiveNotificationConfig,
     hasSupabase,
     getCache,
     setCache,

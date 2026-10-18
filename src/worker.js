@@ -1,3 +1,4 @@
+import {fastLiveNotificationConfig} from './fast-live-notification-budget.js';
 import { chatSafeTelegramBody } from './telegram-chat-markup.js';
 import {
   NEWS_IMPACT_ACTION_WINDOW_MINUTES,
@@ -617,6 +618,7 @@ const {
   telegramDedupeObservabilitySelfTest,
   enforceTelegramBurst,
 } = createServiceWiringRuntime({
+  prepareLiveNotificationConfig: cfg => fastLiveNotificationConfig(cfg,{loadSharedProviderState,providerSnapshot,probeProviderStatus,supaRpc,supaSelectMany}),
   setCache: (...args) => setCache(...args),
   getCache: (...args) => getCache(...args),
   loadScoreboardRecipients: (fixtureId, cfg) => scoreboardRecipientIds(getCache, fixtureId, cfg),

@@ -575,3 +575,29 @@ test('every former morning digest slot omits the retired task and retains match 
     assert.equal(results.find(row=>row.task==='post_match_return').status,'ok');
   }
 });
+
+test('short match alerts do not wait for unrelated lineup, timeline or scoreboard work',async()=>{
+ let release;const slow=new Promise(resolve=>release=resolve);let delivered=false;
+ const rt=runtime({processLineupNotifications:()=>slow,processInPlayTimeline:()=>slow,processFavoriteScoreboards:()=>slow,processSmartNotifications:async()=>{delivered=true;return {ok:true};}});
+ const tasks=rt.api.buildScheduledTaskPlan({},new Date('2026-10-18T12:05:00Z'));
+ await Promise.resolve();assert.equal(delivered,true);
+ release({ok:true});await rt.api.observeScheduledTasks({},tasks);
+});
+test('fast ticks use the same global lease and run only live notification work once per minute',async()=>{
+ const leases=inMemoryLeaseBackend();const seen=[];
+ const rt=runtime({leases,processSmartNotifications:async(_cfg,opts)=>{seen.push(opts);return {ok:true};}});
+ const cfg={cronRunner:'github-actions'},controller={scheduledTime:Date.parse('2026-10-18T12:02:00Z'),liveNotificationsOnly:true};
+ await rt.api.executeScheduledRun(controller,cfg);await rt.api.executeScheduledRun(controller,cfg);
+ assert.equal(seen.length,1);assert.equal(seen[0].liveOnly,true);assert.equal(seen[0].maxFixtures,2);
+ assert.equal(leases.rows.get('cron-live:2026-10-18T12:02:00.000Z').groupKey,'cron-global');
+ assert.equal(rt.calls.length,0,'no other background tasks');
+});
+
+test('a fast tick cannot overlap the normal scheduled execution lease',async()=>{
+ const leases=inMemoryLeaseBackend();let release;const slow=new Promise(resolve=>release=resolve);let live=0;
+ const rt=runtime({leases,processDueReminders:()=>slow,processSmartNotifications:async(_cfg,opts)=>{if(opts?.liveOnly)live++;return {ok:true};}});
+ const cfg={cronRunner:'github-actions'},normal={scheduledTime:Date.parse('2026-10-18T12:00:00Z')},tick={scheduledTime:Date.parse('2026-10-18T12:02:00Z'),liveNotificationsOnly:true};
+ const pending=rt.api.executeScheduledRun(normal,cfg);await new Promise(resolve=>setImmediate(resolve));
+ const result=await rt.api.executeScheduledRun(tick,cfg);assert.equal(result[0].status,'skipped');assert.equal(live,0);
+ release({ok:true});await pending;await rt.api.executeScheduledRun(tick,cfg);assert.equal(live,1);
+});
