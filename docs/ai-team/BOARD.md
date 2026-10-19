@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Досверить незакрытые прогнозы по стабильномуfixtureID, включая переносы/устаревшие даты — **Codex** — `codex/pending-fixture-identity`.
 
 
 
@@ -53,6 +52,8 @@
 
 
 ## На ревью
+
+- [ ] Досверить незакрытые прогнозы по стабильномуfixtureID, включая переносы/устаревшие даты — **Codex** — [#966](https://github.com/TRAP44/football-analytics-cloudflare/pull/966), `codex/pending-fixture-identity`.
 
 
 
