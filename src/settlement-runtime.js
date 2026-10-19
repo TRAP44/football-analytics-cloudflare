@@ -34,6 +34,7 @@ export function createSettlementRuntime(deps) {
     getCache,
     hasSupabase,
     isFinishedStatus,
+    loadProviderFixture,
     loadProviderFixturesForDate,
     loadRuntimeControls,
     loadSharedProviderState,
@@ -2027,7 +2028,8 @@ export function createSettlementRuntime(deps) {
     );
     const dates = [...new Set(currentIds.map(id => String(candidateMap.get(id)?.kickoffAt || '').slice(0, 10)).filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date)))];
     const fixtureSet = new Set(currentIds);
-    const fixtures = [];
+    let fixtures = [];
+    let sourceSummary={};
     const retry = await resolveSettlementRetryLineage(cfg, currentIds);
     if (retry.retryExhausted) {
       await recordOpsEvent(cfg, {
@@ -2080,13 +2082,40 @@ export function createSettlementRuntime(deps) {
         const rows = await loadProviderFixturesForDate(date, cfg);
         fixtures.push(...rows.filter(fixture => fixtureSet.has(fixtureIdentity(fixture))));
       }
+      if (manual && typeof loadProviderFixture==='function') {
+        const byId=new Map(fixtures.map(f=>[positiveSafeInteger(fixtureIdentity(f)),f]).filter(([id])=>id!==null));
+        let lookupFailed=0,fixtureLookups=0;
+        for (const id of currentIds) {
+          const previous=byId.get(id);
+          if (previous && isFinishedStatus(fixtureStatusShort(previous)) && regulationScore(previous)) continue;
+          admit();
+          byId.delete(id);
+          try {
+            // A postponed fixture can move away from the immutable prediction
+            // date. Resolve the stable identity and bypass a stale date cache.
+            fixtureLookups++;
+            const fresh=await loadProviderFixture(id,cfg,{forceRefresh:true});
+            if (positiveSafeInteger(fixtureIdentity(fresh))===id) byId.set(id,fresh);
+            else if (fresh) lookupFailed++;
+          } catch { lookupFailed++; }
+        }
+        let notFound=0,notFinished=0,missingScore=0;
+        for (const id of currentIds) {
+          const fixture=byId.get(id);
+          if (!fixture) notFound++;
+          else if (!isFinishedStatus(fixtureStatusShort(fixture))) notFinished++;
+          else if (!regulationScore(fixture)) missingScore++;
+        }
+        sourceSummary={notFound,notFinished,missingScore,lookupFailed,fixtureLookups};
+        fixtures=[...byId.values()];
+      }
       admit();
       const settlement = await settlePredictionsFromFixtures(fixtures, cfg);
       const after = await supaSelectMany(cfg, 'model_predictions', { fixture_id: `in.(${currentIds.join(',')})` }, { limit: currentIds.length + 2 });
       const settledCount = after.filter(row => row.status === 'settled').length;
       const skippedCount = Math.max(0, currentIds.length - settledCount);
       const status = skippedCount ? 'partial' : 'completed';
-      executionResult = { settledCount, skippedCount, status };
+      executionResult = { settledCount, skippedCount, status,...sourceSummary };
       const action = await finalizeRemediationAction(cfg, actionId, {
         status,
         inspectedCount: currentIds.length,
@@ -2094,6 +2123,7 @@ export function createSettlementRuntime(deps) {
         skippedCount,
         detail: {
           phase: 'final',
+          ...sourceSummary,
           providerCalls: dates.length,
           finishedFixtures: fixtures.filter(f => isFinishedStatus(fixtureStatusShort(f))).length,
           settlementChecked: settlement.checked,
@@ -2102,16 +2132,17 @@ export function createSettlementRuntime(deps) {
         },
       });
       memory.modelRemediation.lastRun = action;
+      await noteSettlementWatchdogOutcome(cfg, status, { actionId }).catch(() => null);
       await recordOpsEvent(cfg, {
         severity: skippedCount ? 'warning' : 'info',
         source: 'model',
         eventType: 'settlement_watchdog',
         code: skippedCount ? 'SETTLEMENT_WATCHDOG_PARTIAL' : 'SETTLEMENT_WATCHDOG_COMPLETED',
         message: `${reason}: завершено ${settledCount}, пропущено ${skippedCount}.`,
-        meta: { ...baseMeta, actionId, settledCount, skippedCount },
+        meta: { ...baseMeta, actionId, settledCount, skippedCount,...sourceSummary },
       }).catch(() => null);
       await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta, actionId, settledCount, skippedCount, status }, cfg, 1440).catch(() => null);
-      return { ok: true, ...baseMeta, actionId, settledCount, skippedCount, status:manual && skippedCount?'degraded':status,...(manual && skippedCount?{reason:'manual_recovery_partial'}:{} ) };
+      return { ok: true, ...baseMeta, actionId, settledCount, skippedCount,...sourceSummary, status:manual && skippedCount?'degraded':status,...(manual && skippedCount?{reason:'manual_recovery_partial'}:{} ) };
     } catch (error) {
       if (executionResult) {
         await noteSettlementWatchdogOutcome(cfg, executionResult.status, { actionId }).catch(() => null);

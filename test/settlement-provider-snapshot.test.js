@@ -66,4 +66,6 @@ test('composition root passes the /status probe to the settlement runtime', () =
   const body = settlementCall.slice(0, settlementCall.indexOf('});'));
   assert.match(body, /\n\s+probeProviderStatus,\n/);
   assert.match(body, /\n\s+loadSharedProviderState,\n/);
+  assert.match(call.slice(0, call.indexOf('});')), /\n\s+loadProviderFixture,\n/);
+  assert.match(body, /\n\s+loadProviderFixture,\n/);
 });

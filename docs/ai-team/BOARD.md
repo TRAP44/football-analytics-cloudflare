@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Досверить незакрытые прогнозы по стабильномуfixtureID, включая переносы/устаревшие даты — **Codex** — `codex/pending-fixture-identity`.
+
 
 
 
@@ -52,7 +54,6 @@
 
 ## На ревью
 
-- [ ] Разовая сверка40pending с официальным источником без включения автоматического восстановления — **Codex** — `codex/manual-pending-recovery`. — [PR #963](https://github.com/TRAP44/football-analytics-cloudflare/pull/963).
 
 
 
@@ -128,6 +129,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Разовая сверка40pending с официальным источником без включения автоматического восстановления — **Codex** — `codex/manual-pending-recovery`. — [PR #963](https://github.com/TRAP44/football-analytics-cloudflare/pull/963). — опубликован;26закрыто,13проверенныхосталось.
 
 - [x] Надёжное подтверждение завершения cron после таймаута и сверка причин старых pending — **Codex** — `codex/scheduled-completion-reconcile`. — [PR #962](https://github.com/TRAP44/football-analytics-cloudflare/pull/962). — опубликован.
 

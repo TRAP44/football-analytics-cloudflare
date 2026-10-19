@@ -3294,6 +3294,7 @@ const {
   loadBotFixtureCard,
   loadCalibrationLifecycleState,
   loadLastProviderE2E,
+  loadProviderFixture,
   loadProviderFixturesForDate,
   loadRuntimeControls,
   loadSharedProviderState,
