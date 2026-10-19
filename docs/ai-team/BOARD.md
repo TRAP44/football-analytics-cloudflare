@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Подтверждение ownership после таймаута renew и разбор fallback кеша — **Codex** — `codex/lease-renewal-reconcile`.
 
 
 
@@ -55,6 +54,8 @@
 
 
 ## На ревью
+
+- [ ] Подтверждение ownership после таймаута renew и разбор fallback кеша — **Codex** — [#968](https://github.com/TRAP44/football-analytics-cloudflare/pull/968), `codex/lease-renewal-reconcile`.
 
 
 

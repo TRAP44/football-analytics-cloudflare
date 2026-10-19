@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-19 — Codex — Подтверждение ownership после потерянного renew
-PR: ветка `codex/lease-renewal-reconcile`.
+PR: [#968](https://github.com/TRAP44/football-analytics-cloudflare/pull/968), ветка `codex/lease-renewal-reconcile`.
 Сделано: после transient renew errors/retry существующий readScheduledJob читает точный job (max1/1800ms), требует sameowner/group/running и horizon>TTL/2+5s, повторно после ops await. Возвращает observeddeadline/ownership_confirmed; не выдумывает extension, обычный heartbeat сохраняется. Falseack/permanent/unknown/expired/short horizon остаются hardstop. Никаких новых RPC/replay/SQL/public/secrets.
 Ревью: независимый Codex нашёл slowops horizon race — исправлено и покрыто injectedclock regression. 38focusedpassed inclcompletion/heartbeat/cacheboundary; финальный Codexreview без блокеров. Node22 npmci/check/lint/release694/full4380,privilegedaudit/verifyrelease/Workerdryrun прошли; CI/публикация/естественная проверка впереди.
 Кеш: единственный CACHE_DB_WRITE timeout в39232000744. Существующий L1 fallback/requireDurablefalse при ошибке верны, проверены; blindwrite retry не добавлен. Документ SCHEDULED_RENEWAL_RECOVERY_RU.md описывает ограничения.
