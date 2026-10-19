@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Чистая AI-карточка картины матча: без процентов покрытия и пустой плашки — **Codex** — `codex/clean-match-insight-card`.
+
 
 
 
@@ -58,7 +60,6 @@
 
 ## На ревью
 
-- [ ] Первый вход: ранняя загрузка стартового JS; чат: фактические игроки стартового состава — **Codex** — [#971](https://github.com/TRAP44/football-analytics-cloudflare/pull/971), `codex/startup-and-lineup-answers`.
 
 
 
@@ -140,6 +141,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Первый вход: ранняя загрузка стартового JS; чат: фактические игроки стартового состава — **Codex** — [#971](https://github.com/TRAP44/football-analytics-cloudflare/pull/971), `codex/startup-and-lineup-answers`. — слит и опубликован.
 
 - [x] Заменить подтверждённый HTTP200 PNG-заполнитель FARDU по exact SHA256 — **Codex** — [#970](https://github.com/TRAP44/football-analytics-cloudflare/pull/970), `codex/verified-provider-placeholder`. — слит и опубликован.
 

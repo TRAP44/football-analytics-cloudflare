@@ -15,6 +15,15 @@ PR: ссылка или ветка
 ---
 
 
+
+## 2026-10-19 — Codex — Чистая AI-карточка «Картина матча»
+PR: ветка `codex/clean-match-insight-card`.
+Сделано: вместо emoji/14%coverage/пустого «Матч» — компактный AI-маркер, заголовок и факт. Строка «В фокусе» только для home/away с реальным названием клуба; balanced/neutral/нет имени её не создают. Нет summary/available — нет пустой панели. Цвета из существующих переменных, перенос длинных названий, launch132 во всех HTML/dynamicURLs/точных тестах.
+Факты: подтверждено, что recentEventSummary считает именно события окна15мин, не общий счёт. Текст «Голы за последние15минут — home:away» сохраняет порядок сторон и не выдаёт голы за общую активность. Логика подсчёта/сортировки/вероятностей не менялась; старый server cache обновит текст при обычном обновлении. Новых API-запросов нет.
+Проверки: Node22 npmci/check/lint/release699/full4401/privilegedaudit/verifyrelease/worker dry-run прошли. Независимое Codex review (не Claude) без блокеров,14focused. Actualrenderer+productionCSS:16случаев320/390/768/1280 dark/light, balanced/namedlongteam; no overflow, footer только при стороне. Screenshot просмотрен после исправления charset только тестового HTML-сервера (production уже UTF8). Полный Chromium320–1280 и first-run/direct-link прошли. Финальные CI/публикация впереди.
+Контекст: #971 слитacfab7df и опубликован: deploy39268383062/monitor39268856143success; task перенесён вГотово. Дублирующий auto deploy39268838889 отменён до публикации на read-only проверке артефакта. Скорость на телефоне не измерена.
+
+
 ## 2026-10-19 — Codex — Первый вход без последовательного ожидания ленты; стартовые составы в чате
 PR: [#971](https://github.com/TRAP44/football-analytics-cloudflare/pull/971), ветка `codex/startup-and-lineup-answers`.
 Сделано: после compatibility один запрос матчей выполняется параллельно оставшемуся bootstrap-профилю/runtime. Settled response/error передаётся в loadMatches после UI-gates; повторного HTTP нет, при другой дате обычный запрос. Серверная auth/beta до routing неизменна. Module-entry в head после deferred SDK; launch131 в HTML/dynamic URLs и точных тестах.
