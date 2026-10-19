@@ -16,7 +16,7 @@ PR: ссылка или ветка
 
 
 ## 2026-10-19 — Codex — Первый вход без последовательного ожидания ленты; стартовые составы в чате
-PR: ветка `codex/startup-and-lineup-answers`.
+PR: [#971](https://github.com/TRAP44/football-analytics-cloudflare/pull/971), ветка `codex/startup-and-lineup-answers`.
 Сделано: после compatibility один запрос матчей выполняется параллельно оставшемуся bootstrap-профилю/runtime. Settled response/error передаётся в loadMatches после UI-gates; повторного HTTP нет, при другой дате обычный запрос. Серверная auth/beta до routing неизменна. Module-entry в head после deferred SDK; launch131 в HTML/dynamic URLs и точных тестах.
 Чат: имена только из сохранённых startXI, без запасных; точный вопрос «Кто в старте?» отвечает напрямую без LLM/квоты. Нет имён — конкретный ответ о неопубликованных составах. Для XI bounded1400 вместо300символов, escaping сохранён; нет новых API-Football запросов. Ownership и выключатель AI сохранены.
 Замер: actual startup functions при искусственных manifest80/profile160/feed100мс, main261/262/262, branch181/182/182мс. Это не телефон/production. Массовый preload26модулей практически не ускорил cold browser (медианы4538→4521мс) и исключён.

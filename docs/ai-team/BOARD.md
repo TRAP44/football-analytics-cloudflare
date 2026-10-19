@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Первый вход: ранняя загрузка стартового JS; чат: фактические игроки стартового состава — **Codex** — `codex/startup-and-lineup-answers`.
 
 
 
@@ -58,6 +57,8 @@
 
 
 ## На ревью
+
+- [ ] Первый вход: ранняя загрузка стартового JS; чат: фактические игроки стартового состава — **Codex** — [#971](https://github.com/TRAP44/football-analytics-cloudflare/pull/971), `codex/startup-and-lineup-answers`.
 
 
 
