@@ -371,6 +371,13 @@ export function createMatchQuestionRuntime(deps = {}) {
     // Переключатель AI в админке: готовые подсказки работают, свой вопрос — нет,
     // в том числе из кеша прежних ответов AI (ревью Codex #863).
     if (!aiEnabled) return json({ available: false, reason: 'ai_disabled' });
+    // Typed preset labels have the same grounded answer as their buttons.
+    // Keep custom-question controls and ownership checks, but avoid model/budget I/O.
+    const knownPreset=Object.entries(QUESTION_PRESETS).find(([,label])=>normalizeQuestion(label)?.normalized===question.normalized)?.[0];
+    if(knownPreset){
+      const ids=presetAnswerIds(knownPreset,facts);
+      return answer(base,ids.length ? 'facts' : 'not_in_data',facts,ids,{source:'data'});
+    }
     if(directTopic){
       const ids=facts.filter(fact=>(directTopic==='starters' ? /^starters_/.test(fact.id) : fact.id===directTopic)).map(fact=>fact.id);
       if(ids.length)return answer(base,'facts',facts,ids,{source:'data'});
@@ -396,10 +403,6 @@ export function createMatchQuestionRuntime(deps = {}) {
       if (selection.reason === 'user_limit' || selection.reason === 'daily_limit') {
         return json({ available: false, reason: selection.reason, ...remaining });
       }
-      const normalized=question.normalized;
-      const knownPreset=Object.entries(QUESTION_PRESETS).find(([,label])=>normalizeQuestion(label)?.normalized===normalized)?.[0];
-      const fallbackIds=knownPreset ? presetAnswerIds(knownPreset,facts) : [];
-      if(fallbackIds.length)return answer(base,'facts',facts,fallbackIds,{source:'data',...remaining});
       return json({ available: false, reason: 'ai_unavailable', ...remaining });
     }
     const cacheWrite=Promise.resolve().then(()=>setCache(cacheKey,fixtureId,{factIds:selection.ids,model:EXPLANATION_MODEL},cfg,ANSWER_CACHE_MINUTES)).catch(()=>null);

@@ -388,14 +388,28 @@ test('direct facts retain ownership and runtime controls and never answer compou
   assert.equal(compound.calls.ai,1);
 });
 
-test('known questions retain a grounded fallback on invalid model output, never on exhausted limits',async()=>{
-  const failed=runtime({ai:()=>({response:'unexpected free text'})});
-  const response=await failed.rt.apiMatchQuestion(request({fixtureId:77,question:'Кто в форме?'}),failed.cfg,user);
-  assert.equal(response.body.source,'data');assert.equal(response.body.answer,'facts');
-  assert.equal(response.body.items.length,2);assert.match(response.body.items[0].text,/Милан|Рома/);
-  const capped=runtime({rpc:()=>({allowed:false,count:10})});
-  const cap=await capped.rt.apiMatchQuestion(request({fixtureId:77,question:'Кто в форме?'}),capped.cfg,user);
-  assert.equal(cap.body.reason,'user_limit');assert.equal(cap.body.available,false);
+test('typed preset labels match button answers without model, budget or answer-cache writes',async()=>{
+  for(const [preset,label] of Object.entries(QUESTION_PRESETS)){
+    const typed=runtime({ai:()=>{throw Error('Model must not run');},rpc:()=>{throw Error('Budget must not run');}});
+    const button=runtime();
+    const actual=await typed.rt.apiMatchQuestion(request({fixtureId:77,question:`  ${label.toUpperCase()}!  `}),typed.cfg,user);
+    const expected=await button.rt.apiMatchQuestion(request({fixtureId:77,preset}),button.cfg,user);
+    assert.equal(actual.body.answer,expected.body.answer,label);
+    assert.deepEqual(actual.body.items,expected.body.items,label);
+    assert.equal(actual.body.source,'data');
+    assert.equal(typed.calls.ai,0);assert.equal(typed.calls.rpc.length,0);assert.equal(typed.calls.setCache.length,0);
+  }
+});
+test('typed presets retain ownership, custom AI controls and missing-data responses',async()=>{
+  const denied=runtime({ownership:false});
+  assert.equal((await denied.rt.apiMatchQuestion(request({fixtureId:77,question:'Кто в форме?'}),denied.cfg,user)).status,404);
+  const disabled=runtime({controls:{aiEnabled:false}});
+  assert.equal((await disabled.rt.apiMatchQuestion(request({fixtureId:77,question:'Кто в форме?'}),disabled.cfg,user)).body.reason,'ai_disabled');
+  const missing=runtime({analysis:payload({recentForm:null})});
+  assert.equal((await missing.rt.apiMatchQuestion(request({fixtureId:77,question:'Кто в форме?'}),missing.cfg,user)).body.answer,'not_in_data');
+  const compound=runtime();
+  await compound.rt.apiMatchQuestion(request({fixtureId:77,question:'Кто в форме и почему проиграла Рома?'}),compound.cfg,user);
+  assert.equal(compound.calls.ai,1);
 });
 
 test('custom starting XI question answers from saved players without LLM or quota calls',async()=>{

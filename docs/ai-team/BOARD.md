@@ -59,9 +59,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Проверка фактических LIVE-резюме по общему публичному кешу матчей — **Codex** — [#974](https://github.com/TRAP44/football-analytics-cloudflare/pull/974), `codex/live-summary-observation`.
+- [ ] Быстрые ответы на вручную введённые готовые вопросы — **Codex** — [#975](https://github.com/TRAP44/football-analytics-cloudflare/pull/975), `codex/typed-match-question-fast-path`.
+
 
 
 
@@ -146,6 +148,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Проверка фактических LIVE-резюме по общему публичному кешу матчей — **Codex** — [#974](https://github.com/TRAP44/football-analytics-cloudflare/pull/974), `codex/live-summary-observation`.
 
 - [x] Связное обновляемое резюме картины матча из нескольких подтверждённых факторов — **Codex** — [#973](https://github.com/TRAP44/football-analytics-cloudflare/pull/973), `codex/live-match-summary`. — слит и опубликован.
 
