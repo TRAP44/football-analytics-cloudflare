@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Быстрые ответы на вручную введённые готовые вопросы — **Codex** — `codex/typed-match-question-fast-path`.
 
 
 
@@ -62,6 +61,8 @@
 
 
 ## На ревью
+
+- [ ] Быстрые ответы на вручную введённые готовые вопросы — **Codex** — [#975](https://github.com/TRAP44/football-analytics-cloudflare/pull/975), `codex/typed-match-question-fast-path`.
 
 
 
