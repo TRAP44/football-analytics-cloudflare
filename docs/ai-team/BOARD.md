@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Чистая AI-карточка картины матча: без процентов покрытия и пустой плашки — **Codex** — `codex/clean-match-insight-card`.
 
 
 
@@ -59,6 +58,8 @@
 
 
 ## На ревью
+
+- [ ] Чистая AI-карточка картины матча: без процентов покрытия и пустой плашки — **Codex** — [#972](https://github.com/TRAP44/football-analytics-cloudflare/pull/972), `codex/clean-match-insight-card`.
 
 
 
