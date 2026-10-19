@@ -175,7 +175,7 @@ export function createFavoriteTeamsRenderer({
       return `
       <div class="favorite-team-row">
         <button class="favorite-team-main team-open-link" type="button" data-open-team="${item.teamId}" data-team-name="${escapedName}" data-team-logo="${escapedLogo}">
-          ${logo ? `<img src="${escapedLogo}" alt="">` : '<span class="team-placeholder">⚽</span>'}
+          ${logo ? `<img src="${escapedLogo}" data-team-crest="${escapedName}" alt="">` : '<span class="team-placeholder">⚽</span>'}
           <strong>${escapedName}</strong>
         </button>
         <button class="favorite-remove" type="button" data-team-id="${item.teamId}" data-team-name="${escapedName}" ${isPending ? 'disabled' : ''}>Удалить</button>

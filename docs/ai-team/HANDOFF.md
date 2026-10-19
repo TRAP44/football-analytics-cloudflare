@@ -14,6 +14,14 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-19 — Codex — Exact fingerprint заглушки FARDU
+PR: [#970](https://github.com/TRAP44/football-analytics-cloudflare/pull/970), ветка `codex/verified-provider-placeholder`.
+Источник: protected39240543606 получил canonicalteam25763PNG HTTP20029416bytes/SHA72f0...7430; файл просмотрен, это camera. Fixture вtest-support. Нельзя использоватьURL/цветовыеэвристики; canvasRGBAhash зависитотpremultipliedalpha, поэтомуrawfileSHA.
+Сделано: толькоfixedreportedURL получает boundedCORSbytecheck128KB/2.5s, credentialsomit/referrernone/redirecterror, sharedpromise60s. Pending/exactplaceholder/failure→FA; changedbytes→originalimg. Late changedsrcunhide, errorfallback не удаляется позднимответом. CSPconnect-srcтолько+media.api-sports.io; otherlogos/paidAPI/startupgatesнетронуты. launch130, allsurfaces/dynamicURLs/exactrevisiontestsupdated.
+Контекст: #9691fbfe2fb слит, deploy39240546865success; ускорениеprofile+manifestparallel/removal120ms. Actualphonebootнеизмерен, isolatedmedian324→123ms приfixedI/O. InspectorнеотправляетTelegram/newproviderAPI. #969перенесёнвГотово, текущаязадача завершаетсяпослеCI/публикации.
+Проверки:10focusedpassed; независимыйread-onlyCodexreview безблокеров, accidental tournamentannotation убрана. Actualbrowsermodule/productionCSP/PNGfixture320px: exactcamera→FA, replacementasset→visible; fullChromium320–1280dark/light+first-runpass. Node22 npmci/check/lint/release695/full4393/privilegedaudit/verifyrelease/Workerdryrun прошли. CI/публикация впереди. Официальныйгерб не создавался.
+
+
 ## 2026-10-19 — Codex — Первый вход и нейтральный crest fallback
 PR: [#969](https://github.com/TRAP44/football-analytics-cloudflare/pull/969), ветка `codex/startup-and-crest-fallback`.
 Сделано: parallelmanifest/profile behind existingfeedgates, removed120msartificialwait, deferSDKbeforemodule. launch129 и всеdynamicURLs/HTML обновлены. Homefeaturedempty/invalid/networkfailedlogo → нейтральныеинициалы, nofabricatedcrest. Observer учитывает и сам добавленныйimg. PublicUI320–1280dark/light+first-run browserpass.

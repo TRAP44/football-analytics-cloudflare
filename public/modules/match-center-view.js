@@ -140,7 +140,7 @@ export function renderMatchCenterView(d, deps) {
 
       <div class="center-scoreboard">
         <button class="center-team-card" type="button" data-center-team="${Number(m.home?.id || 0)}">
-          ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : '<span class="center-logo-fallback">⚽</span>'}
+          ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" data-team-crest="${escapeHtml(m.home.name || '')}" alt="">` : '<span class="center-logo-fallback">⚽</span>'}
           <strong>${escapeHtml(m.home?.name || '')}</strong>
           <small>Хозяева</small>
         </button>
@@ -150,7 +150,7 @@ export function renderMatchCenterView(d, deps) {
           ${live ? '<small id="liveRefreshText">Обновляется автоматически</small>' : `<small>${upcoming ? dateTime(m.date) : `Обновлено ${dateTime(d.generatedAt)}`}</small>`}
         </div>
         <button class="center-team-card away" type="button" data-center-team="${Number(m.away?.id || 0)}">
-          ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : '<span class="center-logo-fallback">⚽</span>'}
+          ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" data-team-crest="${escapeHtml(m.away.name || '')}" alt="">` : '<span class="center-logo-fallback">⚽</span>'}
           <strong>${escapeHtml(m.away?.name || '')}</strong>
           <small>Гости</small>
         </button>

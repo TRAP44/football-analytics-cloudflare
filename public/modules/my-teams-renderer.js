@@ -143,7 +143,7 @@ export function createMyTeamsRenderer({
       const awayName=safeText(focus?.away?.name);
       return `<article class="panel my-team-card">
         <button class="my-team-head team-open-link" type="button" data-open-team="${id}" data-team-name="${escapeHtml(teamName)}" data-team-logo="${escapeHtml(logo)}">
-          ${logo ? `<img src="${escapeHtml(logo)}" alt="">` : '<span class="team-placeholder">⚽</span>'}
+          ${logo ? `<img src="${escapeHtml(logo)}" data-team-crest="${escapeHtml(teamName)}" alt="">` : '<span class="team-placeholder">⚽</span>'}
           <span><strong>${escapeHtml(teamName)}</strong><small>${status}</small></span>
           <b>Открыть →</b>
         </button>
