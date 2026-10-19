@@ -1,3 +1,4 @@
+import {crestFallbackHtml,usableCrestUrl} from './team-crest.js';
 import { localDate, timeOf } from './client-core.js';
 import {
   homeMatchScoreLabel,
@@ -135,9 +136,10 @@ export function createHomeSignalRenderer({
   }
 
   function teamHtml(team,role) {
-    const logo=team?.logo
-      ? `<img src="${safeUrl(team.logo)}" alt="" loading="lazy" decoding="async">`
-      : '<span class="team-logo-fallback" aria-hidden="true">⚽</span>';
+    const url=usableCrestUrl(team?.logo);
+    const logo=url
+      ? `<img src="${escapeHtml(safeUrl(url))}" data-team-crest="${escapeHtml(team?.name || '')}" alt="" loading="eager" decoding="async">`
+      : crestFallbackHtml(team?.name,escapeHtml);
     return `<button class="mr-featured-team team-open-link" type="button" data-open-team="${Number(team?.id)}" data-team-name="${escapeHtml(team?.name || '')}" data-team-logo="${escapeHtml(team?.logo || '')}">
       <span class="mr-featured-crest">${logo}</span>
       <strong>${escapeHtml(team?.name || '')}</strong>

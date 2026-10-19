@@ -53,9 +53,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Подтверждение ownership после таймаута renew и разбор fallback кеша — **Codex** — [#968](https://github.com/TRAP44/football-analytics-cloudflare/pull/968), `codex/lease-renewal-reconcile`.
+- [ ] Ускорить первый вход и заменить отсутствующие гербы; проверить конкретный PNG-заполнитель FARDU — **Codex** — [#969](https://github.com/TRAP44/football-analytics-cloudflare/pull/969), `codex/startup-and-crest-fallback`.
+
 
 
 
@@ -134,6 +136,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Подтверждение ownership после таймаута renew и разбор fallback кеша — **Codex** — [#968](https://github.com/TRAP44/football-analytics-cloudflare/pull/968), `codex/lease-renewal-reconcile`. — опубликованabca7442; natural39234302505 normal+3LIVEOK.
 
 - [x] Диагностировать остановку Cloudflare→GitHub dispatch: безопасная причина/HTTP, различение rate limit и auth — **Codex** — [#967](https://github.com/TRAP44/football-analytics-cloudflare/pull/967), `codex/background-dispatch-diagnosis`. — опубликованa10ff756; HTTP422, natural09:40/09:45UTC восстановлен; отдельныйrenewсбой остаётся.
 

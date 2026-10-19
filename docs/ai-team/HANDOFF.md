@@ -14,6 +14,15 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-19 — Codex — Первый вход и нейтральный crest fallback
+PR: [#969](https://github.com/TRAP44/football-analytics-cloudflare/pull/969), ветка `codex/startup-and-crest-fallback`.
+Сделано: parallelmanifest/profile behind existingfeedgates, removed120msartificialwait, deferSDKbeforemodule. launch129 и всеdynamicURLs/HTML обновлены. Homefeaturedempty/invalid/networkfailedlogo → нейтральныеинициалы, nofabricatedcrest. Observer учитывает и сам добавленныйimg. PublicUI320–1280dark/light+first-run browserpass.
+Замер: actualmain/branch functions,fixed80/80/40msI/O,3пары median324→123ms. Неproduction/телефон. Identitytimingперекрываетmanifest, суммы фазнеравныboot.
+Источник: HTTP200cameraPNG FARDU пока не распознан; нельзя объявлятьсделанным. ProtectedexistingObserveLiveUsage optionalinspect_crest читает2publicdaycache,max2MB,до2canonicalpublicPNG128KB/512px, выводтолькоpublicID/URL/hash/PNG. Нетnewsecrets/providerAPI/Telegram, no authbypass. Послеmergeнужно получитьactualasset иточныйfingerprint; безцветовых/URLэвристик. Независимыйreviewихотклонил, убраны.
+Проверки:38focusedpass; firstfull11oldexactrevision/sourceexpectations обновленынаlaunch129/escapedURL, содержательныепроверкисохранены. Повторныйfull4386/release695/check/lint/audit/verifyrelease/Workerdryrun прошли. Второйfullпоймалстарыйstrict10000ms deadline-тест(9998), отдельные10тестов/полныйповторпрошли безизмененияегоassertions. Финальныйreviewphase1безблокеров. Документ STARTUP_AND_TEAM_CREST_RU.md.
+Контекст: #968abca7442 опубликован, deploy39234205846/monitor39234534460, natural39234302505 normal+3LIVEOK; перенесёнвГотово. Userconfirmedmatch/analysisfast, onlyentryslow. Новыхproductionbootзамеровнет.
+
+
 ## 2026-10-19 — Codex — Подтверждение ownership после потерянного renew
 PR: [#968](https://github.com/TRAP44/football-analytics-cloudflare/pull/968), ветка `codex/lease-renewal-reconcile`.
 Сделано: после transient renew errors/retry существующий readScheduledJob читает точный job (max1/1800ms), требует sameowner/group/running и horizon>TTL/2+5s, повторно после ops await. Возвращает observeddeadline/ownership_confirmed; не выдумывает extension, обычный heartbeat сохраняется. Falseack/permanent/unknown/expired/short horizon остаются hardstop. Никаких новых RPC/replay/SQL/public/secrets.
