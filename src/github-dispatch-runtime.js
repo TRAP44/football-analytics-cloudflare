@@ -52,6 +52,7 @@ export async function dispatchBackgroundJobs(cfg = {}, { fetchImpl = globalThis.
     });
     const status = Number(response?.status || 0);
     if (status === 204 || status === 200) return { dispatched: true, reason: '', status };
+    if (status === 429 || (status === 403 && (response.headers?.get('x-ratelimit-remaining') === '0' || response.headers?.has('retry-after')))) return { dispatched: false, reason: 'rate_limited', status };
     if (status === 401 || status === 403) return { dispatched: false, reason: 'token_rejected', status };
     if (status === 404) return { dispatched: false, reason: 'workflow_or_repository_not_found', status };
     if (status === 422) return { dispatched: false, reason: 'dispatch_rejected', status };

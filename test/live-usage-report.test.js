@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {collectLiveUsage,summarizeTimings,summarizeScoreboards,summarizeAnalysisDiagnostics,usageMarkdown} from '../scripts/live-usage-report.js';
+import {collectLiveUsage,summarizeTimings,summarizeScoreboards,summarizeAnalysisDiagnostics,summarizeDispatchFailures,usageMarkdown} from '../scripts/live-usage-report.js';
 import {auditWorkflow} from '../scripts/privileged-access-audit.js';
 const env={SUPABASE_URL:'https://example.supabase.co',SUPABASE_SECRET_KEY:'sb_secret_not_for_logs'};
 const now=new Date('2026-10-16T18:00:00Z');
@@ -33,9 +33,9 @@ test('live usage reads only bounded narrow GET projections and emits sanitized a
     if(url.searchParams.get('source')==='eq.smart_notifications')return response([{sent:'2',duplicate:'3',failed:'0',unknown:'0',fixturesChecked:'1',checked:'2'}]);
     if(select.startsWith('duration_ms'))return response(Array.from({length:20},(_,i)=>({duration_ms:String((i+1)*100),reason:'ai',message:'private headline',telegram_id:123})));
     if(select.includes('telegramCalls'))return response([{code:'FAVORITE_SCOREBOARD_PARTIAL',sent:'1',edited:'2',closed:'0',failed:'1',unknown:'0',deferred:'3',staleSkipped:'0',oldestWaitSec:'90',telegramCalls:'4',stopped:'rate_limited',telegram_id:123}]);
-    return response([{code:'UPSTREAM_TIMEOUT'},{code:'UPSTREAM_TIMEOUT'},{code:'DAILY_DIGEST_SLO_MISSING_RUN'},{code:'private lower-case text'}]);
+    return response([{code:'BACKGROUND_JOBS_DISPATCH_FAILED',status:401,dispatchReason:'token_rejected',created_at:'2026-10-16T17:00:00Z'},{code:'UPSTREAM_TIMEOUT'},{code:'UPSTREAM_TIMEOUT'},{code:'DAILY_DIGEST_SLO_MISSING_RUN'},{code:'private lower-case text'}]);
   }});
-  assert.equal(calls.length,7);
+  assert.equal(calls.length,7);assert.equal(report.dispatchFailures.byReason.token_rejected,1);
   assert.equal(report.settlementRecovery.automaticEnabled,false);assert.equal(report.settlementRecovery.consecutiveFailures,2);assert.equal(report.settlementRecovery.circuitOpen,false);
   assert.doesNotMatch(JSON.stringify(report.settlementRecovery),/do not copy|last_error/);
   assert.equal(report.alerts.totals.sent,2);assert.equal(report.alerts.runEvents,1);
@@ -117,4 +117,17 @@ test('sparse client timings cannot display a percentile as reliable evidence',()
     assert.equal(r.p50Ms===null,count<3);assert.equal(r.p95Ms===null,count<20);
     assert.equal(r.maxMs,count*100);
   }
+});
+
+
+test('dispatch diagnosis exposes fixed reasons and HTTP codes without raw text or metadata',()=>{
+  const report=summarizeDispatchFailures([
+    {code:'BACKGROUND_JOBS_DISPATCH_FAILED',status:401,dispatchReason:'token_rejected',created_at:'2026-10-19T08:45:00Z',message:'private token'},
+    {code:'BACKGROUND_JOBS_DISPATCH_FAILED',status:'403',dispatchReason:'private token',created_at:'invalid private'},
+    {code:'BACKGROUND_JOBS_DISPATCH_FAILED',status:429,dispatchReason:'rate_limited',created_at:'2026-10-19T08:50:00Z'},
+    {code:'OTHER',status:500,dispatchReason:'network_error'},
+  ]);
+  assert.equal(report.samples,3);assert.deepEqual(report.byReason,{token_rejected:1,unknown:1,rate_limited:1});
+  assert.deepEqual(report.byHttpStatus,{'401':1,'403':1,'429':1});assert.equal(report.lastFailureAt,'2026-10-19T08:50:00.000Z');
+  assert.doesNotMatch(JSON.stringify(report),/private/);
 });

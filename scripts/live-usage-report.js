@@ -60,6 +60,22 @@ function summarizeErrors(rows){
   return {sampleRows:rows.filter(row=>row.code!=='ANALYSIS_SLOW_REQUEST').length,uncategorized,byCode:counts};
 }
 
+const DISPATCH_REASONS=new Set(['token_missing','token_invalid','repository_invalid','fetch_unavailable','token_rejected','workflow_or_repository_not_found','dispatch_rejected','github_unavailable','timeout','network_error','rate_limited']);
+export function summarizeDispatchFailures(rows){
+  const byReason={},byHttpStatus={};let samples=0,lastFailureAt=null;
+  for(const row of rows){
+    if(row.code!=='BACKGROUND_JOBS_DISPATCH_FAILED')continue;
+    samples++;
+    const reason=DISPATCH_REASONS.has(row.dispatchReason)?row.dispatchReason:'unknown';
+    byReason[reason]=(byReason[reason]||0)+1;
+    const status=integer(row.status),key=status>=100 && status<=599?String(status):'unknown';
+    byHttpStatus[key]=(byHttpStatus[key]||0)+1;
+    const timestamp=typeof row.created_at==='string' && /^\d{4}-\d{2}-\d{2}T/.test(row.created_at)?Date.parse(row.created_at):NaN;
+    if(Number.isFinite(timestamp) && (lastFailureAt===null || timestamp>Date.parse(lastFailureAt)))lastFailureAt=new Date(timestamp).toISOString();
+  }
+  return {samples,byReason,byHttpStatus,lastFailureAt,note:'Deduplicated failure rows only; absence does not establish successful dispatch. No token, raw response or error text is returned.'};
+}
+
 export function summarizeAnalysisDiagnostics(rows){
   const timings=[],stages=Object.fromEntries(STAGES.map(key=>[key,[]]));
   const failures={samples:0,byKind:{},byHttpStatus:{}};let invalidTimings=0;
@@ -108,10 +124,10 @@ export async function collectLiveUsage({env={},fetchImpl=fetch,now=new Date()}={
     }
     return {rows,pages,truncated:true};
   }
-  // Sequential reads keep pressure bounded; at most20requests /5000rows total.
+  // Sequential reads keep pressure bounded; at most28requests /7000rows total.
   const timings=await read('duration_ms,reason:metadata->>reason',{source:'eq.client',event_type:'eq.client_telemetry',code:'eq.OPERATION_TIMING'});
   const boards=await read(['code',...COUNTERS.map(x=>`${x}:metadata->>${x}`),'stopped:metadata->>stopped','capped:metadata->>capped'].join(','),{source:'eq.favorite_scoreboard',event_type:'eq.favorite_scoreboard_run',code:'in.(FAVORITE_SCOREBOARD_RUN,FAVORITE_SCOREBOARD_PARTIAL)'});
-  const errors=await read(['code','duration_ms','httpStatus:metadata->>httpStatus','failureKind:metadata->>failureKind',...STAGES.map(key=>`${key}:metadata->>${key}`)].join(','),{or:'(severity.in.(warning,error,critical),code.eq.ANALYSIS_SLOW_REQUEST)'});
+  const errors=await read(['code','status','created_at','dispatchReason:metadata->>reason','duration_ms','httpStatus:metadata->>httpStatus','failureKind:metadata->>failureKind',...STAGES.map(key=>`${key}:metadata->>${key}`)].join(','),{or:'(severity.in.(warning,error,critical),code.eq.ANALYSIS_SLOW_REQUEST)'});
   const alerts=await read('code,sent:metadata->>sent,duplicate:metadata->>duplicate,failed:metadata->>failed,unknown:metadata->>unknown,fixturesChecked:metadata->>fixturesChecked,checked:metadata->>checked',{source:'eq.smart_notifications',event_type:'eq.smart_notification_scheduler',code:'in.(SMART_NOTIFICATION_RUN_OK,SMART_NOTIFICATION_RUN_DEGRADED)'});
   const pending=await read('kickoff_at',{status:'eq.pending',kickoff_at:`lt.${new Date(now.getTime()-86400000).toISOString()}`},'model_predictions');
   const controls=await read('auto_settlement_recovery_enabled',{id:'eq.global'},'runtime_controls');
@@ -133,7 +149,7 @@ export async function collectLiveUsage({env={},fetchImpl=fetch,now=new Date()}={
   const pendingResults={olderThan24hAtLeast:pending.rows.length,oldestKickoffDay:validDates.length?new Date(Math.min(...validDates)).toISOString().slice(0,10):null,invalidRows:dates.length-validDates.length,truncated:pending.truncated,note:'Old pending includes postponed matches; no result is inferred or written.'};
   return {scope:'Read-only production observations, not a load test or capacity proof',window:{start,end,hours:6},
     coverage:{timings:{pages:timings.pages,truncated:timings.truncated},scoreboards:{pages:boards.pages,truncated:boards.truncated},errors:{pages:errors.pages,truncated:errors.truncated},pending:{pages:pending.pages,truncated:pending.truncated},alerts:{pages:alerts.pages,truncated:alerts.truncated},controls:{pages:controls.pages,truncated:controls.truncated},watchdog:{pages:watchdog.pages,truncated:watchdog.truncated}},
-    timings:summarizeTimings(timings.rows),scoreboards:summarizeScoreboards(boards.rows),errors:summarizeErrors(errors.rows),analysisDiagnostics:summarizeAnalysisDiagnostics(errors.rows),pendingResults,settlementRecovery,alerts:summarizeAlerts(alerts.rows),
+    timings:summarizeTimings(timings.rows),scoreboards:summarizeScoreboards(boards.rows),errors:summarizeErrors(errors.rows),analysisDiagnostics:summarizeAnalysisDiagnostics(errors.rows),dispatchFailures:summarizeDispatchFailures(errors.rows),pendingResults,settlementRecovery,alerts:summarizeAlerts(alerts.rows),
     complete:![timings,boards,errors,pending,alerts,controls,watchdog].some(x=>x.truncated),productionCapacityConfirmed:false,
     limitations:['Client timing is observational, may include failed operations, can be missing, and does not distinguish cache from fresh AI.',
       'Offset pagination is bounded and best effort, not a transactional snapshot; concurrent inserts can shift page boundaries.',
@@ -152,6 +168,7 @@ export function usageMarkdown(report){
     `LIVE: событий запусков ${report.scoreboards.runEvents}; частичных ${report.scoreboards.partialRuns}; ограниченных бюджетом ${report.scoreboards.cappedRuns}; ${JSON.stringify(report.scoreboards.totals)}.`,
     `Максимум oldestWaitSec: ${report.scoreboards.maxOldestWaitSec??'нет данных'}. Отложенные сообщения — сумма попыток, не число уникальных людей.`,
     `Ошибки/предупреждения по коду: ${JSON.stringify(report.errors.byCode)}.`,
+    `Запуск фоновых задач: ${JSON.stringify(report.dispatchFailures)}.`,
     `Контроль старых результатов: ${JSON.stringify(report.settlementRecovery)}.`,
     `Диагностика медленных AI (не вся выборка запросов): ${JSON.stringify(report.analysisDiagnostics)}.`,
     '',...report.limitations.map(x=>'- '+x),'','Полная production-вместимость и своевременная доставка этим отчётом не подтверждаются.',''].join('\n');

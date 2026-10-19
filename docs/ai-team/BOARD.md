@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Диагностировать остановку Cloudflare→GitHub dispatch: безопасная причина/HTTP, различение rate limit и auth — **Codex** — `codex/background-dispatch-diagnosis`.
+
 
 
 
@@ -53,7 +55,6 @@
 
 ## На ревью
 
-- [ ] Досверить незакрытые прогнозы по стабильномуfixtureID, включая переносы/устаревшие даты — **Codex** — [#966](https://github.com/TRAP44/football-analytics-cloudflare/pull/966), `codex/pending-fixture-identity`.
 
 
 
@@ -130,6 +131,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Досверить незакрытые прогнозы по стабильномуfixtureID, включая переносы/устаревшие даты — **Codex** — [#966](https://github.com/TRAP44/football-analytics-cloudflare/pull/966), `codex/pending-fixture-identity`. — опубликован04d0f64a; источник13IDнефинален, предыдущие26закрыты.
 
 - [x] Разовая сверка40pending с официальным источником без включения автоматического восстановления — **Codex** — `codex/manual-pending-recovery`. — [PR #963](https://github.com/TRAP44/football-analytics-cloudflare/pull/963). — опубликован;26закрыто,13проверенныхосталось.
 

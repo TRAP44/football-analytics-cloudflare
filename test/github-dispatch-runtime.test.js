@@ -47,3 +47,12 @@ test('only a plain owner/repo can be targeted', () => {
     assert.equal(dispatchRepository(bad), '', bad);
   }
 });
+
+
+test('GitHub rate limits are distinguished from rejected credentials without retrying a dispatch',async()=>{
+  for(const [status,headers] of [[429,{}],[403,{'x-ratelimit-remaining':'0'}],[403,{'retry-after':'30'}]]){
+    let calls=0;
+    const result=await dispatchBackgroundJobs({githubDispatchToken:'test_token'},{fetchImpl:async()=>{calls++;return new Response(null,{status,headers});}});
+    assert.equal(result.reason,'rate_limited');assert.equal(calls,1);
+  }
+});
