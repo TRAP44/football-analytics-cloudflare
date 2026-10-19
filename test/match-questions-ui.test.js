@@ -53,8 +53,7 @@ test('complete long starting XI is visible and escaped; regular answer size stay
   const text=Array.from({length:11},(_,i)=>`Player ${i+1} Longfamilyname Surname`).join(', ');
   const html=matchQuestionAnswerHtml({available:true,answer:'facts',items:[{id:'starters_home',role:'caveat',connector:'Данные:',text:text+' <script>'}]},esc);
   assert.ok(html.includes('Player 11 Longfamilyname Surname'));
-  assert.ok(html.includes('&lt;script&gt;'));
-  assert.doesNotMatch(html,/<script>/);
+  assert.equal(html, '<div class="match-question-response"><p>'+text+' &lt;script&gt;</p></div>');
   const ordinary=matchQuestionAnswerHtml({available:true,answer:'facts',items:[{id:'form_home',role:'support',connector:'Форма:',text:'x'.repeat(400)}]},esc);
   assert.ok(ordinary.includes('x'.repeat(300)));
   assert.ok(!ordinary.includes('x'.repeat(301)));
