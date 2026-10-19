@@ -4,7 +4,7 @@ import {teamInitials,usableCrestUrl,crestFallbackHtml,installCrestFallback} from
 test('neutral initials support Cyrillic and single names without inventing a club logo',()=>{
   assert.equal(teamInitials('FARDU'),'FA');assert.equal(teamInitials('Манчестер Юнайтед'),'МЮ');assert.equal(teamInitials(''),'FC');
   assert.equal(teamInitials('⚽ Étoile'),'ÉT');
-  assert.doesNotMatch(crestFallbackHtml('<script>',s=>s.replaceAll('<','&lt;')),/<script>/);
+  assert.equal(crestFallbackHtml('<script>',s=>s),'<span class="team-crest-initials" aria-hidden="true">SC</span>');
 });
 test('only usable http URLs are accepted; legitimate default paths are retained',()=>{
   for(const value of ['',null,'javascript:alert(1)','https://user:secret@example.com/a.png'])assert.equal(usableCrestUrl(value),'');
