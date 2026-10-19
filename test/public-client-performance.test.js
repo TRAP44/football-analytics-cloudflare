@@ -27,7 +27,8 @@ test('startup parallelizes runtime and identity before the access gate',()=>{
   assert.ok(identityBatch>=0 && blocked>identityBatch && publicBatch>blocked);
   const identitySlice=startup.slice(identityBatch,blocked);
   assert.match(identitySlice,/loadRuntimeStatus\(false\)/);
-  assert.match(identitySlice,/loadProfile\(\{bootstrap:true\}\)\.catch\(\(\)=>null\)/);
+  assert.match(identitySlice,/profileReady/);
+  assert.ok(startup.indexOf('const profileReady = loadProfile({bootstrap:true})')<startup.indexOf('const manifest = await loadAppManifest()'));
   assert.doesNotMatch(identitySlice,/loadFavorites|loadMatches/);
   assert.doesNotMatch(startup,/await loadRuntimeStatus\(false\);[\s\S]*?await loadProfile/);
 });

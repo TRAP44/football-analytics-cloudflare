@@ -2713,3 +2713,6 @@ html[data-theme] body.miniapp-public-shell .match-question-response {
 }
 html[data-theme] body.miniapp-public-shell .match-question-response p { margin: 0; }
 html[data-theme] body.miniapp-public-shell .match-question-response p + p { margin-top: 8px; }
+
+/* Neutral marker for a missing club badge. */
+.team-crest-initials { display:inline-grid;place-items:center;width:42px;height:46px;flex-shrink:0;clip-path:polygon(8% 0,92% 0,92% 65%,78% 84%,50% 100%,22% 84%,8% 65%);background:color-mix(in srgb,var(--accent) 16%,var(--bg));color:var(--accent);font:800 16px/1 system-ui,sans-serif;letter-spacing:.03em; }

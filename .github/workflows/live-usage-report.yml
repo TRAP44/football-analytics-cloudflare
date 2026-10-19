@@ -2,6 +2,11 @@ name: Observe Live Usage
 
 on:
   workflow_dispatch:
+    inputs:
+      inspect_crest:
+        description: Inspect the reported public FARDU badge
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -32,6 +37,13 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node scripts/live-usage-report.js
+      - name: Inspect reported public team crest
+        if: inputs.inspect_crest == true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/inspect-team-crest.js
       - name: Save sanitized observations
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -39,5 +51,6 @@ jobs:
           path: |
             load-results/live-usage.json
             load-results/live-usage.md
+            load-results/team-crest-*
           retention-days: 3
           if-no-files-found: error

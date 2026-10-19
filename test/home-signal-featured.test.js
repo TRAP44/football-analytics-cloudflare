@@ -111,7 +111,7 @@ test('home SIGNAL layout keeps search primary and personal card contract intact'
 
 test('featured card escapes provider text, uses safe logos and opens the match headquarters',()=>{
   const featured=block(signal,'function teamHtml','return Object.freeze');
-  assert.match(featured,/src="\$\{safeUrl\(team\.logo\)\}"/);
+  assert.match(featured,/src="\$\{escapeHtml\(safeUrl\(url\)\)\}"/);
   assert.match(featured,/escapeHtml\(team\?\.name \|\| ''\)/);
   assert.match(featured,/escapeHtml\(meta\)/);
   assert.match(featured,/openMatchCenter\(fixtureId,event\.currentTarget\)/);
