@@ -16,7 +16,7 @@ test('RC123 exposes today matches as a public Mini App destination',()=>{
 });
 
 test('RC123 prepares the public match journey during startup',()=>{
-  assert.match(app,/const startupTasks = \[loadFavorites\(\), loadMatches\(\{ snapshotFastPath:true \}\)\]/);
+  assert.match(app,/const startupTasks = \[loadFavorites\(\), loadMatches\(\{ snapshotFastPath:true, initialResponse:matchesReady \}\)\]/);
   assert.match(app,/await Promise\.allSettled\(\[startupTasks\[1\]\]\)/);
   assert.match(app,/if \(\$\('navMatches'\)\) \$\('navMatches'\)\.hidden=false/);
 });
@@ -37,7 +37,7 @@ test('RC123 defers public match-feed work until access-control bootstrap complet
   const startup=app.slice(start,end);
   const profile=startup.indexOf('loadProfile({bootstrap:true}).catch(()=>null)');
   const access=startup.indexOf('if (state.closedBetaBlocked) return false');
-  const feed=startup.indexOf('const startupTasks = [loadFavorites(), loadMatches({ snapshotFastPath:true })]');
+  const feed=startup.indexOf('const startupTasks = [loadFavorites(), loadMatches({ snapshotFastPath:true, initialResponse:matchesReady })]');
   assert.ok(profile>=0 && access>profile && feed>access);
   assert.doesNotMatch(startup.slice(0,access),/loadMatches\(\{/);
 });

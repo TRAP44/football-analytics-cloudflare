@@ -31,3 +31,13 @@ test('risk preset excludes neutral referee, venue and average form facts',()=>{
   const sparse=buildMatchQuestionPresets({match:{...match,status:'FT'}});
   assert.equal(sparse.presets.risk.answer,'not_in_data');
 });
+
+test('starter facts include actual player names, never substitutes or invented confirmation',()=>{
+  const facts=buildMatchQuestionFacts({match,lineups:{home:{startXI:[{player:{name:'Palmer'}},{name:'Jackson'}],substitutes:[{name:'Bench'}]}}});
+  const starter=facts.find(f=>f.id==='starters_home');
+  assert.match(starter.text,/Palmer, Jackson/);
+  assert.doesNotMatch(starter.text,/Bench|подтверждённый/);
+  assert.equal(facts.some(f=>f.id==='starters_away'),false);
+  for(const q of ['Кто в старте ?', 'Кто в стартовом составе?', 'Покажи стартовый состав'])assert.equal(directMatchQuestionTopic(q),'starters');
+  for(const q of ['Кто в старте и кто травмирован?', 'Кто в старте вместо Палмера?', 'Почему он не в старте?'])assert.equal(directMatchQuestionTopic(q),null);
+});

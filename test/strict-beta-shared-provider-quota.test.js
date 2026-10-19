@@ -52,7 +52,7 @@ test('unauthorized Mini App stops before favorites and match loading',()=>{
 
   const startup=block(appCore,'async function runStartupSequence','const api = createApiClient');
   const blockAt=startup.indexOf('if (state.closedBetaBlocked) return false;');
-  const tasksAt=startup.indexOf('const startupTasks = [loadFavorites(), loadMatches({ snapshotFastPath:true })]');
+  const tasksAt=startup.indexOf('const startupTasks = [loadFavorites(), loadMatches({ snapshotFastPath:true, initialResponse:matchesReady })]');
   assert.ok(blockAt>=0 && tasksAt>blockAt);
 });
 

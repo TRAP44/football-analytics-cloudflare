@@ -365,16 +365,16 @@ export function createMatchQuestionRuntime(deps = {}) {
       const ids = presetAnswerIds(preset, facts);
       return answer(base, ids.length ? 'facts' : 'not_in_data', facts, ids, { source: 'preset' });
     }
-    if (!facts.length) return answer(base, 'not_in_data', facts, [], { source: 'rule' });
+    const directTopic=directMatchQuestionTopic(question.text);
+    if (!facts.length && !directTopic) return answer(base, 'not_in_data', facts, [], { source: 'rule' });
 
     // Переключатель AI в админке: готовые подсказки работают, свой вопрос — нет,
     // в том числе из кеша прежних ответов AI (ревью Codex #863).
     if (!aiEnabled) return json({ available: false, reason: 'ai_disabled' });
-    const directTopic=directMatchQuestionTopic(question.text);
     if(directTopic){
-      const ids=facts.filter(fact=>fact.id===directTopic).map(fact=>fact.id);
+      const ids=facts.filter(fact=>(directTopic==='starters' ? /^starters_/.test(fact.id) : fact.id===directTopic)).map(fact=>fact.id);
       if(ids.length)return answer(base,'facts',facts,ids,{source:'data'});
-      const missing={id:directTopic,role:'caveat',text:directTopic==='referee' ? 'В этом разборе главный судья пока не указан.' : 'В этом разборе стадион пока не указан.'};
+      const missing={id:directTopic,role:'caveat',text:directTopic==='starters' ? 'Стартовые составы в этом разборе пока не опубликованы.' : directTopic==='referee' ? 'В этом разборе главный судья пока не указан.' : 'В этом разборе стадион пока не указан.'};
       return answer(base,'facts',[missing],[directTopic],{source:'data'});
     }
     const hash = await explanationCatalogHash(facts);
