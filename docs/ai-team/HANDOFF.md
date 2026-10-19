@@ -17,6 +17,16 @@ PR: ссылка или ветка
 
 
 
+
+## 2026-10-19 — Codex — Наблюдение фактических LIVE-резюме
+PR: ветка `codex/live-summary-observation`.
+Цель: после #973 проверить реальные сохранённые ответы, а не ещё раз синтетическую модель. Локальных Supabase bindings нет; используется существующий protected main-only Observe Live Usage с существующими secrets, optional inspect_summary=false.
+Сделано: один boundedGET общей analysis_cache (фиксированный match-center:v17 prefix + mode live, последние24ч updated_at, latest6,512KB/10s, no redirects). Artifact только публичные команды/счёт/минута/резюме/типы сигналов и признаки доступности; пользовательские поля/metadata/ключи/ошибки не выводятся. Нет API-Football/Telegram/model вызовов и записей.
+Ограничения: recentSnapshot означает generatedAt в пределах10мин, не свежесть источника/актуальность LIVEстатуса сейчас. Это не Telegram-сессия и не before/after событие. matchesCurrentComposer сравнивает доставленный каталог фактов; при7фактах возможна усечённость, несовпадение не автоматический баг. Нет составов/данных — не объявлять кейс проверенным.
+Проверки: Node22 npmci/check/lint/release699/full4411/privilegedaudit/verifyrelease/worker dry-run прошли. Независимый Codex reviewer (не Claude): без блокеров,4focused. Main-only/env/permissions/secretrefs/uploadretention сохранены. После слияния выполнить Observe Live Usage inspect_summary=true, скачать artifact и оценить actualcases; если свежих снимков нет, честно сообщить, не имитировать пользователя.
+Контекст: #973 cb4b3cde опубликован, deploy39276211056/monitor39276610866success; task перенесёнвГотово. Новых изменений интерфейса/модели/вероятностей нет.
+
+
 ## 2026-10-19 — Codex — Связное LIVE-резюме из нескольких факторов
 PR: [#973](https://github.com/TRAP44/football-analytics-cloudflare/pull/973), ветка `codex/live-match-summary`.
 Сделано: summary smartInsights собирается из главного валидированного сигнала, числового подтверждения атаки при расхождении счёта/удалении и важного текущего контекста. До3элементов, без повторных типов/текстов и коррелирующего владения/угловых поверх давления. Только события — осторожный вывод о недостаточном подтверждении преимущества. Имена и роли сторон сохраняются; новых причинных/временных утверждений нет.
