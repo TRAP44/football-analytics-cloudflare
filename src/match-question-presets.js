@@ -15,7 +15,11 @@ export function presetAnswerIds(preset, facts = []) {
   }
   if (preset === 'risk') return pick(list.filter(fact => fact.role === 'risk' || ['lineups_pending','goals_high','goals_low'].includes(fact.id)));
   if (preset === 'form') return pick(list.filter(fact => /^form_/.test(fact.id)));
-  if (preset === 'squad') return pick(list.filter(fact => /^lineups_|^absences_/.test(fact.id)));
+  if (preset === 'squad') {
+    const starters=pick(list.filter(fact=>/^starters_/.test(fact.id))).slice(0,2);
+    const context=pick(list.filter(fact=>/^lineups_|^absences_/.test(fact.id)));
+    return [...starters,...context].slice(0,MAX_ANSWER_FACTS);
+  }
   return [];
 }
 

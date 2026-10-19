@@ -18,6 +18,14 @@ PR: ссылка или ветка
 
 
 
+## 2026-10-20 — Codex — Этап 2: полные вероятности и стартовые составы в чате
+PR: [#978](https://github.com/TRAP44/football-analytics-cloudflare/pull/978), ветка `codex/complete-match-question-facts`.
+Сделано: каталог вопросов теперь содержит home/draw/away из того же validProbabilities, что объяснение; раньше при явном фаворите был только model_lead и вопрос о ничьей не имел нужного факта, хотя число есть в payload. Узкие вопросы «Какая вероятность ничьей?»/«Какие вероятности исходов?» отвечаются по данным без LLM/квоты. При отсутствии/невалидности — конкретный честный ответ. Составные вопросы остаются AIselection; новый факт доступен модели, hash меняется автоматически.
+Подсказка squad раньше выбирала только lineups/absences, пропуская starters. Теперь опубликованные XI обеих команд + один наиболее приоритетный контекст, максимум3факта; неподтверждённые не выдаются за подтверждённые. ExistingUI уже поддерживает до1400символов starterfacts, public не менялся, launch133 сохраняется.
+Проверки: Node22 npmci/check/lint/release705/full4420, audit/verifyrelease/workerdryrun,48focused; независимый Codexreview без блокеров. Browseractualhandler: referee+probabilities, noLLM/quota, ответы видимы; готовые кнопки/remount/stalereply/Passalignment прошли. Это runtime/браузер с fixtures, не чужая Telegramsession и не реальный вызов WorkersAI вproduction.
+LIVE: отсутствие настоящих LIVEматчей подтверждено пользователем; проверки гол/удаление синтетические, actualbefore/after остаётся отложенным. Не объявлять LIVEпроверенным по тестам.
+Контекст: этап1 #9772452aa80 опубликован; mainquality39341333489/deploy39341686870/monitor39341943937success. PublicmanifestSHA/HTMLasset133/app/точныеbootstrapbytes проверены HTTPS. ПеренесёнвГотово. ПричинаобщихSupabasetimeout не объявляетсяустранённой; MatchCenterбольше не ждёт необязательныйcachewrite. #976обновлён фактическимрезультатом.
+
 ## 2026-10-20 — Codex — Этап 1 плана #976: путь открытия приложения и матча
 PR: [#977](https://github.com/TRAP44/football-analytics-cloudflare/pull/977), ветка `codex/startup-critical-path`.
 Сделано: маленький classic defer script до Telegram SDK запускает только public app-manifest параллельно основному modulegraph; loader потребляет settled результат один раз, повторный startup получает свежий запрос. Личная информация/feed по-прежнему за существующими compatibility/profile/beta gates. Asset revision133 согласована во всех HTML/dynamicURLs/контрактных тестах.

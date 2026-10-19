@@ -1,4 +1,4 @@
-import {buildExplanationFacts} from './match-explanation-runtime.js';
+import {buildExplanationFacts,validProbabilities} from './match-explanation-runtime.js';
 
 const text=value=>typeof value==='string' ? value.replace(/[\u0000-\u001f\u007f<>]/g,' ').replace(/\s+/g,' ').trim().slice(0,100) : '';
 const count=value=>typeof value==='number' && Number.isInteger(value) && value>=0 && value<=60 ? value : null;
@@ -14,6 +14,13 @@ export function buildMatchQuestionFacts(payload={}){
     const fact={id,role:index>=0 ? facts[index].role : 'caveat',text:value,priority};
     if(index>=0)facts[index]=fact;else facts.push(fact);
   };
+  const probabilities=validProbabilities(payload?.probabilities);
+  if(probabilities){
+    const home=text(payload?.match?.home?.name).slice(0,60) || 'Хозяева';
+    const away=text(payload?.match?.away?.name).slice(0,60) || 'Гости';
+    const percent=value=>(Math.round(value*10)/10).toString().replace('.',',');
+    add('outcome_probabilities',`Оценка модели: победа ${home} — ${percent(probabilities.home)}%, ничья — ${percent(probabilities.draw)}%, победа ${away} — ${percent(probabilities.away)}%.`);
+  }
   const referee=text(payload?.match?.referee);
   if(present(referee))add('referee',`Главный судья — ${referee}.`);
   const venue=text(payload?.match?.venue),city=text(payload?.match?.city);
@@ -48,6 +55,7 @@ export function buildMatchQuestionFacts(payload={}){
 
 export function directMatchQuestionTopic(question=''){
   const q=String(question).toLowerCase().replace(/ё/g,'е').replace(/[?!.,…]/g,'').replace(/\s+/g,' ').trim();
+  if(/^(?:(?:какие|каковы) (?:вероятности|шансы)(?: исходов| на исходы)?|вероятности(?: исходов)?|(?:какова|какая) вероятность ничьей|шансы на ничью)$/u.test(q))return 'outcome_probabilities';
   if(/^(?:кто (?:в старте|в стартовом составе|выйдет в старте)|(?:покажи|назови) (?:старт|стартовый состав)|стартовый состав)$/u.test(q) && !/ и |почему|если|вместо|замен|травм/u.test(q))return 'starters';
   if(!/(?: и |почему|строг|стиль|карточ|сколько|пенальти|замен|смен|раньше|предыдущ|помощник|боков|линейн|вар|var|четверт|форм|травм|гол|исход|состав)/u.test(q)
     && /^(?:кто|как зовут|назови|имя|главный судья|главный арбитр|судья|арбитр)(?:\s|$)/u.test(q) && /судь|арбитр|судит/u.test(q))return 'referee';

@@ -11,7 +11,7 @@ const prepared=buildMatchQuestionPresets({match:{fixtureId:123,home:{name:'Chels
 let realHandlerCalls=0;
 const runtime=createMatchQuestionRuntime({
  json:(body,status=200)=>Response.json(body,{status}),
- getCache:async()=>({match:{fixtureId:123,referee:'Michael Oliver'}}),getStaleCache:async()=>null,setCache:async()=>true,
+ getCache:async()=>({match:{fixtureId:123,referee:'Michael Oliver',home:{name:'Chelsea'},away:{name:'Everton'}},probabilities:{home:54,draw:25,away:21}}),getStaleCache:async()=>null,setCache:async()=>true,
  getHistory:async()=>[{fixture_id:123}],hasSupabase:()=>true,supaSelectMany:async()=>[],supaRpc:async()=>{throw Error('direct question must not consume budget');},
  loadRuntimeControls:async()=>({value:{analysisEnabled:true,aiEnabled:true}}),memory:{},
 });
@@ -61,6 +61,12 @@ try {
  for(let attempt=0;attempt<100 && !integrated.textContent.includes('Главный судья — Michael Oliver.');attempt++)await new Promise(resolve=>setTimeout(resolve,20));
  if(!integrated.querySelector('[data-question-answer]').textContent.includes('Главный судья — Michael Oliver.'))throw Error('screenshot question failed through actual handler');
  if(integrated.querySelector('[data-question-answer]').textContent.includes('Это подкрепляет'))throw Error('robotic connector remains');
+ integrated.querySelector('input').value='Какая вероятность ничьей?';
+ integrated.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+ for(let attempt=0;attempt<100 && !integrated.querySelector('[data-question-answer]').textContent.includes('ничья — 25%');attempt++)await new Promise(resolve=>setTimeout(resolve,20));
+ const distribution=integrated.querySelector('[data-question-answer]').textContent;
+ if(!distribution.includes('Chelsea — 54%') || !distribution.includes('ничья — 25%') || !distribution.includes('Everton — 21%'))throw Error('complete distribution missing through actual handler');
+
  document.body.dataset.testStatus='passed';
 } catch(error){document.body.dataset.testStatus='failed';document.body.dataset.testError=error.message;}
 </script></body></html>`;
@@ -95,7 +101,7 @@ try{
   if(result?.status)break;
   await new Promise(resolve=>setTimeout(resolve,100));
  }
- if(realHandlerCalls!==1)throw Error('actual screenshot handler was not exercised exactly once');
+ if(realHandlerCalls!==2)throw Error('actual handler was not exercised exactly twice');
  if(result?.status!=='passed')throw Error('Rendered question flow failed: '+JSON.stringify(result));
- console.log('Rendered questions passed: immediate server-prepared answers without history/API, start action, same-analysis remount, typed question, actual referee handler round trip, stale reply isolation, Pass alignment.');
+ console.log('Rendered questions passed: immediate server-prepared answers without history/API, start action, same-analysis remount, typed question, actual referee/probabilities handler round trips, stale reply isolation, Pass alignment.');
 }finally{cdp?.socket.close();await stopChrome(launched.chrome);server.close();await rm(launched.profileDir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}

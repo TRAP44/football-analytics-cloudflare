@@ -429,3 +429,15 @@ test('missing starting XI gets a specific honest response instead of generic no 
   assert.match(response.body.items[0].text,/составы.*пока не опубликованы/);
   assert.equal(calls.ai,0);
 });
+
+test('known probability question answers the saved complete distribution without model or quota',async()=>{
+  const h=runtime({ai:()=>{throw Error('Model should not run');}});
+  const response=await h.rt.apiMatchQuestion(request({fixtureId:77,question:'Какая вероятность ничьей?'}),h.cfg,user);
+  assert.equal(response.body.source,'data');assert.equal(response.body.answer,'facts');
+  assert.match(response.body.items[0].text,/Милан — 54%/);assert.match(response.body.items[0].text,/ничья — 25%/);assert.match(response.body.items[0].text,/Рома — 21%/);
+  assert.equal(h.calls.ai,0);assert.equal(h.calls.rpc.length,0);
+  const missing=runtime({analysis:payload({probabilities:null})});
+  assert.match((await missing.rt.apiMatchQuestion(request({fixtureId:77,question:'Какие вероятности исходов?'}),missing.cfg,user)).body.items[0].text,/пока нет корректной оценки/);
+  const compound=runtime();await compound.rt.apiMatchQuestion(request({fixtureId:77,question:'Какая вероятность ничьей и почему?'}),compound.cfg,user);
+  assert.equal(compound.calls.ai,1);
+});
