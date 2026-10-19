@@ -176,7 +176,9 @@ export function summarizeRun(settled = []) {
       if (status === 'failed') failed = true;
       // Деградация всего запуска (потеря блокировки, незакрытая отметка) — тоже сбой.
       if (String(result.task || '') === 'scheduled_execution' && (status === 'degraded' || FAILED_SKIP_REASONS.has(reason))) failed = true;
-      tasks.push({ task: String(result.task || ''), status, reason });
+      const detail=result.task==='settlement_recovery'?result.value:null;
+      const recovery=detail?Object.fromEntries(['stalePending','selectedCount','providerCalls','settledCount','skippedCount'].map(key=>[key,Number.isSafeInteger(detail[key])&&detail[key]>=0?detail[key]:null])):null;
+      tasks.push({ task: String(result.task || ''), status, reason,...(recovery?{recovery}:{} ) });
     }
   }
   return { failed, tasks };
@@ -188,16 +190,17 @@ export function degradedWarnings(tasks = []) {
     .map(row => `::warning title=Фоновая задача ${String(row.task).slice(0, 60)}::частичный сбой${row.reason ? `: ${String(row.reason).slice(0, 160)}` : ''}`);
 }
 
-export async function runCron({ worker, env, nowMs = Date.now(), timeoutMs = RUN_TIMEOUT_MS,liveOnly=false } = {}) {
+export async function runCron({ worker, env, nowMs = Date.now(), timeoutMs = RUN_TIMEOUT_MS,liveOnly=false,recoveryMode='' } = {}) {
+  if (recoveryMode && !['preview','apply'].includes(recoveryMode)) throw new Error('invalid_recovery_mode');
   const pending = [];
   const ctx = {
     waitUntil(promise) { pending.push(Promise.resolve(promise)); },
     passThroughOnException() {},
   };
-  const scheduledTime = liveOnly?Math.floor(nowMs/60000)*60000:cronSlot(nowMs);
+  const scheduledTime = liveOnly || recoveryMode?Math.floor(nowMs/60000)*60000:cronSlot(nowMs);
   let timer = null;
   const work = (async () => {
-    const returned = await worker.scheduled({ scheduledTime, cron: '*/5 * * * *', ...(liveOnly?{liveNotificationsOnly:true}:{}), noRetry() {} }, env, ctx);
+    const returned = await worker.scheduled({ scheduledTime, cron: '*/5 * * * *', ...(liveOnly?{liveNotificationsOnly:true}:{}),...(recoveryMode?{settlementRecoveryMode:recoveryMode}:{}), noRetry() {} }, env, ctx);
     // Обработчик отдаёт работу в waitUntil; ждём, пока она завершится целиком
     // (в том числе то, что добавилось по ходу).
     const settled = [];
@@ -289,10 +292,12 @@ async function main() {
   env.botMatchCardRenderer = renderBotMatchCard;
   const trace = installFetchTrace();
   const { default: worker } = await import(pathToFileURL(path.join(root, 'src', 'worker.js')).href);
-  const result = await runCron({ worker, env });
+  const recoveryMode=String(process.env.SETTLEMENT_RECOVERY_MODE || '');
+  const result = await runCron({ worker, env,recoveryMode });
   console.log(`cron-runner: слот ${new Date(result.scheduledTime).toISOString()}`);
   for (const row of result.tasks) {
     console.log(redact(`  ${row.task || '—'}: ${row.status}${row.reason ? ` (${row.reason.slice(0, 200)})` : ''}`));
+    if(row.recovery) console.log('settlement_recovery: '+JSON.stringify(row.recovery));
   }
   if(!result.failed && result.tasks.some(row=>row.task==='smart_notifications')){
     const ticks=await runLiveWindow({endMs:result.scheduledTime+SLOT_MS,

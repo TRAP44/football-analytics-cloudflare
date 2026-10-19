@@ -60,7 +60,7 @@ test('cron runner waits for the whole scheduled run and reports failed tasks', a
 
 test('background jobs run from GitHub every 5 minutes, only on main, with environment-scoped secrets', async () => {
   const wf = fs.readFileSync('.github/workflows/cron-runner.yml', 'utf8');
-  assert.match(wf, /on:\n  workflow_dispatch:\n  schedule:\n[\s\S]*?- cron: "\*\/5 \* \* \* \*"/);
+  assert.match(wf, /on:\n  workflow_dispatch:\n[\s\S]*?  schedule:\n[\s\S]*?- cron: "\*\/5 \* \* \* \*"/);
   assert.match(wf, /permissions:\n  contents: read\n/);
   assert.match(wf, /cancel-in-progress: false/);
   assert.match(wf, /    if: github\.ref == 'refs\/heads\/main'\n    environment: background-jobs\n/);
