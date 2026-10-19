@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Подтверждение ownership после таймаута renew и разбор fallback кеша — **Codex** — `codex/lease-renewal-reconcile`.
+
 
 
 
@@ -54,7 +56,6 @@
 
 ## На ревью
 
-- [ ] Диагностировать остановку Cloudflare→GitHub dispatch: безопасная причина/HTTP, различение rate limit и auth — **Codex** — [#967](https://github.com/TRAP44/football-analytics-cloudflare/pull/967), `codex/background-dispatch-diagnosis`.
 
 
 
@@ -132,6 +133,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Диагностировать остановку Cloudflare→GitHub dispatch: безопасная причина/HTTP, различение rate limit и auth — **Codex** — [#967](https://github.com/TRAP44/football-analytics-cloudflare/pull/967), `codex/background-dispatch-diagnosis`. — опубликованa10ff756; HTTP422, natural09:40/09:45UTC восстановлен; отдельныйrenewсбой остаётся.
 
 - [x] Досверить незакрытые прогнозы по стабильномуfixtureID, включая переносы/устаревшие даты — **Codex** — [#966](https://github.com/TRAP44/football-analytics-cloudflare/pull/966), `codex/pending-fixture-identity`. — опубликован04d0f64a; источник13IDнефинален, предыдущие26закрыты.
 

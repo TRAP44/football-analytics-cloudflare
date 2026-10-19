@@ -355,6 +355,32 @@ export function createScheduledLeaseRuntime({
       }
       return result;
     } catch (error) {
+      // A lost response does not establish ownership loss. Confirm the exact
+      // owner in the durable row; never extend a lease from local memory alone.
+      // Reserve more than the maximum heartbeat interval (TTL/2) plus I/O slack.
+      if (transientLeaseError(error) && typeof readScheduledJob==='function') {
+        try {
+          const row=plainObject(await withRequestDeadline(
+            ()=>readScheduledJob(cfg,jobKey),
+            {budgetMs:1800,source:'Scheduled renewal reconciliation'},
+          ));
+          const until=rpcTimestamp(row?.locked_until,null);
+          if (row?.status==='running' && row.lease_token===token && row.group_key===groupKey
+              && until && Date.parse(until)-now()>ttl*500+5000) {
+            await safeRecord(cfg,{
+              severity:'info',source:'cron',eventType:'scheduled_lease',
+              code:'SCHEDULED_LEASE_RENEW_CONFIRMED',
+              message:'Scheduled ownership confirmed in the database after a transient renewal failure.',
+              meta:{jobKey,groupKey,attempts},
+            });
+            // The read proves current ownership, not that the timed-out RPC
+            // committed. Keep the observed deadline and the normal heartbeat.
+            if (Date.parse(until)-now()>ttl*500+5000) {
+              return {renewed:true,persistent:true,reason:'ownership_confirmed',jobKey,groupKey,lockedUntil:until};
+            }
+          }
+        } catch { /* Unknown ownership remains a hard stop. */ }
+      }
       await safeRecord(cfg,{
         severity:'error',
         source:'cron',
