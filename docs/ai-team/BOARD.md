@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Ускорить первый вход и заменить отсутствующие гербы; проверить конкретный PNG-заполнитель FARDU — **Codex** — `codex/startup-and-crest-fallback`.
 
 
 
@@ -56,6 +55,8 @@
 
 
 ## На ревью
+
+- [ ] Ускорить первый вход и заменить отсутствующие гербы; проверить конкретный PNG-заполнитель FARDU — **Codex** — [#969](https://github.com/TRAP44/football-analytics-cloudflare/pull/969), `codex/startup-and-crest-fallback`.
 
 
 

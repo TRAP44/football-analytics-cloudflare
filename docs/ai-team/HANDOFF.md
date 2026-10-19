@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-19 — Codex — Первый вход и нейтральный crest fallback
-PR: ветка `codex/startup-and-crest-fallback`.
+PR: [#969](https://github.com/TRAP44/football-analytics-cloudflare/pull/969), ветка `codex/startup-and-crest-fallback`.
 Сделано: parallelmanifest/profile behind existingfeedgates, removed120msartificialwait, deferSDKbeforemodule. launch129 и всеdynamicURLs/HTML обновлены. Homefeaturedempty/invalid/networkfailedlogo → нейтральныеинициалы, nofabricatedcrest. Observer учитывает и сам добавленныйimg. PublicUI320–1280dark/light+first-run browserpass.
 Замер: actualmain/branch functions,fixed80/80/40msI/O,3пары median324→123ms. Неproduction/телефон. Identitytimingперекрываетmanifest, суммы фазнеравныboot.
 Источник: HTTP200cameraPNG FARDU пока не распознан; нельзя объявлятьсделанным. ProtectedexistingObserveLiveUsage optionalinspect_crest читает2publicdaycache,max2MB,до2canonicalpublicPNG128KB/512px, выводтолькоpublicID/URL/hash/PNG. Нетnewsecrets/providerAPI/Telegram, no authbypass. Послеmergeнужно получитьactualasset иточныйfingerprint; безцветовых/URLэвристик. Независимыйreviewихотклонил, убраны.
