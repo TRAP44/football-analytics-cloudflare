@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-19 — Codex — Причины отказа запуска фоновых задач
-PR: ветка `codex/background-dispatch-diagnosis`.
+PR: [#967](https://github.com/TRAP44/football-analytics-cloudflare/pull/967), ветка `codex/background-dispatch-diagnosis`.
 Наблюдение: workflow_dispatch автоматически шёл каждые5мин до08:40UTC, после — только ручные recovery. Report39227245426 содержит4BACKGROUND_JOBS_DISPATCH_FAILED, но не причину. Нельзя считать credentials истёкшими или транспорт неисправным без HTTP/reason.
 Сделано: существующий bounded read-only errorsGET дополнен status/created_at/одним scalar metadata reason; наружу только фиксированный enum, HTTP100–599, нормализованная дата и счётчики. Число запросов/защищённое main-only окружение неизменны, новых секретов нет. GitHub429/403сquotaheaders теперь rate_limited, не token_rejected; повторовPOST нет (unknown outcome мог уже запустить job).
 Проверки:13focusedpassed, независимое Codexreview без блокеров. Node22 npmci/check/lint/release694/full4374, privilegedaudit/verifyrelease/Worker dryrun прошли; production report впереди. Это диагностика реального отказа, не утверждение что автоматический запуск уже восстановлен.

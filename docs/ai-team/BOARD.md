@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Диагностировать остановку Cloudflare→GitHub dispatch: безопасная причина/HTTP, различение rate limit и auth — **Codex** — `codex/background-dispatch-diagnosis`.
 
 
 
@@ -54,6 +53,8 @@
 
 
 ## На ревью
+
+- [ ] Диагностировать остановку Cloudflare→GitHub dispatch: безопасная причина/HTTP, различение rate limit и auth — **Codex** — [#967](https://github.com/TRAP44/football-analytics-cloudflare/pull/967), `codex/background-dispatch-diagnosis`.
 
 
 
