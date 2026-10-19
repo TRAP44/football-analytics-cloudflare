@@ -735,3 +735,22 @@ test('live match center reads prematch analysis and AI timeline concurrently',as
   }finally{clearTimeout(timer);release();}
   assert.equal((await pending).status,200);
 });
+
+
+test('completed upcoming Match Center responds before optional cache persistence and tracks its failure',async()=>{
+  let finish;const pending=new Promise(resolve=>{finish=resolve;});
+  const events=[],tasks=[];
+  const runtime=createMatchCenterRuntime(baseDeps({setCache:async()=>{await pending;throw Error('timeout');},recordOpsEvent:async(_cfg,event)=>events.push(event)}));
+  const response=await runtime.apiMatchCenter(request(),{waitUntil:task=>tasks.push(task)});
+  assert.equal(response.status,200);assert.equal(response.body.mode,'upcoming');
+  assert.equal(response.body.persistence.cacheStored,null);assert.equal(response.body.persistence.cachePending,true);
+  assert.equal(tasks.length,1);assert.equal(events.length,0);
+  finish();assert.equal(await tasks[0],false);
+  assert.ok(events.some(event=>event.code==='MATCH_CENTER_CACHE_WRITE_FAILED'));
+});
+test('unavailable waitUntil waits for the same cache write without duplicate persistence',async()=>{
+  let calls=0;
+  const runtime=createMatchCenterRuntime(baseDeps({setCache:async()=>{calls++;return true;}}));
+  const response=await runtime.apiMatchCenter(request(),{waitUntil:()=>{throw Error('unsupported');}});
+  assert.equal(response.body.persistence.cacheStored,true);assert.equal(calls,1);
+});

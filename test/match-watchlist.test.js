@@ -115,7 +115,7 @@ test('watchlist controls stay compact on the public mobile shell', () => {
 });
 
 test('match watchlist ships with one exact frontend asset revision across public and admin shells', () => {
-  assert.equal(FRONTEND_ASSET_REVISION,'6.120.0-launch132');
+  assert.equal(FRONTEND_ASSET_REVISION,'6.120.0-launch133');
 
   const revisions=[html,adminHtml].map(surface=>
     surface.match(
