@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] AI-чат: доступные вероятности всех исходов и стартовые составы в ответах — **Codex** — `codex/complete-match-question-facts`, этап 2 плана #976.
 
 
 
@@ -64,6 +63,8 @@
 
 
 ## На ревью
+
+- [ ] AI-чат: доступные вероятности всех исходов и стартовые составы в ответах — **Codex** — [#978](https://github.com/TRAP44/football-analytics-cloudflare/pull/978), `codex/complete-match-question-facts`, этап 2 плана #976.
 
 
 

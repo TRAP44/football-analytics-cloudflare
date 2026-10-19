@@ -19,7 +19,7 @@ PR: ссылка или ветка
 
 
 ## 2026-10-20 — Codex — Этап 2: полные вероятности и стартовые составы в чате
-PR: ветка `codex/complete-match-question-facts`.
+PR: [#978](https://github.com/TRAP44/football-analytics-cloudflare/pull/978), ветка `codex/complete-match-question-facts`.
 Сделано: каталог вопросов теперь содержит home/draw/away из того же validProbabilities, что объяснение; раньше при явном фаворите был только model_lead и вопрос о ничьей не имел нужного факта, хотя число есть в payload. Узкие вопросы «Какая вероятность ничьей?»/«Какие вероятности исходов?» отвечаются по данным без LLM/квоты. При отсутствии/невалидности — конкретный честный ответ. Составные вопросы остаются AIselection; новый факт доступен модели, hash меняется автоматически.
 Подсказка squad раньше выбирала только lineups/absences, пропуская starters. Теперь опубликованные XI обеих команд + один наиболее приоритетный контекст, максимум3факта; неподтверждённые не выдаются за подтверждённые. ExistingUI уже поддерживает до1400символов starterfacts, public не менялся, launch133 сохраняется.
 Проверки: Node22 npmci/check/lint/release705/full4420, audit/verifyrelease/workerdryrun,48focused; независимый Codexreview без блокеров. Browseractualhandler: referee+probabilities, noLLM/quota, ответы видимы; готовые кнопки/remount/stalereply/Passalignment прошли. Это runtime/браузер с fixtures, не чужая Telegramsession и не реальный вызов WorkersAI вproduction.
