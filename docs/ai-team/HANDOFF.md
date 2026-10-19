@@ -19,7 +19,7 @@ PR: ссылка или ветка
 
 
 ## 2026-10-20 — Codex — Этап 1 плана #976: путь открытия приложения и матча
-PR: ветка `codex/startup-critical-path`.
+PR: [#977](https://github.com/TRAP44/football-analytics-cloudflare/pull/977), ветка `codex/startup-critical-path`.
 Сделано: маленький classic defer script до Telegram SDK запускает только public app-manifest параллельно основному modulegraph; loader потребляет settled результат один раз, повторный startup получает свежий запрос. Личная информация/feed по-прежнему за существующими compatibility/profile/beta gates. Asset revision133 согласована во всех HTML/dynamicURLs/контрактных тестах.
 Матч-центр: готовый payload возвращается без ожидания необязательного setCache; cfg.waitUntil удерживает запись/ops, response честно cacheStored:null/cachePending:true. Без waitUntil или при его исключении ожидается та же операция, дубля нет. Обязательные AI/cache/lineup/history/payment записи не менялись. CACHE_DB_WRITE timeout не объявлен устранённым: убрано его влияние на ожидание готового MatchCenter, причина Supabase timeout отдельно не доказана.
 Замеры: actualapp coldChromium, искусственно100msRTT/250KBs/manifest800ms/otherAPI80ms,3пары: visible baseline5715/5491/5678ms → branch4963/4829/4925ms (медианы5678→4925,−753ms). Один manifest в обоих вариантах, Porto отображён. Это не production/телефон. ActualMatchCenter с искусственным500mscache write: sync504/501/503ms → deferred1/0/0ms; запись затем завершена. Не обещать такое же ускорение других стадий/AI.
