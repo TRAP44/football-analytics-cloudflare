@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-19 — Codex — Exact fingerprint заглушки FARDU
-PR: ветка `codex/verified-provider-placeholder`.
+PR: [#970](https://github.com/TRAP44/football-analytics-cloudflare/pull/970), ветка `codex/verified-provider-placeholder`.
 Источник: protected39240543606 получил canonicalteam25763PNG HTTP20029416bytes/SHA72f0...7430; файл просмотрен, это camera. Fixture вtest-support. Нельзя использоватьURL/цветовыеэвристики; canvasRGBAhash зависитотpremultipliedalpha, поэтомуrawfileSHA.
 Сделано: толькоfixedreportedURL получает boundedCORSbytecheck128KB/2.5s, credentialsomit/referrernone/redirecterror, sharedpromise60s. Pending/exactplaceholder/failure→FA; changedbytes→originalimg. Late changedsrcunhide, errorfallback не удаляется позднимответом. CSPconnect-srcтолько+media.api-sports.io; otherlogos/paidAPI/startupgatesнетронуты. launch130, allsurfaces/dynamicURLs/exactrevisiontestsupdated.
 Контекст: #9691fbfe2fb слит, deploy39240546865success; ускорениеprofile+manifestparallel/removal120ms. Actualphonebootнеизмерен, isolatedmedian324→123ms приfixedI/O. InspectorнеотправляетTelegram/newproviderAPI. #969перенесёнвГотово, текущаязадача завершаетсяпослеCI/публикации.

@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Заменить подтверждённый HTTP200 PNG-заполнитель FARDU по exact SHA256 — **Codex** — `codex/verified-provider-placeholder`.
 
 
 
@@ -57,6 +56,8 @@
 
 
 ## На ревью
+
+- [ ] Заменить подтверждённый HTTP200 PNG-заполнитель FARDU по exact SHA256 — **Codex** — [#970](https://github.com/TRAP44/football-analytics-cloudflare/pull/970), `codex/verified-provider-placeholder`.
 
 
 
