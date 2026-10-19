@@ -78,7 +78,7 @@ test('AI visual scores are bounded before presentation',()=>{
   const full=block(app,'function smartInsightsFullHtml','function liveAiCoachHtml');
   const live=block(app,'function liveAiCoachHtml','function postMatchReviewHtml');
 
-  assert.match(hero,/Math\.round\(clampPercent\(si\.dataScore\)\)/);
+  assert.doesNotMatch(hero,/si\.dataScore|smart-data-score|smart-story-focus/);
   assert.doesNotMatch(full,/smart-insight-summary-panel|ТЕКУЩАЯ КАРТИНА|si\.dataScore/);
   assert.match(live,/Math\.round\(clampPercent\(ai\.confidence\)\)/);
   assert.doesNotMatch(hero,/Number\(si\.dataScore \|\| 0\)/);
@@ -138,7 +138,7 @@ test('frontend asset revision is consistent after Match Center presentation chan
     /frontend-asset-revision" content="([^"]+)"/,
   )?.[1];
 
-  assert.equal(revision,'6.120.0-launch131');
+  assert.equal(revision,'6.120.0-launch132');
   for(const asset of [
     'styles.css',
     'styles/public-shell.css',

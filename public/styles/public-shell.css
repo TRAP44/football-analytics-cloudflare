@@ -1963,6 +1963,23 @@ html {
 .miniapp-public-shell .smart-story-panel{
   border-color:color-mix(in srgb,var(--accent) 20%,var(--line));
 }
+.miniapp-public-shell .smart-story-heading{display:flex;align-items:center;gap:12px;min-width:0}
+.miniapp-public-shell .smart-story-heading > div{min-width:0}
+.miniapp-public-shell .smart-ai-mark{
+  display:grid;place-items:center;flex:0 0 36px;width:36px;height:36px;
+  border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));border-radius:12px;
+  background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 16%,var(--surface)),var(--surface));
+  color:var(--accent);font-size:12px;font-weight:900;letter-spacing:.02em;
+}
+.miniapp-public-shell .smart-story-panel .smart-story-top h2{font-size:20px;line-height:1.25;overflow-wrap:anywhere}
+.miniapp-public-shell .smart-story-panel .smart-story-summary{font-size:14px;line-height:1.65;margin-top:16px;overflow-wrap:anywhere}
+.miniapp-public-shell .smart-story-team{
+  display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px;margin-top:16px;padding-top:12px;
+  border-top:1px solid var(--line);font-size:12px;
+}
+.miniapp-public-shell .smart-story-team > span{color:var(--hint);font-size:11px}
+.miniapp-public-shell .smart-story-team > strong{color:var(--text);overflow-wrap:anywhere;min-width:0}
+
 .miniapp-public-shell .smart-story-top,
 .miniapp-public-shell .live-ai-head,
 .miniapp-public-shell .post-match-review-head{

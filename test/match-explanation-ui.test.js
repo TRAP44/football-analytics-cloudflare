@@ -58,6 +58,6 @@ test('analysis view loads the explanation lazily above the key points', () => {
   // Блок виден сразу, над вкладками и «Что важно перед матчем».
   assert.match(app, /<section class="panel match-explanation" id="matchExplanation" data-fixture="\$\{Number\(m\.fixtureId\) \|\| 0\}" aria-live="polite" hidden><\/section>\s*(<section class="panel match-explanation match-questions"[^\n]*<\/section>\s*)?\$\{kickoffHandoffHtml\(/);
   assert.ok(app.indexOf('id="matchExplanation"') < app.indexOf('${analysisGlanceHtml(d)}'));
-  assert.match(app, /import\('\.\/modules\/match-explanation\.js\?v=6\.120\.0-launch131'\)/);
+  assert.match(app, /import\('\.\/modules\/match-explanation\.js\?v=6\.120\.0-launch132'\)/);
   assert.match(app, /void loadAnalysisExplanation\(Number\(m\.fixtureId\)\);/);
 });

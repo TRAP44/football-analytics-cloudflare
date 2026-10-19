@@ -235,9 +235,7 @@ export function createLiveMatchIntelligenceRuntime(deps) {
       return {
         leader,
         title: 'Последние 15 минут',
-        text: leader === 'balanced'
-          ? `На последнем отрезке команды обменялись голевыми событиями (${score.home}:${score.away}).`
-          : `${smartSideName(leader, homeName, awayName)} активнее на последнем отрезке: голы за 15 минут — ${score[leader]}:${score[leader === 'home' ? 'away' : 'home']}.`,
+        text: `Голы за последние 15 минут — ${score.home}:${score.away}.`,
         homeScore: key.home,
         awayScore: key.away,
       };
