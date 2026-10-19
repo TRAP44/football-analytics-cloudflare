@@ -51,7 +51,7 @@ export function matchQuestionAnswerHtml(data, escapeHtml) {
   if (data?.available === true) {
     const items = validItems(data.items);
     if (data.answer === 'facts' && items.length) {
-      return `${head}<div class="match-question-response">${items.map(item => `<p>${escapeHtml(item.text.trim().slice(0, 300))}</p>`).join('')}</div>${remaining}`;
+      return `${head}<div class="match-question-response">${items.map(item => `<p>${escapeHtml(item.text.trim().slice(0, /^starters_(home|away)$/.test(item.id) ? 1400 : 300))}</p>`).join('')}</div>${remaining}`;
     }
     if (data.answer === 'refused') return `${head}<p class="match-question-empty">Ставки мы не подсказываем. Могу рассказать, что важно в этом матче по данным.</p>${remaining}`;
     return `${head}<p class="match-question-empty">В данных этого матча ответа на этот вопрос нет.</p>${remaining}`;

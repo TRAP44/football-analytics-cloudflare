@@ -14,6 +14,16 @@ PR: ссылка или ветка
 
 ---
 
+
+## 2026-10-19 — Codex — Первый вход без последовательного ожидания ленты; стартовые составы в чате
+PR: ветка `codex/startup-and-lineup-answers`.
+Сделано: после compatibility один запрос матчей выполняется параллельно оставшемуся bootstrap-профилю/runtime. Settled response/error передаётся в loadMatches после UI-gates; повторного HTTP нет, при другой дате обычный запрос. Серверная auth/beta до routing неизменна. Module-entry в head после deferred SDK; launch131 в HTML/dynamic URLs и точных тестах.
+Чат: имена только из сохранённых startXI, без запасных; точный вопрос «Кто в старте?» отвечает напрямую без LLM/квоты. Нет имён — конкретный ответ о неопубликованных составах. Для XI bounded1400 вместо300символов, escaping сохранён; нет новых API-Football запросов. Ownership и выключатель AI сохранены.
+Замер: actual startup functions при искусственных manifest80/profile160/feed100мс, main261/262/262, branch181/182/182мс. Это не телефон/production. Массовый preload26модулей практически не ускорил cold browser (медианы4538→4521мс) и исключён.
+Проверки: Node22 npmci/check/lint/release/full/privilegedaudit/verifyrelease/worker dry-run прошли; Chromium320–1280 dark/light и first-run/direct-link прошли. Независимое Codex review (не Claude): блокеров нет, найденное обрезание последних игроков исправлено с end-to-end renderer тестом. Финальные CI/публикация впереди.
+Контекст: #970 опубликован15b96a53, deploy39264241508/monitor39264566095success; перенесёнвГотово. Native remote Chrome не прошёл CA trust окружения; localbrowser+publishedmodule/currentCDNbytes проверены. Нет новых замеров на телефоне или Telegram-рассылок.
+
+
 ## 2026-10-19 — Codex — Exact fingerprint заглушки FARDU
 PR: [#970](https://github.com/TRAP44/football-analytics-cloudflare/pull/970), ветка `codex/verified-provider-placeholder`.
 Источник: protected39240543606 получил canonicalteam25763PNG HTTP20029416bytes/SHA72f0...7430; файл просмотрен, это camera. Fixture вtest-support. Нельзя использоватьURL/цветовыеэвристики; canvasRGBAhash зависитотpremultipliedalpha, поэтомуrawfileSHA.

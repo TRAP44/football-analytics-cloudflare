@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Первый вход: ранняя загрузка стартового JS; чат: фактические игроки стартового состава — **Codex** — `codex/startup-and-lineup-answers`.
+
 
 
 
@@ -57,7 +59,6 @@
 
 ## На ревью
 
-- [ ] Заменить подтверждённый HTTP200 PNG-заполнитель FARDU по exact SHA256 — **Codex** — [#970](https://github.com/TRAP44/football-analytics-cloudflare/pull/970), `codex/verified-provider-placeholder`.
 
 
 
@@ -138,6 +139,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Заменить подтверждённый HTTP200 PNG-заполнитель FARDU по exact SHA256 — **Codex** — [#970](https://github.com/TRAP44/football-analytics-cloudflare/pull/970), `codex/verified-provider-placeholder`. — слит и опубликован.
 
 - [x] Ускорить первый вход и заменить отсутствующие гербы; проверить конкретный PNG-заполнитель FARDU — **Codex** — [#969](https://github.com/TRAP44/football-analytics-cloudflare/pull/969), `codex/startup-and-crest-fallback`. — слит1fbfe2fb, ускорениеготово; actualFARDUplaceholderполучен39240543606.
 

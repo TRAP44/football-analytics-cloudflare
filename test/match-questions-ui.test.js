@@ -48,3 +48,14 @@ test('analysis screen mounts the questions block lazily under the explanation', 
   const css = fs.readFileSync('public/styles/premium-ui.css', 'utf8');
   assert.match(css, /\.match-question-form input \{[\s\S]*?min-width: 0;/);
 });
+
+test('complete long starting XI is visible and escaped; regular answer size stays bounded',()=>{
+  const text=Array.from({length:11},(_,i)=>`Player ${i+1} Longfamilyname Surname`).join(', ');
+  const html=matchQuestionAnswerHtml({available:true,answer:'facts',items:[{id:'starters_home',role:'caveat',connector:'Данные:',text:text+' <script>'}]},esc);
+  assert.ok(html.includes('Player 11 Longfamilyname Surname'));
+  assert.ok(html.includes('&lt;script&gt;'));
+  assert.doesNotMatch(html,/<script>/);
+  const ordinary=matchQuestionAnswerHtml({available:true,answer:'facts',items:[{id:'form_home',role:'support',connector:'Форма:',text:'x'.repeat(400)}]},esc);
+  assert.ok(ordinary.includes('x'.repeat(300)));
+  assert.ok(!ordinary.includes('x'.repeat(301)));
+});

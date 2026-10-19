@@ -397,3 +397,21 @@ test('known questions retain a grounded fallback on invalid model output, never 
   const cap=await capped.rt.apiMatchQuestion(request({fixtureId:77,question:'Кто в форме?'}),capped.cfg,user);
   assert.equal(cap.body.reason,'user_limit');assert.equal(cap.body.available,false);
 });
+
+test('custom starting XI question answers from saved players without LLM or quota calls',async()=>{
+  const {rt,cfg,calls}=runtime({analysis:payload({lineups:{home:{startXI:[{player:{name:'Leao'}}]},away:{startXI:[{name:'Dybala'}]}}})});
+  const response=await rt.apiMatchQuestion(request({fixtureId:77,question:'Кто в старте ?'}),cfg,user);
+  assert.equal(response.body.source,'data');
+  assert.equal(response.body.items.length,2);
+  assert.match(response.body.items.map(x=>x.text).join(' '),/Leao/);
+  assert.match(response.body.items.map(x=>x.text).join(' '),/Dybala/);
+  assert.equal(calls.ai,0);
+  assert.equal(calls.rpc.length,0);
+});
+test('missing starting XI gets a specific honest response instead of generic no answer',async()=>{
+  const {rt,cfg,calls}=runtime();
+  const response=await rt.apiMatchQuestion(request({fixtureId:77,question:'Кто в старте?'}),cfg,user);
+  assert.equal(response.body.source,'data');
+  assert.match(response.body.items[0].text,/составы.*пока не опубликованы/);
+  assert.equal(calls.ai,0);
+});

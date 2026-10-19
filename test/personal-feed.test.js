@@ -41,7 +41,7 @@ test('the primary match feed stays on For You while deferred history is still lo
   assert.match(history,/if \(Array\.isArray\(state\.matches\) && state\.matches\.length\) renderMatches\(\)/);
 
   const startup=app.slice(
-    app.indexOf('const startupTasks = [loadFavorites(), loadMatches({ snapshotFastPath:true })]'),
+    app.indexOf('const startupTasks = [loadFavorites(), loadMatches({ snapshotFastPath:true, initialResponse:matchesReady })]'),
     app.indexOf('const api = createApiClient'),
   );
   assert.match(startup,/scheduleIdle\(async \(\) => \{/);
