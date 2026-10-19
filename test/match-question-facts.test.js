@@ -41,3 +41,21 @@ test('starter facts include actual player names, never substitutes or invented c
   for(const q of ['Кто в старте ?', 'Кто в стартовом составе?', 'Покажи стартовый состав'])assert.equal(directMatchQuestionTopic(q),'starters');
   for(const q of ['Кто в старте и кто травмирован?', 'Кто в старте вместо Палмера?', 'Почему он не в старте?'])assert.equal(directMatchQuestionTopic(q),null);
 });
+
+test('question catalogue includes all validated outcome probabilities even with a clear favourite',()=>{
+  const facts=buildMatchQuestionFacts({match,probabilities:{home:54.2,draw:25.1,away:20.7}});
+  const answer=facts.find(f=>f.id==='outcome_probabilities');
+  assert.match(answer.text,/Chelsea — 54,2%/);assert.match(answer.text,/ничья — 25,1%/);assert.match(answer.text,/Everton — 20,7%/);
+  for(const probabilities of [{home:54,draw:25},{home:101,draw:0,away:-1},{home:5,draw:5,away:5},{home:true,draw:25,away:74}]){
+    assert.equal(buildMatchQuestionFacts({match,probabilities}).some(f=>f.id==='outcome_probabilities'),false);
+  }
+  for(const q of ['Какая вероятность ничьей?', 'Какие вероятности исходов?', 'Каковы шансы?', 'Шансы на ничью'])assert.equal(directMatchQuestionTopic(q),'outcome_probabilities',q);
+  for(const q of ['Какая вероятность ничьей и почему?', 'Каковы шансы на пенальти?', 'Какие вероятности исходов после удаления?'])assert.equal(directMatchQuestionTopic(q),null,q);
+});
+test('squad preset exposes published starting players for both teams with bounded absence context',()=>{
+  const result=buildMatchQuestionPresets({match,lineups:{home:{startXI:[{name:'Palmer'}]},away:{startXI:[{name:'Pickford'}]}},absences:{home:[{name:'James'}],away:[{name:'Doucoure'}]}});
+  const items=result.presets.squad.items;
+  assert.equal(items.length,3);assert.match(items[0].text,/Palmer/);assert.match(items[1].text,/Pickford/);
+  assert.ok(/^absences_/.test(items[2].id));
+  assert.ok(items.slice(0,2).every(item=>!item.text.includes('подтверждённый')));
+});

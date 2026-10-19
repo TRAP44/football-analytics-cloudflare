@@ -381,7 +381,7 @@ export function createMatchQuestionRuntime(deps = {}) {
     if(directTopic){
       const ids=facts.filter(fact=>(directTopic==='starters' ? /^starters_/.test(fact.id) : fact.id===directTopic)).map(fact=>fact.id);
       if(ids.length)return answer(base,'facts',facts,ids,{source:'data'});
-      const missing={id:directTopic,role:'caveat',text:directTopic==='starters' ? 'Стартовые составы в этом разборе пока не опубликованы.' : directTopic==='referee' ? 'В этом разборе главный судья пока не указан.' : 'В этом разборе стадион пока не указан.'};
+      const missing={id:directTopic,role:'caveat',text:directTopic==='starters' ? 'Стартовые составы в этом разборе пока не опубликованы.' : directTopic==='referee' ? 'В этом разборе главный судья пока не указан.' : directTopic==='outcome_probabilities' ? 'В этом разборе пока нет корректной оценки вероятностей исходов.' : 'В этом разборе стадион пока не указан.'};
       return answer(base,'facts',[missing],[directTopic],{source:'data'});
     }
     const hash = await explanationCatalogHash(facts);

@@ -74,7 +74,7 @@ function oneDecimal(value) {
   return (Math.round(value * 10) / 10).toFixed(1).replace('.', ',');
 }
 
-function validProbabilities(value) {
+export function validProbabilities(value) {
   const source = plainObject(value);
   if (!source) return null;
   const home = finite(source.home, 0, 100);
