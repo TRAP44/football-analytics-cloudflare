@@ -16,6 +16,8 @@ export function composeLiveMatchSummary(insights=[]){
   // attacking explanation without repeating correlated pressure/shot signals.
   if(main.type==='score_mismatch')add(facts.find(item=>ATTACK.has(item.type) && item.side===main.side));
   if(main.type==='discipline')add(facts.find(item=>ATTACK.has(item.type)));
+  // Opposing pressure and chance quality are meaningful disagreement, not duplicates.
+  if(ATTACK.has(main.type))add(facts.find(item=>ATTACK.has(item.type) && ['home','away'].includes(item.side) && item.side!==main.side));
   const contextual=facts.filter(item=>SUPPORT.has(item.type) && item!==main);
   for(const fact of contextual){
     if(selected.length>=3)break;
@@ -23,7 +25,7 @@ export function composeLiveMatchSummary(insights=[]){
     if(selected.some(item=>ATTACK.has(item.type)) && ['possession','territory'].includes(fact.type))continue;
     add(fact);
   }
-  const sentences=selected.map(fact=>fact.text);
+  const sentences=selected.map((fact,index)=>index && ATTACK.has(main.type) && ATTACK.has(fact.type) && fact.side!==main.side ? `При этом ${fact.text}` : fact.text);
   // An event-only feed cannot establish the stronger team from a score window.
   if(main.type==='recent_phase' && !facts.some(item=>ATTACK.has(item.type) || item.type==='score_mismatch')){
     if(sentences.length>=3)sentences.pop();

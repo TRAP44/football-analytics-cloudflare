@@ -44,3 +44,12 @@ test('mismatch and red-card summaries also deduplicate correlated attack support
     assert.equal(result,'Главный вывод. Давление по совокупности метрик.');
   }
 });
+
+
+test('opposing pressure and xG remain visible instead of a one-sided assessment',()=>{
+  const result=runtime.buildSmartMatchInsights({elapsed:60,homeName:'Chelsea',awayName:'Everton',score:{home:0,away:0},pressure:{home:70,away:30,leader:'home'},statistics:{items:[{key:'expected_goals',home:.2,away:.8}]}});
+  assert.equal(result.insights[0].type,'pressure');
+  assert.ok(result.summary.includes('Chelsea сильнее по совокупности'));
+  assert.ok(result.summary.includes('При этом Everton создаёт более качественные моменты'));
+  assert.ok(result.summary.includes('0.20 — 0.80'));
+});
