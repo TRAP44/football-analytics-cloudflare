@@ -1088,10 +1088,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch129'),
+      import('./modules/match-center-view.js?v=6.120.0-launch130'),
       import('./modules/match-pulse.js?v=6.120.0-launch87'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch129'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch129'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch130'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch130'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1248,7 +1248,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch129').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch130').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -2450,7 +2450,7 @@ function clearRecentTeams() {
 
 function discoveryTeamCard(team, badge = '') {
   return `<button class="discovery-team-card" type="button" data-search-team="${Number(team.id)}" data-team-name="${escapeHtml(team.name || '')}" data-team-logo="${escapeHtml(team.logo || '')}" data-team-country="${escapeHtml(team.country || '')}">
-    <span class="discovery-team-logo">${team.logo ? `<img src="${safeUrl(team.logo)}" alt="">` : '⚽'}</span>
+    <span class="discovery-team-logo">${team.logo ? `<img src="${safeUrl(team.logo)}" data-team-crest="${escapeHtml(team.name || '')}" alt="">` : '⚽'}</span>
     <span class="discovery-team-copy"><strong>${escapeHtml(team.name || 'Команда')}</strong><small>${escapeHtml(team.country || badge || '')}${team.national ? ' · сборная' : ''}</small></span>
     ${badge ? `<i>${escapeHtml(badge)}</i>` : '<b>›</b>'}
   </button>`;
@@ -2458,7 +2458,7 @@ function discoveryTeamCard(team, badge = '') {
 
 function searchTeamSummaryCard(team) {
   return `<button class="search-entity-summary search-team-summary" type="button" data-search-team="${Number(team.id)}" data-team-name="${escapeHtml(team.name || '')}" data-team-logo="${escapeHtml(team.logo || '')}" data-team-country="${escapeHtml(team.country || '')}" aria-label="Открыть ${escapeHtml(team.name || 'команду')}">
-    <span class="discovery-team-logo">${team.logo ? `<img src="${safeUrl(team.logo)}" alt="">` : '⚽'}</span>
+    <span class="discovery-team-logo">${team.logo ? `<img src="${safeUrl(team.logo)}" data-team-crest="${escapeHtml(team.name || '')}" alt="">` : '⚽'}</span>
     <span><small>КОМАНДА НАЙДЕНА</small><strong>${escapeHtml(team.name || 'Команда')}</strong><em>${escapeHtml(team.country || '')}${team.national ? ' · сборная' : ''}</em></span>
     <b>Открыть →</b>
   </button>`;
@@ -2562,9 +2562,9 @@ function searchMatchCard(match) {
   return `<article class="search-match-card ${live ? 'is-live' : finished ? 'is-finished' : 'is-upcoming'} ${primary ? 'is-primary' : ''}">${primaryLabel}
     <div class="search-match-meta"><span>${escapeHtml(match.league || match.competition?.name || 'Матч')}</span><small>${escapeHtml(status)}</small></div>
     <div class="search-match-teams">
-      <span>${match.home?.logo ? `<img src="${safeUrl(match.home.logo)}" alt="">` : '⚽'}<strong>${escapeHtml(match.home?.name || 'Хозяева')}</strong></span>
+      <span>${match.home?.logo ? `<img src="${safeUrl(match.home.logo)}" data-team-crest="${escapeHtml(match.home.name || '')}" alt="">` : '⚽'}<strong>${escapeHtml(match.home?.name || 'Хозяева')}</strong></span>
       <b>${score || '—'}</b>
-      <span>${match.away?.logo ? `<img src="${safeUrl(match.away.logo)}" alt="">` : '⚽'}<strong>${escapeHtml(match.away?.name || 'Гости')}</strong></span>
+      <span>${match.away?.logo ? `<img src="${safeUrl(match.away.logo)}" data-team-crest="${escapeHtml(match.away.name || '')}" alt="">` : '⚽'}<strong>${escapeHtml(match.away?.name || 'Гости')}</strong></span>
     </div>
     <div class="search-match-footer">${action}</div>
   </article>`;
@@ -2902,7 +2902,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch129');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch130');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3307,7 +3307,7 @@ function matchCardHtml(m) {
   const team = (side) => {
     const t = m[side] || {};
     return `<span class="match-row-team">
-          ${t.logo ? `<img src="${safeUrl(t.logo)}" alt="" loading="lazy">` : '<i class="match-row-logo-fallback" aria-hidden="true"></i>'}
+          ${t.logo ? `<img src="${safeUrl(t.logo)}" data-team-crest="${escapeHtml(t.name || '')}" alt="" loading="lazy">` : '<i class="match-row-logo-fallback" aria-hidden="true"></i>'}
           <span class="match-row-name">${escapeHtml(t.name || '')}</span>
           <b class="match-row-score">${escapeHtml(score(side))}</b>
         </span>`;
@@ -3389,7 +3389,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch129').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch130').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -3848,7 +3848,7 @@ function renderTeamHub(data) {
   const team = data?.team || state.currentTeam || {}; state.currentTeam = { ...state.currentTeam, ...team, data };
   const fav = isFavorite(team.id), favoritePending = state.favoriteMutations.has(Number(team.id)), comp = data?.primaryCompetition, standing = data?.standing, form = data?.form, next = data?.liveNow || data?.nextMatch;
   const stale = data?.stale ? `<div class="data-notice stale">⚠️ ${escapeHtml(data.warning || 'Показаны сохранённые данные команды.')}</div>` : '';
-  $('teamHero').innerHTML = `${stale}<section class="panel team-hero"><div class="team-hero-main"><div class="team-hero-logo">${team.logo ? `<img src="${safeUrl(team.logo)}" alt="">` : '⚽'}</div><div class="team-hero-copy"><span>СТРАНИЦА КОМАНДЫ</span><h2>${escapeHtml(team.name || 'Команда')}</h2><p>${comp ? `${escapeHtml(comp.name)} · ${escapeHtml(comp.country || '')}` : 'Турнир определяется по последним матчам'}</p></div><button id="teamFavoriteBtn" class="team-favorite-big ${fav ? 'active' : ''} ${favoritePending ? 'is-pending' : ''}" type="button" data-team-id="${Number(team.id)}" aria-pressed="${fav ? 'true' : 'false'}" aria-label="${fav ? 'Удалить команду из избранного' : 'Добавить команду в избранное'}" ${favoritePending ? 'disabled' : ''}>${fav ? '★' : '☆'}</button></div><div class="team-hero-stats"><div><span>Форма</span><strong class="team-hero-form">${form?.form ? String(form.form).slice(-5).split('').map(teamResultBadge).join('') || '—' : '—'}</strong></div><div><span>Очки / матч</span><strong>${form?.ppg ?? '—'}</strong></div><div><span>Голы</span><strong>${form ? `${form.gfAvg} / ${form.gaAvg}` : '—'}</strong></div><div><span>Место</span><strong>${standing?.rank ? `${standing.rank}` : '—'}</strong></div></div>${comp ? `<button id="teamTournamentBtn" class="secondary-btn team-tournament-btn" type="button">🏆 ${escapeHtml(comp.shortName || comp.name)} · открыть турнир</button>` : ''}</section>`;
+  $('teamHero').innerHTML = `${stale}<section class="panel team-hero"><div class="team-hero-main"><div class="team-hero-logo">${team.logo ? `<img src="${safeUrl(team.logo)}" data-team-crest="${escapeHtml(team.name || '')}" alt="">` : '⚽'}</div><div class="team-hero-copy"><span>СТРАНИЦА КОМАНДЫ</span><h2>${escapeHtml(team.name || 'Команда')}</h2><p>${comp ? `${escapeHtml(comp.name)} · ${escapeHtml(comp.country || '')}` : 'Турнир определяется по последним матчам'}</p></div><button id="teamFavoriteBtn" class="team-favorite-big ${fav ? 'active' : ''} ${favoritePending ? 'is-pending' : ''}" type="button" data-team-id="${Number(team.id)}" aria-pressed="${fav ? 'true' : 'false'}" aria-label="${fav ? 'Удалить команду из избранного' : 'Добавить команду в избранное'}" ${favoritePending ? 'disabled' : ''}>${fav ? '★' : '☆'}</button></div><div class="team-hero-stats"><div><span>Форма</span><strong class="team-hero-form">${form?.form ? String(form.form).slice(-5).split('').map(teamResultBadge).join('') || '—' : '—'}</strong></div><div><span>Очки / матч</span><strong>${form?.ppg ?? '—'}</strong></div><div><span>Голы</span><strong>${form ? `${form.gfAvg} / ${form.gaAvg}` : '—'}</strong></div><div><span>Место</span><strong>${standing?.rank ? `${standing.rank}` : '—'}</strong></div></div>${comp ? `<button id="teamTournamentBtn" class="secondary-btn team-tournament-btn" type="button">🏆 ${escapeHtml(comp.shortName || comp.name)} · открыть турнир</button>` : ''}</section>`;
   $('teamFavoriteBtn')?.addEventListener('click', async () => { await toggleFavorite({ id:Number(team.id), name:team.name||'', logo:team.logo||'' }); renderTeamHub(state.currentTeam?.data || data); });
   $('teamTournamentBtn')?.addEventListener('click', () => openTournamentFromTeam(false));
   const formHtml = form ? `<section class="panel team-form-panel"><h2>📈 Последние ${russianCountLabel(form.sample || 0, 'матч', 'матча', 'матчей')}</h2><div class="team-form-line">${String(form.form || '').split('').map(teamResultBadge).join('')}</div><div class="team-kpi-grid"><div><span>Победы</span><strong>${Number(form.wins||0)}</strong></div><div><span>Ничьи</span><strong>${Number(form.draws||0)}</strong></div><div><span>Поражения</span><strong>${Number(form.losses||0)}</strong></div><div><span>Забивает</span><strong>${form.gfAvg ?? '—'}</strong></div><div><span>Пропускает</span><strong>${form.gaAvg ?? '—'}</strong></div></div></section>` : '<section class="panel"><div class="empty compact-empty">Пока недостаточно завершённых матчей для формы.</div></section>';
@@ -5510,7 +5510,7 @@ async function loadAnalysisExplanation(fixtureId) {
   const root = $('matchExplanation');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch129');
+    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch130');
     const { loadMatchExplanation } = await matchExplanationModule;
     await loadMatchExplanation({
       root,
@@ -5530,7 +5530,7 @@ async function loadMatchQuestions(fixtureId) {
   const root = $('matchQuestions');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch129');
+    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch130');
     const { mountMatchQuestions } = await matchQuestionsModule;
     mountMatchQuestions({
       root,
@@ -5549,7 +5549,7 @@ async function loadMatchQuestions(fixtureId) {
 // «Обыграй AI»: прогноз в Штабе матча и таблица в Профиле — ленивый модуль.
 let beatAiModule = null;
 function loadBeatAiModule() {
-  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch129').catch(error => { beatAiModule = null; throw error; });
+  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch130').catch(error => { beatAiModule = null; throw error; });
   return beatAiModule;
 }
 async function mountBeatAi(m = {}) {
@@ -5584,7 +5584,7 @@ async function loadReferralInvitePanel() {
   const root = $('referralInvite');
   if (!root) return;
   try {
-    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch129');
+    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch130');
     const { loadReferralInvite } = await referralInviteModule;
     await loadReferralInvite({ root, api, escapeHtml, tg, toast });
   } catch {
@@ -5595,7 +5595,7 @@ async function loadReferralInvitePanel() {
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch129');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch130');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {
@@ -5893,7 +5893,7 @@ function renderAnalysis(d) {
       </div>
       <div class="match-experience-teams">
         <div class="experience-team">
-          ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : '<div class="experience-logo-placeholder">⚽</div>'}
+          ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" data-team-crest="${escapeHtml(m.home.name || '')}" alt="">` : '<div class="experience-logo-placeholder">⚽</div>'}
           <strong>${escapeHtml(m.home?.name || '')}</strong>
           <small>Хозяева</small>
         </div>
@@ -5902,7 +5902,7 @@ function renderAnalysis(d) {
           ${m.venue ? `<small>${escapeHtml(m.venue)}</small>` : ''}
         </div>
         <div class="experience-team">
-          ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : '<div class="experience-logo-placeholder">⚽</div>'}
+          ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" data-team-crest="${escapeHtml(m.away.name || '')}" alt="">` : '<div class="experience-logo-placeholder">⚽</div>'}
           <strong>${escapeHtml(m.away?.name || '')}</strong>
           <small>Гости</small>
         </div>

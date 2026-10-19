@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Заменить подтверждённый HTTP200 PNG-заполнитель FARDU по exact SHA256 — **Codex** — `codex/verified-provider-placeholder`.
+
 
 
 
@@ -56,7 +58,6 @@
 
 ## На ревью
 
-- [ ] Ускорить первый вход и заменить отсутствующие гербы; проверить конкретный PNG-заполнитель FARDU — **Codex** — [#969](https://github.com/TRAP44/football-analytics-cloudflare/pull/969), `codex/startup-and-crest-fallback`.
 
 
 
@@ -136,6 +137,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Ускорить первый вход и заменить отсутствующие гербы; проверить конкретный PNG-заполнитель FARDU — **Codex** — [#969](https://github.com/TRAP44/football-analytics-cloudflare/pull/969), `codex/startup-and-crest-fallback`. — слит1fbfe2fb, ускорениеготово; actualFARDUplaceholderполучен39240543606.
 
 - [x] Подтверждение ownership после таймаута renew и разбор fallback кеша — **Codex** — [#968](https://github.com/TRAP44/football-analytics-cloudflare/pull/968), `codex/lease-renewal-reconcile`. — опубликованabca7442; natural39234302505 normal+3LIVEOK.
 
