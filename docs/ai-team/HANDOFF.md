@@ -19,7 +19,7 @@ PR: ссылка или ветка
 
 
 ## 2026-10-19 — Codex — Наблюдение фактических LIVE-резюме
-PR: ветка `codex/live-summary-observation`.
+PR: [#974](https://github.com/TRAP44/football-analytics-cloudflare/pull/974), ветка `codex/live-summary-observation`.
 Цель: после #973 проверить реальные сохранённые ответы, а не ещё раз синтетическую модель. Локальных Supabase bindings нет; используется существующий protected main-only Observe Live Usage с существующими secrets, optional inspect_summary=false.
 Сделано: один boundedGET общей analysis_cache (фиксированный match-center:v17 prefix + mode live, последние24ч updated_at, latest6,512KB/10s, no redirects). Artifact только публичные команды/счёт/минута/резюме/типы сигналов и признаки доступности; пользовательские поля/metadata/ключи/ошибки не выводятся. Нет API-Football/Telegram/model вызовов и записей.
 Ограничения: recentSnapshot означает generatedAt в пределах10мин, не свежесть источника/актуальность LIVEстатуса сейчас. Это не Telegram-сессия и не before/after событие. matchesCurrentComposer сравнивает доставленный каталог фактов; при7фактах возможна усечённость, несовпадение не автоматический баг. Нет составов/данных — не объявлять кейс проверенным.

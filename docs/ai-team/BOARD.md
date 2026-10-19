@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Проверка фактических LIVE-резюме по общему публичному кешу матчей — **Codex** — `codex/live-summary-observation`.
 
 
 
@@ -61,6 +60,8 @@
 
 
 ## На ревью
+
+- [ ] Проверка фактических LIVE-резюме по общему публичному кешу матчей — **Codex** — [#974](https://github.com/TRAP44/football-analytics-cloudflare/pull/974), `codex/live-summary-observation`.
 
 
 
