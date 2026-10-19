@@ -176,7 +176,7 @@ test('with BACKGROUND_JOBS_EXECUTOR=github a Cloudflare cron invocation only dis
     assert.equal(calls[0].url, 'https://api.github.com/repos/TRAP44/football-analytics-cloudflare/actions/workflows/cron-runner.yml/dispatches');
     assert.equal(calls[0].init.method, 'POST');
     assert.equal(calls[0].init.headers.authorization, 'Bearer github_pat_test');
-    assert.deepEqual(JSON.parse(calls[0].init.body), { ref: 'main' });
+    assert.deepEqual(JSON.parse(calls[0].init.body), { ref: 'main', inputs: { settlement_recovery: 'off' } });
 
     calls.length = 0;
     await worker.scheduled({ scheduledTime: Date.now(), cron: '*/5 * * * *' }, { ...base, GITHUB_DISPATCH_TOKEN: 'github_pat_test', CRON_RUNNER: 'github-actions' }, ctx);

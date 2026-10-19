@@ -46,7 +46,7 @@ export async function dispatchBackgroundJobs(cfg = {}, { fetchImpl = globalThis.
         'user-agent': 'MatchRadar-Background-Jobs',
         'x-github-api-version': '2022-11-28',
       },
-      body: JSON.stringify({ ref: BACKGROUND_JOBS_REF }),
+      body: JSON.stringify({ ref: BACKGROUND_JOBS_REF, inputs: { settlement_recovery: 'off' } }),
       redirect: 'manual',
       ...(controller ? { signal: controller.signal } : {}),
     });

@@ -17,8 +17,9 @@ PR: ссылка или ветка
 ## 2026-10-19 — Codex — Причины отказа запуска фоновых задач
 PR: [#967](https://github.com/TRAP44/football-analytics-cloudflare/pull/967), ветка `codex/background-dispatch-diagnosis`.
 Наблюдение: workflow_dispatch автоматически шёл каждые5мин до08:40UTC, после — только ручные recovery. Report39227245426 содержит4BACKGROUND_JOBS_DISPATCH_FAILED, но не причину. Нельзя считать credentials истёкшими или транспорт неисправным без HTTP/reason.
+Совместимость: остановка сразу послеmerge#963 в08:41:59UTC; dispatch теперь явно передаёт settlement_recovery=off, YAMLdefault тоже quotedstring. Это устраняет зависимость обычного запуска от неявного default нового choice; production HTTPпричина ещё проверяется.
 Сделано: существующий bounded read-only errorsGET дополнен status/created_at/одним scalar metadata reason; наружу только фиксированный enum, HTTP100–599, нормализованная дата и счётчики. Число запросов/защищённое main-only окружение неизменны, новых секретов нет. GitHub429/403сquotaheaders теперь rate_limited, не token_rejected; повторовPOST нет (unknown outcome мог уже запустить job).
-Проверки:13focusedpassed, независимое Codexreview без блокеров. Node22 npmci/check/lint/release694/full4374, privilegedaudit/verifyrelease/Worker dryrun прошли; production report впереди. Это диагностика реального отказа, не утверждение что автоматический запуск уже восстановлен.
+Проверки:13focusedpassed, независимое Codexreview без блокеров; после explicit-off delta18focusedpassed. Node22 npmci/check/lint/release694/full4374, privilegedaudit/verifyrelease/Worker dryrun прошли; production report впереди. Это диагностика реального отказа, не утверждение что автоматический запуск уже восстановлен.
 Контекст: #966 опубликован04d0f64a, deploy39227025407/monitor39227336117success. Apply39227131394:13IDlookup, все13notFinished,0unknown/failed/settled; ранее26закрыты. Report39227245426:watchdogpartial/Oct19,auto=false,circuit=false,14pending>24ч(инаявыборка). ПеренесёнвГотово. Новых speed samples нет.
 
 

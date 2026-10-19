@@ -18,6 +18,7 @@ test('dispatch posts workflow_dispatch for main and reports success', async () =
   assert.equal(seen.init.headers['x-github-api-version'], '2022-11-28');
   assert.equal(seen.init.headers['user-agent'], 'MatchRadar-Background-Jobs');
   assert.equal(seen.init.redirect, 'manual');
+  assert.deepEqual(JSON.parse(seen.init.body),{ref:'main',inputs:{settlement_recovery:'off'}});
 });
 
 test('dispatch explains failures without throwing or exposing the token', async () => {
