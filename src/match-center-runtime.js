@@ -1582,34 +1582,41 @@ export function createMatchCenterRuntime(deps) {
       : finished
         ? 720
         : 5;
-    let cacheStored=true;
-    try {
-      const result=await setCache(
-        baseCacheKey,
-        fixtureId,
-        payload,
-        cfg,
-        ttlMinutes,
-      );
-      if (result===false) cacheStored=false;
-    } catch {
-      cacheStored=false;
-    }
-    if (!cacheStored) {
-      await safeRecordOps(cfg,{
-        severity:'warning',
-        source:'cache',
-        eventType:'match_center_cache_write',
-        code:'MATCH_CENTER_CACHE_WRITE_FAILED',
-        message:'Match Center completed but the shared cache write failed.',
-        meta:{fixtureId,mode:centerMode},
-      });
-    }
+    const persistCache=async()=>{
+      let cacheStored=true;
+      try {
+        const result=await setCache(baseCacheKey,fixtureId,payload,cfg,ttlMinutes);
+        if (result===false) cacheStored=false;
+      } catch {
+        cacheStored=false;
+      }
+      if (!cacheStored) {
+        await safeRecordOps(cfg,{
+          severity:'warning',source:'cache',eventType:'match_center_cache_write',
+          code:'MATCH_CENTER_CACHE_WRITE_FAILED',
+          message:'Match Center completed but the shared cache write failed.',
+          meta:{fixtureId,mode:centerMode},
+        });
+      }
+      return cacheStored;
+    };
+    // Public sports data is already complete. Keep its optional cache write alive
+    // after the response; never make the viewer wait for Supabase persistence.
+    const cacheWrite=persistCache();
+    let persistence;
+    if (typeof cfg?.waitUntil==='function') {
+      try {
+        cfg.waitUntil(cacheWrite);
+        persistence={cacheStored:null,cachePending:true};
+      } catch {
+        persistence={cacheStored:await cacheWrite};
+      }
+    } else persistence={cacheStored:await cacheWrite};
 
     return json({
       ...payload,
       cached:false,
-      persistence:{cacheStored},
+      persistence,
     });
   }
 

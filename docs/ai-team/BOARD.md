@@ -60,9 +60,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Быстрые ответы на вручную введённые готовые вопросы — **Codex** — [#975](https://github.com/TRAP44/football-analytics-cloudflare/pull/975), `codex/typed-match-question-fast-path`.
+- [ ] Скорость: ранняя проверка совместимости и открытие готового матча без ожидания необязательной записи кеша — **Codex** — [#977](https://github.com/TRAP44/football-analytics-cloudflare/pull/977), `codex/startup-critical-path`, план #976, этап 1.
+
 
 
 
@@ -148,6 +150,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Быстрые ответы на вручную введённые готовые вопросы — **Codex** — [#975](https://github.com/TRAP44/football-analytics-cloudflare/pull/975), `codex/typed-match-question-fast-path`.
 
 - [x] Проверка фактических LIVE-резюме по общему публичному кешу матчей — **Codex** — [#974](https://github.com/TRAP44/football-analytics-cloudflare/pull/974), `codex/live-summary-observation`.
 
