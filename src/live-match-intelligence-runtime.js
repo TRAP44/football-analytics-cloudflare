@@ -1,3 +1,4 @@
+import {composeLiveMatchSummary} from './live-match-summary.js';
 import { neutralOutcomeText, neutralSignalText } from './signal-wording.js';
 
 // Live match intelligence helpers extracted from worker.js.
@@ -647,7 +648,7 @@ export function createLiveMatchIntelligenceRuntime(deps) {
   
     const main = insights[0] || null;
     const headline=main?.title || (pressureValue?.leader==='balanced' ? 'Матч выглядит сбалансированным' : 'Недостаточно данных для сильного вывода');
-    const summary = main?.text || 'Доступных событий и статистики пока недостаточно для содержательного автоматического вывода.';
+    const summary = composeLiveMatchSummary(insights) || 'Доступных событий и статистики пока недостаточно для содержательного автоматического вывода.';
   
     return {
       available: Boolean(insights.length),
