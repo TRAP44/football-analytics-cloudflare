@@ -177,7 +177,7 @@ export function summarizeRun(settled = []) {
       // Деградация всего запуска (потеря блокировки, незакрытая отметка) — тоже сбой.
       if (String(result.task || '') === 'scheduled_execution' && (status === 'degraded' || FAILED_SKIP_REASONS.has(reason))) failed = true;
       const detail=result.task==='settlement_recovery'?result.value:null;
-      const recovery=detail?Object.fromEntries(['stalePending','selectedCount','providerCalls','settledCount','skippedCount'].map(key=>[key,Number.isSafeInteger(detail[key])&&detail[key]>=0?detail[key]:null])):null;
+      const recovery=detail?Object.fromEntries(['stalePending','selectedCount','providerCalls','settledCount','skippedCount','notFound','notFinished','missingScore','lookupFailed','fixtureLookups'].map(key=>[key,Number.isSafeInteger(detail[key])&&detail[key]>=0?detail[key]:null])):null;
       tasks.push({ task: String(result.task || ''), status, reason,...(recovery?{recovery}:{} ) });
     }
   }

@@ -14,6 +14,14 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-19 — Codex — Сверка незакрытых результатов по ID
+PR: [#966](https://github.com/TRAP44/football-analytics-cloudflare/pull/966), ветка `codex/pending-fixture-identity`.
+Сделано: manual-only fresh fixtureID fallback для отсутствующего/нефинального/безсчёта date snapshot; exactidentity и прежние finality/score guards, датаprediction неизменна. До40дополнительныхlookup, каждыйсownership/quota/120sadmission; automaticprofile неизменён. ЧисловыеnotFound/notFinished/missingScore/lookupFailed/fixtureLookups вrunner/audit/ops, безrawIDs. providerCalls — толькоdateplan, retries дополнительные.
+Исправлено: успешная normalветкаwatchdog раньше невызывалаnoteSettlementWatchdogOutcome, отчёт оставалсяnever дажепослереальногозапуска. Добавлена записьcompleted/partial послеaudit, регрессиипроверяютобаисхода.
+Контекст: #963 опубликованe99351f3, deploy39224629638/monitor39224919327success. Preview39224633217:39selected/8dates; apply39225013501:26settled/13skipped, partial. Readonly39225135607:14pending>24ч, oldestOct16, auto=false; окнаразличаются. Telegramнеотправляли. Необъявлятьвсеpendingзакрытыми, settlementunverifiedдоотдельнойfinalityпроверки.
+Проверки:14focusedpassed; независимоеCodexreview(неClaude) безблокеров. Node22 npmci/check/lint,release694/full4372,privilegedaudit/verifyrelease/Workerdryrun прошли. Публикация/одинновыйpreview+apply впереди. Public/SQL/secrets неизменены.
+
+
 
 
 
