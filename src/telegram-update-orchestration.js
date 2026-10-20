@@ -556,7 +556,11 @@ export function createTelegramUpdateProcessor(deps) {
       else await sendBotFixtureSection(request, cfg, callbackUserId, callbackChatId, fixtureId, section === 'refresh' ? 'verdict' : section);
       return json({ ok: true });
     }
-    await telegramApi('answerCallbackQuery', cfg, { callback_query_id: callbackId }).catch(()=>null);
+    await telegramApi('answerCallbackQuery', cfg, {
+      callback_query_id: callbackId,
+      text:'Эта кнопка устарела. Откройте меню командой /start.',
+      show_alert:true,
+    }).catch(()=>null);
     return json({ ok: true });
   }
 
@@ -630,12 +634,13 @@ export function createTelegramUpdateProcessor(deps) {
       await Promise.all([sendBotFixtureMenu(request,cfg,userId,chatId,launchFixtureId,{attribution:launchIntent,source:'deep_link'}),botSetup]);
       return json({ok:true});
     }
-    await Promise.all([sendFootballBotHome(request,cfg,chatId,msg.from || {}),botSetup]);
+    await sendFootballBotHome(request,cfg,chatId,msg.from || {});
     // Новичок без избранного сразу выбирает команды (Сергей 15.10) — только в личке.
     if (msg?.chat?.type === 'private' && typeof sendFavoritePicker === 'function') {
       const favorites=await swallowAsync(getFavorites,userId,cfg);
       if (Array.isArray(favorites) && !favorites.length) await swallowAsync(sendFavoritePicker,request,cfg,userId,chatId);
     }
+    await botSetup;
     return json({ ok: true });
   }
 
@@ -738,6 +743,14 @@ export function createTelegramUpdateProcessor(deps) {
   if (chatId && /^(?:меню|главное меню|старт)$/i.test(text)) {
     await Promise.all([configureFootballBot(request,cfg,chatId),sendFootballBotHome(request,cfg,chatId,msg.from || {})]);
     return json({ ok: true });
+  }
+
+  if (chatId && msg?.chat?.type === 'private' && text.startsWith('/')) {
+    await telegramApi('sendMessage',cfg,{
+      chat_id:chatId,
+      text:'Такой команды нет. Напишите название клуба или откройте меню: /start. Подсказка: /help.',
+    });
+    return json({ok:true});
   }
 
   if (chatId && text && !text.startsWith('/')) {
