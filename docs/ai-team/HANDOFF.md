@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-20 — Codex — Отмена просроченных проверок владения lease
-PR: ветка `codex/supabase-reconciliation-cancellation`, продолжение задачи Supabase/#976.
+PR: [#983](https://github.com/TRAP44/football-analytics-cloudflare/pull/983), ветка `codex/supabase-reconciliation-cancellation`, продолжение задачи Supabase/#976.
 Подтверждённый дефект: внешние reconciliation deadlines1800ms в scheduled-lease.js не передавали signal/remaining в readScheduledJob. Wiring вызывал supaSelectMany с собственным7000ms и без отмены; после внешнего отказа underlyingGET мог оставаться активным ещё~5.2s. Это не установленная первопричина таймаутов POSTclaim/renew.
 Исправлено: remaining/signal через настоящий service wiring в supaSelectMany; опциональный read timeout только сокращает обычные7000ms, не расширяет. withinDeadline объединяет caller/internal signal, проверяет отмену до/послеawait; отмена не идёт в read retry. Дедлайн чтения тела и границы внутренних retries сохраняются. Обычные reads, claim2500ms/renew1800ms/complete1800ms, SQL/owner-token/leaseTTL/уведомления/дедуп/неизвестныеclaims без повторов — без изменений. Worker меняется, publicнет.
 Проверки: Node22 npmci/check/lint/release708/full4446/privilegedaudit/verifyrelease/workerdryrun.43focused: внешнийtimeout действительно abortsactualfetch, fetch/body/preabort/defaultbudget, actualservicewiring+renew/complete; existingreconciliation/HTTPbodycheckspassed. Новый actual-abort regression на origin/main ожидаемо1failed, наветкеpassed. НезависимыйCodexreview безблокеров. Все случаи controlled transport/fixtures, не подтверждение устранения productiontimeout.

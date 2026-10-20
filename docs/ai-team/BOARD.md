@@ -19,7 +19,7 @@
 
 ## В работе
 
-- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — `codex/supabase-reconciliation-cancellation`, продолжение #976. Диагностика #982 слита; исправление отмены брошенных owner reads, первичный timeout под наблюдением.
+- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — [#983](https://github.com/TRAP44/football-analytics-cloudflare/pull/983), `codex/supabase-reconciliation-cancellation`, продолжение #976. Диагностика #982 слита; исправление отмены брошенных owner reads, первичный timeout под наблюдением.
 
 
 
@@ -67,6 +67,8 @@
 
 
 ## На ревью
+
+- [ ] Отмена фактического GET при истечении проверки владельца фоновой блокировки — **Codex** — [#983](https://github.com/TRAP44/football-analytics-cloudflare/pull/983), `codex/supabase-reconciliation-cancellation`. Первичный сетевой timeout расследуется отдельно в рамках общей задачи.
 
 
 
