@@ -3,6 +3,10 @@ name: Observe Live Usage
 on:
   workflow_dispatch:
     inputs:
+      include_product_report:
+        description: Aggregate weekly product usage and returns without personal data in artifacts
+        type: boolean
+        default: false
       inspect_summary:
         description: Inspect up to six shared public LIVE summaries
         type: boolean
@@ -41,6 +45,13 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node scripts/live-usage-report.js
+      - name: Read weekly product aggregates
+        if: inputs.include_product_report == true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/weekly-product-report.js
       - name: Inspect reported public team crest
         if: inputs.inspect_crest == true
         env:
@@ -62,6 +73,8 @@ jobs:
           path: |
             load-results/live-usage.json
             load-results/live-usage.md
+            load-results/product-usage.json
+            load-results/product-usage.md
             load-results/team-crest-*
             load-results/live-summary-inspection.json
           retention-days: 3

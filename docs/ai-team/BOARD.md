@@ -63,9 +63,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Первый запуск и кнопки бота: убрать молчаливые тупики и ожидание настройки меню перед выбором команды — **Codex** — [#980](https://github.com/TRAP44/football-analytics-cloudflare/pull/980), `codex/bot-first-run-completion`, этап 4 #976.
+- [ ] Агрегированный недельный отчёт: люди, возвраты и использование разборов на реальных данных — **Codex** — [#981](https://github.com/TRAP44/football-analytics-cloudflare/pull/981), `codex/weekly-product-observations`, этап 5 #976.
+
 
 
 
@@ -155,6 +157,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Первый запуск и кнопки бота: убрать молчаливые тупики и ожидание настройки меню перед выбором команды — **Codex** — [#980](https://github.com/TRAP44/football-analytics-cloudflare/pull/980), `codex/bot-first-run-completion`, этап 4 #976. — опубликован, production monitor прошёл.
 
 - [x] Уведомления: следующий минутный LIVE-слот после отказа lease до начала работы — **Codex** — [#979](https://github.com/TRAP44/football-analytics-cloudflare/pull/979), `codex/live-window-lease-recovery`, этап 3 плана #976. — слит, реальный фоновый запуск прошёл все 4 LIVE-слота.
 
@@ -345,6 +349,8 @@
 - [x] Настройка совместной работы Claude + Codex — **Claude** — [PR #793](https://github.com/TRAP44/football-analytics-cloudflare/pull/793)
 
 ## Идеи / найдено по пути
+
+- [ ] Наблюдение этапа 5: run39392161719 за20окт02:16–08:16UTC содержит5 CACHE_DB_WRITE/timeout,18 CRON_EXECUTION_LEASE_UNAVAILABLE,2 CRON_EXECUTION_LEASE_COMPLETE_FAILED и3 failed в агрегатах smart-notification scheduler. Это сохранённые/deduplicated строки и суммы запусков, не число уникальных инцидентов/людей. Уточнить корень DB/lease failures отдельной задачей, не ослаблять дедуп и владение lease — **Codex** — план #976.
 
 
 
