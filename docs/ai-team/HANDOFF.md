@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-20 — Codex — Локализация таймаутов Supabase на реальных запросах
-PR: ветка `codex/supabase-transport-diagnosis`, продолжение #976; задача устранения таймаутов пока в работе.
+PR: [#982](https://github.com/TRAP44/football-analytics-cloudflare/pull/982), ветка `codex/supabase-transport-diagnosis`, продолжение #976; задача устранения таймаутов пока в работе.
 Факт: failed BackgroundJobs39392705028 содержит timeout claim08:22UTC и успешные08:23/24LIVE; предыдущий39387527382 — два timeout complete с промежуточными successful owner reads. Исходные trace не содержат фаз и длительности. Ни перегрузка SQL, ни idle socket, ни региональная задержка этими логами не доказаны; не менять таймауты/повторы наугад.
 Сделано: Node-only diagnostics_channel для уже существующих Supabase Undici requests: created/sent/headers/complete/error и относительное время, connection first_seen/reused и idle. Фиксированный список error codes, ни headers/body/query/IP/origin/ключей. Ring40 + отдельные10ошибок со своим send/headerконтекстом: ошибка ранней минуты не теряется после следующих успешных. Одна строка агрегатов на запуск; детализация только при существующем failed/empty исходе. Нет новых сетевых запросов, изменений Worker/SQL/lease/таймаутов/дедупа. sent→headers не отделяет сеть/Kong/PostgREST/SQL: это локализация, не доказанный DBtime.
 Проверки: Node22 npmci/check/lint/release708/full4440/privilegedaudit/verifyrelease. Focused25. Независимый Codex reviewer нашёл вытеснение ранней ошибки ring40 — исправлено отдельнымboundedbuffer и regression. Reviewer дополнительно проверил Node22 actual localhost HTTPS/fetch с доверенным временным CA, TLSverification включена: события, reuse, abort подтверждены; production не трогал.
