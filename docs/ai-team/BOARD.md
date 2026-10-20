@@ -19,7 +19,7 @@
 
 ## В работе
 
-- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — `codex/missing-auth-fast-reject`, продолжение #976. #987 выпущен; два реальных fallback SELECT восстановлены, но claim RPC снова потерял ответ и оставил overlap. Текущая задача: отклонять пустую Telegram-авторизацию до лишнего distributed RPC, сохранив edge/shape/local burst и полный путь проверки непустых credentials.
+- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — [#988](https://github.com/TRAP44/football-analytics-cloudflare/pull/988), `codex/missing-auth-fast-reject`, продолжение #976. #987 выпущен; два реальных fallback SELECT восстановлены, но claim RPC снова потерял ответ и оставил overlap. Текущая задача: отклонять пустую Telegram-авторизацию до лишнего distributed RPC, сохранив edge/shape/local burst и полный путь проверки непустых credentials.
 
 
 
@@ -68,7 +68,7 @@
 
 ## На ревью
 
-- [ ] Отклонять пустую Telegram-авторизацию до лишнего Supabase RPC — **Codex** — `codex/missing-auth-fast-reject`. Нормальный 401 без DB I/O, прежние edge/shape/local burst и devMode; непустые credentials проходят полный distributed/auth/account/admin путь. Node22full4503/release708; independent155 tests + native Worker security checks без блокеров.
+- [ ] Отклонять пустую Telegram-авторизацию до лишнего Supabase RPC — **Codex** — [#988](https://github.com/TRAP44/football-analytics-cloudflare/pull/988), `codex/missing-auth-fast-reject`. Нормальный 401 без DB I/O, прежние edge/shape/local burst и devMode; непустые credentials проходят полный distributed/auth/account/admin путь. Node22full4503/release708; independent155 tests + native Worker security checks без блокеров.
 
 
 
