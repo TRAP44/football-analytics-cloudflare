@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Уведомления: следующий минутный LIVE-слот после отказа lease до начала работы — **Codex** — `codex/live-window-lease-recovery`, этап 3 плана #976.
 
 
 
@@ -65,6 +64,8 @@
 
 
 ## На ревью
+
+- [ ] Уведомления: следующий минутный LIVE-слот после отказа lease до начала работы — **Codex** — [#979](https://github.com/TRAP44/football-analytics-cloudflare/pull/979), `codex/live-window-lease-recovery`, этап 3 плана #976.
 
 
 

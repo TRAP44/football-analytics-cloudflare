@@ -19,7 +19,7 @@ PR: ссылка или ветка
 
 
 ## 2026-10-20 — Codex — Уведомления: не терять оставшиеся минутные LIVE-проходы
-PR: ветка `codex/live-window-lease-recovery`, этап3 #976.
+PR: [#979](https://github.com/TRAP44/football-analytics-cloudflare/pull/979), ветка `codex/live-window-lease-recovery`, этап3 #976.
 Факт: BackgroundJobs39343030053 не потерял весь цикл. Основные reminders/smart/postmatch/scoreboard прошли в23:41UTC, LIVE23:42успешен; только23:43skipped lease_unavailable. Последний trace: POST claim_scheduled_job → ошибка Error. Точная причина транспортного отказа не установлена; старый trace терял код/name. runLiveWindow после tick.failed безусловно break, поэтому не пробовал следующий23:44слот.
 Исправлено: только строго один scheduled_execution/statusskipped/reasonlease_unavailable и failed===true до бизнес-работы допускает следующую минуту. Новое время→новый cron-livejobkey→новый обязательный SQLcron-globalclaim. ИсходныйRPC не повторяется, lease/дедуп/2500ms/720s/лимит4проходов/времяокна/провайдерныебюджеты неизменны. Любая неизвестная, postwork/renew/completionfailure по-прежнему останавливаетокно. Неуспешныйслот остаётся вresults, Actions остаётсякрасным, даже если следующийслот восстановился.
 Диагностика: fetchtrace печатает только timeout/network/transport_or_configuration/unknown, без arbitraryerror.name/message. Это поможет отличить следующий отказ, но не доказывает причину прошлого. Если потерянныйclaim всё-такизаписался, SQLoverlap корректно запрещает новыеуведомления до освобождения/expiry: исходныйSupabaseсбой этимпатчем не устранён.
