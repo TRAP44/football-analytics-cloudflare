@@ -13,6 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import {installSupabaseTransportTrace} from './supabase-transport-trace.js';
 
 export const CRON_RUNNER_SECRET_KEYS = Object.freeze([
   'SUPABASE_URL',
@@ -303,6 +304,7 @@ async function main() {
   const { renderBotMatchCard } = await import('./bot-match-card-renderer.js');
   env.botMatchCardRenderer = renderBotMatchCard;
   const trace = installFetchTrace();
+  const transportTrace = installSupabaseTransportTrace();
   const { default: worker } = await import(pathToFileURL(path.join(root, 'src', 'worker.js')).href);
   const recoveryMode=String(process.env.SETTLEMENT_RECOVERY_MODE || '');
   const result = await runCron({ worker, env,recoveryMode });
@@ -332,7 +334,13 @@ async function main() {
   if (result.failed || !result.tasks.length) {
     console.log('cron-runner: последние запросы воркера:');
     for (const line of trace.entries) console.log(redact(`  ${line}`));
+    console.log('cron-runner: ошибки соединения Supabase:');
+    for (const line of transportTrace.failures) console.log(redact(`  ${line}`));
+    console.log('cron-runner: этапы соединения Supabase:');
+    for (const line of transportTrace.entries) console.log(redact(`  ${line}`));
   }
+  console.log('supabase-transport: '+JSON.stringify(transportTrace.stats));
+  transportTrace.restore();
   process.exit(result.failed || !result.tasks.length ? 1 : 0);
 }
 

@@ -14,6 +14,15 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-20 — Codex — Локализация таймаутов Supabase на реальных запросах
+PR: ветка `codex/supabase-transport-diagnosis`, продолжение #976; задача устранения таймаутов пока в работе.
+Факт: failed BackgroundJobs39392705028 содержит timeout claim08:22UTC и успешные08:23/24LIVE; предыдущий39387527382 — два timeout complete с промежуточными successful owner reads. Исходные trace не содержат фаз и длительности. Ни перегрузка SQL, ни idle socket, ни региональная задержка этими логами не доказаны; не менять таймауты/повторы наугад.
+Сделано: Node-only diagnostics_channel для уже существующих Supabase Undici requests: created/sent/headers/complete/error и относительное время, connection first_seen/reused и idle. Фиксированный список error codes, ни headers/body/query/IP/origin/ключей. Ring40 + отдельные10ошибок со своим send/headerконтекстом: ошибка ранней минуты не теряется после следующих успешных. Одна строка агрегатов на запуск; детализация только при существующем failed/empty исходе. Нет новых сетевых запросов, изменений Worker/SQL/lease/таймаутов/дедупа. sent→headers не отделяет сеть/Kong/PostgREST/SQL: это локализация, не доказанный DBtime.
+Проверки: Node22 npmci/check/lint/release708/full4440/privilegedaudit/verifyrelease. Focused25. Независимый Codex reviewer нашёл вытеснение ранней ошибки ring40 — исправлено отдельнымboundedbuffer и regression. Reviewer дополнительно проверил Node22 actual localhost HTTPS/fetch с доверенным временным CA, TLSverification включена: события, reuse, abort подтверждены; production не трогал.
+Далее: после слияния прочитать естественный BackgroundJobs на новом SHA, получить фазу следующего отказа, затем исправлять подтверждённый механизм в этой же задаче. Не объявлять таймауты устранёнными по выпуску измерения. SUPABASE_ACCESS_TOKEN в старом infrastructure audit38650099979 получал403 для project/compute: не предполагать доступ к SQL/pg_stat и не обходить main-only secrets boundary. Локальных production bindings нет.
+Контекст: #981c8b65179 слит. Actual protected run39393393320success: weeklyполнаявыборка,4аккаунта входили/3 вразныедни/6full_aiвыдачдля3аккаунтов/0новыхusers. Включенывладелец/тесты, неcohortretention/неmarketproof. Stage5закрытв#976, #981перенесёнвГотово. Ops6ч:5CACHE_DB_WRITEtimeoutrows,18claimleaseunavailablerows,2completionfailurerows; этоdeduplicatedrowsнесчётинцидентов. Worker/public в#981не менялись, runtimebd3c502f.
+
+
 ## 2026-10-20 — Codex — Недельные агрегаты реального использования
 PR: [#981](https://github.com/TRAP44/football-analytics-cloudflare/pull/981), ветка `codex/weekly-product-observations`, этап5 #976.
 Сделано: scripts/weekly-product-report.js — bounded read-only GET проекции growth_events (telegram_id/event_name/created_at, allowlist8продуктовых событий, текущие7д+предыдущие7д) и users(created_at, текущие7д). Максимум10страниц×500 на таблицу, 500KBна ответ, 10sна запрос,45sобщий бюджет, redirects запрещены. IDs только в памяти для dedup; артефакты/summary — фиксированные агрегатные поля, без ID/имён/вопросов/metadata. Ошибки не раскрывают upstreamdetails.
