@@ -19,7 +19,7 @@
 
 ## В работе
 
-- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — `codex/reminder-stale-preflight`, продолжение #976. Actual read-only audits39450765884/39451000433:16/60connections, RAM65–66%, SQLmeans значительно короче RESTtimeout, CPUunknown. Единственная причина не доказана. Следующее исправление сокращает idlecleanup8PATCH→1GET без повтора записей.
+- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — [#986](https://github.com/TRAP44/football-analytics-cloudflare/pull/986), `codex/reminder-stale-preflight`, продолжение #976. Actual read-only audits39450765884/39451000433:16/60connections, RAM65–66%, SQLmeans значительно короче RESTtimeout, CPUunknown. Единственная причина не доказана. Следующее исправление сокращает idlecleanup8PATCH→1GET без повтора записей.
 
 
 
@@ -68,7 +68,7 @@
 
 ## На ревью
 
-- [ ] Убрать восемь пустых PATCH очистки заявок уведомлений — **Codex** — `codex/reminder-stale-preflight`. Один ограниченный existenceGET, при кандидате все старые conditionalwrites. No retry/dedup/lease изменения; sourceпроверка и independent review без блокеров.
+- [ ] Убрать восемь пустых PATCH очистки заявок уведомлений — **Codex** — [#986](https://github.com/TRAP44/football-analytics-cloudflare/pull/986), `codex/reminder-stale-preflight`. Один ограниченный existenceGET, при кандидате все старые conditionalwrites. No retry/dedup/lease изменения; sourceпроверка и independent review без блокеров.
 
 
 
