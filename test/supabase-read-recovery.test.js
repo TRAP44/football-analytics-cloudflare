@@ -142,13 +142,15 @@ test('native fetch recovers stalled headers and bodies on a real local HTTP conn
     });
     await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
     try{
-      const infrastructure=createCommonInfrastructureRuntime({bumpTelemetry:()=>{}});
+      const telemetry={};
+      const infrastructure=createCommonInfrastructureRuntime({bumpTelemetry:key=>{telemetry[key]=(telemetry[key]||0)+1;}});
       const client=createSupabaseClient({fetchWithTimeout:infrastructure.fetchWithTimeout});
       const started=performance.now();
       const result=await client.supaSelectMany({...cfg,supabaseUrl:`http://127.0.0.1:${server.address().port}`},'match_reminders');
       assert.deepEqual(result,[{id:6}]);assert.equal(calls,2);
       assert.ok(performance.now()-started<5500,'recovered before the old seven-second failure');
       await new Promise(resolve=>setTimeout(resolve,10));assert.equal(closed,true);
+      assert.equal(telemetry.upstreamTimeouts||0,0,'superseding a read is not an upstream timeout');
     }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
   }
 });

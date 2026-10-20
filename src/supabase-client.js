@@ -153,7 +153,7 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
         if(settled)return;
         try{check();}catch(deadline){error=deadline;}
         settled=true;clearTimeout(fallbackTimer);signal.removeEventListener('abort',onAbort);
-        for(const controller of controllers)controller.abort(new DOMException('Read completed','AbortError'));
+        for(const controller of controllers)controller.abort(Object.assign(new Error('Supabase read superseded.'),{code:'SUPABASE_READ_SUPERSEDED'}));
         if(slowFallback){
           activeReadFallbacks--;
           const key=error||!result?.response?.ok?'failedAfterFallback':index===1?'slowFallbackWins':'originalWins';
