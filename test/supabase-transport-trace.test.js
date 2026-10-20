@@ -61,3 +61,16 @@ test('early failure survives successful later ticks and keeps its own send/heade
   for(let i=0;i<20;i++){const req=request();h.emit('request:create',{request:req});h.emit('request:error',{request:req,error:{name:'AbortError'}});}
   assert.equal(h.trace.failures.length,10);
 });
+
+test('successful slow operations keep bounded sanitized phase samples even without an error',()=>{
+  const h=harness(),socket={};
+  for(let i=0;i<8;i++){
+    const req=request();h.at(i*2000);h.emit('request:create',{request:req});
+    h.at(i*2000+10);h.emit('client:sendHeaders',{request:req,socket});
+    h.at(i*2000+1100);h.emit('request:headers',{request:req,response:{statusCode:200}});
+    h.at(i*2000+1200);h.emit('request:trailers',{request:req});
+  }
+  assert.equal(h.trace.slow.length,5);assert.equal(h.trace.stats.errors,0);
+  assert.match(h.trace.slow[0],/POST \/rest\/v1\/rpc\/claim_scheduled_job complete=1200ms sent=10ms headers=1100ms/);
+  assert.doesNotMatch(h.trace.slow.join('\n'),/private|secret|project/);
+});

@@ -7,7 +7,7 @@ const PATH=/^\/rest\/v1\/(?:rpc\/)?[a-z][a-z0-9_]{0,100}$/;
 const elapsed=(now,start)=>Math.max(0,Math.min(120000,Math.round(now-start)));
 
 export function installSupabaseTransportTrace({subscribe=(name,handler)=>{const target=channel(name);target.subscribe(handler);return()=>target.unsubscribe(handler);},now=()=>performance.now(),limit=40}={}){
-  const requests=new WeakMap(),sockets=new WeakMap(),entries=[],failures=[];
+  const requests=new WeakMap(),sockets=new WeakMap(),entries=[],failures=[],slow=[];
   const stats={requests:0,completed:0,errors:0,maxSentMs:0,maxHeadersMs:0};
   let next=0;
   function append(state,event,extra=''){
@@ -42,6 +42,10 @@ export function installSupabaseTransportTrace({subscribe=(name,handler)=>{const 
     'undici:request:trailers':({request})=>{
       const state=requests.get(request);if(!state)return;
       stats.completed++;append(state,'complete');
+      if(elapsed(now(),state.start)>=1000){
+        slow.push(`${state.method} ${state.path} complete=${elapsed(now(),state.start)}ms sent=${state.sentMs??'none'}ms headers=${state.headersMs??'none'}ms connection=${state.connection||'not_sent'}`);
+        if(slow.length>5)slow.shift();
+      }
       if(state.socket)sockets.set(state.socket,{lastUsed:now()});
       requests.delete(request);
     },
@@ -59,5 +63,5 @@ export function installSupabaseTransportTrace({subscribe=(name,handler)=>{const 
   };
   // Observability must never throw into Undici or prevent a scheduled task.
   const remove=Object.entries(handlers).map(([name,handler])=>subscribe(name,message=>{try{handler(message);}catch{}}));
-  return {entries,failures,stats,restore(){for(const unsubscribe of remove)unsubscribe();}};
+  return {entries,failures,slow,stats,restore(){for(const unsubscribe of remove)unsubscribe();}};
 }

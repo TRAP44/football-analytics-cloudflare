@@ -14,6 +14,16 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-20 — Codex — Отмена просроченных проверок владения lease
+PR: ветка `codex/supabase-reconciliation-cancellation`, продолжение задачи Supabase/#976.
+Подтверждённый дефект: внешние reconciliation deadlines1800ms в scheduled-lease.js не передавали signal/remaining в readScheduledJob. Wiring вызывал supaSelectMany с собственным7000ms и без отмены; после внешнего отказа underlyingGET мог оставаться активным ещё~5.2s. Это не установленная первопричина таймаутов POSTclaim/renew.
+Исправлено: remaining/signal через настоящий service wiring в supaSelectMany; опциональный read timeout только сокращает обычные7000ms, не расширяет. withinDeadline объединяет caller/internal signal, проверяет отмену до/послеawait; отмена не идёт в read retry. Дедлайн чтения тела и границы внутренних retries сохраняются. Обычные reads, claim2500ms/renew1800ms/complete1800ms, SQL/owner-token/leaseTTL/уведомления/дедуп/неизвестныеclaims без повторов — без изменений. Worker меняется, publicнет.
+Проверки: Node22 npmci/check/lint/release708/full4446/privilegedaudit/verifyrelease/workerdryrun.43focused: внешнийtimeout действительно abortsactualfetch, fetch/body/preabort/defaultbudget, actualservicewiring+renew/complete; existingreconciliation/HTTPbodycheckspassed. Новый actual-abort regression на origin/main ожидаемо1failed, наветкеpassed. НезависимыйCodexreview безблокеров. Все случаи controlled transport/fixtures, не подтверждение устранения productiontimeout.
+Дополнено измерение: до5успешных медленных(>=1s)операций с method/path/send/headers/total; ошибки выводятся и при успешном общему запуске, чтобы восстановленный GETtimeout не скрывался. Буферы ограничены, privacy/сеть неизменны.
+Факты #982: merge38f50d5e; PRQuality39394714777/CodeQL39394714868success. Actual safe preview39395416541 skippedoverlap, requests3/completed3/errors0/maxSent34ms/maxHeaders546ms. Естественный39395716769 skippedoverlap,4/4/0/maxSent15/maxHeaders714ms. 08:35run39394519740 потерялrenew8:37, оставил неизвестный lease; SQL корректно блокировал8:40/43/45. Естественный39396323064(8:50)success: основнойцикл+все4LIVE,107/107requests,0errors,maxSent56ms,maxHeaders3502ms. Это ожиданиепослеотправки, не доказанное SQLвремя; старыйsummaryнехранилmethod/pathуспешныхмедленных,поэтому добавленboundedslow. Начался39396931853(8:55),прочитатьпослезавершения. previewнеиспользовалпровайдера/Telegram и неизменялresults; былпропущендо businesswork.
+Осталось: после выпуска cancellationfix проверить новые BackgroundJobs; продолжить первичный timeout по сохранённым sent/headers/errors. Не объявлять проблему Supabase целиком решённой. Если нужен иной transport/SQL, только по наблюдению. #982 diagnostics row перенесена вГотово, общаязадачавВработе.
+
+
 ## 2026-10-20 — Codex — Локализация таймаутов Supabase на реальных запросах
 PR: [#982](https://github.com/TRAP44/football-analytics-cloudflare/pull/982), ветка `codex/supabase-transport-diagnosis`, продолжение #976; задача устранения таймаутов пока в работе.
 Факт: failed BackgroundJobs39392705028 содержит timeout claim08:22UTC и успешные08:23/24LIVE; предыдущий39387527382 — два timeout complete с промежуточными successful owner reads. Исходные trace не содержат фаз и длительности. Ни перегрузка SQL, ни idle socket, ни региональная задержка этими логами не доказаны; не менять таймауты/повторы наугад.

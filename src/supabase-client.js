@@ -113,18 +113,25 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
       && /(?:^|[;,\s])error=PGRST303(?:[;,\s]|$)/i.test(proxyStatus);
   }
 
-  function withinDeadline(source,budget,operation){
-    return withRequestDeadline(({signal,check,remaining})=>operation({
-      check,remaining,
-      fetchResponse:async(url,init={})=>{
+  function withinDeadline(source,budget,operation,callerSignal){
+    return withRequestDeadline(({signal,check,remaining})=>{
+      const transportSignal=callerSignal?AbortSignal.any([signal,callerSignal]):signal;
+      const checkBoth=()=>{
         check();
-        const response=await fetchWithTimeout(url,{...init,signal},remaining(),source);
-        check();return response;
-      },
-    }),{source,budgetMs:budget,now});
+        if(callerSignal?.aborted)throw callerSignal.reason || new DOMException('Aborted','AbortError');
+      };
+      return operation({
+        check:checkBoth,remaining,
+        fetchResponse:async(url,init={})=>{
+          checkBoth();
+          const response=await fetchWithTimeout(url,{...init,signal:transportSignal},remaining(),source);
+          checkBoth();return response;
+        },
+      });
+    },{source,budgetMs:budget,now});
   }
 
-  async function supaReadData(url,init,timeoutMs,source,cfg=null){
+  async function supaReadData(url,init,timeoutMs,source,cfg=null,callerSignal){
     return withinDeadline(source,timeoutMs,async({fetchResponse,check,remaining})=>{
       for(let attempt=0;attempt<2;attempt++){
         let response;
@@ -141,7 +148,7 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
         const body=response.ok ? await response.json() : await response.text().catch(()=>'');
         check();return {response,body};
       }
-    });
+    },callerSignal);
   }
 
   async function supaWriteFetch(url,init,timeoutMs,source,cfg=null,retryAuth=false){
@@ -210,7 +217,7 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
     return rows[0] ?? null;
   }
 
-  async function supaSelectMany(cfg, table, params = {}, { limit = 20, order = '', select = '*' } = {}) {
+  async function supaSelectMany(cfg, table, params = {}, { limit = 20, order = '', select = '*', timeoutMs = 7000, signal } = {}) {
     const tableName = nonEmptyText(table);
     const url = restUrl(cfg, tableName);
     const safeSelect = nonEmptyText(select) || '*';
@@ -220,7 +227,8 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
     url.searchParams.set('limit', String(safeLimit));
     if (safeOrder) url.searchParams.set('order', safeOrder);
     applyQueryParams(url, params, tableName);
-    const {response,body} = await supaReadData(url, { headers: supaHeaders(cfg) }, 7000, `Supabase ${tableName}`, cfg);
+    const budget=boundedInteger(timeoutMs,7000,1,7000);
+    const {response,body} = await supaReadData(url, { headers: supaHeaders(cfg) }, budget, `Supabase ${tableName}`, cfg,signal);
     if (!response.ok) {
       const text = body;
       const detail = safeRedact(text, 160);

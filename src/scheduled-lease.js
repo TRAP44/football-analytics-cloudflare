@@ -361,7 +361,7 @@ export function createScheduledLeaseRuntime({
       if (transientLeaseError(error) && typeof readScheduledJob==='function') {
         try {
           const row=plainObject(await withRequestDeadline(
-            ()=>readScheduledJob(cfg,jobKey),
+            ({signal,remaining})=>readScheduledJob(cfg,jobKey,{signal,timeoutMs:remaining()}),
             {budgetMs:1800,source:'Scheduled renewal reconciliation'},
           ));
           const until=rpcTimestamp(row?.locked_until,null);
@@ -511,7 +511,7 @@ export function createScheduledLeaseRuntime({
   async function reconcileCompletion(cfg,source) {
     if (typeof readScheduledJob!=='function') return null;
     const row=plainObject(await withRequestDeadline(
-      ()=>readScheduledJob(cfg,source.jobKey),
+      ({signal,remaining})=>readScheduledJob(cfg,source.jobKey,{signal,timeoutMs:remaining()}),
       {budgetMs:1800,source:'Scheduled completion reconciliation'},
     ));
     if (!row || row.lease_token!==source.leaseToken || row.group_key!==source.groupKey) return null;

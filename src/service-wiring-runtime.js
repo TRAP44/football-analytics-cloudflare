@@ -55,9 +55,9 @@ export function createServiceWiringRuntime(deps = {}) {
   } = createScheduledLeaseRuntime({
     hasSupabase,
     supaRpc,
-    readScheduledJob:async(cfg,jobKey)=>{
+    readScheduledJob:async(cfg,jobKey,options={})=>{
       const rows=await supaSelectMany(cfg,'scheduled_job_leases',{job_key:`eq.${jobKey}`},
-        {limit:1,select:'status,lease_token,group_key,locked_until'});
+        {limit:1,select:'status,lease_token,group_key,locked_until',timeoutMs:options.timeoutMs,signal:options.signal});
       return rows?.[0] || null;
     },
     recordOpsEvent,
