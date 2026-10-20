@@ -59,7 +59,7 @@ test('renew and completion pass signal and remaining time through the actual ser
       calls++;assert.equal(table,'scheduled_job_leases');assert.equal(filters.job_key,'eq.cron:test');
       assert.equal(options.limit,1);assert.match(options.select,/lease_token/);
       assert.ok(options.signal instanceof AbortSignal);assert.equal(options.signal.aborted,false);
-      assert.ok(options.timeoutMs>0&&options.timeoutMs<=1800);
+      assert.ok(options.timeoutMs>0&&options.timeoutMs<=7000);
       return [{status:operation==='renewScheduledJob'?'running':'done',lease_token:claim.leaseToken,group_key:claim.groupKey,locked_until:claim.lockedUntil}];
     });
     const result=await lease[operation](cfg,claim);
@@ -84,4 +84,28 @@ test('outer timeout cancels the underlying owner read rather than merely abandon
     },{budgetMs:30,source:'Owner read'}),error=>error.code==='UPSTREAM_TIMEOUT');
     assert.equal(signal.aborted,true,'the abandoned GET must not retain its independent 7-second timer');
   }finally{release?.();await child?.catch(()=>{});}
+});
+
+
+test('a three-second background claim can finish once without replaying an ambiguous write',async()=>{
+  const scheduledAt=new Date();let requests=0;
+  const client=createSupabaseClient({fetchWithTimeout:async(_url,init)=>{
+    requests++;
+    return await new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>resolve(new Response(JSON.stringify({claimed:true,jobKey:claim.jobKey,groupKey:claim.groupKey,leaseToken:claim.leaseToken,scheduledAt:scheduledAt.toISOString(),lockedUntil:new Date(Date.now()+720000).toISOString()}),{status:200})),3000);
+      init.signal.addEventListener('abort',()=>{clearTimeout(timer);reject(init.signal.reason);},{once:true});
+    });
+  }});
+  const lease=createScheduledLeaseRuntime({hasSupabase:()=>true,supaRpc:client.supaRpc});
+  const result=await lease.claimScheduledJob(cfg,{jobKey:claim.jobKey,groupKey:claim.groupKey,scheduledAt});
+  assert.equal(result.claimed,true);assert.equal(requests,1);
+});
+
+test('readback waits for a two-second owner confirmation instead of discarding a valid result',async()=>{
+  const lease=createScheduledLeaseRuntime({hasSupabase:()=>true,sleepMs:async()=>{},supaRpc:async()=>{throw timeout();},readScheduledJob:async()=>{
+    await new Promise(resolve=>setTimeout(resolve,2000));
+    return {status:'running',lease_token:claim.leaseToken,group_key:claim.groupKey,locked_until:new Date(Date.now()+720000).toISOString()};
+  }});
+  const result=await lease.renewScheduledJob(cfg,claim);
+  assert.equal(result.renewed,true);assert.equal(result.reason,'ownership_confirmed');
 });
