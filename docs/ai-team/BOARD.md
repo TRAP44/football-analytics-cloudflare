@@ -19,7 +19,7 @@
 
 ## В работе
 
-- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — [#984](https://github.com/TRAP44/football-analytics-cloudflare/pull/984), `codex/background-control-read-recovery`, продолжение #976. #983 опубликован; actual39401186548 подтвердил ранний controls timeout,39401808668 — timeline lookup timeout, подавивший LIVE. Готовится точечное восстановление без повтора неизвестных записей.
+- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — [#985](https://github.com/TRAP44/football-analytics-cloudflare/pull/985), `codex/supabase-server-evidence`, продолжение #976. #984 опубликован: actual39438347309 выполнил все3 оставшихся LIVE после отказа timeline; физические REST timeout сохраняются. Новые scoped права проверены39446936007: project200 ACTIVE_HEALTHY. Следующий шаг — ограниченная серверная диагностика через защищённый main-only workflow.
 
 
 
@@ -68,7 +68,8 @@
 
 ## На ревью
 
-- [ ] Восстановление фона после таймаута настроек и продолжение LIVE после безопасно завершённого основного цикла — **Codex** — [#984](https://github.com/TRAP44/football-analytics-cloudflare/pull/984), `codex/background-control-read-recovery`, продолжение #976/#983; root Supabase timeout не объявлен устранённым.
+- [ ] Supabase: получить серверные агрегаты SQL, журналов и ресурсов без пользовательских данных — **Codex** — [#985](https://github.com/TRAP44/football-analytics-cloudflare/pull/985), `codex/supabase-server-evidence`. Только фиксированные read-only запросы, main-only protected workflow; billing не требуется. Общая задача таймаутов остаётся открытой.
+
 
 
 
@@ -160,6 +161,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Восстановление фона после таймаута настроек и продолжение LIVE после безопасно завершённого основного цикла — **Codex** — [#984](https://github.com/TRAP44/football-analytics-cloudflare/pull/984), `codex/background-control-read-recovery`, продолжение #976/#983; root Supabase timeout не объявлен устранённым. Выпуск: main c709cbac; Deploy39438395894/Monitor39438777960 success; actual39438347309 подтвердил независимые LIVE.
 
 - [x] Устойчивость REST фона: отмена GET, резерв lease, ограничение параллелизма — **Codex** — [#983](https://github.com/TRAP44/football-analytics-cloudflare/pull/983), merge06a2de6d, deploy39400145889/monitor39400501551success. Последующие realruns всё ещё содержат Supabase timeouts; общая задача продолжается.
 

@@ -1,6 +1,7 @@
-// Read-only Management APIs. No provider, SQL, deploy, billing changes or raw response logs.
+// Read-only Management APIs; optional fixed SELECT diagnostics. No mutations.
 import fs from 'node:fs';
 import {pathToFileURL} from 'node:url';
+import {collectSupabaseDiagnostics} from './supabase-server-diagnostics.js';
 
 const text=value=>typeof value==='string'?value.replace(/[^a-zA-Z0-9 _./()-]/g,'').slice(0,80):null;
 const states=new Set(['INACTIVE','ACTIVE_HEALTHY','ACTIVE_UNHEALTHY','COMING_UP','UNKNOWN','GOING_DOWN','INIT_FAILED','REMOVED','RESTORING','UPGRADING','PAUSING','RESTORE_FAILED','RESTARTING','PAUSE_FAILED','RESIZING']);
@@ -16,6 +17,7 @@ async function readJson(url,token,fetchImpl) {
 const invalid=()=>({status:'invalid_response'});
 
 export async function auditInfrastructure({env={},fetchImpl=fetch}={}) {
+  const inspectDatabase=env.SUPABASE_DIAGNOSTICS_ENABLED==='true';
   const report={scope:'read_only_management_apis',productionChanged:false,
     loadTestRun:false,productionCapacityConfirmed:false,
     cloudflare:{settings:{status:'not_configured'},workersSubscriptions:{status:'not_configured'}},
@@ -55,7 +57,7 @@ export async function auditInfrastructure({env={},fetchImpl=fetch}={}) {
       report.supabase.project=(value?.ref===project || (!value?.ref && value?.id===project)) && states.has(value.status)
         ? {status:'observed',projectStatus:value.status,region:text(value.region),postgresVersion:text(value.database?.version)} : invalid();
     })());
-    tasks.push((async()=>{
+    if(!inspectDatabase)tasks.push((async()=>{
       const result=await readJson(`https://api.supabase.com/v1/projects/${project}/billing/addons`,sbToken,fetchImpl);
       if(result.status!=='observed'){report.supabase.compute=result;return;}
       if(!Array.isArray(result.data?.selected_addons)){report.supabase.compute=invalid();return;}
@@ -64,19 +66,27 @@ export async function auditInfrastructure({env={},fetchImpl=fetch}={}) {
       report.supabase.compute={status:'observed',selectedComputeVariants:variants,
         conclusion:variants.length?'compute_selection_not_organization_plan':'unknown_no_compute_selection'};
     })());
+    else report.supabase.compute={status:'not_requested',reason:'billing_not_needed_for_database_diagnostics'};
   } else if(sbToken || project) {
     report.supabase.project={status:'not_configured',reason:'incomplete_or_invalid_project_credentials'};
     report.supabase.compute={...report.supabase.project};
   }
   await Promise.all(tasks);
   report.completeManagementObservations=[report.cloudflare.settings,report.cloudflare.workersSubscriptions,report.supabase.project,report.supabase.compute].every(row=>row.status==='observed');
+  if(inspectDatabase){
+    report.scope='read_only_server_diagnostics';
+    report.supabase.diagnostics=await collectSupabaseDiagnostics({env,fetchImpl});
+    report.completeDiagnosticsObservations=report.supabase.project.status==='observed'&&report.supabase.diagnostics.complete===true;
+    report.nextStep='Review server evidence before changing queries or capacity; missing evidence is not healthy operation.';
+  }
   return report;
 }
 
 export function auditSummary(report) {
   const rows=[['Workers settings',report.cloudflare.settings],['Workers subscriptions',report.cloudflare.workersSubscriptions],
     ['Supabase project',report.supabase.project],['Supabase compute',report.supabase.compute],['Supabase organization plan',report.supabase.organizationPlan]];
-  return '# Infrastructure capacity audit (read-only)\n\nConfigured inputs (presence only): '+JSON.stringify(report.configuredInputs)+'\n\n'+rows.map(([name,value])=>`- ${name}: ${JSON.stringify(value)}`).join('\n')+
+  return (report.supabase.diagnostics?'# Supabase server diagnostics (read-only)':'# Infrastructure capacity audit (read-only)')+'\n\nConfigured inputs (presence only): '+JSON.stringify(report.configuredInputs)+'\n\n'+rows.map(([name,value])=>`- ${name}: ${JSON.stringify(value)}`).join('\n')+
+    (report.supabase.diagnostics?'\n\nFixed read-only server diagnostics:\n'+JSON.stringify(report.supabase.diagnostics,null,2):'')+
     '\n\nNo production changes, deployments, payments or load test. Unknown observations do not prove Free/paid or capacity.\n';
 }
 export async function main(env=process.env) {
@@ -87,7 +97,7 @@ export async function main(env=process.env) {
   if(env.GITHUB_STEP_SUMMARY)fs.appendFileSync(env.GITHUB_STEP_SUMMARY,summary);
   process.stdout.write(summary);
   // Complete means observed management data, never confirmed production capacity.
-  if(!report.completeManagementObservations)process.exitCode=1;
+  if(!(env.SUPABASE_DIAGNOSTICS_ENABLED==='true'?report.completeDiagnosticsObservations:report.completeManagementObservations))process.exitCode=1;
   return report;
 }
 if(process.argv[1] && import.meta.url===pathToFileURL(process.argv[1]).href)await main();

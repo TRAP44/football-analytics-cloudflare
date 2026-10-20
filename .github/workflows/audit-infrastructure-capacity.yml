@@ -2,6 +2,11 @@ name: Audit Infrastructure Capacity
 
 on:
   workflow_dispatch:
+    inputs:
+      inspect_database:
+        description: Read bounded Supabase server statistics and aggregate logs without changing data
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -32,6 +37,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          SUPABASE_DIAGNOSTICS_ENABLED: ${{ inputs.inspect_database == true && 'true' || 'false' }}
         run: node scripts/audit-infrastructure-capacity.js
       - name: Publish sanitized observations
         if: always()
