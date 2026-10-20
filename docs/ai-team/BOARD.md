@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Уведомления: следующий минутный LIVE-слот после отказа lease до начала работы — **Codex** — `codex/live-window-lease-recovery`, этап 3 плана #976.
+
 
 
 
@@ -64,7 +66,6 @@
 
 ## На ревью
 
-- [ ] AI-чат: доступные вероятности всех исходов и стартовые составы в ответах — **Codex** — [#978](https://github.com/TRAP44/football-analytics-cloudflare/pull/978), `codex/complete-match-question-facts`, этап 2 плана #976.
 
 
 
@@ -152,6 +153,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] AI-чат: доступные вероятности всех исходов и стартовые составы в ответах — **Codex** — [#978](https://github.com/TRAP44/football-analytics-cloudflare/pull/978), `codex/complete-match-question-facts`, этап 2 плана #976.
 
 - [x] Скорость: ранняя проверка совместимости и открытие готового матча без ожидания необязательной записи кеша — **Codex** — [#977](https://github.com/TRAP44/football-analytics-cloudflare/pull/977), `codex/startup-critical-path`, план #976, этап 1.
 

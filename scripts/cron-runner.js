@@ -233,7 +233,15 @@ export async function runLiveWindow({runTick,now=Date.now,wait=ms=>new Promise(r
     await wait(Math.max(0,next-now()));
     if(now()+30000>=endMs)break;
     const result=await runTick(now());results.push(result);
-    if(result?.failed)break;
+    if(result?.failed){
+      // This slot never started business work. A later minute has its own job
+      // key and must obtain a fresh durable lease; never replay this claim.
+      const tasks=result.tasks;
+      const declinedBeforeWork=result.failed===true && Array.isArray(tasks) && tasks.length===1
+        && tasks[0]?.task==='scheduled_execution' && tasks[0]?.status==='skipped'
+        && tasks[0]?.reason==='lease_unavailable';
+      if(!declinedBeforeWork)break;
+    }
   }
   return results;
 }
@@ -264,7 +272,11 @@ export function installFetchTrace(limit = 40) {
       entries.push(traceEntry(url, method, String(response.status)));
       return response;
     } catch (error) {
-      entries.push(traceEntry(url, method, `ошибка ${String(error?.name || 'Error').slice(0, 30)}`));
+      const code=error?.code || error?.cause?.code;
+      const kind=code==='UPSTREAM_TIMEOUT' || ['TimeoutError','AbortError'].includes(error?.name)
+        ? 'timeout' : ['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EAI_AGAIN','ENOTFOUND'].includes(code)
+          ? 'network' : error instanceof TypeError ? 'transport_or_configuration' : 'unknown';
+      entries.push(traceEntry(url, method, `ошибка ${kind}`));
       throw error;
     } finally {
       if (entries.length > limit) entries.splice(0, entries.length - limit);
