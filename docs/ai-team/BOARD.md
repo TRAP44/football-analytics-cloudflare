@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — [#982](https://github.com/TRAP44/football-analytics-cloudflare/pull/982), `codex/supabase-transport-diagnosis`, продолжение #976. Сначала этапы реальных сетевых запросов, затем исправление подтверждённого механизма.
+
 
 
 
@@ -66,7 +68,6 @@
 
 ## На ревью
 
-- [ ] Агрегированный недельный отчёт: люди, возвраты и использование разборов на реальных данных — **Codex** — [#981](https://github.com/TRAP44/football-analytics-cloudflare/pull/981), `codex/weekly-product-observations`, этап 5 #976.
 
 
 
@@ -157,6 +158,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Агрегированный недельный отчёт: люди, возвраты и использование разборов на реальных данных — **Codex** — [#981](https://github.com/TRAP44/football-analytics-cloudflare/pull/981), `codex/weekly-product-observations`, этап 5 #976. — actual run39393393320:4аккаунта/3повторных/6выдачAI.
 
 - [x] Первый запуск и кнопки бота: убрать молчаливые тупики и ожидание настройки меню перед выбором команды — **Codex** — [#980](https://github.com/TRAP44/football-analytics-cloudflare/pull/980), `codex/bot-first-run-completion`, этап 4 #976. — опубликован, production monitor прошёл.
 
