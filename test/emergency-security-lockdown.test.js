@@ -32,7 +32,7 @@ const normal = Object.freeze({
 });
 
 function req(path,method='GET') {
-  return new Request(`https://example.com${path}`,{method});
+  return new Request(`https://example.com${path}`,{method,headers:{'x-telegram-init-data':'auth-fixture'}});
 }
 
 function json(body,status=200,headers={}) {

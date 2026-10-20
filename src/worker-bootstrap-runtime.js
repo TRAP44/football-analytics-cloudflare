@@ -134,6 +134,51 @@ export function createWorkerBootstrapRuntime(deps = {}) {
     }
   }
 
+  async function rejectInvalidAuth(request,cfg,url) {
+    let abuseGuard;
+    let abuse;
+    try {
+      abuseGuard=plainObject(createPreAuthAbuseGuard({
+        memory,
+        fingerprintSecret:cfg.botToken,
+        bumpTelemetry,
+        recordOpsEvent:event=>recordOpsEvent(cfg,event),
+      }));
+      const register=safeRead(abuseGuard,'registerInvalidAuthFailure');
+      if (typeof register !== 'function') throw new TypeError('Invalid auth guard is unavailable.');
+      abuse=plainObject(await register.call(abuseGuard,request,{
+        adminSensitive:isAdminSensitivePath(url.pathname),
+      }));
+      if (!abuse || typeof safeRead(abuse,'blocked') !== 'boolean') {
+        throw new TypeError('Invalid auth guard returned an invalid decision.');
+      }
+    } catch (error) {
+      await safeRecord(cfg,{
+        severity:'error',
+        source:'security',
+        eventType:'invalid_auth_guard',
+        code:'INVALID_AUTH_GUARD_UNAVAILABLE',
+        message:safeRedact(safeRead(error,'message') || error,200),
+        endpoint:url.pathname,
+        status:503,
+      });
+      return json({
+        error:'Защитный контур авторизации временно недоступен.',
+        code:'INVALID_AUTH_GUARD_UNAVAILABLE',
+        retryAfter:5,
+      },503,{'retry-after':'5'});
+    }
+    if (safeRead(abuse,'blocked') === true) {
+      const retryAfter=boundedRetryAfter(safeRead(abuse,'retryAfter'),30,3600);
+      return json({
+        error:'Слишком много неуспешных попыток авторизации. Повторите позже.',
+        code:'INVALID_AUTH_BURST',
+        retryAfter,
+      },429,{'retry-after':String(retryAfter)});
+    }
+    return json({ error: 'Откройте мини-приложение внутри Telegram.' }, 401);
+  }
+
   async function safePhase5Summary(cfg) {
     try {
       await recordPhase5ProviderRequestSummary(cfg);
@@ -481,6 +526,17 @@ export function createWorkerBootstrapRuntime(deps = {}) {
   
       if (!url.pathname.startsWith('/api/')) return new Response('Not found', { status: 404 });
   
+      // An empty credential cannot authenticate in production. Reject it before
+      // any distributed limiter/profile I/O, retaining edge, shape and local
+      // invalid-auth burst protection. Development identity keeps its old path.
+      if (cfg.devMode !== true) {
+        let initData='';
+        try { initData=request?.headers?.get?.('x-telegram-init-data'); } catch { /* Deny unreadable credentials. */ }
+        if (typeof initData !== 'string' || !initData.trim()) {
+          return rejectInvalidAuth(request,cfg,url);
+        }
+      }
+
       let distributedPreAuthResponse;
       try {
         distributedPreAuthResponse=await enforceDistributedPreAuthRateLimit({
@@ -515,50 +571,7 @@ export function createWorkerBootstrapRuntime(deps = {}) {
   
       try {
         const user = await getRequestUser(request, cfg);
-        if (!user) {
-          let abuseGuard;
-          let abuse;
-          try {
-            abuseGuard=plainObject(createPreAuthAbuseGuard({
-              memory,
-              fingerprintSecret:cfg.botToken,
-              bumpTelemetry,
-              recordOpsEvent:event=>recordOpsEvent(cfg,event),
-            }));
-            const register=safeRead(abuseGuard,'registerInvalidAuthFailure');
-            if (typeof register !== 'function') throw new TypeError('Invalid auth guard is unavailable.');
-            abuse=plainObject(await register.call(abuseGuard,request,{
-              adminSensitive:isAdminSensitivePath(url.pathname),
-            }));
-            if (!abuse || typeof safeRead(abuse,'blocked') !== 'boolean') {
-              throw new TypeError('Invalid auth guard returned an invalid decision.');
-            }
-          } catch (error) {
-            await safeRecord(cfg,{
-              severity:'error',
-              source:'security',
-              eventType:'invalid_auth_guard',
-              code:'INVALID_AUTH_GUARD_UNAVAILABLE',
-              message:safeRedact(safeRead(error,'message') || error,200),
-              endpoint:url.pathname,
-              status:503,
-            });
-            return json({
-              error:'Защитный контур авторизации временно недоступен.',
-              code:'INVALID_AUTH_GUARD_UNAVAILABLE',
-              retryAfter:5,
-            },503,{'retry-after':'5'});
-          }
-          if (safeRead(abuse,'blocked') === true) {
-            const retryAfter=boundedRetryAfter(safeRead(abuse,'retryAfter'),30,3600);
-            return json({
-              error:'Слишком много неуспешных попыток авторизации. Повторите позже.',
-              code:'INVALID_AUTH_BURST',
-              retryAfter,
-            },429,{'retry-after':String(retryAfter)});
-          }
-        }
-        if (!user) return json({ error: 'Откройте мини-приложение внутри Telegram.' }, 401);
+        if (!user) return rejectInvalidAuth(request,cfg,url);
   
         let betaAccess;
         try {

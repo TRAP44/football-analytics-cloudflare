@@ -12,7 +12,7 @@ function request(url='https://example.test/api/me',method='GET') {
   return {
     url,
     method,
-    headers:{get:()=>null},
+    headers:{get:name=>name==='x-telegram-init-data'?'auth-fixture':null},
   };
 }
 
@@ -312,4 +312,115 @@ test('runner recovery forces fresh controls before actual scheduled work and nev
   assert.equal(recovered.length,1);assert.equal(recovered[0].failed,false);
   assert.equal(reads,2);assert.equal(handled,1);assert.equal(initial.failed,true,'original failure stays visible');
   assert.equal(recovered[0].scheduledTime,initial.scheduledTime,'only pre-claim timeout retries the same main slot');
+});
+
+
+test('missing Telegram credentials are denied without database, user lookup or protected dispatch',async()=>{
+  for(const path of ['/api/me','/api/launch-funnel','/api/analyze','/api/admin/channel-publisher/test']){
+    for(const value of [null,'','   ']){
+      const calls=[];
+      const runtime=createWorkerBootstrapRuntime(deps({
+        enforceDistributedPreAuthRateLimit:async()=>{calls.push('db');throw Error('database unavailable');},
+        getRequestUser:async()=>{calls.push('auth');return {id:123};},
+        dispatchApiRoute:async()=>{calls.push('route');return json({ok:true});},
+        recordOpsEvent:async()=>{calls.push('ops');},
+      }));
+      const req=request(`https://example.test${path}`);
+      req.headers={get:()=>value};
+      const response=await runtime.fetch(req,{},{});
+      assert.equal(response.status,401,path);
+      assert.deepEqual(calls,[],path);
+    }
+  }
+});
+
+test('missing credentials retain real local public/admin burst protection',async()=>{
+  const {createPreAuthAbuseGuard}=await import('../src/security-gate.js');
+  for(const admin of [false,true]){
+    const memory={},events=[];
+    const limit=createPreAuthAbuseGuard({memory:{}}).invalidAuthPolicies()[admin?'admin':'public'].limit;
+    const runtime=createWorkerBootstrapRuntime(deps({memory,createPreAuthAbuseGuard,
+      isAdminSensitivePath:()=>admin,
+      enforceDistributedPreAuthRateLimit:async()=>{throw Error('must not call distributed guard');},
+      recordOpsEvent:async(_cfg,event)=>{events.push(event);},
+    }));
+    const req=new Request('https://example.test/api/me',{headers:{'cf-connecting-ip':'203.0.113.10'}});
+    for(let i=0;i<limit;i++)assert.equal((await runtime.fetch(req,{},{})).status,401);
+    const response=await runtime.fetch(req,{},{});
+    assert.equal(response.status,429);assert.equal(response.body.code,'INVALID_AUTH_BURST');
+    assert.ok(Number(response.headers['retry-after'])>0);
+    assert.equal(events.filter(event=>event.code==='INVALID_AUTH_BURST_BLOCKED').length,1);
+  }
+});
+
+test('invalid local authorization guard still fails closed for missing credentials',async()=>{
+  for(const guard of [()=>null,()=>({registerInvalidAuthFailure:async()=>null}),()=>{throw Error('unavailable');}]){
+    const runtime=createWorkerBootstrapRuntime(deps({createPreAuthAbuseGuard:guard}));
+    const response=await runtime.fetch(new Request('https://example.test/api/me'),{},{});
+    assert.equal(response.status,503);assert.equal(response.body.code,'INVALID_AUTH_GUARD_UNAVAILABLE');
+  }
+});
+
+test('nonempty credentials retain distributed gate before authentication and never bypass invalid signature',async()=>{
+  const calls=[];
+  const runtime=createWorkerBootstrapRuntime(deps({
+    enforceDistributedPreAuthRateLimit:async()=>{calls.push('preauth');return null;},
+    getRequestUser:async()=>{calls.push('auth');return null;},
+    createPreAuthAbuseGuard:()=>({registerInvalidAuthFailure:async()=>{calls.push('local');return {blocked:false};}}),
+    dispatchApiRoute:async()=>{calls.push('route');return json({ok:true});},
+  }));
+  const response=await runtime.fetch(request(),{},{});
+  assert.equal(response.status,401);assert.deepEqual(calls,['preauth','auth','local']);
+  const stopped=createWorkerBootstrapRuntime(deps({
+    enforceDistributedPreAuthRateLimit:async()=>json({code:'PREAUTH_RATE_LIMIT'},429),
+    getRequestUser:async()=>{throw Error('must stop before auth');},
+  }));
+  assert.equal((await stopped.fetch(request(),{},{})).status,429);
+});
+
+test('empty development credentials retain the established development authentication path',async()=>{
+  const calls=[];
+  const runtime=createWorkerBootstrapRuntime(deps({
+    config:()=>({devMode:true}),
+    enforceDistributedPreAuthRateLimit:async()=>{calls.push('preauth');return null;},
+    getRequestUser:async()=>{calls.push('auth');return {id:123,__developmentIdentity:true};},
+    dispatchApiRoute:async()=>{calls.push('route');return json({ok:true});},
+  }));
+  const response=await runtime.fetch(new Request('http://localhost/api/me'),{},{});
+  assert.equal(response.status,200);assert.deepEqual(calls,['preauth','auth','route']);
+});
+
+test('public endpoints and webhook keep their routing without Telegram credentials',async()=>{
+  const runtime=createWorkerBootstrapRuntime(deps({
+    publicStatusRouter:{handle:async req=>req.url.endsWith('/health/ready')?json({ok:true}):null},
+    enforceDistributedPreAuthRateLimit:async()=>{throw Error('must not gate public routes');},
+    handleTelegramWebhook:async()=>json({ok:true}),
+  }));
+  assert.equal((await runtime.fetch(new Request('https://example.test/health/ready'),{},{})).status,200);
+  assert.equal((await runtime.fetch(new Request('https://example.test/telegram/webhook',{method:'POST'}),{},{})).status,200);
+});
+
+
+test('real Telegram signature validation still gates protected routes after pre-auth',async()=>{
+  const {createUserAuthRuntime}=await import('../src/auth-user.js');
+  const {validateTelegramInitData}=await import('../src/crypto-utils.js');
+  const {createHmac}=await import('node:crypto');
+  const botToken='test-only-signing-token',calls=[];
+  const params=new URLSearchParams({auth_date:String(Math.floor(Date.now()/1000)),user:JSON.stringify({id:123})});
+  const check=[...params.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>`${k}=${v}`).join('\n');
+  const secret=createHmac('sha256','WebAppData').update(botToken).digest();
+  params.set('hash',createHmac('sha256',secret).update(check).digest('hex'));
+  const auth=createUserAuthRuntime({memory:{users:new Map()},validateTelegramInitData,hasSupabase:()=>false,
+    bumpTelemetry:()=>{},recordOpsEvent:async()=>{},
+  });
+  const runtime=createWorkerBootstrapRuntime(deps({config:()=>({botToken,devMode:false}),getRequestUser:auth.getRequestUser,
+    enforceDistributedPreAuthRateLimit:async()=>{calls.push('preauth');return null;},
+    dispatchApiRoute:async()=>{calls.push('route');return json({ok:true});},
+  }));
+  const valid=params.toString();
+  for(const [initData,expected] of [[valid,200],[valid.replace('user=','user=x'),401]]){
+    calls.length=0;
+    const response=await runtime.fetch(new Request('https://example.test/api/me',{headers:{'x-telegram-init-data':initData}}),{},{});
+    assert.equal(response.status,expected);assert.deepEqual(calls,expected===200?['preauth','route']:['preauth']);
+  }
 });

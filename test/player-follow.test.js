@@ -231,7 +231,10 @@ test('Favorite Players API is authenticated before routing and canonicalizes met
   const authIndex = bootstrap.indexOf('const user = await getRequestUser(request, cfg);');
   const dispatchIndex = bootstrap.indexOf('dispatchApiRoute(request,url,cfg,user,API_ROUTE_DEPS)');
   assert.ok(authIndex >= 0 && dispatchIndex > authIndex);
-  assert.match(bootstrap.slice(authIndex, dispatchIndex), /if \(!user\) return json\([^\n]+401\)/);
+  assert.match(bootstrap.slice(authIndex, dispatchIndex), /if \(!user\) return rejectInvalidAuth\(request,cfg,url\)/);
+  const rejectStart=bootstrap.indexOf('async function rejectInvalidAuth');
+  const rejectEnd=bootstrap.indexOf('async function safePhase5Summary',rejectStart);
+  assert.match(bootstrap.slice(rejectStart,rejectEnd), /return json\([^\n]+401\)/);
 
   assert.match(router, /pathname === '\/api\/favorite-players'/);
   assert.match(userDataApi, /resolveFavoritePlayerIdentity/);

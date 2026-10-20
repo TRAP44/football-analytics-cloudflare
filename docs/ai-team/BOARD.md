@@ -19,7 +19,7 @@
 
 ## В работе
 
-- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — [#987](https://github.com/TRAP44/football-analytics-cloudflare/pull/987), `codex/supabase-read-recovery`, продолжение #976. #986 опубликован и actual39454368499success, но fresh39467436028/39465965351 подтвердили LIVEfailed из-за GETmatch_reminders7s. Исправляется исчерпание общего readbudget первой попыткой: Node-only bounded fallbackSELECT, max2attempts/исходные7s/одинfallbackнаclient; записи не повторяются.
+- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — `codex/missing-auth-fast-reject`, продолжение #976. #987 выпущен; два реальных fallback SELECT восстановлены, но claim RPC снова потерял ответ и оставил overlap. Текущая задача: отклонять пустую Telegram-авторизацию до лишнего distributed RPC, сохранив edge/shape/local burst и полный путь проверки непустых credentials.
 
 
 
@@ -68,7 +68,8 @@
 
 ## На ревью
 
-- [ ] Восстановление зависших SELECT внутри исходного бюджета — **Codex** — [#987](https://github.com/TRAP44/football-analytics-cloudflare/pull/987), `codex/supabase-read-recovery`. Только Nodecron, быстрыеGET1call, delayedfallbackпосле2s, максимум2attemptsсучётомretry и одинactivefallbackнаclient. Originalживётдоvalidresult/deadline, abortloser; POST/PATCH/RPC неизменны. Node22full4496/release708,independent78testsбезблокеров,nativeHTTP~2srecovery. ОжидаютсяCI/выпуск/реальныеfallbackwins.
+- [ ] Отклонять пустую Telegram-авторизацию до лишнего Supabase RPC — **Codex** — `codex/missing-auth-fast-reject`. Нормальный 401 без DB I/O, прежние edge/shape/local burst и devMode; непустые credentials проходят полный distributed/auth/account/admin путь. Node22full4503/release708; independent155 tests + native Worker security checks без блокеров.
+
 
 
 
@@ -163,6 +164,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Восстановление зависших SELECT внутри исходного бюджета — **Codex** — [#987](https://github.com/TRAP44/football-analytics-cloudflare/pull/987). Выпущен ea7e6b16, Deploy39500881094/Monitor39501314502success, 25 HTTP/rendered UI checks. Actual39500937683: remindersOK/одинLIVEOK, slowFallbacks4/backupWins2/originalWins2/failedAfterFallback0. Run остаётся failed: последующий claim RPC7s, затем overlap; не считать RPC-проблему исправленной. Первый deploy39500401378 откатился после неуспешного missing-auth smoke; повтор прошёл без ослабления проверок.
 
 - [x] Убрать восемь пустых PATCH очистки заявок уведомлений — **Codex** — [#986](https://github.com/TRAP44/football-analytics-cloudflare/pull/986), `codex/reminder-stale-preflight`. Один ограниченный existenceGET, при кандидате все старые conditionalwrites. No retry/dedup/lease изменения; sourceпроверка и independent review без блокеров. Выпущен c573fc9f: Deploy39453238278/Monitor39453959538success, actual39454368499 remindersOK+3LIVEOK. Rootтаймауты остаются открыты.
 

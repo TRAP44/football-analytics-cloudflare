@@ -484,7 +484,7 @@ test('worker HTTP catch boundary survives hostile thrown error metadata',async()
   let response;
   try {
     response=await worker.fetch(
-      new Request('https://example.test/api/test'),
+      new Request('https://example.test/api/test',{headers:{'x-telegram-init-data':'auth-fixture'}}),
       {},
       {},
     );

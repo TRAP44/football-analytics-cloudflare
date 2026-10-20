@@ -18,8 +18,8 @@ function request(path,{method='GET',ip='198.51.100.70'}={}) {
   return new Request('https://example.com'+path,{
     method,
     headers:ip
-      ? {'cf-connecting-ip':ip,'content-type':'application/json'}
-      : {'content-type':'application/json'},
+      ? {'cf-connecting-ip':ip,'content-type':'application/json','x-telegram-init-data':'auth-fixture'}
+      : {'content-type':'application/json','x-telegram-init-data':'auth-fixture'},
     body:['POST','PUT','PATCH'].includes(method) ? '{}' : undefined,
   });
 }
