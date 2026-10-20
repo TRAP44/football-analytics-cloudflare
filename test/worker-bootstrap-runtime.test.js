@@ -265,3 +265,51 @@ test('scheduled worker rejects control-plane corruption before side effects',asy
   assert.equal(reconciles,0);
   assert.equal(handled,0);
 });
+
+test('only Node pre-work controls timeout can recover; manual lockdown and corrupt controls stay stopped',async()=>{
+  const {failClosedRuntimeControls}=await import('../src/runtime-lockdown.js');
+  let handled=0;
+  const base={source:'fail_closed',failClosed:true,transientReadTimeout:true,value:failClosedRuntimeControls({},'runtime_controls_unavailable')};
+  const cases=[
+    {state:base,node:true,retry:true},
+    {state:base,node:false,retry:false},
+    {state:{...base,transientReadTimeout:false},node:true,retry:false},
+    {state:{...base,source:'supabase'},node:true,retry:false},
+    {state:{...base,value:failClosedRuntimeControls({},'runtime_controls_invalid')},node:true,retry:false},
+    {state:{...base,value:failClosedRuntimeControls({},'runtime_controls_missing')},node:true,retry:false},
+    {state:{...base,failClosed:false},node:true,retry:false},
+  ];
+  for(const item of cases){
+    const runtime=createWorkerBootstrapRuntime(deps({
+      config:()=>({cronRunner:item.node?'github-actions':'',backgroundJobsExecutor:'github'}),
+      isSecurityLockdownControls:()=>true,
+      loadRuntimeControls:async(_cfg,options)=>{assert.equal(options.force,true);return item.state;},
+      handleScheduled:()=>{handled++;},
+    }));
+    const result=await runtime.scheduled({scheduledTime:1791302400000},{},{});
+    assert.deepEqual(result,item.retry?[{task:'scheduled_execution',status:'skipped',reason:'runtime_controls_read_timeout'}]:undefined);
+  }
+  assert.equal(handled,0);
+});
+
+test('runner recovery forces fresh controls before actual scheduled work and never reuses fail-closed state',async()=>{
+  const {failClosedRuntimeControls,isSecurityLockdownControls}=await import('../src/runtime-lockdown.js');
+  const {runCron,recoverControlRead}=await import('../scripts/cron-runner.js');
+  const valid=await deps().loadRuntimeControls();
+  let reads=0,handled=0,at=Date.parse('2026-10-20T09:30:10Z');
+  const runtime=createWorkerBootstrapRuntime(deps({
+    config:()=>({cronRunner:'github-actions',backgroundJobsExecutor:'github'}),isSecurityLockdownControls,
+    loadRuntimeControls:async(_cfg,options)=>{
+      assert.equal(options.force,true);reads++;
+      return reads===1?{source:'fail_closed',failClosed:true,transientReadTimeout:true,value:failClosedRuntimeControls({},'runtime_controls_unavailable')}:valid;
+    },
+    handleScheduled:()=>{handled++;return [{task:'smart_notifications',status:'ok'}];},
+  }));
+  const initial=await runCron({worker:runtime,env:{},nowMs:at});
+  assert.equal(initial.failed,true);assert.equal(handled,0);
+  const recovered=await recoverControlRead({initial,now:()=>at,wait:async ms=>{at+=ms;},endMs:initial.scheduledTime+300000,
+    run:nowMs=>runCron({worker:runtime,env:{},nowMs})});
+  assert.equal(recovered.length,1);assert.equal(recovered[0].failed,false);
+  assert.equal(reads,2);assert.equal(handled,1);assert.equal(initial.failed,true,'original failure stays visible');
+  assert.equal(recovered[0].scheduledTime,initial.scheduledTime,'only pre-claim timeout retries the same main slot');
+});

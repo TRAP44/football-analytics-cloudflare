@@ -601,3 +601,21 @@ test('forced administrative refresh starts a new read after the old flight and c
   assert.equal(memory.runtimeControls.value.analysisEnabled,false);
   assert.equal(reads,3);
 });
+
+test('only a real controls read deadline marks fail-closed state recoverable; fresh success clears it',async()=>{
+  for(const code of ['UPSTREAM_TIMEOUT','HTTP_401','HTTP_503','']){
+    let failed=true;
+    const {api}=runtime({hasSupabase:()=>true,supaSelectOne:async()=>{
+      if(failed)throw Object.assign(Error('read failed'),{code});
+      return {id:'global',maintenance_mode:false,analysis_enabled:true,search_enabled:true,live_enabled:true,reminders_enabled:true,expanded_data_enabled:true,auto_settlement_recovery_enabled:false,revision:1};
+    }});
+    const first=await api.loadRuntimeControls({},{force:true});
+    assert.equal(first.transientReadTimeout,code==='UPSTREAM_TIMEOUT');
+    assert.equal(first.value.controlPlaneFailClosed,true);assert.equal(first.value.analysisEnabled,false);
+    failed=false;
+    const next=await api.loadRuntimeControls({},{force:true});
+    assert.equal(next.source,'supabase');assert.equal(next.transientReadTimeout,undefined);
+  }
+  const missing=await runtime({hasSupabase:()=>true}).api.loadRuntimeControls({},{force:true});
+  assert.equal(missing.transientReadTimeout,false);
+});

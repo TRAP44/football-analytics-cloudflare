@@ -158,7 +158,7 @@ export function redactor(env = {}) {
 // Пропуск всего запуска из-за недоступной блокировки — это сбой, а не обычное
 // «предыдущий запуск ещё идёт» (overlap/duplicate): иначе фоновые задачи
 // молча перестанут работать при зелёном Actions.
-const FAILED_SKIP_REASONS = new Set(['lease_unavailable', 'invalid_lease_claim', 'lease_not_claimed', 'lease_renewal_failed', 'renew_not_configured', 'heartbeat_timer_failed', 'execution_lease_heartbeat_lost', 'execution_lease_completion_failed']);
+const FAILED_SKIP_REASONS = new Set(['runtime_controls_read_timeout', 'lease_unavailable', 'invalid_lease_claim', 'lease_not_claimed', 'lease_renewal_failed', 'renew_not_configured', 'heartbeat_timer_failed', 'execution_lease_heartbeat_lost', 'execution_lease_completion_failed']);
 
 // Итог запуска: по каждой задаче — статус; провал — если упала хоть одна задача
 // или весь запуск.
@@ -223,6 +223,35 @@ export async function runCron({ worker, env, nowMs = Date.now(), timeoutMs = RUN
   } finally {
     clearTimeout(timer);
   }
+}
+
+// Retry only the classified controls GET timeout before any lease/business work.
+// The original failed result remains failed; recovery never hides an outage.
+export async function recoverControlRead({initial,run,now=Date.now,wait=ms=>new Promise(resolve=>setTimeout(resolve,ms)),endMs}={}){
+  const results=[];
+  if(typeof run!=='function'||!Number.isFinite(endMs))return results;
+  let current=initial;
+  for(let count=0;count<4;count++){
+    if(current?.failed!==true||current.tasks?.length!==1
+        ||current.tasks[0]?.task!=='scheduled_execution'||current.tasks[0]?.status!=='skipped'
+        ||current.tasks[0]?.reason!=='runtime_controls_read_timeout')break;
+    const next=(Math.floor(now()/60000)+1)*60000;
+    if(next+30000>=endMs)break;
+    await wait(Math.max(0,next-now()));
+    const at=Math.max(next,now());
+    if(at+30000>=endMs)break;
+    current=await run(at);results.push(current);
+  }
+  return results;
+}
+
+export function canStartLiveWindow(result){
+  const tasks=Array.isArray(result?.tasks)?result.tasks:[];
+  const smart=tasks.find(row=>row?.task==='smart_notifications');
+  if(!smart)return false;
+  const leaseRows=tasks.filter(row=>row?.task==='scheduled_execution');
+  if(leaseRows.some(row=>row.status!=='ok'||row.reason!=='lease_completed'))return false;
+  return result.failed===false||(result.failed===true&&smart.status==='ok'&&leaseRows.length>0);
 }
 
 // Reuse this already-started runner; do not dispatch a full workflow per minute.
@@ -316,7 +345,17 @@ async function main() {
     console.log(redact(`  ${row.task || '—'}: ${row.status}${row.reason ? ` (${row.reason.slice(0, 200)})` : ''}`));
     if(row.recovery) console.log('settlement_recovery: '+JSON.stringify(row.recovery));
   }
-  if(!result.failed && result.tasks.some(row=>row.task==='smart_notifications')){
+  const recovered=await recoverControlRead({initial:result,endMs:result.scheduledTime+SLOT_MS,
+    run:nowMs=>runCron({worker,env,nowMs,recoveryMode})});
+  for(const attempt of recovered){
+    console.log(`control-read-recovery: ${new Date(attempt.scheduledTime).toISOString()}`);
+    for(const row of attempt.tasks){
+      console.log(redact(`  ${row.task}: ${row.status}${row.reason?` (${row.reason.slice(0,200)})`:''}`));
+      if(row.recovery)console.log('settlement_recovery: '+JSON.stringify(row.recovery));
+    }
+  }
+  const effective=recovered.at(-1)||result;
+  if(canStartLiveWindow(effective)){
     const ticks=await runLiveWindow({endMs:result.scheduledTime+SLOT_MS,
       enabled:String(process.env.LIVE_NOTIFICATIONS_FAST_ENABLED||'true').trim().toLowerCase()==='true',
       runTick:nowMs=>runCron({worker,env,nowMs,liveOnly:true})});
@@ -329,7 +368,7 @@ async function main() {
   // Частичный сбой задачи (например, часть доставок в Telegram не прошла —
   // пользователь заблокировал бота) — предупреждение в Actions, а не красный
   // запуск: иначе каждый заблокировавший бота делал бы все запуски красными.
-  for (const line of degradedWarnings(result.tasks)) console.log(redact(line));
+  for (const line of degradedWarnings([...result.tasks,...recovered.flatMap(attempt=>attempt.tasks)])) console.log(redact(line));
   // Ни одной задачи — обработчик остановился раньше (нет связи с Supabase,
   // защитный режим или пауза фоновых задач). Это видно как провал запуска.
   if (!result.tasks.length) console.log('  задачи не запускались (проверь ключи Supabase и runtime controls)');

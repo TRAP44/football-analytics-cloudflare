@@ -19,7 +19,7 @@
 
 ## В работе
 
-- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — [#983](https://github.com/TRAP44/football-analytics-cloudflare/pull/983), `codex/supabase-reconciliation-cancellation`, продолжение #976. Диагностика #982 слита; #983: отмена owner reads, bounded7s claim/readback и ограничение REST фона 3+1 lease. Результат естественного production запуска ещё не подтверждён.
+- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — [#983](https://github.com/TRAP44/football-analytics-cloudflare/pull/983), `codex/background-control-read-recovery`, продолжение #976. #983 опубликован; actual39401186548 подтвердил ранний controls timeout,39401808668 — timeline lookup timeout, подавивший LIVE. Готовится точечное восстановление без повтора неизвестных записей.
 
 
 
@@ -68,7 +68,7 @@
 
 ## На ревью
 
-- [ ] Устойчивость фоновых запросов Supabase: отмена GET, резерв lease и ограничение параллелизма — **Codex** — [#983](https://github.com/TRAP44/football-analytics-cloudflare/pull/983), `codex/supabase-reconciliation-cancellation`. Физическая задержка источника после отправки остаётся под наблюдением; неоднозначный claim не повторяется.
+- [ ] Восстановление фона после таймаута настроек и продолжение LIVE после безопасно завершённого основного цикла — **Codex** — `codex/background-control-read-recovery`, продолжение #976/#983; PR готовится, root Supabase timeout не объявлен устранённым.
 
 
 
@@ -160,6 +160,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Устойчивость REST фона: отмена GET, резерв lease, ограничение параллелизма — **Codex** — [#983](https://github.com/TRAP44/football-analytics-cloudflare/pull/983), merge06a2de6d, deploy39400145889/monitor39400501551success. Последующие realruns всё ещё содержат Supabase timeouts; общая задача продолжается.
 
 - [x] Измерение этапов существующих фоновых запросов Supabase без дополнительных обращений — **Codex** — [#982](https://github.com/TRAP44/football-analytics-cloudflare/pull/982), `codex/supabase-transport-diagnosis`. Первичный timeout этим шагом не устранён.
 

@@ -610,3 +610,28 @@ test('manual recovery profiles share cron-global ownership and run no notificati
     assert.equal(args[0].manual,true);assert.equal(args[0].preview,mode==='preview');assert.equal(args[0].canContinue(),true);
   }
 });
+
+test('a failed timeline does not suppress fresh LIVE work after confirmed durable main completion',async()=>{
+  const {summarizeRun,canStartLiveWindow}=await import('../scripts/cron-runner.js');
+  const leases=inMemoryLeaseBackend();let main=0,live=0;
+  const h=runtime({leases,processInPlayTimeline:async()=>({ok:false,reason:'predictions_lookup_failed'}),
+    processSmartNotifications:async(_cfg,opts)=>{if(opts?.liveOnly)live++;else main++;return {ok:true};}});
+  const cfg={cronRunner:'github-actions'},at=Date.parse('2026-10-20T09:35:00Z');
+  const rows=await h.api.executeScheduledRun({scheduledTime:at},cfg);
+  const result=summarizeRun([{status:'fulfilled',value:rows}]);
+  assert.equal(result.failed,true);assert.equal(canStartLiveWindow(result),true);
+  assert.equal(leases.activeByGroup.size,0);
+  await h.api.executeScheduledRun({scheduledTime:at+60000,liveNotificationsOnly:true},cfg);
+  assert.equal(main,1);assert.equal(live,1);
+  assert.equal(leases.rows.get('cron-live:2026-10-20T09:36:00.000Z').status,'done');
+});
+
+test('unknown completion cannot emit a positive lease marker or allow subsequent LIVE',async()=>{
+  const {summarizeRun,canStartLiveWindow}=await import('../scripts/cron-runner.js');
+  for(const completion of [false,'true']){
+    const h=runtime({leases:inMemoryLeaseBackend(),completeScheduledJob:async()=>completion});
+    const rows=await h.api.executeScheduledRun({scheduledTime:Date.parse('2026-10-20T09:35:00Z')},{cronRunner:'github-actions'});
+    assert.equal(rows.some(row=>row.task==='scheduled_execution'&&row.reason==='lease_completed'),false);
+    assert.equal(canStartLiveWindow(summarizeRun([{status:'fulfilled',value:rows}])),false);
+  }
+});

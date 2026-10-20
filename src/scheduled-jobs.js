@@ -680,6 +680,12 @@ export function createScheduledJobsRuntime({
             message:'Scheduled work completed but its distributed run marker could not be sealed.',
             meta:{task:'scheduled_execution',disposition:'degraded'},
           });
+        } else if (cfg?.cronRunner==='github-actions') {
+          // Positive proof for the Node runner: business-task failure must not
+          // suppress later LIVE slots after the durable lease is safely closed.
+          results.push(normalizeScheduledTaskResult('scheduled_execution',{
+            ok:true,reason:'lease_completed',
+          }));
         }
       }
       return results;
