@@ -347,6 +347,7 @@ export function createRuntimeControlsRuntime({
         source:'fail_closed',
         schemaReady:false,
         failClosed:true,
+        transientReadTimeout:reason==='runtime_controls_unavailable' && error?.code==='UPSTREAM_TIMEOUT',
         ...(error ? {error:redactOpsString(error?.message || error,160)} : {}),
       };
       return {...memory.runtimeControls,cached:false};

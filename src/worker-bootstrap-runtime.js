@@ -828,6 +828,14 @@ export function createWorkerBootstrapRuntime(deps = {}) {
             runtimeSource:safeText(safeRead(runtimeState,'source'),80),
           },
         });
+        // Only this observed read timeout happened before any lease/business I/O.
+        // A later Node attempt must force-read controls again; never use old controls.
+        if (cfg.cronRunner==='github-actions' && runtimeState.source==='fail_closed'
+            && runtimeState.failClosed===true && runtimeState.transientReadTimeout===true
+            && scheduledRuntimeValue.controlPlaneFailClosed===true
+            && scheduledRuntimeValue.controlPlaneReason==='runtime_controls_unavailable') {
+          return [{task:'scheduled_execution',status:'skipped',reason:'runtime_controls_read_timeout'}];
+        }
         return undefined;
       }
   
