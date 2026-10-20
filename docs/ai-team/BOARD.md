@@ -19,7 +19,7 @@
 
 ## В работе
 
-- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — `codex/supabase-server-evidence`, продолжение #976. #984 опубликован: actual39438347309 выполнил все3 оставшихся LIVE после отказа timeline; физические REST timeout сохраняются. Новые scoped права проверены39446936007: project200 ACTIVE_HEALTHY. Следующий шаг — ограниченная серверная диагностика через защищённый main-only workflow.
+- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — [#985](https://github.com/TRAP44/football-analytics-cloudflare/pull/985), `codex/supabase-server-evidence`, продолжение #976. #984 опубликован: actual39438347309 выполнил все3 оставшихся LIVE после отказа timeline; физические REST timeout сохраняются. Новые scoped права проверены39446936007: project200 ACTIVE_HEALTHY. Следующий шаг — ограниченная серверная диагностика через защищённый main-only workflow.
 
 
 
@@ -68,7 +68,7 @@
 
 ## На ревью
 
-- [ ] Supabase: получить серверные агрегаты SQL, журналов и ресурсов без пользовательских данных — **Codex** — `codex/supabase-server-evidence`. Только фиксированные read-only запросы, main-only protected workflow; billing не требуется. Общая задача таймаутов остаётся открытой.
+- [ ] Supabase: получить серверные агрегаты SQL, журналов и ресурсов без пользовательских данных — **Codex** — [#985](https://github.com/TRAP44/football-analytics-cloudflare/pull/985), `codex/supabase-server-evidence`. Только фиксированные read-only запросы, main-only protected workflow; billing не требуется. Общая задача таймаутов остаётся открытой.
 
 
 
