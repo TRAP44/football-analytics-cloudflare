@@ -19,7 +19,7 @@
 
 ## В работе
 
-- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — [#986](https://github.com/TRAP44/football-analytics-cloudflare/pull/986), `codex/reminder-stale-preflight`, продолжение #976. Actual read-only audits39450765884/39451000433:16/60connections, RAM65–66%, SQLmeans значительно короче RESTtimeout, CPUunknown. Единственная причина не доказана. Следующее исправление сокращает idlecleanup8PATCH→1GET без повтора записей.
+- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — `codex/supabase-read-recovery`, продолжение #976. #986 опубликован и actual39454368499success, но fresh39467436028/39465965351 подтвердили LIVEfailed из-за GETmatch_reminders7s. Исправляется исчерпание общего readbudget первой попыткой: Node-only bounded fallbackSELECT, max2attempts/исходные7s/одинfallbackнаclient; записи не повторяются.
 
 
 
@@ -68,7 +68,8 @@
 
 ## На ревью
 
-- [ ] Убрать восемь пустых PATCH очистки заявок уведомлений — **Codex** — [#986](https://github.com/TRAP44/football-analytics-cloudflare/pull/986), `codex/reminder-stale-preflight`. Один ограниченный existenceGET, при кандидате все старые conditionalwrites. No retry/dedup/lease изменения; sourceпроверка и independent review без блокеров.
+- [ ] Восстановление зависших SELECT внутри исходного бюджета — **Codex** — `codex/supabase-read-recovery`. Только Nodecron, быстрыеGET1call, delayedfallbackпосле2s, максимум2attemptsсучётомretry и одинactivefallbackнаclient. Originalживётдоvalidresult/deadline, abortloser; POST/PATCH/RPC неизменны. Node22full4496/release708,independent78testsбезблокеров,nativeHTTP~2srecovery. ОжидаютсяCI/выпуск/реальныеfallbackwins.
+
 
 
 
@@ -162,6 +163,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Убрать восемь пустых PATCH очистки заявок уведомлений — **Codex** — [#986](https://github.com/TRAP44/football-analytics-cloudflare/pull/986), `codex/reminder-stale-preflight`. Один ограниченный existenceGET, при кандидате все старые conditionalwrites. No retry/dedup/lease изменения; sourceпроверка и independent review без блокеров. Выпущен c573fc9f: Deploy39453238278/Monitor39453959538success, actual39454368499 remindersOK+3LIVEOK. Rootтаймауты остаются открыты.
 
 - [x] Supabase: получить серверные агрегаты SQL, журналов и ресурсов без пользовательских данных — **Codex** — [#985](https://github.com/TRAP44/football-analytics-cloudflare/pull/985), `codex/supabase-server-evidence`. Только фиксированные read-only запросы, main-only protected workflow; billing не требуется. Общая задача таймаутов остаётся открытой. #985 merged ed9b8290; оба actual diagnostics runs success; private/raw data не возвращались. Диагностика завершена, root timeout остаётся открытым.
 
