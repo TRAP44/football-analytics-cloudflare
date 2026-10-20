@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-20 — Codex — Недельные агрегаты реального использования
-PR: ветка `codex/weekly-product-observations`, этап5 #976.
+PR: [#981](https://github.com/TRAP44/football-analytics-cloudflare/pull/981), ветка `codex/weekly-product-observations`, этап5 #976.
 Сделано: scripts/weekly-product-report.js — bounded read-only GET проекции growth_events (telegram_id/event_name/created_at, allowlist8продуктовых событий, текущие7д+предыдущие7д) и users(created_at, текущие7д). Максимум10страниц×500 на таблицу, 500KBна ответ, 10sна запрос,45sобщий бюджет, redirects запрещены. IDs только в памяти для dedup; артефакты/summary — фиксированные агрегатные поля, без ID/имён/вопросов/metadata. Ошибки не раскрывают upstreamdetails.
 Отчёт: регистрации отдельно от активности; уникальные люди/события, повторные входы в разные дни МСК, overlapдвух rollingнедель, независимые match_open/quick_ai/full_ai после первого записанного входа, дниМСК. Прямые ссылки не обязаны проходить поиск; это не принудительная линейная воронка. full_ai включаетcacheddelivery, не доказательство нового AIвызова/чтения/оплаты. Owner/testактивность не отфильтрована. Это не D1/D7retention от регистрации. При truncated/invalideventratesnull, счётчики нижниеграницы; отсутствие предыдущего знаменателяне0%.
 Выпуск: optional include_product_report=false в существующем manual/main-only ObserveLiveUsage, envbackground-jobs и существующиеSupabasesecrets, безновыхсекретов/провайдеров/сообщений/БДзаписей. Послеmerge запустить include_product_report=true и скачатьsanitizedartifact; без фактического запуска этапне объявлять законченным. Worker/publicне менялись, runtimeSHAостаётсяbd3c502f еслинетдругихизменений.
