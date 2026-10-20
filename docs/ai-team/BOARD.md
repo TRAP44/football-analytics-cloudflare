@@ -19,7 +19,7 @@
 
 ## В работе
 
-- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — `codex/supabase-read-recovery`, продолжение #976. #986 опубликован и actual39454368499success, но fresh39467436028/39465965351 подтвердили LIVEfailed из-за GETmatch_reminders7s. Исправляется исчерпание общего readbudget первой попыткой: Node-only bounded fallbackSELECT, max2attempts/исходные7s/одинfallbackнаclient; записи не повторяются.
+- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — [#987](https://github.com/TRAP44/football-analytics-cloudflare/pull/987), `codex/supabase-read-recovery`, продолжение #976. #986 опубликован и actual39454368499success, но fresh39467436028/39465965351 подтвердили LIVEfailed из-за GETmatch_reminders7s. Исправляется исчерпание общего readbudget первой попыткой: Node-only bounded fallbackSELECT, max2attempts/исходные7s/одинfallbackнаclient; записи не повторяются.
 
 
 
@@ -68,7 +68,7 @@
 
 ## На ревью
 
-- [ ] Восстановление зависших SELECT внутри исходного бюджета — **Codex** — `codex/supabase-read-recovery`. Только Nodecron, быстрыеGET1call, delayedfallbackпосле2s, максимум2attemptsсучётомretry и одинactivefallbackнаclient. Originalживётдоvalidresult/deadline, abortloser; POST/PATCH/RPC неизменны. Node22full4496/release708,independent78testsбезблокеров,nativeHTTP~2srecovery. ОжидаютсяCI/выпуск/реальныеfallbackwins.
+- [ ] Восстановление зависших SELECT внутри исходного бюджета — **Codex** — [#987](https://github.com/TRAP44/football-analytics-cloudflare/pull/987), `codex/supabase-read-recovery`. Только Nodecron, быстрыеGET1call, delayedfallbackпосле2s, максимум2attemptsсучётомretry и одинactivefallbackнаclient. Originalживётдоvalidresult/deadline, abortloser; POST/PATCH/RPC неизменны. Node22full4496/release708,independent78testsбезблокеров,nativeHTTP~2srecovery. ОжидаютсяCI/выпуск/реальныеfallbackwins.
 
 
 
