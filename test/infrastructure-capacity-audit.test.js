@@ -69,7 +69,7 @@ test('empty subscription or compute lists never become an inferred Free plan',as
   assert.equal(report.productionCapacityConfirmed,false);
 });
 
-test('audit workflow uses only main and existing production secret bindings; never deploys or runs SQL',()=>{
+test('audit workflow uses only main and existing production secret bindings; never deploys or accepts SQL input',()=>{
   const file='.github/workflows/audit-infrastructure-capacity.yml',source=fs.readFileSync(file,'utf8');
   assert.deepEqual(auditWorkflow(file,source),[]);
   assert.match(source,/if: github.ref == 'refs\/heads\/main'/);
@@ -78,5 +78,6 @@ test('audit workflow uses only main and existing production secret bindings; nev
   assert.doesNotMatch(source,/pull_request:|workflow_run:|schedule:|wrangler deploy|psql|migration up|npm ci/);
   assert.match(source,/environment: production/);
   assert.match(source,/SUPABASE_PROJECT_REF: \$\{\{ vars.SUPABASE_PROJECT_REF \}\}/);
+  assert.match(source,/inspect_database:\n[\s\S]*?type: boolean\n\s+default: false/);
   assert.ok(auditWorkflow(file,source.replace('    environment: production\n','')).length>0);
 });
