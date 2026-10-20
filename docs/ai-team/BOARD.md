@@ -19,7 +19,7 @@
 
 ## В работе
 
-- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — [#983](https://github.com/TRAP44/football-analytics-cloudflare/pull/983), `codex/background-control-read-recovery`, продолжение #976. #983 опубликован; actual39401186548 подтвердил ранний controls timeout,39401808668 — timeline lookup timeout, подавивший LIVE. Готовится точечное восстановление без повтора неизвестных записей.
+- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — [#984](https://github.com/TRAP44/football-analytics-cloudflare/pull/984), `codex/background-control-read-recovery`, продолжение #976. #983 опубликован; actual39401186548 подтвердил ранний controls timeout,39401808668 — timeline lookup timeout, подавивший LIVE. Готовится точечное восстановление без повтора неизвестных записей.
 
 
 
@@ -68,7 +68,7 @@
 
 ## На ревью
 
-- [ ] Восстановление фона после таймаута настроек и продолжение LIVE после безопасно завершённого основного цикла — **Codex** — `codex/background-control-read-recovery`, продолжение #976/#983; PR готовится, root Supabase timeout не объявлен устранённым.
+- [ ] Восстановление фона после таймаута настроек и продолжение LIVE после безопасно завершённого основного цикла — **Codex** — [#984](https://github.com/TRAP44/football-analytics-cloudflare/pull/984), `codex/background-control-read-recovery`, продолжение #976/#983; root Supabase timeout не объявлен устранённым.
 
 
 

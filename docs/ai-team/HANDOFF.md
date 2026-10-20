@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-20 — Codex — Восстановление раннего чтения controls и независимость LIVE
-PR: ветка `codex/background-control-read-recovery`, продолжение #976/#983; PR готовится.
+PR: [#984](https://github.com/TRAP44/football-analytics-cloudflare/pull/984), ветка `codex/background-control-read-recovery`, продолжение #976/#983.
 Факты: #983 merged06a2de6d, PRQuality39399089812/CodeQL39399089992/Load39399089708 и MainQuality39399729136/CodeQL39399729024/Load39399729197success. Deploy39400145889/ExternalMonitor39400501551success; Worker version3deb838c-2c61-4ca0-92ee-7a0ce0f016ba, SHA06a2de6d на100%traffic, HTTP25/rendered smoke passed. BackgroundJobs39399970987/39400578697 толькоoverlap, не доказательство работы.
 Первопричина удалённой задержки не решена: actual39401186548(12:30МСК) early GET runtime_controls timeout7s/sent38ms/queuewait0 доlease, main сразу завершился. Actual39401808668(12:35МСК):78requests/76completed/2timeouts, peakRegular3/maxQueueWait690ms; notificationsOK, но GET model_predictions7s дал in_play_timelinefailed и выключил все следующие LIVE, хотя durablecomplete успешен. Не объявлять #983 устранением всех Supabasetimeouts.
 Изменения: только настоящий UPSTREAM_TIMEOUT чтения controls получает private transientReadTimeout. Node scheduled возвращает точный отказ до lease/business I/O, runner повторяет forced read только в следующие минуты того же5минслота, максимум4, запас30s; missing/invalid/manual lock/auth/unknownclaim/postwork не повторяются. После успешного main — штатные LIVE, исходный failed остаётся красным вActions. Ручныеpreview/apply не получают новых автоматических разрешений.
