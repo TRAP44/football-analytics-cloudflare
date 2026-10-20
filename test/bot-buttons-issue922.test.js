@@ -367,3 +367,34 @@ test('removed news and digest commands return the current menu without provider 
     assert.match(h.sent[0].payload.text,/Меню обновлено/);
   }
 });
+
+test('unknown commands give an actionable answer without searching or changing user data', async () => {
+  const p=processor({sendBotFootballSearch:async()=>assert.fail('unknown command searched')});
+  await p.run(request,{}, {message:{chat:{id:42,type:'private'},from:{id:7},text:'/unknown@MatchRadarAIBot'}});
+  assert.equal(p.sent.length,1);
+  assert.equal(p.sent[0].method,'sendMessage');
+  assert.match(p.sent[0].payload.text,/\/start/);
+  assert.match(p.sent[0].payload.text,/\/help/);
+});
+
+test('unrecognized and malformed old buttons explain recovery without sending chat spam or running actions', async () => {
+  for(const data of ['old:menu','match:menu:not-an-id','favorite:team:bad','']) {
+    const p=processor({sendBotFixtureMenu:async()=>assert.fail('invalid action'),toggleBotFavorite:async()=>assert.fail('invalid favorite')});
+    await p.run(request,{},callback(data));
+    assert.equal(p.sent.length,1);
+    assert.equal(p.sent[0].method,'answerCallbackQuery');
+    assert.equal(p.sent[0].payload.show_alert,true);
+    assert.match(p.sent[0].payload.text,/\/start/);
+    assert.ok(!p.sent[0].payload.text.includes(data) || !data);
+  }
+});
+
+test('unknown commands in groups, including commands addressed to another bot, stay silent', async () => {
+  for(const type of ['group','supergroup']) {
+    for(const text of ['/unknown','/unknown@OtherBot']) {
+      const p=processor({sendBotFootballSearch:async()=>assert.fail('group command searched')});
+      await p.run(request,{}, {message:{chat:{id:-100500,type},from:{id:7},text}});
+      assert.equal(p.sent.length,0);
+    }
+  }
+});

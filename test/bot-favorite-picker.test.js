@@ -99,3 +99,41 @@ test('picker callbacks add a club and «Готово» shows the chosen teams', 
   await p.run(request, {}, callback('fav:done'));
   assert.ok(p.sent.some(c => c.method === 'favoriteTeams'));
 });
+
+test('first-run picker is delivered before pending Telegram menu setup; update still retains setup', async () => {
+  let finishSetup;
+  let sawPicker;
+  const setup=new Promise(resolve=>{ finishSetup=resolve; });
+  const picked=new Promise(resolve=>{ sawPicker=resolve; });
+  const p=processor({configureFootballBot:()=>setup,sendFavoritePicker:async()=>sawPicker()});
+  let finished=false;
+  const update=p.run(request,{},message('/start')).then(()=>{ finished=true; });
+  try {
+    await Promise.race([picked,new Promise((_,reject)=>{ setTimeout(()=>reject(new Error('picker waited for setup')),100); })]);
+    assert.equal(finished,false,'setup remains owned by the update');
+  } finally {
+    finishSetup();
+    await update;
+  }
+});
+
+test('new fan can start, select a team, finish, open its match and ask for its verdict', async () => {
+  const {runtime,calls,added}=botRuntime();
+  const opened=[];
+  const p=processor({
+    getFavorites:async()=>added.map(team=>({team_id:team.id})),
+    sendFavoritePicker:runtime.sendFavoritePicker,
+    pickStartFavorite:runtime.pickStartFavorite,
+    sendBotFavoriteTeams:async(_request,_cfg,userId,chatId)=>opened.push(['teams',userId,chatId]),
+    sendBotFavoriteTeamMatches:async(_request,_cfg,userId,chatId,teamId)=>opened.push(['team',userId,chatId,teamId]),
+    sendBotFixtureMenu:async(_request,_cfg,userId,chatId,id)=>opened.push(['match',userId,chatId,id]),
+    sendBotFixtureSection:async(_request,_cfg,userId,chatId,id,section)=>opened.push([section,userId,chatId,id]),
+  });
+  const callback=data=>({callback_query:{id:'journey',data,from:{id:7},message:{message_id:100,chat:{id:42,type:'private'}}}});
+  await p.run(request,{},message('/start'));
+  assert.ok(calls[0].payload.reply_markup.inline_keyboard.flat().some(b=>b.callback_data==='fav:pick:541'));
+  for(const data of ['fav:pick:541','fav:done','favorite:team:541','match:menu:77','match:verdict:77']) await p.run(request,{},callback(data));
+  assert.equal(added[0].id,541);
+  assert.deepEqual(opened,[['teams',7,42],['team',7,42,541],['match',7,42,77],['verdict',7,42,77]]);
+  assert.equal(p.sent.filter(c=>c.method==='answerCallbackQuery').length,5);
+});
