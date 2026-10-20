@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {installSupabaseTransportTrace} from './supabase-transport-trace.js';
+import {createSupabaseAdmissionFetch} from './supabase-fetch-admission.js';
 
 export const CRON_RUNNER_SECRET_KEYS = Object.freeze([
   'SUPABASE_URL',
@@ -303,6 +304,8 @@ async function main() {
   }
   const { renderBotMatchCard } = await import('./bot-match-card-renderer.js');
   env.botMatchCardRenderer = renderBotMatchCard;
+  const admission=createSupabaseAdmissionFetch(globalThis.fetch,{origin:new URL(env.SUPABASE_URL).origin});
+  globalThis.fetch=admission.fetch;
   const trace = installFetchTrace();
   const transportTrace = installSupabaseTransportTrace();
   const { default: worker } = await import(pathToFileURL(path.join(root, 'src', 'worker.js')).href);
@@ -331,7 +334,7 @@ async function main() {
   // защитный режим или пауза фоновых задач). Это видно как провал запуска.
   if (!result.tasks.length) console.log('  задачи не запускались (проверь ключи Supabase и runtime controls)');
   // При сбое — последние запросы воркера (без значений и токенов), чтобы причина была видна в Actions.
-  if (result.failed || !result.tasks.length) {
+  if (result.failed || !result.tasks.length || transportTrace.stats.errors>0) {
     console.log('cron-runner: последние запросы воркера:');
     for (const line of trace.entries) console.log(redact(`  ${line}`));
     console.log('cron-runner: ошибки соединения Supabase:');
@@ -339,7 +342,8 @@ async function main() {
     console.log('cron-runner: этапы соединения Supabase:');
     for (const line of transportTrace.entries) console.log(redact(`  ${line}`));
   }
-  console.log('supabase-transport: '+JSON.stringify(transportTrace.stats));
+  console.log('supabase-admission: '+JSON.stringify(admission.stats));
+  console.log('supabase-transport: '+JSON.stringify({...transportTrace.stats,slow:transportTrace.slow}));
   transportTrace.restore();
   process.exit(result.failed || !result.tasks.length ? 1 : 0);
 }

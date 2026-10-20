@@ -323,7 +323,8 @@ test('Issue #330 invalid numeric transport settings fall back to normalized safe
 });
 
 test('normalized invalid policy shares the same key and execution semantics as its fallback',async(t)=>{
-  // Assert normalized policy, not scheduler time spent before transport admission.
+  // Policy normalization is independent of both wall and monotonic admission time.
+  t.mock.method(performance,'now',()=>0);
   t.mock.timers.enable({apis:['Date'],now:Date.parse('2026-10-19T12:00:00Z')});
   const {gateway,fetchCalls,counters}=createGateway();
 

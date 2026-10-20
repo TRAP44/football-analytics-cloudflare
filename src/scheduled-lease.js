@@ -3,6 +3,10 @@ const JOB_KEY_RE=/^[A-Za-z0-9._:@/-]{1,180}$/;
 const GROUP_KEY_RE=/^[A-Za-z0-9._:@/-]{1,120}$/;
 const LEASE_TOKEN_RE=/^[A-Za-z0-9._:-]{16,80}$/;
 const MAX_TIMESTAMP_MS=8.64e15;
+// Background claims/readback share the normal Supabase read ceiling.
+// A measured successful production claim took 2243 ms, close to the old2500 ms cutoff.
+const CLAIM_TIMEOUT_MS=7000;
+const OWNER_READ_TIMEOUT_MS=7000;
 
 function transientLeaseError(error) {
   return ['UPSTREAM_TIMEOUT','HTTP_408','HTTP_502','HTTP_503','HTTP_504','PGRST000','PGRST001','PGRST002','PGRST003','ECONNRESET','ETIMEDOUT','EAI_AGAIN'].includes(error?.code || error?.cause?.code)
@@ -361,8 +365,8 @@ export function createScheduledLeaseRuntime({
       if (transientLeaseError(error) && typeof readScheduledJob==='function') {
         try {
           const row=plainObject(await withRequestDeadline(
-            ()=>readScheduledJob(cfg,jobKey),
-            {budgetMs:1800,source:'Scheduled renewal reconciliation'},
+            ({signal,remaining})=>readScheduledJob(cfg,jobKey,{signal,timeoutMs:remaining()}),
+            {budgetMs:OWNER_READ_TIMEOUT_MS,source:'Scheduled renewal reconciliation'},
           ));
           const until=rpcTimestamp(row?.locked_until,null);
           if (row?.status==='running' && row.lease_token===token && row.group_key===groupKey
@@ -469,7 +473,7 @@ export function createScheduledLeaseRuntime({
         p_scheduled_at:scheduledAtIso,
         p_lease_seconds:safeLeaseSeconds,
         p_retention_seconds:safeRetentionSeconds,
-      },2500);
+      },CLAIM_TIMEOUT_MS);
       const normalized=normalizeClaim(raw,{
         jobKey:safeJobKey,
         groupKey:safeGroupKey,
@@ -511,8 +515,8 @@ export function createScheduledLeaseRuntime({
   async function reconcileCompletion(cfg,source) {
     if (typeof readScheduledJob!=='function') return null;
     const row=plainObject(await withRequestDeadline(
-      ()=>readScheduledJob(cfg,source.jobKey),
-      {budgetMs:1800,source:'Scheduled completion reconciliation'},
+      ({signal,remaining})=>readScheduledJob(cfg,source.jobKey,{signal,timeoutMs:remaining()}),
+      {budgetMs:OWNER_READ_TIMEOUT_MS,source:'Scheduled completion reconciliation'},
     ));
     if (!row || row.lease_token!==source.leaseToken || row.group_key!==source.groupKey) return null;
     if (row.status==='done') return 'done';
