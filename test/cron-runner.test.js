@@ -213,3 +213,13 @@ test('cron runner forwards the favorite scoreboard kill switch from GitHub varia
   const workflow=fs.readFileSync('.github/workflows/cron-runner.yml','utf8');
   assert.match(workflow,/FAVORITE_SCOREBOARD_ENABLED: \$\{\{ vars\.FAVORITE_SCOREBOARD_ENABLED \}\}/);
 });
+
+test('fetch failure trace contains only a fixed classification, never arbitrary error text or names',async()=>{
+ const original=globalThis.fetch;
+ for(const [error,kind] of [[Object.assign(new Error('private'),{code:'UPSTREAM_TIMEOUT',name:'private'}),'timeout'],[Object.assign(new TypeError('private'),{cause:{code:'ECONNRESET'}}),'network'],[new TypeError('private configuration'),'transport_or_configuration'],[Object.assign(new Error('private'),{name:'private-secret'}),'unknown']]){
+  globalThis.fetch=async()=>{throw error;};const trace=installFetchTrace();
+  try{await assert.rejects(fetch('https://x1.supabase.co/rest/v1/rpc/claim_scheduled_job'),error);assert.deepEqual(trace.entries,[`GET supabase /rest/v1/rpc/claim_scheduled_job → ошибка ${kind}`]);}
+  finally{trace.restore();}
+ }
+ globalThis.fetch=original;
+});
