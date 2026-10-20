@@ -1,6 +1,11 @@
 import {withRequestDeadline} from './request-deadline.js';
 import { createRpcAdmissionQueue } from './rpc-admission-queue.js';
 
+// Aggregate counters only: no keys, URLs, identifiers or payloads.
+const readRecoveryStats={slowFallbacks:0,slowFallbackWins:0,originalWins:0,failedAfterFallback:0,busySkips:0};
+export const supabaseReadRecoverySnapshot=()=>({...readRecoveryStats});
+const noteReadRecovery=key=>{readRecoveryStats[key]=Math.min(Number.MAX_SAFE_INTEGER,readRecoveryStats[key]+1);};
+
 export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs, bumpTelemetry = () => {}, now = () => performance.now() } = {}) {
   if (typeof fetchWithTimeout !== 'function') {
     throw new TypeError('createSupabaseClient requires fetchWithTimeout');
@@ -13,6 +18,7 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
   const sleep = typeof sleepMs === 'function'
     ? sleepMs
     : ms => new Promise(resolve => setTimeout(resolve, ms));
+  let activeReadFallbacks=0;
   const retryableReadStatuses = new Set([408, 503, 504]);
   const protectedHeaderNames = new Set([
     'apikey',
@@ -121,34 +127,92 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
         if(callerSignal?.aborted)throw callerSignal.reason || new DOMException('Aborted','AbortError');
       };
       return operation({
-        check:checkBoth,remaining,
+        check:checkBoth,remaining,signal:transportSignal,
         fetchResponse:async(url,init={})=>{
           checkBoth();
-          const response=await fetchWithTimeout(url,{...init,signal:transportSignal},remaining(),source);
-          checkBoth();return response;
+          const requestSignal=init.signal?AbortSignal.any([transportSignal,init.signal]):transportSignal;
+          requestSignal.throwIfAborted();
+          const response=await fetchWithTimeout(url,{...init,signal:requestSignal},remaining(),source);
+          try{checkBoth();requestSignal.throwIfAborted();}
+          catch(error){try{Promise.resolve(response.body?.cancel?.()).catch(()=>{});}catch{}throw error;}
+          return response;
         },
       });
     },{source,budgetMs:budget,now});
   }
 
   async function supaReadData(url,init,timeoutMs,source,cfg=null,callerSignal){
-    return withinDeadline(source,timeoutMs,async({fetchResponse,check,remaining})=>{
-      for(let attempt=0;attempt<2;attempt++){
-        let response;
-        try{response=await fetchResponse(url,init);}catch(error){
-          check();if(attempt===1)throw error;
-          if(remaining()<=180)throw error;
-          await sleep(180);check();continue;
+    return withinDeadline(source,timeoutMs,({fetchResponse,check,remaining,signal})=>new Promise((resolve,reject)=>{
+      // Only table SELECTs use this path. Both the normal retry and a delayed
+      // fallback share the same two attempts and original end-to-end deadline.
+      // Keep the original request alive: a merely slow healthy response can win.
+      let started=0,pending=0,settled=false,fallbackTimer,slowFallback=false;
+      const controllers=[],failures=[];
+      const cancelBody=response=>{try{Promise.resolve(response.body?.cancel?.()).catch(()=>{});}catch{}};
+      const finish=(result,error,index)=>{
+        if(settled)return;
+        try{check();}catch(deadline){error=deadline;}
+        settled=true;clearTimeout(fallbackTimer);signal.removeEventListener('abort',onAbort);
+        for(const controller of controllers)controller.abort(Object.assign(new Error('Supabase read superseded.'),{code:'SUPABASE_READ_SUPERSEDED'}));
+        if(slowFallback){
+          activeReadFallbacks--;
+          const key=error||!result?.response?.ok?'failedAfterFallback':index===1?'slowFallbackWins':'originalWins';
+          noteReadRecovery(key);
         }
-        const retryable=retryableReadStatuses.has(Number(response?.status || 0)) || isTransientSecretReadAuthResponse(response,cfg);
-        if(retryable && attempt===0 && remaining()>180){
-          try{Promise.resolve(response.body?.cancel?.()).catch(()=>{});}catch{}
-          await sleep(180);check();continue;
-        }
-        const body=response.ok ? await response.json() : await response.text().catch(()=>'');
-        check();return {response,body};
+        if(error)reject(error);else resolve(result);
+      };
+      const onAbort=()=>finish(null,signal.reason||new DOMException('Aborted','AbortError'));
+      function launch(){
+        if(settled)return;
+        try{check();}catch(error){finish(null,error);return;}
+        if(started>=2)return;
+        const index=started++,controller=new AbortController();controllers.push(controller);pending++;
+        const attempt=async()=>{
+          let response;
+          try{response=await fetchResponse(url,{...init,signal:controller.signal});}
+          catch(error){return {retry:true,error};}
+          check();
+          const retry=retryableReadStatuses.has(Number(response?.status||0))||isTransientSecretReadAuthResponse(response,cfg);
+          // Discard the first transient error body before retrying. A stalled
+          // error body must not consume the time reserved for the second read.
+          if(retry&&index===0&&(started===2||remaining()>180)){
+            cancelBody(response);return {retry:true,response,body:''};
+          }
+          const body=response.ok?await response.json():await response.text().catch(()=>'');
+          check();
+          if(response.ok&&!Array.isArray(body))throw new Error(`${source}: invalid response payload.`);
+          return {response,body,retry};
+        };
+        attempt().then(result=>{
+          pending--;if(settled)return;
+          try{check();}catch(error){finish(null,error);return;}
+          if(!result.retry){finish(result,null,index);return;}
+          failures[index]=result;
+          if(started===1){
+            clearTimeout(fallbackTimer);
+            if(remaining()<=180){finish(result,result.error,index);return;}
+            Promise.resolve().then(()=>sleep(180)).then(()=>{
+              if(settled)return;launch();
+            },error=>finish(null,error));
+          }else if(pending===0){
+            const last=failures[1]||result;finish(last,last.error,1);
+          }
+          // A failed fallback cannot discard the original while it can succeed.
+        },error=>{pending--;if(!settled)finish(null,error,index);});
       }
-    },callerSignal);
+      if(signal.aborted){onAbort();return;}
+      signal.addEventListener('abort',onAbort,{once:true});
+      launch();
+      // Measured failures are in the Node scheduler. HTTP Worker requests keep
+      // their existing sequential policy; one fallback per client caps pressure.
+      if(!settled&&plainObject(cfg)?.cronRunner==='github-actions'&&remaining()>2180){
+        fallbackTimer=setTimeout(()=>{
+          if(settled||started!==1||pending!==1||remaining()<=180)return;
+          if(activeReadFallbacks>=1){noteReadRecovery('busySkips');return;}
+          slowFallback=true;activeReadFallbacks++;noteReadRecovery('slowFallbacks');launch();
+        },2000);
+      }
+    }),callerSignal);
   }
 
   async function supaWriteFetch(url,init,timeoutMs,source,cfg=null,retryAuth=false){
