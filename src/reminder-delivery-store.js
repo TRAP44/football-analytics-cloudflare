@@ -259,6 +259,26 @@ export function createReminderDeliveryStore({
     if (current === null || current < 20*60_000) throw new Error('Reminder delivery clock is invalid.');
     const cutoff = new Date(current - 20 * 60_000).toISOString();
 
+    // Most cycles have no stale claims. One existence read avoids eight empty
+    // conditional writes. This is only a hint: all mutation guards below remain
+    // authoritative, including the fail-closed sending -> unknown transition.
+    const probe = new URL(`${origin}/rest/v1/match_reminders`);
+    probe.searchParams.set('enabled', 'eq.true');
+    probe.searchParams.set('or', `(${Object.values(REMINDER_DELIVERY_KINDS).map(({claimColumn}) => `${claimColumn}.lt.${cutoff}`).join(',')})`);
+    probe.searchParams.set('and', `(or(delivery_last_error.is.null,delivery_last_error.eq.${REMINDER_CLAIM_STATE},delivery_last_error.eq.${REMINDER_SENDING_STATE}))`);
+    probe.searchParams.set('select', 'fixture_id');
+    probe.searchParams.set('limit', '1');
+    const candidateResponse = await fetchWithTimeout(probe, {
+      method: 'GET', headers: supaHeaders(cfg), signal: AbortSignal.timeout(7000),
+    }, 7000, 'Supabase reminder stale claim probe');
+    requireConfirmedResponse(candidateResponse, 'Supabase reminder stale claim probe');
+    const candidates = await candidateResponse.json().catch(() => null);
+    if (!Array.isArray(candidates) || candidates.length > 1
+      || candidates.some(row => !positiveSafeInteger(row?.fixture_id))) {
+      throw new Error('Supabase reminder stale claim probe response is malformed.');
+    }
+    if (!candidates.length) return { prematch:0, kickoff:0, lineup:0, important_change:0, failed:0 };
+
     const clearColumn = async column => {
       const url = new URL(`${origin}/rest/v1/match_reminders`);
       url.searchParams.set('enabled', 'eq.true');

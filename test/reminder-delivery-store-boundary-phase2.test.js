@@ -347,6 +347,7 @@ test('finish, unknown hold and release reject a lost claim instead of reporting 
 test('stale claim recovery clears claim-only rows and reconciles stale sending rows fail-closed', async () => {
   const {store,calls,events}=runtime({
     responses:[
+      {ok:true,status:200,json:[{fixture_id:1}]},
       {ok:true,status:200,json:[{fixture_id:1},{fixture_id:2}]},
       {ok:true,status:200,json:[{fixture_id:10}]},
       {ok:true,status:200,json:[{fixture_id:3}]},
@@ -359,20 +360,22 @@ test('stale claim recovery clears claim-only rows and reconciles stale sending r
   });
   const result=await store.clearStaleReminderClaims({supabaseUrl:'https://db.test'});
   assert.deepEqual(result,{prematch:2,kickoff:1,lineup:0,important_change:0,failed:0});
-  assert.equal(calls.length,8);
+  assert.equal(calls.length,9);
+  assert.equal(calls[0].init.method,'GET');
+  assert.equal(new URL(calls[0].url).searchParams.get('select'),'fixture_id');
 
-  assert.match(calls[0].url,/prematch_claimed_at=lt\./);
-  assert.match(calls[0].url,/or=%28delivery_last_error\.is\.null%2Cdelivery_last_error\.eq\.delivery_claimed%29/);
   assert.match(calls[1].url,/prematch_claimed_at=lt\./);
-  assert.match(calls[1].url,/notified_at=is\.null/);
-  assert.match(calls[1].url,/delivery_last_error=eq\.telegram_delivery_sending/);
-  const reconciledBody=JSON.parse(calls[1].init.body);
+  assert.match(calls[1].url,/or=%28delivery_last_error\.is\.null%2Cdelivery_last_error\.eq\.delivery_claimed%29/);
+  assert.match(calls[2].url,/prematch_claimed_at=lt\./);
+  assert.match(calls[2].url,/notified_at=is\.null/);
+  assert.match(calls[2].url,/delivery_last_error=eq\.telegram_delivery_sending/);
+  const reconciledBody=JSON.parse(calls[2].init.body);
   assert.equal(reconciledBody.delivery_last_error,'telegram_delivery_unknown');
   assert.equal(Object.hasOwn(reconciledBody,'prematch_claimed_at'),false);
 
-  assert.match(calls[2].url,/kickoff_claimed_at=lt\./);
-  assert.match(calls[4].url,/lineup_claimed_at=lt\./);
-  assert.match(calls[6].url,/important_change_claimed_at=lt\./);
+  assert.match(calls[3].url,/kickoff_claimed_at=lt\./);
+  assert.match(calls[5].url,/lineup_claimed_at=lt\./);
+  assert.match(calls[7].url,/important_change_claimed_at=lt\./);
 
   assert.equal(events.some(event=>event.code==='REMINDER_STALE_CLAIMS'),true);
   assert.equal(events.some(event=>event.code==='REMINDER_STALE_SENDING_RECONCILED'),true);
@@ -385,6 +388,7 @@ test('stale claim recovery clears claim-only rows and reconciles stale sending r
 test('stale claim cleanup surfaces partial clear or reconciliation failures instead of silently returning zero', async () => {
   const {store,events}=runtime({
     responses:[
+      {ok:true,status:200,json:[{fixture_id:1}]},
       {ok:false,status:503,json:null},
       {ok:true,status:200,json:[]},
       {ok:true,status:200,json:[{fixture_id:3}]},
@@ -465,4 +469,97 @@ test('claim refuses ambiguous multi-row ownership confirmations',async()=>{
     error=>error?.code==='REMINDER_DELIVERY_CLAIM_LOST'&&error?.claimLost===true,
   );
   assert.equal(rt.calls.length,1);
+});
+
+test('empty stale-claim probe performs one GET and no writes or success events',async()=>{
+  const {store,calls,events}=runtime();
+  const result=await store.clearStaleReminderClaims({supabaseUrl:'https://db.test'});
+  assert.deepEqual(result,{prematch:0,kickoff:0,lineup:0,important_change:0,failed:0});
+  assert.equal(calls.length,1);assert.equal(events.length,0);
+  const {init,timeout,url}=calls[0],query=new URL(url).searchParams;
+  assert.equal(init.method,'GET');assert.equal(init.body,undefined);assert.equal(timeout,7000);
+  assert.ok(init.signal instanceof AbortSignal);assert.equal(init.signal.aborted,false);
+  assert.equal(query.get('select'),'fixture_id');assert.equal(query.get('limit'),'1');
+  assert.equal(query.get('enabled'),'eq.true');
+  assert.equal(query.get('or'),'(prematch_claimed_at.lt.2026-09-27T17:40:05.000Z,kickoff_claimed_at.lt.2026-09-27T17:40:05.000Z,lineup_claimed_at.lt.2026-09-27T17:40:05.000Z,important_change_claimed_at.lt.2026-09-27T17:40:05.000Z)');
+  assert.equal(query.get('and'),'(or(delivery_last_error.is.null,delivery_last_error.eq.delivery_claimed,delivery_last_error.eq.telegram_delivery_sending))');
+  assert.equal(query.getAll('or').length,1);
+});
+
+test('failed or malformed stale-claim probe never silently reports empty or sends writes',async()=>{
+  for(const response of [
+    {ok:false,status:503,json:[]},
+    {ok:'true',status:200,json:[]},
+    ...[null,{},[{fixture_id:1},{fixture_id:2}],[{fixture_id:null}],[{fixture_id:true}],[{}]].map(json=>({ok:true,status:200,json})),
+  ]){
+    const {store,calls}=runtime({responses:[response]});
+    await assert.rejects(store.clearStaleReminderClaims({supabaseUrl:'https://db.test'}));
+    assert.equal(calls.length,1);assert.equal(calls[0].init.method,'GET');
+  }
+  let calls=0;
+  const timeout=Object.assign(new Error('deadline'),{code:'UPSTREAM_TIMEOUT'});
+  const {store}=runtime({fetchWithTimeout:async()=>{calls++;throw timeout;}});
+  await assert.rejects(store.clearStaleReminderClaims({supabaseUrl:'https://db.test'}),error=>error===timeout);
+  assert.equal(calls,1);
+});
+
+// Interpret only the public PostgREST boolean/filter syntax used by these URLs,
+// independently of the store's construction, to check its candidate superset.
+function matchesReminderFilter(row,key,value){
+  function parts(input){
+    const out=[];let depth=0,start=0;
+    for(let i=0;i<input.length;i++){
+      if(input[i]==='(')depth++;else if(input[i]===')')depth--;
+      else if(input[i]===','&&depth===0){out.push(input.slice(start,i));start=i+1;}
+    }
+    return [...out,input.slice(start)];
+  }
+  function expression(text){
+    const group=text.match(/^(or|and)\((.*)\)$/);
+    if(group)return group[1]==='or'?parts(group[2]).some(expression):parts(group[2]).every(expression);
+    const filter=text.match(/^([a-z_]+)\.(is|eq|lt)\.(.*)$/);assert.ok(filter,text);
+    const [,column,operator,expected]=filter,actual=row[column]??null;
+    if(operator==='is')return expected==='null'&&actual===null;
+    if(operator==='eq')return actual!==null&&String(actual)===expected;
+    return actual!==null&&Date.parse(actual)<Date.parse(expected);
+  }
+  return key==='and'||key==='or'?expression(`${key}${value}`):expression(`${key}.${value}`);
+}
+
+test('probe covers every legacy stale mutation predicate while excluding fresh or held claims',async()=>{
+  const {store,calls}=runtime();await store.clearStaleReminderClaims({supabaseUrl:'https://db.test'});
+  const query=new URL(calls[0].url).searchParams;
+  const kinds=[['prematch_claimed_at','notified_at'],['kickoff_claimed_at','kickoff_notified_at'],['lineup_claimed_at','lineup_notified_at'],['important_change_claimed_at','important_change_notified_at']];
+  let covered=0;
+  for(const [claim,done]of kinds)for(const enabled of [true,false])for(const error of [null,'delivery_claimed','telegram_delivery_sending','telegram_delivery_unknown','another_error']){
+    for(const timestamp of [null,'2026-09-27T17:40:04.999Z','2026-09-27T17:40:05.000Z','2026-09-27T18:00:05.000Z'])for(const sent of [null,'2026-09-27T17:00:00.000Z']){
+      const row={enabled,delivery_last_error:error,[claim]:timestamp,[done]:sent};
+      const legacy=enabled&&timestamp!==null&&Date.parse(timestamp)<Date.parse('2026-09-27T17:40:05.000Z')
+        &&(error===null||error==='delivery_claimed'||(error==='telegram_delivery_sending'&&sent===null));
+      const candidate=[...query].filter(([key])=>!['select','limit'].includes(key)).every(([key,value])=>matchesReminderFilter(row,key,value));
+      if(legacy){assert.equal(candidate,true,JSON.stringify(row));covered++;}
+      if(!enabled||error==='telegram_delivery_unknown'||error==='another_error'||timestamp===null||Date.parse(timestamp)>=Date.parse('2026-09-27T17:40:05.000Z'))assert.equal(candidate,false);
+    }
+  }
+  assert.equal(covered,20);
+});
+
+test('candidate changed to a fresh claim before cleanup remains protected by conditional writes',async()=>{
+  const row={fixture_id:1,enabled:true,prematch_claimed_at:'2026-09-27T17:00:00.000Z',delivery_last_error:'delivery_claimed'};
+  let requests=0,writes=0;
+  const {store}=runtime({fetchWithTimeout:async(url,init)=>{
+    requests++;
+    if(init.method==='GET'){
+      row.prematch_claimed_at='2026-09-27T18:00:05.000Z';
+      return {ok:true,status:200,json:async()=>[{fixture_id:row.fixture_id}]};
+    }
+    writes++;
+    const matches=[...new URL(url).searchParams].every(([key,value])=>matchesReminderFilter(row,key,value));
+    if(matches)Object.assign(row,JSON.parse(init.body));
+    return {ok:true,status:200,json:async()=>matches?[{fixture_id:row.fixture_id}]:[]};
+  }});
+  const result=await store.clearStaleReminderClaims({supabaseUrl:'https://db.test'});
+  assert.deepEqual(result,{prematch:0,kickoff:0,lineup:0,important_change:0,failed:0});
+  assert.equal(requests,9);assert.equal(writes,8);
+  assert.equal(row.prematch_claimed_at,'2026-09-27T18:00:05.000Z');assert.equal(row.delivery_last_error,'delivery_claimed');
 });
