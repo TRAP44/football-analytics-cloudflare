@@ -269,7 +269,7 @@ export function createReminderDeliveryStore({
     probe.searchParams.set('select', 'fixture_id');
     probe.searchParams.set('limit', '1');
     const candidateResponse = await fetchWithTimeout(probe, {
-      method: 'GET', headers: supaHeaders(cfg),
+      method: 'GET', headers: supaHeaders(cfg), signal: AbortSignal.timeout(7000),
     }, 7000, 'Supabase reminder stale claim probe');
     requireConfirmedResponse(candidateResponse, 'Supabase reminder stale claim probe');
     const candidates = await candidateResponse.json().catch(() => null);

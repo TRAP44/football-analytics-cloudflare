@@ -478,6 +478,7 @@ test('empty stale-claim probe performs one GET and no writes or success events',
   assert.equal(calls.length,1);assert.equal(events.length,0);
   const {init,timeout,url}=calls[0],query=new URL(url).searchParams;
   assert.equal(init.method,'GET');assert.equal(init.body,undefined);assert.equal(timeout,7000);
+  assert.ok(init.signal instanceof AbortSignal);assert.equal(init.signal.aborted,false);
   assert.equal(query.get('select'),'fixture_id');assert.equal(query.get('limit'),'1');
   assert.equal(query.get('enabled'),'eq.true');
   assert.equal(query.get('or'),'(prematch_claimed_at.lt.2026-09-27T17:40:05.000Z,kickoff_claimed_at.lt.2026-09-27T17:40:05.000Z,lineup_claimed_at.lt.2026-09-27T17:40:05.000Z,important_change_claimed_at.lt.2026-09-27T17:40:05.000Z)');
