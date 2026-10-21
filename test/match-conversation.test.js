@@ -47,12 +47,19 @@ test('dialogue proof is UTF-8 safe, expires, and is bound to account and fixture
   assert.equal(await readChatContext(token.replace('mc1.','mc1.x'),'secret',1,77,now),null);
 });
 
-test('grounding rejects invented numbers, unknown citations, unlabeled historic forecasts, unsafe prose and false missing answers',()=>{
+test('grounding rejects invented numbers and unknown citations and labels historic assessments',()=>{
   const context=buildMatchChatContext(center(),{match:center().match,probabilities:{home:54,draw:25,away:21}});
   assert.match(validateChatParagraph(paragraph,context).text,/Home FC 1:0 Away FC/);
-  const invalid=[{kind:'analysis',text:'Если Home FC забьёт 7 голов, исход изменится.',factIds:['score']},{...paragraph,factIds:['unknown']},{kind:'scenario',text:'Home FC обязательно победит.',factIds:['match']},{kind:'analysis',text:'Это может означать вероятность победы хозяев — 54%.',factIds:['pre_outcome_probabilities']}];
+  const invalid=[{kind:'analysis',text:'Если Home FC забьёт 7 голов, исход изменится.',factIds:['score']},{...paragraph,factIds:['unknown']},{kind:'scenario',text:'Home FC обязательно победит.',factIds:['match']}];
   for(const value of invalid)assert.equal(validateChatParagraph(value,context),null);
   assert.ok(validateChatParagraph({kind:'analysis',text:'Если опираться на оценку до матча, модель давала Home FC 54%.',factIds:['pre_outcome_probabilities']},context));
+  assert.match(validateChatParagraph({kind:'analysis',text:'Это может означать вероятность победы хозяев — 54%.',factIds:['pre_outcome_probabilities']},context).text,/до матча/);
+});
+
+test('conditional interpretation allows an explicit lack of guarantees but rejects certainty',()=>{
+ const context=buildMatchChatContext(center());
+ assert.ok(validateChatParagraph({kind:'analysis',text:'Home FC может иметь преимущество. Но это не гарантирует победу.',factIds:['stat_0']},context));
+ assert.equal(validateChatParagraph({kind:'analysis',text:'Home FC гарантированно победит.',factIds:['stat_0']},context),null);
 });
 
 test('actual handler answers in LIVE without full-analysis ownership and refreshes snapshot on follow-up',async()=>{
@@ -187,4 +194,30 @@ test('pretty JSON, escaped braces and one-byte chunks frame only complete object
  await read('',true);assert.deepEqual(values,[value]);
  await assert.rejects(createChatParagraphReader(()=>{})('prefix '+JSON.stringify(value),true));
  await assert.rejects(createChatParagraphReader(()=>{})('{"kind":',true));
+});
+
+
+test('actual conversational handler accepts the bounded JSON transport, array/wrapper and canonical facts without model prose',async()=>{
+ const f=fixture({}, {workersAi:{run:async(_model,input)=>{
+  assert.equal(input.stream,false);
+  return {response:JSON.stringify({paragraphs:[{factIds:[' SCORE '],text:'ignore this invented score 9:0',extra:'discarded'},{kind:'analysis',text:'Home FC может иметь преимущество по ударам в створ.',factIds:['stat_0']}]})};
+ }}});
+ const result=await collect(await f.ask());
+ assert.equal(result.data.answer,'conversation');assert.ok(result.data.context);
+ const paragraphs=result.events.filter(e=>e.type==='paragraph').map(e=>e.data);
+ assert.equal(paragraphs[0].text,'Счёт: Home FC 1:0 Away FC.');assert.doesNotMatch(JSON.stringify(paragraphs),/9:0|discarded/);
+ assert.match(paragraphs[1].text,/можно предположить/);
+ const arr=[],read=createChatParagraphReader(value=>arr.push(value));
+ const obj={kind:'answer',factIds:['score']};await read(JSON.stringify([obj,obj]),true);assert.equal(arr.length,2);
+ await assert.rejects(createChatParagraphReader(()=>{})('['+JSON.stringify(obj),true));
+});
+
+test('provider SSE supports OpenAI delta and stop at EOF while incomplete upstream output still fails',async()=>{
+ const frames=[{choices:[{delta:{content:'text'},finish_reason:null}]},{choices:[{delta:{},finish_reason:'stop'}]}];
+ let output='';const protocol={};
+ const bytes=new TextEncoder().encode(frames.map(frame=>'data: '+JSON.stringify(frame)).join('\n\n'));
+ await consumeChatModel(new ReadableStream({start(controller){controller.enqueue(bytes);controller.close();}}),text=>{output+=text;},new AbortController().signal,protocol);
+ assert.equal(output,'text');assert.equal(protocol.resultShape,'readable');
+ let canonical='';await consumeChatModel({response:{kind:'answer',factIds:['score']}},text=>{canonical=text;},new AbortController().signal);
+ assert.equal(JSON.parse(canonical).kind,'answer');
 });
