@@ -9,7 +9,7 @@ function fixture(options={}){
   let applied=options.applied===true,writes=0;const calls=[];
   const fetchImpl=async(url,init)=>{
     calls.push({url,method:init.method,body:init.body});
-    if(url.includes('api.github.com')){
+    if(new URL(url).origin==='https://api.github.com'){
       if(url.endsWith('/branches/main'))return Response.json({commit:{sha:options.stale?'b'.repeat(40):sha}});
       if(url.endsWith('/pulls'))return Response.json([{number:999,state:'closed',merged_at:new Date(now-10000).toISOString(),base:{ref:'main',repo:{full_name:repository}}}]);
       if(url.endsWith('/actions/runs/1234'))return Response.json({path:'.github/workflows/backup-supabase.yml',head_branch:'main',head_sha:sha,status:'completed',conclusion:options.badBackup?'failure':'success',created_at:new Date(now-60000).toISOString()});
