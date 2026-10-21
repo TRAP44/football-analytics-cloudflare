@@ -31,7 +31,7 @@ Production-проект Supabase сейчас находится на Free-пл�
 
 Retention: **30 дней**.
 
-Автоматический запуск: **раз в неделю, воскресенье 02:17 UTC**.
+Автоматический запуск: **раз в неделю, воскресенье 02:17 UTC**. Backup и restore drill используют одноразовые GitHub-hosted Ubuntu runners; отдельная self-hosted машина не требуется. Боевые секреты доступны только запуску из `main` в environment `production`.
 
 Ручной запуск обязателен **перед каждой production migration**.
 
@@ -139,7 +139,7 @@ Backup **не восстанавливается автоматически**.
 
 1. Берётся **ровно тот encrypted artifact**, который создан текущим backup run.
 2. Проверяется внешний SHA-256.
-3. Архив расшифровывается только во временный каталог self-hosted Linux runner.
+3. Архив расшифровывается только во временный каталог одноразового GitHub-hosted Ubuntu runner.
 4. Проверяются внутренние `SHA256SUMS`, `manifest.txt`, `roles.sql`, `schema.sql` и `data.sql`.
 5. Во временном каталоге запускается локальный Supabase stack.
 6. `schema.sql` и `data.sql` восстанавливаются в локальную disposable DB.

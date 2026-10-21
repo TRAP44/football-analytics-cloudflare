@@ -52,11 +52,11 @@ test('headers received after deadline never start body parsing',async()=>{
 test('RPC retains in-budget payload and PostgREST error contracts',async()=>{
   const replies=[Response.json([{claimed:true}]),Response.json({code:'42501',message:'private detail',details:'detail'},{status:403}),new Response('not-json')];
   const client=createSupabaseClient({redactMessage:()=> 'redacted',fetchWithTimeout:async()=>replies.shift()});
-  assert.deepEqual(await client.supaRpc(cfg,'claim_scheduled_job'),{claimed:true});
-  await assert.rejects(client.supaRpc(cfg,'claim_scheduled_job'),error=>{
+  assert.deepEqual(await client.supaRpc(cfg,'consume_analysis_quota'),{claimed:true});
+  await assert.rejects(client.supaRpc(cfg,'consume_analysis_quota'),error=>{
     assert.equal(error.code,'42501');assert.equal(error.detail,'detail');assert.match(error.message,/redacted/);assert.doesNotMatch(error.message,/private detail/);return true;
   });
-  assert.equal(await client.supaRpc(cfg,'claim_scheduled_job'),null);
+  assert.equal(await client.supaRpc(cfg,'consume_analysis_quota'),null);
 });
 
 test('real infrastructure helper carries the RPC signal through response body consumption', {timeout:2000},async t=>{

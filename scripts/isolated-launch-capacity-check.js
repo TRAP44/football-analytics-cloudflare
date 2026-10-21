@@ -48,6 +48,7 @@ globalThis.fetch=async(input,init={})=>{
     await new Promise(resolve=>setTimeout(resolve,transportMs));
     if(url.pathname.endsWith('/runtime_controls'))return Response.json([control]);
     if(url.pathname.endsWith('/model_predictions')){stats.modelLookups++;return Response.json([]);}
+    if(url.pathname.endsWith('/write_analysis_cache_versioned')) return Response.json({stored:true,reason:'stored'});
     if(url.pathname.includes('/rpc/'))return Response.json({allowed:true,count:1,retryAfter:0});
     return Response.json([]);
   } finally {

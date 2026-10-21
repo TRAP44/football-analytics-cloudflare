@@ -654,6 +654,110 @@ begin
 end
 $search_path_restored$;
 
+-- Durable recovery regressions: real function bodies and transactional state.
+set local role service_role;
+do $durable_recovery$
+declare
+  v_at timestamptz := clock_timestamp();
+  v_a uuid := '11111111-1111-4111-8111-111111119760';
+  v_b uuid := '22222222-2222-4222-8222-222222229760';
+  v_c uuid := '33333333-3333-4333-8333-333333339760';
+  v_result jsonb;
+  v_until timestamptz;
+  v_xmin text;
+  v_count integer;
+begin
+  v_result:=public.claim_scheduled_job_owned('issue976:owned','issue976-global',v_at,v_a,720,172800);
+  if (v_result->>'claimed')::boolean is not true then raise exception 'Owned acquisition failed'; end if;
+  v_until:=(v_result->>'lockedUntil')::timestamptz;
+  v_result:=public.claim_scheduled_job_owned('issue976:owned','issue976-global',v_at,v_a,1800,604800);
+  if (v_result->>'claimed')::boolean is not true or (v_result->>'lockedUntil')::timestamptz<>v_until then
+    raise exception 'An owned replay changed its horizon'; end if;
+  v_result:=public.claim_scheduled_job_owned('issue976:owned','issue976-global',v_at,v_b,720,172800);
+  if (v_result->>'claimed')::boolean is not false then raise exception 'Another request adopted an owner'; end if;
+  update public.scheduled_job_leases set locked_until=clock_timestamp()-interval '1 second' where job_key='issue976:owned';
+  v_result:=public.claim_scheduled_job_owned('issue976:owned','issue976-global',v_at,v_a,720,172800);
+  if (v_result->>'claimed')::boolean is not false then raise exception 'Expired replay reacquired its lease'; end if;
+  v_result:=public.claim_scheduled_job_owned('issue976:owned','issue976-global',v_at,v_b,720,172800);
+  if (v_result->>'claimed')::boolean is not false then raise exception 'Denied replay acquired a lease'; end if;
+  v_result:=public.claim_scheduled_job_owned('issue976:owned','issue976-global',v_at,v_c,720,172800);
+  if (v_result->>'claimed')::boolean is not true then raise exception 'Fresh request could not replace an expired owner'; end if;
+  v_result:=public.claim_scheduled_job_owned('issue976:owned','issue976-global',v_at,v_a,720,172800);
+  if (v_result->>'claimed')::boolean is not false then raise exception 'Old replay replaced a newer owner'; end if;
+  if public.complete_scheduled_job('issue976:owned',v_c::text) is not true then raise exception 'Owner completion failed'; end if;
+  v_result:=public.claim_scheduled_job_owned('issue976:owned','issue976-global',v_at,v_c,720,172800);
+  if (v_result->>'claimed')::boolean is not false then raise exception 'Completed replay acquired work again'; end if;
+  v_result:=public.claim_scheduled_job_owned('issue976:other','issue976-other',v_at,v_c,720,172800);
+  if v_result->>'reason'<>'invalid_input' then raise exception 'Receipt identity changed'; end if;
+
+  v_result:=public.claim_scheduled_job_owned('issue976:new','issue976-mixed',v_at,v_a,720,172800);
+  -- The UUID cannot be reused for a different logical operation.
+  if v_result->>'reason'<>'invalid_input' then raise exception 'Cross-job receipt adopted'; end if;
+  v_result:=public.claim_scheduled_job_owned('issue976:new','issue976-mixed',v_at,'44444444-4444-4444-8444-444444449760',720,172800);
+  if (v_result->>'claimed')::boolean is not true then raise exception 'New mixed owner failed'; end if;
+  v_result:=public.claim_scheduled_job('issue976:legacy','issue976-mixed',v_at,720,172800);
+  if v_result->>'reason'<>'overlap' then raise exception 'Legacy bypassed new global owner'; end if;
+  if public.complete_scheduled_job('issue976:new','44444444-4444-4444-8444-444444449760') is not true then raise exception 'Mixed owner completion failed'; end if;
+  v_result:=public.claim_scheduled_job('issue976:legacy','issue976-mixed',v_at,720,172800);
+  if (v_result->>'claimed')::boolean is not true then raise exception 'Legacy fresh acquisition failed'; end if;
+  v_result:=public.claim_scheduled_job_owned('issue976:blocked','issue976-mixed',v_at,'55555555-5555-4555-8555-555555559760',720,172800);
+  if v_result->>'reason'<>'overlap' then raise exception 'New owner bypassed legacy global owner'; end if;
+
+  -- Cleanup is bounded and keeps an active owner's proof even with old expiry.
+  update public.scheduled_job_claim_receipts set expires_at=v_at-interval '1 hour'
+    where request_token='44444444-4444-4444-8444-444444449760';
+  update public.scheduled_job_leases set status='running',locked_until=v_at+interval '1 hour'
+    where job_key='issue976:new';
+  insert into public.scheduled_job_claim_receipts(request_token,job_key,group_key,scheduled_at,result,expires_at)
+    select md5('issue976-expired-'||n)::uuid,'issue976:expired:'||n,'issue976-expired',v_at,'{"claimed":false}',v_at-interval '1 hour'
+    from generate_series(1,100) n;
+  v_result:=public.claim_scheduled_job_owned('issue976:cleanup','issue976-cleanup',v_at,'66666666-6666-4666-8666-666666669760',720,172800);
+  select count(*) into v_count from public.scheduled_job_claim_receipts where group_key='issue976-expired';
+  if v_count<>68 or not exists(select 1 from public.scheduled_job_claim_receipts where request_token='44444444-4444-4444-8444-444444449760') then
+    raise exception 'Receipt cleanup exceeded its bound or removed active proof'; end if;
+
+  v_result:=public.write_analysis_cache_versioned('issue976:cache',0,'{"a":1,"b":2}',v_at+interval '1 hour','test',null,'unknown',v_at);
+  if (v_result->>'stored')::boolean is not true then raise exception 'Cache write failed'; end if;
+  select xmin::text into v_xmin from public.analysis_cache where cache_key='issue976:cache';
+  v_result:=public.write_analysis_cache_versioned('issue976:cache',0,'{"b":2,"a":1}',v_at+interval '1 hour','test',null,'unknown',v_at);
+  if v_result->>'reason'<>'same' or (select xmin::text from public.analysis_cache where cache_key='issue976:cache')<>v_xmin then raise exception 'Identical cache replay rewrote its row'; end if;
+  v_result:=public.write_analysis_cache_versioned('issue976:cache',0,'{"a":3}',v_at+interval '1 hour','test',null,'unknown',v_at+interval '1 second');
+  v_result:=public.write_analysis_cache_versioned('issue976:cache',0,'{"a":1}',v_at+interval '1 hour','test',null,'unknown',v_at);
+  if (v_result->>'stored')::boolean is not false then raise exception 'Stale cache replay reported durability'; end if;
+  update public.analysis_cache set payload='{"a":0}',updated_at=v_at where cache_key='issue976:cache';
+  if (select payload from public.analysis_cache where cache_key='issue976:cache')<>'{"a":3}'::jsonb then raise exception 'Legacy delayed write replaced new cache'; end if;
+  -- Actual post-match finalization uses a conditional PATCH without updated_at.
+  update public.analysis_cache set payload='{"state":"sent"}',expires_at=v_at+interval '2 hours'
+    where cache_key='issue976:cache' and payload='{"a":3}';
+  get diagnostics v_count=row_count;
+  if v_count<>1 or (select payload->>'state' from public.analysis_cache where cache_key='issue976:cache')<>'sent' then raise exception 'Post-match sent marker was blocked'; end if;
+end
+$durable_recovery$;
+reset role;
+
+do $durable_contract$
+declare v_before jsonb; v_after jsonb;
+begin
+  if has_function_privilege('anon','public.claim_scheduled_job_owned(text,text,timestamptz,uuid,integer,integer)','EXECUTE')
+    or has_function_privilege('authenticated','public.write_analysis_cache_versioned(text,bigint,jsonb,timestamptz,text,timestamptz,text,timestamptz)','EXECUTE')
+    or has_table_privilege('anon','public.scheduled_job_claim_receipts','SELECT')
+    or has_table_privilege('authenticated','public.scheduled_job_claim_receipts','UPDATE') then raise exception 'Recovery data exposed to frontend roles'; end if;
+  v_before:=public.backend_schema_contract_v2();
+  grant execute on function public.claim_scheduled_job_owned(text,text,timestamptz,uuid,integer,integer) to anon;
+  v_after:=public.backend_schema_contract_v2();
+  if v_after->>'fingerprint'=v_before->>'fingerprint' or v_after->>'baseFingerprint'<>v_before->>'baseFingerprint' then raise exception 'Recovery grant drift escaped full fingerprint'; end if;
+  revoke execute on function public.claim_scheduled_job_owned(text,text,timestamptz,uuid,integer,integer) from anon;
+  alter table public.scheduled_job_claim_receipts disable row level security;
+  if public.backend_schema_contract_v2()->>'fingerprint'=v_before->>'fingerprint' then raise exception 'Recovery RLS drift escaped fingerprint'; end if;
+  alter table public.scheduled_job_claim_receipts enable row level security;
+  grant select on public.users to anon;
+  v_after:=public.backend_schema_contract_v2();
+  if v_after->>'fingerprint'=v_before->>'fingerprint' or v_after->>'recoveryFingerprint'<>v_before->>'recoveryFingerprint' then raise exception 'Unrelated base grant drift escaped full fingerprint'; end if;
+  revoke select on public.users from anon;
+  if public.backend_schema_contract_v2()->>'fingerprint'<>v_before->>'fingerprint' then raise exception 'Contract did not recover after drift tests'; end if;
+end
+$durable_contract$;
+
 rollback;
 
 select 'MatchRadar executable Supabase schema contract passed.' as result;

@@ -87,18 +87,18 @@ test('outer timeout cancels the underlying owner read rather than merely abandon
 });
 
 
-test('a three-second background claim can finish once without replaying an ambiguous write',async()=>{
-  const scheduledAt=new Date();let requests=0;
+test('a cold-schema three-second claim remains one acquisition',async()=>{
+  const scheduledAt=new Date();let requests=0;const owners=[];
   const client=createSupabaseClient({fetchWithTimeout:async(_url,init)=>{
-    requests++;
+    requests++;owners.push(JSON.parse(init.body).p_owner_token);
     return await new Promise((resolve,reject)=>{
-      const timer=setTimeout(()=>resolve(new Response(JSON.stringify({claimed:true,jobKey:claim.jobKey,groupKey:claim.groupKey,leaseToken:claim.leaseToken,scheduledAt:scheduledAt.toISOString(),lockedUntil:new Date(Date.now()+720000).toISOString()}),{status:200})),3000);
+      const timer=setTimeout(()=>resolve(new Response(JSON.stringify({claimed:true,jobKey:claim.jobKey,groupKey:claim.groupKey,leaseToken:owners[0],scheduledAt:scheduledAt.toISOString(),lockedUntil:new Date(Date.now()+720000).toISOString()}),{status:200})),3000);
       init.signal.addEventListener('abort',()=>{clearTimeout(timer);reject(init.signal.reason);},{once:true});
     });
   }});
   const lease=createScheduledLeaseRuntime({hasSupabase:()=>true,supaRpc:client.supaRpc});
   const result=await lease.claimScheduledJob(cfg,{jobKey:claim.jobKey,groupKey:claim.groupKey,scheduledAt});
-  assert.equal(result.claimed,true);assert.equal(requests,1);
+  assert.equal(result.claimed,true);assert.equal(requests,1);assert.equal(new Set(owners).size,1);
 });
 
 test('readback waits for a two-second owner confirmation instead of discarding a valid result',async()=>{

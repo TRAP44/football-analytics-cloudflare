@@ -1,5 +1,6 @@
 import {withRequestDeadline} from './request-deadline.js';
 import { createRpcAdmissionQueue } from './rpc-admission-queue.js';
+import {createDurableRpcOperation} from './idempotent-rpc-recovery.js';
 
 // Aggregate counters only: no keys, URLs, identifiers or payloads.
 const readRecoveryStats={slowFallbacks:0,slowFallbackWins:0,originalWins:0,failedAfterFallback:0,busySkips:0};
@@ -104,6 +105,13 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
 
   function applyQueryParams(url, params, label) {
     for (const [key, value] of queryEntries(params, label)) url.searchParams.set(key, value);
+  }
+
+  function jsonEqual(left,right){
+    if(left===right)return true;
+    if(!left||!right||typeof left!=='object'||typeof right!=='object'||Array.isArray(left)!==Array.isArray(right))return false;
+    const keys=Object.keys(left);
+    return keys.length===Object.keys(right).length&&keys.every(key=>Object.hasOwn(right,key)&&jsonEqual(left[key],right[key]));
   }
 
   function responseArray(value, label) {
@@ -215,16 +223,16 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
     }),callerSignal);
   }
 
-  async function supaWriteFetch(url,init,timeoutMs,source,cfg=null,retryAuth=false){
+  async function supaWriteFetch(url,init,timeoutMs,source,cfg=null,retryAuth=false,callerSignal,readSuccess=false){
     return withinDeadline(source,timeoutMs,async({fetchResponse,check,remaining})=>{
       let response=await fetchResponse(url,init);
       if(retryAuth && isTransientSecretReadAuthResponse(response,cfg) && remaining()>180){
         try{Promise.resolve(response.body?.cancel?.()).catch(()=>{});}catch{}
         await sleep(180);check();response=await fetchResponse(url,init);
       }
-      const text=response.ok ? '' : await response.text().catch(()=>'');
+      const text=response.ok && !readSuccess ? '' : await response.text();
       check();return {ok:response.ok,status:response.status,text:async()=>text};
-    });
+    },callerSignal);
   }
 
   function hasSupabase(cfg) {
@@ -337,18 +345,49 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
     const url = restUrl(cfg, tableName);
     const conflict = nonEmptyText(onConflict);
     if (conflict) url.searchParams.set('on_conflict', conflict);
-    const response = await supaWriteFetch(url, {
-      method: 'POST',
-      headers: supaHeaders(cfg, { Prefer: 'resolution=merge-duplicates,return=minimal' }),
-      body: JSON.stringify(Array.isArray(rows) ? rows : [rows]),
-    }, 7000, `Supabase ${tableName}`, cfg,true);
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      const detail = safeRedact(text, 180);
-      const error = new Error(`Supabase ${tableName}: HTTP ${response.status}${detail ? ` — ${detail}` : ''}`);
-      error.httpStatus = response.status;
-      throw error;
-    }
+    const encoded=JSON.stringify(Array.isArray(rows)?rows:[rows]);
+    const legacy=async(budget=7000,signal,representation=false)=>{
+      const response=await supaWriteFetch(url,{
+        method:'POST',headers:supaHeaders(cfg,{Prefer:`resolution=merge-duplicates,return=${representation?'representation':'minimal'}`}),body:encoded,
+      },budget,`Supabase ${tableName}`,cfg,!signal,signal,representation);
+      if(!response.ok){
+        const text=await response.text().catch(()=>''),detail=safeRedact(text,180);
+        const error=new Error(`Supabase ${tableName}: HTTP ${response.status}${detail?' — '+detail:''}`);
+        error.httpStatus=response.status;throw error;
+      }
+      if(representation)return responseArray(JSON.parse(await response.text()),tableName);
+    };
+    const cacheRow=Array.isArray(rows)?rows.length===1?plainObject(rows[0]):null:plainObject(rows);
+    const fields=['cache_key','fixture_id','payload','expires_at','provider','source_updated_at','freshness_status','updated_at'];
+    if(tableName!=='analysis_cache'||conflict!=='cache_key'||!cacheRow||!fields.every(key=>Object.hasOwn(cacheRow,key)))return legacy();
+    const matches=(row,body)=>fields.every(key=>['updated_at','expires_at','source_updated_at'].includes(key)
+          ? row[key]===null&&body['p_'+key]===null || Number.isFinite(Date.parse(row[key]))&&Date.parse(row[key])===Date.parse(body['p_'+key])
+          : key==='payload'?jsonEqual(row[key],body.p_payload):row[key]===body['p_'+key]);
+    const args=Object.fromEntries(fields.map(key=>['p_'+key,cacheRow[key]]));
+    const result=await durableRpc(cfg,'write_analysis_cache_versioned',args,7000,{}, {
+      validate:value=>{
+        if(!plainObject(value)||typeof value.stored!=='boolean'
+          || !['stored','same','superseded','expired','legacy'].includes(value.reason)){
+          throw Object.assign(new Error('Supabase cache write rejected.'),{code:'SUPABASE_CACHE_INVALID'});
+        }
+      },
+      legacy:async(_connection,body,remaining,signal)=>{
+        const records=await legacy(remaining,signal,true);
+        if(records.length===0)return {stored:false,reason:'superseded'};
+        if(records.length!==1||!matches(records[0],body))throw Object.assign(new Error('Supabase cache write unconfirmed.'),{code:'SUPABASE_CACHE_INVALID'});
+        return {stored:true,reason:'legacy'};
+      },
+      confirm:async(connection,body,remaining,signal)=>{
+        const records=await supaSelectMany(connection,'analysis_cache',{cache_key:`eq.${body.p_cache_key}`},
+          {limit:1,select:fields.join(','),timeoutMs:remaining,signal});
+        const row=records[0];
+        if(!row)return null;
+        if(matches(row,body))return {stored:true,reason:'same'};
+        if(Date.parse(row.updated_at)>=Date.parse(body.p_updated_at))return {stored:false,reason:'superseded'};
+        return null;
+      },
+    });
+    return result.stored;
   }
 
   async function supaInsertIgnore(cfg, table, rows, onConflict) {
@@ -434,7 +473,7 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
         body: JSON.stringify(payload || {}),
         signal: rpcSignal,
       }, budget, `Supabase RPC ${rpcName}`);
-      checkDeadline();
+      try{checkDeadline();}catch(error){try{Promise.resolve(response.body?.cancel?.()).catch(()=>{});}catch{}throw error;}
       const body = await response.json().catch(() => null);
       checkDeadline();
       if (!response.ok) {
@@ -444,6 +483,7 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
           ? body.code.trim()
           : `HTTP_${response.status}`;
         error.detail = body?.details ?? null;
+        error.transientSecretAuth=isTransientSecretReadAuthResponse(response,cfg);
         throw error;
       }
       return Array.isArray(body) && body.length === 1 ? body[0] : body;
@@ -455,7 +495,36 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
     }
   }
 
-  function supaRpc(cfg, functionName, payload = {}, timeoutMs = 7000, extraHeaders = {}) {
+  const durableRpc=createDurableRpcOperation(rawRpc,{now});
+
+  async function claimOwnedRpc(cfg,payload,timeoutMs,extraHeaders){
+    const owner=crypto.randomUUID();
+    return durableRpc(cfg,'claim_scheduled_job_owned',{...payload,p_owner_token:owner},boundedInteger(timeoutMs,7000,500,120000),extraHeaders,{
+      validate:result=>{
+        if(!plainObject(result)||typeof result.claimed!=='boolean'
+          || result.claimed===true&&result.leaseToken!==owner){
+          throw Object.assign(new Error('Scheduled owner confirmation mismatch.'),{code:'SUPABASE_OWNER_MISMATCH'});
+        }
+      },
+      legacy:(connection,body,remaining,signal)=>{
+        const {p_owner_token,...args}=body;
+        return rawRpc(connection,'claim_scheduled_job',args,remaining,extraHeaders,signal);
+      },
+      confirm:async(connection,body,remaining,signal)=>{
+        const rows=await supaSelectMany(connection,'scheduled_job_leases',{job_key:`eq.${body.p_job_key}`},
+          {limit:1,select:'job_key,group_key,scheduled_at,lease_token,status,locked_until',timeoutMs:remaining,signal});
+        const row=rows[0];
+        if(row?.status!=='running'||row.lease_token!==owner||row.job_key!==body.p_job_key
+          ||row.group_key!==body.p_group_key||Date.parse(row.scheduled_at)!==Date.parse(body.p_scheduled_at)
+          ||!(Date.parse(row.locked_until)>Date.now()+3000))return null;
+        return {claimed:true,reason:'ownership_confirmed',jobKey:row.job_key,groupKey:row.group_key,
+          scheduledAt:row.scheduled_at,lockedUntil:row.locked_until,leaseToken:owner};
+      },
+    });
+  }
+
+  function supaRpc(cfg, functionName, payload = {}, timeoutMs = 7000, extraHeaders = {}, callerSignal) {
+    if(functionName==='claim_scheduled_job')return claimOwnedRpc(cfg,payload,timeoutMs,extraHeaders);
     const bucket=payload?.p_bucket_key;
     if(functionName==='claim_provider_request' && typeof bucket==='string' && /^(preauth:|route:)/.test(bucket)
       && typeof cfg?.supabaseUrl==='string' && cfg.supabaseUrl && typeof cfg?.supabaseKey==='string' && cfg.supabaseKey){
@@ -465,7 +534,7 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs,
       return rateClaims(JSON.stringify([connection.supabaseUrl,connection.supabaseKey]),
         (remaining,signal)=>rawRpc(connection,functionName,snapshot,remaining,headers,signal),boundedInteger(timeoutMs,7000,500,120000),bucket);
     }
-    return rawRpc(cfg,functionName,payload,timeoutMs,extraHeaders);
+    return rawRpc(cfg,functionName,payload,timeoutMs,extraHeaders,callerSignal);
   }
 
   return {

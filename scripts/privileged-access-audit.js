@@ -8,6 +8,7 @@ export const WORKFLOW_SECRET_ALLOWLIST = Object.freeze({
   '.github/workflows/backup-supabase.yml': new Set(['SUPABASE_DB_URL','BACKUP_ENCRYPTION_PASSPHRASE']),
   '.github/workflows/deploy-production.yml': new Set(['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','SUPABASE_ACCESS_TOKEN']),
   '.github/workflows/verify-production-migration.yml': new Set(['SUPABASE_ACCESS_TOKEN']),
+  '.github/workflows/apply-durable-recovery.yml': new Set(['SUPABASE_ACCESS_TOKEN']),
   '.github/workflows/audit-infrastructure-capacity.yml': new Set(['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','SUPABASE_ACCESS_TOKEN']),
   '.github/workflows/rollback-production.yml': new Set(['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID']),
   // Фоновые задачи вне Cloudflare (Workers Free обрывает cron): ключи только из
@@ -24,6 +25,7 @@ export const WORKFLOW_SECRET_ALLOWLIST = Object.freeze({
 const WORKFLOW_REQUIRED_ENVIRONMENT = Object.freeze({
   '.github/workflows/live-usage-report.yml': 'background-jobs',
   '.github/workflows/audit-infrastructure-capacity.yml': 'production',
+  '.github/workflows/apply-durable-recovery.yml': 'production',
   '.github/workflows/cron-runner.yml': 'background-jobs',
 });
 

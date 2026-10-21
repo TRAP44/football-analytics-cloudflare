@@ -19,7 +19,7 @@
 
 ## В работе
 
-- [ ] Найти и устранить таймауты Supabase и срывы фоновых уведомлений — **Codex** — [#988](https://github.com/TRAP44/football-analytics-cloudflare/pull/988), `codex/missing-auth-fast-reject`, продолжение #976. #987 выпущен; два реальных fallback SELECT восстановлены, но claim RPC снова потерял ответ и оставил overlap. Текущая задача: отклонять пустую Telegram-авторизацию до лишнего distributed RPC, сохранив edge/shape/local burst и полный путь проверки непустых credentials.
+- [ ] Надёжно восстанавливать потерянные ответы Supabase без дублей — **Codex** — `codex/durable-supabase-recovery`, продолжение #976. В одном выпуске: постоянный owner UUID и SQL receipts, монотонная запись cache, подтверждение результата чтением, общий предел 7 секунд; завершение lease также получает единый бюджет. Проверки, независимое ревью и защищённое применение миграции с резервной копией.
 
 
 
@@ -68,7 +68,8 @@
 
 ## На ревью
 
-- [ ] Отклонять пустую Telegram-авторизацию до лишнего Supabase RPC — **Codex** — [#988](https://github.com/TRAP44/football-analytics-cloudflare/pull/988), `codex/missing-auth-fast-reject`. Нормальный 401 без DB I/O, прежние edge/shape/local burst и devMode; непустые credentials проходят полный distributed/auth/account/admin путь. Node22full4503/release708; independent155 tests + native Worker security checks без блокеров.
+- [ ] Подтверждение записей Supabase и завершения lease в едином бюджете — **Codex** — [#989](https://github.com/TRAP44/football-analytics-cloudflare/pull/989), `codex/durable-supabase-recovery`. Независимое review основной реализации и нового completion без блокеров; full4526/release708 прошли. До завершения: CI, backup/restore, защищённая миграция v18, deploy и реальные циклы.
+
 
 
 
@@ -164,6 +165,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Отклонять пустую Telegram-авторизацию до лишнего RPC — **Codex** — [#988](https://github.com/TRAP44/football-analytics-cloudflare/pull/988), merge84f3243f. Deploy39503734848/Monitor39504104530 success; Worker be8b44a6 на 100%, 25 HTTP и rendered smoke. Actual39503598097: основные задачи + 3 LIVE завершены, 4 чтения восстановлены. Таймаут cache write остался и входит в текущую задачу.
 
 - [x] Восстановление зависших SELECT внутри исходного бюджета — **Codex** — [#987](https://github.com/TRAP44/football-analytics-cloudflare/pull/987). Выпущен ea7e6b16, Deploy39500881094/Monitor39501314502success, 25 HTTP/rendered UI checks. Actual39500937683: remindersOK/одинLIVEOK, slowFallbacks4/backupWins2/originalWins2/failedAfterFallback0. Run остаётся failed: последующий claim RPC7s, затем overlap; не считать RPC-проблему исправленной. Первый deploy39500401378 откатился после неуспешного missing-auth smoke; повтор прошёл без ослабления проверок.
 

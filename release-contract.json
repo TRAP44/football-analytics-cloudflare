@@ -4,7 +4,7 @@
   "runtimeVersion": "6.120.0-rc144",
   "productionSchema": "6.29",
   "freshInstallBaseline": "supabase/baseline/supabase_baseline_v6_19.sql",
-  "latestMigration": "supabase/migrations/supabase_migration_v6_29_17.sql",
+  "latestMigration": "supabase/migrations/supabase_migration_v6_29_18.sql",
   "accessContract": "public-telegram-validated-by-default",
   "strictBeta": "opt-in-only-when-BETA_ACCESS_ENABLED=true",
   "productionDatabaseRule": "never-run-fresh-install-baseline-over-existing-production",
@@ -20,9 +20,11 @@
   "databaseContract": {
     "version": 2,
     "rpc": "backend_readiness_contract_v2",
-    "fingerprint": "af06ba7b6d944750f312e5cbfd4b5f20",
-    "freshInstallFingerprint": "0169ec29ea39da9d085040ed825057a6",
+    "fingerprint": "ecd2e855833b78694bef24223878eb19",
+    "freshInstallFingerprint": "809a9b16fd55a19b3756f207da28c817",
     "compatibleFingerprints": [
+      "ecd2e855833b78694bef24223878eb19",
+      "809a9b16fd55a19b3756f207da28c817",
       "af06ba7b6d944750f312e5cbfd4b5f20",
       "0169ec29ea39da9d085040ed825057a6",
       "449654e62c352ffcbd618dfccabbda7d",
@@ -105,7 +107,11 @@
     "matchPicks": {
       "version": 1,
       "table": "match_picks",
-      "outcomes": ["home", "draw", "away"],
+      "outcomes": [
+        "home",
+        "draw",
+        "away"
+      ],
       "lockAt": "model_predictions.kickoff_at",
       "scoring": "1 point per correct outcome; AI = model_predictions.predicted_outcome",
       "legacyFingerprintExcludesTable": true,
@@ -114,11 +120,28 @@
     "referralRewards": {
       "version": 1,
       "table": "referral_rewards",
-      "rpc": ["grant_referral_rewards", "reserve_referral_bonus", "refund_referral_bonus"],
+      "rpc": [
+        "grant_referral_rewards",
+        "reserve_referral_bonus",
+        "refund_referral_bonus"
+      ],
       "reward": "one bonus full analysis for the referred user and the referrer (max 10 per 30 days)",
       "legacyFingerprintExcludesTableAndRpc": true,
       "sourceMigration": "supabase/migrations/supabase_migration_v6_29_17.sql"
     },
-    "preLatestLegacyFingerprint": "c3180032babe6e091a2843a84de746e8"
+    "preLatestLegacyFingerprint": "c3180032babe6e091a2843a84de746e8",
+    "durableRestRecovery": {
+      "version": 1,
+      "rpc": [
+        "claim_scheduled_job_owned",
+        "write_analysis_cache_versioned"
+      ],
+      "ownerToken": "caller-generated UUID",
+      "cacheVersion": "updated_at with exact-content confirmation",
+      "sourceMigration": "supabase/migrations/supabase_migration_v6_29_18.sql"
+    },
+    "fingerprintAlgorithm": "partitioned-durable-v1",
+    "baseFingerprint": "af06ba7b6d944750f312e5cbfd4b5f20",
+    "recoveryFingerprint": "06e4edee696bc201a48f7e608a79c0aa"
   }
 }

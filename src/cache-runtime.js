@@ -288,7 +288,7 @@ export function createSharedCacheRuntime({
     noteTelemetry('cacheWrites');
     if (!sharedCacheEnabled(cfg)) return requireDurable ? false : undefined;
     try {
-      await supaUpsert(cfg, 'analysis_cache', {
+      const persisted=await supaUpsert(cfg, 'analysis_cache', {
         cache_key: cacheKey,
         // The persistent analysis_cache.fixture_id column is NOT NULL. Global catalog/
         // quota keys use the existing database convention fixture_id = 0.
@@ -300,6 +300,12 @@ export function createSharedCacheRuntime({
         freshness_status: provenance.freshness,
         updated_at: new Date().toISOString(),
       }, 'cache_key');
+      if(persisted===false){
+        // A concurrent writer persisted a newer snapshot. Do not advertise
+        // this older snapshot as durable or leave it hiding the shared value.
+        if(memory.cache.get(cacheKey)?.payload===payload)memory.cache.delete(cacheKey);
+        return requireDurable?false:undefined;
+      }
       if (requireDurable) {
         memory.cache.set(cacheKey,{payload,expiresAt:expiresAtMs});
         if (memory.cache.size>600) pruneLocalCache();
