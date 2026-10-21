@@ -29,3 +29,10 @@ test('the analysis reminder button exits Saving and reflects the confirmed activ
   const context={state,positiveEntityId:Number,hasReminder:()=>true,reminderMinutesValue:()=>15,$:()=>button,document:{querySelectorAll:()=>[]}};
   vm.createContext(context);vm.runInContext(block('function syncQuickReminderButton','function syncAllQuickReminderButtons')+block('function syncReminderMutationUi','async function toggleReminder'),context);context.syncReminderMutationUi(42);assert.equal(button.disabled,false);assert.match(button.textContent,/Напоминание включено/);assert.doesNotMatch(button.textContent,/Сохраняю/);
 });
+
+test('retrying an unknown state preserves an existing server reminder instead of accidentally deleting it',async()=>{
+  const h=harness({get:async()=>({items:[{fixtureId:42,remindBeforeMinutes:15}]})});await h.toggle();assert.equal(h.requests.length,1);assert.equal(h.state.reminders.length,1);assert.match(h.messages[0],/уже включено/);
+});
+test('a stale cancel intent never re-enables a reminder already removed elsewhere',async()=>{
+  const h=harness();h.state.remindersLoaded=true;h.state.reminders=[{fixtureId:42}];await h.toggle();assert.equal(h.requests.length,1);assert.equal(h.state.reminders.length,0);assert.match(h.messages[0],/уже отключено/);
+});

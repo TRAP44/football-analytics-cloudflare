@@ -5414,12 +5414,17 @@ async function toggleReminder(match) {
   const fixtureId = positiveEntityId(match?.fixtureId);
   if (!fixtureId || state.reminderMutations.has(fixtureId)) return;
   if (!state.remindersLoaded || state.remindersLoadError) {
+    const wantsActive = !state.remindersLoaded || !hasReminder(fixtureId);
     await loadReminders();
     if (!state.remindersLoaded || state.remindersLoadError) {
       toast('Не удалось загрузить напоминания. Нажмите ещё раз, чтобы повторить.');
       return;
     }
     if (state.reminderMutations.has(fixtureId)) return;
+    if (hasReminder(fixtureId) === wantsActive) {
+      toast(wantsActive ? 'Напоминание уже включено' : 'Напоминание уже отключено');
+      return;
+    }
   }
   const active = hasReminder(fixtureId);
   state.remindersLoadError = '';
