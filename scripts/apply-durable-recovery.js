@@ -21,9 +21,8 @@ export const RECOVERY_STATE_SQL=`select public.backend_schema_contract_v2()->>'f
 const fail=code=>{throw Object.assign(new Error(code),{code});};
 const runPsql=promisify(execFile);
 
-// The Management read-only role cannot execute service-only contract functions.
-// Reuse the existing backup connection, but force this child into READ ONLY.
-export async function readRecoveryState({databaseUrl,signal,run=runPsql}={}){
+// Fixed callers below alone select the read-only proof or guarded migration.
+async function runRecoveryPostgres({databaseUrl,signal,run=runPsql,query,write=false}={}){
   let url;
   try{url=new URL(databaseUrl);}catch{fail('RECOVERY_DATABASE_CONNECTION_INVALID');}
   if(!['postgres:','postgresql:'].includes(url.protocol)
@@ -42,11 +41,10 @@ export async function readRecoveryState({databaseUrl,signal,run=runPsql}={}){
       PGHOST:url.hostname,PGPORT:'5432',PGUSER:`postgres.${PROJECT}`,PGDATABASE:'postgres',
       PGPASSWORD:decodeURIComponent(url.password),PGPASSFILE:'/dev/null',PGSERVICEFILE:'/dev/null',
       PGSSLMODE:'verify-full',PGSSLROOTCERT:trustFile,
-      PGCONNECT_TIMEOUT:'5',PGAPPNAME:'matchradar-recovery-readonly'};
-    const query=`begin read only; set local role service_role; set local statement_timeout=5000; set local lock_timeout=1000; select pg_catalog.row_to_json(recovery_state) from (${RECOVERY_STATE_SQL}) recovery_state; commit;`;
+      PGCONNECT_TIMEOUT:'5',PGAPPNAME:write?'matchradar-recovery-migration':'matchradar-recovery-readonly'};
     let stdout;
     try{({stdout}=await run('psql',['-X','--no-psqlrc','--no-align','--tuples-only','--quiet','--set','ON_ERROR_STOP=1','--command',query],
-      {env:childEnv,signal,timeout:12000,killSignal:'SIGKILL',maxBuffer:65536,encoding:'utf8'}));}
+      {env:childEnv,signal,timeout:write?30000:12000,killSignal:'SIGKILL',maxBuffer:65536,encoding:'utf8'}));}
     catch(error){
       const detail=String(error?.stderr||'');
       const reason=error?.code==='ENOENT'?'CLIENT_MISSING'
@@ -55,20 +53,56 @@ export async function readRecoveryState({databaseUrl,signal,run=runPsql}={}){
         :/certificate verify failed|certificate verification failed|self.signed certificate|unable to get.*issuer/i.test(detail)?'TLS_CA_FAILED'
         :/certificate|SSL error|TLS/i.test(detail)?'TLS_FAILED'
         :/password authentication failed|SASL authentication failed/i.test(detail)?'AUTH_FAILED'
-        :/permission denied/i.test(detail)?'PERMISSION_DENIED'
+        :/Recovery base contract mismatch/i.test(detail)?'BASE_STATE_MISMATCH'
+        :/Recovery contract mismatch/i.test(detail)?'CONTRACT_MISMATCH'
+        :/Recovery migration already recorded/i.test(detail)?'ALREADY_RECORDED'
+        :/Recovery migration history mismatch/i.test(detail)?'HISTORY_MISMATCH'
+        :/permission denied|must be owner/i.test(detail)?'PERMISSION_DENIED'
         :/does not exist/i.test(detail)?'OBJECT_MISSING'
         :/timeout|timed out/i.test(detail)?'TIMEOUT':'READ_FAILED';
       fail('RECOVERY_DATABASE_'+reason);
     }
-    try{
-      const value=JSON.parse(stdout.trim());
-      if(value&&typeof value==='object'&&!Array.isArray(value))return value;
-    }catch{}
-    fail('RECOVERY_STATE_INVALID');
+    return stdout;
   }finally{fs.rmSync(trustDirectory,{recursive:true,force:true});}
 }
 
-export async function applyDurableRecovery({env=process.env,fetchImpl=fetch,root=process.cwd(),now=()=>Date.now(),readState=readRecoveryState}={}){
+// The Management read-only role cannot execute service-only contract functions.
+export async function readRecoveryState(options={}){
+  const query=`begin read only; set local role service_role; set local statement_timeout=5000; set local lock_timeout=1000; select pg_catalog.row_to_json(recovery_state) from (${RECOVERY_STATE_SQL}) recovery_state; commit;`;
+  const stdout=await runRecoveryPostgres({...options,query,write:false});
+  try{
+    const value=JSON.parse(stdout.trim());
+    if(value&&typeof value==='object'&&!Array.isArray(value))return value;
+  }catch{}
+  fail('RECOVERY_STATE_INVALID');
+}
+
+export async function applyRecoveryMigration({databaseUrl,signal,run=runPsql,root=process.cwd()}={}){
+  const {releaseContract:contract,latestMigration}=validateSupabaseMigrationContract(root);
+  const db=contract.databaseContract;
+  if(latestMigration!==MIGRATION||![db.fingerprint,db.freshInstallFingerprint,db.baseFingerprint].every(value=>/^[0-9a-f]{32}$/.test(value)))fail('RECOVERY_CONTRACT_INVALID');
+  const sql=fs.readFileSync(`${root}/${MIGRATION}`,'utf8'),quote='$matchradar_v18_source$';
+  if(sql.includes(quote))fail('RECOVERY_MIGRATION_QUOTING_INVALID');
+  // The checked-in migration and its standard Supabase history row commit
+  // together. The lock and base check also fence a delayed duplicate caller.
+  const query=`begin; set local lock_timeout='3s'; set local statement_timeout='20s';
+select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('matchradar:schema-migration'),pg_catalog.hashtext('${MIGRATION_NAME}'));
+set local role service_role;
+do $base$ begin if (public.backend_schema_contract_v2()->>'fingerprint' in ('${db.baseFingerprint}','0169ec29ea39da9d085040ed825057a6')) is not true then raise exception 'Recovery base contract mismatch'; end if; end $base$;
+reset role;
+do $history$ begin if not exists(select 1 from supabase_migrations.schema_migrations where name='supabase_migration_v6_29_17') then raise exception 'Recovery migration history mismatch'; end if; if exists(select 1 from supabase_migrations.schema_migrations where name='${MIGRATION_NAME}') then raise exception 'Recovery migration already recorded'; end if; end $history$;
+${sql}
+set local role service_role;
+do $proof$ begin if (public.backend_schema_contract_v2()->>'fingerprint' in ('${db.fingerprint}','${db.freshInstallFingerprint}')) is not true or coalesce((public.backend_security_contract()->>'ok')::boolean,false) is not true then raise exception 'Recovery contract mismatch'; end if; end $proof$;
+reset role;
+insert into supabase_migrations.schema_migrations(version,name,statements)
+values(pg_catalog.to_char(pg_catalog.clock_timestamp() at time zone 'UTC','YYYYMMDDHH24MISS'),'${MIGRATION_NAME}',array[${quote}${sql}${quote}]);
+commit;`;
+  try{await runRecoveryPostgres({databaseUrl,signal,run,query,write:true});}
+  catch(error){throw Object.assign(new Error('RECOVERY_WRITE_UNCONFIRMED'),{code:'RECOVERY_WRITE_UNCONFIRMED',reason:/^[A-Z0-9_]+$/.test(error?.code||'')?error.code:'RECOVERY_DATABASE_WRITE_UNKNOWN'});}
+}
+
+export async function applyDurableRecovery({env=process.env,fetchImpl=fetch,root=process.cwd(),now=()=>Date.now(),readState=readRecoveryState,applyMigration=applyRecoveryMigration}={}){
   if(env.GITHUB_REPOSITORY!==REPOSITORY||env.GITHUB_REF!=='refs/heads/main'||! /^[0-9a-f]{40}$/.test(env.GITHUB_SHA||''))fail('RECOVERY_MAIN_REQUIRED');
   if(env.SUPABASE_PROJECT_REF!==PROJECT)fail('RECOVERY_PROJECT_MISMATCH');
   const mode=env.RECOVERY_MODE||'preflight';
@@ -134,17 +168,13 @@ export async function applyDurableRecovery({env=process.env,fetchImpl=fetch,root
   const artifacts=await github(`actions/runs/${backupId}/artifacts?per_page=100`);
   if(!artifacts?.artifacts?.some(a=>a.name===`supabase-production-backup-${backupId}`&&a.expired===false&&a.size_in_bytes>0))fail('RECOVERY_BACKUP_ARTIFACT_MISSING');
   report.backupVerified=true;
-  // The official apply API executes and records one named migration. The SQL
-  // is fixed and hash-checked by the repository manifest above, not user input.
-  const sql=fs.readFileSync(`${root}/${MIGRATION}`,'utf8');
-  const assertion=`\ndo $recovery$ begin if public.backend_schema_contract_v2()->>'fingerprint' not in ('${contract.databaseContract.fingerprint}','${contract.databaseContract.freshInstallFingerprint}') then raise exception 'Recovery contract mismatch'; end if; end $recovery$;`;
   if((await github('branches/main'))?.commit?.sha!==env.GITHUB_SHA)fail('RECOVERY_STALE_MAIN');
   let applyError;
   try{
-    await supabase('database/migrations',{method:'POST',timeout:30000,body:{name:MIGRATION_NAME,query:"set local lock_timeout='3s';set local statement_timeout='20s';\n"+sql+assertion}});
+    await applyMigration({databaseUrl:env.SUPABASE_DB_URL,signal:overall,root});
     report.productionChanged=true;
   }catch(error){applyError=error;}
-  // No write retry. A lost HTTP response is settled by read-only proof.
+  // No write retry. A lost write response is settled by read-only proof.
   const afterHistory=await history(),after=await state();
   if(!hasMigration(afterHistory)||!complete(after))throw applyError||Object.assign(new Error('RECOVERY_VERIFICATION_FAILED'),{code:'RECOVERY_VERIFICATION_FAILED'});
   return {...report,applied:true,productionChanged:true,status:applyError?'application_confirmed_after_lost_response':'applied',fingerprint:after.fingerprint};
@@ -155,5 +185,5 @@ if(import.meta.url===(process.argv[1]?pathToFileURL(process.argv[1]).href:'')){
     const report=await applyDurableRecovery();
     console.log(JSON.stringify(report));
     if(process.env.GITHUB_STEP_SUMMARY)fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,`Durable Supabase recovery: ${report.status}; applied=${report.applied}; backup verified=${report.backupVerified}.\n`);
-  }catch(error){console.error(/^[A-Z0-9_]+$/.test(error?.code||'')?error.code:'RECOVERY_FAILED');process.exitCode=1;}
+  }catch(error){const code=/^[A-Z0-9_]+$/.test(error?.code||'')?error.code:'RECOVERY_FAILED';console.error(code+(/^[A-Z0-9_]+$/.test(error?.reason||'')?' '+error.reason:''));process.exitCode=1;}
 }

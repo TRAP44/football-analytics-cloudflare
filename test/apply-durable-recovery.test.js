@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {X509Certificate} from 'node:crypto';
-import {applyDurableRecovery,readRecoveryState,RECOVERY_STATE_SQL} from '../scripts/apply-durable-recovery.js';
+import {applyDurableRecovery,readRecoveryState,RECOVERY_STATE_SQL,applyRecoveryMigration} from '../scripts/apply-durable-recovery.js';
 const contract=JSON.parse(fs.readFileSync('release-contract.json','utf8'));
 const sha='a'.repeat(40),repository='TRAP44/football-analytics-cloudflare',now=Date.now();
 const env={GITHUB_REPOSITORY:repository,GITHUB_REF:'refs/heads/main',GITHUB_SHA:sha,SUPABASE_PROJECT_REF:'nlmvhkjkpgzzlfavaohk',GITHUB_TOKEN:'local-github',SUPABASE_ACCESS_TOKEN:'local-supabase',RECOVERY_MODE:'preflight',RECOVERY_BACKUP_RUN_ID:'1234'};
@@ -18,18 +18,12 @@ function fixture(options={}){
       if(url.includes('/artifacts?'))return Response.json({artifacts:[{name:'supabase-production-backup-1234',expired:false,size_in_bytes:options.noArtifact?0:1024}]});
     }
     if(url.endsWith('/database/migrations')){
-      if(init.method==='POST'){
-        writes++;
-        const body=JSON.parse(init.body);assert.equal(body.name,'supabase_migration_v6_29_18');
-        assert.match(body.query,/claim_scheduled_job_owned/);assert.match(body.query,/statement_timeout='20s'/);assert.match(body.query,/Recovery contract mismatch/);
-        if(options.denied)return new Response('private upstream details',{status:403});
-        applied=true;if(options.lostResponse)throw new TypeError('private network detail');return new Response(null,{status:200});
-      }
+      assert.equal(init.method,'GET','Management API remains read-only');
       return Response.json([{name:'supabase_migration_v6_29_17'},...(applied?[{name:'supabase_migration_v6_29_18'}]:[])]);
     }
     throw Error('Unexpected fixed endpoint');
   };
-  return {run:overrides=>applyDurableRecovery({env:{...env,...overrides},fetchImpl,now:()=>now,readState:async()=>({fingerprint:applied?contract.databaseContract.fingerprint:contract.databaseContract.baseFingerprint,legacy_fingerprint:contract.databaseContract.legacyFingerprint,security_ok:options.badSecurity!==true,receipts:applied,owned_claim:applied,versioned_cache:applied})}),calls,writes:()=>writes};
+  return {run:overrides=>applyDurableRecovery({env:{...env,...overrides},fetchImpl,now:()=>now,applyMigration:async()=>{writes++;if(options.denied)throw Object.assign(Error('fixed'),{code:'RECOVERY_WRITE_UNCONFIRMED'});applied=true;if(options.lostResponse)throw Object.assign(Error('unknown'),{code:'RECOVERY_WRITE_UNCONFIRMED'});},readState:async()=>({fingerprint:applied?contract.databaseContract.fingerprint:contract.databaseContract.baseFingerprint,legacy_fingerprint:contract.databaseContract.legacyFingerprint,security_ok:options.badSecurity!==true,receipts:applied,owned_claim:applied,versioned_cache:applied})}),calls,writes:()=>writes};
 }
 
 test('preflight reads current main, provenance and fixed project state without a production mutation',async()=>{
@@ -44,7 +38,7 @@ test('apply requires exact main backup with successful isolated restore and encr
   const h=fixture(),r=await h.run({RECOVERY_MODE:'apply'});assert.equal(r.applied,true);assert.equal(r.backupVerified,true);assert.equal(h.writes(),1);
 });
 
-test('unknown migration HTTP result is confirmed by reads and is never replayed',async()=>{
+test('unknown migration response is confirmed by reads and is never replayed',async()=>{
   const h=fixture({lostResponse:true}),r=await h.run({RECOVERY_MODE:'apply'});
   assert.equal(r.status,'application_confirmed_after_lost_response');assert.equal(r.applied,true);assert.equal(h.writes(),1);
 });
@@ -65,7 +59,7 @@ test('foreign branch/project/mode, stale main and invalid security stop before m
 
 test('missing write permission stays a precise failure and never leaks the upstream response',async()=>{
   const h=fixture({denied:true});
-  await assert.rejects(h.run({RECOVERY_MODE:'apply'}),e=>{assert.equal(e.code,'RECOVERY_HTTP_403');assert.doesNotMatch(e.message,/private/);return true;});
+  await assert.rejects(h.run({RECOVERY_MODE:'apply'}),e=>{assert.equal(e.code,'RECOVERY_WRITE_UNCONFIRMED');assert.doesNotMatch(e.message,/private/);return true;});
   assert.equal(h.writes(),1);
 });
 
@@ -132,4 +126,25 @@ test('pinned public Supabase CA is the official unexpired 2021 root and temporar
     if(failure)await assert.rejects(result,{code:'RECOVERY_DATABASE_TLS_CA_FAILED'});else await result;
     assert.equal(fs.existsSync(filename),false);
   }
+});
+
+
+test('fixed PostgreSQL migration and its history row are one bounded transaction with guarded role transitions',async()=>{
+  await applyRecoveryMigration({databaseUrl:'postgresql://postgres.nlmvhkjkpgzzlfavaohk:local@aws-1-eu-west-1.pooler.supabase.com:5432/postgres',run:async(command,args,options)=>{
+    assert.equal(command,'psql');const query=args.at(-1);
+    assert.match(query,/^begin; set local lock_timeout='3s'; set local statement_timeout='20s';/);
+    const base=query.indexOf('Recovery base contract mismatch'),ddl=query.indexOf('create table if not exists public.scheduled_job_claim_receipts'),proof=query.indexOf('Recovery contract mismatch'),ledger=query.indexOf('insert into supabase_migrations.schema_migrations');
+    assert.ok(base>0&&ddl>base&&proof>ddl&&ledger>proof);
+    assert.match(query,/pg_advisory_xact_lock/);assert.match(query,/set local role service_role/);assert.match(query,/reset role/);
+    assert.match(query,/Recovery migration already recorded/);
+    assert.equal((query.match(/\)\) is not true/g)||[]).length,2,'both schema guards reject NULL as unknown');
+    assert.match(query,/version,name,statements/);assert.match(query,/array\[\$matchradar_v18_source\$/);assert.match(query,/commit;$/);
+    assert.equal(options.timeout,30000);assert.equal(options.killSignal,'SIGKILL');assert.equal(options.env.PGSSLMODE,'verify-full');
+    assert.equal(options.env.PGAPPNAME,'matchradar-recovery-migration');assert.doesNotMatch(JSON.stringify(args),/postgresql:\/\/|PGPASSWORD/);
+    return {stdout:''};
+  }});
+});
+
+test('an unknown PostgreSQL write outcome is never reported as an unchanged database',async()=>{
+  await assert.rejects(applyRecoveryMigration({databaseUrl:'postgresql://postgres.nlmvhkjkpgzzlfavaohk:local@aws-1-eu-west-1.pooler.supabase.com:5432/postgres',run:async()=>{throw Error('private lost connection');}}),{code:'RECOVERY_WRITE_UNCONFIRMED'});
 });
