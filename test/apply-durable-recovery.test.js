@@ -19,11 +19,11 @@ function fixture(options={}){
     }
     if(url.endsWith('/database/migrations')){
       assert.equal(init.method,'GET','Management API remains read-only');
-      return Response.json([{name:'supabase_migration_v6_29_17'},...(applied?[{name:'supabase_migration_v6_29_18'}]:[])]);
+      return Response.json([{name:'supabase_migration_v6_29_18'},...(applied?[{name:'supabase_migration_v6_29_19'}]:[])]);
     }
     throw Error('Unexpected fixed endpoint');
   };
-  return {run:overrides=>applyDurableRecovery({env:{...env,...overrides},fetchImpl,now:()=>now,applyMigration:async()=>{writes++;if(options.denied)throw Object.assign(Error('fixed'),{code:'RECOVERY_WRITE_UNCONFIRMED'});applied=true;if(options.lostResponse)throw Object.assign(Error('unknown'),{code:'RECOVERY_WRITE_UNCONFIRMED'});},readState:async()=>({fingerprint:applied?contract.databaseContract.fingerprint:contract.databaseContract.baseFingerprint,legacy_fingerprint:contract.databaseContract.legacyFingerprint,security_ok:options.badSecurity!==true,receipts:applied,owned_claim:applied,versioned_cache:applied})}),calls,writes:()=>writes};
+  return {run:overrides=>applyDurableRecovery({env:{...env,...overrides},fetchImpl,now:()=>now,applyMigration:async()=>{writes++;if(options.denied)throw Object.assign(Error('fixed'),{code:'RECOVERY_WRITE_UNCONFIRMED'});applied=true;if(options.lostResponse)throw Object.assign(Error('unknown'),{code:'RECOVERY_WRITE_UNCONFIRMED'});},readState:async()=>({fingerprint:contract.databaseContract.fingerprint,legacy_fingerprint:contract.databaseContract.legacyFingerprint,security_ok:options.badSecurity!==true,receipts:applied,owned_claim:applied,versioned_cache:true,reminder_dates_fixed:applied,reminder_dates_previous:!applied})}),calls,writes:()=>writes};
 }
 
 test('preflight reads current main, provenance and fixed project state without a production mutation',async()=>{
@@ -133,12 +133,12 @@ test('fixed PostgreSQL migration and its history row are one bounded transaction
   await applyRecoveryMigration({databaseUrl:'postgresql://postgres.nlmvhkjkpgzzlfavaohk:local@aws-1-eu-west-1.pooler.supabase.com:5432/postgres',run:async(command,args,options)=>{
     assert.equal(command,'psql');const query=args.at(-1);
     assert.match(query,/^begin; set local lock_timeout='3s'; set local statement_timeout='20s';/);
-    const base=query.indexOf('Recovery base contract mismatch'),ddl=query.indexOf('create table if not exists public.scheduled_job_claim_receipts'),proof=query.indexOf('Recovery contract mismatch'),ledger=query.indexOf('insert into supabase_migrations.schema_migrations');
+    const base=query.indexOf('Recovery base contract mismatch'),ddl=query.indexOf('create or replace function public.resolve_match_reminder_fixture'),proof=query.indexOf('Recovery contract mismatch'),ledger=query.indexOf('insert into supabase_migrations.schema_migrations');
     assert.ok(base>0&&ddl>base&&proof>ddl&&ledger>proof);
     assert.match(query,/pg_advisory_xact_lock/);assert.match(query,/set local role service_role/);assert.match(query,/reset role/);
     assert.match(query,/Recovery migration already recorded/);
-    assert.equal((query.match(/\)\) is not true/g)||[]).length,2,'both schema guards reject NULL as unknown');
-    assert.match(query,/version,name,statements/);assert.match(query,/array\[\$matchradar_v18_source\$/);assert.match(query,/commit;$/);
+    assert.match(query,/reminder_dates_previous from/);assert.match(query,/reminder_dates_fixed from/);assert.match(query,/\) is not true/,'body and schema guards reject NULL');
+    assert.match(query,/version,name,statements/);assert.match(query,/array\[\$matchradar_v19_source\$/);assert.match(query,/commit;$/);
     assert.equal(options.timeout,30000);assert.equal(options.killSignal,'SIGKILL');assert.equal(options.env.PGSSLMODE,'verify-full');
     assert.equal(options.env.PGAPPNAME,'matchradar-recovery-migration');assert.doesNotMatch(JSON.stringify(args),/postgresql:\/\/|PGPASSWORD/);
     return {stdout:''};

@@ -13,6 +13,7 @@ const RELEASE_TESTS = Object.freeze([
   'test/analysis-lifecycle-runtime-boundaries.test.js',
   'test/analysis-quality-runtime-boundaries.test.js',
   'test/analysis-runtime-boundaries.test.js',
+  'test/reminder-action-recovery.test.js',
   'test/match-question-access.test.js',
   'test/match-question.test.js',
   'test/match-question-facts.test.js',

@@ -135,7 +135,7 @@ test('a free question uses LLM selection only; "not in the data" and the user co
   assert.equal(res.body.remaining, 7);
   assert.equal(calls.rpc[0].params.p_bucket_key, 'ai-ask:user:5', 'the user slot is claimed before the shared budget');
   assert.equal(calls.rpc[1].params.p_bucket_key, 'ai-ask-global:h12');
-  assert.match(calls.setCache[0].key, /^ask:v2:77:4\.17\.0-starting-xi:[0-9a-f]{24}:[0-9a-f]{20}$/);
+  assert.match(calls.setCache[0].key, /^ask:v3:77:4\.17\.0-starting-xi:[0-9a-f]{24}:[0-9a-f]{20}$/);
 
   const none = runtime({ ai: () => ({ response: '{"factIds":[]}' }) });
   const nothing = await none.rt.apiMatchQuestion(request({ fixtureId: 77, question: 'Какая погода будет в Милане?' }), none.cfg, user);

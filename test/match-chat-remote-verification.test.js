@@ -9,12 +9,14 @@ import {auditWorkflow} from '../scripts/privileged-access-audit.js';
 test('remote harness calls the actual handler, checks grounded facts and isolates the previous model',async()=>{
   const calls=[];const env={PROBE_NONCE:'local-fixture-only',AI:{run:async(model,input)=>{
     calls.push({model,input});if(model!==EXPLANATION_MODEL)throw Error('model not found');
+    if(input.messages.some(message=>message.content.includes('Question: Как команды играли друг с другом раньше')))return {response:'{"factIds":["h2h"]}'};
+    if(input.messages.some(message=>message.content.includes('Question: Сколько в среднем забивает Home FC')))return {response:'{"factIds":["attack_home"]}'};
     return {response:input.messages.some(message=>message.content.includes('Question: Что модель говорит о результативности')) ? '{"factIds":["goals_high"]}' : '{"factIds":["form_home","form_away"]}'};
   }}};
   for(const variant of ['previous','current']){
     const result=await worker.fetch(new Request('https://local.test/probe',{method:'POST',headers:{'x-probe-key':env.PROBE_NONCE},body:JSON.stringify({variant})}),env);
     const report=await result.json();
-    assert.equal(report.modelCalls,variant==='current' ? 2 : 1);assert.equal(summarizeChatProbe(report),variant==='current');
+    assert.equal(report.modelCalls,variant==='current' ? 4 : 1);assert.equal(summarizeChatProbe(report),variant==='current');
     if(variant==='previous')assert.equal(report.modelFailure,'model_unavailable');
     else{assert.equal(report.model,EXPLANATION_MODEL);assert.ok(report.items[0].text.includes('побед — 4'));}
   }

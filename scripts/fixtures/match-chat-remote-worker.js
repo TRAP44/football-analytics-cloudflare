@@ -7,8 +7,9 @@ const analysis={
   analysisVersion:'remote-verification',
   match:{fixtureId,referee:'Fixture Official',venue:'Fixture Stadium',home:{name:'Home FC'},away:{name:'Away FC'}},
   probabilities:{home:54,draw:25,away:21},
+  h2h:{homeWins:1,draws:1,awayWins:1},
   confidence:{score:72},goalModel:{over25:65},absences:{home:[{name:'Home Player'}],away:[]},
-  recentForm:{home:{overall:{sample:5,wins:4,draws:1,losses:0}},away:{overall:{sample:5,wins:1,draws:1,losses:3}}},
+  recentForm:{home:{overall:{sample:5,wins:4,draws:1,losses:0,gfAvg:1.8,gaAvg:0.6}},away:{overall:{sample:5,wins:1,draws:1,losses:3}}},
 };
 export default {
   async fetch(request,env){
@@ -51,7 +52,7 @@ export default {
       }},
     },{id:1});
     const body=await response.json();
-    const checks={referee:false,missingReferee:false,goals:false};
+    const checks={referee:false,missingReferee:false,goals:false,h2h:false,attack:false};
     if(input.variant==='current'){
       const ask=async question=>{
         const result=await rt.apiMatchQuestion(new Request('https://fixture.invalid/api/match-question',{
@@ -78,6 +79,10 @@ export default {
       checks.missingReferee=missing.source==='data' && missing.items?.[0]?.text==='В этом разборе главный судья пока не указан.';
       const goals=await ask('Что модель говорит о результативности матча?');
       checks.goals=goals.source==='ai' && goals.items?.some(item=>item.id==='goals_high')===true;
+      const h2h=await ask('Как команды играли друг с другом раньше?');
+      checks.h2h=h2h.source==='ai' && h2h.items?.length===1 && h2h.items[0].id==='h2h';
+      const attack=await ask('Сколько в среднем забивает Home FC за последние матчи?');
+      checks.attack=attack.source==='ai' && attack.items?.length===1 && attack.items[0].id==='attack_home';
     }
 
     return Response.json({

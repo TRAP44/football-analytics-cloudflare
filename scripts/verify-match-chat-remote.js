@@ -13,7 +13,7 @@ async function freePort(){
 }
 export function summarizeChatProbe(result){
   return result?.model===EXPLANATION_MODEL && result?.available===true && result?.answer==='facts' && result?.source==='ai'
-    && result?.modelCalls===2 && result?.checks?.referee===true && result?.checks?.missingReferee===true && result?.checks?.goals===true && Array.isArray(result?.items) && result.items.length>0
+    && result?.modelCalls===4 && result?.checks?.referee===true && result?.checks?.missingReferee===true && result?.checks?.goals===true && result?.checks?.h2h===true && result?.checks?.attack===true && Array.isArray(result?.items) && result.items.length>0
     && result.items.some(item=>item.id==='form_home')
     && result.items.every(item=>typeof item.text==='string' && /Home FC|Away FC/.test(item.text));
 }
@@ -22,7 +22,9 @@ export function safeProbeReport(result){
   return {
     model:result?.model===EXPLANATION_MODEL?'current':result?.model==='@cf/meta/llama-3.1-8b-instruct-fp8'?'previous':'unexpected',
     passed:summarizeChatProbe(result),
-    modelCallsExpected:result?.modelCalls===2,
+    modelCallsExpected:result?.modelCalls===4,
+    headToHeadAnsweredByAi:result?.checks?.h2h===true,
+    teamAttackAnsweredByAi:result?.checks?.attack===true,
     refereeAnswered:result?.checks?.referee===true,
     missingRefereeHandled:result?.checks?.missingReferee===true,
     goalsAnsweredByAi:result?.checks?.goals===true,
@@ -60,7 +62,7 @@ export async function verifyMatchChatRemote(env=process.env){
     if(!ready){report.failure='remote_binding_start_failed';report.permissionDenied=/403|401|forbidden|authentication error/i.test(output);return report;}
     for(const variant of ['previous','current']){
       try{
-        const response=await fetch(base+'/probe',{method:'POST',headers:{'content-type':'application/json','x-probe-key':nonce},body:JSON.stringify({variant}),signal:AbortSignal.timeout(12000)});
+        const response=await fetch(base+'/probe',{method:'POST',headers:{'content-type':'application/json','x-probe-key':nonce},body:JSON.stringify({variant}),signal:AbortSignal.timeout(20000)});
         if(!response.ok){report[variant]={failure:'probe_http_error'};continue;}
         report[variant]=safeProbeReport(await response.json());
       }catch{report[variant]={failure:'probe_transport_error'};}

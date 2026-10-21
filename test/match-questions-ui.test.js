@@ -5,14 +5,13 @@ import { matchQuestionAnswerHtml, matchQuestionsShellHtml } from '../public/modu
 
 const esc = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
-test('shell: four ready questions, bounded input, honest note', () => {
-  const html = matchQuestionsShellHtml(esc);
-  assert.equal((html.match(/data-question-preset=/g) || []).length, 4);
-  for (const label of ['Почему такой прогноз?', 'Что может изменить исход?', 'Кто в форме?', 'Что с составами и потерями?']) assert.ok(html.includes(label), label);
-  assert.match(html, /maxlength="200"/);
-  assert.match(html, /<button[^>]*type="button"[^>]*data-question-start/);
-  assert.match(html, /Ответы основаны на данных этого матча/);
-  assert.doesNotMatch(html, /коэффициент|П1|П2|1X2/);
+test('questions show a custom question field without preset chips or an automatic question', () => {
+  const html=matchQuestionsShellHtml(esc);
+  assert.doesNotMatch(html,/data-question-preset|data-question-start|Готовые вопросы/);
+  assert.match(html,/<h2>Спросить про матч<\/h2>/);
+  assert.match(html,/name="question"/);
+  assert.match(html,/type="submit"/);
+  for(const reason of ['user_limit','daily_limit','ai_unavailable','ai_disabled'])assert.doesNotMatch(matchQuestionAnswerHtml({available:false,reason},esc),/подсказк/i);
 });
 
 test('answers: server facts only, "not in the data", refusal and limits', () => {
@@ -35,7 +34,7 @@ test('answers: server facts only, "not in the data", refusal and limits', () => 
   assert.match(matchQuestionAnswerHtml({ available: true, answer: 'facts', items: [] }, esc), /ответа на этот вопрос нет/, 'empty facts fall back to "not in the data"');
   assert.match(matchQuestionAnswerHtml({ available: true, answer: 'refused' }, esc), /Ставки мы не подсказываем/);
   assert.match(matchQuestionAnswerHtml({ available: false, reason: 'user_limit', remaining: 0 }, esc), /Лимит вопросов на этот час исчерпан/);
-  assert.match(matchQuestionAnswerHtml({ available: false, reason: 'daily_limit' }, esc), /На сегодня вопросы к AI закончились/);
+  assert.match(matchQuestionAnswerHtml({ available: false, reason: 'daily_limit' }, esc), /На сегодня лимит вопросов к AI исчерпан/);
   assert.match(matchQuestionAnswerHtml({ available: false, reason: 'rate_limited' }, esc), /подождите минуту/);
   assert.match(matchQuestionAnswerHtml(null, esc), /Не удалось получить ответ/);
 });

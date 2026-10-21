@@ -59,3 +59,10 @@ test('squad preset exposes published starting players for both teams with bounde
   assert.ok(/^absences_/.test(items[2].id));
   assert.ok(items.slice(0,2).every(item=>!item.text.includes('подтверждённый')));
 });
+
+test('custom questions can use balanced head-to-head, expected goals, attack, defence and local kickoff',()=>{
+  const facts=buildMatchQuestionFacts({match:{...match,date:'2026-10-21T17:00:00Z',league:'Premier League'},h2h:{homeWins:1,draws:1,awayWins:1},goalModel:{homeExpected:1.45,awayExpected:0.9},recentForm:{home:{overall:{sample:5,wins:2,draws:1,losses:2,gfAvg:1.8,gaAvg:1.2}}}});
+  const byId=Object.fromEntries(facts.map(f=>[f.id,f.text]));assert.match(byId.h2h,/последних 3 очных/);assert.match(byId.expected_goals,/1,45/);assert.match(byId.attack_home,/1,8/);assert.match(byId.defence_home,/1,2/);assert.match(byId.kickoff,/20:00 МСК/);
+  const invalid=buildMatchQuestionFacts({match,goalModel:{homeExpected:'1.4',awayExpected:NaN},h2h:{homeWins:-1,draws:2,awayWins:3},recentForm:{home:{overall:{sample:5,gfAvg:Infinity,gaAvg:-1}}}});
+  for(const id of ['expected_goals','h2h','attack_home','defence_home'])assert.equal(invalid.some(f=>f.id===id),false,id);
+});

@@ -1095,10 +1095,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch134'),
+      import('./modules/match-center-view.js?v=6.120.0-launch135'),
       import('./modules/match-pulse.js?v=6.120.0-launch87'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch134'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch134'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch135'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch135'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1255,7 +1255,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch134').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch135').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -2247,7 +2247,14 @@ async function loadFavorites() {
   }
 }
 
+let remindersLoadPromise = null;
 async function loadReminders() {
+  if (remindersLoadPromise) return remindersLoadPromise;
+  remindersLoadPromise = performLoadReminders().finally(() => { remindersLoadPromise = null; });
+  return remindersLoadPromise;
+}
+
+async function performLoadReminders() {
   if (state.remindersLoading) return;
   const revisionAtStart = state.remindersRevision;
   state.remindersLoading = true;
@@ -2911,7 +2918,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch134');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch135');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3398,7 +3405,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch134').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch135').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -5392,8 +5399,7 @@ function syncReminderMutationUi(fixtureId) {
   const pending = state.reminderMutations.has(id);
   const button = $('reminderBtn');
   if (button && positiveEntityId(state.currentAnalysis?.match?.fixtureId) === id) {
-    button.disabled = pending;
-    button.classList.toggle('is-pending', pending);
+    syncQuickReminderButton(button, id);
   }
   document.querySelectorAll(`.reminder-remove[data-fixture-id="${id}"]`).forEach(el => {
     el.disabled = pending;
@@ -5407,6 +5413,19 @@ function syncReminderMutationUi(fixtureId) {
 async function toggleReminder(match) {
   const fixtureId = positiveEntityId(match?.fixtureId);
   if (!fixtureId || state.reminderMutations.has(fixtureId)) return;
+  if (!state.remindersLoaded || state.remindersLoadError) {
+    const wantsActive = !state.remindersLoaded || !hasReminder(fixtureId);
+    await loadReminders();
+    if (!state.remindersLoaded || state.remindersLoadError) {
+      toast('Не удалось загрузить напоминания. Нажмите ещё раз, чтобы повторить.');
+      return;
+    }
+    if (state.reminderMutations.has(fixtureId)) return;
+    if (hasReminder(fixtureId) === wantsActive) {
+      toast(wantsActive ? 'Напоминание уже включено' : 'Напоминание уже отключено');
+      return;
+    }
+  }
   const active = hasReminder(fixtureId);
   state.remindersLoadError = '';
   let remindersEnabled = false;
@@ -5519,7 +5538,7 @@ async function loadAnalysisExplanation(fixtureId) {
   const root = $('matchExplanation');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch134');
+    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch135');
     const { loadMatchExplanation } = await matchExplanationModule;
     await loadMatchExplanation({
       root,
@@ -5539,7 +5558,7 @@ async function loadMatchQuestions(fixtureId) {
   const root = $('matchQuestions');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch134');
+    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch135');
     const { mountMatchQuestions } = await matchQuestionsModule;
     mountMatchQuestions({
       root,
@@ -5558,7 +5577,7 @@ async function loadMatchQuestions(fixtureId) {
 // «Обыграй AI»: прогноз в Штабе матча и таблица в Профиле — ленивый модуль.
 let beatAiModule = null;
 function loadBeatAiModule() {
-  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch134').catch(error => { beatAiModule = null; throw error; });
+  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch135').catch(error => { beatAiModule = null; throw error; });
   return beatAiModule;
 }
 async function mountBeatAi(m = {}) {
@@ -5593,7 +5612,7 @@ async function loadReferralInvitePanel() {
   const root = $('referralInvite');
   if (!root) return;
   try {
-    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch134');
+    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch135');
     const { loadReferralInvite } = await referralInviteModule;
     await loadReferralInvite({ root, api, escapeHtml, tg, toast });
   } catch {
@@ -5604,7 +5623,7 @@ async function loadReferralInvitePanel() {
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch134');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch135');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {
@@ -5812,19 +5831,15 @@ function analysisGoalsHtml(goal, m = {}) {
 function analysisFreshnessHtml(freshness = {}, recheck = {}) {
   // Сервер не смог проверить историю — повторная перепроверка сейчас ничего не даст.
   const historyUnavailable = recheck?.reasonCode === 'history_unavailable';
-  const delta = recheck?.performed && recheck?.delta?.available ? recheck.delta : null;
   const needs = Boolean(freshness?.needsRecheck);
-  if (!needs && !delta) return '';
+  if (!needs) return '';
   const action = needs && !historyUnavailable
     ? `<p>${escapeHtml(publicText(freshness.reason || 'Появились новые данные по матчу.'))}</p><button id="analysisRecheckBtn" class="freshness-recheck-btn" type="button">↻ Обновить разбор</button>`
     : '';
   const unavailable = needs && historyUnavailable
     ? '<small class="freshness-recheck-meta">Обновление временно недоступно: не удалось проверить историю разборов. Показан сохранённый разбор, лимит не списан — попробуйте чуть позже.</small>'
     : '';
-  const deltaHtml = delta
-    ? `<div class="analysis-delta ${delta.material ? 'material' : delta.stable ? 'stable' : ''}"><div class="analysis-delta-head"><strong>${delta.material ? '🔄 Что изменилось' : '✓ Прогноз стабилен'}</strong></div><p>${escapeHtml(publicText(delta.summary || ''))}</p></div>`
-    : '';
-  return `<section class="panel analysis-freshness recheck">${deltaHtml}${unavailable}${action}</section>`;
+  return `<section class="panel analysis-freshness recheck">${unavailable}${action}</section>`;
 }
 
 // Вкладка «Форма»: место в таблице и очные встречи — только подтверждённые данные.

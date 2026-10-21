@@ -19,7 +19,8 @@
 
 ## В работе
 
-- [ ] Надёжно восстанавливать потерянные ответы Supabase без дублей — **Codex** — `codex/durable-recovery-transactional-apply`, продолжение #976/#989/#990/#991. #989 слит, backup39572462589 dump + restore success. Исправляется protected preflight: служебные schema RPC недоступны read-only роли Management API; использовать существующий backup PG connection в READ ONLY под service_role. В выпуске: постоянный owner UUID и SQL receipts, монотонная запись cache, подтверждение результата чтением, общий предел 7 секунд; завершение lease также получает единый бюджет. Проверки, независимое ревью и защищённое применение миграции с резервной копией.
+
+
 
 
 
@@ -68,7 +69,8 @@
 
 ## На ревью
 
-- [ ] Применить ровно v18 и записать историю одной PostgreSQL-транзакцией — **Codex** — `codex/durable-recovery-transactional-apply`. Existing admin connection, source/backup guards сохранены, under-lock base и posthash/security, без SQL inputs и повторов неизвестных записей. Management API только читает history; его токен не требует расширения прав.
+- [ ] Матч: рабочее напоминание за 15 минут, свои вопросы без готовых подсказок и лишней сводки перепроверки — **Codex** — [PR #993](https://github.com/TRAP44/football-analytics-cloudflare/pull/993), `codex/match-reminder-chat-cleanup`. Исправить SQL ISO-даты и восстановление кнопки после ошибки загрузки; расширить факты своих вопросов, сохранить скорость и серверные проверки.
+
 
 
 
@@ -168,6 +170,9 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Потерянные ответы Supabase и атомарная миграция v18 — **Codex** — [PR #992](https://github.com/TRAP44/football-analytics-cloudflare/pull/992), опубликован e86016a6, migration/apply + encrypted backup/restore + 25 HTTP/browser checks; 3 реальных фоновых запуска с 9 LIVE-циклами успешны. Подтверждение: #976 issuecomment-6319836567. Внешние сетевые сбои не объявляются устранёнными.
+
 
 - [x] Доверенный официальный CA Supabase в protected preflight — **Codex** — [#991](https://github.com/TRAP44/football-analytics-cloudflare/pull/991), merge0bdb3fb2. Production preflight39576130658 успешен: verify-full, service_role, actual base af06. Backup39576135267 dump + isolated restore success. API apply39576716499 получил403; дальше используется существующее admin PG connection, миграция ещё не применена.
 

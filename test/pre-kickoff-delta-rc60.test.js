@@ -123,11 +123,11 @@ test('recheck response and analytics expose bounded delta metadata',()=>{
   assert.doesNotMatch(event,/query|rawText/);
 });
 
-test('Telegram and Mini App explain what changed after recheck',()=>{
+test('Telegram retains recheck details while Mini App omits the technical delta summary',()=>{
   assert.match(telegram,/Что изменилось после перепроверки/);
   assert.match(telegram,/rowsOrEmpty\(delta\.items,3\)\.map/);
-  assert.match(app,/class="analysis-delta/);
-  assert.match(app,/Прогноз стабилен/);
+  assert.doesNotMatch(app,/class="analysis-delta/);
+  assert.match(app,/id="analysisRecheckBtn"/);
   assert.match(css,/\.analysis-delta\.material/);
 });
 

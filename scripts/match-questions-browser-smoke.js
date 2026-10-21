@@ -1,12 +1,10 @@
 import {createMatchQuestionRuntime} from '../src/match-question-runtime.js';
 import {issueMatchQuestionAccess} from '../src/match-question-access.js';
-import {buildMatchQuestionPresets} from '../src/match-question-presets.js';
 import {launchChromeWithRetry,stopChrome,Cdp,browserExecutable} from './bottom-nav-render-smoke.js';
 import {createServer} from 'node:http';
 import {readFile,rm} from 'node:fs/promises';
 import path from 'node:path';
 
-const prepared=buildMatchQuestionPresets({match:{fixtureId:123,home:{name:'Chelsea'},away:{name:'Everton'}},probabilities:{home:54,draw:25,away:21},recentForm:{home:{overall:{sample:5,wins:4,draws:1,losses:0}}},absences:{home:[],away:[]},lineupQuality:{bothConfirmed:false}});
 
 let realHandlerCalls=0;
 const runtime=createMatchQuestionRuntime({
@@ -22,23 +20,17 @@ const scenario=`<!doctype html><html data-theme="dark"><head><link rel="styleshe
 <section id="questions"></section><script type="module">
 import {mountMatchQuestions} from '/modules/match-questions.js';
 try {
- const instantRoot=document.createElement('section');document.body.append(instantRoot);
- const prepared=${JSON.stringify(prepared)};
- mountMatchQuestions({root:instantRoot,fixtureId:123,presetAnswers:prepared,api:()=>{throw Error('prepared question must not need history/API');},escapeHtml:value=>String(value).replaceAll('<','&lt;')});
- for(const key of ['why','risk','form','squad']){
-  instantRoot.querySelector('[data-question-preset="'+key+'"]').click();
-  if(!instantRoot.querySelector('[data-question-answer]').textContent.trim() || instantRoot.textContent.includes('Ищу в данных'))throw Error('prepared answer missing: '+key);
- }
- instantRoot.querySelector('[data-question-start]').click();
- if(!instantRoot.querySelector('[data-question-answer]').textContent.includes('Chelsea'))throw Error('prepared main answer missing');
- instantRoot.remove();
  const root=document.getElementById('questions');let requests=[],reply;
  const api=async(url,options)=>{if(url!=='/api/match-question')throw Error('wrong endpoint');requests.push(JSON.parse(options.body));return await new Promise(resolve=>{reply=resolve;});};
  const mount=id=>mountMatchQuestions({root,fixtureId:id,accessReceipt:id===123 ? '${receipt}' : null,api,escapeHtml:value=>String(value).replaceAll('<','&lt;'),isCurrent:()=>true});
  const flush=()=>new Promise(resolve=>setTimeout(resolve,0));
  const facts=text=>({available:true,answer:'facts',items:[{role:'lead',connector:'Вывод:',text}]});
- mount(123);root.querySelector('[data-question-start]').click();
- if(requests.length!==1 || requests[0].preset!=='why' || !root.textContent.includes('Ищу в данных'))throw Error('start button did not ask');
+ const submit=question=>{root.querySelector('input').value=question;root.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));};
+ mount(123);
+ if(requests.length || root.querySelector('[data-question-preset]') || root.querySelector('[data-question-start]'))throw Error('questions must start empty without preset actions');
+ submit('Кто лучше играет дома?');
+ if(requests.length!==1 || requests[0].question!=='Кто лучше играет дома?' || !root.textContent.includes('Ищу в данных'))throw Error('custom question did not ask');
+ submit('Другой вопрос');if(requests.length!==1)throw Error('busy question was submitted twice');
  mount(123);reply(facts('Chelsea: подтверждённый факт'));await flush();
  if(!root.querySelector('[data-question-answer]').textContent.includes('Chelsea'))throw Error('same-analysis redraw lost answer');
  root.querySelector('input').value='Кто в форме?';root.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
@@ -46,10 +38,10 @@ try {
  if(requests[1].accessReceipt!=='${receipt}')throw Error('text question lost its delivered-analysis receipt');
  reply(facts('Форма команды'));await flush();
  if(!root.querySelector('[data-question-answer]').textContent.includes('Форма команды'))throw Error('typed answer invisible');
- root.querySelector('[data-question-start]').click();const oldReply=reply;
+ submit('Как играли раньше?');const oldReply=reply;
  mount(124);oldReply(facts('OLD MATCH ANSWER'));await flush();
  if(root.textContent.includes('OLD MATCH ANSWER'))throw Error('old match answer leaked');
- root.querySelector('[data-question-start]').click();if(requests.at(-1).fixtureId!==124)throw Error('wrong fixture');
+ submit('Как играют дома?');if(requests.at(-1).fixtureId!==124)throw Error('wrong fixture');
  reply(facts('Новый матч'));await flush();
  if(!root.textContent.includes('Новый матч'))throw Error('new match answer missing');
  const grid=document.querySelector('.center-hero-actions').getBoundingClientRect(),pass=document.querySelector('.center-pass-btn').getBoundingClientRect();
@@ -103,5 +95,5 @@ try{
  }
  if(realHandlerCalls!==2)throw Error('actual handler was not exercised exactly twice');
  if(result?.status!=='passed')throw Error('Rendered question flow failed: '+JSON.stringify(result));
- console.log('Rendered questions passed: immediate server-prepared answers without history/API, start action, same-analysis remount, typed question, actual referee/probabilities handler round trips, stale reply isolation, Pass alignment.');
+ console.log('Rendered questions passed: custom-only form without automatic requests, duplicate submit guard, same-analysis remount, typed question, actual referee/probabilities handler round trips, stale reply isolation, Pass alignment.');
 }finally{cdp?.socket.close();await stopChrome(launched.chrome);server.close();await rm(launched.profileDir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}

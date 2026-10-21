@@ -113,7 +113,7 @@ test('creating a reminder updates the local list from the POST response without 
   assert.match(toggle, /const data = await api\('\/api\/reminders', \{/);
   assert.match(toggle, /const item = data\?\.item/);
   assert.match(toggle, /state\.reminders = \[item,/);
-  assert.doesNotMatch(toggle, /await loadReminders\(\)/);
+  assert.doesNotMatch(toggle.slice(toggle.indexOf('const item = data?.item')), /await loadReminders\(\)/);
 });
 
 test('personal-data API rejects malformed collection responses instead of publishing false empty state', async () => {

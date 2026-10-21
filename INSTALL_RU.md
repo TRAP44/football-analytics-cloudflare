@@ -15,7 +15,7 @@
 - runtime: `6.120.0-rc144`
 - schema: `6.29`
 - baseline: `supabase/baseline/supabase_baseline_v6_19.sql`
-- latest migration: `supabase/migrations/supabase_migration_v6_29_18.sql`
+- latest migration: `supabase/migrations/supabase_migration_v6_29_19.sql`
 
 ## Существующий Supabase-проект
 
