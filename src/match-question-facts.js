@@ -2,6 +2,8 @@ import {buildExplanationFacts,validProbabilities} from './match-explanation-runt
 
 const text=value=>typeof value==='string' ? value.replace(/[\u0000-\u001f\u007f<>]/g,' ').replace(/\s+/g,' ').trim().slice(0,100) : '';
 const count=value=>typeof value==='number' && Number.isInteger(value) && value>=0 && value<=60 ? value : null;
+const metric=value=>typeof value==='number' && Number.isFinite(value) && value>=0 && value<=20 ? value : null;
+const decimal=value=>String(Math.round(value*100)/100).replace('.',',');
 const present=value=>value && !/^(?:unknown|null|undefined|tbd|n\/a|неизвестно|не указан|-)$/i.test(value);
 
 // Questions need ordinary match facts even when they are not a strong model
@@ -21,6 +23,22 @@ export function buildMatchQuestionFacts(payload={}){
     const percent=value=>(Math.round(value*10)/10).toString().replace('.',',');
     add('outcome_probabilities',`Оценка модели: победа ${home} — ${percent(probabilities.home)}%, ничья — ${percent(probabilities.draw)}%, победа ${away} — ${percent(probabilities.away)}%.`);
   }
+  const expected=payload?.goalModel;
+  if(metric(expected?.homeExpected)!==null && metric(expected?.awayExpected)!==null){
+    const home=text(payload?.match?.home?.name) || 'Хозяева',away=text(payload?.match?.away?.name) || 'Гости';
+    add('expected_goals',`Ожидаемые голы по модели: ${home} — ${decimal(expected.homeExpected)}, ${away} — ${decimal(expected.awayExpected)}. Это оценка, а не точный счёт.`);
+  }
+  const h2h=payload?.h2h;
+  const h2hValues=['homeWins','draws','awayWins'].map(key=>h2h?.[key]);
+  if(h2hValues.every(value=>typeof value==='number' && Number.isInteger(value) && value>=0 && value<=200) && h2hValues.reduce((a,b)=>a+b,0)>0){
+    const [homeWins,draws,awayWins]=h2hValues;
+    add('h2h',`В последних ${homeWins+draws+awayWins} очных встречах: победы ${text(payload?.match?.home?.name) || 'хозяев'} — ${homeWins}, ничьи — ${draws}, победы ${text(payload?.match?.away?.name) || 'гостей'} — ${awayWins}.`,60);
+  }
+  const rawDate=payload?.match?.date;
+  if(typeof rawDate==='string' && /^\d{4}-\d{2}-\d{2}T/.test(rawDate) && Number.isFinite(Date.parse(rawDate))){
+    const kickoff=new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(rawDate));
+    add('kickoff',`Начало матча — ${kickoff} МСК${text(payload?.match?.league) ? `. Турнир: ${text(payload.match.league)}` : ''}.`);
+  }
   const referee=text(payload?.match?.referee);
   if(present(referee))add('referee',`Главный судья — ${referee}.`);
   const venue=text(payload?.match?.venue),city=text(payload?.match?.city);
@@ -32,6 +50,11 @@ export function buildMatchQuestionFacts(payload={}){
     if(values.every(value=>value!==null) && values[0]>0 && values[1]+values[2]+values[3]===values[0]){
       const [sample,wins,draws,losses]=values;
       add(`form_${side}`,`${name} за последние ${sample} матчей: побед — ${wins}, ничьих — ${draws}, поражений — ${losses}.`,facts.find(fact=>fact.id===`form_${side}`)?.priority || 35);
+    }
+    const sample=count(form?.sample);
+    if(sample!==null && sample>0){
+      if(metric(form?.gfAvg)!==null)add(`attack_${side}`,`${name} за последние ${sample} матчей забивает в среднем ${decimal(form.gfAvg)} гола за игру.`);
+      if(metric(form?.gaAvg)!==null)add(`defence_${side}`,`${name} за последние ${sample} матчей пропускает в среднем ${decimal(form.gaAvg)} гола за игру.`);
     }
     const absences=payload?.absences?.[side];
     if(Array.isArray(absences) && absences.length>0 && absences.length<=60){

@@ -268,7 +268,7 @@ export function renderMatchCenterView(d, deps) {
 
   root.querySelector('[data-center-open-analysis]')?.addEventListener('click', e => openHistoryAnalysis(fixtureId, e.currentTarget));
   $('centerWatchBtn')?.addEventListener('click',()=>toggleMatchWatch({...m,finished:false}));
-  root.querySelectorAll('[data-quick-reminder]').forEach(button=>{syncQuickReminderButton(button,m.fixtureId);if(!state.remindersLoaded){button.disabled=true;button.textContent=state.remindersLoadError?'Напоминания недоступны · обновите в профиле':'Загружаю напоминания…';}button.addEventListener('click',()=>toggleReminder(m));});
+  root.querySelectorAll('[data-quick-reminder]').forEach(button=>{syncQuickReminderButton(button,m.fixtureId);if(!state.remindersLoaded){button.disabled=state.remindersLoading===true;button.textContent=state.remindersLoadError?'Повторить · напомнить о матче':'Загружаю напоминания…';}button.addEventListener('click',()=>toggleReminder(m));});
   $('centerAnalyzeBtn')?.addEventListener('click', e => analyzeMatch(Number(m.fixtureId), e.currentTarget));
   $('centerHistoryRetryBtn')?.addEventListener('click', e => {
     e.currentTarget.disabled = true;

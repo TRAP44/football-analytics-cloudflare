@@ -10,14 +10,18 @@ import {validateSupabaseMigrationContract} from './verify-supabase-contract.js';
 import {selectMergedPullRequest} from './verify-main-pr-provenance.js';
 const REPOSITORY='TRAP44/football-analytics-cloudflare';
 const PROJECT='nlmvhkjkpgzzlfavaohk';
-const MIGRATION='supabase/migrations/supabase_migration_v6_29_18.sql';
-const MIGRATION_NAME='supabase_migration_v6_29_18';
+const MIGRATION='supabase/migrations/supabase_migration_v6_29_19.sql';
+const MIGRATION_NAME='supabase_migration_v6_29_19';
+const REMINDER_PREVIOUS_HASH='acbc9eaa061b283c2047682bc26847f8';
+const REMINDER_SOURCE_HASH='58165410c124d6a50deb0804cd114aef';
 export const RECOVERY_STATE_SQL=`select public.backend_schema_contract_v2()->>'fingerprint' as fingerprint,
   public.backend_schema_fingerprint()->>'fingerprint' as legacy_fingerprint,
   coalesce((public.backend_security_contract()->>'ok')::boolean,false) as security_ok,
   pg_catalog.to_regclass('public.scheduled_job_claim_receipts') is not null as receipts,
   pg_catalog.to_regprocedure('public.claim_scheduled_job_owned(text,text,timestamp with time zone,uuid,integer,integer)') is not null as owned_claim,
-  pg_catalog.to_regprocedure('public.write_analysis_cache_versioned(text,bigint,jsonb,timestamp with time zone,text,timestamp with time zone,text,timestamp with time zone)') is not null as versioned_cache`;
+  pg_catalog.to_regprocedure('public.write_analysis_cache_versioned(text,bigint,jsonb,timestamp with time zone,text,timestamp with time zone,text,timestamp with time zone)') is not null as versioned_cache,
+  pg_catalog.md5((select prosrc from pg_catalog.pg_proc where oid='public.resolve_match_reminder_fixture(bigint)'::regprocedure))='${REMINDER_SOURCE_HASH}' as reminder_dates_fixed,
+  pg_catalog.md5((select prosrc from pg_catalog.pg_proc where oid='public.resolve_match_reminder_fixture(bigint)'::regprocedure))='${REMINDER_PREVIOUS_HASH}' as reminder_dates_previous`;
 const fail=code=>{throw Object.assign(new Error(code),{code});};
 const runPsql=promisify(execFile);
 
@@ -81,19 +85,19 @@ export async function applyRecoveryMigration({databaseUrl,signal,run=runPsql,roo
   const {releaseContract:contract,latestMigration}=validateSupabaseMigrationContract(root);
   const db=contract.databaseContract;
   if(latestMigration!==MIGRATION||![db.fingerprint,db.freshInstallFingerprint,db.baseFingerprint].every(value=>/^[0-9a-f]{32}$/.test(value)))fail('RECOVERY_CONTRACT_INVALID');
-  const sql=fs.readFileSync(`${root}/${MIGRATION}`,'utf8'),quote='$matchradar_v18_source$';
+  const sql=fs.readFileSync(`${root}/${MIGRATION}`,'utf8'),quote='$matchradar_v19_source$';
   if(sql.includes(quote))fail('RECOVERY_MIGRATION_QUOTING_INVALID');
   // The checked-in migration and its standard Supabase history row commit
   // together. The lock and base check also fence a delayed duplicate caller.
   const query=`begin; set local lock_timeout='3s'; set local statement_timeout='20s';
 select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('matchradar:schema-migration'),pg_catalog.hashtext('${MIGRATION_NAME}'));
 set local role service_role;
-do $base$ begin if (public.backend_schema_contract_v2()->>'fingerprint' in ('${db.baseFingerprint}','0169ec29ea39da9d085040ed825057a6')) is not true then raise exception 'Recovery base contract mismatch'; end if; end $base$;
+do $base$ begin if (public.backend_schema_contract_v2()->>'fingerprint' in ('${db.fingerprint}','${db.freshInstallFingerprint}')) is not true or (select reminder_dates_previous from (${RECOVERY_STATE_SQL}) checked) is not true then raise exception 'Recovery base contract mismatch'; end if; end $base$;
 reset role;
-do $history$ begin if not exists(select 1 from supabase_migrations.schema_migrations where name='supabase_migration_v6_29_17') then raise exception 'Recovery migration history mismatch'; end if; if exists(select 1 from supabase_migrations.schema_migrations where name='${MIGRATION_NAME}') then raise exception 'Recovery migration already recorded'; end if; end $history$;
+do $history$ begin if not exists(select 1 from supabase_migrations.schema_migrations where name='supabase_migration_v6_29_18') then raise exception 'Recovery migration history mismatch'; end if; if exists(select 1 from supabase_migrations.schema_migrations where name='${MIGRATION_NAME}') then raise exception 'Recovery migration already recorded'; end if; end $history$;
 ${sql}
 set local role service_role;
-do $proof$ begin if (public.backend_schema_contract_v2()->>'fingerprint' in ('${db.fingerprint}','${db.freshInstallFingerprint}')) is not true or coalesce((public.backend_security_contract()->>'ok')::boolean,false) is not true then raise exception 'Recovery contract mismatch'; end if; end $proof$;
+do $proof$ begin if (public.backend_schema_contract_v2()->>'fingerprint' in ('${db.fingerprint}','${db.freshInstallFingerprint}')) is not true or coalesce((public.backend_security_contract()->>'ok')::boolean,false) is not true or (select reminder_dates_fixed from (${RECOVERY_STATE_SQL}) checked) is not true then raise exception 'Recovery contract mismatch'; end if; end $proof$;
 reset role;
 insert into supabase_migrations.schema_migrations(version,name,statements)
 values(pg_catalog.to_char(pg_catalog.clock_timestamp() at time zone 'UTC','YYYYMMDDHH24MISS'),'${MIGRATION_NAME}',array[${quote}${sql}${quote}]);
@@ -148,14 +152,14 @@ export async function applyDurableRecovery({env=process.env,fetchImpl=fetch,root
   const state=()=>readState({databaseUrl:env.SUPABASE_DB_URL,signal:overall});
   const hasMigration=rows=>Array.isArray(rows)&&rows.some(row=>row?.name===MIGRATION_NAME);
   const complete=value=>[contract.databaseContract.fingerprint,contract.databaseContract.freshInstallFingerprint].includes(value?.fingerprint)
-    &&value.security_ok===true&&value.receipts===true&&value.owned_claim===true&&value.versioned_cache===true;
+    &&value.security_ok===true&&value.receipts===true&&value.owned_claim===true&&value.versioned_cache===true&&value.reminder_dates_fixed===true;
   const beforeHistory=await history(),before=await state();
   if(hasMigration(beforeHistory)){
     if(!complete(before))fail('RECOVERY_APPLIED_STATE_MISMATCH');
     return {...report,applied:true,status:'already_applied',fingerprint:before.fingerprint};
   }
-  if(!Array.isArray(beforeHistory)||!beforeHistory.some(row=>row?.name==='supabase_migration_v6_29_17'))fail('RECOVERY_PREDECESSOR_MISSING');
-  if(before.security_ok!==true||![contract.databaseContract.baseFingerprint,'0169ec29ea39da9d085040ed825057a6'].includes(before.fingerprint))fail('RECOVERY_BASE_STATE_MISMATCH');
+  if(!Array.isArray(beforeHistory)||!beforeHistory.some(row=>row?.name==='supabase_migration_v6_29_18'))fail('RECOVERY_PREDECESSOR_MISSING');
+  if(before.security_ok!==true||before.reminder_dates_previous!==true||![contract.databaseContract.fingerprint,contract.databaseContract.freshInstallFingerprint].includes(before.fingerprint))fail('RECOVERY_BASE_STATE_MISMATCH');
   if(mode==='preflight')return {...report,status:'ready_for_backup_and_apply',fingerprint:before.fingerprint};
   const backupId=String(env.RECOVERY_BACKUP_RUN_ID||'');
   if(!/^[1-9][0-9]{0,15}$/.test(backupId))fail('RECOVERY_BACKUP_REQUIRED');

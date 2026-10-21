@@ -3,20 +3,14 @@
 // готовый ответ «в данных этого нет» / отказ от ставок. Здесь — проверка формы
 // ответа и отрисовка; свободный текст AI сюда не попадает.
 
-const PRESETS = Object.freeze([
-  ['why', 'Почему такой прогноз?'],
-  ['risk', 'Что может изменить исход?'],
-  ['form', 'Кто в форме?'],
-  ['squad', 'Что с составами и потерями?'],
-]);
 const ROLES = new Set(['lead', 'support', 'risk', 'caveat']);
 const MAX_LENGTH = 200;
 
 const UNAVAILABLE = Object.freeze({
-  user_limit: 'Лимит вопросов на этот час исчерпан. Готовые подсказки работают без лимита.',
-  daily_limit: 'На сегодня вопросы к AI закончились. Готовые подсказки работают без лимита.',
-  ai_unavailable: 'AI сейчас не ответил. Попробуйте готовую подсказку или спросите позже.',
-  ai_disabled: 'Свои вопросы к AI временно выключены. Готовые подсказки работают.',
+  user_limit: 'Лимит вопросов на этот час исчерпан. Попробуйте позже.',
+  daily_limit: 'На сегодня лимит вопросов к AI исчерпан.',
+  ai_unavailable: 'AI сейчас не ответил. Попробуйте спросить позже.',
+  ai_disabled: 'AI-ассистент временно недоступен.',
   disabled: 'Вопросы по матчу временно выключены.',
   analysis_disabled: 'Вопросы по матчу временно недоступны.',
   analysis_unavailable: 'Данные разбора устарели — обновите разбор матча и спросите снова.',
@@ -25,10 +19,9 @@ const UNAVAILABLE = Object.freeze({
 });
 
 export function matchQuestionsShellHtml(escapeHtml) {
-  return `<div class="match-explanation-head"><button type="button" class="match-question-start" data-question-start>💬 Спросить про матч</button><small>О судье, форме, составах и прогнозе</small></div>
-    <div class="match-question-presets" role="group" aria-label="Готовые вопросы">${PRESETS.map(([id, label]) => `<button type="button" class="match-question-chip" data-question-preset="${escapeHtml(id)}">${escapeHtml(label)}</button>`).join('')}</div>
+  return `<div class="match-explanation-head"><h2>Спросить про матч</h2><small>О судье, форме, составах и прогнозе</small></div>
     <form class="match-question-form" data-question-form>
-      <input type="text" name="question" maxlength="${MAX_LENGTH}" autocomplete="off" placeholder="Свой вопрос, например: кто главный судья?" aria-label="Вопрос про матч">
+      <input type="text" name="question" maxlength="${MAX_LENGTH}" autocomplete="off" placeholder="Что хотите узнать о матче?" aria-label="Вопрос про матч">
       <button type="submit" class="match-question-submit">Спросить</button>
     </form>
     <div class="match-question-answer" data-question-answer aria-live="polite"></div>
@@ -60,7 +53,7 @@ export function matchQuestionAnswerHtml(data, escapeHtml) {
   return `${head}<p class="match-question-empty">${escapeHtml(text)}</p>${remaining}`;
 }
 
-export function mountMatchQuestions({ root, fixtureId, api, escapeHtml, presetAnswers = null, accessReceipt = null, isCurrent = () => true } = {}) {
+export function mountMatchQuestions({ root, fixtureId, api, escapeHtml, accessReceipt = null, isCurrent = () => true } = {}) {
   const id = Number(fixtureId);
   if (!root || !Number.isSafeInteger(id) || id <= 0 || typeof api !== 'function') return false;
   if (root.dataset.questionsMounted === 'true' && Number(root.dataset.fixture) === id) return true;
@@ -75,15 +68,10 @@ export function mountMatchQuestions({ root, fixtureId, api, escapeHtml, presetAn
 
   async function ask(body) {
     if (busy || !answer) return;
-    const prepared=Number(presetAnswers?.fixtureId)===id && body.preset
-      ? presetAnswers?.presets?.[body.preset] : null;
-    if (prepared?.available===true && (prepared.answer==='not_in_data'
-      || (prepared.answer==='facts' && validItems(prepared.items).length))) {
-      answer.innerHTML=matchQuestionAnswerHtml({...prepared,question:PRESETS.find(([key])=>key===body.preset)?.[1]},escapeHtml);
-      return;
-    }
     busy = true;
     root.setAttribute('aria-busy', 'true');
+    const submit = form?.querySelector('[type="submit"]');
+    if (submit) submit.disabled = true;
     answer.innerHTML = '<p class="match-question-empty">Ищу в данных матча…</p>';
     let data = null;
     try {
@@ -93,16 +81,13 @@ export function mountMatchQuestions({ root, fixtureId, api, escapeHtml, presetAn
       data = { available: false, reason };
     }
     busy = false;
-    root.removeAttribute('aria-busy');
     // Пользователь мог уйти с этого разбора, пока шёл запрос.
     if (!isCurrent() || !root.isConnected || Number(root.dataset.fixture) !== id) return;
+    root.removeAttribute('aria-busy');
+    if (submit) submit.disabled = false;
     answer.innerHTML = matchQuestionAnswerHtml(data, escapeHtml);
   }
 
-  root.querySelector('[data-question-start]')?.addEventListener('click', () => ask({ preset: 'why' }));
-  root.querySelectorAll('[data-question-preset]').forEach(button => {
-    button.addEventListener('click', () => ask({ preset: button.dataset.questionPreset }));
-  });
   form?.addEventListener('submit', event => {
     event.preventDefault();
     const question = String(input?.value || '').trim();
