@@ -19,7 +19,7 @@
 
 ## В работе
 
-- [ ] Надёжно восстанавливать потерянные ответы Supabase без дублей — **Codex** — `codex/durable-supabase-recovery`, продолжение #976. В одном выпуске: постоянный owner UUID и SQL receipts, монотонная запись cache, подтверждение результата чтением, общий предел 7 секунд; завершение lease также получает единый бюджет. Проверки, независимое ревью и защищённое применение миграции с резервной копией.
+- [ ] Надёжно восстанавливать потерянные ответы Supabase без дублей — **Codex** — `codex/durable-recovery-preflight-qualification`, продолжение #976/#989. #989 слит, backup39572462589 dump + restore success. Исправляется protected preflight: служебные schema RPC недоступны read-only роли Management API; использовать существующий backup PG connection в READ ONLY под service_role. В выпуске: постоянный owner UUID и SQL receipts, монотонная запись cache, подтверждение результата чтением, общий предел 7 секунд; завершение lease также получает единый бюджет. Проверки, независимое ревью и защищённое применение миграции с резервной копией.
 
 
 
@@ -68,7 +68,8 @@
 
 ## На ревью
 
-- [ ] Подтверждение записей Supabase и завершения lease в едином бюджете — **Codex** — [#989](https://github.com/TRAP44/football-analytics-cloudflare/pull/989), `codex/durable-supabase-recovery`. Независимое review основной реализации и нового completion без блокеров; full4526/release708 прошли. До завершения: CI, backup/restore, защищённая миграция v18, deploy и реальные циклы.
+- [ ] Проверка схемы при выпуске v18 через существующий backup connection в READ ONLY — **Codex** — `codex/durable-recovery-preflight-qualification`. Новый fixed psql SELECT под service_role, без расширения grants, TLS verify-full и bounded child. Продолжение выпуска #989, пользовательских изменений нет.
+
 
 
 
@@ -165,6 +166,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Реализация безопасного восстановления durable Supabase writes — **Codex** — [#989](https://github.com/TRAP44/football-analytics-cloudflare/pull/989), merge583d77cd. Все PR checks pass (Quality39571682383, CodeQL39571682555, Load39571682524). Backup39572462589 dump + isolated restore pass. Общий этап не завершён: preflight400 до любых DB changes, исправляется проверка выпуска.
 
 - [x] Отклонять пустую Telegram-авторизацию до лишнего RPC — **Codex** — [#988](https://github.com/TRAP44/football-analytics-cloudflare/pull/988), merge84f3243f. Deploy39503734848/Monitor39504104530 success; Worker be8b44a6 на 100%, 25 HTTP и rendered smoke. Actual39503598097: основные задачи + 3 LIVE завершены, 4 чтения восстановлены. Таймаут cache write остался и входит в текущую задачу.
 

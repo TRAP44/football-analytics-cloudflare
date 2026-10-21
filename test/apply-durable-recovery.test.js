@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {applyDurableRecovery} from '../scripts/apply-durable-recovery.js';
+import {applyDurableRecovery,readRecoveryState,RECOVERY_STATE_SQL} from '../scripts/apply-durable-recovery.js';
 const contract=JSON.parse(fs.readFileSync('release-contract.json','utf8'));
 const sha='a'.repeat(40),repository='TRAP44/football-analytics-cloudflare',now=Date.now();
 const env={GITHUB_REPOSITORY:repository,GITHUB_REF:'refs/heads/main',GITHUB_SHA:sha,SUPABASE_PROJECT_REF:'nlmvhkjkpgzzlfavaohk',GITHUB_TOKEN:'local-github',SUPABASE_ACCESS_TOKEN:'local-supabase',RECOVERY_MODE:'preflight',RECOVERY_BACKUP_RUN_ID:'1234'};
@@ -26,15 +26,14 @@ function fixture(options={}){
       }
       return Response.json([{name:'supabase_migration_v6_29_17'},...(applied?[{name:'supabase_migration_v6_29_18'}]:[])]);
     }
-    if(url.endsWith('/database/query/read-only'))return Response.json([{fingerprint:applied?contract.databaseContract.fingerprint:contract.databaseContract.baseFingerprint,legacy_fingerprint:contract.databaseContract.legacyFingerprint,security_ok:options.badSecurity!==true,receipts:applied,owned_claim:applied,versioned_cache:applied}]);
     throw Error('Unexpected fixed endpoint');
   };
-  return {run:overrides=>applyDurableRecovery({env:{...env,...overrides},fetchImpl,now:()=>now}),calls,writes:()=>writes};
+  return {run:overrides=>applyDurableRecovery({env:{...env,...overrides},fetchImpl,now:()=>now,readState:async()=>({fingerprint:applied?contract.databaseContract.fingerprint:contract.databaseContract.baseFingerprint,legacy_fingerprint:contract.databaseContract.legacyFingerprint,security_ok:options.badSecurity!==true,receipts:applied,owned_claim:applied,versioned_cache:applied})}),calls,writes:()=>writes};
 }
 
 test('preflight reads current main, provenance and fixed project state without a production mutation',async()=>{
   const h=fixture(),r=await h.run();assert.equal(r.productionChanged,false);assert.equal(r.status,'ready_for_backup_and_apply');assert.equal(h.writes(),0);
-  assert.ok(h.calls.filter(x=>x.method==='POST').every(x=>x.url.endsWith('/database/query/read-only')));
+  assert.equal(h.calls.filter(x=>x.method==='POST').length,0);
 });
 
 test('apply requires exact main backup with successful isolated restore and encrypted artifact',async()=>{
@@ -72,5 +71,42 @@ test('missing write permission stays a precise failure and never leaks the upstr
 test('production apply workflow exposes only mode/backup input and main-only protected credentials',()=>{
   const workflow=fs.readFileSync('.github/workflows/apply-durable-recovery.yml','utf8');
   assert.match(workflow,/if: github\.ref == 'refs\/heads\/main'/);assert.match(workflow,/environment: production/);
-  assert.match(workflow,/options: \[preflight, apply\]/);assert.doesNotMatch(workflow,/pull_request_target|query:\s*\$\{\{|SUPABASE_DB_URL/);
+  assert.match(workflow,/SUPABASE_DB_URL: \$\{\{ secrets\.SUPABASE_DB_URL \}\}/);
+  assert.match(workflow,/options: \[preflight, apply\]/);assert.doesNotMatch(workflow,/pull_request_target|query:\s*\$\{\{/);
+});
+
+
+test('fixed state query qualifies catalog functions and contains only contract reads',()=>{
+  assert.doesNotMatch(RECOVERY_STATE_SQL,/(?<![\w.])to_reg(?:class|procedure)\(/);
+  assert.match(RECOVERY_STATE_SQL,/pg_catalog\.to_regclass\(/);
+  assert.match(RECOVERY_STATE_SQL,/pg_catalog\.to_regprocedure\(/);
+});
+
+test('database contract proof uses existing project connection with isolated TLS-verified read-only psql',async()=>{
+  const signal=new AbortController().signal;
+  const result=await readRecoveryState({databaseUrl:'postgresql://postgres.nlmvhkjkpgzzlfavaohk:local%21@aws-1-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=disable',signal,
+    run:async(command,args,options)=>{
+      assert.equal(command,'psql');assert.doesNotMatch(JSON.stringify(args),/local!|postgresql:\/\//);
+      assert.ok(args.includes('-X'));assert.ok(args.includes('ON_ERROR_STOP=1'));
+      assert.match(args.at(-1),/^begin read only; set local role service_role; set local statement_timeout=5000; set local lock_timeout=1000; select/);
+      assert.match(args.at(-1),/commit;$/);
+      assert.equal(options.env.PGSSLMODE,'verify-full');assert.equal(options.env.PGSSLROOTCERT,'/etc/ssl/certs/ca-certificates.crt');
+      assert.equal(options.env.PGUSER,'postgres.nlmvhkjkpgzzlfavaohk');assert.equal(options.env.PGPASSWORD,'local!');
+      assert.equal(options.env.PGHOSTADDR,undefined);assert.equal(options.env.PGSERVICE,undefined);assert.equal(options.env.PGOPTIONS,undefined);
+      assert.equal(options.env.SUPABASE_ACCESS_TOKEN,undefined);assert.equal(options.env.PGPASSFILE,'/dev/null');
+      assert.equal(options.signal,signal);assert.equal(options.timeout,12000);assert.equal(options.killSignal,'SIGKILL');assert.equal(options.maxBuffer,65536);
+      return {stdout:'{"security_ok":true}\n'};
+    }});
+  assert.equal(result.security_ok,true);
+});
+
+test('connection target, child failures and malformed state are rejected without secret or stderr disclosure',async()=>{
+  const valid='postgresql://postgres.nlmvhkjkpgzzlfavaohk:local@aws-1-eu-west-1.pooler.supabase.com:5432/postgres';
+  for(const url of [undefined,'invalid',valid.replace(':5432',':6543'),valid.replace('postgres.nlmvhkjkpgzzlfavaohk','postgres.other'),valid.replace('/postgres','/other'),valid+'?options=write',valid.replace('aws-1-eu-west-1.pooler.supabase.com','example.com')]){
+    let called=false;
+    await assert.rejects(readRecoveryState({databaseUrl:url,run:async()=>{called=true;}}),{code:'RECOVERY_DATABASE_CONNECTION_INVALID'});
+    assert.equal(called,false);
+  }
+  await assert.rejects(readRecoveryState({databaseUrl:valid,run:async()=>{throw Error('private-password-stderr');}}),e=>e.code==='RECOVERY_DATABASE_READ_FAILED'&&!e.message.includes('private'));
+  await assert.rejects(readRecoveryState({databaseUrl:valid,run:async()=>({stdout:'[]'})}),{code:'RECOVERY_STATE_INVALID'});
 });

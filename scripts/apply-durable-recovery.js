@@ -2,6 +2,8 @@
 // automatic replay after an unknown write result. Artifacts contain no data.
 import fs from 'node:fs';
 import {pathToFileURL} from 'node:url';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
 import {validateSupabaseMigrationContract} from './verify-supabase-contract.js';
 import {selectMergedPullRequest} from './verify-main-pr-provenance.js';
 const REPOSITORY='TRAP44/football-analytics-cloudflare';
@@ -11,12 +13,49 @@ const MIGRATION_NAME='supabase_migration_v6_29_18';
 export const RECOVERY_STATE_SQL=`select public.backend_schema_contract_v2()->>'fingerprint' as fingerprint,
   public.backend_schema_fingerprint()->>'fingerprint' as legacy_fingerprint,
   coalesce((public.backend_security_contract()->>'ok')::boolean,false) as security_ok,
-  to_regclass('public.scheduled_job_claim_receipts') is not null as receipts,
-  to_regprocedure('public.claim_scheduled_job_owned(text,text,timestamp with time zone,uuid,integer,integer)') is not null as owned_claim,
-  to_regprocedure('public.write_analysis_cache_versioned(text,bigint,jsonb,timestamp with time zone,text,timestamp with time zone,text,timestamp with time zone)') is not null as versioned_cache`;
+  pg_catalog.to_regclass('public.scheduled_job_claim_receipts') is not null as receipts,
+  pg_catalog.to_regprocedure('public.claim_scheduled_job_owned(text,text,timestamp with time zone,uuid,integer,integer)') is not null as owned_claim,
+  pg_catalog.to_regprocedure('public.write_analysis_cache_versioned(text,bigint,jsonb,timestamp with time zone,text,timestamp with time zone,text,timestamp with time zone)') is not null as versioned_cache`;
 const fail=code=>{throw Object.assign(new Error(code),{code});};
+const runPsql=promisify(execFile);
 
-export async function applyDurableRecovery({env=process.env,fetchImpl=fetch,root=process.cwd(),now=()=>Date.now()}={}){
+// The Management read-only role cannot execute service-only contract functions.
+// Reuse the existing backup connection, but force this child into READ ONLY.
+export async function readRecoveryState({databaseUrl,signal,run=runPsql}={}){
+  let url;
+  try{url=new URL(databaseUrl);}catch{fail('RECOVERY_DATABASE_CONNECTION_INVALID');}
+  if(!['postgres:','postgresql:'].includes(url.protocol)
+    || !/^[a-z0-9-]+\.pooler\.supabase\.com$/.test(url.hostname)
+    || url.port!=='5432'||decodeURIComponent(url.username)!==`postgres.${PROJECT}`
+    || url.pathname!=='/postgres'||!url.password||url.hash
+    || [...url.searchParams.keys()].some(key=>key!=='sslmode'))fail('RECOVERY_DATABASE_CONNECTION_INVALID');
+  const childEnv={PATH:process.env.PATH,LANG:'C.UTF-8',
+    PGHOST:url.hostname,PGPORT:'5432',PGUSER:`postgres.${PROJECT}`,PGDATABASE:'postgres',
+    PGPASSWORD:decodeURIComponent(url.password),PGPASSFILE:'/dev/null',PGSERVICEFILE:'/dev/null',
+    PGSSLMODE:'verify-full',PGSSLROOTCERT:'/etc/ssl/certs/ca-certificates.crt',
+    PGCONNECT_TIMEOUT:'5',PGAPPNAME:'matchradar-recovery-readonly'};
+  const query=`begin read only; set local role service_role; set local statement_timeout=5000; set local lock_timeout=1000; select pg_catalog.row_to_json(recovery_state) from (${RECOVERY_STATE_SQL}) recovery_state; commit;`;
+  let stdout;
+  try{({stdout}=await run('psql',['-X','--no-psqlrc','--no-align','--tuples-only','--quiet','--set','ON_ERROR_STOP=1','--command',query],
+    {env:childEnv,signal,timeout:12000,killSignal:'SIGKILL',maxBuffer:65536,encoding:'utf8'}));}
+  catch(error){
+    const detail=String(error?.stderr||'');
+    const reason=error?.code==='ENOENT'?'CLIENT_MISSING'
+      :/certificate|SSL error|TLS/i.test(detail)?'TLS_FAILED'
+      :/password authentication failed|SASL authentication failed/i.test(detail)?'AUTH_FAILED'
+      :/permission denied/i.test(detail)?'PERMISSION_DENIED'
+      :/does not exist/i.test(detail)?'OBJECT_MISSING'
+      :/timeout|timed out/i.test(detail)?'TIMEOUT':'READ_FAILED';
+    fail('RECOVERY_DATABASE_'+reason);
+  }
+  try{
+    const value=JSON.parse(stdout.trim());
+    if(value&&typeof value==='object'&&!Array.isArray(value))return value;
+  }catch{}
+  fail('RECOVERY_STATE_INVALID');
+}
+
+export async function applyDurableRecovery({env=process.env,fetchImpl=fetch,root=process.cwd(),now=()=>Date.now(),readState=readRecoveryState}={}){
   if(env.GITHUB_REPOSITORY!==REPOSITORY||env.GITHUB_REF!=='refs/heads/main'||! /^[0-9a-f]{40}$/.test(env.GITHUB_SHA||''))fail('RECOVERY_MAIN_REQUIRED');
   if(env.SUPABASE_PROJECT_REF!==PROJECT)fail('RECOVERY_PROJECT_MISMATCH');
   const mode=env.RECOVERY_MODE||'preflight';
@@ -59,12 +98,7 @@ export async function applyDurableRecovery({env=process.env,fetchImpl=fetch,root
   const pulls=await github(`commits/${env.GITHUB_SHA}/pulls`);
   if(!selectMergedPullRequest(pulls,'main',REPOSITORY))fail('RECOVERY_MERGED_PR_REQUIRED');
   const history=()=>supabase('database/migrations');
-  const state=async()=>{
-    const rows=await supabase('database/query/read-only',{method:'POST',body:{query:RECOVERY_STATE_SQL}});
-    const data=Array.isArray(rows)?rows:rows?.result;
-    if(!Array.isArray(data)||data.length!==1)fail('RECOVERY_STATE_INVALID');
-    return data[0];
-  };
+  const state=()=>readState({databaseUrl:env.SUPABASE_DB_URL,signal:overall});
   const hasMigration=rows=>Array.isArray(rows)&&rows.some(row=>row?.name===MIGRATION_NAME);
   const complete=value=>[contract.databaseContract.fingerprint,contract.databaseContract.freshInstallFingerprint].includes(value?.fingerprint)
     &&value.security_ok===true&&value.receipts===true&&value.owned_claim===true&&value.versioned_cache===true;
