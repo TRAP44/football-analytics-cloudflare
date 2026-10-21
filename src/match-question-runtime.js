@@ -20,7 +20,7 @@ import {
 } from './match-explanation-runtime.js';
 import { isBettingText } from './signal-wording.js';
 
-export const QUESTION_VERSION = 'v2';
+export const QUESTION_VERSION = 'v3';
 export const QUESTION_MAX_LENGTH = 200;
 const QUESTION_MIN_LENGTH = 3;
 const MAX_ANSWER_FACTS = 3;

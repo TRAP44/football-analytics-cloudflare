@@ -161,7 +161,7 @@ test('Workers AI calls respect the switch; presets and the plain explanation kee
   assert.ok(gate < question.indexOf('await getCache(cacheKey, cfg)'), 'cached AI answers are not served when AI is off');
   assert.ok(gate < question.indexOf('await aiAnswer('), 'no Workers AI call when AI is off');
   const ui = fs.readFileSync('public/modules/match-questions.js', 'utf8');
-  assert.match(ui, /ai_disabled: 'Свои вопросы к AI временно выключены\. Готовые подсказки работают\.'/);
+  assert.match(ui, /ai_disabled: 'AI-ассистент временно недоступен\.'/);
 });
 
 test('admin panel has the AI toggle wired into every payload', () => {
