@@ -19,7 +19,7 @@
 
 ## В работе
 
-- [ ] Надёжно восстанавливать потерянные ответы Supabase без дублей — **Codex** — `codex/supabase-recovery-ca-trust`, продолжение #976/#989/#990. #989 слит, backup39572462589 dump + restore success. Исправляется protected preflight: служебные schema RPC недоступны read-only роли Management API; использовать существующий backup PG connection в READ ONLY под service_role. В выпуске: постоянный owner UUID и SQL receipts, монотонная запись cache, подтверждение результата чтением, общий предел 7 секунд; завершение lease также получает единый бюджет. Проверки, независимое ревью и защищённое применение миграции с резервной копией.
+- [ ] Надёжно восстанавливать потерянные ответы Supabase без дублей — **Codex** — `codex/durable-recovery-transactional-apply`, продолжение #976/#989/#990/#991. #989 слит, backup39572462589 dump + restore success. Исправляется protected preflight: служебные schema RPC недоступны read-only роли Management API; использовать существующий backup PG connection в READ ONLY под service_role. В выпуске: постоянный owner UUID и SQL receipts, монотонная запись cache, подтверждение результата чтением, общий предел 7 секунд; завершение lease также получает единый бюджет. Проверки, независимое ревью и защищённое применение миграции с резервной копией.
 
 
 
@@ -68,7 +68,8 @@
 
 ## На ревью
 
-- [ ] Доверенный официальный CA Supabase для production schema preflight — **Codex** — `codex/supabase-recovery-ca-trust`. Pinned public Supabase Root 2021 + OS roots, private временный bundle и cleanup; verify-full сохранён. Требуется настоящий TLS preflight и завершение общего выпуска v18.
+- [ ] Применить ровно v18 и записать историю одной PostgreSQL-транзакцией — **Codex** — `codex/durable-recovery-transactional-apply`. Existing admin connection, source/backup guards сохранены, under-lock base и posthash/security, без SQL inputs и повторов неизвестных записей. Management API только читает history; его токен не требует расширения прав.
+
 
 
 
@@ -167,6 +168,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Доверенный официальный CA Supabase в protected preflight — **Codex** — [#991](https://github.com/TRAP44/football-analytics-cloudflare/pull/991), merge0bdb3fb2. Production preflight39576130658 успешен: verify-full, service_role, actual base af06. Backup39576135267 dump + isolated restore success. API apply39576716499 получил403; дальше используется существующее admin PG connection, миграция ещё не применена.
 
 - [x] Чтение schema/security contracts выпуска через existing backup connection — **Codex** — [#990](https://github.com/TRAP44/football-analytics-cloudflare/pull/990), merge87e4b1b7. PR checks pass; production preflight39574757744 остановился на проверке TLS до SQL, исправляется trust store. Backup39574752929 проходит отдельно; production migration не применялась.
 
