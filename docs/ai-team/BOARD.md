@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Разговорный AI для каждого матча, включая LIVE: свежий Match Center, уточнения в рамках матча, постепенный ответ и единые квоты — **Codex** — `codex/match-conversational-assistant`, запрос Сергея 21.10.
 
 
 
@@ -72,6 +71,8 @@
 
 
 ## На ревью
+
+- [ ] Разговорный AI для каждого матча, включая LIVE: свежий Match Center, уточнения в рамках матча, постепенный ответ и единые квоты — **Codex** — [PR #995](https://github.com/TRAP44/football-analytics-cloudflare/pull/995), `codex/match-conversational-assistant`, запрос Сергея 21.10.
 
 
 

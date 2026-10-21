@@ -2714,6 +2714,7 @@ html[data-theme] body.miniapp-public-shell .match-question-response {
 html[data-theme] body.miniapp-public-shell .match-question-response p { margin: 0; }
 html[data-theme] body.miniapp-public-shell .match-question-response p + p { margin-top: 8px; }
 html[data-theme] body.miniapp-public-shell .match-chat-turn { display: grid; gap: 10px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+html[data-theme] body.miniapp-public-shell .match-questions .match-question-answer:not(:empty) { max-height: min(58dvh, 480px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 html[data-theme] body.miniapp-public-shell .match-chat-turn:last-child { border-bottom: 0; }
 html[data-theme] body.miniapp-public-shell .match-chat-turn .match-question-asked { justify-self: end; max-width: 94%; padding: 9px 12px; border-radius: 14px 14px 4px 14px; background: color-mix(in srgb, var(--accent) 12%, transparent); }
 html[data-theme] body.miniapp-public-shell .match-chat-paragraph + .match-chat-paragraph { margin-top: 10px; }

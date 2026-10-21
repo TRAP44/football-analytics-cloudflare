@@ -93,13 +93,19 @@ export function mountMatchQuestions({root,fixtureId,userId=0,api,escapeHtml,acce
     if(!active())return;
     root.setAttribute('aria-busy',String(session.busy));
     if(submit)submit.disabled=session.busy;
-    if(answer)answer.innerHTML=conversationHtml(session,escapeHtml);
+    if(answer){
+      const follow=session.scrollToLatest || answer.scrollHeight-answer.clientHeight-answer.scrollTop<60;
+      answer.innerHTML=conversationHtml(session,escapeHtml);
+      if(follow)answer.scrollTop=answer.scrollHeight;
+      session.scrollToLatest=false;
+    }
   };
   session.render();
   async function ask(question){
     if(session.busy)return;
     session.busy=true;session.controller=new AbortController();
     const message={question,paragraphs:[]};session.messages.push(message);
+    session.scrollToLatest=true;
     session.messages=session.messages.slice(-6);
     if(input)input.value='';
     session.render();
