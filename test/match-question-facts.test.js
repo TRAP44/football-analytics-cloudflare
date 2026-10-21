@@ -66,3 +66,8 @@ test('custom questions can use balanced head-to-head, expected goals, attack, de
   const invalid=buildMatchQuestionFacts({match,goalModel:{homeExpected:'1.4',awayExpected:NaN},h2h:{homeWins:-1,draws:2,awayWins:3},recentForm:{home:{overall:{sample:5,gfAvg:Infinity,gaAvg:-1}}}});
   for(const id of ['expected_goals','h2h','attack_home','defence_home'])assert.equal(invalid.some(f=>f.id===id),false,id);
 });
+
+test('ordinary goal questions map narrowly to the model while live scores, players and hypothetical changes do not',()=>{
+  for(const q of ['Сколько голов будет?', 'Сколько голов будет в этом матче?', 'Что модель говорит о результативности матча?', 'Будет ли много голов?', 'Какой счёт ожидается?'])assert.equal(directMatchQuestionTopic(q),'goals',q);
+  for(const q of ['Какой счёт сейчас?', 'Сколько голов забьёт Палмер?', 'Сколько голов будет после удаления?', 'Сколько голов будет в первом тайме?', 'Сколько пенальти будет?', 'Сколько голов и кто в форме?'])assert.equal(directMatchQuestionTopic(q),null,q);
+});

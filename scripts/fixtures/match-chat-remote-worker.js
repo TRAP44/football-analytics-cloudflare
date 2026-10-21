@@ -78,7 +78,7 @@ export default {
       const missing=await missingResponse.json();
       checks.missingReferee=missing.source==='data' && missing.items?.[0]?.text==='В этом разборе главный судья пока не указан.';
       const goals=await ask('Что модель говорит о результативности матча?');
-      checks.goals=goals.source==='ai' && goals.items?.some(item=>item.id==='goals_high')===true;
+      checks.goals=goals.source==='data' && goals.items?.length===1 && goals.items[0].id==='goals_high';
       const h2h=await ask('Как команды играли друг с другом раньше?');
       checks.h2h=h2h.source==='ai' && h2h.items?.length===1 && h2h.items[0].id==='h2h';
       const attack=await ask('Сколько в среднем забивает Home FC за последние матчи?');

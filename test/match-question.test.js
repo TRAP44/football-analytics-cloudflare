@@ -441,3 +441,13 @@ test('known probability question answers the saved complete distribution without
   const compound=runtime();await compound.rt.apiMatchQuestion(request({fixtureId:77,question:'Какая вероятность ничьей и почему?'}),compound.cfg,user);
   assert.equal(compound.calls.ai,1);
 });
+
+test('typed goal questions use the goal model directly without inference or budget and never invent a score',async()=>{
+  for(const question of ['Сколько голов будет?', 'Что модель говорит о результативности матча?', 'Какой счёт ожидается?']){
+    const h=runtime({analysis:payload({goalModel:{homeExpected:1.45,awayExpected:0.8,over25:65}}),ai:()=>{throw Error('goal lookup must not infer');}});
+    const result=await h.rt.apiMatchQuestion(request({fixtureId:77,question}),h.cfg,user);
+    assert.equal(result.body.source,'data');assert.equal(result.body.items.length,1);assert.equal(result.body.items[0].id,'expected_goals');assert.match(result.body.items[0].text,/1,45/);assert.match(result.body.items[0].text,/не точный счёт/);assert.equal(h.calls.ai,0);assert.equal(h.calls.rpc.length,0);
+  }
+  const fallback=runtime({analysis:payload({goalModel:{over25:65}})});const result=await fallback.rt.apiMatchQuestion(request({fixtureId:77,question:'Сколько голов будет?'}),fallback.cfg,user);assert.equal(result.body.items[0].id,'goals_high');assert.equal(fallback.calls.ai,0);
+  const missing=runtime({analysis:payload({goalModel:null})});const empty=await missing.rt.apiMatchQuestion(request({fixtureId:77,question:'Сколько голов будет?'}),missing.cfg,user);assert.match(empty.body.items[0].text,/пока нет оценки ожидаемых голов/);assert.equal(missing.calls.ai,0);
+});
