@@ -298,3 +298,13 @@ test('cache write diagnostics classify failures without copying messages, codes 
     assert.deepEqual(await rt.api.getCache('fixture:123:v1',{}),{ok:true});
   }
 });
+
+
+test('a superseded cache write is not durable and cannot hide a newer shared snapshot',async()=>{
+  for(const requireDurable of [true,false]){
+    const rt=runtime({hasSupabase:()=>true,supaUpsert:async()=>false});
+    const value=await rt.api.setCache('concurrent:1',1,{old:true},{},10,{requireDurable});
+    assert.equal(value,requireDurable?false:undefined);assert.equal(rt.memory.cache.has('concurrent:1'),false);
+    assert.equal(rt.telemetry.includes('cacheWriteErrors'),false);
+  }
+});

@@ -16,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {installSupabaseTransportTrace} from './supabase-transport-trace.js';
 import {createSupabaseAdmissionFetch} from './supabase-fetch-admission.js';
 import {supabaseReadRecoverySnapshot} from '../src/supabase-client.js';
+import {idempotentRpcRecoverySnapshot} from '../src/idempotent-rpc-recovery.js';
 
 export const CRON_RUNNER_SECRET_KEYS = Object.freeze([
   'SUPABASE_URL',
@@ -383,6 +384,7 @@ async function main() {
     for (const line of transportTrace.entries) console.log(redact(`  ${line}`));
   }
   console.log('supabase-read-recovery: '+JSON.stringify(supabaseReadRecoverySnapshot()));
+  console.log('supabase-durable-recovery: '+JSON.stringify(idempotentRpcRecoverySnapshot()));
   console.log('supabase-admission: '+JSON.stringify(admission.stats));
   console.log('supabase-transport: '+JSON.stringify({...transportTrace.stats,slow:transportTrace.slow}));
   transportTrace.restore();

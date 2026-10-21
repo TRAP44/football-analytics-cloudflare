@@ -54,7 +54,8 @@ test('Supabase restore drill is isolated, measurable and preserves least privile
   assert.match(workflow, /actions: read/);
   assert.match(workflow, /restore_drill:/);
   assert.match(workflow, /needs: backup/);
-  assert.equal((workflow.match(/runs-on: \[self-hosted, Linux, X64\]/g) || []).length,2);
+  assert.match(workflow, /if: github\.ref == 'refs\/heads\/main'/);
+  assert.equal((workflow.match(/runs-on: ubuntu-latest/g) || []).length,2);
   assert.match(workflow, /actions\/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333/);
   assert.doesNotMatch(workflow, /gh run download/);
   assert.match(workflow, /supabase@\$SUPABASE_CLI_VERSION" start/);
@@ -65,7 +66,7 @@ test('Supabase restore drill is isolated, measurable and preserves least privile
   assert.ok(workflow.includes('Use Node.js 22 for restore drill'));
   assert.ok(workflow.includes('NODE_BIN="$(command -v node)"'));
   assert.ok(workflow.includes('NPX_BIN="$(command -v npx)"'));
-  assert.ok(workflow.includes('Restore drill requires native Linux Node/npm tooling inside WSL.'));
+  assert.ok(workflow.includes('Restore drill requires native Linux Node/npm tooling.'));
   assert.ok(workflow.includes('docker info >/dev/null'));
   assert.ok(workflow.includes('LOCAL_PROJECT="$RUNNER_TEMP/supabase-restore-project"'));
   assert.ok(workflow.includes('echo "LOCAL_PROJECT=$LOCAL_PROJECT" >> "$GITHUB_ENV"'));

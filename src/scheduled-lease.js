@@ -512,11 +512,11 @@ export function createScheduledLeaseRuntime({
     }
   }
 
-  async function reconcileCompletion(cfg,source) {
+  async function reconcileCompletion(cfg,source,budget=OWNER_READ_TIMEOUT_MS,callerSignal) {
     if (typeof readScheduledJob!=='function') return null;
     const row=plainObject(await withRequestDeadline(
-      ({signal,remaining})=>readScheduledJob(cfg,source.jobKey,{signal,timeoutMs:remaining()}),
-      {budgetMs:OWNER_READ_TIMEOUT_MS,source:'Scheduled completion reconciliation'},
+      ({signal,remaining})=>readScheduledJob(cfg,source.jobKey,{signal:callerSignal?AbortSignal.any([signal,callerSignal]):signal,timeoutMs:remaining()}),
+      {budgetMs:budget,source:'Scheduled completion reconciliation'},
     ));
     if (!row || row.lease_token!==source.leaseToken || row.group_key!==source.groupKey) return null;
     if (row.status==='done') return 'done';
@@ -539,29 +539,38 @@ export function createScheduledLeaseRuntime({
     const groupKey=cleanLeasePart(source.groupKey,'group');
     const token=cleanLeaseToken(source.leaseToken);
     try {
-      const complete=()=>supaRpc(cfg,rpcName,{p_job_key:jobKey,p_lease_token:token},1800);
-      try { return await complete() === true; }
-      catch (error) {
-        if (rpcName!=='complete_scheduled_job' || !transientLeaseError(error)) throw error;
-        // A timeout may mean the write committed. Read the exact owner before
-        // considering one retry; never release/reclaim or rerun completed work.
-        let state=await reconcileCompletion(cfg,source);
-        if (state==='running') {
-          try { if (await complete() === true) state='done'; }
-          catch (retryError) { if (!transientLeaseError(retryError)) throw retryError; }
-          if (state!=='done') state=await reconcileCompletion(cfg,source);
+      if(rpcName!=='complete_scheduled_job')return await supaRpc(cfg,rpcName,{p_job_key:jobKey,p_lease_token:token},1800)===true;
+      let recovered=false;
+      const result=await withRequestDeadline(async({signal,remaining,check})=>{
+        let attempts=0;
+        const complete=()=>withRequestDeadline(async({signal:phase,remaining:left,check:phaseCheck})=>{
+          const result=await supaRpc(cfg,rpcName,{p_job_key:jobKey,p_lease_token:token},left(),{},AbortSignal.any([signal,phase]));
+          phaseCheck();check();return result;
+        },{budgetMs:Math.min(++attempts===1?4000:1800,Math.max(1,remaining()-1000)),source:'Scheduled completion write'});
+        try { return await complete() === true; }
+        catch (error) {
+          check();
+          if(!transientLeaseError(error))throw error;
+          // The original 7-second operation includes writes AND ownership proof.
+          // Reserve the final second for readback before an owner-checked retry.
+          let state=await reconcileCompletion(cfg,source,remaining(),signal);check();
+          if(state==='running'&&remaining()>1000){
+            try { if(await complete()===true)state='done'; }
+            catch(retryError){check();if(!transientLeaseError(retryError))throw retryError;}
+            if(state!=='done'){state=await reconcileCompletion(cfg,source,remaining(),signal);check();}
+          }
+          if(state!=='done')throw error;
+          recovered=true;
+          check();return true;
         }
-        if (state!=='done') throw error;
-        await safeRecord(cfg,{
-          severity:'info',source:'cron',eventType:'scheduled_lease',
-          code:'SCHEDULED_LEASE_COMPLETE_RECOVERED',
-          message:'Scheduled completion confirmed after a transient transport failure.',
-          meta:{jobKey,groupKey},
-        });
-        return true;
-      }
+      },{budgetMs:7000,source:'Scheduled completion'});
+      if(recovered)void safeRecord(cfg,{
+            severity:'info',source:'cron',eventType:'scheduled_lease',code:'SCHEDULED_LEASE_COMPLETE_RECOVERED',
+            message:'Scheduled completion confirmed after a transient transport failure.',meta:{jobKey,groupKey},
+          });
+      return result;
     } catch (error) {
-      await safeRecord(cfg,{
+      const report=safeRecord(cfg,{
         severity,
         source:'cron',
         eventType:'scheduled_lease',
@@ -570,6 +579,7 @@ export function createScheduledLeaseRuntime({
         endpoint:'cron',
         meta:{jobKey,groupKey},
       });
+      if(rpcName!=='complete_scheduled_job')await report;
       return false;
     }
   }

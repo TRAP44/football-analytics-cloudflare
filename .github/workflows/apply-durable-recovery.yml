@@ -1,0 +1,48 @@
+name: Apply Durable Supabase Recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Inspect readiness or apply the fixed reviewed v6.29.18 migration
+        type: choice
+        options: [preflight, apply]
+        default: preflight
+      backup_run_id:
+        description: Successful Backup Supabase run on this exact main revision (required for apply)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: supabase-production-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Use Node.js 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Apply only the reviewed durable recovery migration
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          RECOVERY_MODE: ${{ inputs.mode }}
+          RECOVERY_BACKUP_RUN_ID: ${{ inputs.backup_run_id }}
+        run: node scripts/apply-durable-recovery.js

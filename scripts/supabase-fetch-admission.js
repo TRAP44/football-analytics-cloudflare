@@ -1,7 +1,7 @@
 // Background Node runner only. Keep one slot available for durable lease I/O.
 // Caller deadlines include queue time; cancelled queued writes never start.
 import {performance} from 'node:perf_hooks';
-const LEASE_PATHS=new Set(['/rest/v1/scheduled_job_leases',...['claim','renew','complete','release'].map(name=>`/rest/v1/rpc/${name}_scheduled_job`)]);
+const LEASE_PATHS=new Set(['/rest/v1/scheduled_job_leases','/rest/v1/rpc/claim_scheduled_job_owned',...['claim','renew','complete','release'].map(name=>`/rest/v1/rpc/${name}_scheduled_job`)]);
 export function createSupabaseAdmissionFetch(original,{origin,maxActive=4,maxRegular=3,maxQueued=128,now=()=>performance.now()}={}){
   if(typeof original!=='function'||!Number.isSafeInteger(maxActive)||maxActive<2||!Number.isSafeInteger(maxRegular)||maxRegular<1||maxRegular>=maxActive||!Number.isSafeInteger(maxQueued)||maxQueued<1)throw Error('Invalid background admission configuration');
   const base=new URL(origin);

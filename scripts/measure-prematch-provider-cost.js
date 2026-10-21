@@ -28,6 +28,7 @@ try {
       const url=new URL(typeof input==='string'?input:input.url || String(input));
       if (url.hostname==='isolated.supabase.test') {
         let result=[];
+        if (url.pathname.endsWith('/write_analysis_cache_versioned')) result={stored:true,reason:'stored'};
         if (url.pathname.endsWith('/claim_provider_request')) result={allowed:true,count:1};
         if (init?.method==='POST' && url.pathname.endsWith('/analysis_cache')) result=JSON.parse(init.body);
         if (url.pathname.endsWith('/model_predictions') && init?.method==='POST') {

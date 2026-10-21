@@ -25,7 +25,8 @@ concurrency:
 
 jobs:
   backup:
-    runs-on: [self-hosted, Linux, X64]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production
     env:
@@ -240,7 +241,7 @@ jobs:
   restore_drill:
     name: Isolated restore drill
     needs: backup
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
     env:
@@ -267,7 +268,7 @@ jobs:
 
           case "$NODE_BIN:$NPX_BIN" in
             *"/mnt/c/"*|*".exe"*|*".cmd"*)
-              echo "Restore drill requires native Linux Node/npm tooling inside WSL." >&2
+              echo "Restore drill requires native Linux Node/npm tooling." >&2
               echo "node=$NODE_BIN npx=$NPX_BIN" >&2
               exit 1
               ;;
