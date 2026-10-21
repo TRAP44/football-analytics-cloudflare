@@ -19,7 +19,7 @@
 
 ## В работе
 
-- [ ] Надёжно восстанавливать потерянные ответы Supabase без дублей — **Codex** — `codex/durable-recovery-preflight-qualification`, продолжение #976/#989. #989 слит, backup39572462589 dump + restore success. Исправляется protected preflight: служебные schema RPC недоступны read-only роли Management API; использовать существующий backup PG connection в READ ONLY под service_role. В выпуске: постоянный owner UUID и SQL receipts, монотонная запись cache, подтверждение результата чтением, общий предел 7 секунд; завершение lease также получает единый бюджет. Проверки, независимое ревью и защищённое применение миграции с резервной копией.
+- [ ] Надёжно восстанавливать потерянные ответы Supabase без дублей — **Codex** — `codex/supabase-recovery-ca-trust`, продолжение #976/#989/#990. #989 слит, backup39572462589 dump + restore success. Исправляется protected preflight: служебные schema RPC недоступны read-only роли Management API; использовать существующий backup PG connection в READ ONLY под service_role. В выпуске: постоянный owner UUID и SQL receipts, монотонная запись cache, подтверждение результата чтением, общий предел 7 секунд; завершение lease также получает единый бюджет. Проверки, независимое ревью и защищённое применение миграции с резервной копией.
 
 
 
@@ -68,7 +68,8 @@
 
 ## На ревью
 
-- [ ] Проверка схемы при выпуске v18 через существующий backup connection в READ ONLY — **Codex** — `codex/durable-recovery-preflight-qualification`. Новый fixed psql SELECT под service_role, без расширения grants, TLS verify-full и bounded child. Продолжение выпуска #989, пользовательских изменений нет.
+- [ ] Доверенный официальный CA Supabase для production schema preflight — **Codex** — `codex/supabase-recovery-ca-trust`. Pinned public Supabase Root 2021 + OS roots, private временный bundle и cleanup; verify-full сохранён. Требуется настоящий TLS preflight и завершение общего выпуска v18.
+
 
 
 
@@ -166,6 +167,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Чтение schema/security contracts выпуска через existing backup connection — **Codex** — [#990](https://github.com/TRAP44/football-analytics-cloudflare/pull/990), merge87e4b1b7. PR checks pass; production preflight39574757744 остановился на проверке TLS до SQL, исправляется trust store. Backup39574752929 проходит отдельно; production migration не применялась.
 
 - [x] Реализация безопасного восстановления durable Supabase writes — **Codex** — [#989](https://github.com/TRAP44/football-analytics-cloudflare/pull/989), merge583d77cd. Все PR checks pass (Quality39571682383, CodeQL39571682555, Load39571682524). Backup39572462589 dump + isolated restore pass. Общий этап не завершён: preflight400 до любых DB changes, исправляется проверка выпуска.
 
