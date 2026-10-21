@@ -6,6 +6,7 @@ import {randomBytes} from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
 import {fileURLToPath,pathToFileURL} from 'node:url';
+import {MATCH_CHAT_FAILURE_CODES} from '../src/match-chat-runtime.js';
 
 async function freePort(){
   const server=createServer();await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
@@ -73,6 +74,9 @@ export async function verifyMatchChatRemote(env=process.env){
       const checks={};
       for(const name of ['liveScore','liveStatistics','followupContext','refreshedScore','missingLineups','generatedExplanation'])checks[name]=value.checks?.[name]===true;
       report.conversation={checks,modelCallsExpected:value.modelCalls===4,timings:Array.isArray(value.timings) ? value.timings.slice(0,5).map(ms=>Number.isInteger(ms) && ms>=0 && ms<=100000 ? ms : null) : [],passed:value.success===true && Object.values(checks).every(Boolean) && value.modelCalls===4};
+      const protocol=value.protocol || {};
+      report.conversation.protocol={firstFailure:MATCH_CHAT_FAILURE_CODES.includes(protocol.firstFailure)?protocol.firstFailure:'none',resultShape:['json','readable','other'].includes(protocol.resultShape)?protocol.resultShape:'none',frameShape:['none','response','delta','metadata'].includes(protocol.frameShape)?protocol.frameShape:'none',doneSeen:protocol.doneSeen===true};
+      for(const [name,max] of [['jsonResults',4],['streamResults',4],['otherResults',4],['frames',10000],['paragraphsAccepted',3]])report.conversation.protocol[name]=Number.isInteger(protocol[name]) && protocol[name]>=0 && protocol[name]<=max ? protocol[name] : 0;
     }catch{report.conversation={passed:false,failure:'conversation_probe_failed'};}
     report.success=report.current?.passed===true && report.conversation?.passed===true;
     return report;

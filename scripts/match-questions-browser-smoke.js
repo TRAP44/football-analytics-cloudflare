@@ -62,7 +62,8 @@ try {
  };
  await askReal('Кто главный судья?','Главный судья — Michael Oliver.');
  await askReal('Какие вероятности исходов?','ничья — 25%');
- if(clientState.clientPerf.completed!==2)throw Error('stream requests not recorded as complete');
+ await askReal('Что важно в этом матче?','Если Chelsea сохранит преимущество');
+ if(clientState.clientPerf.completed!==3)throw Error('stream requests not recorded as complete');
  document.body.dataset.testStatus='passed';
 } catch(error){document.body.dataset.testStatus='failed';document.body.dataset.testError=error.message;}
 </script></body></html>`;
@@ -74,6 +75,8 @@ const server=createServer(async(req,res)=>{
    let body='';for await(const chunk of req)body+=chunk;
    const response=await runtime.apiMatchQuestion(new Request('https://fixture.invalid/api/match-question',{method:'POST',body}),{
     botToken:'browser-fixture-secret',matchQuestionsEnabled:true,matchQuestionsDailyLimit:500,matchQuestionsUserHourlyLimit:10,workersAi:{run:async(_model,input)=>{
+     if(input.stream!==false)throw Error('supported JSON transport required');
+     if(input.messages.at(-1).content.includes('важно'))return {response:JSON.stringify([{kind:'answer',factIds:['score']},{kind:'analysis',text:'Если Chelsea сохранит преимущество, Everton может потребоваться больше риска в атаке.',factIds:['score']}])};
      const ids=input.messages.at(-1).content.includes('судья') ? ['referee'] : ['pre_outcome_probabilities'];
      const text=JSON.stringify({kind:'answer',text:'',factIds:ids})+'\n';
      return new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode('data: '+JSON.stringify({response:text})+'\n\ndata: [DONE]\n\n'));controller.close();}});
@@ -101,7 +104,7 @@ try{
   if(result?.status)break;
   await new Promise(resolve=>setTimeout(resolve,100));
  }
- if(realHandlerCalls!==2)throw Error('actual handler was not exercised exactly twice');
+ if(realHandlerCalls!==3)throw Error('actual handler was not exercised exactly three times');
  if(result?.status!=='passed')throw Error('Rendered question flow failed: '+JSON.stringify(result));
  console.log('Rendered conversations passed: custom-only form without automatic requests, duplicate submit guard, same-analysis remount, typed question, actual referee/probabilities handler round trips, stale reply isolation, Pass alignment.');
 }finally{cdp?.socket.close();await stopChrome(launched.chrome);server.close();await rm(launched.profileDir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
