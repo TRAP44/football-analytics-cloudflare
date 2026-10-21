@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
+import os from 'node:os';
+import path from 'node:path';
 import {validateSupabaseMigrationContract} from './verify-supabase-contract.js';
 import {selectMergedPullRequest} from './verify-main-pr-provenance.js';
 const REPOSITORY='TRAP44/football-analytics-cloudflare';
@@ -29,30 +31,41 @@ export async function readRecoveryState({databaseUrl,signal,run=runPsql}={}){
     || url.port!=='5432'||decodeURIComponent(url.username)!==`postgres.${PROJECT}`
     || url.pathname!=='/postgres'||!url.password||url.hash
     || [...url.searchParams.keys()].some(key=>key!=='sslmode'))fail('RECOVERY_DATABASE_CONNECTION_INVALID');
-  const childEnv={PATH:process.env.PATH,LANG:'C.UTF-8',
-    PGHOST:url.hostname,PGPORT:'5432',PGUSER:`postgres.${PROJECT}`,PGDATABASE:'postgres',
-    PGPASSWORD:decodeURIComponent(url.password),PGPASSFILE:'/dev/null',PGSERVICEFILE:'/dev/null',
-    PGSSLMODE:'verify-full',PGSSLROOTCERT:'/etc/ssl/certs/ca-certificates.crt',
-    PGCONNECT_TIMEOUT:'5',PGAPPNAME:'matchradar-recovery-readonly'};
-  const query=`begin read only; set local role service_role; set local statement_timeout=5000; set local lock_timeout=1000; select pg_catalog.row_to_json(recovery_state) from (${RECOVERY_STATE_SQL}) recovery_state; commit;`;
-  let stdout;
-  try{({stdout}=await run('psql',['-X','--no-psqlrc','--no-align','--tuples-only','--quiet','--set','ON_ERROR_STOP=1','--command',query],
-    {env:childEnv,signal,timeout:12000,killSignal:'SIGKILL',maxBuffer:65536,encoding:'utf8'}));}
-  catch(error){
-    const detail=String(error?.stderr||'');
-    const reason=error?.code==='ENOENT'?'CLIENT_MISSING'
-      :/certificate|SSL error|TLS/i.test(detail)?'TLS_FAILED'
-      :/password authentication failed|SASL authentication failed/i.test(detail)?'AUTH_FAILED'
-      :/permission denied/i.test(detail)?'PERMISSION_DENIED'
-      :/does not exist/i.test(detail)?'OBJECT_MISSING'
-      :/timeout|timed out/i.test(detail)?'TIMEOUT':'READ_FAILED';
-    fail('RECOVERY_DATABASE_'+reason);
-  }
+  const trustDirectory=fs.mkdtempSync(path.join(os.tmpdir(),'matchradar-recovery-trust-'));
   try{
-    const value=JSON.parse(stdout.trim());
-    if(value&&typeof value==='object'&&!Array.isArray(value))return value;
-  }catch{}
-  fail('RECOVERY_STATE_INVALID');
+    // Pinned public Supabase CA, alongside OS roots. No runtime CA download and
+    // no relaxation of hostname verification for the hosted session pooler.
+    const trustFile=path.join(trustDirectory,'roots.pem');
+    fs.writeFileSync(trustFile,fs.readFileSync('/etc/ssl/certs/ca-certificates.crt','utf8')+'\n'
+      +fs.readFileSync(new URL('../supabase/certs/supabase-prod-ca-2021.crt',import.meta.url),'utf8'),{mode:0o600});
+    const childEnv={PATH:process.env.PATH,LANG:'C.UTF-8',
+      PGHOST:url.hostname,PGPORT:'5432',PGUSER:`postgres.${PROJECT}`,PGDATABASE:'postgres',
+      PGPASSWORD:decodeURIComponent(url.password),PGPASSFILE:'/dev/null',PGSERVICEFILE:'/dev/null',
+      PGSSLMODE:'verify-full',PGSSLROOTCERT:trustFile,
+      PGCONNECT_TIMEOUT:'5',PGAPPNAME:'matchradar-recovery-readonly'};
+    const query=`begin read only; set local role service_role; set local statement_timeout=5000; set local lock_timeout=1000; select pg_catalog.row_to_json(recovery_state) from (${RECOVERY_STATE_SQL}) recovery_state; commit;`;
+    let stdout;
+    try{({stdout}=await run('psql',['-X','--no-psqlrc','--no-align','--tuples-only','--quiet','--set','ON_ERROR_STOP=1','--command',query],
+      {env:childEnv,signal,timeout:12000,killSignal:'SIGKILL',maxBuffer:65536,encoding:'utf8'}));}
+    catch(error){
+      const detail=String(error?.stderr||'');
+      const reason=error?.code==='ENOENT'?'CLIENT_MISSING'
+        :/does not match (?:the )?host|host name.*does not match/i.test(detail)?'TLS_HOSTNAME_FAILED'
+        :/root certificate file|could not read root certificate/i.test(detail)?'TLS_ROOT_FAILED'
+        :/certificate verify failed|certificate verification failed|self.signed certificate|unable to get.*issuer/i.test(detail)?'TLS_CA_FAILED'
+        :/certificate|SSL error|TLS/i.test(detail)?'TLS_FAILED'
+        :/password authentication failed|SASL authentication failed/i.test(detail)?'AUTH_FAILED'
+        :/permission denied/i.test(detail)?'PERMISSION_DENIED'
+        :/does not exist/i.test(detail)?'OBJECT_MISSING'
+        :/timeout|timed out/i.test(detail)?'TIMEOUT':'READ_FAILED';
+      fail('RECOVERY_DATABASE_'+reason);
+    }
+    try{
+      const value=JSON.parse(stdout.trim());
+      if(value&&typeof value==='object'&&!Array.isArray(value))return value;
+    }catch{}
+    fail('RECOVERY_STATE_INVALID');
+  }finally{fs.rmSync(trustDirectory,{recursive:true,force:true});}
 }
 
 export async function applyDurableRecovery({env=process.env,fetchImpl=fetch,root=process.cwd(),now=()=>Date.now(),readState=readRecoveryState}={}){

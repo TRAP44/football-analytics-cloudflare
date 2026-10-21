@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import {X509Certificate} from 'node:crypto';
 import {applyDurableRecovery,readRecoveryState,RECOVERY_STATE_SQL} from '../scripts/apply-durable-recovery.js';
 const contract=JSON.parse(fs.readFileSync('release-contract.json','utf8'));
 const sha='a'.repeat(40),repository='TRAP44/football-analytics-cloudflare',now=Date.now();
@@ -90,7 +91,10 @@ test('database contract proof uses existing project connection with isolated TLS
       assert.ok(args.includes('-X'));assert.ok(args.includes('ON_ERROR_STOP=1'));
       assert.match(args.at(-1),/^begin read only; set local role service_role; set local statement_timeout=5000; set local lock_timeout=1000; select/);
       assert.match(args.at(-1),/commit;$/);
-      assert.equal(options.env.PGSSLMODE,'verify-full');assert.equal(options.env.PGSSLROOTCERT,'/etc/ssl/certs/ca-certificates.crt');
+      assert.equal(options.env.PGSSLMODE,'verify-full');assert.match(options.env.PGSSLROOTCERT,/matchradar-recovery-trust-.*roots\.pem$/);
+      const trust=fs.readFileSync(options.env.PGSSLROOTCERT,'utf8');
+      assert.ok(trust.startsWith(fs.readFileSync('/etc/ssl/certs/ca-certificates.crt','utf8')));
+      assert.ok(trust.includes(fs.readFileSync('supabase/certs/supabase-prod-ca-2021.crt','utf8')));
       assert.equal(options.env.PGUSER,'postgres.nlmvhkjkpgzzlfavaohk');assert.equal(options.env.PGPASSWORD,'local!');
       assert.equal(options.env.PGHOSTADDR,undefined);assert.equal(options.env.PGSERVICE,undefined);assert.equal(options.env.PGOPTIONS,undefined);
       assert.equal(options.env.SUPABASE_ACCESS_TOKEN,undefined);assert.equal(options.env.PGPASSFILE,'/dev/null');
@@ -109,4 +113,23 @@ test('connection target, child failures and malformed state are rejected without
   }
   await assert.rejects(readRecoveryState({databaseUrl:valid,run:async()=>{throw Error('private-password-stderr');}}),e=>e.code==='RECOVERY_DATABASE_READ_FAILED'&&!e.message.includes('private'));
   await assert.rejects(readRecoveryState({databaseUrl:valid,run:async()=>({stdout:'[]'})}),{code:'RECOVERY_STATE_INVALID'});
+});
+
+
+test('pinned public Supabase CA is the official unexpired 2021 root and temporary bundles are removed',async()=>{
+  const pem=fs.readFileSync('supabase/certs/supabase-prod-ca-2021.crt','utf8'),certificate=new X509Certificate(pem);
+  assert.equal(certificate.ca,true);assert.match(certificate.subject,/Supabase Root 2021 CA/);
+  assert.equal(certificate.fingerprint256,'80:70:25:AD:50:D4:ED:21:9D:2C:9C:7D:29:9C:00:4F:82:4E:B0:0C:F7:F6:5A:FE:F6:07:D0:7B:72:E6:CA:FA');
+  assert.ok(Date.parse(certificate.validTo)>Date.now());
+  const databaseUrl='postgresql://postgres.nlmvhkjkpgzzlfavaohk:local@aws-1-eu-west-1.pooler.supabase.com:5432/postgres';
+  for(const failure of [false,true]){
+    let filename;
+    const result=readRecoveryState({databaseUrl,run:async(_c,_a,options)=>{
+      filename=options.env.PGSSLROOTCERT;assert.ok(fs.existsSync(filename));
+      if(failure)throw Object.assign(Error('private detail'),{stderr:'certificate verify failed: private-server'});
+      return {stdout:'{"security_ok":true}'};
+    }});
+    if(failure)await assert.rejects(result,{code:'RECOVERY_DATABASE_TLS_CA_FAILED'});else await result;
+    assert.equal(fs.existsSync(filename),false);
+  }
 });
