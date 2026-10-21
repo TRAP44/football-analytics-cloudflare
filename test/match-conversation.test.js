@@ -122,7 +122,7 @@ test('client refuses silently truncated streams, escapes chat and evidence and b
   await assert.rejects(readMatchChatEvents(new Response('event: meta\ndata: {}\n\n'),()=>{}),/прервался/);
   const esc=value=>String(value).replaceAll('<','&lt;').replaceAll('>','&gt;');
   const html=conversationHtml({messages:[{question:'<script>',paragraphs:[{kind:'analysis',text:'<img>',evidence:[{id:'x',text:'<iframe>'}]}]}]},esc);
-  assert.doesNotMatch(html,/<script>|<img>|<iframe>/);assert.match(html,/&lt;img&gt;/);
+  assert.doesNotMatch(html,/<script>|<img>|<iframe>/i);assert.match(html,/&lt;img&gt;/);
 });
 
 test('a model stream truncated at a paragraph boundary does not silently finish the answer',async()=>{
@@ -168,4 +168,13 @@ test('both long starting XIs survive canonical streaming and transcript renderin
  const html=conversationHtml({messages:[{question:'Составы',paragraphs}]},String);
  assert.match(html,/home Player 11/);assert.match(html,/away Player 11/);
  assert.ok(paragraphs[0].text.length>900);
+});
+
+test('plain referee, published starting XI and missing model lookups preserve zero-inference path and follow-up context',async()=>{
+ const f=fixture();
+ for(const question of ['Кто главный судья?','Кто в старте?','Какие вероятности исходов?','Сколько голов будет?']){
+  const result=await collect(await f.ask({question}));
+  assert.equal(result.data.answer,'conversation');assert.equal(result.data.source,'data');assert.ok(result.data.context);
+ }
+ assert.equal(f.calls.model.length,0);assert.equal(f.calls.rpc.length,0);
 });

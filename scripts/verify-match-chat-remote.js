@@ -72,7 +72,7 @@ export async function verifyMatchChatRemote(env=process.env){
       const value=response.ok ? await response.json() : {};
       const checks={};
       for(const name of ['liveScore','liveStatistics','followupContext','refreshedScore','missingLineups','generatedExplanation'])checks[name]=value.checks?.[name]===true;
-      report.conversation={checks,modelCallsExpected:value.modelCalls===5,timings:Array.isArray(value.timings) ? value.timings.slice(0,5).map(ms=>Number.isInteger(ms) && ms>=0 && ms<=100000 ? ms : null) : [],passed:value.success===true && Object.values(checks).every(Boolean) && value.modelCalls===5};
+      report.conversation={checks,modelCallsExpected:value.modelCalls===4,timings:Array.isArray(value.timings) ? value.timings.slice(0,5).map(ms=>Number.isInteger(ms) && ms>=0 && ms<=100000 ? ms : null) : [],passed:value.success===true && Object.values(checks).every(Boolean) && value.modelCalls===4};
     }catch{report.conversation={passed:false,failure:'conversation_probe_failed'};}
     report.success=report.current?.passed===true && report.conversation?.passed===true;
     return report;

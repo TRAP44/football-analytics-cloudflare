@@ -2,6 +2,7 @@ import {buildMatchChatContext,issueChatContext,readChatContext} from './match-ch
 import {EXPLANATION_MODEL,EXPLANATION_ANALYSIS_CACHE_KEY} from './match-explanation-runtime.js';
 import {verifyMatchQuestionAccess} from './match-question-access.js';
 import {isBettingText} from './signal-wording.js';
+import {directMatchQuestionTopic} from './match-question-facts.js';
 
 export const MATCH_CHAT_TIMEOUT_MS=16000;
 const MAX_PARAGRAPHS=3;
@@ -53,9 +54,9 @@ export function validateChatParagraph(value,context){
   if(value.kind==='missing'){
     if(facts.length)return null;
     const topic=value.text.trim();
-    const known={lineups:context.facts.some(f=>f.id.startsWith('starters_')),referee:context.facts.some(f=>f.id==='referee'),statistics:context.facts.some(f=>f.id.startsWith('stat_')),events:context.facts.some(f=>f.id.startsWith('event_')),prediction:context.facts.some(f=>f.id.startsWith('pre_'))};
+    const known={lineups:context.facts.some(f=>f.id.startsWith('starters_')),referee:context.facts.some(f=>f.id==='referee'),venue:context.facts.some(f=>f.id==='venue'),statistics:context.facts.some(f=>f.id.startsWith('stat_')),events:context.facts.some(f=>f.id.startsWith('event_')),prediction:context.facts.some(f=>f.id.startsWith('pre_')),goals:context.facts.some(f=>/^pre_(expected_goals|goals_high|goals_low)$/.test(f.id)),probabilities:context.facts.some(f=>f.id==='pre_outcome_probabilities')};
     if(known[topic])return null;
-    const messages={lineups:'Стартовые составы пока не опубликованы в доступных данных матча.',referee:'Главный судья пока не указан в доступных данных матча.',statistics:'Подтверждённая статистика этого матча пока недоступна.',events:'Подтверждённые события этого матча пока недоступны.',prediction:'Сохранённой оценки модели в контексте этого диалога пока нет.'};
+    const messages={lineups:'Стартовые составы пока не опубликованы в доступных данных матча.',referee:'Главный судья пока не указан в доступных данных матча.',venue:'Стадион пока не указан в доступных данных матча.',statistics:'Подтверждённая статистика этого матча пока недоступна.',events:'Подтверждённые события этого матча пока недоступны.',prediction:'Сохранённой оценки модели в контексте этого диалога пока нет.',goals:'Оценки ожидаемых голов в контексте этого диалога пока нет.',probabilities:'Оценки вероятностей исходов в контексте этого диалога пока нет.'};
     return {kind:'missing',text:messages[topic] || 'Для ответа на этот вопрос пока не хватает данных матча.',factIds:[]};
   }
   const text=value.text.trim();
@@ -143,6 +144,22 @@ export function createMatchChatRuntime(deps){
     const context=buildMatchChatContext(center,analysis);
     if(!context)return unavailable('match_unavailable');
     if(cancelled())return unavailable('cancelled');
+    // Plain lookups keep their previous fast path: no inference or AI budget.
+    // Open-ended and follow-up questions use the conversational model below.
+    const topic=directMatchQuestionTopic(question.text);
+    if(topic){
+      const ids=topic==='goals' ? ['pre_expected_goals','pre_goals_high','pre_goals_low'].filter(id=>context.facts.some(fact=>fact.id===id)).slice(0,1)
+        : context.facts.filter(fact=>topic==='starters' ? fact.id.startsWith('starters_') : fact.id===topic || fact.id===`pre_${topic}`).map(fact=>fact.id);
+      const missingTopic=topic==='starters' ? 'lineups' : topic==='outcome_probabilities' ? 'probabilities' : topic;
+      const paragraph=validateChatParagraph({kind:ids.length ? 'answer' : 'missing',text:missingTopic,factIds:ids},context);
+      if(paragraph){
+        const token=await issueChatContext(cfg.botToken,userId,body.fixtureId,[...turns,{role:'user',content:question.text},{role:'assistant',content:paragraph.text.slice(0,1800)}],nowMs());
+        if(cancelled())return unavailable('cancelled');
+        const frames=[['meta',{fixtureId:body.fixtureId,mode:context.mode,observedAt:context.observedAt}],['paragraph',{...paragraph,evidence:ids.map(id=>context.facts.find(fact=>fact.id===id))}],['done',{available:true,answer:'conversation',source:'data',context:token}]];
+        const headers=new Headers(json({}).headers);headers.set('content-type','text/event-stream; charset=utf-8');headers.set('cache-control','private, no-store');
+        return new Response(frames.map(([type,data])=>`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`).join(''),{headers});
+      }
+    }
     if(nowMs()-requestStarted>24000)return unavailable('ai_unavailable');
     const admission=await reserveAi(cfg,userId);
     if(admission.allowed!==true)return unavailable(admission.reason,{remaining:admission.remaining});

@@ -40,7 +40,7 @@ test('conversational remote fixture exercises live answers, changed score, conte
   }}};
   const response=await worker.fetch(new Request('https://local.test/probe',{method:'POST',headers:{'x-probe-key':env.PROBE_NONCE},body:JSON.stringify({variant:'conversation'})}),env);
   const report=await response.json();
-  assert.equal(report.success,true);assert.equal(report.modelCalls,5);assert.equal(report.timings.length,5);
+  assert.equal(report.success,true);assert.equal(report.modelCalls,4);assert.equal(report.timings.length,5);
   assert.ok(Object.values(report.checks).every(Boolean));
   assert.doesNotMatch(JSON.stringify(report),/Home FC|Away FC|local-conversation-fixture/,'only bounded verdicts and timing leave the probe');
 });
