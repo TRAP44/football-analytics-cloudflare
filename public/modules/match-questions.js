@@ -1,7 +1,5 @@
-// Задача 6: «Спросить про матч». Ответ приходит с сервера только как факты из
-// каталога данных матча (тексты и связки задаёт сервер) или как короткий
-// готовый ответ «в данных этого нет» / отказ от ставок. Здесь — проверка формы
-// ответа и отрисовка; свободный текст AI сюда не попадает.
+// Match-scoped conversational UI. All prose is escaped; model paragraphs are
+// validated on the server before they reach this transcript.
 
 const ROLES = new Set(['lead', 'support', 'risk', 'caveat']);
 const MAX_LENGTH = 200;
@@ -16,16 +14,18 @@ const UNAVAILABLE = Object.freeze({
   analysis_unavailable: 'Данные разбора устарели — обновите разбор матча и спросите снова.',
   not_in_history: 'Сначала откройте полный разбор этого матча.',
   rate_limited: 'Слишком много вопросов подряд — подождите минуту.',
+  match_unavailable: 'Не удалось обновить данные матча. Попробуйте ещё раз.',
+  context_expired: 'Диалог устарел. Задайте вопрос ещё раз — начнём с актуальных данных.',
 });
 
 export function matchQuestionsShellHtml(escapeHtml) {
-  return `<div class="match-explanation-head"><h2>Спросить про матч</h2><small>О судье, форме, составах и прогнозе</small></div>
+  return `<div class="match-explanation-head"><h2>Спросить про матч</h2><small>До матча и в LIVE</small></div>
+    <div class="match-question-answer" data-question-answer role="log" aria-live="polite" aria-relevant="additions text"></div>
     <form class="match-question-form" data-question-form>
       <input type="text" name="question" maxlength="${MAX_LENGTH}" autocomplete="off" placeholder="Что хотите узнать о матче?" aria-label="Вопрос про матч">
       <button type="submit" class="match-question-submit">Спросить</button>
     </form>
-    <div class="match-question-answer" data-question-answer aria-live="polite"></div>
-    <p class="match-explanation-note">Ответы основаны на данных этого матча.</p>`;
+    <p class="match-explanation-note">Можно уточнять ответ. AI сверяется с доступными данными матча.</p>`;
 }
 
 function validItems(items) {
@@ -53,49 +53,90 @@ export function matchQuestionAnswerHtml(data, escapeHtml) {
   return `${head}<p class="match-question-empty">${escapeHtml(text)}</p>${remaining}`;
 }
 
-export function mountMatchQuestions({ root, fixtureId, api, escapeHtml, accessReceipt = null, isCurrent = () => true } = {}) {
-  const id = Number(fixtureId);
-  if (!root || !Number.isSafeInteger(id) || id <= 0 || typeof api !== 'function') return false;
-  if (root.dataset.questionsMounted === 'true' && Number(root.dataset.fixture) === id) return true;
-  root.dataset.fixture = String(id);
-  root.dataset.questionsMounted = 'true';
-  root.innerHTML = matchQuestionsShellHtml(escapeHtml);
-  root.hidden = false;
-  const answer = root.querySelector('[data-question-answer]');
-  const form = root.querySelector('[data-question-form]');
-  const input = form?.querySelector('input[name="question"]');
-  let busy = false;
+const sessions=new Map();
 
-  async function ask(body) {
-    if (busy || !answer) return;
-    busy = true;
-    root.setAttribute('aria-busy', 'true');
-    const submit = form?.querySelector('[type="submit"]');
-    if (submit) submit.disabled = true;
-    answer.innerHTML = '<p class="match-question-empty">Ищу в данных матча…</p>';
-    let data = null;
-    try {
-      data = await api('/api/match-question', { method: 'POST', body: JSON.stringify({ fixtureId: id, ...body, ...(typeof accessReceipt==='string' && accessReceipt.length<=100 ? {accessReceipt} : {}) }), retry: false, timeoutMs: 9000 });
-    } catch (error) {
-      const reason = error?.payload?.reason || (Number(error?.status) === 404 ? 'not_in_history' : Number(error?.status) === 429 ? 'rate_limited' : '');
-      data = { available: false, reason };
-    }
-    busy = false;
-    // Пользователь мог уйти с этого разбора, пока шёл запрос.
-    if (!isCurrent() || !root.isConnected || Number(root.dataset.fixture) !== id) return;
-    root.removeAttribute('aria-busy');
-    if (submit) submit.disabled = false;
-    answer.innerHTML = matchQuestionAnswerHtml(data, escapeHtml);
+export function conversationHtml(session,escapeHtml){
+  return session.messages.slice(-6).map(message=>{
+    const paragraphs=message.paragraphs || [];
+    const body=paragraphs.map(paragraph=>{
+      const label=paragraph.kind==='scenario' ? 'Возможный сценарий' : paragraph.kind==='analysis' ? 'Оценка AI' : '';
+      return `<div class="match-chat-paragraph">${label ? `<small>${label}</small>` : ''}<p>${escapeHtml(paragraph.text)}</p></div>`;
+    }).join('');
+    const evidence=[...new Map(paragraphs.flatMap(item=>item.evidence || []).filter(item=>typeof item?.id==='string' && typeof item?.text==='string').map(item=>[item.id,item])).values()].slice(0,12);
+    return `<article class="match-chat-turn"><p class="match-question-asked">${escapeHtml(message.question)}</p><div class="match-question-response">${body || (session.busy && message===session.messages.at(-1) ? '<p class="match-question-empty">Сверяюсь с данными матча…</p>' : '')}</div>${evidence.length ? `<details class="match-chat-evidence"><summary>На чём основан ответ</summary>${evidence.map(item=>`<p>${escapeHtml(item.text)}</p>`).join('')}</details>` : ''}${message.error ? `<p class="match-question-empty">${escapeHtml(message.error)}</p>` : ''}</article>`;
+  }).join('');
+}
+
+export function mountMatchQuestions({root,fixtureId,userId=0,api,escapeHtml,accessReceipt=null,isCurrent=()=>true}={}){
+  const id=Number(fixtureId),owner=String(userId);
+  if(!root || !Number.isSafeInteger(id) || id<=0 || typeof api!=='function' || typeof escapeHtml!=='function')return false;
+  const sessionKey=`${owner}:${id}`;
+  // An account switch never inherits another person's local dialogue or proof.
+  for(const [key,session] of sessions){
+    if(key!==sessionKey)session.controller?.abort();
+    if(!key.startsWith(`${owner}:`))sessions.delete(key);
   }
-
-  form?.addEventListener('submit', event => {
-    event.preventDefault();
-    const question = String(input?.value || '').trim();
-    if (question.length < 3) {
-      answer.innerHTML = '<p class="match-question-empty">Напишите вопрос хотя бы из трёх символов.</p>';
-      return;
+  let session=sessions.get(sessionKey);
+  if(!session){
+    session={messages:[],context:null,busy:false,receipt:null,remaining:null};
+    sessions.set(sessionKey,session);
+    if(sessions.size>8){const oldest=sessions.keys().next().value;sessions.get(oldest)?.controller?.abort();sessions.delete(oldest);}
+  }
+  if(typeof accessReceipt==='string' && accessReceipt.length<=100)session.receipt=accessReceipt;
+  if(root.dataset.questionsMounted==='true' && root.dataset.chatSession===sessionKey)return true;
+  root.dataset.fixture=String(id);root.dataset.chatSession=sessionKey;root.dataset.questionsMounted='true';
+  root.innerHTML=matchQuestionsShellHtml(escapeHtml);root.hidden=false;
+  const answer=root.querySelector('[data-question-answer]'),form=root.querySelector('[data-question-form]');
+  const input=form?.querySelector('input[name="question"]'),submit=form?.querySelector('[type="submit"]');
+  const active=()=>isCurrent() && root.isConnected && root.dataset.chatSession===sessionKey;
+  session.render=()=>{
+    if(!active())return;
+    root.setAttribute('aria-busy',String(session.busy));
+    if(submit)submit.disabled=session.busy;
+    if(answer){
+      const follow=session.scrollToLatest || answer.scrollHeight-answer.clientHeight-answer.scrollTop<60;
+      answer.innerHTML=conversationHtml(session,escapeHtml);
+      if(follow)answer.scrollTop=answer.scrollHeight;
+      session.scrollToLatest=false;
     }
-    ask({ question: question.slice(0, MAX_LENGTH) });
+  };
+  session.render();
+  async function ask(question){
+    if(session.busy)return;
+    session.busy=true;session.controller=new AbortController();
+    const message={question,paragraphs:[]};session.messages.push(message);
+    session.scrollToLatest=true;
+    session.messages=session.messages.slice(-6);
+    if(input)input.value='';
+    session.render();
+    let terminal=false;
+    try{
+      const data=await api('/api/match-question',{
+        method:'POST',body:JSON.stringify({fixtureId:id,mode:'conversation',question,context:session.context,...(session.receipt ? {accessReceipt:session.receipt} : {})}),
+        retry:false,timeoutMs:30000,signal:session.controller.signal,
+        onEvent:({type,data})=>{
+          if(type==='paragraph' && message.paragraphs.length<3 && typeof data?.text==='string' && data.text.length<=2800)message.paragraphs.push(data);
+          if(type==='done'){terminal=true;session.context=typeof data.context==='string' ? data.context : null;session.remaining=data.remaining;}
+          if(type==='error'){terminal=true;message.error=message.paragraphs.length ? 'Ответ прервался. Можно задать вопрос ещё раз.' : UNAVAILABLE.ai_unavailable;}
+          session.render();
+        },
+      });
+      if(!terminal){
+        if(data?.reason==='context_expired')session.context=null;
+        if(data?.answer==='refused')message.paragraphs=[{kind:'answer',text:'Ставки мы не подсказываем. Могу обсудить сам матч.'}];
+        else message.error=UNAVAILABLE[data?.reason] || 'Не удалось получить ответ. Попробуйте ещё раз.';
+      }
+    }catch(error){
+      message.error=Number(error?.status)===429 ? UNAVAILABLE.rate_limited : message.paragraphs.length ? 'Ответ прервался. Можно задать вопрос ещё раз.' : UNAVAILABLE.ai_unavailable;
+    }finally{session.busy=false;session.controller=null;session.render();}
+  }
+  form?.addEventListener('submit',event=>{
+    event.preventDefault();
+    const question=String(input?.value || '').trim();
+    if(question.length<3){input?.setCustomValidity?.('Напишите вопрос хотя бы из трёх символов.');input?.reportValidity?.();return;}
+    input?.setCustomValidity?.('');
+    void ask(question.slice(0,MAX_LENGTH));
   });
+  input?.addEventListener('input',()=>input.setCustomValidity?.(''));
   return true;
 }

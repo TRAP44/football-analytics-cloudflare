@@ -1,8 +1,11 @@
 import {buildMatchQuestionFacts,directMatchQuestionTopic} from './match-question-facts.js';
 import {verifyMatchQuestionAccess} from './match-question-access.js';
 import {presetAnswerIds} from './match-question-presets.js';
+import {createMatchChatRuntime} from './match-chat-runtime.js';
 export {presetAnswerIds} from './match-question-presets.js';
-// Задача 6: «Спросить про матч».
+// «Спросить про матч»: mode=conversation delegates to the match-scoped
+// conversational runtime. The fact-selection protocol below stays compatible
+// with already deployed clients and deterministic preset callers.
 //
 // Ответ — только выбор фактов из того же серверного каталога, что и у
 // «AI · простыми словами» (match-explanation-runtime.js): тексты и роли задаёт
@@ -142,6 +145,7 @@ export function createMatchQuestionRuntime(deps = {}) {
     json,
     getCache,
     getCacheEntry,
+    loadMatchContext,
     getStaleCache,
     setCache,
     getHistory,
@@ -222,9 +226,9 @@ export function createMatchQuestionRuntime(deps = {}) {
   //    поэтому один пользователь не израсходует больше своего часового лимита.
   //    Редкий проигрыш гонки на шаге 3 (бюджет кончился между 1 и 3 или сбой)
   //    стоит пользователю одного вопроса — это осознанный компромисс без новой миграции.
-  async function aiAnswer(cfg, facts, question, userId) {
+  async function reserveAi(cfg, userId) {
     const ai = cfg?.workersAi;
-    if (!ai || typeof ai.run !== 'function') return { ids: null, reason: 'no_binding' };
+    if (!ai || typeof ai.run !== 'function') return { allowed: false, reason: 'ai_unavailable' };
     const serviceLimit = cfg?.matchQuestionsDailyLimit;
     let budgetRead=null;
     let budgetHour=-1;
@@ -255,6 +259,15 @@ export function createMatchQuestionRuntime(deps = {}) {
       telemetry(exhausted ? 'matchQuestionDailyLimited' : 'matchQuestionBudgetUnavailable');
       return { ids: null, reason: exhausted ? 'daily_limit' : 'ai_unavailable', remaining: user.remaining };
     }
+    return {allowed:true,remaining:user.remaining};
+  }
+
+  const chatRuntime=createMatchChatRuntime({...deps,loadMatchContext,reserveAi,nowMs,telemetry,reportAiFailure});
+
+  async function aiAnswer(cfg, facts, question, userId) {
+    const admission=await reserveAi(cfg,userId);
+    if(admission.allowed!==true)return {ids:null,...admission};
+    const user=admission,ai=cfg.workersAi;
     let timer;
     try {
       telemetry('matchQuestionCalls');
@@ -293,8 +306,10 @@ export function createMatchQuestionRuntime(deps = {}) {
   async function readBody(request) {
     try {
       const raw = await request.text();
-      if (raw.length > MAX_BODY_CHARS) return null;
-      return plainObject(JSON.parse(raw));
+      if (raw.length > 18000) return null;
+      const body=plainObject(JSON.parse(raw));
+      if(raw.length>MAX_BODY_CHARS && body?.mode!=='conversation')return null;
+      return body;
     } catch {
       return null;
     }
@@ -323,6 +338,13 @@ export function createMatchQuestionRuntime(deps = {}) {
       aiEnabled = runtime.aiEnabled !== false;
     } catch {
       return json({ available: false, reason: 'analysis_disabled' });
+    }
+
+    if(body.mode==='conversation'){
+      if(!question)return json({error:'Напишите свой вопрос.',code:'QUESTION_INVALID'},400);
+      if(!aiEnabled)return json({available:false,reason:'ai_disabled'});
+      if(isBettingQuestion(question.text))return json({available:true,answer:'refused',source:'rule'});
+      return chatRuntime.apiMatchChat(request,cfg,userId,{...body,fixtureId},question);
     }
 
     // Как и объяснение: только по сохранённому анализу из истории пользователя.

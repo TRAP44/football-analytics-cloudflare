@@ -69,11 +69,12 @@
 
 
 
+
 ## На ревью
 
-- [ ] Собственный вопрос о голах: гарантированно использовать доступную голевую модель — **Codex** — [PR #994](https://github.com/TRAP44/football-analytics-cloudflare/pull/994), `codex/match-goals-question`, продолжение #993/#976. Реальный AI probe прошёл форму/H2H/атаку, но не общий вопрос о голах; direct lookup без inference и квот, прежние guards, контролируемое отсутствие оценки.
+- [ ] Разговорный AI для каждого матча, включая LIVE: свежий Match Center, уточнения в рамках матча, постепенный ответ и единые квоты — **Codex** — [PR #995](https://github.com/TRAP44/football-analytics-cloudflare/pull/995), `codex/match-conversational-assistant`, запрос Сергея 21.10.
 
-- [ ] Матч: рабочее напоминание за 15 минут, свои вопросы без готовых подсказок и лишней сводки перепроверки — **Codex** — [PR #993](https://github.com/TRAP44/football-analytics-cloudflare/pull/993), `codex/match-reminder-chat-cleanup`. Исправить SQL ISO-даты и восстановление кнопки после ошибки загрузки; расширить факты своих вопросов, сохранить скорость и серверные проверки.
+
 
 
 
@@ -174,6 +175,9 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Собственный вопрос о голах: гарантированно использовать доступную голевую модель — **Codex** — [PR #994](https://github.com/TRAP44/football-analytics-cloudflare/pull/994), `codex/match-goals-question`, продолжение #993/#976. Реальный AI probe прошёл форму/H2H/атаку, но не общий вопрос о голах; direct lookup без inference и квот, прежние guards, контролируемое отсутствие оценки. Выпущено: main25c94ef0, Deploy39647772080/Monitor39648239141/realAI39647171341 success; proof #976 issuecomment-6325715383.
+- [x] Матч: рабочее напоминание за 15 минут, свои вопросы без готовых подсказок и лишней сводки перепроверки — **Codex** — [PR #993](https://github.com/TRAP44/football-analytics-cloudflare/pull/993), `codex/match-reminder-chat-cleanup`. Исправить SQL ISO-даты и восстановление кнопки после ошибки загрузки; расширить факты своих вопросов, сохранить скорость и серверные проверки. Выпущено: main25c94ef0, Deploy39647772080/Monitor39648239141/realAI39647171341 success; proof #976 issuecomment-6325715383.
 
 - [x] Потерянные ответы Supabase и атомарная миграция v18 — **Codex** — [PR #992](https://github.com/TRAP44/football-analytics-cloudflare/pull/992), опубликован e86016a6, migration/apply + encrypted backup/restore + 25 HTTP/browser checks; 3 реальных фоновых запуска с 9 LIVE-циклами успешны. Подтверждение: #976 issuecomment-6319836567. Внешние сетевые сбои не объявляются устранёнными.
 

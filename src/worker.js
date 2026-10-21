@@ -2572,6 +2572,10 @@ function getMatchQuestionRuntime() {
       clock: () => Date.now(),
       getCache,
       getCacheEntry,
+      loadMatchContext: async (fixtureId,cfg) => {
+        const response=await apiMatchCenter(new Request(`https://match-center.internal/api/match-center?fixtureId=${fixtureId}`),cfg);
+        return response.ok ? response.json() : null;
+      },
       getHistory,
       userHasAnalyzedFixture,
       getStaleCache,

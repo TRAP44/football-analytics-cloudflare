@@ -17,6 +17,7 @@ const RELEASE_TESTS = Object.freeze([
   'test/match-question-access.test.js',
   'test/match-question.test.js',
   'test/match-question-facts.test.js',
+  'test/match-conversation.test.js',
   'test/public-startup-progress.test.js',
   'test/match-chat-remote-verification.test.js',
   'test/availability-quality-rc144.test.js',

@@ -67,7 +67,14 @@ export async function verifyMatchChatRemote(env=process.env){
         report[variant]=safeProbeReport(await response.json());
       }catch{report[variant]={failure:'probe_transport_error'};}
     }
-    report.success=report.current?.passed===true;
+    try{
+      const response=await fetch(base+'/probe',{method:'POST',headers:{'content-type':'application/json','x-probe-key':nonce},body:JSON.stringify({variant:'conversation'}),signal:AbortSignal.timeout(100000)});
+      const value=response.ok ? await response.json() : {};
+      const checks={};
+      for(const name of ['liveScore','liveStatistics','followupContext','refreshedScore','missingLineups','generatedExplanation'])checks[name]=value.checks?.[name]===true;
+      report.conversation={checks,modelCallsExpected:value.modelCalls===4,timings:Array.isArray(value.timings) ? value.timings.slice(0,5).map(ms=>Number.isInteger(ms) && ms>=0 && ms<=100000 ? ms : null) : [],passed:value.success===true && Object.values(checks).every(Boolean) && value.modelCalls===4};
+    }catch{report.conversation={passed:false,failure:'conversation_probe_failed'};}
+    report.success=report.current?.passed===true && report.conversation?.passed===true;
     return report;
   }finally{
     if(child && child.exitCode===null){
