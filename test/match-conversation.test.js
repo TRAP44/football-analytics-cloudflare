@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildMatchChatContext,issueChatContext,readChatContext} from '../src/match-chat-context.js';
 import {createMatchQuestionRuntime} from '../src/match-question-runtime.js';
-import {validateChatParagraph,consumeChatModel} from '../src/match-chat-runtime.js';
+import {validateChatParagraph,consumeChatModel,createChatParagraphReader} from '../src/match-chat-runtime.js';
 import {readMatchChatEvents} from '../public/modules/client-core.js';
 import {conversationHtml} from '../public/modules/match-questions.js';
 
@@ -177,4 +177,14 @@ test('plain referee, published starting XI and missing model lookups preserve ze
   assert.equal(result.data.answer,'conversation');assert.equal(result.data.source,'data');assert.ok(result.data.context);
  }
  assert.equal(f.calls.model.length,0);assert.equal(f.calls.rpc.length,0);
+});
+
+test('pretty JSON, escaped braces and one-byte chunks frame only complete objects; free text and truncation fail',async()=>{
+ const values=[],read=createChatParagraphReader(value=>values.push(value));
+ const value={kind:'answer',text:'brace } and "quote"',factIds:['score']};
+ const text='```json\n'+JSON.stringify(value,null,2)+'\n```\n';
+ for(const char of text)await read(char);
+ await read('',true);assert.deepEqual(values,[value]);
+ await assert.rejects(createChatParagraphReader(()=>{})('prefix '+JSON.stringify(value),true));
+ await assert.rejects(createChatParagraphReader(()=>{})('{"kind":',true));
 });

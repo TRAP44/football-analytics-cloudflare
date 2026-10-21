@@ -39,6 +39,36 @@ export function matchChatPrompt(context,turns,question){
 }
 
 const numericTokens=text=>String(text).match(/\d+(?:[.,:]\d+)*(?:%|′)?/g) || [];
+
+// Models sometimes pretty-print JSON despite the one-line instruction. Frame
+// complete objects by JSON syntax, not by newlines inside a partial object.
+export function createChatParagraphReader(accept){
+  let buffer='',total=0;
+  return async (text,final=false)=>{
+    total+=text.length;buffer+=text;
+    if(total>6000)throw Error('CHAT_TEXT_TOO_LARGE');
+    while(true){
+      buffer=buffer.trimStart();
+      if(!buffer)return;
+      const fence=/^```(?:json)?\s/i.exec(buffer) || (final ? /^```(?:json)?$/i.exec(buffer) : null);
+      if(fence){buffer=buffer.slice(fence[0].length);continue;}
+      if(!final && /^`{1,3}(?:j(?:s(?:o(?:n)?)?)?)?$/i.test(buffer))return;
+      if(buffer[0]!=='{')throw Error('CHAT_JSON_EXPECTED');
+      let depth=0,quoted=false,escaped=false,end=-1;
+      for(let index=0;index<buffer.length;index++){
+        const char=buffer[index];
+        if(quoted){if(escaped)escaped=false;else if(char==='\\')escaped=true;else if(char==='"')quoted=false;continue;}
+        if(char==='"')quoted=true;
+        else if(char==='{')depth++;
+        else if(char==='}' && --depth===0){end=index+1;break;}
+      }
+      if(end<0){if(final)throw Error('CHAT_INCOMPLETE_JSON');return;}
+      const value=JSON.parse(buffer.slice(0,end));buffer=buffer.slice(end);
+      await accept(value);
+    }
+  };
+}
+
 export function validateChatParagraph(value,context){
   if(!value || !['answer','analysis','scenario','missing'].includes(value.kind) || typeof value.text!=='string' || !Array.isArray(value.factIds))return null;
   if(Object.keys(value).some(key=>!['kind','text','factIds'].includes(key)))return null;
@@ -178,7 +208,7 @@ export function createMatchChatRuntime(deps){
       start(output){
         streamController=output;
         const run=async()=>{
-          let modelText='',paragraphs=[];
+          let paragraphs=[];
           try{
             timer=setTimeout(stop,Math.max(1,Math.min(MATCH_CHAT_TIMEOUT_MS,27000-(nowMs()-requestStarted))));
             send('meta',{fixtureId:body.fixtureId,mode:context.mode,observedAt:context.observedAt,remaining:admission.remaining});
@@ -190,24 +220,18 @@ export function createMatchChatRuntime(deps){
             // If headers arrive after cancellation, cancel that late stream too.
             void inference.then(result=>{if(controller.signal.aborted && result?.cancel)void result.cancel().catch(()=>{});},()=>{});
             const result=await Promise.race([inference,abortPromise]);
-            const accept=async line=>{
-              const trimmed=line.trim();
-              if(!trimmed || /^```(?:json)?$/.test(trimmed))return;
+            const accept=async value=>{
               if(paragraphs.length>=MAX_PARAGRAPHS)throw Error('CHAT_PARAGRAPH_LIMIT');
-              const paragraph=validateChatParagraph(JSON.parse(trimmed),context);
+              const paragraph=validateChatParagraph(value,context);
               if(!paragraph)throw Error('CHAT_UNGROUNDED_PARAGRAPH');
               if(paragraphs.map(item=>item.text).join('\n\n').length+paragraph.text.length+2>6000)throw Error('CHAT_TURN_TOO_LARGE');
               paragraphs.push(paragraph);
               send('paragraph',{...paragraph,evidence:paragraph.factIds.map(id=>context.facts.find(fact=>fact.id===id))});
               if(paragraphs.length===1)telemetry('matchChatFirstParagraph');
             };
-            await Promise.race([consumeChatModel(result,async text=>{
-              modelText+=text;
-              if(modelText.length>6000)throw Error('CHAT_TEXT_TOO_LARGE');
-              let newline;
-              while((newline=modelText.indexOf('\n'))>=0){const line=modelText.slice(0,newline);modelText=modelText.slice(newline+1);await accept(line);}
-            },controller.signal),abortPromise]);
-            if(modelText.trim())await accept(modelText);
+            const readParagraph=createChatParagraphReader(accept);
+            await Promise.race([consumeChatModel(result,text=>readParagraph(text),controller.signal),abortPromise]);
+            await readParagraph('',true);
             if(!paragraphs.length)throw Error('CHAT_EMPTY');
             const fullContent=paragraphs.map(item=>item.text).join('\n\n');
             const content=fullContent.length<=1800 ? fullContent : `${fullContent.slice(0,1800)}\n[Длинный ответ сокращён в истории; факты нужно заново сверить с текущим снимком.]`;
