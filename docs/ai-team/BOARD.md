@@ -68,6 +68,8 @@
 
 ## На ревью
 
+- [ ] Подтверждение записей Supabase и завершения lease в едином бюджете — **Codex** — [#989](https://github.com/TRAP44/football-analytics-cloudflare/pull/989), `codex/durable-supabase-recovery`. Независимое review основной реализации и нового completion без блокеров; full4526/release708 прошли. До завершения: CI, backup/restore, защищённая миграция v18, deploy и реальные циклы.
+
 
 
 
