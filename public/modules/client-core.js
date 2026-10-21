@@ -128,6 +128,40 @@ export function phase5SessionToken(scope = globalThis) {
   }
 }
 
+export async function readMatchChatEvents(response,onEvent,signal){
+  const reader=response.body?.getReader();
+  if(!reader)throw new Error('Не удалось открыть ответ AI.');
+  const decoder=new TextDecoder();
+  let buffer='',size=0,terminal=null;
+  const cancel=()=>{void reader.cancel().catch(()=>{});};
+  signal?.addEventListener('abort',cancel,{once:true});
+  try{
+    while(!terminal){
+      if(signal?.aborted)throw new DOMException('cancelled','AbortError');
+      const next=await reader.read();
+      if(next.done)break;
+      size+=next.value.byteLength;
+      if(size>80000)throw new Error('Ответ AI слишком длинный.');
+      buffer+=decoder.decode(next.value,{stream:true}).replace(/\r/g,'');
+      let index;
+      while((index=buffer.indexOf('\n\n'))>=0){
+        const frame=buffer.slice(0,index);buffer=buffer.slice(index+2);
+        const lines=frame.split('\n');
+        const type=lines.find(line=>line.startsWith('event:'))?.slice(6).trim();
+        if(!['meta','paragraph','done','error'].includes(type))continue;
+        const data=JSON.parse(lines.filter(line=>line.startsWith('data:')).map(line=>line.slice(5).trim()).join('\n'));
+        if(signal?.aborted)throw new DOMException('cancelled','AbortError');
+        onEvent({type,data});
+        if(type==='done' || type==='error'){terminal=data;break;}
+      }
+      if(buffer.length>20000)throw new Error('Некорректный ответ AI.');
+    }
+    if(signal?.aborted)throw new DOMException('cancelled','AbortError');
+    if(!terminal)throw new Error('Ответ AI прервался. Попробуйте ещё раз.');
+    return terminal;
+  }finally{signal?.removeEventListener('abort',cancel);try{await reader.cancel();}catch{}reader.releaseLock();}
+}
+
 export function createApiClient(deps) {
   const { state, tg, inflightGetRequests, observeServerVersion, showBootRecovery, applyRuntimeUi, normalizeApiError, noteRequestSuccess, noteRequestFailure } = deps;
   if (
@@ -206,12 +240,18 @@ export function createApiClient(deps) {
         headers.set('Content-Type', 'application/json');
         if (tg?.initData) headers.set('x-telegram-init-data', tg.initData);
         if (validationSession) headers.set('x-phase5-session', validationSession);
-        const { timeoutMs: _timeoutMs, retry: _retry, dedupe: _dedupe, ...fetchOptions } = options;
+        const { timeoutMs: _timeoutMs, retry: _retry, dedupe: _dedupe, onEvent: _onEvent, ...fetchOptions } = options;
         const {response,data}=await Promise.race([
           (async()=>{
             if(options.signal?.aborted || now()>=deadline)throw new DOMException('cancelled or timed out','AbortError');
             const response=await fetch(safePath,{...fetchOptions,method,headers,signal:controller.signal});
-            const data=await response.json().catch(()=>({}));
+            const isStream=response.ok && typeof options.onEvent==='function' && response.headers.get('content-type')?.includes('text/event-stream');
+            if(isStream){
+              const version=String(response.headers.get('x-app-version') || '');
+              if(version)observeServerVersion(version,response);
+              if(state.compatibilityBlocked)throw Object.assign(new Error(state.compatibilityReason),{status:426,payload:{category:'compatibility'}});
+            }
+            const data=isStream ? await readMatchChatEvents(response,options.onEvent,controller.signal) : await response.json().catch(()=>({}));
             if(controller.signal.aborted || options.signal?.aborted || now()>=deadline)throw new DOMException('cancelled or timed out','AbortError');
             return {response,data};
           })(),deadlinePromise,

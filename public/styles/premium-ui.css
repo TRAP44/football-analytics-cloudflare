@@ -2713,6 +2713,15 @@ html[data-theme] body.miniapp-public-shell .match-question-response {
 }
 html[data-theme] body.miniapp-public-shell .match-question-response p { margin: 0; }
 html[data-theme] body.miniapp-public-shell .match-question-response p + p { margin-top: 8px; }
+html[data-theme] body.miniapp-public-shell .match-chat-turn { display: grid; gap: 10px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+html[data-theme] body.miniapp-public-shell .match-chat-turn:last-child { border-bottom: 0; }
+html[data-theme] body.miniapp-public-shell .match-chat-turn .match-question-asked { justify-self: end; max-width: 94%; padding: 9px 12px; border-radius: 14px 14px 4px 14px; background: color-mix(in srgb, var(--accent) 12%, transparent); }
+html[data-theme] body.miniapp-public-shell .match-chat-paragraph + .match-chat-paragraph { margin-top: 10px; }
+html[data-theme] body.miniapp-public-shell .match-chat-paragraph small { display: block; margin-bottom: 4px; color: var(--hint); font-size: 11px; }
+html[data-theme] body.miniapp-public-shell .match-chat-evidence { color: var(--hint); font-size: 12px; line-height: 1.5; }
+html[data-theme] body.miniapp-public-shell .match-chat-evidence summary { cursor: pointer; padding: 4px 0; }
+html[data-theme] body.miniapp-public-shell .match-chat-evidence p { margin: 6px 0; overflow-wrap: anywhere; }
+html[data-theme] body.miniapp-public-shell .match-questions .match-question-form { margin-top: 12px; }
 
 /* Neutral marker for a missing club badge. */
 .team-crest-initials { display:inline-grid;place-items:center;width:var(--crest-width,42px);height:var(--crest-height,46px);flex-shrink:0;clip-path:polygon(8% 0,92% 0,92% 65%,78% 84%,50% 100%,22% 84%,8% 65%);background:color-mix(in srgb,var(--accent) 16%,var(--bg));color:var(--accent);font:800 var(--crest-font-size,16px)/1 system-ui,sans-serif;letter-spacing:.03em; }

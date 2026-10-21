@@ -29,6 +29,22 @@ test('remote harness denies unauthenticated probes before any inference',async()
   assert.equal(summarizeChatProbe({available:true,source:'preset',items:[{text:'Home FC'}]}),false);
 });
 
+test('conversational remote fixture exercises live answers, changed score, context, missing roster and generated explanation',async()=>{
+  const env={PROBE_NONCE:'local-conversation-fixture',AI:{run:async(_model,input)=>{
+    const question=input.messages.at(-1).content;
+    let paragraphs;
+    if(question.includes('стартовом'))paragraphs=[{kind:'missing',text:'lineups',factIds:[]}];
+    else if(question.includes('предматчевая'))paragraphs=[{kind:'answer',text:'',factIds:['pre_form_home','pre_form_away']},{kind:'analysis',text:'Если опираться на форму до матча, Home FC может иметь преимущество. Это не гарантия результата.',factIds:['pre_form_home','pre_form_away']}];
+    else paragraphs=[{kind:'answer',text:'',factIds:[question.includes('створ') ? 'stat_0' : 'score']}];
+    return new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode('data: '+JSON.stringify({response:paragraphs.map(item=>JSON.stringify(item)).join('\n')+'\n'})+'\n\ndata: [DONE]\n\n'));controller.close();}});
+  }}};
+  const response=await worker.fetch(new Request('https://local.test/probe',{method:'POST',headers:{'x-probe-key':env.PROBE_NONCE},body:JSON.stringify({variant:'conversation'})}),env);
+  const report=await response.json();
+  assert.equal(report.success,true);assert.equal(report.modelCalls,5);assert.equal(report.timings.length,5);
+  assert.ok(Object.values(report.checks).every(Boolean));
+  assert.doesNotMatch(JSON.stringify(report),/Home FC|Away FC|local-conversation-fixture/,'only bounded verdicts and timing leave the probe');
+});
+
 test('real-model verification is main-only, manual, production-protected and scoped to existing Cloudflare credentials',()=>{
   const file='.github/workflows/verify-match-chat.yml';const text=fs.readFileSync(file,'utf8');
   assert.deepEqual(auditWorkflow(file,text),[]);

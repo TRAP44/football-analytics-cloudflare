@@ -182,6 +182,7 @@ export function renderMatchCenterView(d, deps) {
       ${live && IN_PLAY_STATUSES.has(String(m.status || '').toUpperCase()) ? inPlayEstimateHtml(latestInPlayEstimate(d.aiTimeline || {}), m, escapeHtml) : ''}
       ${d.smartInsights?.available ? smartInsightsHeroHtml(d.smartInsights, m) : ''}
       ${finished ? postMatchReviewHtml(d.postMatchReview || {}, m) : ''}
+      <section class="panel match-explanation match-questions" id="matchQuestions" data-fixture="${fixtureId}" hidden></section>
       <details class="panel ai-extra-details" data-fixture="${fixtureId}" ${aiDetailsOpen?'open':''}>
         <summary>Подробнее о матче <span aria-hidden="true">⌄</span></summary>
         <div class="ai-extra-body">
