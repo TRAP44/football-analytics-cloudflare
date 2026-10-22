@@ -73,6 +73,8 @@
 
 ## На ревью
 
+- [ ] Завершить AI/LIVE выпуск: действующая JSON-модель после выявленной deprecation base8b, фиксированные ошибки провайдера и ограниченные compatibility controls — **Codex** — `codex/match-chat-binding-compat`, продолжение #995–#997; actual39745998241 failed, production25c94ef0 сохранён.
+
 - [ ] Разговорный AI: поддерживаемый JSON Mode и генерация объяснений с разрешёнными фактами; повторить реальную модель до выпуска — **Codex** — [PR #997](https://github.com/TRAP44/football-analytics-cloudflare/pull/997), `codex/match-chat-structured-replies`, продолжение #995/#996. Actual39680085661 подтвердил LIVE/уточнения/новый счёт, но объяснение отклонено; production остаётся25c94ef0.
 
 - [ ] Завершить выпуск разговорного ассистента после реального model-probe: JSON transport, совместимые фреймы и безопасная диагностика — **Codex** — [PR #996](https://github.com/TRAP44/football-analytics-cloudflare/pull/996), `codex/match-chat-model-protocol`, продолжение #995; failed39676923518, production остаётся25c94ef0, непроверенный deploy остановлен.

@@ -6,17 +6,35 @@ import {directMatchQuestionTopic} from './match-question-facts.js';
 
 export const MATCH_CHAT_TIMEOUT_MS=16000;
 // Officially supported JSON Mode model; legacy fact selection keeps its model.
-export const MATCH_CHAT_MODEL='@cf/meta/llama-3.1-8b-instruct';
-export const MATCH_CHAT_FAILURE_CODES=Object.freeze(['CHAT_TIMEOUT','CHAT_CANCELLED','CHAT_MODEL_STREAM_REQUIRED','CHAT_MODEL_ERROR','CHAT_MODEL_TOO_LARGE','CHAT_MODEL_FRAME_TOO_LARGE','CHAT_STREAM_INTERRUPTED','CHAT_TEXT_TOO_LARGE','CHAT_JSON_EXPECTED','CHAT_INCOMPLETE_JSON','CHAT_PARAGRAPH_LIMIT','CHAT_UNGROUNDED_PARAGRAPH','CHAT_TURN_TOO_LARGE','CHAT_EMPTY','CHAT_INVALID_JSON','CHAT_INFERENCE_FAILED']);
+export const MATCH_CHAT_MODEL='@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+export const MATCH_CHAT_FAILURE_CODES=Object.freeze(['CHAT_TIMEOUT','CHAT_CANCELLED','CHAT_MODEL_STREAM_REQUIRED','CHAT_MODEL_ERROR','CHAT_MODEL_TOO_LARGE','CHAT_MODEL_FRAME_TOO_LARGE','CHAT_STREAM_INTERRUPTED','CHAT_TEXT_TOO_LARGE','CHAT_JSON_EXPECTED','CHAT_INCOMPLETE_JSON','CHAT_PARAGRAPH_LIMIT','CHAT_UNGROUNDED_PARAGRAPH','CHAT_TURN_TOO_LARGE','CHAT_EMPTY','CHAT_INVALID_JSON','CHAT_INFERENCE_FAILED','CHAT_MODEL_UNAVAILABLE','CHAT_SCHEMA_UNSUPPORTED','CHAT_PROVIDER_RATE_LIMITED','CHAT_PROVIDER_AUTH_FAILED','CHAT_MODEL_REQUIRES_PAID','CHAT_PROVIDER_DAILY_LIMIT']);
 const MAX_PARAGRAPHS=3;
 const encoder=new TextEncoder();
+
+// Persist only fixed classifications. Provider exception text can contain request
+// details and must never leave this boundary or reach the client.
+export function classifyChatInferenceFailure(error){
+  try{
+    const text=`${String(error?.code || '')} ${String(error?.message || '')}`;
+    if(/\b5035\b|requires?.*paid/i.test(text))return 'CHAT_MODEL_REQUIRES_PAID';
+    if(/\b3036\b|daily.*(?:quota|limit)|neurons.*exceed/i.test(text))return 'CHAT_PROVIDER_DAILY_LIMIT';
+    if(/\b(?:5007|3042)\b/i.test(text))return 'CHAT_MODEL_UNAVAILABLE';
+    if(/\b3040\b/i.test(text))return 'CHAT_PROVIDER_RATE_LIMITED';
+    if(/\b(?:5018|3041|3023)\b/i.test(text))return 'CHAT_PROVIDER_AUTH_FAILED';
+    if(/schema|json mode|response_format|grammar|regex|pattern/i.test(text))return 'CHAT_SCHEMA_UNSUPPORTED';
+    if(/not found|not available|no such model|could not find/i.test(text))return 'CHAT_MODEL_UNAVAILABLE';
+    if(/rate.?limit|too many requests|quota|\b(?:429|3040)\b/i.test(text))return 'CHAT_PROVIDER_RATE_LIMITED';
+    if(/unauthorized|forbidden|authentication|\b(?:40[13]|5018|3041|3023)\b/i.test(text))return 'CHAT_PROVIDER_AUTH_FAILED';
+  }catch{}
+  return 'CHAT_INFERENCE_FAILED';
+}
 
 export function matchChatResponseFormat(context){
   return {type:'json_schema',json_schema:{
     type:'object',additionalProperties:false,
     properties:{
-      factIds:{type:'array',minItems:0,maxItems:8,items:{type:'string',enum:context.facts.map(fact=>fact.id)}},
-      interpretation:{type:'string',maxLength:500,minLength:0,pattern:'^(|(Если|Это может|Возможно)[^0-9A-ZА-ЯЁ<>]+)$'},
+      factIds:{type:'array',items:{type:'string',enum:context.facts.map(fact=>fact.id)}},
+      interpretation:{type:'string'},
       missingTopic:{type:'string',enum:['','lineups','referee','venue','statistics','events','prediction','goals','probabilities','other']},
     },required:['factIds','interpretation','missingTopic'],
   }};
@@ -295,7 +313,7 @@ export function createMatchChatRuntime(deps){
             telemetry('matchChatCompleted');
           }catch(error){
             telemetry('matchChatFailures');
-            const code=MATCH_CHAT_FAILURE_CODES.includes(error?.message) ? error.message : error instanceof SyntaxError ? 'CHAT_INVALID_JSON' : 'CHAT_INFERENCE_FAILED';
+            const code=MATCH_CHAT_FAILURE_CODES.includes(error?.message) ? error.message : error instanceof SyntaxError ? 'CHAT_INVALID_JSON' : classifyChatInferenceFailure(error);
             reportAiFailure(cfg,`${code}|${protocol.resultShape}|${protocol.frameShape}|${protocol.frames}|${protocol.doneSeen?1:0}|${paragraphs.length}`);
             // Timeout aborts the model reader; an open client still gets an
             // explicit terminal result, never a silently successful partial.

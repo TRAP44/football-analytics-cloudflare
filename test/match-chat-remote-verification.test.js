@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import worker from '../scripts/fixtures/match-chat-remote-worker.js';
-import {summarizeChatProbe,safeProbeReport} from '../scripts/verify-match-chat-remote.js';
+import {summarizeChatProbe,safeProbeReport,safeCompatibilityReport} from '../scripts/verify-match-chat-remote.js';
 import {EXPLANATION_MODEL} from '../src/match-explanation-runtime.js';
 import {auditWorkflow} from '../scripts/privileged-access-audit.js';
 
@@ -65,4 +65,21 @@ test('verification permits remote bindings while serving the fixture only on loo
   assert.ok(invocation);assert.doesNotMatch(invocation,/['"]--local['"]|['"]--remote['"]/);
   assert.match(invocation,/['"]--ip['"],['"]127\.0\.0\.1['"]/);
   assert.match(script,/ai:\{binding:'AI',remote:true\}/);
+});
+
+test('compatibility controls are nonce protected, fixed and never expose raw errors or model text',async()=>{
+ let calls=0;const models=[];
+ const env={PROBE_NONCE:'control-fixture',AI:{run:async(model,input)=>{
+  calls++;models.push(model);assert.equal(input.max_tokens,64);assert.equal(input.stream,false);
+  if(model.includes('3.1') && input.response_format)throw Error('JSON Mode unsupported private details');
+  return {response:{ok:true,private:'private details'}};
+ }}};
+ const request=key=>new Request('https://local.test/probe',{method:'POST',headers:{'x-probe-key':key},body:JSON.stringify({variant:'compatibility',model:'caller-model',prompt:'private details'})});
+ assert.equal((await worker.fetch(request('wrong'),env)).status,404);assert.equal(calls,0);
+ const report=safeCompatibilityReport(await (await worker.fetch(request(env.PROBE_NONCE),env)).json());
+ assert.equal(calls,4);assert.equal(new Set(models).size,2);
+ assert.deepEqual(report.map(item=>item.passed),[true,false,true,true]);
+ assert.deepEqual(report.slice(0,2).map(item=>item.failure),['none','CHAT_SCHEMA_UNSUPPORTED']);
+ assert.doesNotMatch(JSON.stringify(report),/private|caller-model|control-fixture/);
+ assert.equal(safeCompatibilityReport({results:[{candidate:'existing_plain',failure:'secret',durationMs:-1}]} )[0].failure,'none');
 });
