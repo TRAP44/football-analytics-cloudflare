@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildMatchChatContext,issueChatContext,readChatContext} from '../src/match-chat-context.js';
 import {createMatchQuestionRuntime} from '../src/match-question-runtime.js';
-import {validateChatParagraph,consumeChatModel,createChatParagraphReader,matchChatResponseFormat,MATCH_CHAT_MODEL} from '../src/match-chat-runtime.js';
+import {validateChatParagraph,consumeChatModel,createChatParagraphReader,matchChatResponseFormat,MATCH_CHAT_MODEL,classifyChatInferenceFailure} from '../src/match-chat-runtime.js';
 import {readMatchChatEvents} from '../public/modules/client-core.js';
 import {conversationHtml} from '../public/modules/match-questions.js';
 
@@ -229,7 +229,7 @@ test('structured model receives only authorized fact IDs and produces a qualitat
   assert.equal(input.response_format.type,'json_schema');
   assert.ok(!schema.properties.factIds.items.enum.some(id=>id.startsWith('pre_')),'non-owner never exposes premium catalogue via schema');
   const text='Если судить по ударам в створ, хозяева могут создавать больше угроз, но это не гарантирует результат.';
-  assert.ok(new RegExp(schema.properties.interpretation.pattern).test(text));
+  assert.equal(schema.properties.interpretation.type,'string');
   return {response:{factIds:['stat_0','stat_0'],interpretation:text,missingTopic:''}};
  }}});
  const result=await collect(await f.ask({question:'Что означают удары в створ?'}));
@@ -237,9 +237,12 @@ test('structured model receives only authorized fact IDs and produces a qualitat
  assert.deepEqual(result.events.filter(e=>e.type==='paragraph').map(e=>e.data.kind),['answer','analysis']);
  const context=buildMatchChatContext(center(),{match:center().match,probabilities:{home:54,draw:25,away:21}});
  const pattern=matchChatResponseFormat(context).json_schema.properties.interpretation;
- assert.equal(pattern.minLength,0);assert.ok(new RegExp(pattern.pattern).test(''));
- assert.equal(matchChatResponseFormat(context).json_schema.properties.factIds.minItems,0);
- for(const invalid of ['Если счёт будет 4:0.','Если Мбаппе выйдет на поле.','Home FC сильнее.'])assert.ok(!new RegExp(pattern.pattern).test(invalid));
+ assert.equal(pattern.type,'string');assert.equal(pattern.minLength,undefined);
+ assert.equal(matchChatResponseFormat(context).json_schema.properties.factIds.minItems,undefined);
+ for(const invalid of ['Если счёт будет 4:0.','Если Мбаппе выйдет на поле.','Home FC сильнее.']){
+  const read=createChatParagraphReader(()=>assert.fail('invalid free prose must not be emitted'));
+  await assert.rejects(()=>read(JSON.stringify({factIds:['score'],interpretation:invalid,missingTopic:''}),true),/CHAT_UNGROUNDED_PARAGRAPH/);
+ }
 });
 
 // A stored forecast does not establish facts about a new injury or coaching decision.
@@ -247,12 +250,29 @@ test('why questions can honestly abstain despite an owned prematch forecast',asy
  const f=fixture({userHasAnalyzedFixture:async()=>true}, {workersAi:{run:async(_model,input)=>{
   const schema=input.response_format.json_schema;
   assert.ok(schema.properties.factIds.items.enum.some(id=>id.startsWith('pre_')));
-  assert.equal(schema.properties.factIds.minItems,0);
-  assert.ok(new RegExp(schema.properties.interpretation.pattern).test(''));
+  assert.equal(schema.properties.factIds.minItems,undefined);
+  assert.equal(schema.properties.interpretation.minLength,undefined);
   return {response:{factIds:[],interpretation:'',missingTopic:'other'}};
  }}});
  const result=await collect(await f.ask({question:'Почему прогноз не учитывает травму неизвестного игрока?'}));
  assert.equal(result.data.answer,'conversation');
  assert.deepEqual(result.events.filter(e=>e.type==='paragraph').map(e=>e.data.kind),['missing']);
  assert.match(result.events.find(e=>e.type==='paragraph').data.text,/не хватает данных/);
+});
+
+test('provider errors have fixed safe classifications without exposing request details',()=>{
+ for(const [message,expected] of [
+  ['Model not found: private request','CHAT_MODEL_UNAVAILABLE'],
+  ['JSON Mode could not be met for private request','CHAT_SCHEMA_UNSUPPORTED'],
+  ['Model does not support JSON Mode private request','CHAT_SCHEMA_UNSUPPORTED'],
+  ['429 quota private request','CHAT_PROVIDER_RATE_LIMITED'],
+  ['403 authentication private request','CHAT_PROVIDER_AUTH_FAILED'],
+  ['5035 private request','CHAT_MODEL_REQUIRES_PAID'],
+  ['3036 private request','CHAT_PROVIDER_DAILY_LIMIT'],
+  ['5007 private request','CHAT_MODEL_UNAVAILABLE'],
+  ['3040 model not available private request','CHAT_PROVIDER_RATE_LIMITED'],
+  ['5018 private request','CHAT_PROVIDER_AUTH_FAILED'],
+  ['private request','CHAT_INFERENCE_FAILED'],
+ ])assert.equal(classifyChatInferenceFailure(Error(message)),expected);
+ assert.equal(classifyChatInferenceFailure({get message(){throw Error('private');}}),'CHAT_INFERENCE_FAILED');
 });

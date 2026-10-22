@@ -37,6 +37,14 @@ export function safeProbeReport(result){
     homeFormSelected:Array.isArray(result?.items) && result.items.some(item=>item.id==='form_home')
   };
 }
+export function safeCompatibilityReport(value){
+ const allowed=['existing_plain','existing_schema','fast70_plain','fast70_schema'];
+ return allowed.map(candidate=>{
+  const item=value?.results?.find(row=>row?.candidate===candidate);
+  return {candidate,passed:item?.passed===true,failure:MATCH_CHAT_FAILURE_CODES.includes(item?.failure)?item.failure:'none',durationMs:Number.isInteger(item?.durationMs) && item.durationMs>=0 && item.durationMs<=100000 ? item.durationMs : null};
+ });
+}
+
 export async function verifyMatchChatRemote(env=process.env){
   if(!env.CLOUDFLARE_API_TOKEN || !env.CLOUDFLARE_ACCOUNT_ID)throw new Error('Existing Cloudflare workflow credentials are required.');
   const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
@@ -76,8 +84,15 @@ export async function verifyMatchChatRemote(env=process.env){
       report.conversation={checks,modelCallsExpected:value.modelCalls===4,timings:Array.isArray(value.timings) ? value.timings.slice(0,5).map(ms=>Number.isInteger(ms) && ms>=0 && ms<=100000 ? ms : null) : [],passed:value.success===true && Object.values(checks).every(Boolean) && value.modelCalls===4};
       const protocol=value.protocol || {};
       report.conversation.protocol={firstFailure:MATCH_CHAT_FAILURE_CODES.includes(protocol.firstFailure)?protocol.firstFailure:'none',resultShape:['json','readable','other'].includes(protocol.resultShape)?protocol.resultShape:'none',frameShape:['none','response','delta','metadata'].includes(protocol.frameShape)?protocol.frameShape:'none',doneSeen:protocol.doneSeen===true};
-      for(const [name,max] of [['jsonResults',4],['streamResults',4],['otherResults',4],['frames',10000],['paragraphsAccepted',3]])report.conversation.protocol[name]=Number.isInteger(protocol[name]) && protocol[name]>=0 && protocol[name]<=max ? protocol[name] : 0;
+      for(const [name,max] of [['jsonResults',4],['streamResults',4],['otherResults',4],['frames',10000],['paragraphsAccepted',3],['usageResponses',4],['inputTokens',400000],['outputTokens',400000]])report.conversation.protocol[name]=Number.isInteger(protocol[name]) && protocol[name]>=0 && protocol[name]<=max ? protocol[name] : 0;
     }catch{report.conversation={passed:false,failure:'conversation_probe_failed'};}
+    if(report.conversation?.passed!==true){
+      try{
+        const response=await fetch(base+'/probe',{method:'POST',headers:{'content-type':'application/json','x-probe-key':nonce},body:JSON.stringify({variant:'compatibility'}),signal:AbortSignal.timeout(30000)});
+        report.compatibility=safeCompatibilityReport(response.ok ? await response.json() : null);
+      }catch{report.compatibility=safeCompatibilityReport(null);}
+    }
+    // Toy controls are diagnostic; they never turn a failed full chat green.
     report.success=report.current?.passed===true && report.conversation?.passed===true;
     return report;
   }finally{

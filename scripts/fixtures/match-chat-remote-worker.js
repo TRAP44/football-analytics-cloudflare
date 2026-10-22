@@ -1,5 +1,5 @@
 import {issueMatchQuestionAccess} from '../../src/match-question-access.js';
-import {probeMatchConversation} from './match-conversation-remote.js';
+import {probeMatchConversation,probeChatBindingCompatibility} from './match-conversation-remote.js';
 // Isolated local verification Worker. Not deployed or routed in production.
 import {createMatchQuestionRuntime} from '../../src/match-question-runtime.js';
 import {EXPLANATION_MODEL,EXPLANATION_ANALYSIS_CACHE_KEY} from '../../src/match-explanation-runtime.js';
@@ -21,6 +21,7 @@ export default {
     }
     const input=await request.json().catch(()=>null);
     if(input?.variant==='conversation')return Response.json(await probeMatchConversation(env));
+    if(input?.variant==='compatibility')return Response.json(await probeChatBindingCompatibility(env));
     if(!['previous','current'].includes(input?.variant))return Response.json({error:'invalid_variant'},{status:400});
     const model=input.variant==='previous' ? '@cf/meta/llama-3.1-8b-instruct-fp8' : EXPLANATION_MODEL;
     let modelFailure=null;
