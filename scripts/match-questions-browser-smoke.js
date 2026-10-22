@@ -74,7 +74,9 @@ const server=createServer(async(req,res)=>{
  try{
   const pathname=new URL(req.url,'http://localhost').pathname;
   if(pathname==='/api/match-question' && req.method==='POST'){
-   let body='';for await(const chunk of req)body+=chunk;
+   // Decode once: a network chunk can end inside a Cyrillic UTF-8 character.
+   const chunks=[];for await(const chunk of req)chunks.push(chunk);
+   const body=Buffer.concat(chunks).toString('utf8');
    const response=await runtime.apiMatchQuestion(new Request('https://fixture.invalid/api/match-question',{method:'POST',body}),{
     botToken:'browser-fixture-secret',matchQuestionsEnabled:true,matchQuestionsDailyLimit:500,matchQuestionsUserHourlyLimit:10,workersAi:{run:async(_model,input)=>{
      if(input.stream!==false)throw Error('supported JSON transport required');
