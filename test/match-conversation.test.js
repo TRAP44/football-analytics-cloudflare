@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildMatchChatContext,issueChatContext,readChatContext} from '../src/match-chat-context.js';
 import {createMatchQuestionRuntime} from '../src/match-question-runtime.js';
-import {validateChatParagraph,consumeChatModel,createChatParagraphReader} from '../src/match-chat-runtime.js';
+import {validateChatParagraph,consumeChatModel,createChatParagraphReader,matchChatResponseFormat,MATCH_CHAT_MODEL} from '../src/match-chat-runtime.js';
 import {readMatchChatEvents} from '../public/modules/client-core.js';
 import {conversationHtml} from '../public/modules/match-questions.js';
 
@@ -220,4 +220,39 @@ test('provider SSE supports OpenAI delta and stop at EOF while incomplete upstre
  assert.equal(output,'text');assert.equal(protocol.resultShape,'readable');
  let canonical='';await consumeChatModel({response:{kind:'answer',factIds:['score']}},text=>{canonical=text;},new AbortController().signal);
  assert.equal(JSON.parse(canonical).kind,'answer');
+});
+
+test('structured model receives only authorized fact IDs and produces a qualitative interpretation without new figures',async()=>{
+ const f=fixture({}, {workersAi:{run:async(model,input)=>{
+  assert.equal(model,MATCH_CHAT_MODEL);assert.equal(input.stream,false);
+  const schema=input.response_format.json_schema;
+  assert.equal(input.response_format.type,'json_schema');
+  assert.ok(!schema.properties.factIds.items.enum.some(id=>id.startsWith('pre_')),'non-owner never exposes premium catalogue via schema');
+  const text='Если судить по ударам в створ, хозяева могут создавать больше угроз, но это не гарантирует результат.';
+  assert.ok(new RegExp(schema.properties.interpretation.pattern).test(text));
+  return {response:{factIds:['stat_0','stat_0'],interpretation:text,missingTopic:''}};
+ }}});
+ const result=await collect(await f.ask({question:'Что означают удары в створ?'}));
+ assert.equal(result.data.answer,'conversation');
+ assert.deepEqual(result.events.filter(e=>e.type==='paragraph').map(e=>e.data.kind),['answer','analysis']);
+ const context=buildMatchChatContext(center(),{match:center().match,probabilities:{home:54,draw:25,away:21}});
+ const pattern=matchChatResponseFormat(context).json_schema.properties.interpretation;
+ assert.equal(pattern.minLength,0);assert.ok(new RegExp(pattern.pattern).test(''));
+ assert.equal(matchChatResponseFormat(context).json_schema.properties.factIds.minItems,0);
+ for(const invalid of ['Если счёт будет 4:0.','Если Мбаппе выйдет на поле.','Home FC сильнее.'])assert.ok(!new RegExp(pattern.pattern).test(invalid));
+});
+
+// A stored forecast does not establish facts about a new injury or coaching decision.
+test('why questions can honestly abstain despite an owned prematch forecast',async()=>{
+ const f=fixture({userHasAnalyzedFixture:async()=>true}, {workersAi:{run:async(_model,input)=>{
+  const schema=input.response_format.json_schema;
+  assert.ok(schema.properties.factIds.items.enum.some(id=>id.startsWith('pre_')));
+  assert.equal(schema.properties.factIds.minItems,0);
+  assert.ok(new RegExp(schema.properties.interpretation.pattern).test(''));
+  return {response:{factIds:[],interpretation:'',missingTopic:'other'}};
+ }}});
+ const result=await collect(await f.ask({question:'Почему прогноз не учитывает травму неизвестного игрока?'}));
+ assert.equal(result.data.answer,'conversation');
+ assert.deepEqual(result.events.filter(e=>e.type==='paragraph').map(e=>e.data.kind),['missing']);
+ assert.match(result.events.find(e=>e.type==='paragraph').data.text,/не хватает данных/);
 });

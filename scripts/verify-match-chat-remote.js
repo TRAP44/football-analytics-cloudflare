@@ -72,7 +72,7 @@ export async function verifyMatchChatRemote(env=process.env){
       const response=await fetch(base+'/probe',{method:'POST',headers:{'content-type':'application/json','x-probe-key':nonce},body:JSON.stringify({variant:'conversation'}),signal:AbortSignal.timeout(100000)});
       const value=response.ok ? await response.json() : {};
       const checks={};
-      for(const name of ['liveScore','liveStatistics','followupContext','refreshedScore','missingLineups','generatedExplanation'])checks[name]=value.checks?.[name]===true;
+      for(const name of ['liveScore','liveStatistics','followupContext','refreshedScore','missingLineups','generatedExplanation','structuredModelUsed'])checks[name]=value.checks?.[name]===true;
       report.conversation={checks,modelCallsExpected:value.modelCalls===4,timings:Array.isArray(value.timings) ? value.timings.slice(0,5).map(ms=>Number.isInteger(ms) && ms>=0 && ms<=100000 ? ms : null) : [],passed:value.success===true && Object.values(checks).every(Boolean) && value.modelCalls===4};
       const protocol=value.protocol || {};
       report.conversation.protocol={firstFailure:MATCH_CHAT_FAILURE_CODES.includes(protocol.firstFailure)?protocol.firstFailure:'none',resultShape:['json','readable','other'].includes(protocol.resultShape)?protocol.resultShape:'none',frameShape:['none','response','delta','metadata'].includes(protocol.frameShape)?protocol.frameShape:'none',doneSeen:protocol.doneSeen===true};
