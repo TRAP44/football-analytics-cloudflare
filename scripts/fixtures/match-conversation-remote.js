@@ -1,7 +1,7 @@
 import {createMatchQuestionRuntime} from '../../src/match-question-runtime.js';
 import {issueMatchQuestionAccess} from '../../src/match-question-access.js';
 import {readMatchChatEvents} from '../../public/modules/client-core.js';
-import {MATCH_CHAT_FAILURE_CODES} from '../../src/match-chat-runtime.js';
+import {MATCH_CHAT_FAILURE_CODES,MATCH_CHAT_MODEL} from '../../src/match-chat-runtime.js';
 
 // Fixed sports fixtures + in-memory admission; real Workers AI inference only.
 // No production users, Telegram identities, DB reads or provider requests.
@@ -9,10 +9,11 @@ export async function probeMatchConversation(env){
   const fixtureId=77,trust={confidenceBearing:true,stale:false,provenanceState:'verified',fetchedAt:new Date().toISOString()};
   let center={mode:'live',generatedAt:trust.fetchedAt,match:{fixtureId,home:{name:'Home FC'},away:{name:'Away FC'},score:{home:1,away:0},elapsed:65,statusLabel:'Второй тайм'},dataFreshness:{match:trust,statistics:trust},availability:{statistics:true},statistics:{items:[{label:'Удары в створ',home:6,away:2}]}};
   const analysis={match:center.match,probabilities:{home:54,draw:25,away:21},recentForm:{home:{overall:{sample:5,wins:4,draws:1,losses:0}},away:{overall:{sample:5,wins:1,draws:1,losses:3}}}};
-  let modelCalls=0,historySeen=false,snapshotSeen=false;
+  let modelCalls=0,historySeen=false,snapshotSeen=false,structuredModelUsed=true;
   const protocol={jsonResults:0,streamResults:0,otherResults:0,firstFailure:'none',resultShape:'none',frameShape:'none',frames:0,doneSeen:false,paragraphsAccepted:0};
   const cfg={botToken:env.PROBE_NONCE,matchQuestionsEnabled:true,matchQuestionsDailyLimit:500,matchQuestionsUserHourlyLimit:10,workersAi:{run:async(model,input)=>{
     modelCalls++;
+    structuredModelUsed &&= model===MATCH_CHAT_MODEL && input.response_format?.type==='json_schema';
     historySeen ||= input.messages.some(message=>message.role==='assistant');
     snapshotSeen ||= input.messages.some(message=>message.content.includes('Home FC 2:0 Away FC'));
     const result=await env.AI.run(model,input);
@@ -50,6 +51,7 @@ export async function probeMatchConversation(env){
     refreshedScore:refresh.ok && snapshotSeen && refresh.paragraphs.some(paragraph=>paragraph.text.includes('2:0')),
     missingLineups:missing.ok && missing.paragraphs.some(paragraph=>paragraph.kind==='missing'),
     generatedExplanation:explanation.ok && explanation.paragraphs.some(paragraph=>['analysis','scenario'].includes(paragraph.kind)),
+    structuredModelUsed,
   };
   return {checks,modelCalls,timings,protocol,success:Object.values(checks).every(Boolean)};
 }

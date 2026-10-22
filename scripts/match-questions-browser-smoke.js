@@ -7,9 +7,11 @@ import path from 'node:path';
 
 
 let realHandlerCalls=0;
+const modelFailures=[];
 const trust={confidenceBearing:true,stale:false,provenanceState:'verified',fetchedAt:new Date().toISOString()};
 const runtime=createMatchQuestionRuntime({
  json:(body,status=200)=>Response.json(body,{status}),
+ recordOpsEvent:async(_cfg,event)=>modelFailures.push(event.message),
  getCache:async()=>({match:{fixtureId:123,home:{name:'Chelsea'},away:{name:'Everton'}},probabilities:{home:54,draw:25,away:21}}),getStaleCache:async()=>null,setCache:async()=>true,
  getHistory:async()=>[{fixture_id:123}],userHasAnalyzedFixture:async()=>true,hasSupabase:()=>true,supaSelectMany:async()=>[],supaRpc:async()=>({allowed:true,count:1}),
  loadMatchContext:async()=>({mode:'live',match:{fixtureId:123,home:{name:'Chelsea'},away:{name:'Everton'},referee:'Michael Oliver',score:{home:1,away:0},elapsed:65},dataFreshness:{match:trust}}),
@@ -57,12 +59,12 @@ try {
  const askReal=async(question,expected)=>{
   integrated.querySelector('input').value=question;integrated.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
   for(let i=0;i<100 && !integrated.textContent.includes(expected);i++)await new Promise(resolve=>setTimeout(resolve,20));
-  if(!integrated.textContent.includes(expected))throw Error('actual handler answer missing: '+expected);
+  if(!integrated.textContent.includes(expected))throw Error('actual handler answer missing: '+expected+'; fixture UI: '+integrated.textContent.slice(-1200));
   for(let i=0;i<100 && integrated.querySelector('button').disabled;i++)await new Promise(resolve=>setTimeout(resolve,20));
  };
  await askReal('Кто главный судья?','Главный судья — Michael Oliver.');
  await askReal('Какие вероятности исходов?','ничья — 25%');
- await askReal('Что важно в этом матче?','Если Chelsea сохранит преимущество');
+ await askReal('Что важно в этом матче?','Если хозяева сохранят преимущество');
  if(clientState.clientPerf.completed!==3)throw Error('stream requests not recorded as complete');
  document.body.dataset.testStatus='passed';
 } catch(error){document.body.dataset.testStatus='failed';document.body.dataset.testError=error.message;}
@@ -72,11 +74,16 @@ const server=createServer(async(req,res)=>{
  try{
   const pathname=new URL(req.url,'http://localhost').pathname;
   if(pathname==='/api/match-question' && req.method==='POST'){
-   let body='';for await(const chunk of req)body+=chunk;
+   // Decode once: a network chunk can end inside a Cyrillic UTF-8 character.
+   const chunks=[];for await(const chunk of req)chunks.push(chunk);
+   const body=Buffer.concat(chunks).toString('utf8');
    const response=await runtime.apiMatchQuestion(new Request('https://fixture.invalid/api/match-question',{method:'POST',body}),{
     botToken:'browser-fixture-secret',matchQuestionsEnabled:true,matchQuestionsDailyLimit:500,matchQuestionsUserHourlyLimit:10,workersAi:{run:async(_model,input)=>{
      if(input.stream!==false)throw Error('supported JSON transport required');
-     if(input.messages.at(-1).content.includes('важно'))return {response:JSON.stringify([{kind:'answer',factIds:['score']},{kind:'analysis',text:'Если Chelsea сохранит преимущество, Everton может потребоваться больше риска в атаке.',factIds:['score']}])};
+     if(input.messages.at(-1).content.includes('важно')){
+      if(input.response_format?.type!=='json_schema')throw Error('structured reply schema required');
+      return {response:{factIds:['score'],interpretation:'Если хозяева сохранят преимущество, гостям может потребоваться больше риска в атаке.',missingTopic:''}};
+     }
      const ids=input.messages.at(-1).content.includes('судья') ? ['referee'] : ['pre_outcome_probabilities'];
      const text=JSON.stringify({kind:'answer',text:'',factIds:ids})+'\n';
      return new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode('data: '+JSON.stringify({response:text})+'\n\ndata: [DONE]\n\n'));controller.close();}});
@@ -105,6 +112,6 @@ try{
   await new Promise(resolve=>setTimeout(resolve,100));
  }
  if(realHandlerCalls!==3)throw Error('actual handler was not exercised exactly three times');
- if(result?.status!=='passed')throw Error('Rendered question flow failed: '+JSON.stringify(result));
+ if(result?.status!=='passed')throw Error('Rendered question flow failed: '+JSON.stringify(result)+'; fixture model failures: '+JSON.stringify(modelFailures));
  console.log('Rendered conversations passed: custom-only form without automatic requests, duplicate submit guard, same-analysis remount, typed question, actual referee/probabilities handler round trips, stale reply isolation, Pass alignment.');
 }finally{cdp?.socket.close();await stopChrome(launched.chrome);server.close();await rm(launched.profileDir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}

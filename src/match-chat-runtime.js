@@ -1,13 +1,26 @@
 import {buildMatchChatContext,issueChatContext,readChatContext} from './match-chat-context.js';
-import {EXPLANATION_MODEL,EXPLANATION_ANALYSIS_CACHE_KEY} from './match-explanation-runtime.js';
+import {EXPLANATION_ANALYSIS_CACHE_KEY} from './match-explanation-runtime.js';
 import {verifyMatchQuestionAccess} from './match-question-access.js';
 import {isBettingText} from './signal-wording.js';
 import {directMatchQuestionTopic} from './match-question-facts.js';
 
 export const MATCH_CHAT_TIMEOUT_MS=16000;
+// Officially supported JSON Mode model; legacy fact selection keeps its model.
+export const MATCH_CHAT_MODEL='@cf/meta/llama-3.1-8b-instruct';
 export const MATCH_CHAT_FAILURE_CODES=Object.freeze(['CHAT_TIMEOUT','CHAT_CANCELLED','CHAT_MODEL_STREAM_REQUIRED','CHAT_MODEL_ERROR','CHAT_MODEL_TOO_LARGE','CHAT_MODEL_FRAME_TOO_LARGE','CHAT_STREAM_INTERRUPTED','CHAT_TEXT_TOO_LARGE','CHAT_JSON_EXPECTED','CHAT_INCOMPLETE_JSON','CHAT_PARAGRAPH_LIMIT','CHAT_UNGROUNDED_PARAGRAPH','CHAT_TURN_TOO_LARGE','CHAT_EMPTY','CHAT_INVALID_JSON','CHAT_INFERENCE_FAILED']);
 const MAX_PARAGRAPHS=3;
 const encoder=new TextEncoder();
+
+export function matchChatResponseFormat(context){
+  return {type:'json_schema',json_schema:{
+    type:'object',additionalProperties:false,
+    properties:{
+      factIds:{type:'array',minItems:0,maxItems:8,items:{type:'string',enum:context.facts.map(fact=>fact.id)}},
+      interpretation:{type:'string',maxLength:500,minLength:0,pattern:'^(|(Если|Это может|Возможно)[^0-9A-ZА-ЯЁ<>]+)$'},
+      missingTopic:{type:'string',enum:['','lineups','referee','venue','statistics','events','prediction','goals','probabilities','other']},
+    },required:['factIds','interpretation','missingTopic'],
+  }};
+}
 
 export function matchChatPrompt(context,turns,question){
   return [
@@ -17,21 +30,22 @@ export function matchChatPrompt(context,turns,question){
       'История нужна только для понимания уточнений. Она не источник фактов. Новый снимок заменяет старые сведения.',
       'Используй только факты из текущего каталога. Не выдумывай игроков, цифры, травмы, события, тактику или причинные связи.',
       'Можно объяснять смысл фактов и условные сценарии: явно пиши «если», «может», а не утверждай будущий результат.',
-      'Фактический ответ: kind="answer", factIds указывает нужные факты. Их точный текст подставит сервер; text оставь пустым.',
-      'Свободный текст только в kind="analysis" или "scenario": условное объяснение, не новые факты. Начинай с «Если», «Это может» или «Возможно».',
+      'Выбери factIds подходящих фактов: их точный текст подставит сервер, переписывать их не нужно.',
+      'interpretation — одно короткое предложение: объясни смысл выбранных фактов или возможный сценарий, не добавляя новых фактов.',
+      'Начинай interpretation с «Если», «Это может» или «Возможно». Дальше только строчные буквы: называй команды хозяевами и гостями, без имён и цифр.',
+      'Не перечисляй статистику словами: показатели уже будут в фактическом ответе. Объясняй качественно, что они могут означать.',
       'В свободном объяснении не утверждай, что кто-то забил, получил карточку, вышел, отсутствует, ведёт или выигрывает. Это только в точных фактах.',
       'Каждый абзац должен ссылаться на id фактов, на которые он опирается. Не называй отсутствующих в этих фактах людей или команд.',
       'Не копируй весь каталог и не подменяй отсутствующий ответ нерелевантными фактами.',
-      'Если спрашивают почему, про сравнение или риски, после подходящих фактов обязательно добавь analysis/scenario: объясни их смысл условно, без новых фактов.',
-      'Если ответа нет: kind="missing", factIds=[], text — только код темы: lineups, referee, statistics, events, prediction или other. Сообщение подставит сервер.',
+      'Если спрашивают почему, про сравнение или риски и подходящие факты есть, заполни interpretation: объясни их смысл условно, без новых фактов. Если именно запрошенных сведений нет, используй missingTopic, даже когда есть другие оценки до матча.',
+      'Если ответа нет: factIds=[], interpretation="", missingTopic — код отсутствующей темы. В остальных случаях missingTopic="".',
       'Источник prematch — историческая оценка ДО матча. В LIVE никогда не называй её текущим прогнозом; явно скажи «до матча».',
       'В LIVE опирайся на текущие счёт, минуту, события, статистику. Отсутствие событий/составов не значит, что их не было.',
       'Если currentVerified=false, текущий счёт и минуту подтвердить нельзя. Нельзя считать матч текущим по старой истории.',
       'Ставки, коэффициенты и обещания выигрыша запрещены. Не используй Markdown, URL или HTML.',
-      'Вывод: от одного до трёх JSON-объектов, каждый на отдельной строке. Никакого текста вне JSON.',
-      'Формат строки: {"kind":"answer","text":"","factIds":["score"]}. Затем можно дать условное объяснение отдельной JSON-строкой.',
-      'kind: answer (факты), analysis (объяснение), scenario (только условный сценарий), missing (не хватает данных).',
-      'Не более 600 символов на абзац. Не добавляй чисел, отсутствующих в фактах, на которые ссылаешься.',
+      'Вывод: один JSON-объект по схеме response_format. Никакого текста вне JSON.',
+      'Пример: {"factIds":["score"],"interpretation":"Если гости увеличат риск в атаке, игра может стать более открытой.","missingTopic":""}.',
+      'Не более 500 символов в interpretation. Для простого вопроса можно оставить interpretation пустым.',
     ].join(' ')},
     {role:'user',content:`Текущий снимок (JSON): ${JSON.stringify(context)}`},
     ...turns,
@@ -68,7 +82,13 @@ export function createChatParagraphReader(accept){
       }
       if(end<0){if(final)throw Error('CHAT_INCOMPLETE_JSON');return;}
       const value=JSON.parse(buffer.slice(0,end));buffer=buffer.slice(end);
-      if(Array.isArray(value?.paragraphs) && Object.keys(value).length===1){
+      if(Array.isArray(value?.factIds) && typeof value.interpretation==='string' && typeof value.missingTopic==='string'){
+        if(value.factIds.length>8 || value.interpretation.length>500 || (value.interpretation && !/^(Если|Это может|Возможно)[^0-9A-ZА-ЯЁ<>]+$/.test(value.interpretation)))throw Error('CHAT_UNGROUNDED_PARAGRAPH');
+        const ids=[...new Set(value.factIds.map(id=>typeof id==='string' ? id.trim().toLowerCase() : id))];
+        if(ids.length)await accept({kind:'answer',factIds:ids});
+        if(value.interpretation.trim())await accept({kind:'analysis',text:value.interpretation,factIds:ids});
+        if(value.missingTopic || (!ids.length && !value.interpretation.trim()))await accept({kind:'missing',text:value.missingTopic || 'other',factIds:[]});
+      }else if(Array.isArray(value?.paragraphs) && Object.keys(value).length===1){
         if(value.paragraphs.length>3)throw Error('CHAT_PARAGRAPH_LIMIT');
         for(const paragraph of value.paragraphs)await accept(paragraph);
       }else await accept(value);
@@ -251,7 +271,7 @@ export function createMatchChatRuntime(deps){
             // Use the JSON response transport also exercised by the existing
             // production selector. No undocumented streaming terminator is
             // required from this model. Our client still receives SSE frames.
-            const inference=Promise.resolve(cfg.workersAi.run(EXPLANATION_MODEL,{messages:matchChatPrompt(context,turns,question.text),stream:false,max_tokens:700,temperature:0.15}));
+            const inference=Promise.resolve(cfg.workersAi.run(MATCH_CHAT_MODEL,{messages:matchChatPrompt(context,turns,question.text),response_format:matchChatResponseFormat(context),stream:false,max_tokens:700,temperature:0.1}));
             // If headers arrive after cancellation, cancel that late stream too.
             void inference.then(result=>{if(controller.signal.aborted && result?.cancel)void result.cancel().catch(()=>{});},()=>{});
             const result=await Promise.race([inference,abortPromise]);

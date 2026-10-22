@@ -73,6 +73,8 @@
 
 ## На ревью
 
+- [ ] Разговорный AI: поддерживаемый JSON Mode и генерация объяснений с разрешёнными фактами; повторить реальную модель до выпуска — **Codex** — [PR #997](https://github.com/TRAP44/football-analytics-cloudflare/pull/997), `codex/match-chat-structured-replies`, продолжение #995/#996. Actual39680085661 подтвердил LIVE/уточнения/новый счёт, но объяснение отклонено; production остаётся25c94ef0.
+
 - [ ] Завершить выпуск разговорного ассистента после реального model-probe: JSON transport, совместимые фреймы и безопасная диагностика — **Codex** — [PR #996](https://github.com/TRAP44/football-analytics-cloudflare/pull/996), `codex/match-chat-model-protocol`, продолжение #995; failed39676923518, production остаётся25c94ef0, непроверенный deploy остановлен.
 
 - [ ] Разговорный AI для каждого матча, включая LIVE: свежий Match Center, уточнения в рамках матча, постепенный ответ и единые квоты — **Codex** — [PR #995](https://github.com/TRAP44/football-analytics-cloudflare/pull/995), `codex/match-conversational-assistant`, запрос Сергея 21.10.
