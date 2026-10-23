@@ -148,3 +148,19 @@ test('bounded public candidate research never verifies publisher authority or ch
   let requests=0;const bad=await inspectMatchWatch({env:{...env,MATCH_WATCH_CANDIDATE_HANDLE:handle},now,fetchImpl:()=>{requests++;}});assert.equal(requests,0);assert.equal(bad.errorCode,'WATCH_CANDIDATE_HANDLE_INVALID');
  }
 });
+
+test('search territory is explicit and the result cap is enforced before video lookup',async()=>{
+ for(const country of ['RU','SG']){
+  let searches=0;const t=transport();const report=await inspectMatchWatch({env:{...env,MATCH_WATCH_SEARCH_COUNTRY:country},now,fetchImpl:(input,options)=>{
+   const url=new URL(input);if(url.pathname.endsWith('/search')){searches++;assert.equal(url.searchParams.get('regionCode'),country);}
+   return t.fetchImpl(input,options);
+  }});assert.equal(searches,2);assert.equal(report.searchCountry,country);
+ }
+ let calls=0;const bad=await inspectMatchWatch({env:{...env,MATCH_WATCH_SEARCH_COUNTRY:'RU&key=private'},now,fetchImpl:()=>{calls++;}});assert.equal(calls,0);assert.equal(bad.searchCountry,null);assert.equal(bad.errorCode,'WATCH_SEARCH_COUNTRY_INVALID');
+ const both=await inspectMatchWatch({env:{...env,MATCH_WATCH_SEARCH_COUNTRY:'private',MATCH_WATCH_CANDIDATE_HANDLE:'bad&handle'},now,fetchImpl:()=>assert.fail('invalid input transported')});assert.equal(both.searchCountry,null);assert.equal(both.source.handle,null);
+ const t=transport();let videos=0;const oversized=await inspectMatchWatch({env,now,fetchImpl:(input,options)=>{
+  const url=new URL(input);if(url.pathname.endsWith('/search'))return Response.json({items:Array.from({length:11},()=>({id:{videoId:'abcdefghijk'}}))});
+  if(url.pathname.endsWith('/videos'))videos++;
+  return t.fetchImpl(input,options);
+ }});assert.equal(videos,0);assert.equal(oversized.errorCode,'YOUTUBE_SEARCH_RESPONSE_INVALID');
+});

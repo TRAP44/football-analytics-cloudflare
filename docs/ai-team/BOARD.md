@@ -79,7 +79,7 @@
 
 ## На ревью
 
-- [ ] Первый реальный официальный эфир: ограниченное исследование других каналов без отдельного PR на каждый поиск — **Codex** — [PR #1003](https://github.com/TRAP44/football-analytics-cloudflare/pull/1003), `codex/watch-source-discovery`; local full4607/release795, независимое review прошли; read-only candidate не подтверждает права и не публикуется. SPL пока не разместила конкретное видео.
+- [ ] Первый реальный официальный эфир: ограниченное исследование других каналов без отдельного PR на каждый поиск — **Codex** — [PR #1003](https://github.com/TRAP44/football-analytics-cloudflare/pull/1003), `codex/watch-source-discovery`; local full4608/release796, независимое review прошли; read-only candidate не подтверждает права и не публикуется. Конкретное SPL-видео пока не найдено; проверяется явная RU territory вместо неявного default.
 
 
 
@@ -191,7 +191,7 @@
 
 ## Готово
 
-- [x] Проверка первого кандидата SPL — **Codex** — [PR #1002](https://github.com/TRAP44/football-analytics-cloudflare/pull/1002), mergedb552ac78 после всех4CI; actual source40010422802: официальный канал и fixture1603475 подтверждены, но0LIVE/0upcoming, поэтому ничего не опубликовано. Общая задача просмотра остаётся открытой.
+- [x] Проверка первого кандидата SPL — **Codex** — [PR #1002](https://github.com/TRAP44/football-analytics-cloudflare/pull/1002), mergedb552ac78 после всех4CI, Deploy40010952883success; actual source40010422802: официальный канал и fixture1603475 подтверждены, но0LIVE/0upcoming, поэтому ничего не опубликовано. Общая задача просмотра остаётся открытой.
 
 - [x] «Где смотреть»: каталог, страна, официальный player/fallback и кнопка бота — **Codex** — [PR #1001](https://github.com/TRAP44/football-analytics-cloudflare/pull/1001), mergedb63a83d7; exact-head Quality39993170768/CodeQL39993170719 success, full4601. MainQuality40005795194/Deploy40006332394 success; public launch138 подтверждён. Manifest пуст до проверки реального источника; #943/#948 не закрыты.
 
