@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] «Где смотреть»: подтверждённые официальные источники, территории, ссылки и возможность встроенного просмотра (#943–949) — **Codex** — `codex/match-watch-sources`, запрос Сергея23октября; сначала источник и права, затем интеграция.
+
 
 
 
@@ -74,7 +76,7 @@
 
 ## На ревью
 
-- [ ] Профиль игрока вне LIVE: состав команды/матча, «Мои игроки», серверное подтверждение сохранения и восстановление Telegram-входа — **Codex** — [PR #999](https://github.com/TRAP44/football-analytics-cloudflare/pull/999), запрос Сергея23октября; local release770/full4577passed, независимое read-only Codex review без блокеров, CI/production впереди.
+
 
 
 
@@ -180,6 +182,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Профиль и избранное игрока вне LIVE — **Codex** — [PR #999](https://github.com/TRAP44/football-analytics-cloudflare/pull/999), опубликован source685df4e0/version33d02c1d, launch137; Deploy39943033492/Monitor39943417769 и25public checks success.
 
 - [x] Разговорный AI до матча и LIVE, включая #995–#998 — **Codex** — [PR #998](https://github.com/TRAP44/football-analytics-cloudflare/pull/998); два actual runs39747728056/39747830998 success, Deploy39748224394 sourcead2a2541/version668e7642, launch136; public manifest и monitor39918182428 подтверждены23октября.
 

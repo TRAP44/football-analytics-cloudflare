@@ -1,0 +1,79 @@
+{
+  "checkedAt": "2026-10-23T11:41:30.429280+00:00",
+  "scope": "Bounded read-only public documentation/sample check. Not a coverage estimate or playback test.",
+  "provider": "TheSportsDB",
+  "publicExampleCredential": "123 (published public demo credential, not a project secret)",
+  "samples": [
+    {
+      "eventId": "2397702",
+      "apiFootballFixtureId": "1494048",
+      "sport": "Soccer",
+      "event": "One Knoxville vs South Georgia Tormenta",
+      "league": "American USL League One",
+      "dateUtc": "2026-10-23",
+      "timeUtc": "20:00:00",
+      "postponed": "no",
+      "broadcasts": []
+    },
+    {
+      "eventId": "2398151",
+      "apiFootballFixtureId": "1493202",
+      "sport": "Soccer",
+      "event": "Gimnasia y Esgrima de La Plata vs Sarmiento",
+      "league": "Argentinian Primera Division",
+      "dateUtc": "2026-10-23",
+      "timeUtc": "21:00:00",
+      "postponed": "no",
+      "broadcasts": [
+        {
+          "eventId": "2398151",
+          "country": "Argentina",
+          "channelId": "70",
+          "channel": "ESPN Premium Argentina",
+          "date": "2026-10-23",
+          "time": "22:00:00",
+          "hasPlaybackUrl": false
+        }
+      ]
+    },
+    {
+      "eventId": "2398152",
+      "apiFootballFixtureId": "1493203",
+      "sport": "Soccer",
+      "event": "Gimnasia y Esgrima de Mendoza vs Platense",
+      "league": "Argentinian Primera Division",
+      "dateUtc": "2026-10-23",
+      "timeUtc": "21:30:00",
+      "postponed": "no",
+      "broadcasts": [
+        {
+          "eventId": "2398152",
+          "country": "Argentina",
+          "channelId": "1589",
+          "channel": "TNT Sports Argentina",
+          "date": "2026-10-23",
+          "time": "21:30:00",
+          "hasPlaybackUrl": false
+        }
+      ]
+    },
+    {
+      "eventId": "1032723",
+      "apiFootballFixtureId": "592172",
+      "sport": "Soccer",
+      "event": "Aston Villa vs Liverpool",
+      "dateUtc": "2020-10-04",
+      "status": "FT",
+      "videoUrl": "https://www.youtube.com/watch?v=0Nbw3jSafGM",
+      "classification": "Historical video reference in metadata. Not verified as live/full replay/official-channel/embed/territory. Must not become a live watch option."
+    },
+    {
+      "eventId": "584911",
+      "sport": "Motorsport",
+      "event": "Marrakesh E-Prix",
+      "dateUtc": "2019-01-12",
+      "country": "Ireland",
+      "classification": "Documentation TV example is historical motorsport, not football/live coverage."
+    }
+  ]
+}
