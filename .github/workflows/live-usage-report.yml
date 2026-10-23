@@ -31,6 +31,10 @@ on:
         description: Optional positive fixture ID for one read-only API-Football identity check
         type: string
         default: ''
+      watch_candidate_handle:
+        description: Optional public YouTube handle for bounded research only, without @; never approves a source
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -86,6 +90,7 @@ jobs:
         if: ${{ !cancelled() && inputs.inspect_watch == true }}
         env:
           MATCH_WATCH_PUBLISHER: ${{ inputs.watch_publisher || 'fifa' }}
+          MATCH_WATCH_CANDIDATE_HANDLE: ${{ inputs.watch_candidate_handle }}
           MATCH_WATCH_FIXTURE_ID: ${{ inputs.watch_fixture_id }}
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           YOUTUBE_DATA_API_KEY: ${{ secrets.YOUTUBE_DATA_API_KEY }}
