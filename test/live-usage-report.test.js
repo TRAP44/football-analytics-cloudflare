@@ -85,12 +85,14 @@ test('invalid configuration cannot send credentials to an arbitrary scheme or UR
   }
 });
 
-test('report workflow is manual/main-only, uses existing protected environment and has no messaging or provider keys',()=>{
+test('report workflow is manual/main-only, uses existing protected environment and keeps the optional watch fixture key isolated',()=>{
   const path='.github/workflows/live-usage-report.yml',source=readFileSync(path,'utf8');
   assert.deepEqual(auditWorkflow(path,source),[]);
   assert.match(source,/workflow_dispatch:/);assert.doesNotMatch(source,/pull_request:|schedule:|workflow_run:/);
   assert.match(source,/if: github.ref == 'refs\/heads\/main'/);assert.match(source,/environment: background-jobs/);
-  assert.doesNotMatch(source,/TELEGRAM|API_FOOTBALL|TAVILY|contents: write|actions: write/);
+  const withoutWatch=source.replace(/      - name: Verify official watch source metadata\n[\s\S]*?run: node scripts\/inspect-match-watch\.js\n/,'');
+  assert.equal((source.match(/secrets\.API_FOOTBALL_KEY/g)||[]).length,1);
+  assert.doesNotMatch(withoutWatch,/TELEGRAM|API_FOOTBALL|TAVILY|contents: write|actions: write/);
   assert.ok(auditWorkflow(path,source.replace('environment: background-jobs','environment: other')).some(x=>x.type==='secret_environment_missing'));
 });
 

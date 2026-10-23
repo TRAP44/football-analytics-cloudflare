@@ -20,6 +20,18 @@ on:
         type: boolean
         default: false
 
+      watch_publisher:
+        description: Official publisher to inspect; used only when inspect_watch is true
+        type: choice
+        options:
+          - fifa
+          - sgpremierleague
+        default: fifa
+      watch_fixture_id:
+        description: Optional positive fixture ID for one read-only API-Football identity check
+        type: string
+        default: ''
+
 permissions:
   contents: read
 
@@ -73,6 +85,9 @@ jobs:
       - name: Verify official watch source metadata
         if: ${{ !cancelled() && inputs.inspect_watch == true }}
         env:
+          MATCH_WATCH_PUBLISHER: ${{ inputs.watch_publisher || 'fifa' }}
+          MATCH_WATCH_FIXTURE_ID: ${{ inputs.watch_fixture_id }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           YOUTUBE_DATA_API_KEY: ${{ secrets.YOUTUBE_DATA_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

@@ -121,3 +121,23 @@ test('checked-in approvals are valid, and static media permission stays narrow',
   assert.match(section,/script-src 'self' https:\/\/telegram\.org;/);assert.doesNotMatch(section,/youtube|ytimg/);
  }
 });
+
+test('recent reviewed provider identity prepares a source before first visit without bypassing runtime cache identity',async()=>{
+ const evidenced={...approval,fixtureEvidence:{provider:'api-football',observedAt:iso(-1000),fixtureIdentity:watchFixtureIdentity(match)}};
+ const t=refreshFixture({rows:[]});
+ const report=await refreshMatchWatch({env:{YOUTUBE_DATA_API_KEY:'local-fixture-key',SUPABASE_URL:'https://local-fixture.supabase.co',SUPABASE_SECRET_KEY:'local-fixture-db'},manifest:{version:1,items:[evidenced]},fetchImpl:async(url,init)=>{
+  // Reuse the same strict fixed-endpoint fixture; capture its complete write.
+  t.calls.push({url:String(url),init});const parsed=new URL(url);
+  if(parsed.hostname==='www.googleapis.com')return Response.json({items:[video]});
+  if(parsed.pathname==='/rest/v1/analysis_cache')return Response.json([]);
+  return Response.json({stored:true,reason:'stored'});
+ },now});
+ assert.equal(report.published,1);assert.equal(report.approvedFixtureFallbacks,1);
+ const stored=JSON.parse(t.calls.at(-1).init.body).p_payload;
+ const api=apiRuntime({watchApprovals:[evidenced],getCache:async key=>key===watchCacheKey(999)?stored:null});
+ const response=await api.apiMatchWatch(new Request('https://app.example/api/match-watch?fixtureId=999&country=RU'),{},{id:42});assert.equal((await response.json()).available,false,'fresh independent Match Center is still mandatory');
+ for(const evidence of [{...evidenced.fixtureEvidence,observedAt:iso(-49*3600000)},{...evidenced.fixtureEvidence,fixtureIdentity:'other'},{...evidenced.fixtureEvidence,provider:'untrusted'},{...evidenced.fixtureEvidence,observedAt:iso(1000)}]){
+  let googleCalls=0;const report=await refreshMatchWatch({env:{SUPABASE_URL:'https://local-fixture.supabase.co',SUPABASE_SECRET_KEY:'local-fixture-db'},manifest:{version:1,items:[{...approval,fixtureEvidence:evidence}]},fetchImpl:async url=>{if(new URL(url).hostname==='www.googleapis.com')googleCalls++;return Response.json([]);},now});
+  assert.equal(report.published,0);assert.equal(googleCalls,0);
+ }
+});

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {inspectMatchWatch,describeWatchVideo,watchMatchHints,boundedSourceJson,WATCH_SOURCE} from '../scripts/inspect-match-watch.js';
+import {inspectMatchWatch,describeWatchVideo,watchMatchHints,boundedSourceJson,WATCH_SOURCE,watchFixtureRelay} from '../scripts/inspect-match-watch.js';
 const now=new Date('2026-10-23T12:00:00Z');
 const env={YOUTUBE_DATA_API_KEY:'local-test-youtube-key',SUPABASE_URL:'https://fixture.supabase.co',SUPABASE_SECRET_KEY:'local-test-db-key'};
 const video=(extra={})=>({id:'abcdefghijk',snippet:{channelId:WATCH_SOURCE.channelId,title:'Alpha Club vs Beta Club',liveBroadcastContent:'upcoming'},status:{privacyStatus:'public',embeddable:true},contentDetails:{regionRestriction:{blocked:['RU']}},liveStreamingDetails:{scheduledStartTime:'2026-10-23T15:00:00Z'},...extra});
@@ -71,4 +71,66 @@ test('existing protected observer keeps key server-side and exact main-only secr
  assert.match(workflow,/if: \$\{\{ !cancelled\(\) && inputs.inspect_watch == true \}\}/);assert.match(workflow,/YOUTUBE_DATA_API_KEY: \$\{\{ secrets.YOUTUBE_DATA_API_KEY \}\}/);
  assert.match(workflow,/run: node scripts\/inspect-match-watch.js/);
  assert.ok(!workflow.includes('pull_request_target'));assert.ok(!workflow.includes('secrets: inherit'));
+});
+
+test('new publisher and one canonical football fixture use separate fixed hosts and never auto-approve',async()=>{
+ const calls=[];
+ const selected={...env,SUPABASE_URL:'https://nlmvhkjkpgzzlfavaohk.supabase.co',MATCH_WATCH_PUBLISHER:'sgpremierleague',MATCH_WATCH_FIXTURE_ID:'99',API_FOOTBALL_KEY:'local-football-fixture-key'};
+ const fetchImpl=async(input,options)=>{
+  const url=new URL(input);calls.push({url,options});
+  if(url.hostname==='www.googleapis.com'){
+   assert.equal(options.headers['x-apisports-key'],undefined);assert.equal(options.headers.apikey,undefined);
+   if(url.pathname.endsWith('/channels')){assert.equal(url.searchParams.get('forHandle'),'sgpremierleague');return Response.json({items:[{id:'UCiJTKr-wja_JVM2dVTYCELA',snippet:{customUrl:'@SGPremierLeague'}}]});}
+   if(url.pathname.endsWith('/search'))return Response.json({items:[{id:{videoId:'abcdefghijk'}}]});
+   return Response.json({items:[video({snippet:{...video().snippet,channelId:'UCiJTKr-wja_JVM2dVTYCELA'}})]});
+  }
+  if(url.pathname==='/functions/v1/football-relay/fixtures'){
+   assert.equal(url.hostname,'nlmvhkjkpgzzlfavaohk.supabase.co');assert.equal(url.searchParams.get('id'),'99');assert.equal([...url.searchParams.keys()].length,1);
+   assert.equal(options.headers['x-apisports-key'],selected.API_FOOTBALL_KEY);assert.equal(options.headers['X-Goog-Api-Key'],undefined);assert.equal(options.headers.apikey,undefined);
+   return Response.json({errors:[],response:[fixture({league:{id:3,name:'Senior League',season:2026}})]});
+  }
+  assert.equal(url.hostname,'nlmvhkjkpgzzlfavaohk.supabase.co');assert.equal(options.headers['x-apisports-key'],undefined);
+  if(url.pathname.endsWith('/claim_provider_request')){assert.equal(options.method,'POST');assert.deepEqual(JSON.parse(options.body),{p_bucket_key:'api-football:minute',p_limit:4,p_window_seconds:60});return Response.json({allowed:true});}
+  return Response.json([]);
+ };
+ const report=await inspectMatchWatch({env:selected,now,fetchImpl});assert.equal(calls.length,8);
+ assert.equal(report.channelVerified,true);assert.equal(report.fixtureCheck.verified,true);assert.equal(report.fixtureCheck.match.season,2026);assert.match(report.fixtureCheck.fixtureIdentity,/^99:1:2:3:2026:/);
+ assert.equal(report.requestCounts.football,1);assert.equal(report.featureReady,false);assert.equal(report.videos[0].fixtureVerified,false);
+ assert.ok(!JSON.stringify(report).includes(selected.API_FOOTBALL_KEY));
+});
+
+test('unknown publishers or malformed fixture IDs fail before any transport',async()=>{
+ for(const patch of [{MATCH_WATCH_PUBLISHER:'untrusted'},{MATCH_WATCH_FIXTURE_ID:'99&host=evil'},{MATCH_WATCH_FIXTURE_ID:'2000000001'}]){
+  let calls=0;const report=await inspectMatchWatch({env:{...env,...patch},now,fetchImpl:()=>{calls++;}});assert.equal(calls,0);assert.match(report.errorCode,/^WATCH_(SOURCE_NOT_ALLOWED|FIXTURE_ID_INVALID)$/);
+ }
+});
+
+test('targeted fixture errors never expose raw provider data or accept another fixture',async()=>{
+ for(const payload of [{errors:{quota:'private diagnostic'},response:[]},{errors:[],response:[fixture({fixture:{id:100,date:'2026-10-23T15:00:00Z'},league:{id:3,name:'League',season:2026}})]},{errors:[],response:[fixture()]}]){
+  const upstream=transport();
+  const report=await inspectMatchWatch({env:{...env,SUPABASE_URL:'https://nlmvhkjkpgzzlfavaohk.supabase.co',MATCH_WATCH_FIXTURE_ID:'99',API_FOOTBALL_KEY:'local-football-fixture-key'},now,fetchImpl:async(input,options)=>{const url=new URL(input);if(url.pathname==='/functions/v1/football-relay/fixtures')return Response.json(payload);if(url.hostname.endsWith('.supabase.co'))return Response.json(url.pathname.endsWith('/claim_provider_request')?{allowed:true}:[]);return upstream.fetchImpl(input,options);}});
+  assert.equal(report.fixtureCheck.verified,false);assert.equal(report.errorCode,'WATCH_FIXTURE_VERIFICATION_FAILED');assert.ok(!JSON.stringify(report).includes('private diagnostic'));
+ }
+});
+
+
+test('fixture probe uses trusted configured relay and fails closed on cooldown, quota or ambiguous claim',async()=>{
+ const configured=readFileSync('wrangler.jsonc','utf8');assert.equal(watchFixtureRelay(configured).pathname,'/functions/v1/football-relay');
+ for(const destination of ['https://evil.example/functions/v1/football-relay','https://nlmvhkjkpgzzlfavaohk.supabase.co/other','https://v3.football.api-sports.io','http://nlmvhkjkpgzzlfavaohk.supabase.co/functions/v1/football-relay'])assert.equal(watchFixtureRelay(JSON.stringify({vars:{API_FOOTBALL_BASE_URL:destination}})),null);
+ for(const scenario of ['cooldown','reserve','minute','claim_denied','claim_unknown','claim_timeout','wrong_project']){
+  let footballCalls=0,claims=0;const yt=transport();
+  const selected={...env,SUPABASE_URL:scenario==='wrong_project'?env.SUPABASE_URL:'https://nlmvhkjkpgzzlfavaohk.supabase.co',MATCH_WATCH_FIXTURE_ID:'99',API_FOOTBALL_KEY:'local-football-fixture-key',API_FOOTBALL_BASE_URL:'https://evil.example/'};
+  const report=await inspectMatchWatch({env:selected,now,fetchImpl:async(input,options)=>{
+   const url=new URL(input);
+   if(url.hostname==='www.googleapis.com')return yt.fetchImpl(input,options);
+   assert.equal(url.hostname,'nlmvhkjkpgzzlfavaohk.supabase.co');
+   if(url.pathname.includes('football-relay')){footballCalls++;throw Error('must not call provider');}
+   assert.equal(options.headers['x-apisports-key'],undefined);
+   if(url.pathname.endsWith('/claim_provider_request')){claims++;if(scenario==='claim_timeout')throw Error('secret private failure');return Response.json(scenario==='claim_denied'?{allowed:false}:{});}
+   const payload=scenario==='cooldown'?{cooldownUntil:'2026-10-23T12:01:00Z'}:{plan:'FREE',updatedAt:now.toISOString(),dailyRemaining:scenario==='reserve'?20:90,minuteRemaining:scenario==='minute'?0:5};
+   return Response.json([{cache_key:scenario==='cooldown'?'provider-state:api-football:cooldown:v1':'provider-state:api-football:quota:v1',payload}]);
+  }});
+  assert.equal(footballCalls,0,scenario);assert.equal(report.fixtureCheck.verified,false);assert.equal(report.errorCode,'WATCH_FIXTURE_VERIFICATION_FAILED');
+  assert.equal(claims,scenario.startsWith('claim_')?1:0);assert.ok(!JSON.stringify(report).includes('secret private'));
+ }
 });
