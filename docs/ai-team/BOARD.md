@@ -78,7 +78,7 @@
 
 ## На ревью
 
-- [ ] Первый официальный LIVE: Singapore Premier League, Young Lions — Balestier Khalsa24.10 14:30МСК; проверка канала/YouTube/каноническогоfixture и публикация — **Codex** — `codex/first-official-watch`; local full4606/release794, guarded relay и независимое review прошли. #1001 mergedb63a83d7, Deploy40006332394success; свежий sourcecheck40005921534 подтвердил FIFAkey, но0текущихLIVE. Официальный анонс SPL и TSDB fixture1603475 совпадают по командам/дате/времени; video/country/playback ещё не подтверждены.
+- [ ] Первый официальный LIVE: Singapore Premier League, Young Lions — Balestier Khalsa24.10 14:30МСК; проверка канала/YouTube/каноническогоfixture и публикация — **Codex** — [PR #1002](https://github.com/TRAP44/football-analytics-cloudflare/pull/1002), `codex/first-official-watch`; local full4606/release794, guarded relay и независимое review прошли. #1001 mergedb63a83d7, Deploy40006332394success; свежий sourcecheck40005921534 подтвердил FIFAkey, но0текущихLIVE. Официальный анонс SPL и TSDB fixture1603475 совпадают по командам/дате/времени; video/country/playback ещё не подтверждены.
 
 
 
