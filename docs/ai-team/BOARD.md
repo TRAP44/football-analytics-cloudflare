@@ -74,9 +74,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] «Где смотреть»: защищённая проверка официальных YouTube-эфиров и свежего общего кеша матчей — **Codex** — [PR #1000](https://github.com/TRAP44/football-analytics-cloudflare/pull/1000), `codex/match-watch-sources`; владелец добавил YOUTUBE_DATA_API_KEY. Local release770/full4584 и независимый reviewpassed; CI и настоящий main-only source-check впереди. UI/playback ещё не реализованы, общий #943 не закрывать.
+- [ ] «Где смотреть»: каталог, страна, официальный player/fallback и кнопка бота — **Codex** — [PR #1001](https://github.com/TRAP44/football-analytics-cloudflare/pull/1001), `codex/match-watch-catalogue`; local full4600/release782/focused65, Chromium actual app wiring, независимое review прошли. CI проверяется. Manifest пуст: actual key/channel подтверждены, текущий fixture/source/territory/Telegram playback ещё нет; общий #943/#948 не закрывать.
+
 
 
 
@@ -184,6 +186,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] «Где смотреть»: ключ и официальные YouTube-метаданные — **Codex** — [PR #1000](https://github.com/TRAP44/football-analytics-cloudflare/pull/1000), merged2f2ca3bd; actual39956319359success: key/channel confirmed,0LIVE/5архивныхпремьер, свежийfixturecacheempty. MainCI/Deploy39956816087success, runtimeartifactнеизменён (launch137). Это sourceproof, неготовностьпросмотра.
 
 - [x] Профиль и избранное игрока вне LIVE — **Codex** — [PR #999](https://github.com/TRAP44/football-analytics-cloudflare/pull/999), опубликован source685df4e0/version33d02c1d, launch137; Deploy39943033492/Monitor39943417769 и25public checks success.
 
@@ -408,6 +412,8 @@
 - [x] Настройка совместной работы Claude + Codex — **Claude** — [PR #793](https://github.com/TRAP44/football-analytics-cloudflare/pull/793)
 
 ## Идеи / найдено по пути
+
+- [ ] Тестовый helper `scripts/player-profile-browser-smoke.js` передаёт в `stopChrome` объект запуска вместо `launched.chrome`; исправить cleanup отдельно. Найдено Codex при работе над просмотром; к production-профилям это не относится.
 
 - [ ] Наблюдение этапа 5: run39392161719 за20окт02:16–08:16UTC содержит5 CACHE_DB_WRITE/timeout,18 CRON_EXECUTION_LEASE_UNAVAILABLE,2 CRON_EXECUTION_LEASE_COMPLETE_FAILED и3 failed в агрегатах smart-notification scheduler. Это сохранённые/deduplicated строки и суммы запусков, не число уникальных инцидентов/людей. Уточнить корень DB/lease failures отдельной задачей, не ослаблять дедуп и владение lease — **Codex** — план #976.
 

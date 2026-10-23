@@ -991,6 +991,7 @@ function footballBotKeyboard(...args) { return getTelegramBotUiRuntime().footbal
 function footballBotMoreKeyboard(...args) { return getTelegramBotUiRuntime().footballBotMoreKeyboard(...args); }
 function favoriteTeamIdSet(...args) { return getTelegramBotUiRuntime().favoriteTeamIdSet(...args); }
 function favoriteMatchTeamRow(...args) { return getTelegramBotUiRuntime().favoriteMatchTeamRow(...args); }
+function footballWatchActionKeyboard(...args) { return getTelegramBotUiRuntime().footballWatchActionKeyboard(...args); }
 function footballMatchActionKeyboard(...args) { return getTelegramBotUiRuntime().footballMatchActionKeyboard(...args); }
 function footballQuickAiHandoffKeyboard(...args) { return getTelegramBotUiRuntime().footballQuickAiHandoffKeyboard(...args); }
 function footballSearchHandoffKeyboard(...args) { return getTelegramBotUiRuntime().footballSearchHandoffKeyboard(...args); }
@@ -1161,6 +1162,7 @@ function getTelegramBotOrchestrationRuntime() {
       botAiVerdictText: (...args) => botAiVerdictText(...args),
       botAnalyzeFixture: (...args) => botAnalyzeFixture(...args),
       footballBotKeyboard: (...args) => footballBotKeyboard(...args),
+      footballWatchActionKeyboard: (...args) => footballWatchActionKeyboard(...args),
       footballMatchActionKeyboard: (...args) => footballMatchActionKeyboard(...args),
       getFavorites: (...args) => getFavorites(...args),
       loadBotTeamCard: (...args) => loadBotTeamCard(...args),
@@ -2640,6 +2642,7 @@ const apiFavorites = (...args) => getUserDataApiRuntime().apiFavorites(...args);
 const publicFavoritePlayer = (...args) => getUserDataApiRuntime().publicFavoritePlayer(...args);
 const resolveFavoritePlayerIdentity = (...args) => getUserDataApiRuntime().resolveFavoritePlayerIdentity(...args);
 const apiFavoritePlayers = (...args) => getUserDataApiRuntime().apiFavoritePlayers(...args);
+const apiMatchWatch = (...args) => getUserDataApiRuntime().apiMatchWatch(...args);
 const apiDigestSettings = (...args) => getUserDataApiRuntime().apiDigestSettings(...args);
 const publicReminder = (...args) => getUserDataApiRuntime().publicReminder(...args);
 const apiReminders = (...args) => getUserDataApiRuntime().apiReminders(...args);
@@ -3216,6 +3219,7 @@ const {
   apiDigestSettings,
   apiEntitlements,
   apiFavoritePlayers,
+  apiMatchWatch,
   apiFavorites,
   apiFixtureShareLink,
   apiFootball,

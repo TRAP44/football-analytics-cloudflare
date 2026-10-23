@@ -99,10 +99,10 @@ test('AI card headline never shows saved betting-style signal labels',()=>{
   for (const token of ['ТБ 2.5','Обе забьют','П1','коэффициент','ставк']) assert.ok(!card.includes(token),token);
 });
 
-function leaveViewHandler(state) {
+function leaveViewHandler(state,matchWatchPanel=null) {
   const source=block(app,'onLeaveView: ({ from, to, options }) => {','\n  onEffectError');
   const body=source.slice(source.indexOf('=> {')+4,source.lastIndexOf('}'));
-  return new Function('state','deactivateLiveRefresh',`return ({ from, to, options }) => {${body}};`)(state,()=>{});
+  return new Function('state','deactivateLiveRefresh','matchWatchPanel',`return ({ from, to, options }) => {${body}};`)(state,()=>{},matchWatchPanel);
 }
 
 test('leaving the Match Center cancels a pending saved-analysis open started there',()=>{
@@ -129,4 +129,19 @@ test('saved-analysis opens report the real source view in telemetry',()=>{
   assert.match(open,/sendProductAction\('history_item_open', sourceView\)/);
   assert.match(open,/sendActionError\('history', error, sourceView\)/);
   assert.doesNotMatch(open,/'historyView'\)/);
+});
+
+
+test('leaving match view disposes optional video immediately without cancelling navigation',()=>{
+ let disposed=0;const state={};const onLeave=leaveViewHandler(state,{dispose:()=>{disposed++;}});
+ onLeave({from:'analysisView',to:'matchesView',options:{}});assert.equal(disposed,1);
+ onLeave({from:'matchesView',to:'analysisView',options:{}});assert.equal(disposed,1);
+});
+
+
+test('opening another fixture immediately clears video ownership even before its center arrives',()=>{
+ const prepare=block(app,'function prepareMatchWatchTarget','async function mountMatchWatchPanel');
+ const scope=new Function(`let matchWatchFixture=999;let disposed=0;const matchWatchPanel={dispose:()=>disposed++};${prepare};return {prepareMatchWatchTarget,read:()=>({fixture:matchWatchFixture,disposed})};`)();
+ scope.prepareMatchWatchTarget(999);assert.deepEqual(scope.read(),{fixture:999,disposed:0});
+ scope.prepareMatchWatchTarget(1000);assert.deepEqual(scope.read(),{fixture:0,disposed:1});
 });

@@ -27,6 +27,7 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
     botAnalyzeFixture,
     footballBotKeyboard,
     footballMatchActionKeyboard,
+    footballWatchActionKeyboard,
     getFavorites,
     loadBotTeamCard,
     markTelegramWebhookMutation,
@@ -523,7 +524,9 @@ export function createTelegramBotOrchestrationRuntime(deps = {}) {
         parse_mode:'HTML',
         text:safeMessageText(text,3900,'Не удалось сформировать раздел матча.'),
       };
-      const replyMarkup=safeMatchKeyboard(request,match,favorites);
+      const replyMarkup=typeof footballWatchActionKeyboard==='function'
+        ? await optionalAsync(footballWatchActionKeyboard,undefined,request,match,favorites,cfg)
+        : safeMatchKeyboard(request,match,favorites);
       if (replyMarkup) payload.reply_markup=replyMarkup;
       await requireFunction('telegramApi',telegramApi)('sendMessage',cfg,payload);
       return {ok:true,status:200};

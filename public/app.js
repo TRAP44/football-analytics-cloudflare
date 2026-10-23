@@ -321,6 +321,8 @@ const {
   isTelegramBackVisible: id => telegramBackButtonVisible(id),
 });
 
+let matchWatchModulePromise,matchWatchPanel,matchWatchFixture=0;
+
 const navigationShell = createNavigationShell({
   window,
   document,
@@ -341,7 +343,7 @@ const navigationShell = createNavigationShell({
     if (from === 'analysisView' && to !== 'analysisView' && state.analysisActionPending) {
       state.analysisRequestSeq += 1;
     }
-    if (to !== 'analysisView') deactivateLiveRefresh();
+    if (to !== 'analysisView') {deactivateLiveRefresh();matchWatchPanel?.dispose();}
   },
   onEffectError: (error, context) => {
     console.error('Navigation lifecycle effect failed', context, error);
@@ -1098,10 +1100,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch137'),
+      import('./modules/match-center-view.js?v=6.120.0-launch138'),
       import('./modules/match-pulse.js?v=6.120.0-launch87'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch137'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch137'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch138'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch138'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1258,7 +1260,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch137').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch138').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -2921,7 +2923,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch137');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch138');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3408,7 +3410,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch137').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch138').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -5146,9 +5148,26 @@ function matchCenterExtraHtml(name,...args) {
   }
 }
 
+function prepareMatchWatchTarget(fixtureId){
+  const id=Number(fixtureId);
+  if(Number.isSafeInteger(id)&&id>0&&matchWatchFixture!==id){matchWatchPanel?.dispose();matchWatchFixture=0;}
+}
+async function mountMatchWatchPanel(fixtureId){
+  const root=$('matchWatchPanel');if(!root)return;
+  try{
+    matchWatchModulePromise ||= import('./modules/match-watch.js?v=6.120.0-launch138');
+    const module=await matchWatchModulePromise;
+    if(!root.isConnected || matchWatchFixture!==fixtureId || activeViewId()!=='analysisView')return;
+    matchWatchPanel ||= module.createMatchWatch({api,escapeHtml});
+    matchWatchPanel.mount({root,fixtureId,isCurrent:()=>matchWatchFixture===fixtureId&&activeViewId()==='analysisView'});
+  }catch{matchWatchModulePromise=null;}
+}
+
 function renderMatchCenter(d) {
   $('analysis')?.setAttribute('aria-busy', 'false');
   const previousFixture = Number(state.currentCenter?.match?.fixtureId || 0);
+  prepareMatchWatchTarget(d.match?.fixtureId);
+  matchWatchFixture=Number(d.match?.fixtureId)||0;
   const existingChat=Number($('matchQuestions')?.dataset.fixture)===Number(d.match?.fixtureId) ? $('matchQuestions') : null;
   state.currentCenter = d;
   if (isAdmin() && d?.provider?.visibility === 'admin') { state.provider = d.provider; renderProvider(); }
@@ -5165,10 +5184,12 @@ function renderMatchCenter(d) {
   }
   view(d, { state, $, escapeHtml, publicText, safeUrl, timeOf, dateTime, isAdmin, isWatchedMatch, positiveEntityId, matchCenterExtraHtml, matchChangeNarrativeHtml, liveAiCoachHtml, smartInsightsHeroHtml, smartInsightsFullHtml, postMatchReviewHtml, centerKeyStatsHtml, liveEventsHtml, centerAbsenceSummary, liveAbsencesHtml, centerCoverageHtml, centerFreshnessHtml, eventQualityHintHtml, timelineEventsHtml, statisticsQualityHintHtml, xgQualityHintHtml, centerAllStatsHtml, lineupLiveHtml, availabilityQualityHintHtml, centerPlayersHtml, analysisHistoryForFixture, aiConfidenceMeterHtml, bindMatchCenterTabs, setMatchCenterTab, openPlayerFromMatch, openTeam, toggleMatchWatch, syncQuickReminderButton, toggleReminder, analyzeMatch, loadHistory, openHistoryAnalysis, openPassStoreForFixture, runProviderCoverageAudit, openProfileView, runProviderE2E, requestMatchCenter, renderMatchCenter, toast, startLiveRefresh, stopLiveRefresh, shareMatchCard, mountBeatAi });
   if(existingChat)$('matchQuestions')?.replaceWith(existingChat);
+  void mountMatchWatchPanel(Number(m.fixtureId));
   void loadMatchQuestions(Number(m.fixtureId));
 }
 
 async function openMatchCenter(fixtureId, btn) {
+  prepareMatchWatchTarget(fixtureId);
   const controller = await ensureMatchCenterController();
   return controller.openMatchCenter(fixtureId, btn);
 }
@@ -5181,6 +5202,7 @@ function syncAnalysisBusyUi() {
 }
 
 async function analyzeMatch(fixtureId, btn, options = {}) {
+  prepareMatchWatchTarget(fixtureId);
   const controller = await ensureAnalysisController();
   return controller.analyzeMatch(fixtureId, btn, options);
 }
@@ -5324,6 +5346,7 @@ async function openHistoryAnalysis(fixtureId, btn) {
     return;
   }
 
+  prepareMatchWatchTarget(id);
   const sourceView = activeViewId();
   if (sourceView !== 'analysisView') state.analysisBackView = sourceView;
   state.historyOpenSourceView = sourceView;
@@ -5606,7 +5629,7 @@ async function loadAnalysisExplanation(fixtureId) {
   const root = $('matchExplanation');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch137');
+    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch138');
     const { loadMatchExplanation } = await matchExplanationModule;
     await loadMatchExplanation({
       root,
@@ -5626,7 +5649,7 @@ async function loadMatchQuestions(fixtureId) {
   const root = $('matchQuestions');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch137');
+    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch138');
     const { mountMatchQuestions } = await matchQuestionsModule;
     mountMatchQuestions({
       root,
@@ -5646,7 +5669,7 @@ async function loadMatchQuestions(fixtureId) {
 // «Обыграй AI»: прогноз в Штабе матча и таблица в Профиле — ленивый модуль.
 let beatAiModule = null;
 function loadBeatAiModule() {
-  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch137').catch(error => { beatAiModule = null; throw error; });
+  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch138').catch(error => { beatAiModule = null; throw error; });
   return beatAiModule;
 }
 async function mountBeatAi(m = {}) {
@@ -5681,7 +5704,7 @@ async function loadReferralInvitePanel() {
   const root = $('referralInvite');
   if (!root) return;
   try {
-    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch137');
+    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch138');
     const { loadReferralInvite } = await referralInviteModule;
     await loadReferralInvite({ root, api, escapeHtml, tg, toast });
   } catch {
@@ -5692,7 +5715,7 @@ async function loadReferralInvitePanel() {
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch137');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch138');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {
@@ -5962,6 +5985,7 @@ function renderAnalysis(d) {
   if (!d) return;
   const previousFixture = Number(state.currentAnalysis?.match?.fixtureId || 0);
   const nextFixture = Number(d?.match?.fixtureId || 0);
+  prepareMatchWatchTarget(nextFixture);matchWatchFixture=nextFixture;
   const existingQuestions = previousFixture === nextFixture && d.generatedAt && state.currentAnalysis?.generatedAt === d.generatedAt
     ? $('matchQuestions') : null;
   if (previousFixture && nextFixture && previousFixture !== nextFixture) state.currentAnalysisTab = 'brief';
@@ -6091,6 +6115,7 @@ function renderAnalysis(d) {
   // Profile/favorites refresh may redraw this same analysis while an answer is
   // pending. Keep its actual DOM/listeners so the response stays visible.
   if (existingQuestions) $('matchQuestions')?.replaceWith(existingQuestions);
+  void mountMatchWatchPanel(Number(m.fixtureId));
   void loadAnalysisExplanation(Number(m.fixtureId));
   void loadMatchQuestions(Number(m.fixtureId));
   $('analysis')?.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({

@@ -2726,3 +2726,16 @@ html[data-theme] body.miniapp-public-shell .match-questions .match-question-form
 
 /* Neutral marker for a missing club badge. */
 .team-crest-initials { display:inline-grid;place-items:center;width:var(--crest-width,42px);height:var(--crest-height,46px);flex-shrink:0;clip-path:polygon(8% 0,92% 0,92% 65%,78% 84%,50% 100%,22% 84%,8% 65%);background:color-mix(in srgb,var(--accent) 16%,var(--bg));color:var(--accent);font:800 var(--crest-font-size,16px)/1 system-ui,sans-serif;letter-spacing:.03em; }
+
+/* Optional official watch panel: loaded media starts only after a user action. */
+.match-watch-panel{padding:0;overflow:hidden}
+.match-watch-details summary{cursor:pointer;padding:18px;color:var(--accent,#ffca28);font-weight:800;list-style:none}
+.match-watch-details summary span{display:block;font-size:12px;font-weight:400;color:var(--muted,#94a3b8);margin-top:4px}
+.match-watch-body{display:grid;gap:14px;padding:0 18px 18px;min-width:0}
+.match-watch-body label{display:grid;gap:8px;font-size:14px}
+.match-watch-body select{width:100%;min-height:44px;background:#101821;color:#f4f5f7;border:1px solid #313b48;border-radius:12px;padding:10px}
+.match-watch-source{display:grid;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid #2b323c;min-width:0}
+.match-watch-source span,.match-watch-body p{font-size:13px;line-height:1.5}
+.match-watch-source a{color:var(--accent,#ffca28);min-height:44px;display:flex;align-items:center}
+.match-watch-source button{min-height:44px;white-space:normal}
+[data-watch-player] iframe{width:100%;aspect-ratio:16/9;border:0;border-radius:12px;background:#000;display:block}
