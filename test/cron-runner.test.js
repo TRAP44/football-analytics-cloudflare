@@ -223,3 +223,15 @@ test('fetch failure trace contains only a fixed classification, never arbitrary 
  }
  globalThis.fetch=original;
 });
+
+test('watch refresh follows the reliable Cloudflare clock in an isolated protected job',()=>{
+ const workflow=fs.readFileSync('.github/workflows/cron-runner.yml','utf8');
+ const [core,watch]=workflow.split('\n  watch:\n');
+ assert.ok(watch);assert.doesNotMatch(core,/YOUTUBE_DATA_API_KEY|refresh-match-watch\.js/);
+ assert.match(watch,/if: github\.ref == 'refs\/heads\/main'/);assert.match(watch,/inputs\.settlement_recovery != 'preview'/);assert.match(watch,/inputs\.settlement_recovery != 'apply'/);
+ assert.match(watch,/environment: background-jobs/);assert.match(watch,/timeout-minutes: 3/);assert.match(watch,/group: match-watch-refresh/);assert.match(watch,/cancel-in-progress: false/);
+ assert.doesNotMatch(watch,/\bneeds:|continue-on-error:|TELEGRAM_BOT_TOKEN|API_FOOTBALL_KEY|TAVILY_KEY|cron-runner\.js/);
+ assert.match(watch,/ref: main/);assert.match(watch,/YOUTUBE_DATA_API_KEY: \$\{\{ secrets\.YOUTUBE_DATA_API_KEY \}\}/);assert.match(watch,/run: node scripts\/refresh-match-watch\.js/);assert.match(watch,/if: always\(\)/);assert.match(watch,/path: load-results\/match-watch-refresh\.json/);
+ assert.equal(Object.hasOwn(runnerEnv({YOUTUBE_DATA_API_KEY:'local-fixture-youtube-key'}),'YOUTUBE_DATA_API_KEY'),false);
+ const manual=fs.readFileSync('.github/workflows/refresh-match-watch.yml','utf8');assert.doesNotMatch(manual,/schedule:|cron:/);assert.match(manual,/group: match-watch-refresh/);
+});

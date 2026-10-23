@@ -78,9 +78,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Публикация первых2официальных эфиров: Kashima—Kashiwa и Vissel—Machida24Oct08:55МСК — **Codex** — [PR #1004](https://github.com/TRAP44/football-analytics-cloudflare/pull/1004), `codex/jleague-official-live`; local full4608/release796, worker/Chromium и независимое review прошли; pinnedowner+officialfixturepages+actualprovider1556114/1556120 verified, season2027. RU/KZ/BY metadataallowed; реальный Telegramplayback ещё не проверен.
+- [ ] Надёжное автообновление каталога просмотра через существующие часы Cloudflare → Background Jobs — **Codex** — [PR #1005](https://github.com/TRAP44/football-analytics-cloudflare/pull/1005), `codex/watch-refresh-dispatch`; local full4609/release796, независимое review без блокеров; отдельный GitHub schedule не запускался более часа. Parallel watch job изолирован от уведомлений и их ключей; после выпуска проверить настоящий очередной CF dispatch.
+
 
 
 
@@ -192,6 +194,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Первые два официальных источника J.LEAGUE — **Codex** — [PR #1004](https://github.com/TRAP44/football-analytics-cloudflare/pull/1004), merged601a9667 после exact-head CI (Chrome startup rerun на свежем runner), mainQuality40015069828/Deploy40015491940success. ActualRefresh40015072759: published2/rejected0. Эфир24Oct08:55МСК, RU/KZ/BY; реальный phoneplayback ещё не проверен.
 
 - [x] Ограниченное исследование источников без публикации — **Codex** — [PR #1003](https://github.com/TRAP44/football-analytics-cloudflare/pull/1003), merged44d7e581 после Quality40012184807/CodeQL40012184799/audit40012184839success. Actual40012750842 нашёл2предстоящих J.LEAGUEvideo дляRU, SPL повтор40012892597 вернул0. Researchнеавтоодобрение.
 
