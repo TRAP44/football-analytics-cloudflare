@@ -75,9 +75,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] «Где смотреть»: каталог, страна, официальный player/fallback и кнопка бота — **Codex** — [PR #1001](https://github.com/TRAP44/football-analytics-cloudflare/pull/1001), `codex/match-watch-catalogue`; local full4600/release782/focused65, Chromium actual app wiring, независимое review прошли. CI проверяется. Manifest пуст: actual key/channel подтверждены, текущий fixture/source/territory/Telegram playback ещё нет; общий #943/#948 не закрывать.
+- [ ] Первый официальный LIVE: Singapore Premier League, Young Lions — Balestier Khalsa24.10 14:30МСК; проверка канала/YouTube/каноническогоfixture и публикация — **Codex** — [PR #1002](https://github.com/TRAP44/football-analytics-cloudflare/pull/1002), `codex/first-official-watch`; local full4606/release794, guarded relay и независимое review прошли. #1001 mergedb63a83d7, Deploy40006332394success; свежий sourcecheck40005921534 подтвердил FIFAkey, но0текущихLIVE. Официальный анонс SPL и TSDB fixture1603475 совпадают по командам/дате/времени; video/country/playback ещё не подтверждены.
+
 
 
 
@@ -186,6 +188,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] «Где смотреть»: каталог, страна, официальный player/fallback и кнопка бота — **Codex** — [PR #1001](https://github.com/TRAP44/football-analytics-cloudflare/pull/1001), mergedb63a83d7; exact-head Quality39993170768/CodeQL39993170719 success, full4601. MainQuality40005795194/Deploy40006332394 success; public launch138 подтверждён. Manifest пуст до проверки реального источника; #943/#948 не закрыты.
 
 - [x] «Где смотреть»: ключ и официальные YouTube-метаданные — **Codex** — [PR #1000](https://github.com/TRAP44/football-analytics-cloudflare/pull/1000), merged2f2ca3bd; actual39956319359success: key/channel confirmed,0LIVE/5архивныхпремьер, свежийfixturecacheempty. MainCI/Deploy39956816087success, runtimeartifactнеизменён (launch137). Это sourceproof, неготовностьпросмотра.
 

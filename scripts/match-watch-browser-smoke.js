@@ -82,4 +82,4 @@ try{
  await evaluate("document.getElementById('navMatches').click()");
  await wait("!document.querySelector('#matchWatchPanel iframe') && document.getElementById('matchWatchPanel').hidden",'actual navigation left media');
  console.log(JSON.stringify({scope:'synthetic_browser_and_cache_api_not_actual_playback',countryRequired:true,lazyMedia:true,sameFixturePreserved:true,deniedEmbedFallback:true,countryTeardownImmediate:true,navigationTeardown:true,actualAppWiring:true,actualCenterRefreshPreservesFrame:true,widths:[320,390,900],requests}));
-}finally{cdp?.close();await stopChrome(launched.chrome);await new Promise(resolve=>server.close(resolve));if(launched.profileDir)await rm(launched.profileDir,{recursive:true,force:true});}
+}finally{cdp?.close();await stopChrome(launched.chrome);await new Promise(resolve=>server.close(resolve));if(launched.profileDir)await rm(launched.profileDir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}

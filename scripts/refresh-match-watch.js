@@ -65,8 +65,15 @@ export async function refreshMatchWatch({env=process.env,manifest,fetchImpl=fetc
   if(!Array.isArray(rows)||rows.length>ids.length)fail('WATCH_CACHE_INVALID');
   const matches=new Map(rows.filter(row=>row.cache_key===matchCenterCacheKey(row.payload?.match?.fixtureId)).map(row=>[row.payload.match.fixtureId,row.payload.match]));
   const candidates=approvals.filter(item=>{
-    const match=matches.get(item.match.fixtureId);
-    if(!match){report.missingFixture++;return false;}
+    let match=matches.get(item.match.fixtureId);
+    if(!match){
+      report.missingFixture++;
+      const evidence=item.fixtureEvidence,observed=timestamp(evidence?.observedAt);
+      if(evidence?.provider!=='api-football' || evidence.fixtureIdentity!==watchFixtureIdentity(item.match) || !Number.isFinite(observed) || observed>now || now-observed>48*3600000)return false;
+      // Reviewed provider identity can prepare a catalogue before the first visitor.
+      // The public API still requires the independent fresh Match Center identity.
+      match=item.match;matches.set(match.fixtureId,match);report.approvedFixtureFallbacks=(report.approvedFixtureFallbacks||0)+1;
+    }
     if(watchFixtureIdentity(match)!==watchFixtureIdentity(item.match)){report.rejected++;return false;}
     return true;
   });

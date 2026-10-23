@@ -111,12 +111,14 @@ test('errors never expose private upstream text; invalid URLs never receive cred
   }
 });
 
-test('product report stays optional, manual/main-only, protected and free of messaging/provider bindings',()=>{
+test('product report stays optional, manual/main-only, protected and report steps free of messaging/provider bindings',()=>{
   const path='.github/workflows/live-usage-report.yml',source=readFileSync(path,'utf8');
   assert.deepEqual(auditWorkflow(path,source),[]);
   assert.match(source,/include_product_report:[\s\S]*?default: false/);
   assert.match(source,/if: inputs.include_product_report == true/);
   assert.match(source,/if: github.ref == 'refs\/heads\/main'/);
   assert.match(source,/environment: background-jobs/);
-  assert.doesNotMatch(source,/pull_request:|schedule:|workflow_run:|TELEGRAM|API_FOOTBALL|contents: write|actions: write/);
+  const withoutWatch=source.replace(/      - name: Verify official watch source metadata\n[\s\S]*?run: node scripts\/inspect-match-watch\.js\n/,'');
+  assert.equal((source.match(/secrets\.API_FOOTBALL_KEY/g)||[]).length,1);
+  assert.doesNotMatch(withoutWatch,/pull_request:|schedule:|workflow_run:|TELEGRAM|API_FOOTBALL|contents: write|actions: write/);
 });
