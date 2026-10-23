@@ -70,3 +70,39 @@ jobs:
 
       - name: Run scheduled tasks
         run: node scripts/cron-runner.js
+
+  # The existing Cloudflare dispatch is the reliable five-minute clock.
+  # Keep optional video I/O independent of notification leases and Telegram keys.
+  watch:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || (inputs.settlement_recovery != 'preview' && inputs.settlement_recovery != 'apply'))
+    environment: background-jobs
+    timeout-minutes: 3
+    concurrency:
+      group: match-watch-refresh
+      cancel-in-progress: false
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Use Node.js 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Refresh official watch catalogue
+        env:
+          YOUTUBE_DATA_API_KEY: ${{ secrets.YOUTUBE_DATA_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/refresh-match-watch.js
+      - name: Save watch refresh result
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: match-watch-refresh
+          path: load-results/match-watch-refresh.json
+          retention-days: 3
+          if-no-files-found: error
