@@ -74,7 +74,7 @@
 
 ## На ревью
 
-- [ ] Профиль игрока вне LIVE: состав команды/матча, «Мои игроки», серверное подтверждение сохранения и восстановление Telegram-входа — **Codex** — [ветка](https://github.com/TRAP44/football-analytics-cloudflare/tree/codex/player-profile-favorites), запрос Сергея23октября; local release770/full4577passed, независимое read-only Codex review без блокеров, CI/production впереди.
+- [ ] Профиль игрока вне LIVE: состав команды/матча, «Мои игроки», серверное подтверждение сохранения и восстановление Telegram-входа — **Codex** — [PR #999](https://github.com/TRAP44/football-analytics-cloudflare/pull/999), запрос Сергея23октября; local release770/full4577passed, независимое read-only Codex review без блокеров, CI/production впереди.
 
 
 
