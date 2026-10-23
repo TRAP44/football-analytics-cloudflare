@@ -1,3 +1,5 @@
+import {watchCacheKey,watchFixtureIdentity,WATCH_PUBLISHERS} from '../src/match-watch.js';
+import {matchCenterCacheKey} from '../src/match-center-cache-key.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -583,4 +585,45 @@ test('cold LIVE card persists callback data once and before sending its buttons'
   assert.equal(await api.sendBotFixtureMenu(request,{},7,700,123),true);
   assert.equal(sent,true);assert.equal(writes.length,3);
   assert.equal(writes.filter(key=>key.startsWith('bot:fixture-card:')).length,1);
+});
+
+
+test('watch bot action is shown only for an approved exact fixture and opens country selection in Mini App',async()=>{
+ const now=Date.now(),time=ms=>new Date(now+ms).toISOString();
+ const match={fixtureId:123,date:time(-60000),status:'1H',live:true,finished:false,leagueId:39,season:2026,home:{id:1,name:'Home'},away:{id:2,name:'Away'}};
+ const approval={match,provider:'youtube',publisher:'fifa',videoId:'abcdefghijk',eventUrl:'https://www.youtube.com/watch?v=abcdefghijk',kind:'live',access:'free',countries:['RU'],confirmed:true,confirmedAt:time(-1000),validUntil:time(3600000)};
+ const {api,cache}=runtime({watchApprovals:[approval]});
+ const identity=watchFixtureIdentity(match);
+ cache.set(matchCenterCacheKey(123),{match});
+ cache.set(watchCacheKey(123),{version:1,fixtureIdentity:identity,items:[{...approval,channelId:WATCH_PUBLISHERS.fifa,publicVideo:true,regionVerified:true,ageRestricted:false,embeddable:true,checkedAt:time(0),expiresAt:time(1800000),approval:{version:1,fixtureIdentity:identity,confirmed:true,confirmedAt:approval.confirmedAt}}]});
+ const row=(await api.footballWatchActionKeyboard(request,match,[],{})).inline_keyboard.flat().find(item=>item.text==='📺 Где смотреть');assert.ok(row);
+ const url=new URL(row.web_app.url);assert.equal(url.origin,'https://app.example');assert.equal(url.searchParams.get('fixtureId'),'123');assert.equal(url.searchParams.get('watch'),'1');
+ for(const cfg of [{matchWatchEnabled:false}])assert.equal((await api.footballWatchActionKeyboard(request,match,[],cfg)).inline_keyboard.flat().some(item=>item.text==='📺 Где смотреть'),false);
+ const wrong=await api.footballWatchActionKeyboard(request,{...match,date:time(60000)},[],{});assert.equal(wrong.inline_keyboard.flat().some(item=>item.text==='📺 Где смотреть'),false);
+ cache.delete(watchCacheKey(123));assert.equal((await api.footballWatchActionKeyboard(request,match,[],{})).inline_keyboard.flat().some(item=>item.text==='📺 Где смотреть'),false);
+ const empty=runtime({getCache:()=>{throw Error('must not read cache without approved source');}});assert.ok(await empty.api.footballWatchActionKeyboard(request,match,[],{}));
+});
+
+
+test('successful upcoming AI handoff also includes the verified watch action',async()=>{
+ const now=Date.now(),time=ms=>new Date(now+ms).toISOString();
+ const match={fixtureId:123,date:time(60000),status:'NS',live:false,finished:false,leagueId:39,season:2026,home:{id:1,name:'Home FC'},away:{id:2,name:'Away FC'}};
+ const approval={match,provider:'youtube',publisher:'fifa',videoId:'abcdefghijk',eventUrl:'https://www.youtube.com/watch?v=abcdefghijk',kind:'live',access:'free',countries:['RU'],confirmed:true,confirmedAt:time(-1000),validUntil:time(3600000)};
+ const fixture=providerFixture({fixture:{id:123,date:match.date,status:{short:'NS'}},league:{id:39,name:'League',season:2026}});
+ const {api,cache,sent}=runtime({watchApprovals:[approval],loadProviderFixture:async()=>fixture,apiAnalyze:async()=>response({match})});
+ const identity=watchFixtureIdentity(match);cache.set(matchCenterCacheKey(123),{match});
+ cache.set(watchCacheKey(123),{version:1,fixtureIdentity:identity,items:[{...approval,channelId:WATCH_PUBLISHERS.fifa,publicVideo:true,regionVerified:true,ageRestricted:false,embeddable:true,checkedAt:time(0),expiresAt:time(1800000),approval:{version:1,fixtureIdentity:identity,confirmed:true,confirmedAt:approval.confirmedAt}}]});
+ assert.equal(await api.sendBotFixtureMenu(request,{},42,42,123),true);
+ assert.ok(sent.at(-1).payload.reply_markup.inline_keyboard.flat().some(item=>item.text==='📺 Где смотреть'));
+});
+
+
+test('optional watch lookup has a short deadline and late reads never add a button',async()=>{
+ const match={fixtureId:123,home:{id:1},away:{id:2}};
+ let release;const pending=new Promise(resolve=>{release=resolve;});
+ const {api}=runtime({watchApprovals:[{match}],getCache:()=>pending});const started=performance.now();
+ const keyboard=await api.footballWatchActionKeyboard(request,match,[],{});
+ assert.ok(performance.now()-started<1500);assert.ok(keyboard.inline_keyboard.length);
+ release({});await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(keyboard.inline_keyboard.flat().some(item=>item.text==='📺 Где смотреть'),false);
 });

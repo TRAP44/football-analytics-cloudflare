@@ -1509,6 +1509,7 @@ export function createMatchCenterRuntime(deps) {
         timezone:safeText(fixture?.fixture?.timezone,80),
         league:leagueName,
         leagueId:leagueId || 0,
+        season:Number(fixture?.league?.season) || 0,
         leagueLogo:safeHttpUrl(fixture?.league?.logo,500),
         country:safeText(fixture?.league?.country,120),
         round:safeText(fixture?.league?.round,120),

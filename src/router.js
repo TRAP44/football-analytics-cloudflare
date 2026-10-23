@@ -48,6 +48,7 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     apiDigestSettings,
     apiEntitlements,
     apiFavoritePlayers,
+    apiMatchWatch,
     apiFavorites,
     apiFixtureShareLink,
     apiHistory,
@@ -298,6 +299,7 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
   if (method === 'GET' && pathname === '/api/referral') return await apiReferral(request, cfg, user);
   if (pathname === '/api/favorites') return await apiFavorites(request, cfg, user);
   if (pathname === '/api/favorite-players') return await apiFavoritePlayers(request, cfg, user);
+  if (pathname === '/api/match-watch') return await apiMatchWatch(request, cfg, user);
   if (pathname === '/api/digest-settings') return await apiDigestSettings(request, cfg, user);
   if (pathname === '/api/reminders') return await apiReminders(request, cfg, user);
   if (pathname === '/api/preferences') return await apiPreferences(request, cfg, user);

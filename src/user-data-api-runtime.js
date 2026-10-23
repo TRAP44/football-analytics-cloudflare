@@ -1,4 +1,6 @@
+import {withRequestDeadline} from './request-deadline.js';
 import {matchCenterCacheKey} from './match-center-cache-key.js';
+import {WATCH_APPROVALS,WATCH_COUNTRIES,watchCacheKey,watchApiPayload} from './match-watch.js';
 import {issueMatchQuestionAccess} from './match-question-access.js';
 import { publicSignalLabel, withPublicSignalLabel } from './signal-wording.js';
 // User profile, history, favorites, reminders, digest and preferences API extracted from worker.js.
@@ -8,6 +10,7 @@ export function createUserDataApiRuntime(deps) {
     throw new TypeError('User data API runtime dependencies are required.');
   }
   const {
+    watchApprovals:configuredWatchApprovals=WATCH_APPROVALS,
     addFavorite,
     addFavoritePlayer,
     addReminder,
@@ -40,6 +43,8 @@ export function createUserDataApiRuntime(deps) {
     savePreferences,
     setBotDigestSubscription,
   } = deps;
+
+  const watchApprovals=Array.isArray(configuredWatchApprovals)?configuredWatchApprovals:WATCH_APPROVALS;
 
   const requiredFunctions={
     addFavorite,
@@ -518,6 +523,20 @@ export function createUserDataApiRuntime(deps) {
     return json({ error: 'Метод не поддерживается.' }, 405);
   }
   
+  async function apiMatchWatch(request,cfg,user){
+    if(!positiveId(user?.id))return json({error:'Сессия Telegram не подтверждена.',code:'AUTH_REQUIRED'},401);
+    if(request.method!=='GET')return json({error:'Метод не поддерживается.'},405,{allow:'GET'});
+    const params=new URL(request.url).searchParams,id=positiveId(params.get('fixtureId')),country=params.get('country') || '';
+    if(!id || country && !Object.hasOwn(WATCH_COUNTRIES,country))return json({error:'Проверьте матч и страну.',code:'WATCH_INPUT_INVALID'},400);
+    const empty={fixtureId:id,country,available:false,countries:[],items:[]};
+    if(cfg.matchWatchEnabled===false || !watchApprovals.some(item=>item.match?.fixtureId===id))return json(empty);
+    try{
+      const [center,catalogue]=await withRequestDeadline(()=>Promise.all([getCache(matchCenterCacheKey(id),cfg),getCache(watchCacheKey(id),cfg)]),{budgetMs:1500,source:'match-watch-cache'});
+      if(center?.match?.fixtureId!==id)return json(empty);
+      return json(watchApiPayload(center.match,catalogue,{country,approvals:watchApprovals}));
+    }catch{return json(empty);}
+  }
+
   async function apiPreferences(request, cfg, user) {
     const userId=positiveId(user?.id);
     if (!userId) return json({error:'Сессия Telegram не подтверждена.',code:'AUTH_REQUIRED'},401);
@@ -556,6 +575,7 @@ export function createUserDataApiRuntime(deps) {
     publicFavoritePlayer,
     resolveFavoritePlayerIdentity,
     apiFavoritePlayers,
+    apiMatchWatch,
     apiDigestSettings,
     publicReminder,
     apiReminders,

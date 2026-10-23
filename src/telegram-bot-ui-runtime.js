@@ -1,9 +1,13 @@
+import {withRequestDeadline} from './request-deadline.js';
+import {WATCH_APPROVALS,watchCacheKey,watchFixtureIdentity,validatedWatchOptions} from './match-watch.js';
+import {matchCenterCacheKey} from './match-center-cache-key.js';
 import { neutralReasonText, neutralSignalText, NO_CLEAR_SIGNAL_LABEL } from './signal-wording.js';
 export function createTelegramBotUiRuntime(deps = {}) {
   if (!deps || typeof deps!=='object' || Array.isArray(deps)) {
     throw new TypeError('Telegram bot UI runtime dependencies are required.');
   }
   const {
+    watchApprovals:configuredWatchApprovals=WATCH_APPROVALS,
     apiAnalyze,
     botAiHandoffText,
     createRequest,
@@ -25,6 +29,8 @@ export function createTelegramBotUiRuntime(deps = {}) {
     telegramHtmlEscape,
     telegramWebAppUrl
   } = deps;
+
+  const watchApprovals=Array.isArray(configuredWatchApprovals)?configuredWatchApprovals:WATCH_APPROVALS;
 
   const requiredFunctions={
     apiAnalyze,
@@ -399,6 +405,22 @@ export function createTelegramBotUiRuntime(deps = {}) {
     return {inline_keyboard:rows};
   }
 
+  async function appendWatchAction(request,match,keyboard,cfg){
+    const fixtureId=positiveSafeInteger(match?.fixtureId);
+    if(!fixtureId || cfg.matchWatchEnabled===false || !watchApprovals.some(item=>item.match?.fixtureId===fixtureId))return keyboard;
+    try{
+      const [center,catalogue]=await withRequestDeadline(()=>Promise.all([getCache(matchCenterCacheKey(fixtureId),cfg),getCache(watchCacheKey(fixtureId),cfg)]),{budgetMs:500,source:'match-watch-cache'});
+      if(center?.match?.fixtureId!==fixtureId || watchFixtureIdentity(normalizeBotFixtureCard(match))!==watchFixtureIdentity(center.match) || !validatedWatchOptions(center.match,catalogue,{approvals:watchApprovals}).length)return keyboard;
+      const url=new URL(centerUrl(request,fixtureId));url.searchParams.set('watch','1');
+      keyboard.inline_keyboard.push([{text:'📺 Где смотреть',web_app:{url:url.toString()}}]);
+    }catch{}
+    return keyboard;
+  }
+
+  async function footballWatchActionKeyboard(request,match={},favorites=[],cfg={}) {
+    return appendWatchAction(request,match,footballMatchActionKeyboard(request,match,'',favorites),cfg);
+  }
+
   function footballQuickAiHandoffKeyboard(
     request,
     match={},
@@ -548,6 +570,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
         source.country ?? leagueSource?.country,
         120,
       ),
+      season:positiveSafeInteger(source.season ?? leagueSource?.season) || 0,
       round:safeText(
         source.roundLabel ?? source.round ?? leagueSource?.round,
         120,
@@ -784,12 +807,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
         chat_id:chat,
         parse_mode:'HTML',
         text:botFixtureCardText(match,{aiReady}),
-        reply_markup:footballMatchActionKeyboard(
-          request,
-          match,
-          '',
-          favorites,
-        ),
+        reply_markup:await footballWatchActionKeyboard(request,match,favorites,cfg),
       });
       return true;
     }
@@ -891,7 +909,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
           3900,
           'AI-разбор готов.',
         ),
-        reply_markup:replyMarkup,
+        reply_markup:await appendWatchAction(request,analyzedMatch,replyMarkup,cfg),
       });
       return true;
     } catch (error) {
@@ -915,12 +933,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
         chat_id:chat,
         parse_mode:'HTML',
         text:`⚠️ ${escapeHtml(message,600)}\n\n${botFixtureCardText(match,{aiReady:false})}`,
-        reply_markup:footballMatchActionKeyboard(
-          request,
-          match,
-          '',
-          favorites,
-        ),
+        reply_markup:await footballWatchActionKeyboard(request,match,favorites,cfg),
       });
       return false;
     }
@@ -1157,6 +1170,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
     favoriteTeamIdSet,
     favoriteMatchTeamRow,
     footballMatchActionKeyboard,
+    footballWatchActionKeyboard,
     footballQuickAiHandoffKeyboard,
     footballSearchHandoffKeyboard,
     normalizeBotFixtureCard,
