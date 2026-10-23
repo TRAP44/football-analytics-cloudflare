@@ -1,3 +1,4 @@
+import {matchCenterCacheKey} from './match-center-cache-key.js';
 import {issueMatchQuestionAccess} from './match-question-access.js';
 import { publicSignalLabel, withPublicSignalLabel } from './signal-wording.js';
 // User profile, history, favorites, reminders, digest and preferences API extracted from worker.js.
@@ -355,7 +356,7 @@ export function createUserDataApiRuntime(deps) {
     const teamId=positiveId(source.teamId);
     const fixtureId=positiveId(source.fixtureId);
   
-    if (!playerId || !teamId || !fixtureId) {
+    if (!playerId || !teamId || (source.fixtureId!==undefined && source.fixtureId!==null && !fixtureId)) {
       return {
         ok: false,
         status: 400,
@@ -364,7 +365,18 @@ export function createUserDataApiRuntime(deps) {
       };
     }
   
-    const cacheKey = `match-center:${fixtureId}:v16-availability-quality-rc144`;
+    if (!fixtureId) {
+      // Opening a player from a club roster must not require a live fixture.
+      // Use fresh server-owned roster data, never a client-provided name/team.
+      const squad=plainObject(await getCache(`team:squad:${teamId}:v1`,cfg));
+      if (!squad || positiveId(squad.team?.id)!==teamId || squad.available!==true) return {ok:false,status:409,code:'FAVORITE_PLAYER_CONTEXT_EXPIRED',error:'Обновите состав команды и повторите добавление.'};
+      const entries=Array.isArray(squad.players) ? squad.players : (Array.isArray(squad.groups) ? squad.groups.flatMap(group=>Array.isArray(group?.players)?group.players:[]) : []);
+      const player=entries.find(item=>positiveId(item?.id)===playerId);
+      const name=safeText(player?.name,180).trim();
+      return name ? {ok:true,player:{id:playerId,name,teamId}} : {ok:false,status:422,code:'FAVORITE_PLAYER_NOT_FOUND',error:'Игрок не найден в подтверждённом составе команды.'};
+    }
+
+    const cacheKey = matchCenterCacheKey(fixtureId);
     const center = await getCache(cacheKey, cfg) || await getStaleCache(cacheKey, cfg);
     if (!center) {
       return {
@@ -376,6 +388,7 @@ export function createUserDataApiRuntime(deps) {
     }
   
     const match=plainObject(center?.match) || {};
+    if(positiveId(match.fixtureId)!==fixtureId)return {ok:false,status:409,code:'FAVORITE_PLAYER_CONTEXT_EXPIRED',error:'Обновите матч и повторите добавление.'};
     const side=['home','away'].find(key=>positiveId(plainObject(match[key])?.id)===teamId);
     if (!side) {
       return {
@@ -389,7 +402,9 @@ export function createUserDataApiRuntime(deps) {
     const leaders=Array.isArray(center?.playerLeaders?.[side])
       ? center.playerLeaders[side].filter(item=>plainObject(item))
       : [];
-    const player=leaders.find(item=>positiveId(item.id)===playerId);
+    const lineup=plainObject(center?.lineups?.[side]) || {};
+    const lineupPlayers=[...(Array.isArray(lineup.startXI)?lineup.startXI:[]),...(Array.isArray(lineup.substitutes)?lineup.substitutes:[])].map(item=>plainObject(item?.player) || item);
+    const player=[...leaders,...lineupPlayers].find(item=>positiveId(item?.id)===playerId);
     const playerName=safeText(player?.name,180).trim();
     if (!player || !playerName) {
       return {

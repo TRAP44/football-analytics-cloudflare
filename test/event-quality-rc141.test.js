@@ -414,7 +414,7 @@ test('Match Center wires sanitized events into analytics and uses the rolled cac
   );
   assert.match(
     runtime,
-    /match-center:\$\{fixtureId\}:v17-event-evidence-rc144/,
+    /baseCacheKey=matchCenterCacheKey\(fixtureId\)/,
   );
 });
 

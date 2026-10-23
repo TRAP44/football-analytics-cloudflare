@@ -3576,3 +3576,18 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .admin-feedback-meta span { color: var(--hint); }
 .admin-feedback-meta small { margin-left: auto; color: var(--hint); }
 .admin-feedback-item p { margin: 6px 0 0; font-size: 13px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Player profiles outside a live fixture. */
+.squad-player-open{width:100%;text-align:left;color:inherit;font:inherit;cursor:pointer}
+.squad-player-open:hover,.squad-player-open:focus-visible{border-color:var(--accent,#ffc21a)}
+.squad-player-chevron{margin-left:auto;color:var(--accent,#ffc21a);font-size:24px}
+.saved-players-panel h2{margin-bottom:14px}
+.saved-player-row{display:flex;align-items:center;gap:12px;width:100%;padding:14px;border:1px solid var(--border,#252b34);border-radius:14px;background:var(--surface,#101720);color:inherit;text-align:left;font:inherit;margin-top:8px;cursor:pointer}
+.saved-player-row strong{flex:1;min-width:0;overflow-wrap:anywhere}
+.saved-player-star{color:var(--accent,#ffc21a)}
+.player-follow-recovery{display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--muted,#a4adba)}
+.player-follow-recovery .btn{white-space:normal;min-height:44px}
+
+.lineup-player-open{font:inherit;color:inherit;background:transparent;border:0;cursor:pointer;text-align:inherit;padding:0}
+.lineup-player-open:focus-visible{outline:2px solid var(--accent,#ffc21a);outline-offset:3px}
+.lp-player-overlay{position:absolute;inset:0;width:100%;height:100%;border-radius:12px}

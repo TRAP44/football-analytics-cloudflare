@@ -15,6 +15,7 @@ export function createPlayerFollowModule({
   api,
   toast = () => {},
   onChange = () => {},
+  onAuthRequired = () => {},
 }) {
   state.favoritePlayers = Array.isArray(state.favoritePlayers) ? state.favoritePlayers : [];
   state.favoritePlayersLoaded = Boolean(state.favoritePlayersLoaded);
@@ -49,12 +50,14 @@ export function createPlayerFollowModule({
     const playerId = playerIdOf(player);
     const teamId = teamIdOf(player);
     const fixtureId = fixtureIdOf(player);
-    if (!playerId || !teamId || !fixtureId) {
+    if (!playerId || !teamId) {
       return '<button class="btn secondary player-follow-btn" type="button" disabled>☆ Следить за игроком</button>';
     }
 
+    if(state.favoritePlayersAuthRequired)return '<div class="player-follow-recovery" role="status"><span>Нужно обновить вход в Telegram.</span><button class="btn secondary" type="button" data-player-follow-auth>Обновить вход</button></div>';
     const pending = state.favoritePlayerMutations.has(playerId);
     const active = isFollowing(playerId);
+    if(!fixtureId && !active && !player.squadProfile?.found)return `<button class="btn secondary player-follow-btn" type="button" disabled>${!player.squadProfile || player.squadProfile.loading ? 'Проверяю состав команды…' : 'Состав команды пока недоступен'}</button>`;
 
     if (!state.favoritePlayersLoaded) {
       if (state.favoritePlayersLoadError) {
@@ -92,11 +95,13 @@ export function createPlayerFollowModule({
       state.favoritePlayers = Array.isArray(data?.items) ? data.items : [];
       state.favoritePlayersLoaded = true;
       state.favoritePlayersLoadError = '';
+      state.favoritePlayersAuthRequired=false;
       syncProfileCount();
       return true;
     } catch (error) {
       if (revisionAtStart !== state.favoritePlayersRevision) return false;
-      state.favoritePlayersLoadError = error?.message || 'Не удалось загрузить отслеживаемых игроков.';
+      state.favoritePlayersAuthRequired=Number(error?.status)===401;
+      state.favoritePlayersLoadError = state.favoritePlayersAuthRequired ? 'Нужно обновить вход в Telegram.' : error?.message || 'Не удалось загрузить отслеживаемых игроков.';
       if (state.favoritePlayersLoaded) {
         toast('Игроки временно не обновились — показаны последние данные.');
       }
@@ -111,7 +116,7 @@ export function createPlayerFollowModule({
     const playerId = playerIdOf(player);
     const teamId = teamIdOf(player);
     const fixtureId = fixtureIdOf(player);
-    if (!playerId || !teamId || !fixtureId || state.favoritePlayerMutations.has(playerId)) return false;
+    if (!playerId || !teamId || state.favoritePlayersAuthRequired || state.favoritePlayerMutations.has(playerId)) return false;
 
     if (!state.favoritePlayersLoaded) {
       const loaded = await loadFavoritePlayers({ force: true });
@@ -120,7 +125,6 @@ export function createPlayerFollowModule({
 
     const active = isFollowing(playerId);
     const previousItems = state.favoritePlayers.map(item => ({ ...item }));
-    const previousStats = state.profile?.stats ? { ...state.profile.stats } : null;
     const playerName = String(player?.data?.name || '').trim() || 'Игрок';
 
     state.favoritePlayerMutations.add(playerId);
@@ -148,9 +152,10 @@ export function createPlayerFollowModule({
       } else {
         const data = await api('/api/favorite-players', {
           method: 'POST',
-          body: JSON.stringify({ playerId, teamId, fixtureId }),
+          body: JSON.stringify({ playerId, teamId, ...(fixtureId ? {fixtureId} : {}) }),
         });
-        const saved = data?.item || { playerId, playerName, teamId };
+        const saved = data?.item;
+        if(positiveId(saved?.playerId)!==playerId || positiveId(saved?.teamId)!==teamId || typeof saved?.playerName!=='string' || !saved.playerName.trim())throw Error('Сервер не подтвердил сохранение игрока.');
         state.favoritePlayers = [
           saved,
           ...state.favoritePlayers.filter(item => positiveId(item?.playerId) !== playerId),
@@ -160,12 +165,13 @@ export function createPlayerFollowModule({
       }
       return true;
     } catch (error) {
-      state.favoritePlayers = previousItems;
-      if (state.profile && previousStats) {
-        state.profile = { ...state.profile, stats: previousStats };
-      }
-      state.favoritePlayersLoadError = error?.message || 'Не удалось изменить отслеживание игрока.';
-      toast(`Не удалось изменить отслеживание: ${state.favoritePlayersLoadError}`);
+      const previous=previousItems.find(item=>positiveId(item?.playerId)===playerId);
+      state.favoritePlayers=state.favoritePlayers.filter(item=>positiveId(item?.playerId)!==playerId);
+      if(previous)state.favoritePlayers.splice(Math.min(previousItems.indexOf(previous),state.favoritePlayers.length),0,previous);
+      syncProfileCount();
+      state.favoritePlayersAuthRequired=Number(error?.status)===401;
+      state.favoritePlayersLoadError = state.favoritePlayersAuthRequired ? 'Нужно обновить вход в Telegram.' : error?.message || 'Не удалось изменить отслеживание игрока.';
+      if(!state.favoritePlayersAuthRequired)toast(`Не удалось изменить отслеживание: ${state.favoritePlayersLoadError}`);
       return false;
     } finally {
       state.favoritePlayerMutations.delete(playerId);
@@ -175,6 +181,7 @@ export function createPlayerFollowModule({
 
   function bind(root, player) {
     if (!root || !player) return;
+    root.querySelector('[data-player-follow-auth]')?.addEventListener('click',()=>onAuthRequired(player));
     root.querySelector('[data-player-follow-toggle]')?.addEventListener('click', () => {
       void togglePlayerFollow(player);
     });

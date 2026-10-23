@@ -1,3 +1,4 @@
+import {matchCenterCacheKey} from './match-center-cache-key.js';
 // Match Center runtime extracted from worker.js.
 // Provider, cache, quality and settlement capabilities are injected by the composition root.
 export function createMatchCenterRuntime(deps) {
@@ -400,7 +401,7 @@ export function createMatchCenterRuntime(deps) {
 
     // Shared across all users. LIVE cache follows the provider refresh cadence
     // with a hard minimum of 10 seconds.
-    const baseCacheKey=`match-center:${fixtureId}:v17-event-evidence-rc144`;
+    const baseCacheKey=matchCenterCacheKey(fixtureId);
     const cachedCandidate=await optionalAsync(getCache,baseCacheKey,cfg);
     const cachedPayload=matchCenterCachePayload(cachedCandidate,fixtureId);
     const cachedKickoffExpired=upcomingCachePastKickoff(cachedPayload);

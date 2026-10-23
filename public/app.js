@@ -36,6 +36,7 @@ import { deriveMatchCockpit } from './modules/match-cockpit.js';
 import { wholePercentText, wholePercentTriple } from './modules/probability-display.js';
 import { renderFormIntelligence } from './modules/form-intelligence.js';
 import { createPlayerFollowModule } from './modules/player-follow.js';
+import {favoritePlayersHtml,playerLaunchIntent,playerTelegramUrl,squadPlayer,rememberPlayerReturn,takePlayerReturn} from './modules/player-navigation.js';
 import {
   CLIENT_VERSION,
   CLIENT_API_CONTRACT,
@@ -944,7 +945,7 @@ async function runStartupSequence() {
   }
 
   applyLaunchIntent();
-  if (!hasDirectLaunchIntent()) showView('matchesView');
+  if (!hasDirectLaunchIntent() && !playerLaunchIntent(window) && activeViewId()!=='playerView') showView('matchesView');
   sendProductAction('matches_open', 'matchesView');
   setBootStatus('MatchRadar', 'Загружаем матчи…', 100);
   phaseStartedAt = performance.now();
@@ -1052,7 +1053,9 @@ const playerFollowModule = createPlayerFollowModule({
   state,
   api,
   toast,
+  onAuthRequired: reopenPlayerInTelegram,
   onChange: () => {
+    renderFavoritePlayers();
     if (state.currentPlayer) renderPlayerHub(state.currentPlayer);
     if (state.profile) renderProfile();
   },
@@ -1095,10 +1098,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch136'),
+      import('./modules/match-center-view.js?v=6.120.0-launch137'),
       import('./modules/match-pulse.js?v=6.120.0-launch87'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch136'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch136'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch137'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch137'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1255,7 +1258,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch136').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch137').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -2918,7 +2921,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch136');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch137');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3405,7 +3408,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch136').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch137').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -3816,14 +3819,19 @@ async function loadTeamIntelligence(force=false) {
   }
 }
 function playerCard(p) {
-  return `<div class="squad-player">${p.photo?`<img src="${safeUrl(p.photo)}" alt="">`:'<span class="squad-avatar">👤</span>'}<div><strong>${escapeHtml(p.name||'')}</strong><small>${p.number?`№${Number(p.number)} · `:''}${p.age?`${Number(p.age)} лет`:'Возраст —'}</small></div></div>`;
+  return `<button class="squad-player squad-player-open" type="button" data-squad-player="${positiveEntityId(p.id)}" ${positiveEntityId(p.id) ? '' : 'disabled'}>${p.photo?`<img src="${safeUrl(p.photo)}" alt="">`:'<span class="squad-avatar">👤</span>'}<div><strong>${escapeHtml(p.name||'')}</strong><small>${p.number?`№${Number(p.number)} · `:''}${p.age?`${Number(p.age)} лет`:'Возраст —'}</small></div><span class="squad-player-chevron" aria-hidden="true">›</span></button>`;
 }
 function renderTeamSquad(data) {
   const el=$('teamSquad'); if(!el) return;
   if(!data?.available || !data?.groups?.length){el.innerHTML=`<div class="empty compact-empty">${escapeHtml(data?.reason||'Состав команды сейчас недоступен.')}</div>`;return;}
   const sm=data.summary||{};
   const warning=data.stale?`<div class="data-notice stale">⚠️ ${escapeHtml(data.warning||'Показан сохранённый состав.')}</div>`:'';
-  el.innerHTML=`${warning}<section class="panel squad-summary-panel"><div class="mini-section-head"><strong>👥 Состав команды</strong><span>${Number(sm.total||0)} игроков</span></div><div class="squad-summary-grid"><div><span>Средний возраст</span><strong>${sm.averageAge??'—'}</strong></div><div><span>Вратари</span><strong>${Number(sm.goalkeepers||0)}</strong></div><div><span>Защитники</span><strong>${Number(sm.defenders||0)}</strong></div><div><span>Полузащитники</span><strong>${Number(sm.midfielders||0)}</strong></div><div><span>Нападающие</span><strong>${Number(sm.attackers||0)}</strong></div></div></section>${data.groups.map(group=>`<section class="panel squad-group"><div class="mini-section-head"><strong>${escapeHtml(group.label||'Игроки')}</strong><span>${group.players?.length||0}</span></div><div class="squad-player-grid">${(group.players||[]).map(playerCard).join('')}</div></section>`).join('')}<p class="tiny squad-cache-note">Состав загружается только при открытии вкладки и сохраняется на 12 часов. Статистика отдельных игроков будет подключена после перехода на расширенный тариф источника данных.</p>`;
+  el.innerHTML=`${warning}<section class="panel squad-summary-panel"><div class="mini-section-head"><strong>👥 Состав команды</strong><span>${Number(sm.total||0)} игроков</span></div><div class="squad-summary-grid"><div><span>Средний возраст</span><strong>${sm.averageAge??'—'}</strong></div><div><span>Вратари</span><strong>${Number(sm.goalkeepers||0)}</strong></div><div><span>Защитники</span><strong>${Number(sm.defenders||0)}</strong></div><div><span>Полузащитники</span><strong>${Number(sm.midfielders||0)}</strong></div><div><span>Нападающие</span><strong>${Number(sm.attackers||0)}</strong></div></div></section>${data.groups.map(group=>`<section class="panel squad-group"><div class="mini-section-head"><strong>${escapeHtml(group.label||'Игроки')}</strong><span>${group.players?.length||0}</span></div><div class="squad-player-grid">${(group.players||[]).map(playerCard).join('')}</div></section>`).join('')}<p class="tiny squad-cache-note">Нажмите на игрока, чтобы открыть профиль и добавить его в избранное.</p>`;
+  el.querySelectorAll('[data-squad-player]').forEach(button=>button.addEventListener('click',()=>{
+    const entry=squadPlayer(data,button.dataset.squadPlayer,state.currentTeam?.id);
+    if(entry)openPlayerFromTeam(entry,{...data.team},data);
+  }));
+
 }
 async function loadTeamSquad(force=false) {
   const team=state.currentTeam, el=$('teamSquad'); if(!team?.id||!el) return;
@@ -4037,7 +4045,12 @@ function shortPlayerName(name) {
   return escapeHtml(parts.length > 1 ? parts[parts.length - 1] : (parts[0] || 'Игрок'));
 }
 
-function lineupPitchHtml(lineup, title) {
+function lineupPlayerOpenAttrs(player,side){
+  const id=positiveEntityId(player?.player?.id || player?.id);
+  return id ? `data-center-player="${id}" data-center-player-side="${side==='away'?'away':'home'}" aria-label="${escapeHtml('Открыть профиль игрока '+lineupPlayerName(player))}"` : 'disabled';
+}
+
+function lineupPitchHtml(lineup, title,side='home') {
   if (!lineup?.startXI?.length) return '<div class="empty compact-empty">Стартовый состав ещё не опубликован.</div>';
   const players = lineup.startXI || [];
   const parsed = players.map((p, i) => {
@@ -4046,7 +4059,7 @@ function lineupPitchHtml(lineup, title) {
   });
   const hasGrid = parsed.filter(x => x.row && x.col).length >= 8;
   if (!hasGrid) {
-    return `<div class="lineup-fallback">${players.map((p, i) => `<div class="lineup-fallback-row"><b>${lineupPlayerNumber(p) || i + 1}</b><span>${escapeHtml(lineupPlayerName(p))}</span></div>`).join('')}</div>`;
+    return `<div class="lineup-fallback">${players.map((p, i) => `<button class="lineup-fallback-row lineup-player-open" type="button" ${lineupPlayerOpenAttrs(p,side)}><b>${lineupPlayerNumber(p) || i + 1}</b><span>${escapeHtml(lineupPlayerName(p))}</span></button>`).join('')}</div>`;
   }
   const maxRow = Math.max(...parsed.filter(x => x.row).map(x => x.row), 4);
   const rowCounts = {};
@@ -4059,9 +4072,9 @@ function lineupPitchHtml(lineup, title) {
       const safeCol = col || ((i % count) + 1);
       const x = count === 1 ? 50 : 12 + ((safeCol - 1) / Math.max(1, count - 1)) * 76;
       const y = maxRow <= 1 ? 50 : 91 - ((safeRow - 1) / (maxRow - 1)) * 82;
-      return `<div class="pitch-player" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%">
+      return `<button class="pitch-player lineup-player-open" type="button" ${lineupPlayerOpenAttrs(p,side)} style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%">
         <span>${lineupPlayerNumber(p) || '•'}</span><small>${shortPlayerName(lineupPlayerName(p))}</small>
-      </div>`;
+      </button>`;
     }).join('')}
   </div>`;
 }
@@ -4073,7 +4086,7 @@ function lineupQualityLabel(lineup) {
   return 'Состав не подтверждён';
 }
 
-function lineupTeamHtml(lineup, title) {
+function lineupTeamHtml(lineup, title,side='home') {
   if (!lineup) return `<div class="center-lineup-team"><h3>${escapeHtml(title)}</h3><div class="empty compact-empty">Состав не опубликован.</div></div>`;
   const subs = lineup.substitutes || [];
   const quality = lineup.quality || {};
@@ -4083,9 +4096,9 @@ function lineupTeamHtml(lineup, title) {
   return `<div class="center-lineup-team">
     <div class="center-lineup-head"><div><h3>${escapeHtml(title)}</h3><span>${escapeHtml(lineup.formation || 'Схема —')} · ${escapeHtml(lineupQualityLabel(lineup))}</span></div><div class="coach-chip">👔 ${escapeHtml(lineup.coach || 'Тренер —')}</div></div>
     ${qualityNotice}
-    ${lineupPitchHtml(lineup, title)}
+    ${lineupPitchHtml(lineup, title,side)}
     <details class="bench-details"><summary>Запасные · ${subs.length}</summary>
-      <div class="bench-grid">${subs.length ? subs.map(p => `<span><b>${lineupPlayerNumber(p) || '•'}</b>${escapeHtml(lineupPlayerName(p))}</span>`).join('') : '<i>Нет данных</i>'}</div>
+      <div class="bench-grid">${subs.length ? subs.map(p => `<button class="lineup-player-open" type="button" ${lineupPlayerOpenAttrs(p,side)}><b>${lineupPlayerNumber(p) || '•'}</b>${escapeHtml(lineupPlayerName(p))}</button>`).join('') : '<i>Нет данных</i>'}</div>
     </details>
   </div>`;
 }
@@ -4094,7 +4107,7 @@ function lineupLiveHtml(lineups, match) {
   const home = lineups?.home;
   const away = lineups?.away;
   if (!home && !away) return '<div class="empty compact-empty">Составы не опубликованы или не входят в покрытие турнира.</div>';
-  return `<div class="center-lineups-grid">${lineupTeamHtml(home, match.home?.name || 'Хозяева')}${lineupTeamHtml(away, match.away?.name || 'Гости')}</div>`;
+  return `<div class="center-lineups-grid">${lineupTeamHtml(home, match.home?.name || 'Хозяева')}${lineupTeamHtml(away, match.away?.name || 'Гости','away')}</div>`;
 }
 
 async function requestMatchCenter(fixtureId, extraParams = {}, options = {}) {
@@ -4301,6 +4314,7 @@ function playerHubMetric(label, value, suffix = '') {
 }
 
 function playerSquadProfile(data = {}, player = {}) {
+  if(positiveEntityId(data?.team?.id) && positiveEntityId(player?.team?.id) && positiveEntityId(data.team.id)!==positiveEntityId(player.team.id))return {found:false};
   const targetId = Number(player?.data?.id || 0);
   const targetName = String(player?.data?.name || '').trim().toLowerCase();
   for (const group of (data?.groups || [])) {
@@ -4309,6 +4323,7 @@ function playerSquadProfile(data = {}, player = {}) {
       const sameName = !targetId && targetName && String(item?.name || '').trim().toLowerCase() === targetName;
       if (sameId || sameName) return {
         found: true,
+        name: item.name || '',
         group: String(group?.label || 'Состав'),
         age: Number(item?.age || 0) || null,
         number: Number(item?.number || 0) || null,
@@ -4324,7 +4339,7 @@ function playerSquadProfile(data = {}, player = {}) {
 
 function playerSquadProfileHtml(profile = {}) {
   if (profile.loading) return `<section class="panel player-hub-profile"><div class="center-section-title"><div><h2>Профиль игрока</h2><p>Сверяю с составом команды</p></div></div><div class="loader compact-loader">Загружаю профиль…</div></section>`;
-  if (profile.error) return `<section class="panel player-hub-profile"><div class="center-section-title"><div><h2>Профиль игрока</h2><p>Дополнительные данные команды</p></div></div><div class="empty compact-empty">Профиль состава временно недоступен. Данные текущего матча остаются актуальными.</div></section>`;
+  if (profile.error) return `<section class="panel player-hub-profile"><div class="center-section-title"><div><h2>Профиль игрока</h2><p>Дополнительные данные команды</p></div></div><div class="empty compact-empty">${profile.inMatch ? 'Профиль состава временно недоступен. Данные текущего матча остаются актуальными.' : 'Профиль состава временно недоступен. Попробуйте открыть его ещё раз.'}</div></section>`;
   if (!profile.found) return `<section class="panel player-hub-profile"><div class="center-section-title"><div><h2>Профиль игрока</h2><p>Дополнительные данные команды</p></div></div><div class="empty compact-empty">Игрок не найден в текущем составе команды.</div></section>`;
   return `<section class="panel player-hub-profile">
     <div class="center-section-title"><div><h2>Профиль игрока</h2><p>Данные из текущего состава команды</p></div></div>
@@ -4352,6 +4367,10 @@ async function loadPlayerSquadProfile(player = state.currentPlayer) {
     }
     if (state.currentPlayer !== player) return;
     player.squadProfile = playerSquadProfile(data, player);
+    if(player.source!=='match_center' && player.source!=='match_lineup'){
+      const entry=squadPlayer(data,player.data?.id,teamId);
+      if(entry){player.data={...entry};player.team={...data.team};}
+    }
     if (player.squadProfile.photo && !player.data.photo) player.data.photo = player.squadProfile.photo;
     if (player.squadProfile.position && !player.data.position) player.data.position = player.squadProfile.position;
     renderPlayerHub(player);
@@ -4436,7 +4455,7 @@ function playerSeasonStatsHtml(profile = {}) {
       ${playerHubMetric('Жёлтые', profile.yellow === null ? '—' : profile.yellow)}
       ${playerHubMetric('Красные', profile.red === null ? '—' : profile.red)}
     </div>
-    <p class="tiny">Player Hub использует общий Team Intelligence cache. Отдельного player endpoint и отдельного запроса только ради этого профиля нет.</p>
+
   </section>`;
 }
 
@@ -4609,23 +4628,27 @@ function renderPlayerHub(player = state.currentPlayer) {
   const match = player.match || {};
   const team = player.team || {};
   const p = player.data || {};
-  const rating = Number.isFinite(Number(p.rating)) ? Number(p.rating).toFixed(1) : '—';
+  const inMatch=positiveEntityId(match.fixtureId)>0;
+  const hasMatchStats=player.source==='match_center';
+  const rating = p.rating!==null && p.rating!==undefined && p.rating!=='' && Number.isFinite(Number(p.rating)) ? Number(p.rating).toFixed(1) : '—';
+  const back=$('playerBackBtn');
+  if(back)back.textContent=state.playerBackView==='teamView' ? '← К команде' : state.playerBackView==='myTeamsView' ? '← Мои команды' : inMatch ? '← К матчу' : '← Назад';
   root.innerHTML = `
     <section class="panel player-hub-hero">
       <div class="player-hub-main">
         <div class="player-hub-photo">${p.photo ? `<img src="${safeUrl(p.photo)}" alt="">` : '<span>👤</span>'}</div>
         <div class="player-hub-copy">
-          <span>PLAYER HUB · ТЕКУЩИЙ МАТЧ</span>
+          <span>${inMatch ? 'ИГРОК · МАТЧ' : 'ПРОФИЛЬ ИГРОКА'}</span>
           <h2>${escapeHtml(p.name || 'Игрок')}</h2>
           <p>${escapeHtml(team.name || 'Команда')} · ${escapeHtml(playerPositionLabel(p.position))}</p>
         </div>
-        <div class="player-hub-rating"><span>Рейтинг</span><strong>${rating}</strong></div>
+        ${hasMatchStats ? `<div class="player-hub-rating"><span>Рейтинг</span><strong>${rating}</strong></div>` : ''}
       </div>
-      <div class="player-hub-match">
+      ${inMatch ? `<div class="player-hub-match">
         <span>${escapeHtml(match.league || '')}</span>
         <strong>${escapeHtml(match.home?.name || '')} — ${escapeHtml(match.away?.name || '')}</strong>
         <small>${escapeHtml(match.statusLabel || '')}</small>
-      </div>
+      </div>` : ''}
       <div class="player-hub-actions">
         ${playerFollowModule.controlHtml(player)}
         <button class="btn secondary" type="button" data-player-comparison-open>⚖️ Сравнить</button>
@@ -4640,24 +4663,24 @@ function renderPlayerHub(player = state.currentPlayer) {
       error:String(player.comparison?.error || ''),
     }) : ''}
 
-    ${playerSquadProfileHtml(player.squadProfile || {})}
-    ${playerSeasonStatsHtml(player.seasonStats || {})}
+    ${playerSquadProfileHtml({...player.squadProfile,inMatch})}
+    ${positiveEntityId(match.leagueId) && positiveEntityId(match.season) || player.seasonStats?.found ? playerSeasonStatsHtml(player.seasonStats || {}) : ''}
 
-    <section class="panel">
+    ${hasMatchStats ? `<section class="panel">
       <div class="center-section-title"><div><h2>Показатели в матче</h2><p>Только данные, уже полученные для этого матча</p></div></div>
       <div class="player-hub-metrics">
-        ${playerHubMetric('Минуты', Number(p.minutes || 0))}
-        ${playerHubMetric('Голы', Number(p.goals || 0))}
-        ${playerHubMetric('Ассисты', Number(p.assists || 0))}
-        ${playerHubMetric('Удары в створ', Number(p.shotsOn || 0))}
-        ${playerHubMetric('Ключевые передачи', Number(p.keyPasses || 0))}
-        ${playerHubMetric('Отборы', Number(p.tackles || 0))}
-        ${playerHubMetric('Перехваты', Number(p.interceptions || 0))}
-        ${playerHubMetric('Сейвы', Number(p.saves || 0))}
+        ${playerHubMetric('Минуты', p.minutes)}
+        ${playerHubMetric('Голы', p.goals)}
+        ${playerHubMetric('Ассисты', p.assists)}
+        ${playerHubMetric('Удары в створ', p.shotsOn)}
+        ${playerHubMetric('Ключевые передачи', p.keyPasses)}
+        ${playerHubMetric('Отборы', p.tackles)}
+        ${playerHubMetric('Перехваты', p.interceptions)}
+        ${playerHubMetric('Сейвы', p.saves)}
       </div>
-    </section>
+    </section>` : ''}
 
-    <section class="panel player-hub-context">
+    ${hasMatchStats ? `<section class="panel player-hub-context">
       <div class="center-section-title"><div><h2>Роль в текущем матче</h2><p>Краткий контекст без дополнительного запроса к источнику</p></div></div>
       <div class="player-hub-context-grid">
         <div><span>Позиция</span><strong>${escapeHtml(playerPositionLabel(p.position))}</strong></div>
@@ -4666,7 +4689,7 @@ function renderPlayerHub(player = state.currentPlayer) {
         <div><span>Источник</span><strong>данные матча</strong></div>
       </div>
       <p class="tiny">Контекст матча остаётся независимым от сезонной выборки: если сезонные данные ограничены квотой или покрытием, текущая статистика игрока продолжает отображаться.</p>
-    </section>
+    </section>` : ''}
   `;
   bindPlayerComparisonActions(player, playerComparisonCandidatesFor(player));
   playerFollowModule.bind(root, player);
@@ -4676,15 +4699,18 @@ function openPlayerFromMatch(playerId, side = '') {
   const center = state.currentCenter || {};
   const match = center.match || {};
   const key = side === 'away' ? 'away' : 'home';
-  const player = (center.playerLeaders?.[key] || []).find(item => Number(item.id || 0) === Number(playerId || 0));
+  const leader = (center.playerLeaders?.[key] || []).find(item => Number(item.id || 0) === Number(playerId || 0));
+  const lineup=center.lineups?.[key] || {};
+  const player=leader || [...(lineup.startXI || []),...(lineup.substitutes || [])].map(item=>item.player || item).find(item=>positiveEntityId(item?.id)===positiveEntityId(playerId));
   if (!player) return toast('Данные игрока для этого матча уже недоступны.');
   const current = activeViewId();
   if (current !== 'playerView') state.playerBackView = current || 'analysisView';
   state.currentPlayer = {
-    data: { ...player },
+    data: { ...player,position:player.position || player.pos },
     team: { ...(match[key] || {}) },
     match: { ...match },
     source: 'match_center',
+    ...(!leader ? {source:'match_lineup'} : {}),
   };
   renderPlayerHub();
   sendProductAction('player_open', current || 'analysisView');
@@ -4692,6 +4718,45 @@ function openPlayerFromMatch(playerId, side = '') {
   if (!state.favoritePlayersLoaded && !state.favoritePlayersLoading) void loadFavoritePlayers();
   void loadPlayerSquadProfile(state.currentPlayer);
   void loadPlayerSeasonStats(state.currentPlayer);
+}
+
+
+function reopenPlayerInTelegram(player=state.currentPlayer){
+  rememberPlayerReturn(player,state.profile?.user?.id,window);
+  const url=playerTelegramUrl();
+  const telegram=window.Telegram?.WebApp || tg;
+  if(typeof telegram?.openTelegramLink==='function'){telegram.openTelegramLink(url);telegram.close?.();}
+  else window.location.assign(url);
+}
+
+function renderFavoritePlayers(){
+  const root=$('favoritePlayersList');if(!root)return;
+  root.innerHTML=favoritePlayersHtml(state,escapeHtml);
+  root.querySelector('[data-favorite-player-auth]')?.addEventListener('click',()=>reopenPlayerInTelegram(null));
+  root.querySelector('[data-favorite-player-retry]')?.addEventListener('click',()=>void loadFavoritePlayers({force:true}));
+  root.querySelectorAll('[data-saved-player]').forEach(button=>button.addEventListener('click',()=>{
+    const row=state.favoritePlayers.find(item=>positiveEntityId(item.playerId)===positiveEntityId(button.dataset.savedPlayer) && positiveEntityId(item.teamId)===positiveEntityId(button.dataset.playerTeam));
+    if(!row)return;
+    const team=state.favorites.find(item=>positiveEntityId(item.teamId)===positiveEntityId(row.teamId));
+    openPlayerFromTeam({id:row.playerId,name:row.playerName},{id:row.teamId,name:team?.teamName || 'Команда'},null,'favorite');
+  }));
+}
+
+function openPlayerFromTeam(entry,team,squad=null,source='team_squad'){
+  if(!positiveEntityId(entry?.id) || !positiveEntityId(team?.id))return;
+  const current=activeViewId();
+  if(current!=='playerView')state.playerBackView=current || 'matchesView';
+  const competition=positiveEntityId(state.currentTeam?.id)===positiveEntityId(team.id) ? state.currentTeam.data?.primaryCompetition : null;
+  state.currentPlayer={data:{...entry},team:{...team},match:{leagueId:competition?.leagueId,season:competition?.season,league:competition?.name},source};
+  if(squad)state.currentPlayer.squadProfile=playerSquadProfile(squad,state.currentPlayer);
+  renderPlayerHub();showView('playerView');
+  if(!state.favoritePlayersLoaded && !state.favoritePlayersLoading)void loadFavoritePlayers();
+  void loadPlayerSquadProfile(state.currentPlayer);
+  void loadPlayerSeasonStats(state.currentPlayer);
+}
+
+async function openStandalonePlayer(playerId,teamId){
+  openPlayerFromTeam({id:playerId,name:'Игрок'},{id:teamId,name:'Команда'});
 }
 
 
@@ -5541,7 +5606,7 @@ async function loadAnalysisExplanation(fixtureId) {
   const root = $('matchExplanation');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch136');
+    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch137');
     const { loadMatchExplanation } = await matchExplanationModule;
     await loadMatchExplanation({
       root,
@@ -5561,7 +5626,7 @@ async function loadMatchQuestions(fixtureId) {
   const root = $('matchQuestions');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch136');
+    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch137');
     const { mountMatchQuestions } = await matchQuestionsModule;
     mountMatchQuestions({
       root,
@@ -5581,7 +5646,7 @@ async function loadMatchQuestions(fixtureId) {
 // «Обыграй AI»: прогноз в Штабе матча и таблица в Профиле — ленивый модуль.
 let beatAiModule = null;
 function loadBeatAiModule() {
-  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch136').catch(error => { beatAiModule = null; throw error; });
+  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch137').catch(error => { beatAiModule = null; throw error; });
   return beatAiModule;
 }
 async function mountBeatAi(m = {}) {
@@ -5616,7 +5681,7 @@ async function loadReferralInvitePanel() {
   const root = $('referralInvite');
   if (!root) return;
   try {
-    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch136');
+    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch137');
     const { loadReferralInvite } = await referralInviteModule;
     await loadReferralInvite({ root, api, escapeHtml, tg, toast });
   } catch {
@@ -5627,7 +5692,7 @@ async function loadReferralInvitePanel() {
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch136');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch137');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {
@@ -5752,6 +5817,8 @@ async function openLaunchFixture(fixtureId, action, tab = '', handoff = false, n
 function applyLaunchIntent() {
   if (launchIntentHandled) return;
   launchIntentHandled = true;
+  const playerIntent=playerLaunchIntent(window) || (!hasDirectLaunchIntent() ? takePlayerReturn(state.profile?.user?.id,window) : null);
+  if(playerIntent){showView(CANONICAL_HOME_VIEW);void openStandalonePlayer(playerIntent.playerId,playerIntent.teamId);return;}
   const params = new URLSearchParams(location.search);
   const filter = String(params.get('filter') || '').toLowerCase();
   const view = String(params.get('view') || '').toLowerCase();
@@ -6290,6 +6357,8 @@ $('navMatches').addEventListener('click', () => {
 $('navMyTeams')?.addEventListener('click', () => {
   sendProductAction('matches_open', 'myTeamsView');
   renderMyTeams();
+  renderFavoritePlayers();
+  if(!state.favoritePlayersLoaded)void loadFavoritePlayers();
   showView('myTeamsView');
 });
 $('navHistory').addEventListener('click', async () => {
@@ -6306,6 +6375,8 @@ $('navProfile').addEventListener('click', () => {
 });
 $('profileFavoriteTeamsBtn')?.addEventListener('click', () => {
   renderMyTeams();
+  renderFavoritePlayers();
+  if(!state.favoritePlayersLoaded)void loadFavoritePlayers();
   showView('myTeamsView');
 });
 $('profileRemindersBtn')?.addEventListener('click', () => {

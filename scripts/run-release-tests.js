@@ -37,6 +37,8 @@ const RELEASE_TESTS = Object.freeze([
   'test/pass-entitlements.test.js',
   'test/pass-purchase-ui.test.js',
   'test/personal-data-write-consistency.test.js',
+  'test/player-profile-navigation.test.js',
+  'test/player-follow.test.js',
   'test/personal-feed.test.js',
   'test/personal-surfaces-visual-polish.test.js',
   'test/post-deploy-smoke.test.js',
