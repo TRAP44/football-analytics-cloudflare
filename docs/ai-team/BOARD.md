@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Автоматический поиск и публикация официальных эфиров без PR на каждый матч — **Codex** — `codex/automatic-official-watch`; точное сопоставление, ограничение квоты, отзыв устаревших источников.
 
 
 
@@ -82,6 +81,8 @@
 
 
 ## На ревью
+
+- [ ] Автоматический поиск и публикация официальных эфиров без PR на каждый матч — **Codex** — [PR #1006](https://github.com/TRAP44/football-analytics-cloudflare/pull/1006), `codex/automatic-official-watch`; J1 source policy, quota guard, exact canonical matching, removal/revocation; независимое review без блокеров, local ci/check/lint/release802/full4616 + дополнительные negative tests/Chromium прошли. CI и actual auto refresh перед заявлением о выпуске.
 
 - [ ] Надёжное автообновление каталога просмотра через существующие часы Cloudflare → Background Jobs — **Codex** — [PR #1005](https://github.com/TRAP44/football-analytics-cloudflare/pull/1005), `codex/watch-refresh-dispatch`; local full4609/release796, независимое review без блокеров; отдельный GitHub schedule не запускался более часа. Parallel watch job изолирован от уведомлений и их ключей; после выпуска проверить настоящий очередной CF dispatch.
 
