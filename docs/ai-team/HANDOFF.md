@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-23 — Codex — Каталог, страна и официальный просмотр матча
-Ветка `codex/match-watch-catalogue`, продолжение #943–949. YouTube key проверен настоящим запуском39956319359: FIFA channel подтверждён, но найдено0LIVE и5предстоящих показов записей; свежий fixture cache пуст. #1000 merged2f2ca3bd, mainCI и Deploy39956816087 прошли без изменения runtime artifact. Архивы не добавлены как сегодняшние трансляции.
+PR [#1001](https://github.com/TRAP44/football-analytics-cloudflare/pull/1001), ветка `codex/match-watch-catalogue`, продолжение #943–949. YouTube key проверен настоящим запуском39956319359: FIFA channel подтверждён, но найдено0LIVE и5предстоящих показов записей; свежий fixture cache пуст. #1000 merged2f2ca3bd, mainCI и Deploy39956816087 прошли без изменения runtime artifact. Архивы не добавлены как сегодняшние трансляции.
 
 Сделан один сценарий от каталога до UI: authenticated cache-only GET /api/match-watch, manifest с точными fixture/team/league/season/date, типом видео, странами и сроком; main-only/background-jobs refresh на существующих ключах, один batched videos.list, проверки publisher/public/age/region/status/time, shared cache30мин через versioned RPC. Неизвестный POST не повторяется. Manifest находится в src/, поэтому его изменение входит в production artifact diff. Новый runtime сверяет кеш с текущим выпущенным manifest; удаление approval/страны отзывает старые записи. При пустом manifest нет Google/DB запросов в refresh и нет DB чтений в API/боте. Бот ждёт необязательный кеш максимум500мс, API1500мс; поздний результат не изменяет отправленную keyboard.
 

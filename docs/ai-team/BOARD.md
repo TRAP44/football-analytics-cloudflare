@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] «Где смотреть»: общий каталог, страна, Mini App player/fallback и кнопка бота (#945–949) — **Codex** — `codex/match-watch-catalogue`; APIключ и FIFAidentity проверены actual39956319359success, но5видеопремьер — записи,0currentLIVE. Публикация толькоподтверждённыхсобытий, невыдаватьстарыйматчзасегодняшний.
 
 
 
@@ -77,6 +76,8 @@
 
 
 ## На ревью
+
+- [ ] «Где смотреть»: каталог, страна, официальный player/fallback и кнопка бота — **Codex** — [PR #1001](https://github.com/TRAP44/football-analytics-cloudflare/pull/1001), `codex/match-watch-catalogue`; local full4600/release782/focused65, Chromium actual app wiring, независимое review прошли. CI проверяется. Manifest пуст: actual key/channel подтверждены, текущий fixture/source/territory/Telegram playback ещё нет; общий #943/#948 не закрывать.
 
 
 
