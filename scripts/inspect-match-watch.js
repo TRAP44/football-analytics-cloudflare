@@ -92,12 +92,17 @@ export function watchMatchHints(videos,rows){
 
 export async function inspectMatchWatch({env=process.env,fetchImpl=fetch,now=new Date()}={}){
   let calls=0,searchCalls=0;
-  const source=Object.hasOwn(WATCH_SOURCES,env.MATCH_WATCH_PUBLISHER || 'fifa')?WATCH_SOURCES[env.MATCH_WATCH_PUBLISHER || 'fifa']:null;
+  const candidateHandle=env.MATCH_WATCH_CANDIDATE_HANDLE || '';
+  const searchCountry=env.MATCH_WATCH_SEARCH_COUNTRY || 'RU';
+  const candidateValid=/^[A-Za-z0-9][A-Za-z0-9_.-]{2,29}$/.test(candidateHandle);
+  let source=candidateHandle?{handle:candidateValid?candidateHandle.toLowerCase():null,channelId:null,authorityUrl:null,channelUrl:null}:Object.hasOwn(WATCH_SOURCES,env.MATCH_WATCH_PUBLISHER || 'fifa')?WATCH_SOURCES[env.MATCH_WATCH_PUBLISHER || 'fifa']:null;
   const requestedFixture=env.MATCH_WATCH_FIXTURE_ID || '';
   const fixtureId=/^[1-9][0-9]{0,9}$/.test(requestedFixture)&&Number(requestedFixture)<=2_000_000_000?Number(requestedFixture):0;
-  const report={scope:fixtureId?'official_source_and_one_guarded_fixture_not_playback_or_published_catalogue':'read_only_official_youtube_metadata_not_playback_or_published_catalogue',observedAt:now.toISOString(),
+  const report={scope:candidateHandle?'unverified_public_candidate_metadata_not_playback_or_published_catalogue':fixtureId?'official_source_and_one_guarded_fixture_not_playback_or_published_catalogue':'read_only_official_youtube_metadata_not_playback_or_published_catalogue',observedAt:now.toISOString(),searchCountry:['RU','GB','US','SG'].includes(searchCountry)?searchCountry:null,
     keyAccepted:false,channelVerified:false,source,requestCounts:{youtube:0,search:0,supabase:0},videos:[],matchHints:[],matchCacheStatus:'not_requested',featureReady:false};
   if(!source)return {...report,errorCode:'WATCH_SOURCE_NOT_ALLOWED'};
+  if(candidateHandle&&!candidateValid)return {...report,errorCode:'WATCH_CANDIDATE_HANDLE_INVALID'};
+  if(!['RU','GB','US','SG'].includes(searchCountry))return {...report,searchCountry:null,errorCode:'WATCH_SEARCH_COUNTRY_INVALID'};
   if(requestedFixture && !fixtureId)return {...report,errorCode:'WATCH_FIXTURE_ID_INVALID'};
   const key=typeof env.YOUTUBE_DATA_API_KEY==='string'?env.YOUTUBE_DATA_API_KEY.trim():'';
   if(!key || key.length>512) return {...report,errorCode:'YOUTUBE_KEY_NOT_CONFIGURED'};
@@ -120,11 +125,15 @@ export async function inspectMatchWatch({env=process.env,fetchImpl=fetch,now=new
   }
   try{
     const channels=await youtube('channels',{part:'id,snippet',forHandle:source.handle,maxResults:'1'});
-    if(channels.length!==1 || channels[0].id!==source.channelId || String(channels[0].snippet?.customUrl || '').toLowerCase()!=='@'+source.handle)fail('YOUTUBE_CHANNEL_IDENTITY_MISMATCH');
-    report.channelVerified=true;
+    if(channels.length!==1 || String(channels[0].snippet?.customUrl || '').toLowerCase()!=='@'+source.handle || (candidateHandle?!/^UC[A-Za-z0-9_-]{22}$/.test(channels[0].id || ''):channels[0].id!==source.channelId))fail('YOUTUBE_CHANNEL_IDENTITY_MISMATCH');
+    if(candidateHandle){
+      source={...source,channelId:channels[0].id,channelUrl:`https://www.youtube.com/@${source.handle}`};
+      report.source=source;report.sourceStatus='unverified_research_candidate';
+    }else report.channelVerified=true;
     const ids=new Set();
     for(const eventType of ['live','upcoming']){
-      const results=await youtube('search',{part:'id',channelId:source.channelId,type:'video',eventType,maxResults:'10'});
+      const results=await youtube('search',{part:'id',channelId:source.channelId,type:'video',eventType,regionCode:searchCountry,maxResults:'10'});
+      if(results.length>10)fail('YOUTUBE_SEARCH_RESPONSE_INVALID');
       for(const result of results){const id=result?.id?.videoId;if(VIDEO_ID.test(id || ''))ids.add(id);}
     }
     if(ids.size){

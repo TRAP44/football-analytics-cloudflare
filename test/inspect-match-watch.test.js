@@ -134,3 +134,33 @@ test('fixture probe uses trusted configured relay and fails closed on cooldown, 
   assert.equal(claims,scenario.startsWith('claim_')?1:0);assert.ok(!JSON.stringify(report).includes('secret private'));
  }
 });
+
+test('bounded public candidate research never verifies publisher authority or changes approvals',async()=>{
+ const calls=[];const pinned=readFileSync('src/match-watch-approvals.json','utf8');
+ const report=await inspectMatchWatch({env:{YOUTUBE_DATA_API_KEY:env.YOUTUBE_DATA_API_KEY,MATCH_WATCH_CANDIDATE_HANDLE:'GermanFootball'},now,fetchImpl:async(input,options)=>{
+  const url=new URL(input);calls.push(url);assert.equal(url.origin,'https://www.googleapis.com');assert.equal(options.method,'GET');assert.equal(options.redirect,'error');assert.equal(options.headers['X-Goog-Api-Key'],env.YOUTUBE_DATA_API_KEY);
+  if(url.pathname.endsWith('/channels')){assert.equal(url.searchParams.get('forHandle'),'germanfootball');return Response.json({items:[{id:WATCH_SOURCE.channelId,snippet:{customUrl:'@GermanFootball'}}]});}
+  if(url.pathname.endsWith('/search')){assert.equal(url.searchParams.get('channelId'),WATCH_SOURCE.channelId);return Response.json({items:[{id:{videoId:'abcdefghijk'}}]});}
+  return Response.json({items:[video()]});
+ }});
+ assert.equal(calls.length,4);assert.equal(report.keyAccepted,true);assert.equal(report.channelVerified,false);assert.equal(report.featureReady,false);assert.equal(report.sourceStatus,'unverified_research_candidate');assert.equal(report.source.authorityUrl,null);assert.equal(report.source.channelId,WATCH_SOURCE.channelId);assert.equal(report.videos[0].fixtureVerified,false);assert.equal(readFileSync('src/match-watch-approvals.json','utf8'),pinned);
+ for(const handle of ['../../bad','https://evil.example','handle&key=private','@GermanFootball','a'.repeat(31)]){
+  let requests=0;const bad=await inspectMatchWatch({env:{...env,MATCH_WATCH_CANDIDATE_HANDLE:handle},now,fetchImpl:()=>{requests++;}});assert.equal(requests,0);assert.equal(bad.errorCode,'WATCH_CANDIDATE_HANDLE_INVALID');
+ }
+});
+
+test('search territory is explicit and the result cap is enforced before video lookup',async()=>{
+ for(const country of ['RU','SG']){
+  let searches=0;const t=transport();const report=await inspectMatchWatch({env:{...env,MATCH_WATCH_SEARCH_COUNTRY:country},now,fetchImpl:(input,options)=>{
+   const url=new URL(input);if(url.pathname.endsWith('/search')){searches++;assert.equal(url.searchParams.get('regionCode'),country);}
+   return t.fetchImpl(input,options);
+  }});assert.equal(searches,2);assert.equal(report.searchCountry,country);
+ }
+ let calls=0;const bad=await inspectMatchWatch({env:{...env,MATCH_WATCH_SEARCH_COUNTRY:'RU&key=private'},now,fetchImpl:()=>{calls++;}});assert.equal(calls,0);assert.equal(bad.searchCountry,null);assert.equal(bad.errorCode,'WATCH_SEARCH_COUNTRY_INVALID');
+ const both=await inspectMatchWatch({env:{...env,MATCH_WATCH_SEARCH_COUNTRY:'private',MATCH_WATCH_CANDIDATE_HANDLE:'bad&handle'},now,fetchImpl:()=>assert.fail('invalid input transported')});assert.equal(both.searchCountry,null);assert.equal(both.source.handle,null);
+ const t=transport();let videos=0;const oversized=await inspectMatchWatch({env,now,fetchImpl:(input,options)=>{
+  const url=new URL(input);if(url.pathname.endsWith('/search'))return Response.json({items:Array.from({length:11},()=>({id:{videoId:'abcdefghijk'}}))});
+  if(url.pathname.endsWith('/videos'))videos++;
+  return t.fetchImpl(input,options);
+ }});assert.equal(videos,0);assert.equal(oversized.errorCode,'YOUTUBE_SEARCH_RESPONSE_INVALID');
+});
