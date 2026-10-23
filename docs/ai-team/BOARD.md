@@ -19,7 +19,7 @@
 
 ## В работе
 
-- [ ] «Где смотреть»: источники, территории и разрешённый плеер (#943–949) — **Codex** — [Draft PR #1000](https://github.com/TRAP44/football-analytics-cloudflare/pull/1000), `codex/match-watch-sources`; исследование #944 и read-only review готовы, но действующий эфир/страна и доступ YouTube Data API пока не подтверждены. У владельца уточнено наличие ключа, не значение; UI/production не менялись, feature не готова.
+
 
 
 
@@ -75,6 +75,8 @@
 
 
 ## На ревью
+
+- [ ] «Где смотреть»: защищённая проверка официальных YouTube-эфиров и свежего общего кеша матчей — **Codex** — [PR #1000](https://github.com/TRAP44/football-analytics-cloudflare/pull/1000), `codex/match-watch-sources`; владелец добавил YOUTUBE_DATA_API_KEY. Local release770/full4584 и независимый reviewpassed; CI и настоящий main-only source-check впереди. UI/playback ещё не реализованы, общий #943 не закрывать.
 
 
 

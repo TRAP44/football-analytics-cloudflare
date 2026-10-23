@@ -96,3 +96,17 @@ GET https://www.thesportsdb.com/api/v1/json/123/lookupevent.php?id=1032723
 - До любой покупки сначала проверить предоставляемые поля и реальные матчи/страны: каталог TV без event URL не решает исходную задачу. Регистрации, billing и переговоры от имени владельца без его поручения не начинать.
 
 Приёмка первого работающего сценария: действующий футбольный fixtureId + выбранная страна → подтверждённое видео официального канала → playback в Telegram iOS/Android; fallback для embed refusal; отсутствие пустых кнопок/влияния на открытие матч-центра/AI. Затем расширение источников. Тестовые данные, исторические ссылки и HTTP200 документации не закрывают этот gate.
+
+## Подключение сохранённого ключа — 23 октября
+
+Сергей создал Google Cloud project `matchradar-512512`, включил YouTube Data API v3 и подтвердил сохранение `YOUTUBE_DATA_API_KEY` в GitHub repository secrets. Значение не получаем и не переносим в public/ или логи. Реальная работоспособность проверяется отдельно, не выводится из сообщения о сохранении.
+
+В существующий main-only `Observe Live Usage` добавлен optional `inspect_watch=false`. Запуск из `main` с `inspect_watch=true` в защищённом окружении `background-jobs` читает ключ в одном серверном шаге. Отдельный шаг продолжится при ошибке агрегированного наблюдения, но не после отмены задания. Существующий аудит privileges разрешает только это новое имя секрета; права workflow, main-only guard и pinned actions сохраняются.
+
+`scripts/inspect-match-watch.js` выполняет до4GET YouTube, включая ровно2search(live/upcoming, по10 результатов), без пагинации/повторов; один GET существующего свежего public cache на сегодня/завтра. API key передаётся только Google в заголовке `X-Goog-Api-Key`, ключ Supabase — только настроенному `*.supabase.co` в `apikey`. Redirects запрещены, размеры ответов/сроки ограничены; ошибки только фиксированные категории без raw response/URL/error. Пользовательские таблицы, Telegram, новые запросы API-Football, SQL и production writes не используются.
+
+Для первого источника закреплён FIFA channel ID `UCpcTrCXblq78GZrTUTLWeBw`, handle `fifa`; [официальный сайт Inside FIFA](https://inside.fifa.com/) в social footer подтверждает `https://www.youtube.com/fifa`. Ответ `channels.list` обязан подтвердить и ID, и handle до поиска видео. Видеозаписи другого канала отбрасываются повторно.
+
+Артефакт `load-results/match-watch-source-check.json` содержит только публичные video ID/title/time, public/embeddable/age/region metadata и максимум10 совпадений названий+времени с кешем. Они **кандидаты на ручную проверку**: совпадение названия и пяти минут не подтверждает турнир, возраст/пол, права и реальное воспроизведение. `featureReady`, `fixtureVerified`, `playbackVerified` всегдаfalse у этого source-inspection, даже при успешном API. Отсутствие `contentDetails`/невалидные region restrictions → unknown, не мировой доступ. Истёкшие/будущие противоречивые LIVE времена не считаются текущим эфиром. Отсутствие кандидатов в таком ограниченном сканировании не означает отсутствие иных официальных трансляций.
+
+После merge: `gh workflow run live-usage-report.yml --ref main -f inspect_watch=true`, скачать только sanitized artifact и зафиксировать реальный результат перед реализацией пользовательского плеера. PR с этим кодом не является готовым встроенным просмотром.

@@ -15,6 +15,10 @@ on:
         description: Inspect the reported public FARDU badge
         type: boolean
         default: false
+      inspect_watch:
+        description: Read official YouTube source metadata and public fixture cache without publishing
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -66,7 +70,16 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node scripts/inspect-live-summary.js
+      - name: Verify official watch source metadata
+        if: ${{ !cancelled() && inputs.inspect_watch == true }}
+        env:
+          YOUTUBE_DATA_API_KEY: ${{ secrets.YOUTUBE_DATA_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/inspect-match-watch.js
       - name: Save sanitized observations
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: live-usage-report
@@ -77,5 +90,6 @@ jobs:
             load-results/product-usage.md
             load-results/team-crest-*
             load-results/live-summary-inspection.json
+            load-results/match-watch-source-check.json
           retention-days: 3
           if-no-files-found: error
