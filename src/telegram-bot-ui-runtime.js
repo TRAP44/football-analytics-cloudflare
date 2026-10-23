@@ -1,3 +1,4 @@
+import {WATCH_POLICIES} from './match-watch-policy.js';
 import {withRequestDeadline} from './request-deadline.js';
 import {WATCH_APPROVALS,watchCacheKey,watchFixtureIdentity,validatedWatchOptions} from './match-watch.js';
 import {matchCenterCacheKey} from './match-center-cache-key.js';
@@ -8,6 +9,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
   }
   const {
     watchApprovals:configuredWatchApprovals=WATCH_APPROVALS,
+    watchPolicies:configuredWatchPolicies=WATCH_POLICIES,
     apiAnalyze,
     botAiHandoffText,
     createRequest,
@@ -31,6 +33,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
   } = deps;
 
   const watchApprovals=Array.isArray(configuredWatchApprovals)?configuredWatchApprovals:WATCH_APPROVALS;
+  const watchPolicies=Array.isArray(configuredWatchPolicies)?configuredWatchPolicies:WATCH_POLICIES;
 
   const requiredFunctions={
     apiAnalyze,
@@ -407,10 +410,10 @@ export function createTelegramBotUiRuntime(deps = {}) {
 
   async function appendWatchAction(request,match,keyboard,cfg){
     const fixtureId=positiveSafeInteger(match?.fixtureId);
-    if(!fixtureId || cfg.matchWatchEnabled===false || !watchApprovals.some(item=>item.match?.fixtureId===fixtureId))return keyboard;
+    if(!fixtureId || cfg.matchWatchEnabled===false || !watchPolicies.some(policy=>policy.leagueId===match.leagueId) && !watchApprovals.some(item=>item.match?.fixtureId===fixtureId))return keyboard;
     try{
       const [center,catalogue]=await withRequestDeadline(()=>Promise.all([getCache(matchCenterCacheKey(fixtureId),cfg),getCache(watchCacheKey(fixtureId),cfg)]),{budgetMs:500,source:'match-watch-cache'});
-      if(center?.match?.fixtureId!==fixtureId || watchFixtureIdentity(normalizeBotFixtureCard(match))!==watchFixtureIdentity(center.match) || !validatedWatchOptions(center.match,catalogue,{approvals:watchApprovals}).length)return keyboard;
+      if(center?.match?.fixtureId!==fixtureId || watchFixtureIdentity(normalizeBotFixtureCard(match))!==watchFixtureIdentity(center.match) || !validatedWatchOptions(center.match,catalogue,{approvals:watchApprovals,policies:watchPolicies}).length)return keyboard;
       const url=new URL(centerUrl(request,fixtureId));url.searchParams.set('watch','1');
       keyboard.inline_keyboard.push([{text:'📺 Где смотреть',web_app:{url:url.toString()}}]);
     }catch{}
