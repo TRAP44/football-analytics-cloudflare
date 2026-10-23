@@ -34,7 +34,7 @@ test('view chrome updates topbar with home fallback', () => {
 
   controller.syncTopbar('playerView');
   assert.equal(elements.topbarTitle.textContent, 'Игрок');
-  assert.equal(elements.topbarSubtitle.textContent, 'Показатели и роль в текущем матче');
+  assert.equal(elements.topbarSubtitle.textContent, 'Профиль, статистика и избранное');
 
   controller.syncTopbar('unknownView');
   assert.equal(elements.topbarTitle.textContent, 'Главная');

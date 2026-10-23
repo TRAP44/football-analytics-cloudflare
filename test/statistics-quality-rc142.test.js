@@ -133,7 +133,7 @@ test('RC142 routes sanitized statistics into comparative live analytics', () => 
 });
 
 test('RC142 exposes statistics quality in Match Center and release health contracts', () => {
-  assert.match(userDataApiSource,/match-center:\$\{fixtureId\}:v16-availability-quality-rc144/);
+  assert.match(userDataApiSource,/const cacheKey = matchCenterCacheKey\(fixtureId\)/);
   assert.match(app,/function statisticsQualityHintHtml/);
   assert.match(app,/statisticsQualityHintHtml\(d\.statisticsQuality\)/);
   assert.match(smoke,/'providerDataReliability'/);

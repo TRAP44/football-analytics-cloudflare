@@ -103,13 +103,19 @@ function fieldSvg() {
   </svg>`;
 }
 
+function playerOpenButton(player,side,esc,content=''){
+  const id=Number(player?.id);
+  if(!Number.isSafeInteger(id) || id<=0)return content;
+  return `<button class="lineup-player-open ${content ? '' : 'lp-player-overlay'}" type="button" data-center-player="${id}" data-center-player-side="${side==='away'?'away':'home'}" aria-label="${esc('Открыть профиль игрока '+playerName(player))}">${content}</button>`;
+}
+
 function chipHtml({ player, x, y, scale }, side, escapeHtml) {
   const number = playerNumber(player);
   const name = playerName(player);
   const role = ROLE_LABELS[String(player?.pos || '').toUpperCase()] || '';
   const label = `${number ? `№${number} ` : ''}${name}${role ? `, ${role}` : ''}`;
   return `<li class="lp-chip ${side}" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%;--lp-scale:${scale.toFixed(3)}" aria-label="${escapeHtml(label)}">
-    <b aria-hidden="true">${escapeHtml(number || '•')}</b><span aria-hidden="true">${escapeHtml(surname(name))}</span>
+    <b aria-hidden="true">${escapeHtml(number || '•')}</b><span aria-hidden="true">${escapeHtml(surname(name))}</span>${playerOpenButton(player,side,escapeHtml)}
   </li>`;
 }
 
@@ -132,11 +138,11 @@ function teamMetaHtml(lineup, name, side, escapeHtml) {
   return `<div class="lp-team ${side}"><i aria-hidden="true"></i><b>${escapeHtml(name)}</b><span>${escapeHtml([formation || 'схема —', coach ? `тренер ${coach}` : ''].filter(Boolean).join(' · '))}</span>${status ? `<small class="lp-status${unconfirmed ? ' is-unconfirmed' : ''}">${escapeHtml(status)}</small>` : ''}</div>`;
 }
 
-function benchHtml(lineup, name, escapeHtml) {
+function benchHtml(lineup, name, escapeHtml,side='home') {
   const subs = Array.isArray(lineup?.substitutes) ? lineup.substitutes.slice(0, 23) : [];
   return `<details class="lp-bench"><summary>${escapeHtml(name)} · запасные · ${subs.length}</summary>
     ${subs.length
-      ? `<ul>${subs.map(player => `<li><b>${escapeHtml(playerNumber(player) || '•')}</b>${escapeHtml(playerName(player))}</li>`).join('')}</ul>`
+      ? `<ul>${subs.map(player => `<li>${playerOpenButton(player,side,escapeHtml,`<b>${escapeHtml(playerNumber(player) || '•')}</b>${escapeHtml(playerName(player))}`)}</li>`).join('')}</ul>`
       : '<p>Запасные в данных не указаны.</p>'}
   </details>`;
 }
@@ -166,7 +172,7 @@ export function lineupPitchViewHtml(lineups, match = {}, { escapeHtml, fallback 
     const hasBench = [home, away].some(lineup => Array.isArray(lineup?.substitutes) && lineup.substitutes.length);
     const empty = `<div class="empty compact-empty lp-empty">${esc(emptyText(match))}</div>`;
     return hasBench
-      ? `<div class="lp-view">${empty}<div class="lp-benches">${benchHtml(home, homeName, esc)}${benchHtml(away, awayName, esc)}</div></div>`
+      ? `<div class="lp-view">${empty}<div class="lp-benches">${benchHtml(home, homeName, esc)}${benchHtml(away, awayName, esc,'away')}</div></div>`
       : empty;
   }
   const homeRows = lineupFormationRows(home);
@@ -184,16 +190,16 @@ export function lineupPitchViewHtml(lineups, match = {}, { escapeHtml, fallback 
   ].join('');
   const missingHalf = (rows, lineup, side) => (rows ? '' : `<p class="lp-half-note ${side}">${esc(lineup?.startXI?.length ? 'Расстановки нет — состав списком ниже' : 'Состав этой команды пока не объявлен')}</p>`);
   // Команда со стартом, но без сетки: её 11 игроков не теряются — списком.
-  const startList = (rows, lineup, name) => (rows || !lineup?.startXI?.length ? '' : `<div class="lp-start-list"><b>${esc(name)} · стартовый состав</b><ul>${lineup.startXI.slice(0, 11).map(player => `<li><b>${esc(playerNumber(player) || '•')}</b>${esc(playerName(player))}</li>`).join('')}</ul></div>`);
+  const startList = (rows, lineup, name,side='home') => (rows || !lineup?.startXI?.length ? '' : `<div class="lp-start-list"><b>${esc(name)} · стартовый состав</b><ul>${lineup.startXI.slice(0, 11).map(player => `<li>${playerOpenButton(player,side,esc,`<b>${esc(playerNumber(player) || '•')}</b>${esc(playerName(player))}`)}</li>`).join('')}</ul></div>`);
   const partial = [home, away].some(lineup => lineup?.quality?.partial);
   const unconfirmed = [home, away].some(lineup => lineupStatusLabel(lineup) === 'состав не подтверждён');
   if (!homeRows && !awayRows) {
     return `<div class="lp-view">
     ${teamMetaHtml(home, homeName, 'home', esc)}${teamMetaHtml(away, awayName, 'away', esc)}
     <p class="data-notice">Источник передал расстановку не для всех игроков — составы показаны списком.</p>
-    ${startList(homeRows, home, homeName)}${startList(awayRows, away, awayName)}
+    ${startList(homeRows, home, homeName)}${startList(awayRows, away, awayName,'away')}
     ${partial ? '<p class="data-notice">⚠️ Источник передал неполный стартовый состав — он не считается подтверждённым.</p>' : unconfirmed ? '<p class="data-notice">⚠️ Состав не подтверждён источником — показан как есть.</p>' : ''}
-    <div class="lp-benches">${benchHtml(home, homeName, esc)}${benchHtml(away, awayName, esc)}</div>
+    <div class="lp-benches">${benchHtml(home, homeName, esc)}${benchHtml(away, awayName, esc,'away')}</div>
   </div>`;
   }
   return `<div class="lp-view">
@@ -204,8 +210,8 @@ export function lineupPitchViewHtml(lineups, match = {}, { escapeHtml, fallback 
       ${missingHalf(awayRows, away, 'away')}${missingHalf(homeRows, home, 'home')}
     </figure>
     ${teamMetaHtml(home, homeName, 'home', esc)}
-    ${startList(homeRows, home, homeName)}${startList(awayRows, away, awayName)}
+    ${startList(homeRows, home, homeName)}${startList(awayRows, away, awayName,'away')}
     ${partial ? '<p class="data-notice">⚠️ Источник передал неполный стартовый состав — он не считается подтверждённым.</p>' : unconfirmed ? '<p class="data-notice">⚠️ Состав не подтверждён источником — показан как есть.</p>' : ''}
-    <div class="lp-benches">${benchHtml(home, homeName, esc)}${benchHtml(away, awayName, esc)}</div>
+    <div class="lp-benches">${benchHtml(home, homeName, esc)}${benchHtml(away, awayName, esc,'away')}</div>
   </div>`;
 }

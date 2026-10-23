@@ -13,6 +13,7 @@ function setup({runtime={},blocked=false,compatibilityBlocked=false,manifestProm
     loadAppManifest:async()=>{calls.push('manifest');return manifestPromise || {runtime};},loadRuntimeStatus:async()=>{calls.push('runtime');},loadProfile:async()=>{calls.push('profile');return profilePromise;},
     loadFavorites:()=>{calls.push('favorites');return new Promise(()=>{});},
     loadMatches:async()=>{calls.push('feed');},loadFavoritePlayers:noop,
+    window:{},playerLaunchIntent:()=>null,activeViewId:()=> 'matchesView',
     applyLaunchIntent:noop,hasDirectLaunchIntent:()=>false,showView:noop,sendProductAction:noop,
     setTimeout:resolve=>resolve(),hideBootGate:()=>calls.push('visible'),scheduleIdle:noop};
   vm.createContext(context);vm.runInContext(code+';globalThis.run=runStartupSequence;',context);

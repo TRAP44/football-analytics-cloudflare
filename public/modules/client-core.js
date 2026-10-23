@@ -29,6 +29,15 @@ export function initTelegramWebApp(scope = globalThis) {
   return tg;
 }
 
+// Only transports Telegram's original signed payload. Authentication and
+// freshness checks remain on the server; initDataUnsafe is never a credential.
+export function telegramInitData(tg,scope=globalThis){
+  for(const read of [()=>tg?.initData,()=>scope?.Telegram?.WebApp?.initData,()=>new URLSearchParams(String(scope?.location?.hash || '').slice(1)).get('tgWebAppData')]){
+    try{const value=read();if(typeof value==='string' && value.length>0 && value.length<=16384 && !/[\r\n\u0000]/.test(value))return value;}catch{}
+  }
+  return '';
+}
+
 export function localDate(offset = 0) {
   const d = new Date();
   d.setDate(d.getDate() + offset);
@@ -238,7 +247,8 @@ export function createApiClient(deps) {
       try {
         const headers = new Headers(options.headers || {});
         headers.set('Content-Type', 'application/json');
-        if (tg?.initData) headers.set('x-telegram-init-data', tg.initData);
+        const initData=telegramInitData(tg);
+        if (initData) headers.set('x-telegram-init-data',initData);
         if (validationSession) headers.set('x-phase5-session', validationSession);
         const { timeoutMs: _timeoutMs, retry: _retry, dedupe: _dedupe, onEvent: _onEvent, ...fetchOptions } = options;
         const {response,data}=await Promise.race([

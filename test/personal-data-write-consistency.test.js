@@ -204,3 +204,27 @@ test('bootstrap profile keeps current auth/quota/preferences but does not read d
   assert.deepEqual(full.body.stats,{favorites:0,favoritePlayers:0,reminders:0});
   assert.equal((await api.apiMe(new Request('https://example.test/api/me?bootstrap=1'),{},null)).status,401);
 });
+
+test('favorite player can be saved from a verified club squad without a fixture; client metadata is ignored',async()=>{
+ const writes=[];
+ const squad={available:true,team:{id:55},players:[{id:777,name:'Canonical Roster Player'}]};
+ const api=apiRuntime({getCache:async key=>key==='team:squad:55:v1'?squad:null,addFavoritePlayer:async(userId,player)=>{writes.push({userId,player});return {player_id:player.id,player_name:player.name,team_id:player.teamId};}});
+ const request=body=>new Request('https://example.test/api/favorite-players',{method:'POST',body:JSON.stringify(body)});
+ const saved=await api.apiFavoritePlayers(request({playerId:777,teamId:55,playerName:'Injected name'}),{}, {id:42});
+ assert.equal(saved.status,200);assert.equal(saved.body.item.playerName,'Canonical Roster Player');
+ assert.deepEqual(writes,[{userId:42,player:{id:777,name:'Canonical Roster Player',teamId:55}}]);
+ for(const body of [{playerId:778,teamId:55},{playerId:777,teamId:56},{playerId:777,teamId:55,fixtureId:'invalid'}]){
+  const result=await api.apiFavoritePlayers(request(body),{}, {id:42});assert.ok(result.status>=400);
+ }
+ const unauth=await api.apiFavoritePlayers(request({playerId:777,teamId:55}),{},null);assert.equal(unauth.status,401);assert.equal(writes.length,1);
+ const expired=apiRuntime({getCache:async()=>null,getStaleCache:async()=>squad});
+ assert.equal((await expired.resolveFavoritePlayerIdentity({playerId:777,teamId:55},{})).status,409);
+});
+
+test('favorite players from pre-match lineups are verified against fixture and team identity',async()=>{
+ const center={match:{fixtureId:999,home:{id:55},away:{id:56}},lineups:{home:{startXI:[{id:777,name:'Starting Player'}],substitutes:[{player:{id:778,name:'Bench Player'}}]}}};
+ const api=apiRuntime({getCache:async key=>key==='match-center:999:v17-event-evidence-rc144' ? center : null});
+ for(const playerId of [777,778])assert.equal((await api.resolveFavoritePlayerIdentity({playerId,teamId:55,fixtureId:999},{})).ok,true);
+ assert.equal((await api.resolveFavoritePlayerIdentity({playerId:777,teamId:56,fixtureId:999},{})).ok,false);
+ assert.equal((await api.resolveFavoritePlayerIdentity({playerId:777,teamId:55,fixtureId:998},{})).ok,false);
+});

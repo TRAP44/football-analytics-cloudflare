@@ -96,7 +96,7 @@ test('RC140 routes xG through the semantic guard before live AI and post-match e
 });
 
 test('RC140 xG quality remains part of the current Match Center contract', () => {
-  assert.match(worker, /match-center:\$\{fixtureId\}:v17-event-evidence-rc144/);
+  assert.match(worker, /baseCacheKey=matchCenterCacheKey\(fixtureId\)/);
   assert.match(worker, /const APP_VERSION = '6\.120\.0-rc144'/);
   assert.match(worker, /const RC_NAME = 'RC144'/);
   assert.match(runtime, /const CLIENT_VERSION = '6\.120\.0-rc144'/);

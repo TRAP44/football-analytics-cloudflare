@@ -236,7 +236,7 @@ test('RC143 gates prematch and live odds before snapshots, movement and model bl
 });
 
 test('RC143 exposes odds quality through Match Center, analysis and production health contracts', () => {
-  assert.match(userDataApiSource,/match-center:\$\{fixtureId\}:v16-availability-quality-rc144/);
+  assert.match(userDataApiSource,/const cacheKey = matchCenterCacheKey\(fixtureId\)/);
   assert.match(worker,/fixture:\$\{fixtureId\}:v17-starting-xi-rc146/);
   assert.match(worker,/analysisVersion:\s*'4\.17\.0-starting-xi'/);
   assert.match(worker,/liveOddsQuality,/);

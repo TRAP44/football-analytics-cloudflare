@@ -41,7 +41,10 @@ test('profile keeps favorite-team management in My Teams without a duplicate Pro
   assert.doesNotMatch(html, /profile-teams-shortcut/);
   assert.match(html, /id="profileFavoriteTeamsBtn"/);
   assert.match(app, /\$\('profileFavoriteTeamsBtn'\)\?\.addEventListener/);
-  assert.match(app, /renderMyTeams\(\);[\s\S]{0,80}showView\('myTeamsView'\)/);
+  const shortcut=app.slice(app.indexOf("$('profileFavoriteTeamsBtn')?.addEventListener"),app.indexOf("$('profileRemindersBtn')?.addEventListener"));
+  assert.match(shortcut, /renderMyTeams\(\)/);
+  assert.match(shortcut, /renderFavoritePlayers\(\)/);
+  assert.match(shortcut, /showView\('myTeamsView'\)/);
 });
 
 test('profile keeps common appearance choices visible and moves rare styling behind disclosure', () => {

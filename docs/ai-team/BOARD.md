@@ -71,15 +71,13 @@
 
 
 
+
 ## На ревью
 
-- [ ] Завершить AI/LIVE выпуск: действующая JSON-модель после выявленной deprecation base8b, фиксированные ошибки провайдера и ограниченные compatibility controls — **Codex** — `codex/match-chat-binding-compat`, продолжение #995–#997; actual39745998241 failed, production25c94ef0 сохранён.
+- [ ] Профиль игрока вне LIVE: состав команды/матча, «Мои игроки», серверное подтверждение сохранения и восстановление Telegram-входа — **Codex** — [PR #999](https://github.com/TRAP44/football-analytics-cloudflare/pull/999), запрос Сергея23октября; local release770/full4577passed, независимое read-only Codex review без блокеров, CI/production впереди.
 
-- [ ] Разговорный AI: поддерживаемый JSON Mode и генерация объяснений с разрешёнными фактами; повторить реальную модель до выпуска — **Codex** — [PR #997](https://github.com/TRAP44/football-analytics-cloudflare/pull/997), `codex/match-chat-structured-replies`, продолжение #995/#996. Actual39680085661 подтвердил LIVE/уточнения/новый счёт, но объяснение отклонено; production остаётся25c94ef0.
 
-- [ ] Завершить выпуск разговорного ассистента после реального model-probe: JSON transport, совместимые фреймы и безопасная диагностика — **Codex** — [PR #996](https://github.com/TRAP44/football-analytics-cloudflare/pull/996), `codex/match-chat-model-protocol`, продолжение #995; failed39676923518, production остаётся25c94ef0, непроверенный deploy остановлен.
 
-- [ ] Разговорный AI для каждого матча, включая LIVE: свежий Match Center, уточнения в рамках матча, постепенный ответ и единые квоты — **Codex** — [PR #995](https://github.com/TRAP44/football-analytics-cloudflare/pull/995), `codex/match-conversational-assistant`, запрос Сергея 21.10.
 
 
 
@@ -182,6 +180,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Разговорный AI до матча и LIVE, включая #995–#998 — **Codex** — [PR #998](https://github.com/TRAP44/football-analytics-cloudflare/pull/998); два actual runs39747728056/39747830998 success, Deploy39748224394 sourcead2a2541/version668e7642, launch136; public manifest и monitor39918182428 подтверждены23октября.
 
 - [x] Собственный вопрос о голах: гарантированно использовать доступную голевую модель — **Codex** — [PR #994](https://github.com/TRAP44/football-analytics-cloudflare/pull/994), `codex/match-goals-question`, продолжение #993/#976. Реальный AI probe прошёл форму/H2H/атаку, но не общий вопрос о голах; direct lookup без inference и квот, прежние guards, контролируемое отсутствие оценки. Выпущено: main25c94ef0, Deploy39647772080/Monitor39648239141/realAI39647171341 success; proof #976 issuecomment-6325715383.
 - [x] Матч: рабочее напоминание за 15 минут, свои вопросы без готовых подсказок и лишней сводки перепроверки — **Codex** — [PR #993](https://github.com/TRAP44/football-analytics-cloudflare/pull/993), `codex/match-reminder-chat-cleanup`. Исправить SQL ISO-даты и восстановление кнопки после ошибки загрузки; расширить факты своих вопросов, сохранить скорость и серверные проверки. Выпущено: main25c94ef0, Deploy39647772080/Monitor39648239141/realAI39647171341 success; proof #976 issuecomment-6325715383.
