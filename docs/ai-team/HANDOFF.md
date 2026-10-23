@@ -14,6 +14,13 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-23 — Codex — Два реальных предстоящих эфира J.LEAGUE
+PR [#1004](https://github.com/TRAP44/football-analytics-cloudflare/pull/1004), ветка `codex/jleague-official-live`. #1003 merged44d7e581 после всех4CI exacthead82796201. Actual40012750842 (RU) нашёл2public/embeddable/upcoming видео канала J.LEAGUE International, scheduled24Oct05:55UTC/08:55МСК. Официальный jleague.jp/en footer+sameAs ведёт на этот канал; закреплён UCmQp6ZaAejJKKkXc_Y_lh1A. Это ручная проверка официальности после research: исходныйartifact честно остаётся channelVerifiedfalse. SPL repeat40012892597 сявнойRU всё ещё0видео; не добавлен.
+
+Конкретные источники6IqOyyLkj90 (Kashima—Kashiwa) и9lzAcSA6zy4 (Vissel—Machida) сопоставлены с официальными страницами102407/102410 и actualguardedprovider40013052102/40013125638. Fixture1556114=290/281, fixture1556120=289/303, league98, **season2027**,24Oct06:00UTC.2027 — значение provider для сезона2026/27, не менять на2026. Approvals RU/KZ/BY по свежейmetadata, validUntil24Oct10UTC; только конкретныеvideoID, без новых URLs/DRM/proxy. Есть точные fixtureEvidence≤48ч для подготовки кеша до первого посетителя, публичныйfreshCenter gate прежний. Подробно docs/MATCH_WATCH_FIRST_LIVE_RU.md. Реальный Telegramplayback не проверен и не объявляется готовым по metadata.
+
+Node22 ci/check/lint/release796/full4608, privileged/secret scan/verifyrelease/worker/Chromium прошли; независимое read-only Codex review сверило actual artifacts и первоисточники, блокеров нет. Осталось: CI→merge/deploy→защищённый Refresh Match Watch с published2→конкретный phoneplayback. Никаких новыхключей/покупок/providerfanout илиSQL/publicchanges. Не закрывать реальное воспроизведение заочно; эфир начнётся только завтра.
+
 ## 2026-10-23 — Codex — Фактический SPL probe и исследование дополнительных каналов
 PR [#1003](https://github.com/TRAP44/football-analytics-cloudflare/pull/1003), ветка `codex/watch-source-discovery`, продолжение #1002. #1002 mergedb552ac78 после exact-head Quality40009625183/CodeQL40009625149/audit40009625130 success; actual protected40010422802success,23октября19:19UTC: существующийkey/channel SPL и точный API-Football1603475/4208/4201/368/2026/24Oct11:30Z подтверждены. **0LIVE/0upcoming видео**, fixturecacheempty. Первый поиск не задавал regionCode, поэтому0не доказывает глобальное отсутствие видео. Анонс завтрашнего показа не является опубликованным видео: manifest оставлен пустым, просмотр не объявлять готовым.3GoogleGET/2search,1FootballGET,2guardrequests,1cacheGET, ни одного sports/user write.
 

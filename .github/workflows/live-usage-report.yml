@@ -26,6 +26,7 @@ on:
         options:
           - fifa
           - sgpremierleague
+          - jleagueinternational
         default: fifa
       watch_fixture_id:
         description: Optional positive fixture ID for one read-only API-Football identity check

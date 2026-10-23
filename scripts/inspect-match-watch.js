@@ -19,7 +19,7 @@ export const WATCH_SOURCE = Object.freeze({
   handle:'fifa',channelId:'UCpcTrCXblq78GZrTUTLWeBw',
   authorityUrl:'https://inside.fifa.com/',channelUrl:'https://www.youtube.com/fifa',
 });
-export const WATCH_SOURCES=Object.freeze({fifa:WATCH_SOURCE,sgpremierleague:Object.freeze({handle:'sgpremierleague',channelId:WATCH_PUBLISHERS.sgpremierleague,authorityUrl:'https://spl.sg/',channelUrl:'https://www.youtube.com/@sgpremierleague'})});
+export const WATCH_SOURCES=Object.freeze({fifa:WATCH_SOURCE,sgpremierleague:Object.freeze({handle:'sgpremierleague',channelId:WATCH_PUBLISHERS.sgpremierleague,authorityUrl:'https://spl.sg/',channelUrl:'https://www.youtube.com/@sgpremierleague'}),jleagueinternational:Object.freeze({handle:'jleagueinternational',channelId:WATCH_PUBLISHERS.jleagueinternational,authorityUrl:'https://www.jleague.jp/en/',channelUrl:'https://www.youtube.com/jleagueinternational'})});
 const COUNTRIES=['RU','KZ','BY','UA','GB','US','DE','FR','ES','IT','BR','AR','SG'];
 const VIDEO_ID=/^[A-Za-z0-9_-]{11}$/;
 const text=(value,max=180)=>typeof value==='string'?value.replace(/[\u0000-\u001f\u007f<>]/g,' ').replace(/\s+/g,' ').trim().slice(0,max):'';
