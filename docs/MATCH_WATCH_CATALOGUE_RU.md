@@ -2,9 +2,9 @@
 
 ## Текущее состояние
 
-YouTube Data API v3 принимает существующий GitHub secret `YOUTUBE_DATA_API_KEY`: защищённый запуск [39956319359](https://github.com/TRAP44/football-analytics-cloudflare/actions/runs/39956319359) подтвердил канал FIFA. Пять найденных upcoming-видео оказались показами записей прошлых матчей. Подтверждённых текущих LIVE-источников в этом запуске нет. Это не ошибка ключа.
+Код просмотра опубликован через #1001 (main b63a83d7, Deploy40006332394, launch138), проверка источников #1002/#1003 выполняется на существующих GitHub keys. В каталог добавляются два проверенных предстоящих эфира J.LEAGUE24октября с08:55МСК, RU/KZ/BY: [источники, матчи и условия проверки](MATCH_WATCH_FIRST_LIVE_RU.md). Наличие одобрения ещё не доказывает успешный deploy, публикацию кеша или воспроизведение в настоящем Telegram: эти этапы проверяются отдельно.
 
-В `src/match-watch-approvals.json` пока пустой каталог. Поэтому пользователь не увидит пустую панель или неработающую кнопку. Код просмотра опубликован через #1001 (main b63a83d7, Deploy40006332394, launch138); пустой каталог и браузерный тест не доказывают доступность видео в Telegram/России. Исследование источников и ограничения: [MATCH_WATCH_SOURCES_RU.md](MATCH_WATCH_SOURCES_RU.md).
+FIFA в проверках вернула только архивные премьеры, SPL —0найденных LIVE/upcoming даже при явнойRU territory. Поэтому они не опубликованы. Пустые и неподтверждённые варианты не отображаются. [Исследование источников и ограничения](MATCH_WATCH_SOURCES_RU.md).
 
 ## Как работает просмотр
 
@@ -62,7 +62,7 @@ CSP разрешает только официальный YouTube iframe и SDK
 
 ## Подключение первого источника
 
-Защищённый **Observe Live Usage** на `main`, `inspect_watch=true`, поддерживает закреплённые `watch_publisher=fifa` и `sgpremierleague`. Официальный сайт [Singapore Premier League](https://spl.sg/) сам ссылается на `@sgpremierleague`; ID канала `UCiJTKr-wja_JVM2dVTYCELA` закреплён в коде. Анонс [5-го тура](https://spl.sg/news/spl-2026-27-matchweek-5-top-three-look-to-extend-unbeaten-starts/) от23октября указывает Young Lions — Balestier Khalsa, 24октября2026 19:30SGT /14:30МСК, YouTube или meWATCH. Это кандидат, ещё не одобренное видео или подтверждение прав для России.
+Защищённый **Observe Live Usage** на `main`, `inspect_watch=true`, поддерживает закреплённые `watch_publisher=fifa`, `sgpremierleague`, `jleagueinternational`. Официальный сайт [Singapore Premier League](https://spl.sg/) сам ссылается на `@sgpremierleague`; ID канала `UCiJTKr-wja_JVM2dVTYCELA` закреплён в коде. Анонс [5-го тура](https://spl.sg/news/spl-2026-27-matchweek-5-top-three-look-to-extend-unbeaten-starts/) от23октября указывает Young Lions — Balestier Khalsa, 24октября2026 19:30SGT /14:30МСК, YouTube или meWATCH. Это кандидат, ещё не одобренное видео или подтверждение прав для России.
 
 `watch_fixture_id` — необязательный точный положительный ID, максимум один запрос `/fixtures?id=…`. Используется существующий relay из доверенного `wrangler.jsonc`, без workflow-параметра URL и без прямого fallback. До запроса проверяются общие quota/cooldown и делается один `claim_provider_request` в том же production minute bucket с консервативным пределом4. Недоступность/неоднозначный результат проверки останавливают provider GET, повторов нет. Это единственная операционная запись лимита: пользовательские и футбольные данные не изменяются. Ключи Google, футбольного API и Supabase остаются раздельными, в артефакте только публичные данные матча и фиксированные коды ошибок.
 

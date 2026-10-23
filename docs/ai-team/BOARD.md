@@ -77,9 +77,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Первый реальный официальный эфир: ограниченное исследование других каналов без отдельного PR на каждый поиск — **Codex** — [PR #1003](https://github.com/TRAP44/football-analytics-cloudflare/pull/1003), `codex/watch-source-discovery`; local full4608/release796, независимое review прошли; read-only candidate не подтверждает права и не публикуется. Конкретное SPL-видео пока не найдено; проверяется явная RU territory вместо неявного default.
+- [ ] Публикация первых2официальных эфиров: Kashima—Kashiwa и Vissel—Machida24Oct08:55МСК — **Codex** — [PR #1004](https://github.com/TRAP44/football-analytics-cloudflare/pull/1004), `codex/jleague-official-live`; local full4608/release796, worker/Chromium и независимое review прошли; pinnedowner+officialfixturepages+actualprovider1556114/1556120 verified, season2027. RU/KZ/BY metadataallowed; реальный Telegramplayback ещё не проверен.
+
 
 
 
@@ -190,6 +192,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Ограниченное исследование источников без публикации — **Codex** — [PR #1003](https://github.com/TRAP44/football-analytics-cloudflare/pull/1003), merged44d7e581 после Quality40012184807/CodeQL40012184799/audit40012184839success. Actual40012750842 нашёл2предстоящих J.LEAGUEvideo дляRU, SPL повтор40012892597 вернул0. Researchнеавтоодобрение.
 
 - [x] Проверка первого кандидата SPL — **Codex** — [PR #1002](https://github.com/TRAP44/football-analytics-cloudflare/pull/1002), mergedb552ac78 после всех4CI, Deploy40010952883success; actual source40010422802: официальный канал и fixture1603475 подтверждены, но0LIVE/0upcoming, поэтому ничего не опубликовано. Общая задача просмотра остаётся открытой.
 
