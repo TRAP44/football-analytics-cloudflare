@@ -37,8 +37,22 @@ export function automaticHighlightsMatch(policy,match,title,publishedAt,now,desc
   return names(match.home).includes(normalized(parts[1]))&&names(match.away).includes(normalized(parts[2]));
 }
 function highlightsDescriptionEvidence(match,description){
-  if(typeof description!=='string'||!description||description.length>6000||! /\bJ1 League\b/i.test(description)||/\bJ[23] League\b|\bLevain Cup\b|\b(?:archive|throwback|classic match|retro|on this day|U-?\d{2}|women|youth)\b/i.test(description))return false;
+  if(typeof description!=='string'||!description||description.length>6000||/\bJ[23] League\b|\bLevain Cup\b|\b(?:archive|throwback|classic match|retro|on this day|U-?\d{2}|women|youth)\b/i.test(description))return false;
   const split=`${match.season-1}/${String(match.season).slice(-2)}`;
+  // Observed protected metadata 40136213538. The first sentence independently
+  // identifies both clubs, season and round; generic footer advertising cannot.
+  const official=description.split(/\r?\n/,1)[0].match(/^Highlights from Matchweek ([1-9]\d?) in the (20\d{2})-(\d{2}) J\.League between ([^|]+) and ([^|]+)\.$/);
+  const canonicalRound=typeof match.round==='string'?match.round.match(/^(?:Regular Season|Matchweek)\s*-?\s*(\d+)$/):null;
+  if(official){
+    if(!canonicalRound||Number(official[1])!==Number(canonicalRound[1])||`${official[2]}/${official[3]}`!==split||!names(match.home).includes(normalized(official[4]))||!names(match.away).includes(normalized(official[5])))return false;
+    const seasons=[...new Set((description.match(/\b20\d{2}[-/]\d{2}\b/g)||[]).map(value=>value.replace('-','/')))];
+    const rounds=[...new Set([...description.matchAll(/\b(?:Matchweek|MW)\s*([1-9]\d?)\b/gi)].map(item=>Number(item[1])))];
+    if(seasons.length!==1||seasons[0]!==split||rounds.length!==1||rounds[0]!==Number(canonicalRound[1]))return false;
+    const dates=[...description.matchAll(/\bMatch date:\s*(20\d{2}-\d{2}-\d{2})\b/gi)];
+    if(dates.length)return false; // No contradictory additional match-date claims.
+    return true;
+  }
+  if(! /\bJ1 League\b/i.test(description))return false;
   const seasons=[...new Set(description.match(/\b20\d{2}\/\d{2}\b/g)||[])];
   const rounds=[...new Set([...description.matchAll(/\b(?:Matchweek|MW)\s*([1-9]\d?)\b/gi)].map(item=>Number(item[1])))];
   const round=typeof match.round==='string'?match.round.match(/^(?:Regular Season|Matchweek)\s*-?\s*(\d+)$/):null;

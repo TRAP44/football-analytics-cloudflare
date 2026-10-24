@@ -29,7 +29,9 @@ test('remote harness denies unauthenticated probes before any inference',async()
   assert.equal(summarizeChatProbe({available:true,source:'preset',items:[{text:'Home FC'}]}),false);
 });
 
-test('conversational remote fixture exercises live answers, changed score, context, missing roster and generated explanation',async()=>{
+test('conversational remote fixture exercises live answers, changed score, context, missing roster and generated explanation',async(t)=>{
+  // The isolated admission fixture must not depend on the runner's hour edge.
+  t.mock.method(Date,'now',()=>Date.parse('2026-10-24T21:59:59Z'));
   const env={PROBE_NONCE:'local-conversation-fixture',AI:{run:async(_model,input)=>{
     const question=input.messages.at(-1).content;
     let paragraphs;

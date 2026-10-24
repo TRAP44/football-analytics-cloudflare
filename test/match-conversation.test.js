@@ -6,6 +6,7 @@ import {validateChatParagraph,consumeChatModel,createChatParagraphReader,matchCh
 import {readMatchChatEvents} from '../public/modules/client-core.js';
 import {conversationHtml} from '../public/modules/match-questions.js';
 
+const fixtureNow=Date.parse('2026-10-21T12:30:00Z');
 const trust={confidenceBearing:true,stale:false,provenanceState:'verified',fetchedAt:'2026-10-21T12:00:00Z'};
 const center=()=>({mode:'live',generatedAt:'2026-10-21T12:00:00Z',match:{fixtureId:77,home:{name:'Home FC'},away:{name:'Away FC'},score:{home:1,away:0},elapsed:65,statusLabel:'Второй тайм',referee:'Official'},dataFreshness:{match:trust,statistics:trust,events:trust,lineups:trust},availability:{statistics:true,events:true,lineupsTrusted:true},statistics:{items:[{key:'Shots on Goal',label:'Удары в створ',home:6,away:2}]},events:[{side:'home',minute:64,player:'Home Player',label:'Гол'}],lineups:{home:{startXI:[{name:'Home Player'}]}},lineupQuality:{bothConfirmed:false}});
 const paragraph={kind:'answer',text:'Home FC ведёт 1:0.',factIds:['score']};
@@ -18,7 +19,7 @@ const sse=text=>new ReadableStream({start(controller){
 function fixture(overrides={},config={}){
   const calls={model:[],rpc:[],cache:0,center:0};
   let snapshot=center();
-  const deps={json:(data,status=200)=>Response.json(data,{status}),getCache:async()=>{calls.cache++;return {match:{fixtureId:77},probabilities:{home:54,draw:25,away:21}};},getStaleCache:async()=>null,setCache:async()=>true,getHistory:async()=>[],userHasAnalyzedFixture:async()=>false,hasSupabase:()=>true,supaSelectMany:async()=>[],supaRpc:async(_cfg,name,args)=>{calls.rpc.push(args.p_bucket_key);return {allowed:true,count:1};},loadRuntimeControls:async()=>({value:{analysisEnabled:true,aiEnabled:true}}),loadMatchContext:async()=>{calls.center++;return structuredClone(snapshot);},...overrides};
+  const deps={clock:()=>fixtureNow,json:(data,status=200)=>Response.json(data,{status}),getCache:async()=>{calls.cache++;return {match:{fixtureId:77},probabilities:{home:54,draw:25,away:21}};},getStaleCache:async()=>null,setCache:async()=>true,getHistory:async()=>[],userHasAnalyzedFixture:async()=>false,hasSupabase:()=>true,supaSelectMany:async()=>[],supaRpc:async(_cfg,name,args)=>{calls.rpc.push(args.p_bucket_key);return {allowed:true,count:1};},loadRuntimeControls:async()=>({value:{analysisEnabled:true,aiEnabled:true}}),loadMatchContext:async()=>{calls.center++;return structuredClone(snapshot);},...overrides};
   const cfg={botToken:'local-test-secret',matchQuestionsEnabled:true,matchQuestionsDailyLimit:500,matchQuestionsUserHourlyLimit:10,workersAi:{run:async(model,input)=>{calls.model.push(input);return sse(JSON.stringify(paragraph)+'\n');}},...config};
   const rt=createMatchQuestionRuntime(deps);
   return {calls,cfg,setCenter:value=>{snapshot=value;},ask:(body={},user={id:1})=>rt.apiMatchQuestion(new Request('https://test.invalid/api/match-question',{method:'POST',body:JSON.stringify({fixtureId:77,mode:'conversation',question:'Как сейчас идёт игра?',...body})}),cfg,user)};
@@ -80,7 +81,7 @@ test('actual handler answers in LIVE without full-analysis ownership and refresh
 });
 
 test('cross-account or fixture dialogue is rejected before data, quotas and inference',async()=>{
-  const f=fixture();const token=await issueChatContext(f.cfg.botToken,2,77,[],Date.now());
+  const f=fixture();const token=await issueChatContext(f.cfg.botToken,2,77,[],fixtureNow);
   const response=await f.ask({context:token});assert.equal((await response.json()).reason,'context_expired');
   assert.equal(f.calls.model.length,0);assert.equal(f.calls.rpc.length,0);assert.equal(f.calls.center,0);
 });

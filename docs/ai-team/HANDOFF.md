@@ -14,6 +14,16 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-25 — Codex — Наблюдавшийся полный формат описания J.LEAGUE и официальный тур
+PR [#1013](https://github.com/TRAP44/football-analytics-cloudflare/pull/1013), ветка `codex/observed-jleague-highlight-format`. #1012 mergedcb22fa68, PRQuality40135850014/CodeQL40135849985success. ActualRefresh40136213538,25Oct00:53МСК: cached/1GoogleGET/published2replays,0highlights, missingFixture2; впервые полученыactualdescriptions, неsynthetic. Перваястрока `Highlights from Matchweek 12 in the 2026-27 J.League between HOME and AWAY.`. Недельнаясборка имеетдругоеописание/название и невключена.
+
+Теперь допуск exactfirstsentence, orderedclubsповторяютсяизcanonicalfixture, season2026-27→canonical2027, **обязательный**canonicalRound12; genericfooter/непервые/contradicting date/season/round иarchive/category не принимаются. Existing2replay canonical snapshots дополненыround12 по **независимымофициальным** jleague.jp/en/match/j1/2026/102407/ и102410/: title24Oct2026J1exactclubs, decodedserverdata `section:Matchweek12`. roundAuthorityUrl+roundObservedAt указаныотдельноотпрежнегоAPI-Footballidentityevidence, тур не выведенизYouTube. Fallback snapshots готовятcache, publicAPIвсёещётребуетfreshindependentcenterсround12. НовыхFootball/Googlecalls/keys/SQL/publicchanges нет.
+
+39focused/release840/full4654/check/lint/secret/privileged/workerpassed; independentCodexreview сверилоactualartifacts/officialHTML безmaterialblockers. CI проверяется. CI40136599266 остановилсянасуществующихchatfixtures, wallclock21:59:59UTC: dailybudget bydesign failclosedвпоследние5секчаса; matchertestsнепадали. Fixedclock вisolatedconversationfixtures +sameclockreceipt устраняютнедетерминизм; remoteharnessregression принудительнозапускаетсяприDate.now21:59:59. Productionbudgetguard/limitsнеизменны. Эторазблокировкапровероктекущеговыпуска, нефичаAIчата.
+
+Обязательнозавершитьmerge→actualprotectedrefresh сkindhighlights publication>0→mainQuality/Deploy/publicmanifestproof. Ниодинпредыдущийartifact не доказывалпубликациюкороткогообзора; невыдаватьreplaycountsзаhighlights инеутверждатьphysicalTelegramplayback.
+
+
 ## 2026-10-25 — Codex — Привязка наблюдавшихся заголовков обзоров по описанию
 PR [#1012](https://github.com/TRAP44/football-analytics-cloudflare/pull/1012), ветка `codex/highlights-description-evidence`. Продолжение реального source admission #1011, не объявлять обзоры готовыми по syntheticтестам. #1011 merged449c3d6d, PRQuality40134727840/CodeQL40134727713, MainQuality40135090349/Deploy40135343229 success. ActualprotectedRefresh40135092840,24Oct21:38:22UTC (25Oct00:38МСК): uploads_searched,2GoogleGET, published2replay/rejected0, **0highlights**. Найдены SScpVbbDmqc/Gamba-Kyoto,2lrJR1gD1cA/Tokyo-Avispa,-n76-TIdoCY/Kobe-Machida,SJ4BOFMymDw/Kashima-Kashiwa; заголовки `PROMO | HOME vs AWAY HIGHLIGHTS | J.League` не содержатseason/round. Публичный officialjleague footerсверен, weeklycompilation не привязываласькматчам.
 
