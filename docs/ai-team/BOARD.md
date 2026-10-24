@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Оставлять официальные завершённые эфиры как «Полная запись» в Mini App — **Codex** — `codex/official-match-replays`; автоматический переход LIVE→replay, свежая доступность/страны, точный матч.
 
 
 
@@ -84,6 +83,8 @@
 
 
 ## На ревью
+
+- [ ] Официальные завершённые эфиры как «Полная запись» в Mini App — **Codex** — [PR #1008](https://github.com/TRAP44/football-analytics-cloudflare/pull/1008), `codex/official-match-replays`; live→replay до7д,24focused/release807/full4621/nativebrowser прошли, independentreview без blockers; actualtwoFT sourcesverified, CI→deploy→publication ещё проверяются.
 
 - [ ] Разблокировать выпуск #1006: security patch undici7.30.1 для ночных advisories — **Codex** — [PR #1007](https://github.com/TRAP44/football-analytics-cloudflare/pull/1007), `codex/undici-security-7301`; audit0/release804/full4618, independent review чистый; exact override+lock+securityfloor. Actual automation searched→cached и отказ завершённым эфирам подтверждены; ожидается CI→production.
 
