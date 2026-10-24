@@ -19,7 +19,9 @@ PR [#1013](https://github.com/TRAP44/football-analytics-cloudflare/pull/1013), �
 
 Теперь допуск exactfirstsentence, orderedclubsповторяютсяизcanonicalfixture, season2026-27→canonical2027, **обязательный**canonicalRound12; genericfooter/непервые/contradicting date/season/round иarchive/category не принимаются. Existing2replay canonical snapshots дополненыround12 по **независимымофициальным** jleague.jp/en/match/j1/2026/102407/ и102410/: title24Oct2026J1exactclubs, decodedserverdata `section:Matchweek12`. roundAuthorityUrl+roundObservedAt указаныотдельноотпрежнегоAPI-Footballidentityevidence, тур не выведенизYouTube. Fallback snapshots готовятcache, publicAPIвсёещётребуетfreshindependentcenterсround12. НовыхFootball/Googlecalls/keys/SQL/publicchanges нет.
 
-39focused/release840/full4654/check/lint/secret/privileged/workerpassed; independentCodexreview сверилоactualartifacts/officialHTML безmaterialblockers. CI проверяется. Обязательнозавершитьmerge→actualprotectedrefresh сkindhighlights publication>0→mainQuality/Deploy/publicmanifestproof. Ниодинпредыдущийartifact не доказывалпубликациюкороткогообзора; невыдаватьreplaycountsзаhighlights инеутверждатьphysicalTelegramplayback.
+39focused/release840/full4654/check/lint/secret/privileged/workerpassed; independentCodexreview сверилоactualartifacts/officialHTML безmaterialblockers. CI проверяется. CI40136599266 остановилсянасуществующихchatfixtures, wallclock21:59:59UTC: dailybudget bydesign failclosedвпоследние5секчаса; matchertestsнепадали. Fixedclock вisolatedconversationfixtures +sameclockreceipt устраняютнедетерминизм; remoteharnessregression принудительнозапускаетсяприDate.now21:59:59. Productionbudgetguard/limitsнеизменны. Эторазблокировкапровероктекущеговыпуска, нефичаAIчата.
+
+Обязательнозавершитьmerge→actualprotectedrefresh сkindhighlights publication>0→mainQuality/Deploy/publicmanifestproof. Ниодинпредыдущийartifact не доказывалпубликациюкороткогообзора; невыдаватьreplaycountsзаhighlights инеутверждатьphysicalTelegramplayback.
 
 
 ## 2026-10-25 — Codex — Привязка наблюдавшихся заголовков обзоров по описанию

@@ -7,6 +7,7 @@ import {MATCH_CHAT_FAILURE_CODES,MATCH_CHAT_MODEL,classifyChatInferenceFailure} 
 // Fixed sports fixtures + in-memory admission; real Workers AI inference only.
 // No production users, Telegram identities, DB reads or provider requests.
 export async function probeMatchConversation(env){
+  const clock=()=>Date.parse('2026-10-21T12:30:00Z');
   const fixtureId=77,trust={confidenceBearing:true,stale:false,provenanceState:'verified',fetchedAt:new Date().toISOString()};
   let center={mode:'live',generatedAt:trust.fetchedAt,match:{fixtureId,home:{name:'Home FC'},away:{name:'Away FC'},score:{home:1,away:0},elapsed:65,statusLabel:'Второй тайм'},dataFreshness:{match:trust,statistics:trust},availability:{statistics:true},statistics:{items:[{label:'Удары в створ',home:6,away:2}]}};
   const analysis={match:center.match,probabilities:{home:54,draw:25,away:21},recentForm:{home:{overall:{sample:5,wins:4,draws:1,losses:0}},away:{overall:{sample:5,wins:1,draws:1,losses:3}}}};
@@ -28,11 +29,11 @@ export async function probeMatchConversation(env){
     else protocol.otherResults++;
     return result;
   }}};
-  const rt=createMatchQuestionRuntime({json:(value,status=200)=>Response.json(value,{status}),getCache:async()=>analysis,getCacheEntry:async()=>({payload:analysis}),getStaleCache:async()=>null,setCache:async()=>true,getHistory:async()=>[],userHasAnalyzedFixture:async()=>false,hasSupabase:()=>true,supaSelectMany:async()=>[],supaRpc:async()=>({allowed:true,count:1}),loadRuntimeControls:async()=>({value:{analysisEnabled:true,aiEnabled:true}}),loadMatchContext:async()=>structuredClone(center),recordOpsEvent:async(_cfg,event)=>{
+  const rt=createMatchQuestionRuntime({clock,json:(value,status=200)=>Response.json(value,{status}),getCache:async()=>analysis,getCacheEntry:async()=>({payload:analysis}),getStaleCache:async()=>null,setCache:async()=>true,getHistory:async()=>[],userHasAnalyzedFixture:async()=>false,hasSupabase:()=>true,supaSelectMany:async()=>[],supaRpc:async()=>({allowed:true,count:1}),loadRuntimeControls:async()=>({value:{analysisEnabled:true,aiEnabled:true}}),loadMatchContext:async()=>structuredClone(center),recordOpsEvent:async(_cfg,event)=>{
     const [code,shape,frame,frames,done,accepted]=String(event.message).split('|');
     if(MATCH_CHAT_FAILURE_CODES.includes(code) && protocol.firstFailure==='none')Object.assign(protocol,{firstFailure:code,resultShape:['json','readable','other'].includes(shape)?shape:'none',frameShape:['none','response','delta','metadata'].includes(frame)?frame:'none',frames:Math.min(10000,Math.max(0,Number(frames)||0)),doneSeen:done==='1',paragraphsAccepted:Math.min(3,Math.max(0,Number(accepted)||0))});
   }});
-  const receipt=await issueMatchQuestionAccess(env.PROBE_NONCE,1,fixtureId);
+  const receipt=await issueMatchQuestionAccess(env.PROBE_NONCE,1,fixtureId,clock());
   const timings=[];
   const ask=async(question,context=null)=>{
     const started=performance.now(),events=[];
