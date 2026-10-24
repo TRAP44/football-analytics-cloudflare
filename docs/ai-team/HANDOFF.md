@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-24 — Codex — Просмотр без спойлеров и сохранение позиции
-Ветка `codex/watch-without-spoilers`. Предыдущий #1008 действительно выпущен: mainb5a8bcae, MainQuality40085770897/CodeQL40085770885/Deploy40086039764 success, activeCF72ffa144-3f7f-41c3-87c9-2f78bb4e9288,25postdeploychecks и publicmanifestSHA verified. ActualRefresh40085803491 и ordinarywatch40085861964 опубликовали2replay/rejected0/1GoogleGET; речь о publication, не phoneplayback.
+PR [#1009](https://github.com/TRAP44/football-analytics-cloudflare/pull/1009), ветка `codex/watch-without-spoilers`. Предыдущий #1008 действительно выпущен: mainb5a8bcae, MainQuality40085770897/CodeQL40085770885/Deploy40086039764 success, activeCF72ffa144-3f7f-41c3-87c9-2f78bb4e9288,25postdeploychecks и publicmanifestSHA verified. ActualRefresh40085803491 и ordinarywatch40085861964 опубликовали2replay/rejected0/1GoogleGET; речь о publication, не phoneplayback.
 
 Новая задача: «Без спойлеров» скрывает целые result-bearing panels/inert и другие матчевые экраны, сохраняет доступ к официальному плееру и explicitoff/return banner. Защита3ч, послеexpiryне раскрываетданные автоматически, предлагает продлить; page reload восстанавливает тольконеистёкшую сессию. Pause либоmin30/60/90сек отfirst server discovery, не точная секунда отправки/синхронизациявидео; Telegraminflight неотзывается. Goal markers4ч дают pause/no backlog и minimumdelay доclaim. Табло send/edit и postmatchreturn recheck targetsession доотправки/claim, deferredboard не удаляется. Ошибкиcontrolstate откладываютsend; существующийdeliveryownership/dedupe/paidplan неизменён. Новых Football запросов/ключей/SQL нет.
 
