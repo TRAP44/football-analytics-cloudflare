@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-25 — Codex — Наблюдавшийся полный формат описания J.LEAGUE и официальный тур
-PR: `codex/observed-jleague-highlight-format`. #1012 mergedcb22fa68, PRQuality40135850014/CodeQL40135849985success. ActualRefresh40136213538,25Oct00:53МСК: cached/1GoogleGET/published2replays,0highlights, missingFixture2; впервые полученыactualdescriptions, неsynthetic. Перваястрока `Highlights from Matchweek 12 in the 2026-27 J.League between HOME and AWAY.`. Недельнаясборка имеетдругоеописание/название и невключена.
+PR [#1013](https://github.com/TRAP44/football-analytics-cloudflare/pull/1013), ветка `codex/observed-jleague-highlight-format`. #1012 mergedcb22fa68, PRQuality40135850014/CodeQL40135849985success. ActualRefresh40136213538,25Oct00:53МСК: cached/1GoogleGET/published2replays,0highlights, missingFixture2; впервые полученыactualdescriptions, неsynthetic. Перваястрока `Highlights from Matchweek 12 in the 2026-27 J.League between HOME and AWAY.`. Недельнаясборка имеетдругоеописание/название и невключена.
 
 Теперь допуск exactfirstsentence, orderedclubsповторяютсяизcanonicalfixture, season2026-27→canonical2027, **обязательный**canonicalRound12; genericfooter/непервые/contradicting date/season/round иarchive/category не принимаются. Existing2replay canonical snapshots дополненыround12 по **независимымофициальным** jleague.jp/en/match/j1/2026/102407/ и102410/: title24Oct2026J1exactclubs, decodedserverdata `section:Matchweek12`. roundAuthorityUrl+roundObservedAt указаныотдельноотпрежнегоAPI-Footballidentityevidence, тур не выведенизYouTube. Fallback snapshots готовятcache, publicAPIвсёещётребуетfreshindependentcenterсround12. НовыхFootball/Googlecalls/keys/SQL/publicchanges нет.
 

@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Допустить фактически проверенное описание J.LEAGUE и сохранить подтверждённый 12-й тур двух первых матчей — **Codex** — `codex/observed-jleague-highlight-format`; actual40136213538 + officialmatchpages102407/102410, no guessedround.
 
 
 
@@ -89,6 +88,8 @@
 
 
 ## На ревью
+
+- [ ] Фактический формат описания J.LEAGUE и официальный 12-й тур первых матчей — **Codex** — [PR #1013](https://github.com/TRAP44/football-analytics-cloudflare/pull/1013), `codex/observed-jleague-highlight-format`; actualGoogle+officialfixturepages, 39focused/release840/full4654/independentreview passed; ждёмCI→positivepublication→deployproof.
 
 - [ ] Привязка наблюдавшихся обзоров по независимым данным матча в описании — **Codex** — [PR #1012](https://github.com/TRAP44/football-analytics-cloudflare/pull/1012), `codex/highlights-description-evidence`; actualtitle+matchspecificdesc, archive/category/promotion guards, release839/full4653/38focused/independentreview passed; actualpositivepublication не подтверждена.
 
