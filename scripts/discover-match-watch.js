@@ -86,14 +86,14 @@ export async function discoverMatchWatch({readCache,writeCache,youtube,approvals
     const policy=policies.find(item=>item.channelId===video.snippet?.channelId);
     if(!policy)continue;
     const candidates=[...matches.values()].flatMap(({match,observedAt})=>{
-      const highlight=automaticHighlightsMatch(policy,match,video.snippet.title,video.snippet.publishedAt,now)&&automaticHighlightsEvidence(video.contentDetails?.duration,video.snippet.liveBroadcastContent,video.liveStreamingDetails);
+      const highlight=automaticHighlightsMatch(policy,match,video.snippet.title,video.snippet.publishedAt,now,video.snippet.description)&&automaticHighlightsEvidence(video.contentDetails?.duration,video.snippet.liveBroadcastContent,video.liveStreamingDetails);
       const kind=highlight?'highlights':match.finished?'replay':'live';
       return highlight||automaticWatchMatch(policy,match,video.snippet.title,video.liveStreamingDetails?.scheduledStartTime,now,kind)?[{match,observedAt,kind}]:[];
     });
     if(candidates.length!==1){
       report.ambiguousOrUnmatched=(report.ambiguousOrUnmatched||0)+1;
       // Bounded public research evidence; never an approval or a published link.
-      if(/highlights/i.test(video.snippet?.title||'')&&(report.unmatchedHighlights||=[]).length<6)report.unmatchedHighlights.push({videoId:video.id,title:String(video.snippet.title).slice(0,220),publishedAt:video.snippet.publishedAt||null});
+      if(/highlights/i.test(video.snippet?.title||'')&&(report.unmatchedHighlights||=[]).length<6)report.unmatchedHighlights.push({videoId:video.id,title:String(video.snippet.title).slice(0,220),publishedAt:video.snippet.publishedAt||null,description:String(video.snippet.description||'').slice(0,2000),duration:video.contentDetails?.duration||null});
       continue;
     }
     if(automatic.length>=20)break;

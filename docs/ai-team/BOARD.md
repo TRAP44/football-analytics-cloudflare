@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Завершить привязку реально найденных обзоров через независимые сведения в описании — **Codex** — `codex/highlights-description-evidence`; actual40135092840 нашёл4обзора, strictmatcher невыдалихбезseason/round.
+
 
 
 

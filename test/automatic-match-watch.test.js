@@ -247,3 +247,30 @@ test('separately scheduled live search retains cached upload IDs until the next 
  const h=harness();h.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-60001),payload:{version:1,attemptedAt:iso(-WATCH_DISCOVERY_INTERVAL),uploadsAttemptedAt:iso(-60000),uploadIds:[highlight.id],videoIds:[highlight.id],bindings:[]}});
  h.setVideos([highlight]);h.setSearchResults([]);await h.run();assert.ok(h.cache.get(WATCH_DISCOVERY_KEY).payload.videoIds.includes(highlight.id));assert.equal(h.calls.filter(c=>c.url.pathname.endsWith('/playlistItems')).length,0);
 });
+
+
+const observedHighlight={...highlight,snippet:{...highlight.snippet,title:'FIVE GOAL THRILLER! 😱 | Kashima Antlers vs Kashiwa Reysol HIGHLIGHTS | J.League',description:'Highlights from Matchweek 10 of the 2026/27 J1 League.'}};
+test('observed official title requires independent season and round evidence in its description',async()=>{
+ const h=harness();h.setVideos([observedHighlight]);h.setMatches([finished]);h.setSearchResults([]);await h.run(15*3600000);
+ const payload=h.cache.get(watchCacheKey(match.fixtureId)).payload;assert.equal(payload.items[0].kind,'highlights');assert.equal(payload.items[0].videoDescription,observedHighlight.snippet.description);
+ const options={now:now+15*3600000,approvals:[]};assert.equal(validatedWatchOptions(finished,payload,options).length,1);
+ for(const description of ['', 'Subscribe for the latest highlights.','Uploaded on 2026-10-24','Matchweek 1 of the 2026/27 J1 League','Matchweek 10 of the 2025/26 J1 League','Matchweek 10 and Matchweek 1, 2026/27 J1 League','Matchweek 10 of the 2026/27 J2 League','Matchweek 10 of the 2026/27 J1 League; Match date: 2025-10-24']){
+  const bad=structuredClone(payload);bad.items[0].videoDescription=description;assert.equal(validatedWatchOptions(finished,bad,options).length,0,description);
+ }
+});
+test('an explicit match date in an official description can establish the meeting without inventing a round',()=>{
+ const p=WATCH_POLICIES[0],time=now+15*3600000,title=observedHighlight.snippet.title,published=highlight.snippet.publishedAt;
+ assert.equal(automaticHighlightsMatch(p,{...finished,round:undefined},title,published,time,'J1 League. Match date: 2026-10-24'),true);
+ for(const description of ['Uploaded on 2026-10-24','Date: 2026-10-24','Match date: 2025-10-24','Match date: 2026-10-24; Match date: 2026-10-25','Match date: 2026-10-24; Matchweek 1; 2026/27'])assert.equal(automaticHighlightsMatch(p,finished,title,published,time,description),false,description);
+});
+test('observed title parsing still requires exact clubs and rejects weekly compilations, added categories or arbitrary suffixes',()=>{
+ const p=WATCH_POLICIES[0],time=now+15*3600000,published=highlight.snippet.publishedAt,description=observedHighlight.snippet.description;
+ for(const title of [observedHighlight.snippet.title.replace('Antlers','Antlers Women'),observedHighlight.snippet.title+' Archive','Weekly Highlights Show - Matchweek 10 | J.League 2026/27',observedHighlight.snippet.title.replace('Kashima Antlers vs Kashiwa Reysol','Kashiwa Reysol vs Kashima Antlers')])assert.equal(automaticHighlightsMatch(p,finished,title,published,time,description),false,title);
+});
+
+test('archive/category promotional prefixes and generic advertisements cannot substitute for match-specific evidence',()=>{
+ const p=WATCH_POLICIES[0],time=now+15*3600000,published=highlight.snippet.publishedAt,description=observedHighlight.snippet.description;
+ for(const prefix of ['ARCHIVE 2020','THROWBACK','CLASSIC MATCH','WOMEN’S MATCH','U21 YOUTH'])assert.equal(automaticHighlightsMatch(p,finished,prefix+' | Kashima Antlers vs Kashiwa Reysol HIGHLIGHTS | J.League',published,time,description),false,prefix);
+ assert.equal(automaticHighlightsMatch(p,finished,observedHighlight.snippet.title,published,time,'Watch J1 League live: Matchweek 10 of the 2026/27 season.'),false);
+ assert.equal(automaticHighlightsMatch(p,finished,observedHighlight.snippet.title,published,time,'ARCHIVE. '+description),false);
+});
