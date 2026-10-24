@@ -14,6 +14,14 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-24 — Codex — Непрерывный просмотр при обновлении каталога
+PR [#1010](https://github.com/TRAP44/football-analytics-cloudflare/pull/1010), ветка `codex/watch-background-revalidation`. Предыдущий #1009 действительно выпущен: main1c0a735a, MainQuality40095807486/CodeQL40095807543/Deploy40096094053 success, CFversioncab7773e-f2d2-4bbb-8168-735a402fa5ca, launch139, publicmanifest SHA и25postdeploychecks проверены.
+
+Устранён reset видео при истечении каталога: cache-only фоновая проверка обычно60сек, ближе expiry15сек, без Google/Football запросов на зрителя. Для того же разрешённого videoURL/country сохраняются iframe/SDK, позиция и целый privacy control DOM с несохранённым draft. Новый expiry принимается только из свежего ответа. Hard-expiry timer независим от HTTP, transport failure не продлевает доступ; empty/revoked/embed:false/replacement останавливают видео, recovery не autoplay. Страна/fixture/navigation teardown и abort-ignoring stale response защищены; возврат из suspended page проверяет срок синхронно до сети. Режим без спойлеров не выключается при отзыве видео. Frontendlaunch140/точные revision contracts обновлены.
+
+Node22 ci/check/lint/release825/full4639 passed, audit0, privileged/secret scan/verifyrelease/workerdryrun. 7 deterministic deadline/race tests; nativeChromium actualDOM+HTTP+actualAPI подтвердил identity iframe/details через refresh, sourcewithdrawal/empty/recovery без autoplay, остальные country/privacy/resume/app сценарии и320/390/900. Независимое read-only **Codex**, не Claude review без material blockers; focused22/22 до добавления suspended-page regression. Synthetic SDK не подтверждает actual Telegram phoneplayback. Следующие обязательные шаги: exact-headCI→merge→mainQuality→Deploy→publicmanifest/asset proof; реальные test messages людям не отправлять.
+
+
 ## 2026-10-24 — Codex — Просмотр без спойлеров и сохранение позиции
 PR [#1009](https://github.com/TRAP44/football-analytics-cloudflare/pull/1009), ветка `codex/watch-without-spoilers`. Предыдущий #1008 действительно выпущен: mainb5a8bcae, MainQuality40085770897/CodeQL40085770885/Deploy40086039764 success, activeCF72ffa144-3f7f-41c3-87c9-2f78bb4e9288,25postdeploychecks и publicmanifestSHA verified. ActualRefresh40085803491 и ordinarywatch40085861964 опубликовали2replay/rejected0/1GoogleGET; речь о publication, не phoneplayback.
 

@@ -83,7 +83,10 @@
 
 
 
+
 ## На ревью
+
+- [ ] Непрерывный просмотр при обновлении каталога — **Codex** — [PR #1010](https://github.com/TRAP44/football-analytics-cloudflare/pull/1010), `codex/watch-background-revalidation`; launch140, same-player renewal, independent expiry/revocation, no autoplay, privacy drafts. Localrelease825/full4639/nativebrowser и independent Codexreview прошли; CI/deploy проверяются.
 
 - [ ] Режим просмотра без спойлеров и продолжение записи — **Codex** — [PR #1009](https://github.com/TRAP44/football-analytics-cloudflare/pull/1009), `codex/watch-without-spoilers`; launch139, separate versioned watchingstate, min-goaldelay/pause, board/result guards, resume/startover. Localrelease818/full4632/nativebrowser+independentreview прошли; CI/deploy ещё проверяются.
 
