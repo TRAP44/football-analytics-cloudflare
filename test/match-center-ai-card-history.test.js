@@ -141,7 +141,7 @@ test('leaving match view disposes optional video immediately without cancelling 
 
 test('opening another fixture immediately clears video ownership even before its center arrives',()=>{
  const prepare=block(app,'function prepareMatchWatchTarget','async function mountMatchWatchPanel');
- const scope=new Function(`let matchWatchFixture=999;let disposed=0;const matchWatchPanel={dispose:()=>disposed++};${prepare};return {prepareMatchWatchTarget,read:()=>({fixture:matchWatchFixture,disposed})};`)();
+ const scope=new Function(`let matchWatchFixture=999;let disposed=0;const watchExperience={prepare:()=>{}};const matchWatchPanel={dispose:()=>disposed++};${prepare};return {prepareMatchWatchTarget,read:()=>({fixture:matchWatchFixture,disposed})};`)();
  scope.prepareMatchWatchTarget(999);assert.deepEqual(scope.read(),{fixture:999,disposed:0});
  scope.prepareMatchWatchTarget(1000);assert.deepEqual(scope.read(),{fixture:0,disposed:1});
 });

@@ -1,3 +1,4 @@
+import {watchingFixture} from './watch-session.js';
 export function createPostMatchReturnRuntime(deps = {}) {
   const {
     APP_VERSION,
@@ -8,6 +9,7 @@ export function createPostMatchReturnRuntime(deps = {}) {
     fixtureIdentity,
     freeQuotaHealthy,
     getCache,
+    getWatchSession,
     getCacheEntry,
     hasSupabase,
     loadProviderFixturesForDate,
@@ -262,6 +264,7 @@ export function createPostMatchReturnRuntime(deps = {}) {
         if (await getCache(postMatchReturnDisabledKey(userId),cfg)) { disabled++; continue; }
         if (await getCache(postMatchReturnCooldownKey(userId),cfg)) { cooldown++; continue; }
   
+        if(typeof getWatchSession==='function'){try{if(watchingFixture({watchSession:await getWatchSession(userId,cfg)},fixtureId,now)){disabled++;continue;}}catch{failed++;continue;}}
         let claim;
         try { claim=await claimPostMatchReturnDelivery(userId,fixtureId,cfg); }
         catch (error) { failed++; continue; }

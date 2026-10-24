@@ -98,7 +98,7 @@ test('startup graph defers profile-only and Match Center-only modules until thei
   assert.match(app,/async function ensureAnalysisController\(/);
   assert.match(app,/async function ensureMatchCenterExtras\(/);
 
-  const staticImports=[...app.matchAll(/from ['"]\.\/modules\/([^'"]+)['"]/g)].map(match=>`public/modules/${match[1]}`);
+  const staticImports=[...app.matchAll(/from ['"]\.\/modules\/([^'"]+)['"]/g)].map(match=>`public/modules/${match[1].split('?')[0]}`);
   const startupJsRawBytes=Buffer.byteLength(app)+staticImports.reduce((total,path)=>total+fs.statSync(path).size,0);
   assert.ok(startupJsRawBytes < 515_000, `startup JS graph regressed to ${startupJsRawBytes} bytes`);
 });

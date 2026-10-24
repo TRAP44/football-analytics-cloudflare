@@ -1,3 +1,4 @@
+import {watchingFixture} from './watch-session.js';
 // Живое табло любимых команд (Сергей 15.10): одно сообщение на матч, которое
 // обновляется весь матч (счёт, минута, перерыв), а после свистка — итог.
 //
@@ -180,7 +181,7 @@ function telegramErrorKind(error) {
 }
 
 export function createFavoriteScoreboardJob(deps = {}) {
-  const { clock, filterRecipients, getCache, hasSupabase, recordOpsEvent, setCache, supaSelectPaged, telegramApi } = deps;
+  const { getWatchSession, clock, filterRecipients, getCache, hasSupabase, recordOpsEvent, setCache, supaSelectPaged, telegramApi } = deps;
   for (const [name, fn] of Object.entries({ filterRecipients, getCache, hasSupabase, setCache, supaSelectPaged, telegramApi })) {
     if (typeof fn !== 'function') throw new TypeError(`Favorite scoreboard job requires ${name}.`);
   }
@@ -512,6 +513,10 @@ export function createFavoriteScoreboardJob(deps = {}) {
       return ok;
     };
 
+    const watching=async(userId,fixtureId)=>{
+      if(typeof getWatchSession!=='function')return false;
+      try{return Boolean(watchingFixture({watchSession:await getWatchSession(userId,cfg)},fixtureId,now()));}catch{return true;}
+    };
     let index = 0;
     let unsentClaims = 0;
     while (index < queue.length && !summary.stopped && !summary.capped) {
@@ -555,6 +560,7 @@ export function createFavoriteScoreboardJob(deps = {}) {
             unsentClaims += 1;
             continue;
           }
+          if(await watching(userId,match.fixtureId)){delete boards[userId];retryNew.push(userId);unsentClaims++;continue;}
           budget -= 1;
           summary.telegramCalls += 1;
           try {
@@ -590,6 +596,7 @@ export function createFavoriteScoreboardJob(deps = {}) {
       }
 
       index += 1;
+      if(await watching(item.userId,match.fixtureId)){unsentClaims++;continue;}
       budget -= 1;
       summary.telegramCalls += 1;
       const board = boards[item.userId];

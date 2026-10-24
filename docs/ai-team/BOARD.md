@@ -82,7 +82,10 @@
 
 
 
+
 ## На ревью
+
+- [ ] Режим просмотра без спойлеров и продолжение записи — **Codex** — [PR #1009](https://github.com/TRAP44/football-analytics-cloudflare/pull/1009), `codex/watch-without-spoilers`; launch139, separate versioned watchingstate, min-goaldelay/pause, board/result guards, resume/startover. Localrelease818/full4632/nativebrowser+independentreview прошли; CI/deploy ещё проверяются.
 
 - [ ] Официальные завершённые эфиры как «Полная запись» в Mini App — **Codex** — [PR #1008](https://github.com/TRAP44/football-analytics-cloudflare/pull/1008), `codex/official-match-replays`; live→replay до7д,24focused/release807/full4621/nativebrowser прошли, independentreview без blockers; actualtwoFT sourcesverified, CI→deploy→publication ещё проверяются.
 

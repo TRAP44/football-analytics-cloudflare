@@ -648,6 +648,7 @@ export function createSmartNotificationService({
       else if (state === 'cooldown') summary.cooldown += 1;
       else if (state === 'retry_pending') summary.retryPending += 1;
       else if (state === 'unknown') summary.unknown += 1;
+      else if(state==='watch_deferred'||state==='watch_suppressed')summary.watchProtected=(summary.watchProtected||0)+1;
       else if (state && state !== 'invalid') summary.failed += 1;
     };
     const safeAudience = async (inputRows, eventType) => {

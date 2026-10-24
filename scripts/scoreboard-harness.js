@@ -25,6 +25,7 @@ export function createScoreboardHarness({
   clockStart = NOW,
   sendDelayMs = 0,
   runTimeBudgetMs,
+  getWatchSession,
 } = {}) {
   const store = new Map();
   const ops = [];
@@ -34,6 +35,7 @@ export function createScoreboardHarness({
   let saves = 0;
   let nextMessageId = 1000;
   const job = createFavoriteScoreboardJob({
+    getWatchSession,
     clock: () => clock,
     maxMessagesPerRun,
     discoveryMaxRows,
