@@ -11,14 +11,14 @@ const match={fixtureId:777777,date:iso(12*3600000),status:'NS',home:{id:290,name
 const video={id:'abcdefghijk',snippet:{channelId:WATCH_POLICIES[0].channelId,title:'Kashima Antlers v Kashiwa Reysol - Live Match | J.League',liveBroadcastContent:'upcoming'},status:{privacyStatus:'public',embeddable:true},contentDetails:{},liveStreamingDetails:{scheduledStartTime:iso(12*3600000-300000)}};
 const raw=m=>({fixture:{id:m.fixtureId,date:m.date,status:{short:m.status}},teams:{home:m.home,away:m.away},league:{id:m.leagueId,name:m.league,season:m.season}});
 function harness(){
- const cache=new Map(),calls=[];let items=[structuredClone(video)],matches=[structuredClone(match)],failSearch=false,failWrite=false;
+ const cache=new Map(),calls=[];let items=[structuredClone(video)],matches=[structuredClone(match)],failSearch=false,failWrite=false,searchResults=null,currentNow=now;
  const env={SUPABASE_URL:'https://example.supabase.co',SUPABASE_SECRET_KEY:'db-test-secret',YOUTUBE_DATA_API_KEY:'youtube-test-secret'};
  const fetchImpl=async(value,init)=>{
   const url=new URL(value);calls.push({url,init});
   assert.equal(init.redirect,'error');
   if(url.hostname==='www.googleapis.com'){
    assert.equal(init.headers.apikey,undefined);assert.equal(init.headers['X-Goog-Api-Key'],env.YOUTUBE_DATA_API_KEY);
-   if(url.pathname.endsWith('/search')){if(failSearch)throw Error('private upstream text');return Response.json({items:items.map(v=>({id:{videoId:v.id}}))});}
+   if(url.pathname.endsWith('/search')){if(failSearch)throw Error('private upstream text');return Response.json({items:searchResults??items.map(v=>({id:{videoId:v.id}}))});}
    assert.ok(url.pathname.endsWith('/videos'));assert.ok(url.searchParams.get('id').split(',').length<=50);return Response.json({items});
   }
   assert.equal(url.hostname,'example.supabase.co');assert.equal(init.headers['X-Goog-Api-Key'],undefined);
@@ -28,16 +28,16 @@ function harness(){
    // Model the real versioned RPC: repeated differing content at the same
    // timestamp cannot overwrite the search-attempt marker.
    if(previous&&previous.updatedAt>=body.p_updated_at)return Response.json({stored:false,reason:'superseded'});
-   cache.set(body.p_cache_key,{payload:body.p_payload,updatedAt:body.p_updated_at});return Response.json({stored:true,reason:'stored'});
+   cache.set(body.p_cache_key,{payload:body.p_payload,updatedAt:body.p_updated_at,expiresAt:Date.parse(body.p_expires_at)});return Response.json({stored:true,reason:'stored'});
   }
   assert.equal(url.pathname,'/rest/v1/analysis_cache');const key=url.searchParams.get('cache_key');
-  if(key===`eq.${WATCH_DISCOVERY_KEY}`)return Response.json(cache.has(WATCH_DISCOVERY_KEY)?[{cache_key:WATCH_DISCOVERY_KEY,payload:cache.get(WATCH_DISCOVERY_KEY).payload}]:[]);
+  if(key===`eq.${WATCH_DISCOVERY_KEY}`)return Response.json((cache.has(WATCH_DISCOVERY_KEY)&&(cache.get(WATCH_DISCOVERY_KEY).expiresAt??Infinity)>currentNow)?[{cache_key:WATCH_DISCOVERY_KEY,payload:cache.get(WATCH_DISCOVERY_KEY).payload}]:[]);
   if(key.startsWith('in.(provider-fixtures:'))return Response.json([{cache_key:'provider-fixtures:2026-10-24:v1',payload:{date:'2026-10-24',fetchedAt:iso(-60000),fixtures:matches.map(raw)}}]);
   if(key.startsWith('like.'))return Response.json([]);
   assert.match(key,/^in\.\(match-center:/);return Response.json([]);
  };
- const run=(offset=0)=>refreshMatchWatch({env,manifest:{version:1,items:[]},automatic:true,fetchImpl,now:now+offset});
- return {run,cache,calls,setVideos:v=>{items=v;},setMatches:m=>{matches=m;},failSearch:()=>{failSearch=true;},failWrite:()=>{failWrite=true;}};
+ const run=(offset=0)=>{currentNow=now+offset;return refreshMatchWatch({env,manifest:{version:1,items:[]},automatic:true,fetchImpl,now:currentNow});};
+ return {run,cache,calls,setVideos:v=>{items=v;},setMatches:m=>{matches=m;},setSearchResults:v=>{searchResults=v;},failSearch:()=>{failSearch=true;},failWrite:()=>{failWrite=true;}};
 }
 const apiRuntime=deps=>createUserDataApiRuntime(new Proxy(deps,{get:(target,key)=>key in target?target[key]:async()=>[]}));
 const searchCalls=h=>h.calls.filter(call=>call.url.pathname.endsWith('/search')).length;
@@ -110,4 +110,39 @@ test('malformed or future discovery state stops before any search',async()=>{
   const h=harness();h.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-1),payload:{version:1,attemptedAt:iso(-60000),videoIds:[],bindings:[],...patch}});
   await assert.rejects(h.run(),e=>e.code==='WATCH_DISCOVERY_STATE_INVALID');assert.equal(searchCalls(h),0);
  }
+});
+
+
+const finished={...match,status:'FT',finished:true};
+const replay={...video,snippet:{...video.snippet,title:video.snippet.title.replace('Live Match','Full Match'),liveBroadcastContent:'none'},liveStreamingDetails:{...video.liveStreamingDetails,actualStartTime:iso(12*3600000-300000),actualEndTime:iso(14*3600000)}};
+
+test('a bound LIVE becomes a full replay and survives disappearance from LIVE/upcoming search',async()=>{
+ const h=harness();await h.run();h.setMatches([finished]);h.setVideos([replay]);h.setSearchResults([]);
+ const offset=15*3600000,report=await h.run(offset);
+ assert.equal(report.automaticPublished,1);assert.equal(report.discovery,'searched');
+ const payload=h.cache.get(watchCacheKey(match.fixtureId)).payload;
+ assert.equal(payload.items[0].kind,'replay');assert.equal(payload.items[0].label,'Полная запись J.LEAGUE');
+ assert.equal(validatedWatchOptions(finished,payload,{now:now+offset,approvals:[]}).length,1);
+ assert.equal(validatedWatchOptions(match,payload,{now:now+offset,approvals:[]}).length,0,'independent unfinished centre cannot display replay');
+ assert.equal(validatedWatchOptions(finished,payload,{now:now+offset,approvals:[],policies:[]}).length,0);
+ assert.deepEqual(h.cache.get(WATCH_DISCOVERY_KEY).payload.videoIds,[]);
+ assert.deepEqual(h.cache.get(WATCH_DISCOVERY_KEY).payload.bindings[0].videoIds,[video.id]);
+ // No remaining day feed or centre at three days: final canonical snapshot and
+ // bound video are retained, never an invented Match Center for the public API.
+ h.setMatches([]);assert.equal((await h.run(3*86400000)).automaticPublished,1);
+ const expired=await h.run(12*3600000+7*86400000+1);assert.equal(expired.published,0);
+});
+
+test('ended recording requires canonical final status, real full-length timing and a current region permission',async()=>{
+ for(const patch of [{liveStreamingDetails:{...replay.liveStreamingDetails,actualEndTime:iso(12*3600000+300000)}},{liveStreamingDetails:{...replay.liveStreamingDetails,actualStartTime:iso(-86400000)}},{liveStreamingDetails:{...replay.liveStreamingDetails,actualEndTime:iso(20*3600000)}},{liveStreamingDetails:{scheduledStartTime:replay.liveStreamingDetails.scheduledStartTime}},{snippet:{...replay.snippet,title:replay.snippet.title.replace('Full Match','Highlights')}},{status:{privacyStatus:'private'}},{contentDetails:{regionRestriction:{blocked:['RU','KZ','BY']}}}]){
+  const h=harness();await h.run();h.setMatches([finished]);h.setVideos([{...replay,...patch}]);h.setSearchResults([]);
+  assert.equal((await h.run(15*3600000)).published,0,JSON.stringify(patch));
+  assert.equal(h.cache.get(watchCacheKey(match.fixtureId)).payload.items.length,0);
+ }
+ const h=harness();await h.run();h.setVideos([replay]);h.setSearchResults([]);assert.equal((await h.run(15*3600000)).published,0,'stream end does not fabricate a final football status');
+});
+
+test('deleting an already published replay clears its option on the next tick',async()=>{
+ const h=harness();await h.run();h.setMatches([finished]);h.setVideos([replay]);h.setSearchResults([]);await h.run(15*3600000);
+ h.setVideos([]);assert.equal((await h.run(15*3600000+300000)).published,0);assert.equal(h.cache.get(watchCacheKey(match.fixtureId)).payload.items.length,0);
 });
