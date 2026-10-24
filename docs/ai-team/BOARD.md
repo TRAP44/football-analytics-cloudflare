@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Разблокировать выпуск #1006: security patch undici7.30.1 для ночных advisories — **Codex** — `codex/undici-security-7301`; main758519a8 Quality блокируется npm audit, Dependabot964 меняет те же package files, Сергею сообщено.
+
 
 
 

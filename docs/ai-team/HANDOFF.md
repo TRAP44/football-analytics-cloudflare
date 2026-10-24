@@ -14,6 +14,13 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-24 — Codex — Разблокировать production: Undici 7.30.1
+Ветка `codex/undici-security-7301`. #1006 прошёл exact-head9ee0737a Quality40026748483/CodeQL40026748421 и merged758519a8 24Oct09:18UTC. MainQuality40081448854 остановился **на npm audit**, до приложения: 23Oct22:13–14UTC после прежних проверок опубликованы GHSA-xjj6-f33q-929c(high), GHSA-4qv8-2p9j-2685 и GHSA-f72v-6w45-q472. GitHub advisories называют firstpatched7.30.1. Это внешнее изменение audit data, не падение app tests. Не понижать Wrangler через auditfix--force и не обходить security gate.
+
+Изменён только exact override/одна lock instance undici7.30.0→7.30.1 и floor dependency-security-audit; regression теперь отклоняет прежнюю7.30.0 даже при согласованных package+lock. Wrangler4.149.0/miniflare/sharp0.35.5 и optional libc metadata сохранены. Dependabot964 меняет packagefiles отдельно, Сергею пересечение сообщено. Node22 ci/audit0/securitydependencies/check/lint/release804/full4618passed, focused5passed, независимый read-only Codex review без блокеров.
+
+**Реальная автоматика #1006 уже проверена на main**: protectedRefresh40081480317,24Oct09:19:24UTC, searched/3GoogleGET/4cacheGET/4versionedwrites, automaticMatched1,published0,rejected2; утренние матчевые эфиры уже завершились, не выдаём их за текущий LIVE. Обычный CFdispatch40081571506 watchjob success09:20:46UTC: cached/1GoogleGET/4cacheGET/3writes, search не повторяется. Полный core sibling ещё работал; не объявлять весьworkflowsuccess по одномуwatch. Production runtime до исправления audit по-прежнему601a9667/cac1c642, launch138. После выпуска securitypatch нужен свежий mainQuality→Deploy и postdeployproof; реального Telegramplayback нет. AutomaticPublished>0 реальным сегодняшним источником не подтверждено — не подменять это synthetic тестом (восемь adversarial сценариев проходят).
+
 ## 2026-10-24 — Codex — Автоматический официальный LIVE без per-match PR
 PR [#1006](https://github.com/TRAP44/football-analytics-cloudflare/pull/1006), ветка `codex/automatic-official-watch`. По прямому запросу Сергея выполнено автоматическое обнаружение и публикация по reviewed source policy. Первый источник — J.LEAGUE International/J1 league98/RU-KZ-BY, точный observed full-LIVE title, канонические provider team IDs/имена (исключения290KashimaAntlers,303FCMachidaZelvia), порядокhome-away, единственное совпадение, scheduled kickoff -15/+5мин, upcoming/live в48ч. FIFA архивы и непроверенный SPL format не включены. Существующие ручные approvals остаются совместимыми; одинаковые video/fixture предпочитают автоматическую v2 policy.
 

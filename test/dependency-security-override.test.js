@@ -17,21 +17,21 @@ const lock=JSON.parse(
 test('security overrides and installed lockfile instances satisfy the audited floors',()=>{
   assert.deepEqual(auditDependencySecurityFiles(),[]);
   assert.deepEqual(Object.keys(SECURITY_OVERRIDE_FLOORS).sort(),['sharp','undici']);
-  assert.equal(pkg.overrides.undici,'7.30.0');
+  assert.equal(pkg.overrides.undici,'7.30.1');
   assert.equal(pkg.overrides.sharp,'0.35.5');
 });
 
 test('security audit rejects a downgrade even when package.json and lockfile agree',()=>{
   const downgradedPkg=structuredClone(pkg);
   const downgradedLock=structuredClone(lock);
-  downgradedPkg.overrides.undici='7.29.0';
-  downgradedLock.packages['node_modules/undici'].version='7.29.0';
+  downgradedPkg.overrides.undici='7.30.0';
+  downgradedLock.packages['node_modules/undici'].version='7.30.0';
   downgradedLock.packages['node_modules/undici'].resolved=
-    'https://registry.npmjs.org/undici/-/undici-7.29.0.tgz';
+    'https://registry.npmjs.org/undici/-/undici-7.30.0.tgz';
 
   const findings=auditDependencySecurityOverrides(downgradedPkg,downgradedLock);
   assert.ok(
-    findings.some(message=>message.includes('below security floor 7.30.0')),
+    findings.some(message=>message.includes('below security floor 7.30.1')),
     findings.join('\n'),
   );
 });
@@ -65,7 +65,7 @@ test('security audit checks every installed copy of an overridden dependency',()
   assert.ok(
     findings.some(message=>
       message.includes('node_modules/example/node_modules/undici')
-      && message.includes('7.30.0')
+      && message.includes('7.30.1')
     ),
     findings.join('\n'),
   );
@@ -74,7 +74,7 @@ test('security audit checks every installed copy of an overridden dependency',()
 test('security audit rejects range overrides, missing integrity and unreviewed overrides',()=>{
   const malformedPkg=structuredClone(pkg);
   const malformedLock=structuredClone(lock);
-  malformedPkg.overrides.undici='^7.30.0';
+  malformedPkg.overrides.undici='^7.30.1';
   malformedPkg.overrides.unreviewed='1.0.0';
   malformedLock.packages['node_modules/sharp'].integrity='sha256-not-enough';
 
