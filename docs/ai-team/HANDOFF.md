@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-25 — Codex — Автоматические официальные короткие обзоры
-PR: `codex/official-match-highlights`. Предыдущий #1010 выпущен: mainc3256a27, PRQuality40128783903/CodeQL40128783762, MainQuality40129140374/CodeQL40129140410/Deploy40129411138 success. ActiveCF0cc01d02-ae29-43c3-934e-26cc0e2d84b6,25postdeploychecks/renderedsmoke и publicmanifest exactSHA/versionedmodule launch140 проверены.
+PR [#1011](https://github.com/TRAP44/football-analytics-cloudflare/pull/1011), ветка `codex/official-match-highlights`. Предыдущий #1010 выпущен: mainc3256a27, PRQuality40128783903/CodeQL40128783762, MainQuality40129140374/CodeQL40129140410/Deploy40129411138 success. ActiveCF0cc01d02-ae29-43c3-934e-26cc0e2d84b6,25postdeploychecks/renderedsmoke и publicmanifest exactSHA/versionedmodule launch140 проверены.
 
 Обзоры J.LEAGUE International получают отдельныйkindhighlights в прежнем каталоге. Один uploads playlist page20/retain15 раз2ч, отдельный durable uploadmarker в existing discoveryv1 не повторяет дорогойsearch и делаетпервыйuploadscheck сразу послеupgrade. Разделённые search/uploads try сохраняют успешно найденныеLIVE приотказеplaylist и наоборот; errorвидим, failedfeeds безсекретов, неизвестныйmarkerwrite прекращаетI/O. SaveduploadIDs переживаютразнесённыетики. Metadata≤50, Googlecap5/deadline55сек прежние; новые Football/Telegram/SQL/keys отсутствуют. API cacheonly/authfreshcenter gate прежний.
 
