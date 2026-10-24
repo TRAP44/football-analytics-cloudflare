@@ -585,6 +585,7 @@ const {
   completeScheduledJob,
   releaseScheduledJob,
   getPreferences,
+  getWatchSession,saveWatchSession,
   savePreferences,
   recordHistory,
   getHistory,
@@ -1648,6 +1649,7 @@ let postMatchReturnRuntime = null;
 function getPostMatchReturnRuntime() {
   if (!postMatchReturnRuntime) {
     postMatchReturnRuntime = createPostMatchReturnRuntime({
+      getWatchSession,
       APP_VERSION,
       memory,
       actualOutcomeFromGoals,
@@ -1759,6 +1761,7 @@ let favoriteScoreboardJob = null;
 function getFavoriteScoreboardJob() {
   if (!favoriteScoreboardJob) {
     favoriteScoreboardJob = createFavoriteScoreboardJob({
+      getWatchSession,
       clock: () => Date.now(),
       filterRecipients: (...args) => filterSmartNotificationRecipients(...args),
       getCache,
@@ -2503,6 +2506,7 @@ let userDataApiRuntime = null;
 function getUserDataApiRuntime() {
   if (!userDataApiRuntime) {
     userDataApiRuntime = createUserDataApiRuntime({
+      getWatchSession,saveWatchSession,
       addFavorite,
       addFavoritePlayer,
       addReminder,

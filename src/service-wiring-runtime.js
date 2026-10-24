@@ -1,3 +1,4 @@
+import {createWatchSessionStore} from './watch-session.js';
 export function createServiceWiringRuntime(deps = {}) {
   const {
     SMART_NOTIFICATION_POLICY,
@@ -209,9 +210,11 @@ export function createServiceWiringRuntime(deps = {}) {
     supaHeaders,
   });
   
+  const {getWatchSession,saveWatchSession,getWatchMarker,setWatchMarker}=createWatchSessionStore({memory,hasSupabase,supaSelectOne,supaRpc});
   const {
     deliverSmartNotification,
   } = createSmartNotificationDeliveryService({
+    getWatchSession,getWatchMarker,setWatchMarker,
     memory,
     hasSupabase,
     supaRpc,
@@ -284,6 +287,7 @@ export function createServiceWiringRuntime(deps = {}) {
     renewScheduledJob,
     completeScheduledJob,
     releaseScheduledJob,
+    getWatchSession,saveWatchSession,
     getPreferences,
     savePreferences,
     recordHistory,

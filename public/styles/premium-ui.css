@@ -1132,6 +1132,22 @@ html[data-theme="light"] .miniapp-public-shell {
   }
 }
 
+/* Viewing mode hides complete result-bearing subtrees, including from accessibility APIs. */
+body.watch-private #analysis,
+body.watch-private #analysisQuotaPaywall,
+body.watch-private .view:not(#analysisView) > *,
+body.watch-private #toast { display: none !important; }
+.watch-privacy-banner { margin: 12px auto; padding: 14px; max-width: 1100px; border-color: #eab308; }
+.watch-privacy-banner[hidden] { display: none; }
+.watch-privacy-banner > span { display: block; margin: 8px 0; }
+.watch-privacy-banner > div, .watch-privacy-controls { display: flex; flex-wrap: wrap; gap: 10px; }
+.watch-privacy-controls { margin: 14px 0; padding: 12px; border: 1px solid #62531b; border-radius: 12px; }
+.watch-privacy-controls label, .watch-privacy-controls small { width: 100%; }
+.watch-privacy-controls select { max-width: 100%; }
+.watch-privacy-controls label { display: flex; flex-wrap: wrap; min-width: 0; gap: 8px; }
+.watch-privacy-controls select { width: 100%; min-width: 0; }
+.watch-privacy-banner button { max-width: 100%; }
+
 /* Public component contracts.
    This is the public-surface source of truth for interactive geometry.
    Keep product-specific cosmetics above; keep shared control geometry here. */

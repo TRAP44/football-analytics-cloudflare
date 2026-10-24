@@ -19,30 +19,56 @@ function youtubeSdk(win,doc){
   }).catch(error=>{sdkPromise=null;throw error;});
   return sdkPromise;
 }
-export function createMatchWatch({api,escapeHtml,window:win=window,document:doc=document}={}){
+export function createMatchWatch({api,escapeHtml,watchExperience,window:win=window,document:doc=document}={}){
   let session=null;
+  doc.addEventListener?.('watchprivacychange',()=>{
+    if(!session)return;const settings=watchExperience?.settings(),checkbox=session.root.querySelector('[data-watch-private]'),select=session.root.querySelector('[data-watch-delay]');
+    if(!settings?.enabled){session.privacyEdited=false;if(checkbox)checkbox.checked=false;if(select)select.value='0';}
+    else if(!session.privacyEdited&&settings.confirmed){if(checkbox)checkbox.checked=true;if(select)select.value=String(settings.delaySeconds);}
+  });
   const storedCountry=()=>{try{return win.localStorage.getItem(COUNTRY_KEY)||'';}catch{return '';}};
   const saveCountry=country=>{try{win.localStorage.setItem(COUNTRY_KEY,country);}catch{}};
   const active=s=>session===s&&s.root.isConnected&&s.isCurrent();
-  function stopPlayer(s){s.player?.destroy?.();s.player=null;s.root.querySelector('[data-watch-player]')?.replaceChildren();}
+  function stopPlayer(s){savePosition(s);win.clearInterval(s.positionTimer);s.positionTimer=null;s.player?.destroy?.();s.player=null;s.root.querySelector('[data-watch-player]')?.replaceChildren();}
+  function positionKey(s,item){return `matchradar:watch-position:${s.fixtureId}:${item.videoId}:v1`;}
+  function savePosition(s){
+    if(s.item?.kind!=='replay'||!s.player?.getCurrentTime)return;
+    try{const seconds=Math.floor(s.player.getCurrentTime());if(Number.isFinite(seconds)&&seconds>=10&&seconds<4*3600000)win.localStorage.setItem(positionKey(s,s.item),JSON.stringify({seconds,at:Date.now()}));}catch{}
+  }
+  function position(s,item){try{const value=JSON.parse(win.localStorage.getItem(positionKey(s,item))||'null');return item.kind==='replay'&&value?.seconds>=10&&value.seconds<4*3600000&&Date.now()-value.at<7*86400000?Math.floor(value.seconds):0;}catch{return 0;}}
   function dispose(){if(!session)return;session.controller?.abort();win.clearTimeout(session.timer);stopPlayer(session);session.root.hidden=true;session.root.replaceChildren();session=null;}
   function render(s,data){
     if(!active(s))return;
     stopPlayer(s);win.clearTimeout(s.timer);
     const countries=Array.isArray(data?.countries)?data.countries.filter(item=>/^[A-Z]{2}$/.test(item?.code)&&typeof item.name==='string'):[];
     const items=Array.isArray(data?.items)?data.items.filter(item=>Date.parse(item?.expiresAt)>Date.now()).slice(0,10):[];
-    if(!countries.length){s.root.hidden=true;s.root.replaceChildren();return;}
+    const privacy=watchExperience?.settings();
+    if(!countries.length&&!privacy){s.root.hidden=true;s.root.replaceChildren();return;}
     const country=countries.some(item=>item.code===s.country)?s.country:'';
     s.root.hidden=false;
-    s.root.innerHTML=`<details class="match-watch-details" ${s.open?'open':''}><summary>Где смотреть <span>Официальные источники</span></summary>
-      <div class="match-watch-body"><label>Где будете смотреть? <select data-watch-country aria-label="Страна просмотра"><option value="">Выберите страну</option>${countries.map(item=>`<option value="${item.code}" ${item.code===country?'selected':''}>${escapeHtml(item.name)}</option>`).join('')}</select></label>
-      <div data-watch-options>${country?items.length?items.map((item,index)=>`<article class="match-watch-source"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.kind==='live'?'Трансляция':item.kind==='replay'?'Полная запись':'Обзор')} · ${escapeHtml(({free:'Бесплатно',subscription:'По подписке',ppv:'Отдельная покупка',unknown:'Условия у источника'})[item.access]||'Условия у источника')}</span>
-      ${youtubeEmbedUrl(item,win.location.origin)?`<button class="primary-btn" type="button" data-watch-play="${index}">Смотреть в приложении</button>`:''}
+    s.root.innerHTML=`<details class="match-watch-details" ${s.open?'open':''}><summary>${countries.length?'Где смотреть':'Режим просмотра'} <span>${countries.length?'Официальные источники':'Без спойлеров'}</span></summary>
+      <div class="match-watch-body">${countries.length?`<label>Где будете смотреть? <select data-watch-country aria-label="Страна просмотра"><option value="">Выберите страну</option>${countries.map(item=>`<option value="${item.code}" ${item.code===country?'selected':''}>${escapeHtml(item.name)}</option>`).join('')}</select></label>`:''}
+      ${privacy?`<div class="watch-privacy-controls"><label><input type="checkbox" data-watch-private ${privacy.enabled?'checked':''}> Без спойлеров</label><label>Голевые уведомления <select data-watch-delay><option value="0">Не присылать во время просмотра</option><option value="30">Не раньше чем через 30 секунд</option><option value="60">Не раньше чем через 60 секунд</option><option value="90">Не раньше чем через 90 секунд</option></select></label><small>Счёт, события и AI скрываются. Остальные сообщения и табло этого матча приостанавливаются на 3 часа. Доставка голевых сообщений может быть позже выбранного времени.</small><button type="button" data-watch-privacy-save>Применить</button><p data-watch-privacy-state role="status"></p></div>`:''}
+      <div data-watch-options>${!countries.length?'Доступный источник видео пока не подтверждён. Режим без спойлеров можно включить и для просмотра на другом сервисе.':country?items.length?items.map((item,index)=>`<article class="match-watch-source"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.kind==='live'?'Трансляция':item.kind==='replay'?'Полная запись':'Обзор')} · ${escapeHtml(({free:'Бесплатно',subscription:'По подписке',ppv:'Отдельная покупка',unknown:'Условия у источника'})[item.access]||'Условия у источника')}</span>
+      ${youtubeEmbedUrl(item,win.location.origin)?`<button class="primary-btn" type="button" data-watch-play="${index}">${position(s,item)?`Продолжить с ${Math.floor(position(s,item)/60)}:${String(position(s,item)%60).padStart(2,'0')}`:'Смотреть в приложении'}</button>${position(s,item)?`<button class="secondary-btn" type="button" data-watch-restart="${index}">Сначала</button>`:''}`:''}
       <a href="${escapeHtml(item.eventUrl)}" target="_blank" rel="noopener noreferrer">${item.embed?'Открыть у источника ↗':'Смотреть у источника ↗'}</a></article>`).join(''):'<p>Для этой страны просмотр сейчас не подтверждён.</p>':'<p>Выберите страну — покажем доступный вариант.</p>'}</div>
       <div data-watch-player></div><p class="muted" data-watch-status role="status">Доступ и подписку проверяет источник. Если плеер не открылся, перейдите по официальной ссылке.</p></div></details>`;
+    if(privacy){
+      s.privacyEdited=false;
+      s.root.querySelector('[data-watch-private]').onchange=()=>{s.privacyEdited=true;};
+      s.root.querySelector('[data-watch-delay]').onchange=()=>{s.privacyEdited=true;};
+      s.root.querySelector('[data-watch-delay]').value=String(privacy.delaySeconds);
+      s.root.querySelector('[data-watch-privacy-save]').onclick=async()=>{
+        const button=s.root.querySelector('[data-watch-privacy-save]');button.disabled=true;
+        const ok=await watchExperience.setMode(s.fixtureId,s.root.querySelector('[data-watch-private]').checked,Number(s.root.querySelector('[data-watch-delay]').value));
+        if(active(s)){button.disabled=false;if(ok)s.privacyEdited=false;s.root.querySelector('[data-watch-privacy-state]').textContent=ok?'Настройки просмотра сохранены.':'Данные скрыты, но настройка уведомлений не подтверждена. Повторите попытку.';}
+      };
+    }
     s.root.querySelector('details').addEventListener('toggle',event=>{s.open=event.target.open;});
-    s.root.querySelector('[data-watch-country]').onchange=event=>{stopPlayer(s);win.clearTimeout(s.timer);s.root.querySelector('[data-watch-options]').textContent='Проверяем доступность…';s.country=event.target.value;saveCountry(s.country);s.open=true;void load(s);};
+    const countrySelect=s.root.querySelector('[data-watch-country]');
+    if(countrySelect)countrySelect.onchange=event=>{stopPlayer(s);win.clearTimeout(s.timer);s.root.querySelector('[data-watch-options]').textContent='Проверяем доступность…';s.country=event.target.value;saveCountry(s.country);s.open=true;void load(s);};
     s.root.querySelectorAll('[data-watch-play]').forEach(button=>{button.onclick=()=>void play(s,items[Number(button.dataset.watchPlay)]);});
+    s.root.querySelectorAll('[data-watch-restart]').forEach(button=>{button.onclick=()=>void play(s,items[Number(button.dataset.watchRestart)],true);});
     const expiry=Math.min(...items.map(item=>Date.parse(item.expiresAt)));
     if(Number.isFinite(expiry))s.timer=win.setTimeout(()=>{
       if(!active(s))return;stopPlayer(s);
@@ -55,17 +81,20 @@ export function createMatchWatch({api,escapeHtml,window:win=window,document:doc=
       if(!controller.signal.aborted)render(s,data);
     }catch{if(active(s)&&!controller.signal.aborted){stopPlayer(s);s.root.hidden=true;s.root.replaceChildren();}}
   }
-  async function play(s,item){
+  async function play(s,item,fromStart=false){
     if(!active(s)||Date.parse(item?.expiresAt)<=Date.now())return;
     stopPlayer(s);
-    const source=youtubeEmbedUrl(item,win.location.origin);if(!source)return;
+    let source=youtubeEmbedUrl(item,win.location.origin);if(!source)return;
+    if(fromStart)try{win.localStorage.removeItem(positionKey(s,item));}catch{}
+    const resume=fromStart?0:position(s,item);if(resume)source+='&start='+resume;s.item=item;
     const target=s.root.querySelector('[data-watch-player]'),status=s.root.querySelector('[data-watch-status]');
     const iframe=doc.createElement('iframe');iframe.title='Официальный плеер YouTube';iframe.referrerPolicy='strict-origin-when-cross-origin';iframe.allow='encrypted-media; picture-in-picture; fullscreen';iframe.allowFullscreen=true;iframe.src=source;
     target.append(iframe);status.textContent='Если видео недоступно, откройте официальный источник по ссылке выше.';
     try{const YT=await youtubeSdk(win,doc);if(!active(s)||!iframe.isConnected)return;
-      s.player=new YT.Player(iframe,{events:{onError:()=>{if(active(s)&&iframe.isConnected){stopPlayer(s);status.textContent='Источник не разрешил просмотр здесь. Откройте официальную ссылку выше.';}}}});
+      s.player=new YT.Player(iframe,{events:{onReady:()=>{if(active(s)&&iframe.isConnected)s.positionTimer=win.setInterval(()=>savePosition(s),5000);},onError:()=>{if(active(s)&&iframe.isConnected){stopPlayer(s);status.textContent='Источник не разрешил просмотр здесь. Откройте официальную ссылку выше.';}}}});
     }catch{if(active(s))status.textContent='Плеер может быть недоступен в Telegram. Официальная ссылка — выше.';}
   }
+  win.addEventListener?.('pagehide',()=>{if(session)savePosition(session);});
   function mount({root,fixtureId,isCurrent=()=>true}={}){
     if(!root||!Number.isSafeInteger(fixtureId)||fixtureId<=0)return;
     if(session?.fixtureId===fixtureId&&session.root===root){session.isCurrent=isCurrent;if(!session.player && !session.root.querySelector('iframe') && Date.now()-(session.loadedAt||0)>60000)void load(session);return;}

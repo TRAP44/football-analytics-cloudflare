@@ -25,6 +25,7 @@ export function createUserDataApiRuntime(deps) {
     getHistory,
     getModelProbabilities,
     getPreferences,
+    getWatchSession, saveWatchSession,
     getQuota,
     getReminders,
     getStaleCache,
@@ -545,12 +546,14 @@ export function createUserDataApiRuntime(deps) {
     if (!userId) return json({error:'Сессия Telegram не подтверждена.',code:'AUTH_REQUIRED'},401);
 
     if (request.method === 'GET') {
+      const watchSession=typeof getWatchSession==='function'?await getWatchSession(userId,cfg):null;
       const [preferences, quota] = await Promise.all([
         getPreferences(userId,cfg),
         getQuota(userId,cfg),
       ]);
       return json({
         preferences,
+        watchSession,
         notificationCapabilities:publicSmartNotificationCapabilities(quota?.plan),
       });
     }
@@ -559,6 +562,13 @@ export function createUserDataApiRuntime(deps) {
       try { body=plainObject(await request.json()); } catch { body=null; }
       if (!body) return json({error:'Некорректное тело запроса.',code:'PREFERENCES_INVALID_JSON'},400);
 
+      if(Object.hasOwn(body,'watchSession')){
+        const input=body.watchSession;
+        if(input!==null&&(!plainObject(input)||!positiveId(input.fixtureId)||![0,30,60,90].includes(input.delaySeconds)))return json({error:'Проверьте параметры просмотра.'},400);
+        if(typeof saveWatchSession!=='function')return json({error:'Защита уведомлений временно недоступна.'},503);
+        const watchSession=await saveWatchSession(userId,input===null?null:{fixtureId:positiveId(input.fixtureId),delaySeconds:input.delaySeconds},cfg);
+        return json({ok:true,watchSession});
+      }
       const preferences=await savePreferences(userId,body,cfg);
       const quota=await getQuota(userId,cfg);
       return json({

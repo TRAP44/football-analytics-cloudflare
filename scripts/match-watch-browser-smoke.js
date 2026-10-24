@@ -1,3 +1,5 @@
+import {createWatchSessionStore} from '../src/watch-session.js';
+import {createUserPreferencesService} from '../src/user-preferences.js';
 import {createServer} from 'node:http';
 import {readFile,rm} from 'node:fs/promises';
 import path from 'node:path';
@@ -15,14 +17,22 @@ const catalogue={version:1,fixtureIdentity:watchFixtureIdentity(match),items:[{.
 const functions='addFavorite addFavoritePlayer addReminder analysisFreshness analysisResponsePayload getBotDigestSubscription getCache getFavoritePlayers getFavorites getHistory getPreferences getQuota getReminders getStaleCache getUserRecord isAdminUser publicDataCapabilities publicDigestSettings publicPlayerFollowNotificationContract publicRuntimeControls publicSiteUrl publicSmartNotificationCapabilities recordOpsEvent reminderDeliveryStatus removeFavorite removeFavoritePlayer removeReminder savePreferences setBotDigestSubscription'.split(' ');
 const runtime={maintenanceMode:false,analysisEnabled:true,aiEnabled:true,liveEnabled:true,searchEnabled:true};
 const center=()=>({mode:match.finished?'finished':'live',generatedAt:new Date().toISOString(),match,lineups:{},availability:{},playerLeaders:{home:[],away:[]}});
-const api=createUserDataApiRuntime({...Object.fromEntries(functions.map(key=>[key,async()=>[]])),json:(data,status=200)=>Response.json(data,{status}),getQuota:async()=>({plan:'FREE',left:5,limit:5,used:0}),getPreferences:async()=>({}),getUserRecord:async()=>({}),publicRuntimeControls:()=>runtime,publicDataCapabilities:()=>({}),publicSmartNotificationCapabilities:()=>({}),isAdminUser:()=>false,watchApprovals:[approval],getCache:async key=>key===matchCenterCacheKey(999)?{match}:key===watchCacheKey(999)?catalogue:null});
-let delay=false,requests=0,centerRequests=0;
+const preferences=createUserPreferencesService({memory:{},hasSupabase:()=>false});
+const watchStore=createWatchSessionStore({memory:{},hasSupabase:()=>false});
+const api=createUserDataApiRuntime({...Object.fromEntries(functions.map(key=>[key,async()=>[]])),getWatchSession:watchStore.getWatchSession,saveWatchSession:watchStore.saveWatchSession,json:(data,status=200)=>Response.json(data,{status}),getQuota:async()=>({plan:'FREE',left:5,limit:5,used:0}),getPreferences:preferences.getPreferences,savePreferences:preferences.savePreferences,getUserRecord:async()=>({}),publicRuntimeControls:()=>runtime,publicDataCapabilities:()=>({}),publicSmartNotificationCapabilities:()=>({}),isAdminUser:()=>false,watchApprovals:[approval],getCache:async key=>key===matchCenterCacheKey(999)?{match}:key===watchCacheKey(999)?catalogue:null});
+let delay=false,requests=0,centerRequests=0,slowPrefs=false;
 const server=createServer(async(req,res)=>{
  try{
   const url=new URL(req.url,'http://127.0.0.1');
   if(url.pathname==='/api/match-watch'){
    requests++;if(delay)await new Promise(resolve=>setTimeout(resolve,300));
    const response=await api.apiMatchWatch(new Request(url),{},{id:42});res.writeHead(response.status,{'Content-Type':'application/json'});res.end(await response.text());return;
+  }
+  if(url.pathname==='/api/preferences'){
+   if(slowPrefs&&req.method==='GET')await new Promise(resolve=>setTimeout(resolve,600));
+   const chunks=[];for await(const chunk of req)chunks.push(chunk);
+   const response=await api.apiPreferences(new Request(url,{method:req.method,...(req.method==='GET'?{}:{body:Buffer.concat(chunks).toString('utf8')})}),{},{id:42});
+   res.setHeader('Content-Type','application/json');res.writeHead(response.status);res.end(await response.text());return;
   }
   if(url.pathname==='/api/match-center'){centerRequests++;res.setHeader('Content-Type','application/json');res.end(JSON.stringify(center()));return;}
   if(url.pathname==='/api/me'){const response=await api.apiMe(new Request(url),{},{id:42,first_name:'Fixture'});res.setHeader('Content-Type','application/json');res.end(await response.text());return;}
@@ -71,6 +81,10 @@ try{
  const launch=new URLSearchParams({auth_date:String(Math.floor(now/1000)),user:JSON.stringify({id:42,first_name:'Fixture'}),hash:'0'.repeat(64)}).toString();
  await cdp.call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/full-app?fixtureId=999&action=center&watch=1#${new URLSearchParams({tgWebAppData:launch})}`});
  await wait("Boolean(document.querySelector('#matchWatchPanel [data-watch-play]')) && document.querySelector('#bootGate')?.hidden",'actual app watch wiring missing');
+ await evaluate("document.querySelector('[data-watch-private]').checked=true;document.querySelector('[data-watch-delay]').value='60';document.querySelector('[data-watch-privacy-save]').click()");
+ await wait("document.querySelector('[data-watch-privacy-state]').textContent.includes('сохранены')",'watch privacy not confirmed by server');
+ if(!await evaluate("document.body.classList.contains('watch-private')&&getComputedStyle(document.getElementById('analysis')).display==='none'&&document.getElementById('analysis').inert"))throw Error('match data visible in private mode');
+ for(const width of [320,390]){await cdp.call('Emulation.setDeviceMetricsOverride',{width,height:844,deviceScaleFactor:1,mobile:true});if(await evaluate('document.documentElement.scrollWidth>innerWidth+1'))throw Error('private mode overflow '+width);}
  await evaluate("window.YT={Player:class {constructor(iframe){this.iframe=iframe;}destroy(){this.iframe.remove();}}};document.querySelector('#matchWatchPanel [data-watch-play]').click()");
  await wait("Boolean(document.querySelector('#matchWatchPanel iframe'))",'actual app play missing');
  const previousRequests=centerRequests;
@@ -81,6 +95,8 @@ try{
  if(!await evaluate("document.querySelector('#matchWatchPanel iframe')===window.preservedWatchFrame && window.preservedWatchFrame.isConnected"))throw Error('actual LIVE rerender destroyed iframe');
  await evaluate("document.getElementById('navMatches').click()");
  await wait("!document.querySelector('#matchWatchPanel iframe') && document.getElementById('matchWatchPanel').hidden",'actual navigation left media');
+ if(!await evaluate("document.body.classList.contains('watch-private')&&getComputedStyle(document.getElementById('matches')).display==='none'"))throw Error('navigation exposed match feed');
+ await evaluate("document.querySelector('[data-privacy-off]').click()");await wait("!document.body.classList.contains('watch-private')",'privacy could not be disabled');
  // A completed fixture uses the same real application/HTTP path, with the
  // existing full-recording label and on-demand player rather than a LIVE label.
  Object.assign(match,{status:'FT',statusLabel:'Матч завершён',live:false,finished:true});approval.kind='replay';catalogue.items[0].kind='replay';
@@ -88,7 +104,27 @@ try{
  await wait("Boolean(document.querySelector('#matchWatchPanel [data-watch-play]')) && document.querySelector('#bootGate')?.hidden",'finished match replay missing');
  const replayLabel=await evaluate("document.querySelector('#matchWatchPanel .match-watch-source span').textContent");
  if(!replayLabel.includes('Полная запись')||replayLabel.includes('Трансляция'))throw Error('replay incorrectly labelled as LIVE');
- await evaluate("window.YT={Player:class {constructor(iframe){this.iframe=iframe;}destroy(){this.iframe.remove();}}};document.querySelector('#matchWatchPanel [data-watch-play]').click()");
+ await evaluate("window.YT={Player:class {constructor(iframe,opts){this.iframe=iframe;queueMicrotask(()=>opts.events.onReady?.());}getCurrentTime(){return 125;}destroy(){this.iframe.remove();}}};document.querySelector('#matchWatchPanel [data-watch-play]').click()");
  await wait("Boolean(document.querySelector('#matchWatchPanel iframe'))",'replay player not mounted');
- console.log(JSON.stringify({scope:'synthetic_browser_and_cache_api_not_actual_playback',countryRequired:true,lazyMedia:true,sameFixturePreserved:true,deniedEmbedFallback:true,countryTeardownImmediate:true,navigationTeardown:true,actualAppWiring:true,actualCenterRefreshPreservesFrame:true,finishedReplayLabel:true,finishedReplayPlayer:true,widths:[320,390,900],requests}));
+ await evaluate("document.getElementById('navMatches').click()");
+ await cdp.call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/full-app?fixtureId=999&action=center&watch=1&resumeSmoke=1#${new URLSearchParams({tgWebAppData:launch})}`});
+ await wait("document.querySelector('#matchWatchPanel [data-watch-play]')?.textContent.includes('Продолжить с 2:05')",'saved replay position missing');
+ await evaluate("window.YT={Player:class {constructor(iframe){this.iframe=iframe;}destroy(){this.iframe.remove();}}};document.querySelector('#matchWatchPanel [data-watch-play]').click()");
+ await wait("Boolean(document.querySelector('#matchWatchPanel iframe'))",'resumed iframe missing');
+ if(!await evaluate("new URL(document.querySelector('#matchWatchPanel iframe').src).searchParams.get('start')==='125'"))throw Error('replay did not seek to saved position');
+ await evaluate("document.querySelector('[data-watch-restart]').click()");
+ if(!await evaluate("new URL(document.querySelector('#matchWatchPanel iframe').src).searchParams.get('start')===null"))throw Error('start over did not reset position');
+ // Server preferences may have changed in another tab. A delayed restore must
+ // update the visible selector as well as the internal mode before confirmation.
+ await evaluate(`fetch('/api/preferences',{method:'POST',body:JSON.stringify({watchSession:{fixtureId:999,delaySeconds:30}})}).then(()=>localStorage.setItem('matchradar:watch-mode:v1',JSON.stringify({fixtureId:999,delaySeconds:90,startedAt:new Date().toISOString(),expiresAt:new Date(Date.now()+3600000).toISOString()})))`);
+ slowPrefs=true;
+ await cdp.call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/full-app?fixtureId=999&action=center&watch=1&restoreSmoke=1#${new URLSearchParams({tgWebAppData:launch})}`});
+ await wait("document.querySelector('[data-watch-delay]')?.value==='30' && document.getElementById('watchPrivacyBanner').textContent.includes('включена')",'canonical restore delay not reflected in the control');
+ await evaluate("document.querySelector('[data-privacy-off]').click()");await wait("!document.body.classList.contains('watch-private')",'privacy off before external-source case');
+ Object.assign(match,{fixtureId:1000});
+ await cdp.call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/full-app?fixtureId=1000&action=center#${new URLSearchParams({tgWebAppData:launch})}`});
+ await wait("Boolean(document.querySelector('[data-watch-private]')) && document.querySelector('#matchWatchPanel summary').textContent.includes('Режим просмотра')",'privacy missing for a match without a catalogued stream');
+ if(await evaluate("Boolean(document.querySelector('#matchWatchPanel [data-watch-play],#matchWatchPanel .match-watch-source a'))"))throw Error('empty catalogue invented a stream');
+ await evaluate("document.querySelector('[data-watch-private]').checked=true;document.querySelector('[data-watch-privacy-save]').click()");await wait("document.querySelector('[data-watch-privacy-state]').textContent.includes('сохранены')",'external viewing mode not acknowledged');
+ console.log(JSON.stringify({scope:'synthetic_browser_and_cache_api_not_actual_playback',countryRequired:true,lazyMedia:true,sameFixturePreserved:true,deniedEmbedFallback:true,countryTeardownImmediate:true,navigationTeardown:true,actualAppWiring:true,actualCenterRefreshPreservesFrame:true,finishedReplayLabel:true,finishedReplayPlayer:true,privacyHidesData:true,privacyApiConfirmed:true,privacyNavigationSafe:true,canonicalRestoreVisible:true,externalViewingPrivate:true,replayResume:true,replayRestart:true,widths:[320,390,900],requests}));
 }finally{cdp?.close();await stopChrome(launched.chrome);await new Promise(resolve=>server.close(resolve));if(launched.profileDir)await rm(launched.profileDir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}

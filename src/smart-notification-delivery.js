@@ -1,3 +1,4 @@
+import {watchingFixture} from './watch-session.js';
 const CLAIM_STALE_MS = 20 * 60_000;
 const MAX_DELIVERY_ATTEMPTS = 3;
 const MAX_COOLDOWN_SECONDS = 24 * 60 * 60;
@@ -278,6 +279,7 @@ export function createSmartNotificationDeliveryService({
   supaRpc,
   sendTelegramMessage,
   recordOpsEvent,
+  getWatchSession, getWatchMarker, setWatchMarker,
   now=Date.now,
 } = {}) {
   required('hasSupabase',hasSupabase);
@@ -582,6 +584,30 @@ export function createSmartNotificationDeliveryService({
       dedupeKey,
       cooldownSeconds,
     }=normalized;
+
+    if(typeof getWatchSession==='function'){
+      try{
+        const current=safeClock(now),value=await getWatchSession(userId,cfg),session=watchingFixture({watchSession:value},fixtureId,current);
+        if(['match.goal','player.goal'].includes(eventType)){
+          const key=`watch-goal:${userId}:${dedupeKey}:v1`;
+          if(typeof getWatchMarker!=='function'||typeof setWatchMarker!=='function')return {state:'watch_deferred'};
+          const marker=await getWatchMarker(key,cfg);
+          if(marker?.drop===true)return {state:'watch_suppressed'};
+          if(session){
+            if(session.delaySeconds===0){
+              if(await setWatchMarker(key,fixtureId,{drop:true},session,cfg)!==true)return {state:'watch_deferred'};
+              return {state:'watch_suppressed'};
+            }
+            const first=typeof marker?.firstSeenAt==='string'?Date.parse(marker.firstSeenAt):NaN;
+            if(!Number.isFinite(first)){
+              await setWatchMarker(key,fixtureId,{firstSeenAt:new Date(current).toISOString()},session,cfg);
+              return {state:'watch_deferred'};
+            }
+            if(first>current||current-first<session.delaySeconds*1000)return {state:'watch_deferred'};
+          }
+        }else if(session)return {state:'watch_suppressed'};
+      }catch{return {state:'watch_deferred'};}
+    }
 
     const claimed=await claim({
       userId,
