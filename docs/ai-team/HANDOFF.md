@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-24 — Codex — Непрерывный просмотр при обновлении каталога
-PR: `codex/watch-background-revalidation`. Предыдущий #1009 действительно выпущен: main1c0a735a, MainQuality40095807486/CodeQL40095807543/Deploy40096094053 success, CFversioncab7773e-f2d2-4bbb-8168-735a402fa5ca, launch139, publicmanifest SHA и25postdeploychecks проверены.
+PR [#1010](https://github.com/TRAP44/football-analytics-cloudflare/pull/1010), ветка `codex/watch-background-revalidation`. Предыдущий #1009 действительно выпущен: main1c0a735a, MainQuality40095807486/CodeQL40095807543/Deploy40096094053 success, CFversioncab7773e-f2d2-4bbb-8168-735a402fa5ca, launch139, publicmanifest SHA и25postdeploychecks проверены.
 
 Устранён reset видео при истечении каталога: cache-only фоновая проверка обычно60сек, ближе expiry15сек, без Google/Football запросов на зрителя. Для того же разрешённого videoURL/country сохраняются iframe/SDK, позиция и целый privacy control DOM с несохранённым draft. Новый expiry принимается только из свежего ответа. Hard-expiry timer независим от HTTP, transport failure не продлевает доступ; empty/revoked/embed:false/replacement останавливают видео, recovery не autoplay. Страна/fixture/navigation teardown и abort-ignoring stale response защищены; возврат из suspended page проверяет срок синхронно до сети. Режим без спойлеров не выключается при отзыве видео. Frontendlaunch140/точные revision contracts обновлены.
 
