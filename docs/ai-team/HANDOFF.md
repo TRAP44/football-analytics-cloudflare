@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-24 — Codex — Разблокировать production: Undici 7.30.1
-Ветка `codex/undici-security-7301`. #1006 прошёл exact-head9ee0737a Quality40026748483/CodeQL40026748421 и merged758519a8 24Oct09:18UTC. MainQuality40081448854 остановился **на npm audit**, до приложения: 23Oct22:13–14UTC после прежних проверок опубликованы GHSA-xjj6-f33q-929c(high), GHSA-4qv8-2p9j-2685 и GHSA-f72v-6w45-q472. GitHub advisories называют firstpatched7.30.1. Это внешнее изменение audit data, не падение app tests. Не понижать Wrangler через auditfix--force и не обходить security gate.
+PR [#1007](https://github.com/TRAP44/football-analytics-cloudflare/pull/1007), ветка `codex/undici-security-7301`. #1006 прошёл exact-head9ee0737a Quality40026748483/CodeQL40026748421 и merged758519a8 24Oct09:18UTC. MainQuality40081448854 остановился **на npm audit**, до приложения: 23Oct22:13–14UTC после прежних проверок опубликованы GHSA-xjj6-f33q-929c(high), GHSA-4qv8-2p9j-2685 и GHSA-f72v-6w45-q472. GitHub advisories называют firstpatched7.30.1. Это внешнее изменение audit data, не падение app tests. Не понижать Wrangler через auditfix--force и не обходить security gate.
 
 Изменён только exact override/одна lock instance undici7.30.0→7.30.1 и floor dependency-security-audit; regression теперь отклоняет прежнюю7.30.0 даже при согласованных package+lock. Wrangler4.149.0/miniflare/sharp0.35.5 и optional libc metadata сохранены. Dependabot964 меняет packagefiles отдельно, Сергею пересечение сообщено. Node22 ci/audit0/securitydependencies/check/lint/release804/full4618passed, focused5passed, независимый read-only Codex review без блокеров.
 

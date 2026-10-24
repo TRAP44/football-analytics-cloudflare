@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Разблокировать выпуск #1006: security patch undici7.30.1 для ночных advisories — **Codex** — `codex/undici-security-7301`; main758519a8 Quality блокируется npm audit, Dependabot964 меняет те же package files, Сергею сообщено.
 
 
 
@@ -83,6 +82,8 @@
 
 
 ## На ревью
+
+- [ ] Разблокировать выпуск #1006: security patch undici7.30.1 для ночных advisories — **Codex** — [PR #1007](https://github.com/TRAP44/football-analytics-cloudflare/pull/1007), `codex/undici-security-7301`; audit0/release804/full4618, independent review чистый; exact override+lock+securityfloor. Actual automation searched→cached и отказ завершённым эфирам подтверждены; ожидается CI→production.
 
 - [ ] Автоматический поиск и публикация официальных эфиров без PR на каждый матч — **Codex** — [PR #1006](https://github.com/TRAP44/football-analytics-cloudflare/pull/1006), `codex/automatic-official-watch`; J1 source policy, quota guard, exact canonical matching, removal/revocation; независимое review без блокеров, local ci/check/lint/release802/full4616 + дополнительные negative tests/Chromium прошли. CI и actual auto refresh перед заявлением о выпуске.
 
