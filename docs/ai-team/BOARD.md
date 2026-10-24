@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Непрерывный просмотр: фоновая перепроверка источника без сброса плеера и позиции — **Codex** — `codex/watch-background-revalidation`; отзыв/expiry fail closed, сохранение privacy controls.
+
 
 
 
