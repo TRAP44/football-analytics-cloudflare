@@ -14,6 +14,16 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-25 — Codex — Автоматические официальные короткие обзоры
+PR [#1011](https://github.com/TRAP44/football-analytics-cloudflare/pull/1011), ветка `codex/official-match-highlights`. Предыдущий #1010 выпущен: mainc3256a27, PRQuality40128783903/CodeQL40128783762, MainQuality40129140374/CodeQL40129140410/Deploy40129411138 success. ActiveCF0cc01d02-ae29-43c3-934e-26cc0e2d84b6,25postdeploychecks/renderedsmoke и publicmanifest exactSHA/versionedmodule launch140 проверены.
+
+Обзоры J.LEAGUE International получают отдельныйkindhighlights в прежнем каталоге. Один uploads playlist page20/retain15 раз2ч, отдельный durable uploadmarker в existing discoveryv1 не повторяет дорогойsearch и делаетпервыйuploadscheck сразу послеupgrade. Разделённые search/uploads try сохраняют успешно найденныеLIVE приотказеplaylist и наоборот; errorвидим, failedfeeds безсекретов, неизвестныйmarkerwrite прекращаетI/O. SaveduploadIDs переживаютразнесённыетики. Metadata≤50, Googlecap5/deadline55сек прежние; новые Football/Telegram/SQL/keys отсутствуют. API cacheonly/authfreshcenter gate прежний.
+
+Независимое read-only **Codex**, не Claude review нашло undatedarchive falsematch и failopen missinground, затем couplingplaylistfailure→lostLIVE. Исправленывсе: **обязательные exactseason+parsedcanonicalround+orderedteams**, полныйanchoredtitle, publication kickoff+60мин..+48ч и≤now, duration2–20мин, broadcastnone/no stream. Optionalscore сверяетсяеслиесть. Runtime повторяетproof, missinground hidden; недельныеподборки/Shorts/архивы/неизвестныйформат невыдаются. Regression rawfixture сохраняетround; freshuploadedarchive/unknownround/revocation/coexistence/quota/legacyupgrade/failureisolation. Финальноеindependentreview34focused безmaterialblockers.
+
+Node22 ci/check/lint/release835, audit0/privileged/secret/verifyrelease/workerdryrun passed; full4649 passed. NativeChromium actualapp/HTTP/actualAPI labelОбзор+on-demandframe сsyntheticSDK прошёл вместе с прежним privacy/resume/refresh/sourcewithdrawal. public/assets неизменны: UIkind ужеподдерживался, launch140 сохраняется. Реальные Googleформаты/positivehighlightpublication иphysicalTelegramplayback пока не подтверждены: directYouTube RSS executorproxy403 не обходили; официальныйjleague.jp/en footer подтверждаеттекущийканал, homepageweeklycompilations непривязаныкматчам. Обязательно exactheadCI→merge→actualprotectedrefresh+inspectunmatched→mainQuality/Deploy→publicmanifestproof. Не объявлять realhighlight опубликованным по syntheticтесту.
+
+
 ## 2026-10-24 — Codex — Непрерывный просмотр при обновлении каталога
 PR [#1010](https://github.com/TRAP44/football-analytics-cloudflare/pull/1010), ветка `codex/watch-background-revalidation`. Предыдущий #1009 действительно выпущен: main1c0a735a, MainQuality40095807486/CodeQL40095807543/Deploy40096094053 success, CFversioncab7773e-f2d2-4bbb-8168-735a402fa5ca, launch139, publicmanifest SHA и25postdeploychecks проверены.
 

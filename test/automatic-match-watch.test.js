@@ -2,16 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {refreshMatchWatch} from '../scripts/refresh-match-watch.js';
 import {WATCH_DISCOVERY_KEY,WATCH_DISCOVERY_INTERVAL} from '../scripts/discover-match-watch.js';
-import {WATCH_POLICIES,automaticWatchMatch} from '../src/match-watch-policy.js';
+import {WATCH_POLICIES,automaticWatchMatch,automaticHighlightsMatch} from '../src/match-watch-policy.js';
 import {validatedWatchOptions,watchCacheKey} from '../src/match-watch.js';
 import {createUserDataApiRuntime} from '../src/user-data-api-runtime.js';
 import {matchCenterCacheKey} from '../src/match-center-cache-key.js';
 const now=Date.parse('2026-10-23T21:00:00Z'),iso=offset=>new Date(now+offset).toISOString();
-const match={fixtureId:777777,date:iso(12*3600000),status:'NS',home:{id:290,name:'Kashima'},away:{id:281,name:'Kashiwa Reysol'},leagueId:98,league:'J1 League',season:2027,finished:false};
+const match={fixtureId:777777,date:iso(12*3600000),status:'NS',home:{id:290,name:'Kashima'},away:{id:281,name:'Kashiwa Reysol'},leagueId:98,league:'J1 League',season:2027,round:'Regular Season - 10',finished:false};
 const video={id:'abcdefghijk',snippet:{channelId:WATCH_POLICIES[0].channelId,title:'Kashima Antlers v Kashiwa Reysol - Live Match | J.League',liveBroadcastContent:'upcoming'},status:{privacyStatus:'public',embeddable:true},contentDetails:{},liveStreamingDetails:{scheduledStartTime:iso(12*3600000-300000)}};
-const raw=m=>({fixture:{id:m.fixtureId,date:m.date,status:{short:m.status}},teams:{home:m.home,away:m.away},league:{id:m.leagueId,name:m.league,season:m.season}});
+const raw=m=>({fixture:{id:m.fixtureId,date:m.date,status:{short:m.status}},teams:{home:m.home,away:m.away},league:{id:m.leagueId,name:m.league,season:m.season,round:m.round}});
 function harness(){
- const cache=new Map(),calls=[];let items=[structuredClone(video)],matches=[structuredClone(match)],failSearch=false,failWrite=false,searchResults=null,currentNow=now;
+ const cache=new Map(),calls=[];let items=[structuredClone(video)],matches=[structuredClone(match)],failSearch=false,failWrite=false,failUploads=false,searchResults=null,uploadResults=null,currentNow=now;
  const env={SUPABASE_URL:'https://example.supabase.co',SUPABASE_SECRET_KEY:'db-test-secret',YOUTUBE_DATA_API_KEY:'youtube-test-secret'};
  const fetchImpl=async(value,init)=>{
   const url=new URL(value);calls.push({url,init});
@@ -19,6 +19,7 @@ function harness(){
   if(url.hostname==='www.googleapis.com'){
    assert.equal(init.headers.apikey,undefined);assert.equal(init.headers['X-Goog-Api-Key'],env.YOUTUBE_DATA_API_KEY);
    if(url.pathname.endsWith('/search')){if(failSearch)throw Error('private upstream text');return Response.json({items:searchResults??items.map(v=>({id:{videoId:v.id}}))});}
+   if(url.pathname.endsWith('/playlistItems')){if(failUploads)throw Error('uploads unavailable');assert.equal(url.searchParams.get('playlistId'),'UU'+WATCH_POLICIES[0].channelId.slice(2));assert.equal(url.searchParams.get('maxResults'),'20');return Response.json({items:(uploadResults??items.map(v=>v.id)).map(id=>({contentDetails:{videoId:id}}))});}
    assert.ok(url.pathname.endsWith('/videos'));assert.ok(url.searchParams.get('id').split(',').length<=50);return Response.json({items});
   }
   assert.equal(url.hostname,'example.supabase.co');assert.equal(init.headers['X-Goog-Api-Key'],undefined);
@@ -32,19 +33,19 @@ function harness(){
   }
   assert.equal(url.pathname,'/rest/v1/analysis_cache');const key=url.searchParams.get('cache_key');
   if(key===`eq.${WATCH_DISCOVERY_KEY}`)return Response.json((cache.has(WATCH_DISCOVERY_KEY)&&(cache.get(WATCH_DISCOVERY_KEY).expiresAt??Infinity)>currentNow)?[{cache_key:WATCH_DISCOVERY_KEY,payload:cache.get(WATCH_DISCOVERY_KEY).payload}]:[]);
-  if(key.startsWith('in.(provider-fixtures:'))return Response.json([{cache_key:'provider-fixtures:2026-10-24:v1',payload:{date:'2026-10-24',fetchedAt:iso(-60000),fixtures:matches.map(raw)}}]);
+  if(key.startsWith('in.(provider-fixtures:'))return Response.json([{cache_key:'provider-fixtures:2026-10-24:v1',payload:{date:'2026-10-24',fetchedAt:new Date(currentNow-60000).toISOString(),fixtures:matches.map(raw)}}]);
   if(key.startsWith('like.'))return Response.json([]);
   assert.match(key,/^in\.\(match-center:/);return Response.json([]);
  };
  const run=(offset=0)=>{currentNow=now+offset;return refreshMatchWatch({env,manifest:{version:1,items:[]},automatic:true,fetchImpl,now:currentNow});};
- return {run,cache,calls,setVideos:v=>{items=v;},setMatches:m=>{matches=m;},setSearchResults:v=>{searchResults=v;},failSearch:()=>{failSearch=true;},failWrite:()=>{failWrite=true;}};
+ return {run,cache,calls,setVideos:v=>{items=v;},setMatches:m=>{matches=m;},setSearchResults:v=>{searchResults=v;},setUploads:v=>{uploadResults=v;},failSearch:()=>{failSearch=true;},failUploads:()=>{failUploads=true;},failWrite:()=>{failWrite=true;}};
 }
 const apiRuntime=deps=>createUserDataApiRuntime(new Proxy(deps,{get:(target,key)=>key in target?target[key]:async()=>[]}));
 const searchCalls=h=>h.calls.filter(call=>call.url.pathname.endsWith('/search')).length;
 
 test('a previously undeployed fixture/video is discovered, bound and published without a per-match approval',async()=>{
  const h=harness(),report=await h.run();
- assert.equal(report.discovery,'searched');assert.equal(report.automaticMatched,1);assert.equal(report.automaticPublished,1);assert.equal(report.youtubeRequests,3);assert.equal(searchCalls(h),2);
+ assert.equal(report.discovery,'searched');assert.equal(report.automaticMatched,1);assert.equal(report.automaticPublished,1);assert.equal(report.youtubeRequests,4);assert.equal(searchCalls(h),2);
  const payload=h.cache.get(watchCacheKey(match.fixtureId)).payload;
  assert.equal(payload.items[0].approval.version,2);assert.equal(payload.items[0].approval.policyId,WATCH_POLICIES[0].id);
  assert.equal(validatedWatchOptions(match,payload,{now,approvals:[],country:'RU'}).length,1);
@@ -79,7 +80,7 @@ test('deleted/private/geoblocked videos withdraw old bindings on the next metada
 });
 
 test('search attempt is durable before API I/O; failed search does not repeat every tick',async()=>{
- const h=harness();h.failSearch();const report=await h.run();assert.equal(report.discovery,'failed_retaining_previous');assert.equal(report.discoveryError,'WATCH_DISCOVERY_SEARCH_FAILED');
+ const h=harness();h.failSearch();const report=await h.run();assert.equal(report.discovery,'partial');assert.equal(report.discoveryError,'WATCH_DISCOVERY_SEARCH_FAILED');
  assert.ok(h.cache.get(WATCH_DISCOVERY_KEY).payload.attemptedAt);assert.equal(searchCalls(h),1);
  await h.run(300000);assert.equal(searchCalls(h),1);
  const unknown=harness();unknown.failWrite();await assert.rejects(unknown.run(),e=>e.code==='WATCH_WRITE_UNCONFIRMED');assert.equal(searchCalls(unknown),0);assert.equal(unknown.calls.filter(call=>call.init.method==='POST').length,1);
@@ -117,7 +118,7 @@ const finished={...match,status:'FT',finished:true};
 const replay={...video,snippet:{...video.snippet,title:video.snippet.title.replace('Live Match','Full Match'),liveBroadcastContent:'none'},liveStreamingDetails:{...video.liveStreamingDetails,actualStartTime:iso(12*3600000-300000),actualEndTime:iso(14*3600000)}};
 
 test('a bound LIVE becomes a full replay and survives disappearance from LIVE/upcoming search',async()=>{
- const h=harness();await h.run();h.setMatches([finished]);h.setVideos([replay]);h.setSearchResults([]);
+ const h=harness();await h.run();h.setMatches([finished]);h.setVideos([replay]);h.setSearchResults([]);h.setUploads([]);
  const offset=15*3600000,report=await h.run(offset);
  assert.equal(report.automaticPublished,1);assert.equal(report.discovery,'searched');
  const payload=h.cache.get(watchCacheKey(match.fixtureId)).payload;
@@ -145,4 +146,104 @@ test('ended recording requires canonical final status, real full-length timing a
 test('deleting an already published replay clears its option on the next tick',async()=>{
  const h=harness();await h.run();h.setMatches([finished]);h.setVideos([replay]);h.setSearchResults([]);await h.run(15*3600000);
  h.setVideos([]);assert.equal((await h.run(15*3600000+300000)).published,0);assert.equal(h.cache.get(watchCacheKey(match.fixtureId)).payload.items.length,0);
+});
+
+
+const highlight={id:'zyxwvutsrqp',snippet:{channelId:WATCH_POLICIES[0].channelId,title:'Kashima Antlers vs. Kashiwa Reysol | 2026/27 J1 League | Matchweek 10 | Highlights',liveBroadcastContent:'none',publishedAt:iso(14*3600000)},status:{privacyStatus:'public',embeddable:true},contentDetails:{duration:'PT5M12S'}};
+
+test('a standalone official post-match upload publishes an overview without any previously bound live video',async()=>{
+ const h=harness();h.setVideos([highlight]);h.setMatches([finished]);h.setSearchResults([]);
+ const report=await h.run(15*3600000);assert.equal(report.youtubeRequests,4);assert.equal(report.automaticPublished,1);
+ const payload=h.cache.get(watchCacheKey(match.fixtureId)).payload,item=payload.items[0];
+ assert.equal(item.kind,'highlights');assert.equal(item.label,'Обзор J.LEAGUE');assert.equal(item.publishedAt,highlight.snippet.publishedAt);assert.equal(item.videoDuration,'PT5M12S');
+ assert.equal(validatedWatchOptions(finished,payload,{now:now+15*3600000,approvals:[],country:'RU'})[0].embed,true);
+ assert.equal(validatedWatchOptions(match,payload,{now:now+15*3600000,approvals:[]}).length,0);
+ const uploads=h.calls.find(c=>c.url.pathname.endsWith('/playlistItems'));assert.ok(uploads);assert.equal(h.calls.filter(c=>c.url.pathname.endsWith('/playlistItems')).length,1);
+ h.setSearchResults([]);h.setUploads([]);assert.equal((await h.run(15*3600000+300000)).automaticPublished,1);assert.equal(h.calls.filter(c=>c.url.pathname.endsWith('/playlistItems')).length,1,'no uploads poll every five minutes');
+});
+
+test('weekly compilations, old meetings, premieres, short clips and full-length videos never become match highlights',async()=>{
+ const variants=[
+  {...highlight,snippet:{...highlight.snippet,title:'Weekly Highlights Show - Matchweek 10 | J.League'}},
+  {...highlight,snippet:{...highlight.snippet,title:highlight.snippet.title.replace('Antlers','Antlers U21')}},
+  {...highlight,snippet:{...highlight.snippet,title:highlight.snippet.title.replace('Highlights','Goals')}},
+  {...highlight,snippet:{...highlight.snippet,publishedAt:iso(-86400000)}},
+  {...highlight,snippet:{...highlight.snippet,publishedAt:iso(70*3600000)}},
+  {...highlight,snippet:{...highlight.snippet,liveBroadcastContent:'upcoming'}},
+  {...highlight,snippet:{...highlight.snippet,channelId:'UC-unverified'}},
+  {...highlight,liveStreamingDetails:{actualEndTime:iso(14*3600000)}},
+  {...highlight,contentDetails:{duration:'PT59S'}},
+  {...highlight,contentDetails:{duration:'PT1H30M'}},
+  {...highlight,contentDetails:{duration:'PT21M'}},
+  {...highlight,contentDetails:{}},
+ ];
+ for(const source of variants){const h=harness();h.setVideos([source]);h.setSearchResults([]);h.setMatches([finished]);assert.equal((await h.run(71*3600000)).published,0,JSON.stringify(source));}
+});
+
+test('seasonal highlights require exact canonical clubs, season and a compatible known round',async()=>{
+ const h=harness();h.setVideos([{...highlight,snippet:{...highlight.snippet,title:'Kashima Antlers vs. Kashiwa Reysol | 2026/27 J1 League | Matchweek 10 | Highlights'}}]);h.setMatches([{...finished,round:'Regular Season - 10'}]);h.setSearchResults([]);
+ assert.equal((await h.run(15*3600000)).published,1);
+ const payload=h.cache.get(watchCacheKey(match.fixtureId)).payload;
+ assert.equal(validatedWatchOptions({...finished,round:'Regular Season - 11'},payload,{now:now+15*3600000,approvals:[]}).length,0);
+ for(const title of ['Kashima Antlers vs. Kashiwa Reysol | 2025/26 J1 League | Matchweek 10 | Highlights','Kashiwa Reysol vs. Kashima Antlers | 2026/27 J1 League | Matchweek 10 | Highlights']){
+  const v=structuredClone(payload);v.items[0].videoTitle=title;assert.equal(validatedWatchOptions(finished,v,{now:now+15*3600000,approvals:[]}).length,0);
+ }
+});
+
+test('runtime independently rejects corrupted highlight evidence, source removal and country revocation',async()=>{
+ const h=harness();h.setVideos([highlight]);h.setMatches([finished]);h.setSearchResults([]);await h.run(15*3600000);
+ const original=h.cache.get(watchCacheKey(match.fixtureId)).payload,options={now:now+15*3600000,approvals:[]};
+ for(const patch of [{videoDuration:'PT90M'},{broadcastKind:'live'},{videoStream:{}},{publishedAt:iso(70*3600000)},{videoTitle:highlight.snippet.title+' Women'},{ageRestricted:true},{publicVideo:false}]){
+  const payload=structuredClone(original);Object.assign(payload.items[0],patch);assert.equal(validatedWatchOptions(finished,payload,options).length,0,JSON.stringify(patch));
+ }
+ assert.equal(validatedWatchOptions(finished,original,{...options,policies:[{...WATCH_POLICIES[0],highlights:false}]}).length,0);
+ assert.equal(validatedWatchOptions(finished,original,{...options,country:'US'}).length,0);
+ const external=structuredClone(original);external.items[0].embeddable=false;assert.equal(validatedWatchOptions(finished,external,options)[0].embed,false,'official external link remains');
+});
+
+test('a full replay and a short overview coexist; deleted overview is withdrawn without deleting the replay',async()=>{
+ const h=harness();h.setVideos([replay,highlight]);h.setMatches([finished]);h.setSearchResults([]);await h.run(15*3600000);
+ assert.deepEqual(h.cache.get(watchCacheKey(match.fixtureId)).payload.items.map(v=>v.kind).sort(),['highlights','replay']);
+ h.setVideos([replay]);assert.equal((await h.run(15*3600000+300000)).published,1);assert.equal(h.cache.get(watchCacheKey(match.fixtureId)).payload.items[0].kind,'replay');
+});
+
+test('ambiguous final fixtures cannot receive a standalone highlight',async()=>{
+ const h=harness();h.setVideos([highlight]);h.setMatches([finished,{...finished,fixtureId:888888}]);h.setSearchResults([]);assert.equal((await h.run(15*3600000)).published,0);
+});
+
+
+test('fresh uploads of undated archives and missing, unknown or wrong canonical rounds fail closed',()=>{
+ const p=WATCH_POLICIES[0],time=now+15*3600000;
+ assert.equal(automaticHighlightsMatch(p,finished,highlight.snippet.title,highlight.snippet.publishedAt,time),true);
+ for(const round of [undefined,'Unknown','Regular Season - 1'])assert.equal(automaticHighlightsMatch(p,{...finished,round},highlight.snippet.title,highlight.snippet.publishedAt,time),false);
+ assert.equal(automaticHighlightsMatch(p,finished,'Kashima Antlers v Kashiwa Reysol - Highlights | J.League',highlight.snippet.publishedAt,time),false,'upload date is not the date of an undated archival match');
+ const scored='Kashima Antlers 1-0 Kashiwa Reysol | MW 10 | 2026/27 J1 League Highlights';
+ assert.equal(automaticHighlightsMatch(p,{...finished,score:{home:1,away:0}},scored,highlight.snippet.publishedAt,time),true);
+ assert.equal(automaticHighlightsMatch(p,{...finished,score:{home:0,away:1}},scored,highlight.snippet.publishedAt,time),false);
+});
+
+test('deploying highlights reads uploads once without waiting for or repeating the existing live-search interval',async()=>{
+ const h=harness();await h.run();const state=h.cache.get(WATCH_DISCOVERY_KEY);delete state.payload.uploadsAttemptedAt;
+ h.setVideos([highlight]);h.setMatches([finished]);h.setSearchResults([]);const report=await h.run(15*3600000);
+ assert.equal(report.published,1);
+ // Simulate a legacy v1 discovery state whose live search ran one minute ago.
+ const fresh=harness();fresh.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-60001),payload:{version:1,attemptedAt:iso(-60000),videoIds:[],bindings:[]}});
+ const first=await fresh.run();assert.equal(first.discovery,'uploads_searched');assert.equal(searchCalls(fresh),0);assert.equal(first.youtubeRequests,2);
+ const second=await fresh.run(300000);assert.equal(second.discovery,'cached');assert.equal(searchCalls(fresh),0);assert.equal(second.youtubeRequests,1);
+});
+
+
+test('uploads failure records the attempt before I/O, does not retry every tick, and invalid upload state fails closed',async()=>{
+ const h=harness();h.failUploads();const report=await h.run();assert.equal(report.discoveryError,'WATCH_DISCOVERY_SEARCH_FAILED');assert.equal(report.published,1,'optional uploads failure must not lose newly discovered LIVE sources');assert.equal(report.discovery,'partial');assert.ok(h.cache.get(WATCH_DISCOVERY_KEY).payload.videoIds.includes(video.id));
+ assert.equal(h.calls.filter(c=>c.url.pathname.endsWith('/playlistItems')).length,1);assert.ok(h.cache.get(WATCH_DISCOVERY_KEY).payload.uploadsAttemptedAt);
+ await h.run(300000);assert.equal(h.calls.filter(c=>c.url.pathname.endsWith('/playlistItems')).length,1);
+ for(const patch of [{uploadsAttemptedAt:iso(1000)},{uploadIds:['bad-url']}]){
+  const f=harness();f.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-60001),payload:{version:1,attemptedAt:iso(-60000),videoIds:[],bindings:[],...patch}});
+  await assert.rejects(f.run(),error=>error.code==='WATCH_DISCOVERY_STATE_INVALID');assert.equal(f.calls.filter(c=>c.url.hostname==='www.googleapis.com').length,0);
+ }
+});
+
+test('separately scheduled live search retains cached upload IDs until the next uploads check',async()=>{
+ const h=harness();h.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-60001),payload:{version:1,attemptedAt:iso(-WATCH_DISCOVERY_INTERVAL),uploadsAttemptedAt:iso(-60000),uploadIds:[highlight.id],videoIds:[highlight.id],bindings:[]}});
+ h.setVideos([highlight]);h.setSearchResults([]);await h.run();assert.ok(h.cache.get(WATCH_DISCOVERY_KEY).payload.videoIds.includes(highlight.id));assert.equal(h.calls.filter(c=>c.url.pathname.endsWith('/playlistItems')).length,0);
 });
