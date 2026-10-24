@@ -85,7 +85,10 @@
 
 
 
+
 ## На ревью
+
+- [ ] Привязка наблюдавшихся обзоров по независимым данным матча в описании — **Codex** — [PR #1012](https://github.com/TRAP44/football-analytics-cloudflare/pull/1012), `codex/highlights-description-evidence`; actualtitle+matchspecificdesc, archive/category/promotion guards, release839/full4653/38focused/independentreview passed; actualpositivepublication не подтверждена.
 
 - [ ] Автоматические официальные короткие обзоры матчей — **Codex** — [PR #1011](https://github.com/TRAP44/football-analytics-cloudflare/pull/1011), `codex/official-match-highlights`; canonicalseason/mandatoryround, uploads+durablemarker/failureisolation, replay coexist. Localrelease835/full4649/nativebrowser/independentCodexreview passed; actualGooglepublication и CI/deploy проверяются.
 

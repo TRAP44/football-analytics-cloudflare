@@ -14,6 +14,14 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-25 — Codex — Привязка наблюдавшихся заголовков обзоров по описанию
+PR [#1012](https://github.com/TRAP44/football-analytics-cloudflare/pull/1012), ветка `codex/highlights-description-evidence`. Продолжение реального source admission #1011, не объявлять обзоры готовыми по syntheticтестам. #1011 merged449c3d6d, PRQuality40134727840/CodeQL40134727713, MainQuality40135090349/Deploy40135343229 success. ActualprotectedRefresh40135092840,24Oct21:38:22UTC (25Oct00:38МСК): uploads_searched,2GoogleGET, published2replay/rejected0, **0highlights**. Найдены SScpVbbDmqc/Gamba-Kyoto,2lrJR1gD1cA/Tokyo-Avispa,-n76-TIdoCY/Kobe-Machida,SJ4BOFMymDw/Kashima-Kashiwa; заголовки `PROMO | HOME vs AWAY HIGHLIGHTS | J.League` не содержатseason/round. Публичный officialjleague footerсверен, weeklycompilation не привязываласькматчам.
+
+Actualtitle допускаетсятолько при независимомmatch-specific descriptionproof: exactunique season+round в строке `Highlights from/of Matchweek N of/in YYYY/YY J1 League`, либо явном `Match date: YYYY-MM-DD` на календарную датуkickoff Asia/Tokyo иJ1 League. Upload time не заменяетdate. Conflictingdate/season/round, J2/J3/Levain, archive/youth/women префиксы/description иgenericadvertising отклоняются. Description сохраняетсяизfreshGoogle вкаталоге, runtimeповторяетproof. Existingstructuredtitles неизменны; unknownmetadatafailclosed. Publicunmatchedreport ≤6×2000description/duration позволяетactualsourceinspection безuserkeys/новыхGooglecalls. Никакихpublic/assets/SQL/новыхключей/Telegrammessages.
+
+Independentread-only Codexreview нашёлarchiveprefix + boilerplatepromo falsematch; исправленboth, concrete negativesдобавлены. 38focused/release839/full4653/check/lint/secret/privileged/worker passed. Осталось exactheadCI→merge→actualrefresh: positivehighlightpublication не подтверждена; еслиdescriptionне содержитmatch-specificevidence, источник должен остатьсяневидимым. #1011 publicdeployproof записатьвегоPR, текущий этапневыдаватьзаphysicalplayback.
+
+
 ## 2026-10-25 — Codex — Автоматические официальные короткие обзоры
 PR [#1011](https://github.com/TRAP44/football-analytics-cloudflare/pull/1011), ветка `codex/official-match-highlights`. Предыдущий #1010 выпущен: mainc3256a27, PRQuality40128783903/CodeQL40128783762, MainQuality40129140374/CodeQL40129140410/Deploy40129411138 success. ActiveCF0cc01d02-ae29-43c3-934e-26cc0e2d84b6,25postdeploychecks/renderedsmoke и publicmanifest exactSHA/versionedmodule launch140 проверены.
 

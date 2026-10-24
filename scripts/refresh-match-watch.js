@@ -42,10 +42,10 @@ export function approvedYoutubeItem(approval,video,match,now){
     if(!live&&!upcoming || Math.abs((Number.isFinite(scheduled)?scheduled:start)-Date.parse(match.date))>30*60000 || approval.policyId && live && Math.abs(start-Date.parse(match.date))>30*60000)return null;
   }else if(approval.kind==='highlights'&&approval.policyId){
     const policy=WATCH_POLICIES.find(item=>item.id===approval.policyId&&item.revision===approval.policyRevision);
-    if(!automaticHighlightsMatch(policy,match,video.snippet.title,video.snippet.publishedAt,now)||!automaticHighlightsEvidence(details.duration,video.snippet.liveBroadcastContent,video.liveStreamingDetails))return null;
+    if(!automaticHighlightsMatch(policy,match,video.snippet.title,video.snippet.publishedAt,now,video.snippet.description)||!automaticHighlightsEvidence(details.duration,video.snippet.liveBroadcastContent,video.liveStreamingDetails))return null;
   }else if(!match.finished || video.snippet.liveBroadcastContent!=='none' || stream.actualEndTime && (!Number.isFinite(end)||end>now) || approval.policyId && !automaticReplayEvidence(match,stream.actualStartTime,stream.actualEndTime,now))return null;
   return {...approval,channelId:video.snippet.channelId,countries,publicVideo:true,regionVerified:true,ageRestricted:false,embeddable:video.status.embeddable===true,
-    ...(approval.kind==='highlights'?{publishedAt:video.snippet.publishedAt,videoDuration:details.duration,broadcastKind:video.snippet.liveBroadcastContent,videoStream:video.liveStreamingDetails||null}:{}),
+    ...(approval.kind==='highlights'?{publishedAt:video.snippet.publishedAt,videoDescription:video.snippet.description||'',videoDuration:details.duration,broadcastKind:video.snippet.liveBroadcastContent,videoStream:video.liveStreamingDetails||null}:{}),
     availableFrom:Number.isFinite(scheduled)?new Date(scheduled).toISOString():null,
     replayStartedAt:approval.kind==='replay'&&Number.isFinite(start)?new Date(start).toISOString():null,replayEndedAt:approval.kind==='replay'&&Number.isFinite(end)?new Date(end).toISOString():null};
 }
