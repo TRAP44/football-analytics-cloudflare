@@ -18,7 +18,8 @@
         "league": "J1 League",
         "season": 2027,
         "live": false,
-        "finished": true
+        "finished": true,
+        "round": "Regular Season - 12"
       },
       "provider": "youtube",
       "publisher": "jleagueinternational",
@@ -38,7 +39,9 @@
       "fixtureEvidence": {
         "provider": "api-football",
         "observedAt": "2026-10-24T10:09:58.131Z",
-        "fixtureIdentity": "1556114:290:281:98:2027:2026-10-24T06:00:00.000Z"
+        "fixtureIdentity": "1556114:290:281:98:2027:2026-10-24T06:00:00.000Z",
+        "roundAuthorityUrl": "https://www.jleague.jp/en/match/j1/2026/102407/",
+        "roundObservedAt": "2026-10-24T21:56:31.291735Z"
       }
     },
     {
@@ -58,7 +61,8 @@
         "league": "J1 League",
         "season": 2027,
         "live": false,
-        "finished": true
+        "finished": true,
+        "round": "Regular Season - 12"
       },
       "provider": "youtube",
       "publisher": "jleagueinternational",
@@ -78,7 +82,9 @@
       "fixtureEvidence": {
         "provider": "api-football",
         "observedAt": "2026-10-24T10:11:40.704Z",
-        "fixtureIdentity": "1556120:289:303:98:2027:2026-10-24T06:00:00.000Z"
+        "fixtureIdentity": "1556120:289:303:98:2027:2026-10-24T06:00:00.000Z",
+        "roundAuthorityUrl": "https://www.jleague.jp/en/match/j1/2026/102410/",
+        "roundObservedAt": "2026-10-24T21:56:31.291762Z"
       }
     }
   ]

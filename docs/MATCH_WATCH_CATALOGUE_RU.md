@@ -121,3 +121,10 @@ Google-проверка использует максимум4 GET (из них2
 ### Надёжные часы обновления
 
 Отдельный GitHub cron оказался ненадёжным: workflow был active более часа, но запусков по schedule не было. В проекте уже есть рабочие часы — Cloudflare вызывает **Background Jobs** через workflow_dispatch каждые пять минут. Обновление просмотра выполняется отдельной параллельной задачей `watch` этого workflow. У неё собственные main-only/environment ограничения, только Google/Supabase keys, deadline3мин и общий с ручным Refresh Match Watch concurrency key. Telegram и Football keys туда не передаются; leases и порядок задач напоминаний не меняются. Сбой `watch` виден в отдельной задаче и её JSON artifact, но не останавливает независимую задачу отправки уведомлений. В recovery preview/apply просмотр не запускается. Отдельный Refresh Match Watch оставлен ручным, повторного schedule нет.
+
+
+### Проверенное описание самого матча
+
+Protected40136213538 вернул firstsentence `Highlights from Matchweek 12 in the 2026-27 J.League between HOME and AWAY.`. Допуск этого **точного** наблюдавшегосяформата сверяет обеупорядоченныекоманды, сезон иобязательныйcanonicalтур; рекламныйfooter неиспользуется какproof. Противоречащие дополнительныеseason/round/date отклоняются. Сезон2026-27 соответствуетprovider2027. Короткиеобзоры -n76-TIdoCY(Kobe-Machida) иSJ4BOFMymDw(Kashima-Kashiwa) имеютдлительность9:56/10:18, опубликованы24Oct08:18/08:16UTC. Доactualpositivepublication не считатьихвыданнымивприложении.
+
+Недостающийтур двухранееодобренныхfixture snapshots подтверждён **официальными** страницами102410/102407: точныекоманды/дата24Oct2026/J1 иsectionMatchweek12. Вmanifest roundAuthorityUrl/roundObservedAt записаныотдельноотпрежнегоproviderfixtureEvidence; не утверждаемчтоGoogleдоказалcanonicalтур. PublicAPI требуетсобственныйсвежийMatchCenterссовпадающимтуром.

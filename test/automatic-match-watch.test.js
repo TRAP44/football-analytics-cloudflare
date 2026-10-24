@@ -274,3 +274,13 @@ test('archive/category promotional prefixes and generic advertisements cannot su
  assert.equal(automaticHighlightsMatch(p,finished,observedHighlight.snippet.title,published,time,'Watch J1 League live: Matchweek 10 of the 2026/27 season.'),false);
  assert.equal(automaticHighlightsMatch(p,finished,observedHighlight.snippet.title,published,time,'ARCHIVE. '+description),false);
 });
+
+
+test('actual J.LEAGUE first sentence binds both clubs and season-round while generic footer text cannot',async()=>{
+ const finished12={...finished,round:'Regular Season - 12'},source={...observedHighlight,snippet:{...observedHighlight.snippet,description:'Highlights from Matchweek 12 in the 2026-27 J.League between Kashima Antlers and Kashiwa Reysol.\n\nOfficial links: https://www.jleague.jp/en/'}};
+ const h=harness();h.setVideos([source]);h.setMatches([finished12]);h.setSearchResults([]);const report=await h.run(15*3600000);assert.equal(report.published,1);
+ const payload=h.cache.get(watchCacheKey(match.fixtureId)).payload,options={now:now+15*3600000,approvals:[]};assert.equal(validatedWatchOptions(finished12,payload,options).length,1);
+ for(const description of [source.snippet.description.replace('2026-27','2025-26'),source.snippet.description.replace('Matchweek 12','Matchweek 11'),source.snippet.description.replace('and Kashiwa Reysol','and Vissel Kobe'),'Watch highlights this week.\n'+source.snippet.description,source.snippet.description+'\nMatch date: 2025-10-24',source.snippet.description+'\nMatchweek 11',source.snippet.description+'\n2025/26']){
+  const bad=structuredClone(payload);bad.items[0].videoDescription=description;assert.equal(validatedWatchOptions(finished12,bad,options).length,0,description);
+ }
+});

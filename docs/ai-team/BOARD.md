@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Допустить фактически проверенное описание J.LEAGUE и сохранить подтверждённый 12-й тур двух первых матчей — **Codex** — `codex/observed-jleague-highlight-format`; actual40136213538 + officialmatchpages102407/102410, no guessedround.
+
 
 
 
