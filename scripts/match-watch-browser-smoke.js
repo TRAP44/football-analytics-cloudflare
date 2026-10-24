@@ -14,7 +14,7 @@ const approval={match,provider:'youtube',publisher:'fifa',videoId:'abcdefghijk',
 const catalogue={version:1,fixtureIdentity:watchFixtureIdentity(match),items:[{...approval,channelId:WATCH_PUBLISHERS.fifa,publicVideo:true,embeddable:true,ageRestricted:false,regionVerified:true,checkedAt:iso(0),expiresAt:iso(WATCH_TTL_MS),approval:{version:1,confirmed:true,confirmedAt:approval.confirmedAt,fixtureIdentity:watchFixtureIdentity(match)}}]};
 const functions='addFavorite addFavoritePlayer addReminder analysisFreshness analysisResponsePayload getBotDigestSubscription getCache getFavoritePlayers getFavorites getHistory getPreferences getQuota getReminders getStaleCache getUserRecord isAdminUser publicDataCapabilities publicDigestSettings publicPlayerFollowNotificationContract publicRuntimeControls publicSiteUrl publicSmartNotificationCapabilities recordOpsEvent reminderDeliveryStatus removeFavorite removeFavoritePlayer removeReminder savePreferences setBotDigestSubscription'.split(' ');
 const runtime={maintenanceMode:false,analysisEnabled:true,aiEnabled:true,liveEnabled:true,searchEnabled:true};
-const center=()=>({mode:'live',generatedAt:new Date().toISOString(),match,lineups:{},availability:{},playerLeaders:{home:[],away:[]}});
+const center=()=>({mode:match.finished?'finished':'live',generatedAt:new Date().toISOString(),match,lineups:{},availability:{},playerLeaders:{home:[],away:[]}});
 const api=createUserDataApiRuntime({...Object.fromEntries(functions.map(key=>[key,async()=>[]])),json:(data,status=200)=>Response.json(data,{status}),getQuota:async()=>({plan:'FREE',left:5,limit:5,used:0}),getPreferences:async()=>({}),getUserRecord:async()=>({}),publicRuntimeControls:()=>runtime,publicDataCapabilities:()=>({}),publicSmartNotificationCapabilities:()=>({}),isAdminUser:()=>false,watchApprovals:[approval],getCache:async key=>key===matchCenterCacheKey(999)?{match}:key===watchCacheKey(999)?catalogue:null});
 let delay=false,requests=0,centerRequests=0;
 const server=createServer(async(req,res)=>{
@@ -81,5 +81,14 @@ try{
  if(!await evaluate("document.querySelector('#matchWatchPanel iframe')===window.preservedWatchFrame && window.preservedWatchFrame.isConnected"))throw Error('actual LIVE rerender destroyed iframe');
  await evaluate("document.getElementById('navMatches').click()");
  await wait("!document.querySelector('#matchWatchPanel iframe') && document.getElementById('matchWatchPanel').hidden",'actual navigation left media');
- console.log(JSON.stringify({scope:'synthetic_browser_and_cache_api_not_actual_playback',countryRequired:true,lazyMedia:true,sameFixturePreserved:true,deniedEmbedFallback:true,countryTeardownImmediate:true,navigationTeardown:true,actualAppWiring:true,actualCenterRefreshPreservesFrame:true,widths:[320,390,900],requests}));
+ // A completed fixture uses the same real application/HTTP path, with the
+ // existing full-recording label and on-demand player rather than a LIVE label.
+ Object.assign(match,{status:'FT',statusLabel:'Матч завершён',live:false,finished:true});approval.kind='replay';catalogue.items[0].kind='replay';
+ await cdp.call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/full-app?fixtureId=999&action=center&watch=1&replaySmoke=1#${new URLSearchParams({tgWebAppData:launch})}`});
+ await wait("Boolean(document.querySelector('#matchWatchPanel [data-watch-play]')) && document.querySelector('#bootGate')?.hidden",'finished match replay missing');
+ const replayLabel=await evaluate("document.querySelector('#matchWatchPanel .match-watch-source span').textContent");
+ if(!replayLabel.includes('Полная запись')||replayLabel.includes('Трансляция'))throw Error('replay incorrectly labelled as LIVE');
+ await evaluate("window.YT={Player:class {constructor(iframe){this.iframe=iframe;}destroy(){this.iframe.remove();}}};document.querySelector('#matchWatchPanel [data-watch-play]').click()");
+ await wait("Boolean(document.querySelector('#matchWatchPanel iframe'))",'replay player not mounted');
+ console.log(JSON.stringify({scope:'synthetic_browser_and_cache_api_not_actual_playback',countryRequired:true,lazyMedia:true,sameFixturePreserved:true,deniedEmbedFallback:true,countryTeardownImmediate:true,navigationTeardown:true,actualAppWiring:true,actualCenterRefreshPreservesFrame:true,finishedReplayLabel:true,finishedReplayPlayer:true,widths:[320,390,900],requests}));
 }finally{cdp?.close();await stopChrome(launched.chrome);await new Promise(resolve=>server.close(resolve));if(launched.profileDir)await rm(launched.profileDir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}

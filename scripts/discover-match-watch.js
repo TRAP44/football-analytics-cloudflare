@@ -1,5 +1,5 @@
 // Main-only bounded discovery. No football-provider requests and no user data.
-import {WATCH_POLICIES,automaticWatchMatch} from '../src/match-watch-policy.js';
+import {WATCH_POLICIES,automaticWatchMatch,automaticWatchValidUntil} from '../src/match-watch-policy.js';
 import {watchFixtureIdentity} from '../src/match-watch.js';
 import {matchCenterCacheKey} from '../src/match-center-cache-key.js';
 export const WATCH_DISCOVERY_KEY='match-watch-discovery:v1';
@@ -11,8 +11,9 @@ export async function discoverMatchWatch({readCache,writeCache,youtube,approvals
   const stateRows=await readCache({cache_key:`eq.${WATCH_DISCOVERY_KEY}`,limit:'1'});
   if(stateRows.length>1)fail('WATCH_DISCOVERY_STATE_INVALID');
   const previous=stateRows[0]?.payload;
-  if(previous && (stateRows[0].cache_key!==WATCH_DISCOVERY_KEY || previous.version!==1 || !validTime(previous.attemptedAt,now,72*3600000) || !Array.isArray(previous.videoIds)||previous.videoIds.length>30||previous.videoIds.some(id=>!videoId(id))||!Array.isArray(previous.bindings)||previous.bindings.length>20))fail('WATCH_DISCOVERY_STATE_INVALID');
+  if(previous && (stateRows[0].cache_key!==WATCH_DISCOVERY_KEY || previous.version!==1 || !validTime(previous.attemptedAt,now,72*3600000) || !Array.isArray(previous.videoIds)||previous.videoIds.length>30||previous.videoIds.some(id=>!videoId(id))||!Array.isArray(previous.bindings)||previous.bindings.length>20||previous.bindings.some(binding=>!binding||!watchFixtureIdentity(binding.match)||binding.videoIds!==undefined&&(!Array.isArray(binding.videoIds)||binding.videoIds.length>5||binding.videoIds.some(id=>!videoId(id))))))fail('WATCH_DISCOVERY_STATE_INVALID');
   const state=previous?structuredClone(previous):{version:1,attemptedAt:new Date(0).toISOString(),videoIds:[],bindings:[]};
+  const retained=state.bindings.filter(binding=>validTime(binding.observedAt,now,7*86400000)&&Date.parse(binding.match.date)+7*86400000>now);
   let discoveryFailed=false;
   if(!previous || now-Date.parse(previous.attemptedAt)>=WATCH_DISCOVERY_INTERVAL){
     // Persist the attempt BEFORE spending search quota. Shared workflow concurrency
@@ -33,7 +34,7 @@ export async function discoverMatchWatch({readCache,writeCache,youtube,approvals
     }catch{discoveryFailed=true;report.discovery='failed_retaining_previous';}
   }else report.discovery='cached';
   // Fresh per-video metadata is checked every tick, including deleted/private IDs.
-  const ids=[...new Set([...state.videoIds,...approvals.filter(item=>item.provider==='youtube').map(item=>item.videoId)])];
+  const ids=[...new Set([...state.videoIds,...approvals.filter(item=>item.provider==='youtube').map(item=>item.videoId),...retained.flatMap(binding=>binding.videoIds||[])])].slice(0,50);
   const videos=ids.length?await youtube('videos',{part:'snippet,status,contentDetails,liveStreamingDetails',id:ids.join(',')}):[];
   if(videos.length>ids.length)fail('WATCH_VIDEO_RESPONSE_INVALID');
   const seen=new Set();
@@ -41,9 +42,9 @@ export async function discoverMatchWatch({readCache,writeCache,youtube,approvals
   const dates=[0,86400000].map(offset=>new Date(now+offset).toISOString().slice(0,10));
   const rows=await readCache({cache_key:`in.(${dates.map(date=>`provider-fixtures:${date}:v1`).join(',')})`,limit:'2'});
   const matches=new Map();
-  const put=(match,observedAt)=>{if(watchFixtureIdentity(match)&&validTime(observedAt,now,48*3600000))matches.set(match.fixtureId,{match,observedAt});};
-  for(const binding of state.bindings)put(binding?.match,binding?.observedAt);
-  for(const approval of approvals){const e=approval.fixtureEvidence;if(e?.provider==='api-football'&&e.fixtureIdentity===watchFixtureIdentity(approval.match))put(approval.match,e.observedAt);}
+  const put=(match,observedAt,maxAge=48*3600000)=>{if(watchFixtureIdentity(match)&&validTime(observedAt,now,maxAge))matches.set(match.fixtureId,{match,observedAt});};
+  for(const binding of retained)put(binding.match,binding.observedAt,7*86400000);
+  for(const approval of approvals){const e=approval.fixtureEvidence;if(e?.provider==='api-football'&&e.fixtureIdentity===watchFixtureIdentity(approval.match))put(approval.match,e.observedAt,approval.kind==='replay'?7*86400000:48*3600000);}
   for(const row of rows){
     const payload=row?.payload;
     if(!dates.includes(payload?.date)||row.cache_key!==`provider-fixtures:${payload.date}:v1`||!validTime(payload.fetchedAt,now,48*3600000)||!Array.isArray(payload.fixtures)||payload.fixtures.length>2000)continue;
@@ -59,17 +60,23 @@ export async function discoverMatchWatch({readCache,writeCache,youtube,approvals
   for(const video of videos){
     const policy=policies.find(item=>item.channelId===video.snippet?.channelId);
     if(!policy)continue;
-    const candidates=[...matches.values()].filter(({match})=>automaticWatchMatch(policy,match,video.snippet.title,video.liveStreamingDetails?.scheduledStartTime,now));
+    const candidates=[...matches.values()].filter(({match})=>automaticWatchMatch(policy,match,video.snippet.title,video.liveStreamingDetails?.scheduledStartTime,now,match.finished?'replay':'live'));
     if(candidates.length!==1){report.ambiguousOrUnmatched=(report.ambiguousOrUnmatched||0)+1;continue;}
     if(automatic.length>=20)break;
     if(automatic.filter(item=>item.match.fixtureId===candidates[0].match.fixtureId).length>=5)continue;
-    const {match,observedAt}=candidates[0];
-    automatic.push({match,provider:'youtube',publisher:policy.publisher,videoId:video.id,eventUrl:`https://www.youtube.com/watch?v=${video.id}`,kind:'live',access:'free',label:policy.label,countries:[...policy.countries],confirmed:true,confirmedAt:new Date(now).toISOString(),validUntil:new Date(Date.parse(match.date)+4*3600000).toISOString(),videoTitle:video.snippet.title,policyId:policy.id,policyRevision:policy.revision,fixtureEvidence:{provider:'api-football',observedAt,fixtureIdentity:watchFixtureIdentity(match)}});
+    const {match,observedAt}=candidates[0],kind=match.finished?'replay':'live';
+    automatic.push({match,provider:'youtube',publisher:policy.publisher,videoId:video.id,eventUrl:`https://www.youtube.com/watch?v=${video.id}`,kind,access:'free',label:kind==='replay'?'Полная запись J.LEAGUE':policy.label,countries:[...policy.countries],confirmed:true,confirmedAt:new Date(now).toISOString(),validUntil:new Date(automaticWatchValidUntil(policy,match,kind)).toISOString(),videoTitle:video.snippet.title,policyId:policy.id,policyRevision:policy.revision,fixtureEvidence:{provider:'api-football',observedAt,fixtureIdentity:watchFixtureIdentity(match)}});
   }
   report.automaticMatched=automatic.length;
-  // Keep the old bindings for one final empty-catalogue write on removal or mismatch.
-  const cleanup=state.bindings.filter(binding=>watchFixtureIdentity(binding?.match)&&validTime(binding.observedAt,now,48*3600000)).map(binding=>binding.match);
-  state.bindings=[...new Map(automatic.map(item=>[item.match.fixtureId,{match:item.match,observedAt:item.fixtureEvidence.observedAt}])).values()];
+  // Retain bound video IDs even after search stops returning ended streams.
+  // Public/private/deleted metadata is still checked on every normal tick.
+  const cleanup=retained.map(binding=>binding.match);
+  const bindings=new Map(retained.map(binding=>[binding.match.fixtureId,{...binding,videoIds:binding.videoIds||[]}]));
+  for(const item of automatic){
+    const prior=bindings.get(item.match.fixtureId);
+    bindings.set(item.match.fixtureId,{match:item.match,observedAt:item.fixtureEvidence.observedAt,videoIds:[...new Set([item.videoId,...prior?.videoIds||[]])].slice(0,5)});
+  }
+  state.bindings=[...bindings.values()].sort((a,b)=>Date.parse(b.match.date)-Date.parse(a.match.date)).slice(0,20);
   await writeCache(WATCH_DISCOVERY_KEY,0,state,now+72*3600000);
   if(discoveryFailed)report.discoveryError='WATCH_DISCOVERY_SEARCH_FAILED';
   return {automatic,videos,cleanup};

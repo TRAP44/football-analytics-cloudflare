@@ -5,7 +5,7 @@
       "match": {
         "fixtureId": 1556114,
         "date": "2026-10-24T06:00:00.000Z",
-        "status": "NS",
+        "status": "FT",
         "home": {
           "id": 290,
           "name": "Kashima"
@@ -18,26 +18,26 @@
         "league": "J1 League",
         "season": 2027,
         "live": false,
-        "finished": false
+        "finished": true
       },
       "provider": "youtube",
       "publisher": "jleagueinternational",
       "videoId": "6IqOyyLkj90",
       "eventUrl": "https://www.youtube.com/watch?v=6IqOyyLkj90",
-      "kind": "live",
+      "kind": "replay",
       "access": "free",
-      "label": "Трансляция J.LEAGUE",
+      "label": "Полная запись J.LEAGUE",
       "countries": [
         "RU",
         "KZ",
         "BY"
       ],
       "confirmed": true,
-      "confirmedAt": "2026-10-23T19:42:44Z",
-      "validUntil": "2026-10-24T10:00:00.000Z",
+      "confirmedAt": "2026-10-24T10:09:58.131Z",
+      "validUntil": "2026-10-31T06:00:00.000Z",
       "fixtureEvidence": {
         "provider": "api-football",
-        "observedAt": "2026-10-23T19:39:09.789Z",
+        "observedAt": "2026-10-24T10:09:58.131Z",
         "fixtureIdentity": "1556114:290:281:98:2027:2026-10-24T06:00:00.000Z"
       }
     },
@@ -45,7 +45,7 @@
       "match": {
         "fixtureId": 1556120,
         "date": "2026-10-24T06:00:00.000Z",
-        "status": "NS",
+        "status": "FT",
         "home": {
           "id": 289,
           "name": "Vissel Kobe"
@@ -58,26 +58,26 @@
         "league": "J1 League",
         "season": 2027,
         "live": false,
-        "finished": false
+        "finished": true
       },
       "provider": "youtube",
       "publisher": "jleagueinternational",
       "videoId": "9lzAcSA6zy4",
       "eventUrl": "https://www.youtube.com/watch?v=9lzAcSA6zy4",
-      "kind": "live",
+      "kind": "replay",
       "access": "free",
-      "label": "Трансляция J.LEAGUE",
+      "label": "Полная запись J.LEAGUE",
       "countries": [
         "RU",
         "KZ",
         "BY"
       ],
       "confirmed": true,
-      "confirmedAt": "2026-10-23T19:42:44Z",
-      "validUntil": "2026-10-24T10:00:00.000Z",
+      "confirmedAt": "2026-10-24T10:11:40.704Z",
+      "validUntil": "2026-10-31T06:00:00.000Z",
       "fixtureEvidence": {
         "provider": "api-football",
-        "observedAt": "2026-10-23T19:39:40.624Z",
+        "observedAt": "2026-10-24T10:11:40.704Z",
         "fixtureIdentity": "1556120:289:303:98:2027:2026-10-24T06:00:00.000Z"
       }
     }
