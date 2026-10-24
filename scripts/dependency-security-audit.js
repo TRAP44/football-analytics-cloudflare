@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const SECURITY_OVERRIDE_FLOORS=Object.freeze({
-  undici:'7.30.0',
+  undici:'7.30.1',
   sharp:'0.35.5',
 });
 
