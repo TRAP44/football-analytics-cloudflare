@@ -1,9 +1,10 @@
-// Main-only curated catalogue. No title-based matching, scraping or public writes.
+// Main-only reviewed sources: manual approvals and strict official league policies.
 import {readFileSync,mkdirSync,writeFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {boundedSourceJson} from './inspect-match-watch.js';
 import {WATCH_COUNTRIES,WATCH_PUBLISHERS,WATCH_TTL_MS,watchFixtureIdentity,watchCacheKey,validatedWatchOptions,officialWatchUrl} from '../src/match-watch.js';
 import {matchCenterCacheKey} from '../src/match-center-cache-key.js';
+import {discoverMatchWatch} from './discover-match-watch.js';
 
 const fail=code=>{throw Object.assign(new Error(code),{code});};
 const timestamp=value=>typeof value==='string'?Date.parse(value):NaN;
@@ -36,16 +37,16 @@ export function approvedYoutubeItem(approval,video,match,now){
     if(match.finished || now>Date.parse(match.date)+4*3600000)return null;
     const live=video.snippet.liveBroadcastContent==='live'&&Number.isFinite(start)&&start<=now&&!stream.actualEndTime;
     const upcoming=video.snippet.liveBroadcastContent==='upcoming'&&!stream.actualStartTime&&!stream.actualEndTime&&Number.isFinite(scheduled)&&scheduled>now;
-    // A human must confirm tournament/category/date; this is an additional mismatch guard.
-    if(!live&&!upcoming || Math.abs((Number.isFinite(scheduled)?scheduled:start)-Date.parse(match.date))>30*60000)return null;
+    // Manual approval or strict league policy already checks category and fixture.
+    if(!live&&!upcoming || Math.abs((Number.isFinite(scheduled)?scheduled:start)-Date.parse(match.date))>30*60000 || approval.policyId && live && Math.abs(start-Date.parse(match.date))>30*60000)return null;
   }else if(!match.finished || video.snippet.liveBroadcastContent!=='none' || stream.actualEndTime && (!Number.isFinite(end)||end>now))return null;
   return {...approval,channelId:video.snippet.channelId,countries,publicVideo:true,regionVerified:true,ageRestricted:false,embeddable:video.status.embeddable===true,
     availableFrom:Number.isFinite(scheduled)?new Date(scheduled).toISOString():null};
 }
-export async function refreshMatchWatch({env=process.env,manifest,fetchImpl=fetch,now=Date.now()}={}){
-  const report={scope:'curated_watch_catalogue',checkedAt:new Date(now).toISOString(),approvals:0,published:0,rejected:0,missingFixture:0,youtubeRequests:0,cacheReads:0,cacheWrites:0};
-  const approvals=validateWatchApprovals(manifest,now);report.approvals=approvals.length;
-  if(!approvals.length)return report;
+export async function refreshMatchWatch({env=process.env,manifest,fetchImpl=fetch,now=Date.now(),automatic=false}={}){
+  const report={scope:automatic?'automatic_official_watch_catalogue':'curated_watch_catalogue',checkedAt:new Date(now).toISOString(),approvals:0,published:0,rejected:0,missingFixture:0,youtubeRequests:0,cacheReads:0,cacheWrites:0};
+  let approvals=validateWatchApprovals(manifest,now);report.approvals=approvals.length;
+  if(!approvals.length&&!automatic)return report;
   const dbKey=env.SUPABASE_SECRET_KEY||env.SUPABASE_SERVICE_ROLE_KEY;
   let base;try{base=new URL(env.SUPABASE_URL);}catch{fail('WATCH_DB_CONFIGURATION');}
   if(!dbKey||base.protocol!=='https:'||!base.hostname.endsWith('.supabase.co')||base.pathname!=='/'||base.username||base.password||base.search||base.hash)fail('WATCH_DB_CONFIGURATION');
@@ -58,10 +59,40 @@ export async function refreshMatchWatch({env=process.env,manifest,fetchImpl=fetc
     return boundedSourceJson(response,3_000_000);
   }
   const dbHeaders={apikey:dbKey,Accept:'application/json','Content-Type':'application/json'};
+  const youtube=async(path,params)=>{
+    const key=env.YOUTUBE_DATA_API_KEY;if(!key||key.length>512)fail('WATCH_YOUTUBE_KEY_MISSING');
+    if(++report.youtubeRequests>5)fail('WATCH_YOUTUBE_BUDGET');
+    const url=new URL('https://www.googleapis.com/youtube/v3/'+path);url.search=new URLSearchParams(params);
+    const data=await request(url,{'X-Goog-Api-Key':key,Accept:'application/json'});
+    if(!Array.isArray(data.items)||data.items.length>50)fail('WATCH_VIDEO_RESPONSE_INVALID');return data.items;
+  };
+  const readCache=async(params)=>{
+    const url=new URL('/rest/v1/analysis_cache',base);
+    url.search=new URLSearchParams({select:'cache_key,payload',expires_at:`gt.${new Date(now).toISOString()}`,...params});
+    report.cacheReads++;const rows=await request(url,dbHeaders);
+    if(!Array.isArray(rows)||rows.length>Number(params.limit))fail('WATCH_CACHE_INVALID');return rows;
+  };
+  let sequence=0;
+  const writeCache=async(cacheKey,fixtureId,payload,expiry)=>{
+    const updatedAt=new Date(now+sequence++).toISOString();
+    const fields={cache_key:cacheKey,fixture_id:fixtureId,payload,expires_at:new Date(expiry).toISOString(),provider:'official-watch',source_updated_at:updatedAt,freshness_status:'fresh',updated_at:updatedAt};
+    const body=Object.fromEntries(Object.entries(fields).map(([key,value])=>['p_'+key,value]));
+    report.cacheWrites++;
+    const result=await request(new URL('/rest/v1/rpc/write_analysis_cache_versioned',base),dbHeaders,body);
+    if(!result||typeof result.stored!=='boolean'||!['stored','same','superseded'].includes(result.reason))fail('WATCH_WRITE_UNCONFIRMED');
+    if(!result.stored && fixtureId===0)fail('WATCH_DISCOVERY_WRITE_UNCONFIRMED');
+    return result.stored;
+  };
+  let discovery;
+  if(automatic){
+    discovery=await discoverMatchWatch({readCache,writeCache,youtube,approvals,now,report});
+    // Prefer policy verification over a matching legacy per-video approval.
+    approvals=approvals.filter(item=>!discovery.automatic.some(auto=>auto.eventUrl===item.eventUrl&&auto.match.fixtureId===item.match.fixtureId)).concat(discovery.automatic);
+  }
   const ids=[...new Set(approvals.map(item=>item.match.fixtureId))];
   const cacheUrl=new URL('/rest/v1/analysis_cache',base);
   cacheUrl.search=new URLSearchParams({select:'cache_key,payload',cache_key:`in.(${ids.map(matchCenterCacheKey).join(',')})`,expires_at:`gt.${new Date(now).toISOString()}`,limit:String(ids.length)});
-  report.cacheReads++;const rows=await request(cacheUrl,dbHeaders);
+  if(ids.length)report.cacheReads++;const rows=ids.length?await request(cacheUrl,dbHeaders):[];
   if(!Array.isArray(rows)||rows.length>ids.length)fail('WATCH_CACHE_INVALID');
   const matches=new Map(rows.filter(row=>row.cache_key===matchCenterCacheKey(row.payload?.match?.fixtureId)).map(row=>[row.payload.match.fixtureId,row.payload.match]));
   const candidates=approvals.filter(item=>{
@@ -78,39 +109,35 @@ export async function refreshMatchWatch({env=process.env,manifest,fetchImpl=fetc
     return true;
   });
   const youtubeIds=[...new Set(candidates.filter(item=>item.provider==='youtube').map(item=>item.videoId))],videos=new Map();
-  if(youtubeIds.length){
-    const key=env.YOUTUBE_DATA_API_KEY;if(!key||key.length>512)fail('WATCH_YOUTUBE_KEY_MISSING');
-    const headers={'X-Goog-Api-Key':key,Accept:'application/json'};
-    const url=new URL('https://www.googleapis.com/youtube/v3/videos');url.search=new URLSearchParams({part:'snippet,status,contentDetails,liveStreamingDetails',id:youtubeIds.join(',')});
-    report.youtubeRequests++;const data=await request(url,headers);
-    if(!Array.isArray(data.items)||data.items.length>youtubeIds.length)fail('WATCH_VIDEO_RESPONSE_INVALID');
-    for(const video of data.items)if(youtubeIds.includes(video.id))videos.set(video.id,video);
-  }
+  if(discovery){for(const video of discovery.videos)videos.set(video.id,video);}
+  else if(youtubeIds.length){for(const video of await youtube('videos',{part:'snippet,status,contentDetails,liveStreamingDetails',id:youtubeIds.join(',')}))if(youtubeIds.includes(video.id))videos.set(video.id,video);}
   const catalogues=new Map(candidates.map(item=>{const match=matches.get(item.match.fixtureId);return [match.fixtureId,{version:1,fixtureIdentity:watchFixtureIdentity(match),items:[]}];}));
+  for(const match of discovery?.cleanup||[])if(!catalogues.has(match.fixtureId))catalogues.set(match.fixtureId,{version:1,fixtureIdentity:watchFixtureIdentity(match),items:[]});
   for(const approval of candidates){
     const match=matches.get(approval.match.fixtureId),identity=watchFixtureIdentity(match);
     const source=approval.provider==='youtube'?approvedYoutubeItem(approval,videos.get(approval.videoId),match,now):approval;
     if(!source){report.rejected++;continue;}
     const expiresAt=new Date(Math.min(now+WATCH_TTL_MS,timestamp(approval.validUntil))).toISOString();
-    const item={...source,approval:{version:1,confirmed:true,confirmedAt:approval.confirmedAt,fixtureIdentity:identity},checkedAt:new Date(now).toISOString(),expiresAt};
+    const item={...source,approval:{version:approval.policyId?2:1,policyId:approval.policyId,policyRevision:approval.policyRevision,confirmed:true,confirmedAt:approval.confirmedAt,fixtureIdentity:identity},checkedAt:new Date(now).toISOString(),expiresAt};
     const catalogue={version:1,fixtureIdentity:identity,items:[item]};
     if(!validatedWatchOptions(match,catalogue,{now,approvals}).length){report.rejected++;continue;}
     if(!catalogues.has(match.fixtureId))catalogues.set(match.fixtureId,{version:1,fixtureIdentity:identity,items:[]});
     catalogues.get(match.fixtureId).items.push(item);
   }
   for(const [fixtureId,payload] of catalogues){
-    const fields={cache_key:watchCacheKey(fixtureId),fixture_id:fixtureId,payload,expires_at:new Date(Math.min(now+WATCH_TTL_MS,...payload.items.map(item=>timestamp(item.expiresAt)))).toISOString(),provider:'official-watch',source_updated_at:new Date(now).toISOString(),freshness_status:'fresh',updated_at:new Date(now).toISOString()};
-    const body=Object.fromEntries(Object.entries(fields).map(([key,value])=>['p_'+key,value]));
-    report.cacheWrites++;
-    // No retry after unknown POST: the existing versioned RPC prevents overwriting newer data.
-    const result=await request(new URL('/rest/v1/rpc/write_analysis_cache_versioned',base),dbHeaders,body);
-    if(!result||typeof result.stored!=='boolean'||!['stored','same','superseded'].includes(result.reason))fail('WATCH_WRITE_UNCONFIRMED');
-    if(result.stored)report.published+=payload.items.length;
+    const stored=await writeCache(watchCacheKey(fixtureId),fixtureId,payload,Math.min(now+WATCH_TTL_MS,...payload.items.map(item=>timestamp(item.expiresAt))));
+    if(stored){
+      report.published+=payload.items.length;
+      const automaticItems=payload.items.filter(item=>item.approval.version===2);
+      report.automaticPublished=(report.automaticPublished||0)+automaticItems.length;
+      if(automatic)(report.automaticItems||=[]).push(...automaticItems.map(item=>({fixtureId,videoId:item.videoId})));
+    }
   }
   return report;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
-  let report;try{report=await refreshMatchWatch({manifest:JSON.parse(readFileSync('src/match-watch-approvals.json','utf8'))});}
+  let report;try{report=await refreshMatchWatch({manifest:JSON.parse(readFileSync('src/match-watch-approvals.json','utf8')),automatic:true});}
   catch(error){report={scope:'curated_watch_catalogue',errorCode:/^WATCH_[A-Z_]+$/.test(error.code||'')?error.code:'WATCH_REFRESH_FAILED'};process.exitCode=1;}
+  if(report.discoveryError)process.exitCode=1;
   mkdirSync('load-results',{recursive:true});writeFileSync('load-results/match-watch-refresh.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
 }

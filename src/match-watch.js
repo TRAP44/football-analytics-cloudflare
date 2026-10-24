@@ -1,4 +1,5 @@
 import watchManifest from './match-watch-approvals.json' with {type:'json'};
+import {WATCH_POLICIES,automaticWatchMatch} from './match-watch-policy.js';
 export const WATCH_APPROVALS=watchManifest.items;
 // Only service-owned, explicitly reviewed catalogue records are eligible for UI.
 // Public requests never discover/fetch/submit arbitrary videos or provider URLs.
@@ -33,16 +34,18 @@ export function officialWatchUrl(provider,value){
   return '';
 }
 
-export function validatedWatchOptions(match,catalogue,{country='',now=Date.now(),enabled=true,approvals=WATCH_APPROVALS}={}){
+export function validatedWatchOptions(match,catalogue,{country='',now=Date.now(),enabled=true,approvals=WATCH_APPROVALS,policies=WATCH_POLICIES}={}){
   const identity=watchFixtureIdentity(match);
   if(!Array.isArray(approvals) || !enabled || !identity || !Number.isFinite(now) || !catalogue || catalogue.version!==1 || catalogue.fixtureIdentity!==identity || !Array.isArray(catalogue.items) || catalogue.items.length>10 || ['PST','CANC','ABD','AWD','WO','TBD'].includes(match.status))return [];
   const seen=new Set(),result=[];
   for(const item of catalogue.items){
     if(!item || typeof item!=='object' || Array.isArray(item) || !Array.isArray(item.countries))continue;
-    const approvedSource=approvals.find(source=>source.confirmed===true && watchFixtureIdentity(source.match)===identity && source.provider===item.provider && source.eventUrl===item.eventUrl && source.kind===item.kind && source.access===item.access && source.confirmedAt===item.approval?.confirmedAt && source.publisher===item.publisher && time(source.validUntil)>now);
+    const policy=Array.isArray(policies) && policies.find(source=>source.id===item.approval?.policyId && source.revision===item.approval?.policyRevision && source.publisher===item.publisher && source.channelId===item.channelId);
+    const automatic=item.approval?.version===2 && policy && item.provider==='youtube' && item.kind==='live' && item.access==='free' && automaticWatchMatch(policy,match,item.videoTitle,item.availableFrom,now);
+    const approvedSource=automatic?{countries:policy.countries,validUntil:new Date(time(match.date)+4*3600000).toISOString()}:item.approval?.version===1?approvals.find(source=>source.confirmed===true && watchFixtureIdentity(source.match)===identity && source.provider===item.provider && source.eventUrl===item.eventUrl && source.kind===item.kind && source.access===item.access && source.confirmedAt===item.approval?.confirmedAt && source.publisher===item.publisher && time(source.validUntil)>now):null;
     if(!approvedSource || !Array.isArray(approvedSource.countries) || item.countries?.some(code=>!approvedSource.countries.includes(code)))continue;
     const checked=time(item?.checkedAt),expiry=time(item?.expiresAt),approved=time(item?.approval?.confirmedAt);
-    if(item?.approval?.version!==1 || item.approval.fixtureIdentity!==identity || item.approval.confirmed!==true || !Number.isFinite(checked)||!Number.isFinite(expiry)||!Number.isFinite(approved)||approved>now+5000||checked>now+5000||expiry<=now||expiry>time(approvedSource.validUntil)||expiry-checked>WATCH_TTL_MS||now-checked>WATCH_TTL_MS||checked<approved)continue;
+    if(item.approval.fixtureIdentity!==identity || item.approval.confirmed!==true || !Number.isFinite(checked)||!Number.isFinite(expiry)||!Number.isFinite(approved)||approved>now+5000||checked>now+5000||expiry<=checked||expiry<=now||expiry>time(approvedSource.validUntil)||expiry-checked>WATCH_TTL_MS||now-checked>WATCH_TTL_MS||checked<approved)continue;
     if(!['live','replay','highlights'].includes(item.kind)||!['free','subscription','ppv','unknown'].includes(item.access))continue;
     if(!Array.isArray(item.countries)||item.countries.length<1||item.countries.length>Object.keys(WATCH_COUNTRIES).length||item.countries.some(code=>!Object.hasOwn(WATCH_COUNTRIES,code))||country && !item.countries.includes(country))continue;
     // A replay never becomes a current live option due to a scheduled premiere.

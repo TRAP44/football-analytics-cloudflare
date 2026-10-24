@@ -1,3 +1,4 @@
+import {WATCH_POLICIES} from './match-watch-policy.js';
 import {withRequestDeadline} from './request-deadline.js';
 import {matchCenterCacheKey} from './match-center-cache-key.js';
 import {WATCH_APPROVALS,WATCH_COUNTRIES,watchCacheKey,watchApiPayload} from './match-watch.js';
@@ -11,6 +12,7 @@ export function createUserDataApiRuntime(deps) {
   }
   const {
     watchApprovals:configuredWatchApprovals=WATCH_APPROVALS,
+    watchPolicies:configuredWatchPolicies=WATCH_POLICIES,
     addFavorite,
     addFavoritePlayer,
     addReminder,
@@ -45,6 +47,7 @@ export function createUserDataApiRuntime(deps) {
   } = deps;
 
   const watchApprovals=Array.isArray(configuredWatchApprovals)?configuredWatchApprovals:WATCH_APPROVALS;
+  const watchPolicies=Array.isArray(configuredWatchPolicies)?configuredWatchPolicies:WATCH_POLICIES;
 
   const requiredFunctions={
     addFavorite,
@@ -529,11 +532,11 @@ export function createUserDataApiRuntime(deps) {
     const params=new URL(request.url).searchParams,id=positiveId(params.get('fixtureId')),country=params.get('country') || '';
     if(!id || country && !Object.hasOwn(WATCH_COUNTRIES,country))return json({error:'Проверьте матч и страну.',code:'WATCH_INPUT_INVALID'},400);
     const empty={fixtureId:id,country,available:false,countries:[],items:[]};
-    if(cfg.matchWatchEnabled===false || !watchApprovals.some(item=>item.match?.fixtureId===id))return json(empty);
+    if(cfg.matchWatchEnabled===false || !watchPolicies.length && !watchApprovals.some(item=>item.match?.fixtureId===id))return json(empty);
     try{
       const [center,catalogue]=await withRequestDeadline(()=>Promise.all([getCache(matchCenterCacheKey(id),cfg),getCache(watchCacheKey(id),cfg)]),{budgetMs:1500,source:'match-watch-cache'});
       if(center?.match?.fixtureId!==id)return json(empty);
-      return json(watchApiPayload(center.match,catalogue,{country,approvals:watchApprovals}));
+      return json(watchApiPayload(center.match,catalogue,{country,approvals:watchApprovals,policies:watchPolicies}));
     }catch{return json(empty);}
   }
 

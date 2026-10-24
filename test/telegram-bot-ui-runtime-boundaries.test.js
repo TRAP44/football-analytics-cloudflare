@@ -627,3 +627,12 @@ test('optional watch lookup has a short deadline and late reads never add a butt
  release({});await new Promise(resolve=>setImmediate(resolve));
  assert.equal(keyboard.inline_keyboard.flat().some(item=>item.text==='📺 Где смотреть'),false);
 });
+
+test('bot watch action accepts an automatic league policy without a per-fixture deployment',async()=>{
+ const now=Date.now(),time=ms=>new Date(now+ms).toISOString();
+ const match={fixtureId:123,date:time(3600000),status:'NS',finished:false,leagueId:98,season:2027,home:{id:290,name:'Kashima'},away:{id:281,name:'Kashiwa Reysol'}};
+ const identity=watchFixtureIdentity(match),{api,cache}=runtime({watchApprovals:[]});
+ cache.set(matchCenterCacheKey(123),{match});
+ cache.set(watchCacheKey(123),{version:1,fixtureIdentity:identity,items:[{provider:'youtube',publisher:'jleagueinternational',videoId:'abcdefghijk',eventUrl:'https://www.youtube.com/watch?v=abcdefghijk',kind:'live',access:'free',countries:['RU'],channelId:WATCH_PUBLISHERS.jleagueinternational,publicVideo:true,regionVerified:true,ageRestricted:false,embeddable:true,videoTitle:'Kashima Antlers v Kashiwa Reysol - Live Match | J.League',availableFrom:time(3300000),checkedAt:time(0),expiresAt:time(1800000),approval:{version:2,policyId:'jleague-j1-live',policyRevision:1,fixtureIdentity:identity,confirmed:true,confirmedAt:time(0)}}]});
+ assert.ok((await api.footballWatchActionKeyboard(request,match,[],{})).inline_keyboard.flat().some(item=>item.text==='📺 Где смотреть'));
+});
