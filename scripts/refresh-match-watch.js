@@ -4,7 +4,7 @@ import {pathToFileURL} from 'node:url';
 import {boundedSourceJson} from './inspect-match-watch.js';
 import {WATCH_COUNTRIES,WATCH_PUBLISHERS,WATCH_TTL_MS,watchFixtureIdentity,watchCacheKey,validatedWatchOptions,officialWatchUrl} from '../src/match-watch.js';
 import {matchCenterCacheKey} from '../src/match-center-cache-key.js';
-import {automaticReplayEvidence} from '../src/match-watch-policy.js';
+import {automaticReplayEvidence,automaticHighlightsMatch,automaticHighlightsEvidence,WATCH_POLICIES} from '../src/match-watch-policy.js';
 import {discoverMatchWatch} from './discover-match-watch.js';
 
 const fail=code=>{throw Object.assign(new Error(code),{code});};
@@ -40,8 +40,12 @@ export function approvedYoutubeItem(approval,video,match,now){
     const upcoming=video.snippet.liveBroadcastContent==='upcoming'&&!stream.actualStartTime&&!stream.actualEndTime&&Number.isFinite(scheduled)&&scheduled>now;
     // Manual approval or strict league policy already checks category and fixture.
     if(!live&&!upcoming || Math.abs((Number.isFinite(scheduled)?scheduled:start)-Date.parse(match.date))>30*60000 || approval.policyId && live && Math.abs(start-Date.parse(match.date))>30*60000)return null;
+  }else if(approval.kind==='highlights'&&approval.policyId){
+    const policy=WATCH_POLICIES.find(item=>item.id===approval.policyId&&item.revision===approval.policyRevision);
+    if(!automaticHighlightsMatch(policy,match,video.snippet.title,video.snippet.publishedAt,now)||!automaticHighlightsEvidence(details.duration,video.snippet.liveBroadcastContent,video.liveStreamingDetails))return null;
   }else if(!match.finished || video.snippet.liveBroadcastContent!=='none' || stream.actualEndTime && (!Number.isFinite(end)||end>now) || approval.policyId && !automaticReplayEvidence(match,stream.actualStartTime,stream.actualEndTime,now))return null;
   return {...approval,channelId:video.snippet.channelId,countries,publicVideo:true,regionVerified:true,ageRestricted:false,embeddable:video.status.embeddable===true,
+    ...(approval.kind==='highlights'?{publishedAt:video.snippet.publishedAt,videoDuration:details.duration,broadcastKind:video.snippet.liveBroadcastContent,videoStream:video.liveStreamingDetails||null}:{}),
     availableFrom:Number.isFinite(scheduled)?new Date(scheduled).toISOString():null,
     replayStartedAt:approval.kind==='replay'&&Number.isFinite(start)?new Date(start).toISOString():null,replayEndedAt:approval.kind==='replay'&&Number.isFinite(end)?new Date(end).toISOString():null};
 }
@@ -102,7 +106,7 @@ export async function refreshMatchWatch({env=process.env,manifest,fetchImpl=fetc
     if(!match){
       report.missingFixture++;
       const evidence=item.fixtureEvidence,observed=timestamp(evidence?.observedAt);
-      if(evidence?.provider!=='api-football' || evidence.fixtureIdentity!==watchFixtureIdentity(item.match) || !Number.isFinite(observed) || observed>now || now-observed>(item.policyId&&item.kind==='replay'?7*86400000:48*3600000))return false;
+      if(evidence?.provider!=='api-football' || evidence.fixtureIdentity!==watchFixtureIdentity(item.match) || !Number.isFinite(observed) || observed>now || now-observed>(item.policyId&&['replay','highlights'].includes(item.kind)?7*86400000:48*3600000))return false;
       // Reviewed provider identity can prepare a catalogue before the first visitor.
       // The public API still requires the independent fresh Match Center identity.
       match=item.match;matches.set(match.fixtureId,match);report.approvedFixtureFallbacks=(report.approvedFixtureFallbacks||0)+1;
@@ -132,7 +136,7 @@ export async function refreshMatchWatch({env=process.env,manifest,fetchImpl=fetc
       report.published+=payload.items.length;
       const automaticItems=payload.items.filter(item=>item.approval.version===2);
       report.automaticPublished=(report.automaticPublished||0)+automaticItems.length;
-      if(automatic)(report.automaticItems||=[]).push(...automaticItems.map(item=>({fixtureId,videoId:item.videoId})));
+      if(automatic)(report.automaticItems||=[]).push(...automaticItems.map(item=>({fixtureId,videoId:item.videoId,kind:item.kind})));
     }
   }
   return report;

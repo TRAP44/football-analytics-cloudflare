@@ -2,7 +2,7 @@
 
 ## Текущее состояние
 
-Автокаталог #1006/#1007 выпущен в main bafaa222, Deploy40082360277, launch138. Эфиры J.LEAGUE24октября завершились. Поддерживается сохранение официального полного эфира как «Полная запись» до семи дней от kickoff, с проверкой текущей доступности и независимого завершённого Match Center. Два первых источника и матча повторно проверены24октября через protected provider40084806780/40084925952: обаFT, public/ended/embed, RU/KZ/BY разрешены metadata. Это не проверка playback в физическом Telegram.
+Просмотр выпущен в #1010: mainc3256a27, MainQuality40129140374/Deploy40129411138 success, CF0cc01d02-ae29-43c3-934e-26cc0e2d84b6, launch140; публичныйmanifest/модуль и25postdeploychecks проверены. Эфиры J.LEAGUE24октября завершились. Поддерживается сохранение официального полного эфира как «Полная запись» до семи дней от kickoff, с проверкой текущей доступности и независимого завершённого Match Center. Два первых источника и матча повторно проверены24октября через protected provider40084806780/40084925952: обаFT, public/ended/embed, RU/KZ/BY разрешены metadata. Это не проверка playback в физическом Telegram.
 
 FIFA в проверках вернула только архивные премьеры, SPL —0найденных LIVE/upcoming даже при явнойRU territory. Поэтому они не опубликованы. Пустые и неподтверждённые варианты не отображаются. [Исследование источников и ограничения](MATCH_WATCH_SOURCES_RU.md).
 
@@ -66,6 +66,16 @@ Manifest хранится под `src/`, чтобы его изменения и
 2. Запустить GitHub Actions **Refresh Match Watch** на `main` либо дождаться следующего пятиминутного **Background Jobs → watch**. При пустом каталоге нет ни одного обращения к Google/Supabase.
 3. Проверить агрегированный artifact `match-watch-refresh.json`: публикация >0, нет `errorCode`. Пропуск из-за отсутствия свежего Match Center не равен подтверждённой публикации.
 4. Проверить конкретный матч с выбранной страной в настоящем Telegram: воспроизведение/звук/fullscreen, закрытие, официальный переход. Факт `embeddable=true` этого не доказывает.
+
+## Короткие официальные обзоры
+
+J.LEAGUE International: рядом с LIVE/upcoming поиском читается одна страница uploads playlist официального закреплённого канала (20новых ID, сохраняются15). Это один дополнительный quota unit раз в2ч, не новый text search; дорогой LIVE search остаётся24/day при одном источнике. Отдельные durable attemptedAt для search/uploads позволяют первому выпуску сразу проверить uploads, не повторяя LIVE search. Ошибка uploads не выбрасывает успешно найденный LIVE, и наоборот; failedFeeds/discoveryError остаются видимыми, повторов на каждом5мин тике нет. IDs двух списков сохраняются раздельно при разнесённых тиках. Общее сохранённое discovery окно30ID, metadata batch≤50, прежний GoogleGETcap5 и deadline55сек.
+
+Автоматическая привязка обзора требует **canonical FT/AET/PEN, точных ordered team names, season и обязательного распознанного round**. Разрешены только полные anchored форматы `HOME vs. AWAY | SEASON J1 League | Matchweek N | Highlights` и `HOME H-A AWAY | MW N | SEASON J1 League Highlights`; при наличии canonicalscore он также сверяется со scoredtitle. Provider season2027 соответствует2026/27; календарный формат должен точно совпасть с providerseason. Публикация между kickoff+60мин и kickoff+48ч, не в будущем; duration2–20мин; broadcastnone и отсутствие liveStreamingDetails. Недельные сборники, Shorts, голы отдельных игроков, бездатные архивы и неизвестный тур не публикуются. Время загрузки **не** считается датой матча. Ровно один canonical кандидат, переносы/отмены и неоднозначность исключаются. Это узкое покрытие, а не обещание любых форматов и всех лиг.
+
+Источники canonical evidence: существующие свежие day caches за7д/сегодня/завтра, Match Center, retained final snapshot≤7д. Новых Football запросов нет. Retention до7д отkickoff; на каждом тике независимо проверяются metadata/private/age/region/embed. Runtime повторяет season/round/title/publication/duration validation при каждой cache-only выдаче. Если round отсутствует в независимом текущем Match Center, обзор не показывается. Полная запись и обзор сосуществуют; отзыв одного не удаляет другой. `unmatchedHighlights` в защищённом отчёте — до6публичных кандидатов для исследования, не список одобренных видео. Последние15uploads/20fixtures capacity могут вытеснить ролик раньше7д.
+
+Плеер/официальный переход и подпись «Обзор» уже поддерживались frontend, поэтому public/assets не меняются и launch140 сохраняется. Новый browsercase проверяет label и клик→iframe в actualapp/HTTP/API с syntheticSDK. Реальная metadata/publication после deploy и физический Telegram playback — отдельные доказательства; синтетические34focused tests их не заменяют.
 
 ## Кеш, отзыв и отказ источника
 

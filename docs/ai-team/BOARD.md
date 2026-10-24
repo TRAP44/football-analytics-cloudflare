@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Официальные короткие обзоры в карточке завершённого матча — **Codex** — `codex/official-match-highlights`; uploads discovery, строгая fixture/season/date привязка, cache-only API, независимая проверка источника.
+
 
 
 

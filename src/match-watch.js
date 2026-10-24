@@ -1,5 +1,5 @@
 import watchManifest from './match-watch-approvals.json' with {type:'json'};
-import {WATCH_POLICIES,automaticWatchMatch,automaticWatchValidUntil,automaticReplayEvidence} from './match-watch-policy.js';
+import {WATCH_POLICIES,automaticWatchMatch,automaticWatchValidUntil,automaticReplayEvidence,automaticHighlightsMatch,automaticHighlightsEvidence} from './match-watch-policy.js';
 export const WATCH_APPROVALS=watchManifest.items;
 // Only service-owned, explicitly reviewed catalogue records are eligible for UI.
 // Public requests never discover/fetch/submit arbitrary videos or provider URLs.
@@ -41,7 +41,9 @@ export function validatedWatchOptions(match,catalogue,{country='',now=Date.now()
   for(const item of catalogue.items){
     if(!item || typeof item!=='object' || Array.isArray(item) || !Array.isArray(item.countries))continue;
     const policy=Array.isArray(policies) && policies.find(source=>source.id===item.approval?.policyId && source.revision===item.approval?.policyRevision && source.publisher===item.publisher && source.channelId===item.channelId);
-    const automatic=item.approval?.version===2 && policy && item.provider==='youtube' && ['live','replay'].includes(item.kind) && item.access==='free' && automaticWatchMatch(policy,match,item.videoTitle,item.availableFrom,now,item.kind) && (item.kind!=='replay'||automaticReplayEvidence(match,item.replayStartedAt,item.replayEndedAt,now));
+    const automatic=item.approval?.version===2 && policy && item.provider==='youtube' && item.access==='free' && (item.kind==='highlights'
+      ?automaticHighlightsMatch(policy,match,item.videoTitle,item.publishedAt,now)&&automaticHighlightsEvidence(item.videoDuration,item.broadcastKind,item.videoStream)
+      :['live','replay'].includes(item.kind)&&automaticWatchMatch(policy,match,item.videoTitle,item.availableFrom,now,item.kind)&&(item.kind!=='replay'||automaticReplayEvidence(match,item.replayStartedAt,item.replayEndedAt,now)));
     const approvedSource=automatic?{countries:policy.countries,validUntil:new Date(automaticWatchValidUntil(policy,match,item.kind)).toISOString()}:item.approval?.version===1?approvals.find(source=>source.confirmed===true && watchFixtureIdentity(source.match)===identity && source.provider===item.provider && source.eventUrl===item.eventUrl && source.kind===item.kind && source.access===item.access && source.confirmedAt===item.approval?.confirmedAt && source.publisher===item.publisher && time(source.validUntil)>now):null;
     if(!approvedSource || !Array.isArray(approvedSource.countries) || item.countries?.some(code=>!approvedSource.countries.includes(code)))continue;
     const checked=time(item?.checkedAt),expiry=time(item?.expiresAt),approved=time(item?.approval?.confirmedAt);
