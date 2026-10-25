@@ -14,6 +14,17 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-25 — Codex — Защита просмотра непосредственно перед отправкой
+PR: ветка `codex/watch-privacy-send-boundary`. #1017 полностью выпущен: mergedb3610dcd, MainQuality40205945231/CodeQL40205945233/Deploy40206230511success, CFb5d79c6f-a6f1-4b8e-9d6c-93462c3fca56, publicmanifestSHA/tag и25postdeploy/renderedverified; launch142 прежний. Обычный Background40206087981success (smartok+4liveok), не proof конкретной доставки.
+
+Обнаружено и воспроизведено на прежних productionмодулях: watchmode читался доclaim/begin ипроверокподписки, поэтомуlatepause вauthorizationcallback неостанавливалагол; post-matchreturnпроверялmodeтолькодополученияclaim. Старыйкодпадаетна2новыхregressions /tmp/watch-send-before.log (syntheticcallbacks, неrealmessages).
+
+Вproductionwiring getWatchDeliveryState делает **один strong Supabase SELECT** текущих session+durablegoalmarker (≤2analysis_cache rows), безL1/negativecache, timeout1500ms. OwnUID/markerprefix, duplicate/foreignkey/expiry/payload checks failclosed. Это один SQL snapshot, не два разнесённых чтения. WatchPermission общийдляpreflight/final; финальныйsnapshotпослеsubscriptionIO ипрямопередTelegram. Pauseсохраняетdurabledrop иterminalCAScancel, дажееслираньшепроверкаподпискинеудалась; послеwatchoffголнепревращаетсявbacklog. Новаяdelayrevision неиспользуетстарыйmaturefirstSeen; firstSeen≥session.startedAtтакжепридопустимомclockskew≤5sec. Pendingdelay/readfailure→existingretry_pending60s, maxattempts/unknownsuppression/claimAtмикросекундысохранены. Неизвестныйwatchreadтеперьвиденвscheduler.failed, deliberateвыдержкаdelayнеявляетсясбоем.
+
+Post-matchresult повторяетgetWatchSession послеclaim, используетfreshDate.now (нестарыйrunstart), отпускаетподтверждённуюнеотправленнуюclaimприpause/unknown. Scoreboardужеимелlast-momentcheckпослеcheckpoint; подтвержденновымtestбезизмененияproductionтабло. ДоодногоadditionalindexedGET наactualcandidate, duplicates дофинальногоread; новыхFootball/Google/LLM/SQL/keys/publicизмененийнет. Ужеотправляемыйзапроспослепоследнегоreadнеотзывается.
+
+15новыхactualStore+delivery/mockRPCregressions: latepause/обаcardcolors/playergoal/new90sdelay/clockskew/unknownsnapshot/corruptforeignkeys/expiry/normal+otherfixture/dedupe/unknownTelegram/schedulerfailurevisibility/productionwiring; post-resultpause+failedread+slowclaim10s; scoreboardexistingboundary. Independentread-only **Codex**, не Claude review беззамечаний,79focusedpassed. Node22ci/check316/lint/security/privileged/verifyrelease/workerdryrunpassed; финальныеrelease898/full4692passed, включаяпоследнийclockskewcase. Public/assetsнеизменны, launch142 сохраняется. ОбязательноexactheadCI→merge→mainQuality→Deploy→publicmanifest/25checksproof. Реальныхtestmessagesнеотправлять; standinguserauthorizationнаслияниепроверенныхPRдействует, mainpushзапрещён.
+
 ## 2026-10-25 — Codex — Последняя проверка подписки перед Telegram
 PR [#1017](https://github.com/TRAP44/football-analytics-cloudflare/pull/1017), ветка `codex/notification-live-subscription-check`. #1016 полностью выпущен: merged0259567c, MainQuality40192129056/CodeQL40192129095/IsolatedLoad40192129078/Deploy40192406496success, activeCF76cd9b38-9553-4fae-a9a0-b77986714ca5,25postdeploy/rendered и publicmanifestSHA/tag verified; launch142 сохраняется. Обычный Background40192324986 success (smartok+3liveok+completedleases), не доказательство конкретной доставки. Микросекунды claimAt теперь сохраняются и SQLprecisionproof вPR1016 подтверждён.
 

@@ -211,11 +211,11 @@ export function createServiceWiringRuntime(deps = {}) {
     supaHeaders,
   });
   
-  const {getWatchSession,saveWatchSession,getWatchMarker,setWatchMarker}=createWatchSessionStore({memory,hasSupabase,supaSelectOne,supaRpc});
+  const {getWatchSession,saveWatchSession,getWatchMarker,setWatchMarker,getWatchDeliveryState}=createWatchSessionStore({memory,hasSupabase,supaSelectOne,supaSelectMany,supaRpc});
   const {
     deliverSmartNotification,
   } = createSmartNotificationDeliveryService({
-    getWatchSession,getWatchMarker,setWatchMarker,
+    getWatchSession,getWatchMarker,setWatchMarker,getWatchDeliveryState,
     recheckDelivery: recheckSmartNotificationDelivery,
     memory,
     hasSupabase,

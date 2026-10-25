@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Без спойлеров: повторная проверка режима перед отправкой гола/карточки/итога — **Codex** — `codex/watch-privacy-send-boundary`; единыйstrongSELECT session+marker, latepause/delay, CAScancel/defer, проверкатабло.
+
 
 
 
