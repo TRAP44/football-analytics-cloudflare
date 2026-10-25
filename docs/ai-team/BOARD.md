@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Уведомления: сохранить микросекунды claimAt перед begin/finalize CAS — **Codex** — `codex/notification-claim-precision`; actual40191003788 SEND_NOT_STARTED, SQL точное равенство vs JS Date truncation. Без SQL migration/реальных testmessages, unit+realDB integration.
+
 
 
 

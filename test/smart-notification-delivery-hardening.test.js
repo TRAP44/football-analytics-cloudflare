@@ -396,3 +396,56 @@ test('smart delivery never sends after a persistent claim RPC outage',async()=>{
   assert.equal(attemptedClaims,1);
   assert.equal(sends,0);
 });
+
+
+test('persistent delivery preserves PostgreSQL microseconds through begin and finalize ownership checks',async()=>{
+  const claimAt='2026-10-25T11:05:48.123456+00:00';let sent=0;const seen=[];
+  const service=createSmartNotificationDeliveryService({
+    memory:{},hasSupabase:()=>true,
+    supaRpc:async(_cfg,name,args)=>{
+      if(name==='claim_smart_notification_delivery')return {allowed:true,reason:'created',claimAt};
+      seen.push(args.p_claimed_at);
+      if(name==='begin_smart_notification_delivery_send')return {started:args.p_claimed_at===claimAt,reason:args.p_claimed_at===claimAt?'sending':'claim_lost'};
+      if(name==='finalize_smart_notification_delivery')return {updated:args.p_claimed_at===claimAt,reason:'finalized'};
+      throw Error('unexpected RPC');
+    },
+    sendTelegramMessage:async()=>{sent++;return {ok:true,status:200,outcome:'sent'};},
+  });
+  assert.equal((await service.deliverSmartNotification(input(),{})).state,'sent');
+  assert.equal(sent,1);assert.deepEqual(seen,[claimAt,claimAt]);
+});
+
+
+test('persistent ownership keeps fractional precision and timezone forms without normalization',async()=>{
+  for(const claimAt of ['2026-10-25T11:05:48Z','2026-10-25T11:05:48.1Z','2026-10-25T11:05:48.1234Z','2026-10-25T11:05:48.12345Z','2026-10-25T14:05:48.123456+03:00','2026-10-25T06:05:48.000001-05:00']){
+    const seen=[];const service=createSmartNotificationDeliveryService({
+      hasSupabase:()=>true,supaRpc:async(_cfg,name,args)=>{
+        if(name==='claim_smart_notification_delivery')return {allowed:true,reason:'created',claim_at:claimAt};
+        seen.push(args.p_claimed_at);return name==='begin_smart_notification_delivery_send'?{started:true,reason:'sending'}:{updated:true,reason:'finalized'};
+      },sendTelegramMessage:async()=>({ok:false,outcome:'unknown'}),
+    });
+    assert.equal((await service.deliverSmartNotification(input(),{})).state,'unknown');
+    assert.deepEqual(seen,[claimAt,claimAt]);
+  }
+});
+
+test('invalid or unsupported ownership timestamps never reach begin-send or Telegram',async()=>{
+  for(const claimAt of ['2026-10-25T11:05:48.1234567Z','2026-02-30T11:05:48.123456Z','2026-10-25 11:05:48.123456+00:00','2026-10-25T25:05:48Z','2026-10-25T11:05:48+24:00','2026-10-25T11:05:48','2026-10-25T11:05:48Z;select 1',{},0]){
+    let calls=0,sends=0;const service=createSmartNotificationDeliveryService({
+      hasSupabase:()=>true,supaRpc:async()=>{calls++;return {allowed:true,reason:'created',claimAt};},
+      sendTelegramMessage:async()=>{sends++;return {ok:true};},
+    });
+    assert.equal((await service.deliverSmartNotification(input(),{})).state,'persistence_ambiguous');
+    assert.equal(calls,1);assert.equal(sends,0);
+  }
+});
+
+test('a different owner within the same millisecond cannot begin a send',async()=>{
+  let sends=0;const service=createSmartNotificationDeliveryService({
+    hasSupabase:()=>true,supaRpc:async(_cfg,name,args)=>{
+      if(name==='claim_smart_notification_delivery')return {allowed:true,reason:'created',claimAt:'2026-10-25T11:05:48.123455+00:00'};
+      assert.equal(args.p_claimed_at,'2026-10-25T11:05:48.123455+00:00');return {started:false,reason:'claim_lost'};
+    },sendTelegramMessage:async()=>{sends++;return {ok:true};},
+  });
+  assert.equal((await service.deliverSmartNotification(input(),{})).state,'persistence_ambiguous');assert.equal(sends,0);
+});

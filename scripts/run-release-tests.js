@@ -5,6 +5,7 @@ const RELEASE_TESTS = Object.freeze([
   'test/access-control.test.js',
   'test/fast-live-notifications.test.js',
   'test/favorite-match-notifications.test.js',
+  'test/smart-notification-delivery-hardening.test.js',
   'test/beat-the-ai.test.js',
   'test/billing-refund-replay.test.js',
   'test/common-request-budgets.test.js',
