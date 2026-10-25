@@ -102,7 +102,7 @@ test('AI card headline never shows saved betting-style signal labels',()=>{
 function leaveViewHandler(state,matchWatchPanel=null) {
   const source=block(app,'onLeaveView: ({ from, to, options }) => {','\n  onEffectError');
   const body=source.slice(source.indexOf('=> {')+4,source.lastIndexOf('}'));
-  return new Function('state','deactivateLiveRefresh','matchWatchPanel',`return ({ from, to, options }) => {${body}};`)(state,()=>{},matchWatchPanel);
+  return new Function('state','deactivateLiveRefresh','matchWatchPanel','watchLibrary',`let matchWatchOpenFixture=0;return ({ from, to, options }) => {${body}};`)(state,()=>{},matchWatchPanel,null);
 }
 
 test('leaving the Match Center cancels a pending saved-analysis open started there',()=>{

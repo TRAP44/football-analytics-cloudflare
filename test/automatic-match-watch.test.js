@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {refreshMatchWatch} from '../scripts/refresh-match-watch.js';
 import {WATCH_DISCOVERY_KEY,WATCH_DISCOVERY_INTERVAL} from '../scripts/discover-match-watch.js';
 import {WATCH_POLICIES,automaticWatchMatch,automaticHighlightsMatch} from '../src/match-watch-policy.js';
-import {validatedWatchOptions,watchCacheKey} from '../src/match-watch.js';
+import {validatedWatchOptions,watchCacheKey,watchLibraryPayload,WATCH_LIBRARY_KEY} from '../src/match-watch.js';
 import {createUserDataApiRuntime} from '../src/user-data-api-runtime.js';
 import {matchCenterCacheKey} from '../src/match-center-cache-key.js';
 const now=Date.parse('2026-10-23T21:00:00Z'),iso=offset=>new Date(now+offset).toISOString();
@@ -283,4 +283,13 @@ test('actual J.LEAGUE first sentence binds both clubs and season-round while gen
  for(const description of [source.snippet.description.replace('2026-27','2025-26'),source.snippet.description.replace('Matchweek 12','Matchweek 11'),source.snippet.description.replace('and Kashiwa Reysol','and Vissel Kobe'),'Watch highlights this week.\n'+source.snippet.description,source.snippet.description+'\nMatch date: 2025-10-24',source.snippet.description+'\nMatchweek 11',source.snippet.description+'\n2025/26']){
   const bad=structuredClone(payload);bad.items[0].videoDescription=description;assert.equal(validatedWatchOptions(finished12,bad,options).length,0,description);
  }
+});
+
+
+test('shared viewing library is built once without extra provider reads and withdraws a removed source',async()=>{
+ const h=harness();const first=await h.run();assert.equal(first.libraryMatches,1);assert.equal(first.youtubeRequests,4);
+ const index=h.cache.get(WATCH_LIBRARY_KEY).payload;assert.equal(index.entries.length,1);
+ const cards=watchLibraryPayload(index,{now,country:'RU',approvals:[]});assert.equal(cards.items[0].fixtureId,match.fixtureId);assert.deepEqual(cards.items[0].kinds,['live']);
+ assert.doesNotMatch(JSON.stringify(cards),/videoId|eventUrl|channelId|probabilities|score/);
+ h.setVideos([]);const second=await h.run(300000);assert.equal(second.libraryMatches,0);assert.equal(h.cache.get(WATCH_LIBRARY_KEY).payload.entries.length,0);
 });

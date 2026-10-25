@@ -2506,6 +2506,7 @@ let userDataApiRuntime = null;
 function getUserDataApiRuntime() {
   if (!userDataApiRuntime) {
     userDataApiRuntime = createUserDataApiRuntime({
+      hasSupabase, supaSelectOne,
       getWatchSession,saveWatchSession,
       addFavorite,
       addFavoritePlayer,

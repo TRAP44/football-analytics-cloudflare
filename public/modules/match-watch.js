@@ -116,10 +116,10 @@ export function createMatchWatch({api,escapeHtml,watchExperience,now=Date.now,wi
   const resume=()=>{const s=session;if(!s||!active(s)||!s.data)return;render(s,s.data);if(!s.loading&&now()-s.loadedAt>=60000)void load(s,true);};
   doc.addEventListener?.('visibilitychange',()=>{if(doc.visibilityState==='visible')resume();});
   win.addEventListener?.('pageshow',resume);
-  function mount({root,fixtureId,isCurrent=()=>true}={}){
+  function mount({root,fixtureId,isCurrent=()=>true,open=false}={}){
     if(!root||!Number.isSafeInteger(fixtureId)||fixtureId<=0)return;
-    if(session?.fixtureId===fixtureId&&session.root===root){session.isCurrent=isCurrent;if(!session.loading&&now()-(session.loadedAt||0)>60000)void load(session,true);return;}
-    dispose();const s={root,fixtureId,isCurrent,country:storedCountry(),open:new URL(win.location.href).searchParams.get('watch')==='1',player:null,items:[],controller:null};session=s;
+    if(session?.fixtureId===fixtureId&&session.root===root){session.isCurrent=isCurrent;if(open){session.open=true;const details=root.querySelector('details');if(details)details.open=true;}if(!session.loading&&now()-(session.loadedAt||0)>60000)void load(session,true);return;}
+    dispose();const s={root,fixtureId,isCurrent,country:storedCountry(),open:open||new URL(win.location.href).searchParams.get('watch')==='1',player:null,items:[],controller:null};session=s;
     s.root.dataset.fixture=String(fixtureId);void load(s);
   }
   return {mount,dispose};

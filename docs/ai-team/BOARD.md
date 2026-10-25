@@ -87,7 +87,10 @@
 
 
 
+
 ## На ревью
+
+- [ ] Библиотека доступного просмотра с главной — **Codex** — [PR #1014](https://github.com/TRAP44/football-analytics-cloudflare/pull/1014), `codex/watch-library-entrypoint`; launch141, lazy0startup, oneDBread, explicitcountry/noURL/noSpoilers, checkedmatchentry/cancelledimport/heldHTTPexpiry. Release846/full4660/nativebrowser/independentreview passed; CI/indexpublication/deploy проверяются.
 
 - [ ] Фактический формат описания J.LEAGUE и официальный 12-й тур первых матчей — **Codex** — [PR #1013](https://github.com/TRAP44/football-analytics-cloudflare/pull/1013), `codex/observed-jleague-highlight-format`; actualGoogle+officialfixturepages, 39focused/release840/full4654/independentreview passed; ждёмCI→positivepublication→deployproof.
 

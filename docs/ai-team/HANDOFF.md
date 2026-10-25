@@ -14,6 +14,18 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-25 — Codex — Библиотека просмотра на главной
+PR [#1014](https://github.com/TRAP44/football-analytics-cloudflare/pull/1014), ветка `codex/watch-library-entrypoint`. Предыдущий этап #1011–#1013 действительно выпущен: maind16bbad9, Quality40137208227/CodeQL40137208067/Deploy40137491928success, activeCFa425c0f8-91cd-4d53-b04b-0f9c38cc5aad, launch140, publicmanifestSHA/auth401/25postdeploy+rendered verified. ActualRefresh40137210262 и ordinaryCFwatch40137416884: published6/rejected0 =4highlights+2replays, cached/1GoogleGET, источники1556114/1556120/1556119/1556117. Это actualcatalogue, не phoneplayback.
+
+Устранена проблема discoverability: старые обзоры были доступны только внутри известной карточки, home date picker ограниченвчера/сегодня/завтра. Новый collapsedhomeblock «Смотреть матчи» lazyimport иHTTP **только по открытию**; explicitcountry/sharedcountrykey, до20матчей сnames/league/kickoffМСК/kinds, безscore/minute/AI/URLs/videoID. Click→existingMatchCenter→раскрытый«Гдесмотреть», noautoplay, источникповторнопроверяетсячерезобычныйfreshindependentcenter gate. Openintentconsumed once: manualclose не отменяетсяповторнымrerender. Nav/close/countryinvalidates pendingintent; latecontrollerimportне уводитпользователяпослеотмены. HeldHTTPexpiry independently removes expiredcards; bounded60srefresh толькоexpandedvisiblehome, documenthidden отменяетoptionalrequest/poll иперепроверяетпослевозврата.
+
+Backgroundrefresh добавляет **одну** versionedRPCwrite общегоindex `match-watch-library:v1`, fixture0 (existingSQLпроверен, newmigrationнет), толькоsuccessfullystoredcatalogues/max20, TTL30мин, emptyindex приwithdraw. ExistingGoogle/Footballrequests/budgets/keys неизменны. AuthenticatedGET `/api/match-watch?list=1&country=RU` одна strong SupabaseSELECT/1500ms (безL1masking), policy/identity/TTL/countryvalidation повторяется. Никакихvideolinksвindexresponse, list смешанныйсfixtureIdотклоняется. Actualvideogateнеослаблен.
+
+Independentread-only **Codex**, не Claude review нашлоlateimport navigationP2; fixedintentguard + realHTTPheldimport/close+reopen+leave+return regression. Повторноеreview45focused безmaterialblockers. Node22 ci/check/lint/release846/full4660, audit0/privileged/secret/verifyrelease/workerdryrun passed. NativeChromium actualapp/HTTP/API подтвердил0startuprequests, country/races/noSpoilers/noAutoplay, click→openwatchpanel, cancelledimport, expirywhileheldHTTP, прежниеplayer/privacy/resume, widths320/390/900. Dark/light визуальнопроверены; select44px, disclosurechevron. Exactrevision141 иentry/importcontracts обновлены; extractednavigationtest получаетновыестабыпеременных безослабленияassertions. CodeQL40179319743 выявилjs/insecure-temporary-file только в диагностическом screenshotwrite нафиксированный/tmp filename. Исправленоmkdtemp private randomdir+cleanup; gateнеослаблен, productcodeнеизменён. ПовторныйCIобязателен.
+
+Следующее: exactheadCI→merge→actualprotectedrefresh/libraryMatches→mainQuality/deploy→publicmanifest/asset141/authproof. РеальныеTelegramtestmessagesнеотправлять.
+
+
 ## 2026-10-25 — Codex — Наблюдавшийся полный формат описания J.LEAGUE и официальный тур
 PR [#1013](https://github.com/TRAP44/football-analytics-cloudflare/pull/1013), ветка `codex/observed-jleague-highlight-format`. #1012 mergedcb22fa68, PRQuality40135850014/CodeQL40135849985success. ActualRefresh40136213538,25Oct00:53МСК: cached/1GoogleGET/published2replays,0highlights, missingFixture2; впервые полученыactualdescriptions, неsynthetic. Перваястрока `Highlights from Matchweek 12 in the 2026-27 J.League between HOME and AWAY.`. Недельнаясборка имеетдругоеописание/название и невключена.
 
