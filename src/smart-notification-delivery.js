@@ -1,4 +1,4 @@
-import {watchingFixture} from './watch-session.js';
+import {normalizeWatchSession} from './watch-session.js';
 const CLAIM_STALE_MS = 20 * 60_000;
 const MAX_DELIVERY_ATTEMPTS = 3;
 const MAX_COOLDOWN_SECONDS = 24 * 60 * 60;
@@ -290,12 +290,13 @@ export function createSmartNotificationDeliveryService({
   supaRpc,
   sendTelegramMessage,
   recordOpsEvent,
-  getWatchSession, getWatchMarker, setWatchMarker,
+  getWatchSession, getWatchMarker, setWatchMarker, getWatchDeliveryState,
   recheckDelivery,
   now=Date.now,
 } = {}) {
   required('hasSupabase',hasSupabase);
   if(recheckDelivery!==undefined)required('recheckDelivery',recheckDelivery);
+  if(getWatchDeliveryState!==undefined)required('getWatchDeliveryState',getWatchDeliveryState);
   required('supaRpc',supaRpc);
   required('sendTelegramMessage',sendTelegramMessage);
   required('now',now);
@@ -584,6 +585,46 @@ export function createSmartNotificationDeliveryService({
     }
   }
 
+  async function watchPermission({userId,fixtureId,eventType,dedupeKey},cfg,final=false){
+    const atomic=final&&typeof getWatchDeliveryState==='function';
+    if(!atomic&&typeof getWatchSession!=='function')return null;
+    const goal=['match.goal','player.goal'].includes(eventType),key=goal?`watch-goal:${userId}:${dedupeKey}:v1`:null;
+    try{
+      let value,marker=null;
+      if(atomic){
+        const state=await getWatchDeliveryState(userId,key,cfg);
+        if(!plainObject(state)||!Object.hasOwn(state,'session')||!Object.hasOwn(state,'marker'))throw Error('WATCH_STATE_INVALID');
+        value=state.session;marker=state.marker;
+      }else{
+        value=(await getWatchSession(userId,cfg))??null;
+        if(goal){if(typeof getWatchMarker!=='function')throw Error('WATCH_MARKER_UNAVAILABLE');marker=(await getWatchMarker(key,cfg))??null;}
+      }
+      const current=safeClock(now),normalized=value===null?null:normalizeWatchSession(value,current);
+      if(value!==null&&!normalized&&!(Date.parse(value?.expiresAt)<=current))throw Error('WATCH_STATE_INVALID');
+      const session=normalized?.fixtureId===fixtureId?normalized:null;
+      if(goal){
+        if(marker!==null&&(!plainObject(marker)||(marker.drop!==undefined&&typeof marker.drop!=='boolean')||(marker.drop!==true&&!Number.isFinite(Date.parse(marker.firstSeenAt)))))throw Error('WATCH_MARKER_INVALID');
+        if(marker?.drop===true)return {state:'watch_suppressed',unavailable:false};
+        if(session){
+          if(typeof setWatchMarker!=='function')throw Error('WATCH_MARKER_UNAVAILABLE');
+          if(session.delaySeconds===0){
+            if(await setWatchMarker(key,fixtureId,{drop:true},session,cfg)!==true)throw Error('WATCH_MARKER_UNCONFIRMED');
+            return {state:'watch_suppressed',unavailable:false};
+          }
+          const first=marker===null?NaN:Date.parse(marker.firstSeenAt);
+          // A new watch revision starts its own minimum: an earlier session's
+          // mature marker cannot bypass a newly selected viewing delay.
+          if(!Number.isFinite(first)||first<Date.parse(session.startedAt)){
+            if(await setWatchMarker(key,fixtureId,{firstSeenAt:new Date(Math.max(current,Date.parse(session.startedAt))).toISOString()},session,cfg)!==true)throw Error('WATCH_MARKER_UNCONFIRMED');
+            return {state:'watch_deferred',unavailable:false};
+          }
+          if(first>current||current-first<session.delaySeconds*1000)return {state:'watch_deferred',unavailable:false};
+        }
+      }else if(session)return {state:'watch_suppressed',unavailable:false};
+      return null;
+    }catch{return {state:'watch_deferred',unavailable:true};}
+  }
+
   async function deliverSmartNotification(input={},cfg) {
     const normalized=normalizeInput(input);
     if (!normalized) return {state:'invalid'};
@@ -598,28 +639,10 @@ export function createSmartNotificationDeliveryService({
       cooldownSeconds,
     }=normalized;
 
-    if(typeof getWatchSession==='function'){
-      try{
-        const current=safeClock(now),value=await getWatchSession(userId,cfg),session=watchingFixture({watchSession:value},fixtureId,current);
-        if(['match.goal','player.goal'].includes(eventType)){
-          const key=`watch-goal:${userId}:${dedupeKey}:v1`;
-          if(typeof getWatchMarker!=='function'||typeof setWatchMarker!=='function')return {state:'watch_deferred'};
-          const marker=await getWatchMarker(key,cfg);
-          if(marker?.drop===true)return {state:'watch_suppressed'};
-          if(session){
-            if(session.delaySeconds===0){
-              if(await setWatchMarker(key,fixtureId,{drop:true},session,cfg)!==true)return {state:'watch_deferred'};
-              return {state:'watch_suppressed'};
-            }
-            const first=typeof marker?.firstSeenAt==='string'?Date.parse(marker.firstSeenAt):NaN;
-            if(!Number.isFinite(first)){
-              await setWatchMarker(key,fixtureId,{firstSeenAt:new Date(current).toISOString()},session,cfg);
-              return {state:'watch_deferred'};
-            }
-            if(first>current||current-first<session.delaySeconds*1000)return {state:'watch_deferred'};
-          }
-        }else if(session)return {state:'watch_suppressed'};
-      }catch{return {state:'watch_deferred'};}
+    const preliminaryWatch=await watchPermission(normalized,cfg);
+    if(preliminaryWatch){
+      if(preliminaryWatch.unavailable)await observe(cfg,{severity:'warning',code:'SMART_NOTIFICATION_WATCH_STATE_UNAVAILABLE',message:'Watch protection could not be verified; Telegram send deferred.',fixtureId,eventType,category,disposition:'watch_deferred'});
+      return preliminaryWatch;
     }
 
     const claimed=await claim({
@@ -688,18 +711,24 @@ export function createSmartNotificationDeliveryService({
       };
     }
 
-    // Re-read subscription and policy after claiming/begin-send: discovery
-    // may have happened before a user opted out. No Telegram call on failure.
-    if(typeof recheckDelivery==='function'){
-      let decision;
-      try{decision=await recheckDelivery(input,cfg);}catch{decision=null;}
-      if(!(plainObject(decision)&&decision.allowed===true&&(decision.unavailable===undefined||decision.unavailable===false))){
-        const unavailable=!(plainObject(decision)&&decision.allowed===false&&(decision.unavailable===undefined||decision.unavailable===false));
-        const finalized=await finalize({userId,dedupeKey,claimAt,status:unavailable?'retry_pending':'terminal_failed',retryAfterSeconds:unavailable?60:0,error:unavailable?'Subscription verification unavailable before Telegram send.':'Notification subscription cancelled before Telegram send.'},cfg);
-        await observe(cfg,{severity:unavailable?'warning':'info',code:unavailable?'SMART_NOTIFICATION_SUBSCRIPTION_DEFERRED':'SMART_NOTIFICATION_SUBSCRIPTION_CANCELLED',message:unavailable?'Subscription verification unavailable; Telegram send deferred.':'Notification cancelled by current subscription or preferences.',fixtureId,eventType,category,disposition:unavailable?'subscription_deferred':'subscription_suppressed'});
-        return {state:!finalized?'persistence_ambiguous':unavailable?'subscription_deferred':'subscription_suppressed'};
-      }
+    // Resolve all subscription IO first, then read watch control+goal marker
+    // in one current snapshot immediately before Telegram. A pause still drops
+    // a queued goal even if an earlier authorization read failed.
+    let decision={allowed:true};
+    if(typeof recheckDelivery==='function'){try{decision=await recheckDelivery(input,cfg);}catch{decision=null;}}
+    const authorized=plainObject(decision)&&decision.allowed===true&&(decision.unavailable===undefined||decision.unavailable===false);
+    const cancelled=plainObject(decision)&&decision.allowed===false&&(decision.unavailable===undefined||decision.unavailable===false);
+    const finalWatch=await watchPermission(normalized,cfg,true);
+    async function stopBeforeTelegram(state,unavailable,watch){
+      const deferred=state.endsWith('_deferred');
+      const finalized=await finalize({userId,dedupeKey,claimAt,status:deferred?'retry_pending':'terminal_failed',retryAfterSeconds:deferred?60:0,error:watch?'Watch protection stopped the pending Telegram send.':deferred?'Subscription verification unavailable before Telegram send.':'Notification subscription cancelled before Telegram send.'},cfg);
+      await observe(cfg,{severity:unavailable?'warning':'info',code:watch?deferred?'SMART_NOTIFICATION_WATCH_DEFERRED':'SMART_NOTIFICATION_WATCH_SUPPRESSED':deferred?'SMART_NOTIFICATION_SUBSCRIPTION_DEFERRED':'SMART_NOTIFICATION_SUBSCRIPTION_CANCELLED',message:watch?'Watch protection stopped the pending Telegram send.':deferred?'Subscription verification unavailable; Telegram send deferred.':'Notification cancelled by current subscription or preferences.',fixtureId,eventType,category,disposition:state});
+      return {state:finalized?state:'persistence_ambiguous',unavailable};
     }
+    if(finalWatch?.state==='watch_suppressed')return stopBeforeTelegram(finalWatch.state,false,true);
+    if(cancelled)return stopBeforeTelegram('subscription_suppressed',false,false);
+    if(finalWatch&&(authorized||finalWatch.unavailable))return stopBeforeTelegram(finalWatch.state,finalWatch.unavailable,true);
+    if(!authorized)return stopBeforeTelegram('subscription_deferred',true,false);
 
     let rawResult;
     try {

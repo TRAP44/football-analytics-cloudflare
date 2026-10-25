@@ -20,6 +20,7 @@ const RELEASE_TESTS = Object.freeze([
   'test/match-question.test.js',
   'test/match-watch.test.js',
   'test/watch-session.test.js',
+  'test/watch-send-boundary.test.js',
   'test/watch-library.test.js',
   'test/watch-experience.test.js',
   'test/watch-revalidation.test.js',

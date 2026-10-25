@@ -264,12 +264,21 @@ export function createPostMatchReturnRuntime(deps = {}) {
         if (await getCache(postMatchReturnDisabledKey(userId),cfg)) { disabled++; continue; }
         if (await getCache(postMatchReturnCooldownKey(userId),cfg)) { cooldown++; continue; }
   
-        if(typeof getWatchSession==='function'){try{if(watchingFixture({watchSession:await getWatchSession(userId,cfg)},fixtureId,now)){disabled++;continue;}}catch{failed++;continue;}}
+        if(typeof getWatchSession==='function'){try{if(watchingFixture({watchSession:await getWatchSession(userId,cfg)},fixtureId,Date.now())){disabled++;continue;}}catch{failed++;continue;}}
         let claim;
         try { claim=await claimPostMatchReturnDelivery(userId,fixtureId,cfg); }
         catch (error) { failed++; continue; }
         if (!claim.claimed) { deduped++; continue; }
   
+        // The claim may wait on DB IO while viewing mode changes. No result
+        // message is sent until the current control is checked again.
+        if(typeof getWatchSession==='function'){
+          try{
+            if(watchingFixture({watchSession:await getWatchSession(userId,cfg)},fixtureId,Date.now())){
+              await releasePostMatchReturnClaim(claim.key,cfg);disabled++;continue;
+            }
+          }catch{await releasePostMatchReturnClaim(claim.key,cfg);failed++;continue;}
+        }
         const message=postMatchReturnMessage(history,prediction);
         const result=await sendTelegramMessage(userId,message.text,cfg,{parseMode:'HTML',replyMarkup:message.replyMarkup});
         if (result.ok) {
