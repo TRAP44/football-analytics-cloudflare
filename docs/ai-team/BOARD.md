@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Завершение ошибок просмотра и официального перехода — **Codex** — `codex/watch-playback-recovery`; видимый retry источников, player-ready deadline, Telegram official link/expiry, invalid-country recovery, launch143.
 
 
 
@@ -96,6 +95,8 @@
 
 
 ## На ревью
+
+- [ ] Завершение восстановления просмотра — **Codex** — [PR #1020](https://github.com/TRAP44/football-analytics-cloudflare/pull/1020), `codex/watch-playback-recovery`; launch143, retry/deadline/Telegramofficial, release923/full4707/nativebrowser/44focusedreviewpassed; CI→deployproof проверяются.
 
 - [ ] Автоматическая сверка незакрытых результатов — **Codex** — [PR #1019](https://github.com/TRAP44/football-analytics-cloudflare/pull/1019), `codex/automatic-pending-reconciliation`; release917/full4701, independent72focused/reviewclean; CI→activation→automaticproof→deploy проверяются.
 
