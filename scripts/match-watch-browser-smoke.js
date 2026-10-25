@@ -187,7 +187,7 @@ try{
  if(centerRequests!==beforeCancelledOpen||preferenceWrites!==beforeCancelledPrefs||!await evaluate("document.getElementById('matchesView').classList.contains('active') && !document.body.classList.contains('watch-private')"))throw Error('stale library intent opened a match or changed privacy');
  await cdp.call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
  for(const theme of ['dark','light']){
-  await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>{document.documentElement.dataset.theme='${theme}';document.getElementById('watchLibrary').scrollIntoView({block:'start'});requestAnimationFrame(()=>requestAnimationFrame(resolve));}))`);
+  await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>{document.documentElement.dataset.theme='${theme}';document.querySelector('.watch-library-card').scrollIntoView({block:'center'});requestAnimationFrame(()=>requestAnimationFrame(resolve));}))`);
   const shot=await cdp.call('Page.captureScreenshot',{format:'png'});visualDir ||= await mkdtemp(path.join(tmpdir(),'matchradar-watch-library-'));await writeFile(path.join(visualDir,'watch-library-'+theme+'.png'),Buffer.from(shot.data,'base64'),{flag:'wx',mode:0o600});
  }
  // The opt-in private action hides data BEFORE a held centre response and

@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Переход из библиотеки к просмотру без раскрытия результата — **Codex** — `codex/watch-library-spoiler-entry`; скрыть данные до navigation/HTTP, сохранить обычное открытие, подтвердить fail-closed и отменённый intent.
 
 
 
@@ -91,6 +90,8 @@
 
 
 ## На ревью
+
+- [ ] Переход из библиотеки к просмотру без раскрытия результата — **Codex** — [PR #1015](https://github.com/TRAP44/football-analytics-cloudflare/pull/1015), `codex/watch-library-spoiler-entry`; launch142, privatehide до HTTP, parallelprefs/failedACKhidden/retry, ordinaryentry/noautoplay/cancel. Localrelease846/full4660/nativebrowser/independentreview passed; CI→deployproof проверяются.
 
 - [ ] Библиотека доступного просмотра с главной — **Codex** — [PR #1014](https://github.com/TRAP44/football-analytics-cloudflare/pull/1014), `codex/watch-library-entrypoint`; launch141, lazy0startup, oneDBread, explicitcountry/noURL/noSpoilers, checkedmatchentry/cancelledimport/heldHTTPexpiry. Release846/full4660/nativebrowser/independentreview passed; CI/indexpublication/deploy проверяются.
 
@@ -457,6 +458,8 @@
 - [x] Настройка совместной работы Claude + Codex — **Claude** — [PR #793](https://github.com/TRAP44/football-analytics-cloudflare/pull/793)
 
 ## Идеи / найдено по пути
+
+- [ ] Обычный Background Jobs40187426710 (25окт14:05МСК) завершился ошибкой `smart_notifications: failed`; siblingwatchsuccess, общийleasecompleted, DBtransport176/176errors0. Уведомления не объявлять полностью здоровыми по одномуwatch. Выяснить из structuredopsотчёта причину отдельно, без повторной отправки реальным людям — найдено **Codex** при #1015.
 
 - [ ] Тестовый helper `scripts/player-profile-browser-smoke.js` передаёт в `stopChrome` объект запуска вместо `launched.chrome`; исправить cleanup отдельно. Найдено Codex при работе над просмотром; к production-профилям это не относится.
 
