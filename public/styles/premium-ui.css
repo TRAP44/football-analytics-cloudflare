@@ -1164,7 +1164,8 @@ body.watch-private #toast { display: none !important; }
 .watch-library-card strong { font-size: 15px; line-height: 1.4; }
 .watch-library-card small { color: var(--muted); font-size: 12px; }
 .watch-library-card > span { color: var(--accent); font-size: 12px; }
-.watch-library-card button { width: 100%; }
+.watch-library-card button { width: 100%; min-height: 44px; white-space: normal; }
+.watch-library-hint { font-size: 12px; line-height: 1.5; margin-block: 10px 0; }
 @media(min-width:720px) { .watch-library-list { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 
 /* Public component contracts.
