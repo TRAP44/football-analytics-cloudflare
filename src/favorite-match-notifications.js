@@ -31,9 +31,10 @@ export function favoriteMatchRecipients(favorites,batches,now=Date.now(),limit=1
         const key=`${user}:${fixtureId}`;const rows=compare({telegram_id:user,fixture_id:fixtureId},pivot)>0?after:before;let row=rows.get(key);
         if(!row){
           const rawElapsed=fixture.status?.elapsed;const elapsed=rawElapsed===null||rawElapsed===undefined||rawElapsed===''||typeof rawElapsed==='boolean'?NaN:Number(rawElapsed);
-          row={telegram_id:user,fixture_id:fixtureId,fixture_date:new Date(kickoff).toISOString(),home_name:text(item.teams.home.name),away_name:text(item.teams.away.name),league_name:text(item.league?.name),enabled:true,_favoriteOnly:true,_favoriteOpponent:text(item.teams[teamId===homeId?'away':'home'].name),_favoriteTeams:[],_favoriteToday:future,_favoriteMinMinute:Number.isInteger(elapsed)&&elapsed>=0?Math.max(0,elapsed-10):null};
+          row={telegram_id:user,fixture_id:fixtureId,fixture_date:new Date(kickoff).toISOString(),home_name:text(item.teams.home.name),away_name:text(item.teams.away.name),league_name:text(item.league?.name),enabled:true,_favoriteOnly:true,_favoriteOpponent:text(item.teams[teamId===homeId?'away':'home'].name),_favoriteTeams:[],_favoriteTeamIds:[],_favoriteToday:future,_favoriteMinMinute:Number.isInteger(elapsed)&&elapsed>=0?Math.max(0,elapsed-10):null};
           rows.set(key,row);
         }
+        if(!row._favoriteTeamIds.includes(teamId))row._favoriteTeamIds.push(teamId);
         const team=name||text(item.teams[teamId===homeId?'home':'away'].name);
         if(team&&!row._favoriteTeams.includes(team))row._favoriteTeams.push(team);
         trim(rows);

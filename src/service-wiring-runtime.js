@@ -114,6 +114,7 @@ export function createServiceWiringRuntime(deps = {}) {
   
   const {
     filterRecipients: filterSmartNotificationRecipients,
+    recheckDelivery: recheckSmartNotificationDelivery,
     loadFavoritePlayersByUser: loadFavoritePlayersForSmartNotifications,
   } = createSmartNotificationAudience({
     hasSupabase,
@@ -215,6 +216,7 @@ export function createServiceWiringRuntime(deps = {}) {
     deliverSmartNotification,
   } = createSmartNotificationDeliveryService({
     getWatchSession,getWatchMarker,setWatchMarker,
+    recheckDelivery: recheckSmartNotificationDelivery,
     memory,
     hasSupabase,
     supaRpc,

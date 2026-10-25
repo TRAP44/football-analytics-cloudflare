@@ -312,6 +312,7 @@ test('smart scheduler fans one trusted live event to match followers and reuses 
     assert.equal(deliveries.filter(item=>item.eventType==='match.goal').length, 2);
     assert.equal(deliveries.filter(item=>item.eventType==='player.goal').length, 1);
     assert.equal(deliveries.find(item=>item.eventType==='player.goal').row.telegram_id, 1);
+    assert.equal(deliveries.find(item=>item.eventType==='player.goal').playerId,10);
   } finally {
     Date.now = originalNow;
   }
