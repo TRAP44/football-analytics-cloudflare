@@ -195,7 +195,7 @@ export function degradedWarnings(tasks = []) {
 }
 
 export async function runCron({ worker, env, nowMs = Date.now(), timeoutMs = RUN_TIMEOUT_MS,liveOnly=false,recoveryMode='' } = {}) {
-  if (recoveryMode && !['preview','apply'].includes(recoveryMode)) throw new Error('invalid_recovery_mode');
+  if (recoveryMode && !['preview','apply','automatic'].includes(recoveryMode)) throw new Error('invalid_recovery_mode');
   const pending = [];
   const ctx = {
     waitUntil(promise) { pending.push(Promise.resolve(promise)); },

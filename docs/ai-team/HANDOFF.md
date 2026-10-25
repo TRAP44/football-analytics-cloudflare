@@ -14,6 +14,14 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-25 — Codex — Автоматическая сверка незакрытых результатов
+Ветка `codex/automatic-pending-reconciliation`. Явное поручение Сергея включить ограниченную автоматику после разовой сверки: actual runs40219575277/40229783853 закрыли17+1 записей,25 selected остались provider nonfinal; финальный read-only40229900342:39 pending>24h (сдвиг окна, не вычитать механически), auto=false. #1018 выпущен70c7e8ee, Quality40217728487/CodeQL40217728504/Deploy40218030096success, CF1fa079c7-da7f-4fe7-a01f-971ab18580c6, publicmanifest и25postdeploy/renderedverified.
+
+Daily yesterday partial marker теперь60мин; автоматический watchdog hourly-admission, максимум1 завершённый UTC-day batch20/5+до20точныхIDlookup, pending-only scan/truncationstop; successfulaudit nextCursor обеспечивает обход/rotation без постоянного вытеснения новейших записей перенесёнными. Durablefinishedaudit также блокирует второй пакет втотжедневнойслот при потере marker. Maintenance/runtimeunknown/circuit/reserve/ownership/deadline сохраняются; interruptedmanualrecover теперь тоже reconciled, retrylineage manual/auto раздельно. Никаких новых SQL/public/assets/ключей.
+
+Защищённый input settlement_automation enable/disable вызывает существующий runtime-controls save сrevisionCAS+transactionalhistory иreadback, прочие controls сохраняются, без Telegram/watch/обычногоcron. Defaults unchanged; до завершения review/CI реальныйфлагнепереключать. Изолированный automatic profile уважает реальныйфлаг/daycap. Независимое read-only Codex review нашло и исправило3ошибки: wrapcursorназад приdatecap, modernsecretвBearer, failopencircuitread. Finalreviewclean/72focused. Node22 npmci/check/lint/secret/privileged/verifyrelease/workerdryrun passed, full4701passed. Осталось exactheadCI, merge→activation→actualautomaticproof→deployment. Затем полностью проверить текущий путь просмотра/источники, не заявлять physicalTelegramplayback по syntheticbrowser.
+
+
 ## 2026-10-25 — Codex — Защита просмотра непосредственно перед отправкой
 PR [#1018](https://github.com/TRAP44/football-analytics-cloudflare/pull/1018), ветка `codex/watch-privacy-send-boundary`. #1017 полностью выпущен: mergedb3610dcd, MainQuality40205945231/CodeQL40205945233/Deploy40206230511success, CFb5d79c6f-a6f1-4b8e-9d6c-93462c3fca56, publicmanifestSHA/tag и25postdeploy/renderedverified; launch142 прежний. Обычный Background40206087981success (smartok+4liveok), не proof конкретной доставки.
 

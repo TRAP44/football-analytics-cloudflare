@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Автоматическая ограниченная сверка незакрытых результатов — **Codex** — `codex/automatic-pending-reconciliation`; pending-only, durable queue cursor/daily audit cap, ID fallback, runtime activation с CAS/history; затем полный этап просмотра.
+
 
 
 
