@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-25 — Codex — Микросекунды владения отправкой уведомлений
-PR: ветка `codex/notification-claim-precision`. #1015 полностью выпущен: merged871b7b1d, MainQuality40188367158/CodeQL40188367185/Deploy40188689437success, activeCF03c9e5a1-9476-47ae-8e88-a8dbe5d3ddef, publicmanifestSHA/tag+assetslaunch142 и25postdeploy/renderedverified. PhysicalTelegramplayback не проверялся.
+PR [#1016](https://github.com/TRAP44/football-analytics-cloudflare/pull/1016), ветка `codex/notification-claim-precision`. #1015 полностью выпущен: merged871b7b1d, MainQuality40188367158/CodeQL40188367185/Deploy40188689437success, activeCF03c9e5a1-9476-47ae-8e88-a8dbe5d3ddef, publicmanifestSHA/tag+assetslaunch142 и25postdeploy/renderedverified. PhysicalTelegramplayback не проверялся.
 
 **Диагностика:** actual read-only Observe40191003788,6ч05:57–11:57UTC: среди14warning/errorrows SMART_NOTIFICATION_SEND_NOT_STARTED1 + SMART_NOTIFICATION_RUN_DEGRADED1/failed1/unknown0/sent0. Это persisted/deduplicatedrows, не уникальные инциденты/люди. Исходный Background40187426710 smartfailed при успешном DBtransport176/176 иcompletedlease; последующие40187763159/40188108923success. Найден и воспроизведён конкретный runtimebug: PostgreSQLclaimAt имеет6fractiondigits/+00:00, normalizeClaimResult Иdeliver() делали Date→toISOString с3digits. SQLbegin/finalize сравнивают claimed_at точнымравенством, поэтому свой token превращался вчужой и отправка блокировалась. Старыйкодпадает на regression sent→persistence_ambiguous, artifact/tmp/notification-precision-before.log. Rawdisposition исходнойopsrow не запрашивали: механизм доказан кодом+repro, не утверждать прочитанное исходное claimed_at.
 

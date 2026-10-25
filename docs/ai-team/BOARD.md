@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Уведомления: сохранить микросекунды claimAt перед begin/finalize CAS — **Codex** — `codex/notification-claim-precision`; actual40191003788 SEND_NOT_STARTED, SQL точное равенство vs JS Date truncation. Без SQL migration/реальных testmessages, unit+realDB integration.
 
 
 
@@ -92,6 +91,8 @@
 
 
 ## На ревью
+
+- [ ] Точность владения отправкой уведомлений — **Codex** — [PR #1016](https://github.com/TRAP44/football-analytics-cloudflare/pull/1016), `codex/notification-claim-precision`; strict lossless6digits, прежниеCAS/dedupe, release870/full4664/independentreviewpassed; fresh+upgrade realDBproof иCI→deploy проверяются.
 
 - [ ] Переход из библиотеки к просмотру без раскрытия результата — **Codex** — [PR #1015](https://github.com/TRAP44/football-analytics-cloudflare/pull/1015), `codex/watch-library-spoiler-entry`; launch142, privatehide до HTTP, parallelprefs/failedACKhidden/retry, ordinaryentry/noautoplay/cancel. Localrelease846/full4660/nativebrowser/independentreview passed; CI→deployproof проверяются.
 
