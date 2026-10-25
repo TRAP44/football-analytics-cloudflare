@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Завершение ошибок просмотра и официального перехода — **Codex** — `codex/watch-playback-recovery`; видимый retry источников, player-ready deadline, Telegram official link/expiry, invalid-country recovery, launch143.
+
 
 
 

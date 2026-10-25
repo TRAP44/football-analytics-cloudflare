@@ -14,6 +14,12 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-25 — Codex — Завершение восстановления просмотра
+Ветка `codex/watch-playback-recovery`, отдельный worktree /workspace/football-analytics-watch, подготовлен поверх #1019. Не сливать до выпуска/активации #1019 и exacthead CI. #1019 merged e11b527d; activation40234655541queued, MainQuality40234653998pending; полный выпуск ещё не подтверждён. Пользователь поручил довести трансляции до конца. Actual source inspect40233752920: no currentLIVE/upcoming; actualRefresh40233848827:10published=8highlights+2replay,8librarymatches, discoverycached/1GoogleGET, rejected0. Физический Telegramplayback не проверен, top-league coverage/Okko partnerembed не заявлять.
+
+Найдены продуктовые сбои: initialAPIerror скрывалплейбекразделбезretry; silentYTSDKplayer могоставитьпустойiframeнавсегда; неизвестныйcachedcountry400 не давалповторновыбратьстрану. Исправляются retry shell/noURL/noautoplay,15sreadydeadline сteardown/latecallbackfence, resetinvalidterritory, officiallink черезTelegramopenLink сnativeanchorfallback иcurrent/expirycheck. Backgroundrenewal живётдопрежнегоTTL, права иsourcegates/API/discovery unchanged. launch143 во всехentries/imports/exactfixtures. Nativebrowser проверяет реальныеHTTP503→retry, silentplayer15s, bridgeURL вместе с прежними privacy/renewal/country/expiredcases; SDKsynthetic, не physicalplayback. Прежние productionмодули падают на5 новыхregressions /tmp/watch-recovery-before.log; исправленныйкод13focused/44independentfocusedpassed. Node22 npmci вbaseworktree зависимостиоднообразные, check/lint/release923/full4707/securityscan/privileged/verifyrelease/workerdryrun passed. Independentread-only Codexreviewclean; nativebrowser503retry/15stimeout/TGlink+allpreviouspassed320/390/900. SDKsynthetic. Осталось exactheadCI/deploy/sourceproof.
+
+
 ## 2026-10-25 — Codex — Автоматическая сверка незакрытых результатов
 PR [#1019](https://github.com/TRAP44/football-analytics-cloudflare/pull/1019), ветка `codex/automatic-pending-reconciliation`. Явное поручение Сергея включить ограниченную автоматику после разовой сверки: actual runs40219575277/40229783853 закрыли17+1 записей,25 selected остались provider nonfinal; финальный read-only40229900342:39 pending>24h (сдвиг окна, не вычитать механически), auto=false. #1018 выпущен70c7e8ee, Quality40217728487/CodeQL40217728504/Deploy40218030096success, CF1fa079c7-da7f-4fe7-a01f-971ab18580c6, publicmanifest и25postdeploy/renderedverified.
 

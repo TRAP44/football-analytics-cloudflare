@@ -21,12 +21,12 @@ const center=()=>({mode:match.finished?'finished':'live',generatedAt:new Date().
 const preferences=createUserPreferencesService({memory:{},hasSupabase:()=>false});
 const watchStore=createWatchSessionStore({memory:{},hasSupabase:()=>false});
 const api=createUserDataApiRuntime({...Object.fromEntries(functions.map(key=>[key,async()=>[]])),getWatchSession:watchStore.getWatchSession,saveWatchSession:watchStore.saveWatchSession,json:(data,status=200)=>Response.json(data,{status}),getQuota:async()=>({plan:'FREE',left:5,limit:5,used:0}),getPreferences:preferences.getPreferences,savePreferences:preferences.savePreferences,getUserRecord:async()=>({}),publicRuntimeControls:()=>runtime,publicDataCapabilities:()=>({}),publicSmartNotificationCapabilities:()=>({}),isAdminUser:()=>false,watchApprovals:[approval],getCache:async key=>key===matchCenterCacheKey(999)?{match}:key===watchCacheKey(999)?catalogue:key===WATCH_LIBRARY_KEY?{version:1,checkedAt:new Date().toISOString(),entries:[{match,catalogue}]}:null});
-let delay=false,requests=0,centerRequests=0,slowPrefs=false,libraryRequests=0,holdController=false,holdLibrary=false,holdCenter=false,holdPrefs=false,failPrefs=false,preferenceWrites=0;const releaseControllers=[],releaseLibraries=[],releaseCenters=[],releasePrefs=[];
+let failWatch=false,delay=false,requests=0,centerRequests=0,slowPrefs=false,libraryRequests=0,holdController=false,holdLibrary=false,holdCenter=false,holdPrefs=false,failPrefs=false,preferenceWrites=0;const releaseControllers=[],releaseLibraries=[],releaseCenters=[],releasePrefs=[];
 const server=createServer(async(req,res)=>{
  try{
   const url=new URL(req.url,'http://127.0.0.1');
   if(url.pathname==='/api/match-watch'){
-   requests++;if(url.searchParams.get('list')==='1'){libraryRequests++;if(holdLibrary)await new Promise(resolve=>releaseLibraries.push(resolve));}if(delay)await new Promise(resolve=>setTimeout(resolve,300));
+   requests++;if(failWatch){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'SYNTHETIC_WATCH_UNAVAILABLE'}));return;}if(url.searchParams.get('list')==='1'){libraryRequests++;if(holdLibrary)await new Promise(resolve=>releaseLibraries.push(resolve));}if(delay)await new Promise(resolve=>setTimeout(resolve,300));
    const response=await api.apiMatchWatch(new Request(url),{},{id:42});res.writeHead(response.status,{'Content-Type':'application/json'});res.end(await response.text());return;
   }
   if(url.pathname==='/api/preferences'){
@@ -49,11 +49,11 @@ const server=createServer(async(req,res)=>{
    res.setHeader('Content-Type','text/javascript');res.end(`import {createMatchWatch} from '/modules/match-watch.js';
     const escapeHtml=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     window.errors=[];window.destroyed=0;window.active=true;
-    window.YT={Player:class {constructor(iframe,options){this.iframe=iframe;window.failPlayer=options.events.onError;}destroy(){window.destroyed++;this.iframe.remove();}}};
+    window.YT={Player:class {constructor(iframe,options){this.iframe=iframe;window.failPlayer=options.events.onError;if(!window.silentPlayer)queueMicrotask(()=>options.events.onReady());}destroy(){window.destroyed++;this.iframe.remove();}}};
     let clock=Date.now(),serial=0;const timers=new Map();
     window.advanceWatch=ms=>{clock+=ms;const due=[...timers].filter(([,task])=>task.at<=clock);for(const [id,task] of due){timers.delete(id);task.fn();}};
-    const clockWindow={location:window.location,localStorage:window.localStorage,YT:window.YT,setTimeout:(fn,ms)=>{timers.set(++serial,{fn,at:clock+ms});return serial;},clearTimeout:id=>timers.delete(id),setInterval:window.setInterval.bind(window),clearInterval:window.clearInterval.bind(window),addEventListener:window.addEventListener.bind(window)};
-    window.panel=createMatchWatch({now:()=>clock,window:clockWindow,api:async(url,options)=>{const response=await fetch(url,options);return response.json();},escapeHtml});
+    window.externalOpens=[];const clockWindow={Telegram:{WebApp:{openLink:url=>window.externalOpens.push(url)}},location:window.location,localStorage:window.localStorage,YT:window.YT,setTimeout:(fn,ms)=>{timers.set(++serial,{fn,at:clock+ms});return serial;},clearTimeout:id=>timers.delete(id),setInterval:window.setInterval.bind(window),clearInterval:window.clearInterval.bind(window),addEventListener:window.addEventListener.bind(window)};
+    window.panel=createMatchWatch({now:()=>clock,window:clockWindow,api:async(url,options)=>{const response=await fetch(url,options),data=await response.json();if(!response.ok)throw Object.assign(Error('watch request failed'),{status:response.status,payload:data});return data;},escapeHtml});
     window.mount=()=>window.panel.mount({root:document.getElementById('watch'),fixtureId:999,isCurrent:()=>window.active});window.mount();`);return;
   }
   if(url.pathname==='/modules/match-center-controller.js'&&holdController)await new Promise(resolve=>releaseControllers.push(resolve));
@@ -67,7 +67,10 @@ try{
  const tab=await(await fetch(`http://127.0.0.1:${launched.debugPort}/json/new?about:blank`,{method:'PUT'})).json();cdp=new Cdp(tab.webSocketDebuggerUrl);await cdp.open();await cdp.call('Page.enable');await cdp.call('Network.enable');await cdp.call('Network.setCacheDisabled',{cacheDisabled:true});await cdp.call('Network.setBlockedURLs',{urls:['*youtube.com*','*ytimg.com*']});await cdp.call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
  const evaluate=async expression=>{const result=await cdp.call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw Error(result.exceptionDetails.text);return result.result?.value;};
  const wait=async(expression,label)=>{for(let n=0;n<80;n++){if(await evaluate(expression))return;await new Promise(resolve=>setTimeout(resolve,50));}throw Error(label);};
- await cdp.call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/?watch=1`});await wait("Boolean(document.querySelector('[data-watch-country]'))",'country prompt not mounted');
+ failWatch=true;
+ await cdp.call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/?watch=1`});await wait("Boolean(document.querySelector('[data-watch-retry]'))",'failed source request hid the panel');
+ if(await evaluate("Boolean(document.querySelector('iframe,.match-watch-source a'))"))throw Error('failed request exposed source');
+ failWatch=false;await evaluate("document.querySelector('[data-watch-retry]').click()");await wait("Boolean(document.querySelector('[data-watch-country]'))",'country prompt not mounted after retry');
  if(await evaluate("Boolean(document.querySelector('iframe, [data-watch-play]'))"))throw Error('media or watch action before explicit country');
  await evaluate("document.querySelector('[data-watch-country]').value='RU';document.querySelector('[data-watch-country]').dispatchEvent(new Event('change'))");await wait("Boolean(document.querySelector('[data-watch-play]'))",'country source missing');
  if(await evaluate("Boolean(document.querySelector('iframe,script[src*=youtube]'))"))throw Error('third-party player loaded before click');
@@ -88,6 +91,10 @@ try{
 
  await evaluate('window.failPlayer({data:150})');await wait("!document.querySelector('iframe') && document.querySelector('[data-watch-status]').textContent.includes('не разрешил')",'player denial fallback absent');
  if(!await evaluate("document.querySelector('.match-watch-source a').href==='https://www.youtube.com/watch?v=abcdefghijk'"))throw Error('official fallback absent');
+ await evaluate("document.querySelector('.match-watch-source a').click()");if(!await evaluate("window.externalOpens.length===1&&window.externalOpens[0]==='https://www.youtube.com/watch?v=abcdefghijk'"))throw Error('Telegram external navigation missing');
+ await evaluate("window.silentPlayer=true;document.querySelector('[data-watch-play]').click()");await wait("Boolean(document.querySelector('iframe'))",'silent player setup missing');
+ await evaluate('window.advanceWatch(15000)');await wait("!document.querySelector('iframe')&&document.querySelector('[data-watch-status]').textContent.includes('не загрузился')",'silent player kept a blank frame');
+ await evaluate('window.silentPlayer=false');
  await evaluate("document.querySelector('[data-watch-play]').click()");await wait('Boolean(window.failPlayer&&document.querySelector("iframe"))','second play missing');delay=true;
  await evaluate("document.querySelector('[data-watch-country]').value='KZ';document.querySelector('[data-watch-country]').dispatchEvent(new Event('change'))");
  if(await evaluate("Boolean(document.querySelector('iframe,.match-watch-source a'))"))throw Error('old country media/links remain while request pending');
@@ -111,7 +118,7 @@ try{
  await wait("document.querySelector('[data-watch-privacy-state]').textContent.includes('сохранены')",'watch privacy not confirmed by server');
  if(!await evaluate("document.body.classList.contains('watch-private')&&getComputedStyle(document.getElementById('analysis')).display==='none'&&document.getElementById('analysis').inert"))throw Error('match data visible in private mode');
  for(const width of [320,390]){await cdp.call('Emulation.setDeviceMetricsOverride',{width,height:844,deviceScaleFactor:1,mobile:true});if(await evaluate('document.documentElement.scrollWidth>innerWidth+1'))throw Error('private mode overflow '+width);}
- await evaluate("window.YT={Player:class {constructor(iframe){this.iframe=iframe;}destroy(){this.iframe.remove();}}};document.querySelector('#matchWatchPanel [data-watch-play]').click()");
+ await evaluate("window.YT={Player:class {constructor(iframe,options){this.iframe=iframe;queueMicrotask(()=>options.events.onReady());}destroy(){this.iframe.remove();}}};document.querySelector('#matchWatchPanel [data-watch-play]').click()");
  await wait("Boolean(document.querySelector('#matchWatchPanel iframe'))",'actual app play missing');
  const previousRequests=centerRequests;
  await evaluate("window.preservedWatchFrame=document.querySelector('#matchWatchPanel iframe');document.getElementById('centerRefreshBtn').click()");
@@ -135,7 +142,7 @@ try{
  await evaluate("document.getElementById('navMatches').click()");
  await cdp.call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/full-app?fixtureId=999&action=center&watch=1&resumeSmoke=1#${new URLSearchParams({tgWebAppData:launch})}`});
  await wait("document.querySelector('#matchWatchPanel [data-watch-play]')?.textContent.includes('Продолжить с 2:05')",'saved replay position missing');
- await evaluate("window.YT={Player:class {constructor(iframe){this.iframe=iframe;}destroy(){this.iframe.remove();}}};document.querySelector('#matchWatchPanel [data-watch-play]').click()");
+ await evaluate("window.YT={Player:class {constructor(iframe,options){this.iframe=iframe;queueMicrotask(()=>options.events.onReady());}destroy(){this.iframe.remove();}}};document.querySelector('#matchWatchPanel [data-watch-play]').click()");
  await wait("Boolean(document.querySelector('#matchWatchPanel iframe'))",'resumed iframe missing');
  if(!await evaluate("new URL(document.querySelector('#matchWatchPanel iframe').src).searchParams.get('start')==='125'"))throw Error('replay did not seek to saved position');
  await evaluate("document.querySelector('[data-watch-restart]').click()");
@@ -145,7 +152,7 @@ try{
  await cdp.call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/full-app?fixtureId=999&action=center&watch=1&highlightSmoke=1#${new URLSearchParams({tgWebAppData:launch})}`});
  await wait("Boolean(document.querySelector('#matchWatchPanel [data-watch-play]')) && document.querySelector('#bootGate')?.hidden",'highlight missing');
  if(!await evaluate("document.querySelector('#matchWatchPanel .match-watch-source span').textContent.includes('Обзор')"))throw Error('highlight incorrectly labelled');
- await evaluate("window.YT={Player:class {constructor(iframe){this.iframe=iframe;}destroy(){this.iframe.remove();}}};document.querySelector('#matchWatchPanel [data-watch-play]').click()");await wait("Boolean(document.querySelector('#matchWatchPanel iframe'))",'highlight player absent');
+ await evaluate("window.YT={Player:class {constructor(iframe,options){this.iframe=iframe;queueMicrotask(()=>options.events.onReady());}destroy(){this.iframe.remove();}}};document.querySelector('#matchWatchPanel [data-watch-play]').click()");await wait("Boolean(document.querySelector('#matchWatchPanel iframe'))",'highlight player absent');
  // Server preferences may have changed in another tab. A delayed restore must
  // update the visible selector as well as the internal mode before confirmation.
  await evaluate(`fetch('/api/preferences',{method:'POST',body:JSON.stringify({watchSession:{fixtureId:999,delaySeconds:30}})}).then(()=>localStorage.setItem('matchradar:watch-mode:v1',JSON.stringify({fixtureId:999,delaySeconds:90,startedAt:new Date().toISOString(),expiresAt:new Date(Date.now()+3600000).toISOString()})))`);
@@ -235,5 +242,5 @@ try{
  await wait("!document.querySelector('[data-watch-library-open]')",'expired card survived a hung refresh');
  holdLibrary=false;for(const release of releaseLibraries.splice(0))release();
  await evaluate('Date.now=window.libraryRealNow');
- console.log(JSON.stringify({scope:'synthetic_browser_and_cache_api_not_actual_playback',countryRequired:true,homeLibraryOptIn:true,homeLibraryNoSpoilers:true,homeLibraryPrivateBeforeResponse:true,homeLibraryPrivacyFailureKeepsHidden:true,homeLibraryPrivacyRetryConfirmed:true,homeLibraryOrdinaryEntryUnchanged:true,homeLibraryRoutesToCheckedMatch:true,homeLibraryNoAutoplay:true,homeLibraryCancelledImport:true,homeLibraryVisibilityPause:true,homeLibraryExpiryDuringRefresh:true,lazyMedia:true,sameFixturePreserved:true,deniedEmbedFallback:true,countryTeardownImmediate:true,navigationTeardown:true,backgroundRenewalPreservesFrame:true,withdrawalStopsPlayer:true,recoveryNeverAutoplays:true,actualAppWiring:true,actualCenterRefreshPreservesFrame:true,finishedReplayLabel:true,finishedReplayPlayer:true,officialHighlightLabel:true,officialHighlightPlayer:true,privacyHidesData:true,privacyApiConfirmed:true,privacyNavigationSafe:true,canonicalRestoreVisible:true,externalViewingPrivate:true,replayResume:true,replayRestart:true,widths:[320,390,900],requests}));
+ console.log(JSON.stringify({scope:'synthetic_browser_and_cache_api_not_actual_playback',countryRequired:true,homeLibraryOptIn:true,homeLibraryNoSpoilers:true,homeLibraryPrivateBeforeResponse:true,homeLibraryPrivacyFailureKeepsHidden:true,homeLibraryPrivacyRetryConfirmed:true,homeLibraryOrdinaryEntryUnchanged:true,homeLibraryRoutesToCheckedMatch:true,homeLibraryNoAutoplay:true,homeLibraryCancelledImport:true,homeLibraryVisibilityPause:true,homeLibraryExpiryDuringRefresh:true,lazyMedia:true,sameFixturePreserved:true,deniedEmbedFallback:true,initialFailureRetry:true,silentPlayerDeadline:true,telegramOfficialLink:true,countryTeardownImmediate:true,navigationTeardown:true,backgroundRenewalPreservesFrame:true,withdrawalStopsPlayer:true,recoveryNeverAutoplays:true,actualAppWiring:true,actualCenterRefreshPreservesFrame:true,finishedReplayLabel:true,finishedReplayPlayer:true,officialHighlightLabel:true,officialHighlightPlayer:true,privacyHidesData:true,privacyApiConfirmed:true,privacyNavigationSafe:true,canonicalRestoreVisible:true,externalViewingPrivate:true,replayResume:true,replayRestart:true,widths:[320,390,900],requests}));
 }finally{for(const release of [...releaseControllers,...releaseLibraries,...releaseCenters,...releasePrefs])release();cdp?.close();await stopChrome(launched.chrome);await new Promise(resolve=>server.close(resolve));if(visualDir)await rm(visualDir,{recursive:true,force:true});if(launched.profileDir)await rm(launched.profileDir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
