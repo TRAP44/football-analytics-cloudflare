@@ -7,7 +7,7 @@ const fixture=(status='1H',minute=20,date='2026-10-18T12:00:00Z')=>({fixture:{id
 const batch=rows=>({fetchedAt:new Date(now).toISOString(),fixtures:rows});
 test('favorite discovery merges both teams and repeated cache batches per user/fixture',()=>{
  const result=favoriteMatchRecipients([favorite(),favorite(1,22),favorite(2,33)],[batch([fixture()]),batch([fixture()])],now);
- assert.equal(result.rows.length,1);assert.deepEqual(result.rows[0]._favoriteTeams,['Alpha','Beta']);assert.equal(result.rows[0]._favoriteMinMinute,10);
+ assert.equal(result.rows.length,1);assert.deepEqual(result.rows[0]._favoriteTeams,['Alpha','Beta']);assert.deepEqual(result.rows[0]._favoriteTeamIds,[11,22]);assert.equal(result.rows[0]._favoriteMinMinute,10);
 });
 test('favorite discovery rejects stale/future/unrelated/final fixtures and bounds recipients',()=>{
  assert.equal(favoriteMatchRecipients([favorite()],[{...batch([fixture()]),fetchedAt:new Date(now-11*60000).toISOString()}],now).rows.length,0);
@@ -63,7 +63,7 @@ test('recipient cursor reaches followers beyond the per-run limit and wraps fair
 test('favorite metadata survives an explicit reminder for match-day announcement',()=>fixed(async()=>{
  const reminder={telegram_id:1,fixture_id:100,fixture_date:'2026-10-18T18:00:00Z',home_name:'Alpha',away_name:'Beta',enabled:true};
  const h=harness({reminders:[reminder],rows:[fixture('NS',null,reminder.fixture_date)]});await h.service.processSmartNotifications({botToken:'test'});
- assert.equal(h.deliveries.filter(x=>x.eventType==='team.match_day').length,1);
+ assert.equal(h.deliveries.filter(x=>x.eventType==='team.match_day').length,1);assert.deepEqual(h.deliveries.find(x=>x.eventType==='team.match_day').row._favoriteTeamIds,[11]);
 }));
 test('production wiring supplies the actual shared cache to smart notification discovery',async()=>{
  const {createServiceWiringRuntime}=await import('../src/service-wiring-runtime.js');

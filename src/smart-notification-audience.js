@@ -177,7 +177,7 @@ export function createSmartNotificationAudience({
   if (typeof hasSupabase !== 'function') throw new TypeError('hasSupabase is required');
   if (typeof supaSelectMany !== 'function') throw new TypeError('supaSelectMany is required');
 
-  async function loadRowsByUserIds(table, userIds, cfg, limitMultiplier = 1) {
+  async function loadRowsByUserIds(table, userIds, cfg, limitMultiplier = 1, timeoutMs = 7000) {
     if (!CONTEXT_TABLES.has(table)) throw new TypeError('unsupported smart notification audience table');
     const ids=positiveUserIds(userIds);
     if (!ids.length) return [];
@@ -190,7 +190,7 @@ export function createSmartNotificationAudience({
         cfg,
         table,
         {telegram_id:`in.(${batch.join(',')})`},
-        {limit:Math.min(MAX_BATCH_SIZE*MAX_ROWS_PER_USER,Math.max(batch.length*multiplier,batch.length))},
+        {limit:Math.min(MAX_BATCH_SIZE*MAX_ROWS_PER_USER,Math.max(batch.length*multiplier,batch.length)),timeoutMs},
       );
       for (const row of Array.isArray(rows) ? rows : []) {
         if (!plainObject(row)) continue;
@@ -202,7 +202,7 @@ export function createSmartNotificationAudience({
     return output;
   }
 
-  async function loadContexts(rows, cfg) {
+  async function loadContexts(rows, cfg, timeoutMs = 7000) {
     const userIds=positiveUserIds(rows);
     const users=new Map();
     const preferences=new Map();
@@ -216,8 +216,8 @@ export function createSmartNotificationAudience({
 
     if (strictSupabaseAvailable(hasSupabase,cfg)) {
       const [userRows,preferenceRows]=await Promise.all([
-        loadRowsByUserIds('users',userIds,cfg,2),
-        loadRowsByUserIds('user_preferences',userIds,cfg,2),
+        loadRowsByUserIds('users',userIds,cfg,2,timeoutMs),
+        loadRowsByUserIds('user_preferences',userIds,cfg,2,timeoutMs),
       ]);
       const userContexts=collectSingleContext(userRows,userIds);
       const preferenceContexts=collectSingleContext(preferenceRows,userIds);
@@ -260,10 +260,10 @@ export function createSmartNotificationAudience({
     return {users,preferences,ambiguousUsers,ambiguousPreferences,preferenceFailures};
   }
 
-  async function filterRecipients(rows = [], eventType, cfg) {
+  async function filterRecipients(rows = [], eventType, cfg, requiredEvents = [], timeoutMs = 7000, requireUser = false) {
     const source=uniqueSourceRows(rows);
     const safeEventType=normalizedEventType(eventType);
-    if (!safeEventType) {
+    if (!safeEventType || !Array.isArray(requiredEvents) || requiredEvents.some(type=>!normalizedEventType(type))) {
       return {
         rows:[],
         checked:Array.isArray(rows) ? rows.length : 0,
@@ -280,7 +280,7 @@ export function createSmartNotificationAudience({
       ambiguousUsers,
       ambiguousPreferences,
       preferenceFailures,
-    }=await loadContexts(source.rows,cfg);
+    }=await loadContexts(source.rows,cfg,timeoutMs);
     const eligible=[];
     let blockedByPreference=0;
     let blockedByEntitlement=0;
@@ -290,7 +290,7 @@ export function createSmartNotificationAudience({
       const userId=rowUserId(row);
       if (!userId) continue;
 
-      if (ambiguousPreferences.has(userId) || preferenceFailures.has(userId)) {
+      if (ambiguousPreferences.has(userId) || preferenceFailures.has(userId) || requireUser&&(!users.has(userId)||ambiguousUsers.has(userId))) {
         blockedByPreference+=1;
         contextFailures+=1;
         continue;
@@ -304,11 +304,12 @@ export function createSmartNotificationAudience({
         contextFailures+=1;
         continue;
       }
-      const decision=notificationDecision({
-        eventType:safeEventType,
+      const decisions=[safeEventType,...requiredEvents].map(type=>notificationDecision({
+        eventType:type,
         plan:effectiveNotificationPlan(sanitizedUserForPlan(user)),
         preferences:preference.value,
-      });
+      }));
+      const decision=decisions.find(item=>item.allowed!==true)||decisions[0];
       if (decision?.allowed === true) eligible.push(row);
       else if (decision?.reason === 'entitlement_required') blockedByEntitlement+=1;
       else blockedByPreference+=1;
@@ -352,8 +353,39 @@ export function createSmartNotificationAudience({
     return byUser;
   }
 
+  async function recheckDelivery(input,cfg) {
+    if(!strictSupabaseAvailable(hasSupabase,cfg))return {allowed:false,unavailable:true};
+    const row=plainObject(input?.row),userId=rowUserId(row),fixtureId=positiveUserId(row?.fixture_id??row?.fixtureId),eventType=normalizedEventType(input?.eventType);
+    if(!userId||!fixtureId||!eventType)return {allowed:false,unavailable:true};
+    const teamIds=Array.isArray(row._favoriteTeamIds)?[...new Set(row._favoriteTeamIds.map(positiveUserId).filter(Boolean))].slice(0,2):[];
+    const playerId=positiveUserId(input?.playerId),player=eventType.startsWith('player.'),teamOnly=eventType.startsWith('team.');
+    if(teamOnly&&!teamIds.length)return {allowed:false,unavailable:true};
+    if(player&&(!playerId||!input.dedupeKey?.startsWith(`v1:${fixtureId}:${eventType}:p${playerId}:`)))return {allowed:false,unavailable:true};
+    async function read(table,filters,select,valid){
+      const result=await supaSelectMany(cfg,table,{telegram_id:`eq.${userId}`,...filters},{select,limit:3,timeoutMs:1500});
+      if(!Array.isArray(result)||result.length>2||result.some(item=>!plainObject(item)||rowUserId(item)!==userId||!valid(item)))throw Error('Notification subscription unavailable');
+      return result;
+    }
+    try{
+      const [reminders,favorites,players]=await Promise.all([
+        teamOnly?[]:read('match_reminders',{fixture_id:`eq.${fixtureId}`,enabled:'eq.true'},'telegram_id,fixture_id,enabled',item=>positiveUserId(item.fixture_id)===fixtureId&&item.enabled===true),
+        !teamIds.length||player?[]:read('favorites',{team_id:`in.(${teamIds.join(',')})`},'telegram_id,team_id',item=>teamIds.includes(positiveUserId(item.team_id))),
+        !player?[]:read('favorite_players',{player_id:`eq.${playerId}`},'telegram_id,player_id',item=>positiveUserId(item.player_id)===playerId),
+      ]);
+      if(reminders.length>1||players.length>1||new Set(favorites.map(item=>positiveUserId(item.team_id))).size!==favorites.length)throw Error('Ambiguous notification subscription');
+      if(!player&&!reminders.length&&!teamIds.length&&row._favoriteOnly===true)return {allowed:false,unavailable:true};
+      if(player?!reminders.length||!players.length:!reminders.length&&!favorites.length)return {allowed:false};
+      // One fresh context load checks both the event category and, when the
+      // favorite is the remaining source, the automatic team-alert preference.
+      const decision=await filterRecipients([row],eventType,cfg,!reminders.length?['team.match_day']:[],1500,true);
+      if(decision.contextFailures)return {allowed:false,unavailable:true};
+      return {allowed:decision.rows.length===1};
+    }catch{return {allowed:false,unavailable:true};}
+  }
+
   return Object.freeze({
     filterRecipients,
+    recheckDelivery,
     loadFavoritePlayersByUser,
   });
 }

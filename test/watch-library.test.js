@@ -16,7 +16,12 @@ test('library requires an explicit country, groups kinds per fixture, and never 
  const initial=watchLibraryPayload(library(),{...options,country:''});assert.equal(initial.available,false);assert.deepEqual(initial.items,[]);assert.equal(initial.countries.length,2);
  const payload=watchLibraryPayload(library(),options);assert.equal(payload.available,true);assert.equal(payload.items.length,1);assert.deepEqual(payload.items[0].kinds,['highlights']);assert.equal(payload.items[0].home,'Home FC');
  assert.deepEqual(Object.keys(payload.items[0]).sort(),['fixtureId','home','away','league','date','kinds','expiresAt'].sort());
- assert.doesNotMatch(JSON.stringify(payload),/3:0|"score"|elapsed|videoId|eventUrl|youtube|Private raw metadata|Must never appear/);
+ // ISO dates such as 13:02 contain "3:0" without exposing a match score.
+ // Exclude only the two known item timestamps; root fields, country labels
+ // and every other item field remain subject to the original score check.
+ const withoutDates={...payload,items:payload.items.map(item=>({...item,date:'',expiresAt:''}))};
+ assert.doesNotMatch(JSON.stringify(withoutDates),/3:0/);
+ assert.doesNotMatch(JSON.stringify(payload),/"score"|elapsed|videoId|eventUrl|youtube|Private raw metadata|Must never appear/);
  assert.equal(watchLibraryPayload(library(),{...options,country:'US'}).items.length,0);
 });
 test('expired, revoked, cross-fixture and malformed library evidence cannot advertise a match',()=>{

@@ -291,9 +291,11 @@ export function createSmartNotificationDeliveryService({
   sendTelegramMessage,
   recordOpsEvent,
   getWatchSession, getWatchMarker, setWatchMarker,
+  recheckDelivery,
   now=Date.now,
 } = {}) {
   required('hasSupabase',hasSupabase);
+  if(recheckDelivery!==undefined)required('recheckDelivery',recheckDelivery);
   required('supaRpc',supaRpc);
   required('sendTelegramMessage',sendTelegramMessage);
   required('now',now);
@@ -684,6 +686,19 @@ export function createSmartNotificationDeliveryService({
           ? 'failed'
           : 'persistence_ambiguous',
       };
+    }
+
+    // Re-read subscription and policy after claiming/begin-send: discovery
+    // may have happened before a user opted out. No Telegram call on failure.
+    if(typeof recheckDelivery==='function'){
+      let decision;
+      try{decision=await recheckDelivery(input,cfg);}catch{decision=null;}
+      if(!(plainObject(decision)&&decision.allowed===true&&(decision.unavailable===undefined||decision.unavailable===false))){
+        const unavailable=!(plainObject(decision)&&decision.allowed===false&&(decision.unavailable===undefined||decision.unavailable===false));
+        const finalized=await finalize({userId,dedupeKey,claimAt,status:unavailable?'retry_pending':'terminal_failed',retryAfterSeconds:unavailable?60:0,error:unavailable?'Subscription verification unavailable before Telegram send.':'Notification subscription cancelled before Telegram send.'},cfg);
+        await observe(cfg,{severity:unavailable?'warning':'info',code:unavailable?'SMART_NOTIFICATION_SUBSCRIPTION_DEFERRED':'SMART_NOTIFICATION_SUBSCRIPTION_CANCELLED',message:unavailable?'Subscription verification unavailable; Telegram send deferred.':'Notification cancelled by current subscription or preferences.',fixtureId,eventType,category,disposition:unavailable?'subscription_deferred':'subscription_suppressed'});
+        return {state:!finalized?'persistence_ambiguous':unavailable?'subscription_deferred':'subscription_suppressed'};
+      }
     }
 
     let rawResult;

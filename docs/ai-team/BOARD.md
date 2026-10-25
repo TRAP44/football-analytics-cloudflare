@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Уведомления: последняя проверка подписки/избранного и настроек перед Telegram — **Codex** — `codex/notification-live-subscription-check`; изменения после discovery/claim, strongDB, failcloseddefer, прежниеCAS/dedupe.
+
 
 
 

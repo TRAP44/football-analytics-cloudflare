@@ -576,7 +576,7 @@ export function createSmartNotificationService({
     for(const row of favorites.rows){
       const key=`${row.telegram_id}:${row.fixture_id}`;
       const existing=combined.get(key);
-      if(existing)combined.set(key,{...existing,_favoriteTeams:row._favoriteTeams,_favoriteOpponent:row._favoriteOpponent,_favoriteToday:row._favoriteToday});
+      if(existing)combined.set(key,{...existing,_favoriteTeams:row._favoriteTeams,_favoriteTeamIds:row._favoriteTeamIds,_favoriteOpponent:row._favoriteOpponent,_favoriteToday:row._favoriteToday});
       else combined.set(key,row);
     }
     const rows = [...combined.values()].filter(row=>!liveOnly || recentMinutes.has(Number(row.fixture_id)) && Date.parse(row.fixture_date)<=now);
@@ -648,6 +648,8 @@ export function createSmartNotificationService({
       else if (state === 'cooldown') summary.cooldown += 1;
       else if (state === 'retry_pending') summary.retryPending += 1;
       else if (state === 'unknown') summary.unknown += 1;
+      else if(state==='subscription_suppressed')summary.blockedByPreference+=1;
+      else if(state==='subscription_deferred')summary.failed+=1;
       else if(state==='watch_deferred'||state==='watch_suppressed')summary.watchProtected=(summary.watchProtected||0)+1;
       else if (state && state !== 'invalid') summary.failed += 1;
     };
@@ -790,6 +792,7 @@ export function createSmartNotificationService({
                   row,
                   eventType: followedType,
                   category: 'players',
+                  playerId,
                   text: playerEventMessage(row, event, followedType, favorite),
                   dedupeKey,
                 });
@@ -832,6 +835,7 @@ export function createSmartNotificationService({
                 row,
                 eventType,
                 category: 'players',
+                playerId,
                 text: lineupPlayerMessage(row, favorite, eventType),
                 dedupeKey,
               });

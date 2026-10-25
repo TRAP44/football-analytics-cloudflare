@@ -14,6 +14,19 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-25 — Codex — Последняя проверка подписки перед Telegram
+PR: ветка `codex/notification-live-subscription-check`. #1016 полностью выпущен: merged0259567c, MainQuality40192129056/CodeQL40192129095/IsolatedLoad40192129078/Deploy40192406496success, activeCF76cd9b38-9553-4fae-a9a0-b77986714ca5,25postdeploy/rendered и publicmanifestSHA/tag verified; launch142 сохраняется. Обычный Background40192324986 success (smartok+3liveok+completedleases), не доказательство конкретной доставки. Микросекунды claimAt теперь сохраняются и SQLprecisionproof вPR1016 подтверждён.
+
+Старый delivery доTelegram не перепроверял текущие подписки/настройки послеdiscovery. Baselinerepro через исходный productiondelivery +newguardtest дал sent вместо subscription_suppressed после удаленияfavorite (/tmp/subscription-before.log). Новый productionwiring передаёт audience.recheckDelivery вactualdelivery; проверка **после begin-sendCAS, перед Telegram**. StrongSELECT текущего match_reminders OR соответствующихfavorites, дляteam.* толькоfavorite, дляplayer.* currentfavoriteplayer+reminder+paidaccess. Одноfreshcontextload проверяетактуальныеprefs/plan иteamsoptout еслиfavoriteостаётсяединственнымисточником. НикакогоL1/discoverycache какразрешения. До4indexedSELECT на новую отправку, timeout1500msкаждая; ужеduplicate не делаетэтихread. НовыхFootball/Google/LLMrequests/keys/SQL/publicизменений нет.
+
+Discovery передаётprivate_favoriteTeamIds обоихклубов, mergeexplicitreminder ихсохраняет;playernotifications несутplayerId, связаннуюсdedupekey. IndependentCodexreview нашлоP2: stalefavoriteOnly могигнорироватьновыйmanualreminder. Исправлено: дляmatch/player всегдачитаетсяcurrentreminder, новыйmanualпослеdiscovery +unfavorite всёещёauthorizes. Teamsannounce остаётсяfavorite-only; explicitreminder переживаетteamoptout. Missing/ambiguouscontext/foreignUID/malformedpermission/timeout→deferбезTelegram. Confirmedcancel→existingCASfinalizeterminal_failed +subscription_suppressed; невозможностьпроверки→existingretry_pending60s, bounded3attempts, failureвиденвsummary. Unknownsend suppress неизменён. Измененияпослепоследнегоread/ужеотправляемоесообщениеотозватьнельзя.
+
+13newactualaudience+deliverymockDB regressions: off/unfavorite/unfollow/reminderremoval послеbegin, latestmanualOR, playerID/plan, malformed/contextfailure, safe60sdefer/cancellationpersistencefailure/unknownnoduplicate, productionwiring.87focusedpassed; release883/full4677passed, Node22ci/check316/lint/security/privileged/verifyrelease/workerdryrunpassed. Независимыйread-only **Codex**, не Claude review беззамечаний. Newtestfile вreleasecriticalmanifest.
+
+Full/release обнаружилисуществующийfalsepositive watch-librarytest: /3:0/ поJSON совпалскорректнымISO13:02. Productwatchнеизменён. Scorecheck поfullpayloadкопии, гдеисключенытолькоизвестныеitem.date/item.expiresAt; root/countries/прочиеfields всёещёпроверяются, fullJSONforbiddenmetadata иitemfieldallowlist сохранены. ForcedDate.now15:02→kickoff13:02 5tests passed иотдельноreviewed; gateнеослаблен. Послефинальногоtest-onlyусиленияповторforced5pass, productfull/releaseдоусиленияpassed; CIповторитвсёнаfinalhead.
+
+ОбязательнозавершитьexactheadCI→merge→mainQuality→Deploy→manifestSHA/25postdeploy. Неотправлятьrealtestmessages/непереотправлятьстарыесобытия. Standinguserauthorization наслияниепроверенныхPR действует; прямойmainpushзапрещён.
+
 ## 2026-10-25 — Codex — Микросекунды владения отправкой уведомлений
 PR [#1016](https://github.com/TRAP44/football-analytics-cloudflare/pull/1016), ветка `codex/notification-claim-precision`. #1015 полностью выпущен: merged871b7b1d, MainQuality40188367158/CodeQL40188367185/Deploy40188689437success, activeCF03c9e5a1-9476-47ae-8e88-a8dbe5d3ddef, publicmanifestSHA/tag+assetslaunch142 и25postdeploy/renderedverified. PhysicalTelegramplayback не проверялся.
 
