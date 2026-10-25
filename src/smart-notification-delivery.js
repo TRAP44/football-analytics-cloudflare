@@ -77,6 +77,17 @@ function canonicalTimestamp(value) {
   try { return new Date(ms).toISOString(); } catch { return ''; }
 }
 
+// PostgreSQL claimed_at is an ownership token, not a JS clock value. Date
+// round-tripping drops up to three fractional digits and breaks exact SQL CAS.
+function ownershipTimestamp(value) {
+  if(typeof value!=='string')return '';
+  const raw=value.trim();
+  const parts=raw.match(/^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,6})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/);
+  if(!parts||parseTimestamp(raw)===null)return '';
+  const days=new Date(Date.UTC(Number(parts[1]),Number(parts[2]),0)).getUTCDate();
+  return Number(parts[3])<=days?raw:'';
+}
+
 function cleanToken(value,maxLength,pattern) {
   if (typeof value !== 'string') return '';
   const raw=value.trim();
@@ -235,7 +246,7 @@ function normalizeClaimResult(value) {
     : positiveSafeInteger(source.attempts);
 
   if (source.allowed === true) {
-    const claimAt=canonicalTimestamp(source.claimAt ?? source.claim_at);
+    const claimAt=ownershipTimestamp(source.claimAt ?? source.claim_at);
     if (!CLAIM_ALLOW_REASONS.has(reason) || !claimAt || (attempts !== null && !attempts)) {
       return {allowed:false,reason:'persistence_error',claimAt:'',attempts:null};
     }
@@ -644,7 +655,7 @@ export function createSmartNotificationDeliveryService({
       return {state};
     }
 
-    const claimAt=canonicalTimestamp(claimed.claimAt);
+    const claimAt=ownershipTimestamp(claimed.claimAt);
     if (!claimAt) {
       await observe(cfg,{
         severity:'error',

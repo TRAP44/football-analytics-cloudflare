@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
+import {createSmartNotificationDeliveryService} from '../src/smart-notification-delivery.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -591,10 +592,54 @@ async function testSensitiveMutationIdempotency() {
   );
 }
 
+async function testSmartNotificationOwnershipPrecision() {
+  const telegramId=900000000436,fixtureId=420,dedupeKey='v1:420:match.goal:ci-ownership-micros';
+  const literal=value=>"'"+String(value).replace(/'/g,"''")+"'";
+  await psql(`delete from public.users where telegram_id=${telegramId}; insert into public.users(telegram_id) values (${telegramId});`);
+  let sends=0,beginFenced=false,finalizeFenced=false;
+  const service=createSmartNotificationDeliveryService({
+    hasSupabase:()=>true,
+    supaRpc:async(_cfg,name,args)=>{
+      if(name==='claim_smart_notification_delivery'){
+        const claim=parseJson(await serviceRoleQuery(`select public.claim_smart_notification_delivery(${args.p_telegram_id},${args.p_fixture_id},${literal(args.p_event_type)},${literal(args.p_category)},${literal(args.p_dedupe_key)},0)::text;`),'smart notification claim');
+        if(!claim.allowed)return claim;
+        // Deterministically exercise the fractional digits JS Date discards.
+        return parseJson(await serviceRoleQuery(`update public.smart_notification_deliveries set claimed_at=date_trunc('second',claimed_at)+interval '0.123456 seconds' where telegram_id=${telegramId} and dedupe_key=${literal(dedupeKey)} returning jsonb_build_object('allowed',true,'reason',${literal(claim.reason)},'claimAt',claimed_at)::text;`),'microsecond claim');
+      }
+      assert.match(args.p_claimed_at,/\.123456(?:Z|[+-])/,'ownership token must retain all six fractional digits');
+      const token=`timestamptz ${literal(args.p_claimed_at)}`;
+      if(name==='begin_smart_notification_delivery_send'){
+        const rounded=`timestamptz ${literal(new Date(args.p_claimed_at).toISOString())}`;
+        const oldPath=parseJson(await serviceRoleQuery(`select public.begin_smart_notification_delivery_send(${telegramId},${literal(dedupeKey)},${rounded},3)::text;`),'rounded smart notification owner');
+        assert.equal(oldPath.started,false);assert.equal(oldPath.reason,'claim_lost');
+        const wrong=parseJson(await serviceRoleQuery(`select public.begin_smart_notification_delivery_send(${telegramId},${literal(dedupeKey)},${token}-interval '0.000001 seconds',3)::text;`),'wrong smart notification owner');
+        assert.equal(wrong.started,false);assert.equal(wrong.reason,'claim_lost');beginFenced=true;
+        return parseJson(await serviceRoleQuery(`select public.begin_smart_notification_delivery_send(${telegramId},${literal(dedupeKey)},${token},3)::text;`),'begin smart notification send');
+      }
+      if(name==='finalize_smart_notification_delivery'){
+        const wrong=parseJson(await serviceRoleQuery(`select public.finalize_smart_notification_delivery(${telegramId},${literal(dedupeKey)},${token}-interval '0.000001 seconds','sent','',0)::text;`),'wrong smart notification finalizer');
+        assert.equal(wrong.updated,false);finalizeFenced=true;
+        return parseJson(await serviceRoleQuery(`select public.finalize_smart_notification_delivery(${telegramId},${literal(dedupeKey)},${token},${literal(args.p_status)},'',0)::text;`),'finalize smart notification send');
+      }
+      throw new Error('Unexpected smart notification RPC');
+    },
+    // No Telegram connection or credentials: only the local DB path is real.
+    sendTelegramMessage:async()=>{sends++;return {ok:true,status:200,outcome:'sent'};},
+  });
+  const input={row:{telegram_id:telegramId,fixture_id:fixtureId},eventType:'match.goal',category:'match',text:'CI synthetic event',dedupeKey};
+  const results=await Promise.all([service.deliverSmartNotification(input,{}),service.deliverSmartNotification(input,{})]);
+  assert.deepEqual(results.map(item=>item.state).sort(),['duplicate','sent']);
+  assert.equal((await service.deliverSmartNotification(input,{})).state,'duplicate');
+  assert.equal(sends,1);assert.equal(beginFenced,true);assert.equal(finalizeFenced,true);
+  assert.equal(await psql(`select status from public.smart_notification_deliveries where telegram_id=${telegramId} and dedupe_key=${literal(dedupeKey)};`),'sent');
+  console.log('Smart notification PostgreSQL precision passed: six fractional digits, exact begin/finalize ownership, concurrent duplicate suppressed, one synthetic send.');
+}
+
 async function cleanup() {
   await psql([
     'delete from public.usage_daily where telegram_id=900000000433',
     'delete from public.users where telegram_id=900000000433',
+    'delete from public.users where telegram_id=900000000436',
     "delete from public.provider_rate_windows where bucket_key='ci-433-provider-budget'",
     "delete from public.telegram_update_claims where update_key='ci-433-telegram-update'",
     "delete from public.scheduled_job_leases where group_key in ('ci-433-scheduled-group','ci-433-scheduled-retention-group')",
@@ -611,6 +656,7 @@ export async function runConcurrencyGate() {
     await testScheduledLease();
     await testOpsEventOccurrence();
     await testSensitiveMutationIdempotency();
+    await testSmartNotificationOwnershipPrecision();
   } finally {
     await cleanup();
   }
