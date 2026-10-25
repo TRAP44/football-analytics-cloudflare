@@ -43,8 +43,9 @@ export function createWatchLibrary({root,api,escapeHtml,onOpen,now=Date.now,wind
     try{
       const data=await api('/api/match-watch?'+new URLSearchParams({list:'1',...(country?{country}:{})}),{signal,timeoutMs:4000});
       if(request!==sequence||signal.aborted||!active())return;loadedAt=now();render(data);
-    }catch{
+    }catch(error){
       if(request!==sequence||signal.aborted||!active())return;
+      if(error?.status===400 && error?.payload?.code==='WATCH_INPUT_INVALID'){country='';items=[];try{win.localStorage.setItem(COUNTRY_KEY,'');}catch{}}
       renderCards();const message=body.querySelector('[data-watch-library-state]');
       if(message)message.textContent='Список временно недоступен. Повторите обновление.';
       else{body.innerHTML='<p role="status">Список временно недоступен.</p><button type="button" class="secondary-btn" data-watch-library-retry>Попробовать снова</button>';body.querySelector('[data-watch-library-retry]').onclick=()=>void load();}

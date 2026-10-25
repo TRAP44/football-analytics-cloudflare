@@ -26,10 +26,10 @@ export function createMatchWatch({api,escapeHtml,watchExperience,now=Date.now,wi
     if(!settings?.enabled){session.privacyEdited=false;if(checkbox)checkbox.checked=false;if(select)select.value='0';}
     else if(!session.privacyEdited&&settings.confirmed){if(checkbox)checkbox.checked=true;if(select)select.value=String(settings.delaySeconds);}
   });
-  const storedCountry=()=>{try{return win.localStorage.getItem(COUNTRY_KEY)||'';}catch{return '';}};
+  const storedCountry=()=>{try{const value=win.localStorage.getItem(COUNTRY_KEY)||'';return /^[A-Z]{2}$/.test(value)?value:'';}catch{return '';}};
   const saveCountry=country=>{try{win.localStorage.setItem(COUNTRY_KEY,country);}catch{}};
   const active=s=>session===s&&s.root.isConnected&&s.isCurrent();
-  function stopPlayer(s){savePosition(s);win.clearInterval(s.positionTimer);s.positionTimer=null;s.player?.destroy?.();s.player=null;s.item=null;s.root.querySelector('[data-watch-player]')?.replaceChildren();}
+  function stopPlayer(s){win.clearTimeout(s.playerReadyTimer);s.playerReadyTimer=null;savePosition(s);win.clearInterval(s.positionTimer);s.positionTimer=null;s.player?.destroy?.();s.player=null;s.item=null;s.root.querySelector('[data-watch-player]')?.replaceChildren();}
   function positionKey(s,item){return `matchradar:watch-position:${s.fixtureId}:${item.videoId}:v1`;}
   function savePosition(s){
     if(s.item?.kind!=='replay'||!s.player?.getCurrentTime)return;
@@ -52,6 +52,7 @@ export function createMatchWatch({api,escapeHtml,watchExperience,now=Date.now,wi
   }
   function render(s,data){
     if(!active(s))return;
+    if(s.failedRoot){s.root.replaceChildren();s.failedRoot=false;}
     const countries=Array.isArray(data?.countries)?data.countries.filter(item=>/^[A-Z]{2}$/.test(item?.code)&&typeof item.name==='string'):[];
     const items=Array.isArray(data?.items)?data.items.filter(item=>Date.parse(item?.expiresAt)>now()).slice(0,10):[];
     s.data=data;s.items=items;s.hadCatalogue||=items.length>0;
@@ -70,7 +71,7 @@ export function createMatchWatch({api,escapeHtml,watchExperience,now=Date.now,wi
     s.root.querySelector('[data-watch-country-area]').innerHTML=countries.length?`<label>Где будете смотреть? <select data-watch-country aria-label="Страна просмотра"><option value="">Выберите страну</option>${countries.map(item=>`<option value="${item.code}" ${item.code===country?'selected':''}>${escapeHtml(item.name)}</option>`).join('')}</select></label>`:'';
     s.root.querySelector('[data-watch-options]').innerHTML=!countries.length?'Доступный источник видео пока не подтверждён. Режим без спойлеров можно включить и для просмотра на другом сервисе.':country?items.length?items.map((item,index)=>`<article class="match-watch-source"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.kind==='live'?'Трансляция':item.kind==='replay'?'Полная запись':'Обзор')} · ${escapeHtml(({free:'Бесплатно',subscription:'По подписке',ppv:'Отдельная покупка',unknown:'Условия у источника'})[item.access]||'Условия у источника')}</span>
       ${youtubeEmbedUrl(item,win.location.origin)?`<button class="primary-btn" type="button" data-watch-play="${index}">${position(s,item)?`Продолжить с ${Math.floor(position(s,item)/60)}:${String(position(s,item)%60).padStart(2,'0')}`:'Смотреть в приложении'}</button>${position(s,item)?`<button class="secondary-btn" type="button" data-watch-restart="${index}">Сначала</button>`:''}`:''}
-      <a href="${escapeHtml(item.eventUrl)}" target="_blank" rel="noopener noreferrer">${item.embed?'Открыть у источника ↗':'Смотреть у источника ↗'}</a></article>`).join(''):'<p>Для этой страны просмотр сейчас не подтверждён.</p>':'<p>Выберите страну — покажем доступный вариант.</p>';
+      <a data-watch-external="${index}" href="${escapeHtml(item.eventUrl)}" target="_blank" rel="noopener noreferrer">${item.embed?'Открыть у источника ↗':'Смотреть у источника ↗'}</a></article>`).join(''):'<p>Для этой страны просмотр сейчас не подтверждён.</p>':'<p>Выберите страну — покажем доступный вариант.</p>';
     if(stopped)s.root.querySelector('[data-watch-status]').textContent='Доступ к этому видео больше не подтверждён. Выберите доступный источник.';
     if(privacy&&!mounted){
       s.privacyEdited=false;
@@ -88,15 +89,28 @@ export function createMatchWatch({api,escapeHtml,watchExperience,now=Date.now,wi
     if(countrySelect)countrySelect.onchange=event=>{stopPlayer(s);clearTimers(s);s.data=null;s.items=[];s.root.querySelector('[data-watch-options]').textContent='Проверяем доступность…';s.country=event.target.value;saveCountry(s.country);s.open=true;void load(s);};
     s.root.querySelectorAll('[data-watch-play]').forEach(button=>{button.onclick=()=>void play(s,items[Number(button.dataset.watchPlay)]);});
     s.root.querySelectorAll('[data-watch-restart]').forEach(button=>{button.onclick=()=>void play(s,items[Number(button.dataset.watchRestart)],true);});
+    s.root.querySelectorAll('[data-watch-external]').forEach(link=>{link.onclick=event=>{
+      const item=items[Number(link.dataset.watchExternal)];
+      if(!active(s)||!s.items.includes(item)||!(Date.parse(item?.expiresAt)>now())){event.preventDefault();return;}
+      // Prefer Telegram's supported external navigation; a real anchor remains
+      // available in other browsers or if the bridge rejects the call.
+      try{if(typeof win.Telegram?.WebApp?.openLink==='function'){win.Telegram.WebApp.openLink(item.eventUrl);event.preventDefault();}}catch{}
+    };});
     schedule(s);
+  }
+  function loadFailure(s,error){
+    stopPlayer(s);clearTimers(s);s.items=[];s.root.hidden=false;s.failedRoot=true;
+    if(error?.status===400 && error?.payload?.code==='WATCH_INPUT_INVALID') {s.country='';saveCountry('');}
+    s.root.innerHTML='<details class="match-watch-details" open><summary>Где смотреть</summary><div class="match-watch-body"><p role="status">Не удалось проверить источники видео. Повторите попытку.</p><button class="secondary-btn" type="button" data-watch-retry>Повторить</button></div></details>';
+    s.root.querySelector('[data-watch-retry]').onclick=event=>{event.currentTarget.disabled=true;event.currentTarget.textContent='Проверяем…';void load(s);};
   }
   async function load(s,background=false){
     s.loadedAt=now();s.controller?.abort();const controller=new AbortController();s.controller=controller;s.loading=true;
     try{const data=await api(`/api/match-watch?${new URLSearchParams({fixtureId:String(s.fixtureId),...(s.country?{country:s.country}:{})})}`,{signal:controller.signal,timeoutMs:4000});
       if(!controller.signal.aborted&&s.controller===controller)render(s,data);
-    }catch{if(active(s)&&!controller.signal.aborted&&s.controller===controller){
+    }catch(error){if(active(s)&&!controller.signal.aborted&&s.controller===controller){
       if(background&&s.data)render(s,s.data);
-      else{stopPlayer(s);s.root.hidden=true;s.root.replaceChildren();}
+      else loadFailure(s,error);
     }}finally{if(active(s)&&s.controller===controller){s.loading=false;schedule(s);}}
   }
   async function play(s,item,fromStart=false){
@@ -108,9 +122,11 @@ export function createMatchWatch({api,escapeHtml,watchExperience,now=Date.now,wi
     const target=s.root.querySelector('[data-watch-player]'),status=s.root.querySelector('[data-watch-status]');
     const iframe=doc.createElement('iframe');iframe.title='Официальный плеер YouTube';iframe.referrerPolicy='strict-origin-when-cross-origin';iframe.allow='encrypted-media; picture-in-picture; fullscreen';iframe.allowFullscreen=true;iframe.src=source;
     target.append(iframe);status.textContent='Если видео недоступно, откройте официальный источник по ссылке выше.';
+    const failed=message=>{if(active(s)&&iframe.isConnected){stopPlayer(s);status.textContent=message;}};
+    s.playerReadyTimer=win.setTimeout(()=>failed('Плеер не загрузился. Откройте официальный источник по ссылке выше.'),15000);
     try{const YT=await youtubeSdk(win,doc);if(!active(s)||!iframe.isConnected)return;if(!(Date.parse(s.item?.expiresAt)>now())){stopPlayer(s);return;}
-      s.player=new YT.Player(iframe,{events:{onReady:()=>{if(active(s)&&iframe.isConnected)s.positionTimer=win.setInterval(()=>savePosition(s),5000);},onError:()=>{if(active(s)&&iframe.isConnected){stopPlayer(s);status.textContent='Источник не разрешил просмотр здесь. Откройте официальную ссылку выше.';}}}});
-    }catch{if(active(s))status.textContent='Плеер может быть недоступен в Telegram. Официальная ссылка — выше.';}
+      s.player=new YT.Player(iframe,{events:{onReady:()=>{if(active(s)&&iframe.isConnected){win.clearTimeout(s.playerReadyTimer);s.playerReadyTimer=null;s.positionTimer=win.setInterval(()=>savePosition(s),5000);}},onError:event=>failed([101,150].includes(event?.data)?'Источник не разрешил просмотр здесь. Откройте официальную ссылку выше.':'Встроенный плеер недоступен. Откройте официальный источник по ссылке выше.')}});
+    }catch{failed('Плеер не загрузился. Откройте официальный источник по ссылке выше.');}
   }
   win.addEventListener?.('pagehide',()=>{if(session)savePosition(session);});
   const resume=()=>{const s=session;if(!s||!active(s)||!s.data)return;render(s,s.data);if(!s.loading&&now()-s.loadedAt>=60000)void load(s,true);};

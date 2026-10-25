@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
+import {settlementControlSql} from './settlement-recovery-control.js';
 import {createSmartNotificationDeliveryService} from '../src/smart-notification-delivery.js';
 
 const execFileAsync = promisify(execFile);
@@ -635,6 +636,23 @@ async function testSmartNotificationOwnershipPrecision() {
   console.log('Smart notification PostgreSQL precision passed: six fractional digits, exact begin/finalize ownership, concurrent duplicate suppressed, one synthetic send.');
 }
 
+async function testSettlementControlTransport() {
+  // PostgREST wraps PATCH in a data-modifying CTE. Reproduce the actual rule
+  // incompatibility without matching any row, then exercise the shipped fix.
+  await assert.rejects(psql("with pgrst_source as (update public.runtime_controls set revision=revision+1 where id='global' and revision=0 returning *) select * from pgrst_source;"),/DO ALSO rules are not supported/);
+  const read=async()=>parseJson(await serviceRoleQuery("select row_to_json(r) from public.runtime_controls r where id='global';"),'settlement runtime state');
+  const before=await read();assert.equal(before.maintenance_mode,false);
+  try {
+    await psql(settlementControlSql(!before.auto_settlement_recovery_enabled));
+    const after=await read();assert.equal(after.auto_settlement_recovery_enabled,!before.auto_settlement_recovery_enabled);assert.equal(after.revision,before.revision+1);
+    for(const key of Object.keys(before).filter(key=>!['auto_settlement_recovery_enabled','revision','updated_at','updated_by'].includes(key)))assert.deepEqual(after[key],before[key]);
+    const audit=parseJson(await serviceRoleQuery(`select snapshot from public.runtime_control_history where revision=${after.revision};`),'settlement runtime audit');
+    assert.equal(audit.autoSettlementRecoveryEnabled,after.auto_settlement_recovery_enabled);assert.equal(audit.revision,after.revision);
+    await psql(settlementControlSql(after.auto_settlement_recovery_enabled));assert.equal((await read()).revision,after.revision);
+  } finally {await psql(settlementControlSql(before.auto_settlement_recovery_enabled));}
+  console.log('Settlement control PostgreSQL transport passed: PostgREST CTE reproduced, fixed transaction and audit atomic, other flags preserved, duplicate idempotent.');
+}
+
 async function cleanup() {
   await psql([
     'delete from public.usage_daily where telegram_id=900000000433',
@@ -657,6 +675,7 @@ export async function runConcurrencyGate() {
     await testOpsEventOccurrence();
     await testSensitiveMutationIdempotency();
     await testSmartNotificationOwnershipPrecision();
+    await testSettlementControlTransport();
   } finally {
     await cleanup();
   }

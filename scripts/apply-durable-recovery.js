@@ -26,7 +26,7 @@ const fail=code=>{throw Object.assign(new Error(code),{code});};
 const runPsql=promisify(execFile);
 
 // Fixed callers below alone select the read-only proof or guarded migration.
-async function runRecoveryPostgres({databaseUrl,signal,run=runPsql,query,write=false}={}){
+export async function runRecoveryPostgres({databaseUrl,signal,run=runPsql,query,write=false}={}){
   let url;
   try{url=new URL(databaseUrl);}catch{fail('RECOVERY_DATABASE_CONNECTION_INVALID');}
   if(!['postgres:','postgresql:'].includes(url.protocol)
