@@ -168,7 +168,10 @@ try{
  await evaluate("window.libraryRealNow=Date.now;window.libraryClock=Date.now();Date.now=()=>window.libraryClock;document.getElementById('watchLibrary').open=true");await wait("Boolean(document.querySelector('[data-watch-library-country]'))",'library country selector missing');
  if(await evaluate("Boolean(document.querySelector('[data-watch-library-open],iframe,script[src*=youtube]'))"))throw Error('library exposed card/media before explicit country');
  await evaluate("document.querySelector('[data-watch-library-country]').value='RU';document.querySelector('[data-watch-library-country]').dispatchEvent(new Event('change'))");await wait("Boolean(document.querySelector('[data-watch-library-open]'))",'library card missing');
- if(await evaluate("/0:0|1:0|fixtureIdentity|https:/.test(document.getElementById('watchLibrary').innerText)"))throw Error('library leaked score or internal metadata');
+ // The known kickoff label can contain 0:0 at Moscow midnight. Remove only
+ // that complete timestamp; every other visible field retains the score guard.
+ const kickoffLabel=new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(match.date))+' МСК';
+ if(await evaluate(`/0:0|1:0|fixtureIdentity|https:/.test(document.getElementById('watchLibrary').innerText.replace(${JSON.stringify(kickoffLabel)},''))`))throw Error('library leaked score or internal metadata');
  for(const width of [320,390,900]){await cdp.call('Emulation.setDeviceMetricsOverride',{width,height:844,deviceScaleFactor:1,mobile:true});if(await evaluate('document.documentElement.scrollWidth>innerWidth+1'))throw Error('library overflow '+width);}
  delay=true;
  await evaluate("document.querySelector('[data-watch-library-country]').value='KZ';document.querySelector('[data-watch-library-country]').dispatchEvent(new Event('change'));document.querySelector('[data-watch-library-country]').value='RU';document.querySelector('[data-watch-library-country]').dispatchEvent(new Event('change'))");

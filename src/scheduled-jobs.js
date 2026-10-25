@@ -446,7 +446,7 @@ export function createScheduledJobsRuntime({
     if (!normalizedDate) throw new TypeError('scheduledAt is invalid');
     scheduledAt=normalizedDate;
     const run=(task,runner)=>runOwnedTask(task,runner,ownershipState);
-    if(recoveryMode)return [['settlement_recovery',run('settlement_recovery',()=>runSettlementWatchdog(cfg,{manual:true,preview:recoveryMode==='preview',canContinue:()=>!ownershipState?.lost}))]];
+    if(recoveryMode)return [['settlement_recovery',run('settlement_recovery',()=>runSettlementWatchdog(cfg,{manual:recoveryMode!=='automatic',preview:recoveryMode==='preview',canContinue:()=>!ownershipState?.lost}))]];
     if(liveOnly)return [['live_notifications',run('live_notifications',()=>processSmartNotifications(cfg,{liveOnly:true,maxFixtures:2,timeBudgetMs:20000}))]];
     const backtestTask = run('backtest', () => settleBacktestDaily(cfg));
     const remindersTask = run('reminders', () => processDueReminders(cfg));
@@ -494,8 +494,8 @@ export function createScheduledJobsRuntime({
       tasks.push(['integrity_cleanup', runDailyTaskOnce('integrity_cleanup', () => cleanupIntegrityData(cfg), cfg, scheduledAt, ownershipState)]);
     }
 
-    if (scheduledAt.getUTCHours() === 4 && scheduledAt.getUTCMinutes() < 15) {
-      tasks.push(['settlement_watchdog', backtestTask.then(() => run('settlement_watchdog', () => runSettlementWatchdog(cfg)))]);
+    if (scheduledAt.getUTCMinutes() < 15) {
+      tasks.push(['settlement_watchdog', backtestTask.then(() => run('settlement_watchdog', () => runSettlementWatchdog(cfg,{canContinue:()=>!ownershipState?.lost})))]);
     }
 
     if (scheduledAt.getUTCHours() === 5 && scheduledAt.getUTCMinutes() < 15) {
@@ -568,7 +568,7 @@ export function createScheduledJobsRuntime({
     }
 
     const liveOnly=controller?.liveNotificationsOnly===true && cfg?.cronRunner==='github-actions';
-    const recoveryMode=cfg?.cronRunner==='github-actions' && ['preview','apply'].includes(controller?.settlementRecoveryMode)?controller.settlementRecoveryMode:'';
+    const recoveryMode=cfg?.cronRunner==='github-actions' && ['preview','apply','automatic'].includes(controller?.settlementRecoveryMode)?controller.settlementRecoveryMode:'';
     const jobKey=recoveryMode?`settlement-${recoveryMode}:${scheduledAt.toISOString()}`:liveOnly?`cron-live:${scheduledAt.toISOString()}`:scheduledRunKey(scheduledAt);
     let claim={
       claimed:true,

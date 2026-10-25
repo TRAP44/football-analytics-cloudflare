@@ -18,6 +18,8 @@ const RELEASE_TESTS = Object.freeze([
   'test/reminder-action-recovery.test.js',
   'test/match-question-access.test.js',
   'test/match-question.test.js',
+  'test/manual-pending-recovery.test.js',
+  'test/settlement-recovery-control.test.js',
   'test/match-watch.test.js',
   'test/watch-session.test.js',
   'test/watch-send-boundary.test.js',

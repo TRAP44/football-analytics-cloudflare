@@ -1345,10 +1345,19 @@ export function createSettlementRuntime(deps) {
     return result;
   }
 
-  function selectRemediationBatch(candidates, maxFixtures = 20, maxDates = 5) {
+  function selectRemediationBatch(candidates, maxFixtures = 20, maxDates = 5, cursor = undefined) {
+    const compare = (a,b) => Date.parse(a.kickoff_at)-Date.parse(b.kickoff_at) || Number(a.fixture_id)-Number(b.fixture_id);
+    const ordered = [...(candidates || [])];
+    if (cursor !== undefined) ordered.sort(compare);
+    const boundary = cursor ? {kickoff_at:cursor.kickoffAt,fixture_id:cursor.fixtureId} : null;
+    const after = boundary ? ordered.findIndex(row=>compare(row,boundary)>0) : 0;
+    const start = Math.max(0,after);
+    // Wrap only when the tail is empty; mixing head and tail can move the
+    // checkpoint backwards when the date cap skips intervening rows.
+    const rotated = ordered.slice(start);
     const selected = [];
     const dates = new Set();
-    for (const row of candidates || []) {
+    for (const row of rotated) {
       const date = String(row?.kickoff_at || '').slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
       if (!dates.has(date) && dates.size >= maxDates) continue;
@@ -1504,7 +1513,7 @@ export function createSettlementRuntime(deps) {
   async function inspectSettlementRunLedger(cfg) {
     if (!hasSupabase(cfg)) return { active: [], stale: [], cutoff: null };
     const rows = await supaSelectMany(cfg, 'prediction_integrity_actions', {
-      action_type: 'eq.auto_recover',
+      action_type: 'in.(auto_recover,recover)',
       status: 'eq.started',
     }, { limit: 20, order: 'updated_at.asc' });
     const cutoffTs = Date.now() - SETTLEMENT_RUN_STALE_MINUTES * 60_000;
@@ -1557,10 +1566,10 @@ export function createSettlementRuntime(deps) {
     return { reconciled, active: ledger.active, cutoff: ledger.cutoff };
   }
 
-  async function resolveSettlementRetryLineage(cfg, fixtureIds) {
+  async function resolveSettlementRetryLineage(cfg, fixtureIds, manual = false) {
     if (!hasSupabase(cfg)) return settlementRetryDecision(null, fixtureIds);
     const rows = await supaSelectMany(cfg, 'prediction_integrity_actions', {
-      action_type: 'eq.auto_recover',
+      action_type: manual ? 'eq.recover' : 'eq.auto_recover',
     }, { limit: 20, order: 'created_at.desc' });
     const key = settlementBatchKey(fixtureIds);
     const latest = (rows || []).find(row => settlementBatchKey(row.fixture_ids || []) === key) || null;
@@ -1742,7 +1751,7 @@ export function createSettlementRuntime(deps) {
     return publicRemediationAction(row);
   }
 
-  async function buildModelRemediationReport(cfg, { maxRows = 5000, manualBatch = false } = {}) {
+  async function buildModelRemediationReport(cfg, { maxRows = 5000, manualBatch = false, automaticBatch = false } = {}) {
     if (!hasSupabase(cfg) && !cfg.devMode) {
       return { available: false, reason: 'Supabase не настроен: восстановление требует постоянную базу данных.' };
     }
@@ -1754,14 +1763,31 @@ export function createSettlementRuntime(deps) {
       hasSupabase(cfg) ? probeSettlementFinalitySchema(cfg) : Promise.resolve({ ok: true, status: 'memory' }),
       hasSupabase(cfg) ? probeSettlementTrustSchema(cfg) : Promise.resolve({ ok: true, status: 'memory' }),
       hasSupabase(cfg) ? probeSettlementAdjudicationSchema(cfg) : Promise.resolve({ ok: true, status: 'memory' }),
-      hasSupabase(cfg) ? loadSettlementReliability(cfg).catch(() => normalizeSettlementReliability()) : Promise.resolve(normalizeSettlementReliability()),
+      hasSupabase(cfg) ? loadSettlementReliability(cfg).catch(error => {
+        if (manualBatch || automaticBatch) throw error;
+        return normalizeSettlementReliability();
+      }) : Promise.resolve(normalizeSettlementReliability()),
       loadRuntimeControls(cfg),
     ]);
-    const loaded = await loadPredictionRemediationRows(cfg, maxRows,manualBatch);
+    const loaded = await loadPredictionRemediationRows(cfg, maxRows,manualBatch || automaticBatch);
     const settled = loaded.rows.filter(row => row.status === 'settled');
     const pending = loaded.rows.filter(row => row.status === 'pending');
     const candidates = stalePredictionCandidates(pending);
-    const batch = selectRemediationBatch(candidates,manualBatch?40:20,manualBatch?40:5);
+    let cursor = null, dailyBatchCompleted = false;
+    if (automaticBatch && hasSupabase(cfg)) {
+      // The successful audit is the durable queue checkpoint. A failed or
+      // interrupted attempt never advances it, and the queue wraps fairly.
+      const previous = await supaSelectMany(cfg,'prediction_integrity_actions',{
+        action_type:'eq.auto_recover',status:'in.(completed,partial)',
+      },{limit:1,order:'created_at.desc'});
+      dailyBatchCompleted = String(previous[0]?.finished_at || '').slice(0,10)===todayUtc();
+      const saved = parseJsonObject(previous[0]?.detail).nextCursor;
+      if (saved !== undefined) {
+        if (!saved || !positiveSafeInteger(saved.fixtureId) || !Number.isFinite(Date.parse(saved.kickoffAt))) throw new Error('Invalid settlement queue checkpoint');
+        cursor = saved;
+      }
+    }
+    const batch = selectRemediationBatch(candidates,manualBatch?40:20,manualBatch?40:5,automaticBatch?cursor:undefined);
     const candidateToken = await remediationFingerprint(batch.selected);
     let recentActions = [];
     if (schema.ok) recentActions = await loadRemediationActions(cfg, 10).catch(() => []);
@@ -1789,9 +1815,11 @@ export function createSettlementRuntime(deps) {
       integrity,
       recovery: {
         stalePending: candidates.length,
+        dailyBatchCompleted,
         selectedCount: batch.selected.length,
         candidateToken,
         fixtureIds:batch.selected.map(row=>positiveSafeInteger(row?.fixture_id)).filter(id=>id!==null),
+        nextCursor:batch.selected.length ? {fixtureId:Number(batch.selected.at(-1).fixture_id),kickoffAt:batch.selected.at(-1).kickoff_at} : null,
         estimatedProviderCalls: batch.dates.length,
         maxFixturesPerRun: 20,
         maxDatesPerRun: 5,
@@ -1811,7 +1839,7 @@ export function createSettlementRuntime(deps) {
         schemaStatus: watchdogSchema.status || (watchdogSchema.ok ? 'ok' : 'missing'),
         mode: runtimeState.value?.autoSettlementRecoveryEnabled ? 'active' : 'shadow',
         autoRecoveryEnabled: Boolean(runtimeState.value?.autoSettlementRecoveryEnabled),
-        scheduleUtc: '04:00',
+        scheduleUtc: 'hourly_until_daily_batch',
         maxRunsPerDay: 1,
         maxFixturesPerRun: 20,
         maxDatesPerRun: 5,
@@ -1922,7 +1950,7 @@ export function createSettlementRuntime(deps) {
   async function runSettlementWatchdog(cfg,{manual=false,preview=false,canContinue=()=>true}={}) {
     if ((manual || preview) && cfg?.cronRunner!=='github-actions') return {skipped:'manual_recovery_runner_required'};
     if (!hasSupabase(cfg)) return { skipped: 'no_persistent_database' };
-    const markerKey = manual?`settlement-manual:${crypto.randomUUID()}`:`settlement-watchdog:${todayUtc()}:v1`;
+    const markerKey = manual?`settlement-manual:${crypto.randomUUID()}`:`settlement-watchdog:${todayUtc()}:v2`;
     if (preview) {
       const report=await buildModelRemediationReport(cfg,{maxRows:5000,manualBatch:true});
       return {ok:report.available===true && report.schemaReady===true,reason:'manual_recovery_preview',
@@ -1950,15 +1978,16 @@ export function createSettlementRuntime(deps) {
     }
     if (!manual && await getCache(markerKey, cfg)) return { skipped: 'already_checked', date: todayUtc(), reconciledInterrupted: reconciliation.reconciled.length };
   
-    const report = await buildModelRemediationReport(cfg, { maxRows: 5000, manualBatch:manual });
+    const report = await buildModelRemediationReport(cfg, { maxRows: 5000, manualBatch:manual, automaticBatch:!manual });
+    if (!manual && report.recovery?.dailyBatchCompleted) return {skipped:'already_checked',date:todayUtc()};
     const runtimeState = await loadRuntimeControls(cfg);
     const runtime = runtimeState.value || DEFAULT_RUNTIME_CONTROLS;
     // Explicit protected workflow invocation is a one-off manual action; never
     // persist or enable the automatic runtime setting.
-    if (manual && (runtime.maintenanceMode===true || runtime.controlPlaneFailClosed===true)) return {skipped:'manual_recovery_paused'};
-    if (manual && report.scan?.truncated) return {skipped:'manual_recovery_scan_truncated'};
+    if (runtime.maintenanceMode===true || runtime.controlPlaneFailClosed===true) return {skipped:'recovery_paused'};
+    if (report.scan?.truncated) return {skipped:'recovery_scan_truncated'};
     await ensureSettlementProviderSnapshot(cfg);
-    if (manual && !prematchProviderBudget(providerSnapshot()).allowed) return {skipped:'manual_recovery_provider_reserve'};
+    if (!prematchProviderBudget(providerSnapshot()).allowed) return {skipped:'recovery_provider_reserve'};
     const decision = settlementWatchdogDecision(report, manual?{...runtime,autoSettlementRecoveryEnabled:true}:runtime, {
       schemaReady: Boolean(report?.watchdog?.schemaReady),
       runtimeVerified: runtimeState.source === 'supabase',
@@ -2010,8 +2039,8 @@ export function createSettlementRuntime(deps) {
           : `Settlement watchdog did not execute recovery: ${decision.state}.`,
         meta: baseMeta,
       }).catch(() => null);
-      if (decision.state !== 'quota_guard') {
-        await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta }, cfg, 1440).catch(() => null);
+      if (['observe','no_batch'].includes(decision.state)) {
+        await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta }, cfg, 60).catch(() => null);
       }
       return { ok: true, ...baseMeta,...(manual?{skipped:decision.state}:{} ) };
     }
@@ -2030,7 +2059,7 @@ export function createSettlementRuntime(deps) {
     const fixtureSet = new Set(currentIds);
     let fixtures = [];
     let sourceSummary={};
-    const retry = await resolveSettlementRetryLineage(cfg, currentIds);
+    const retry = await resolveSettlementRetryLineage(cfg, currentIds, manual);
     if (retry.retryExhausted) {
       await recordOpsEvent(cfg, {
         severity: 'warning',
@@ -2046,7 +2075,7 @@ export function createSettlementRuntime(deps) {
     const actionId = crypto.randomUUID();
     const reason = manual?'Разовая сверка ожидающих результатов из защищённого GitHub workflow':'Плановое восстановление ожидающих результатов';
     const admissionUntil=Date.now()+120000;
-    const admit=()=>{if(manual && (!canContinue() || Date.now()>admissionUntil || !prematchProviderBudget(providerSnapshot()).allowed))throw Object.assign(new Error('Manual recovery stopped before new work'),{code:'MANUAL_RECOVERY_STOPPED'});};
+    const admit=()=>{if(!canContinue() || Date.now()>admissionUntil || !prematchProviderBudget(providerSnapshot()).allowed)throw Object.assign(new Error('Recovery stopped before new work'),{code:'SETTLEMENT_RECOVERY_STOPPED'});};
     let auditStarted = false;
     let executionResult = null;
   
@@ -2082,7 +2111,7 @@ export function createSettlementRuntime(deps) {
         const rows = await loadProviderFixturesForDate(date, cfg);
         fixtures.push(...rows.filter(fixture => fixtureSet.has(fixtureIdentity(fixture))));
       }
-      if (manual && typeof loadProviderFixture==='function') {
+      if (typeof loadProviderFixture==='function') {
         const byId=new Map(fixtures.map(f=>[positiveSafeInteger(fixtureIdentity(f)),f]).filter(([id])=>id!==null));
         let lookupFailed=0,fixtureLookups=0;
         for (const id of currentIds) {
@@ -2123,6 +2152,7 @@ export function createSettlementRuntime(deps) {
         skippedCount,
         detail: {
           phase: 'final',
+          ...(!manual ? {nextCursor:report.recovery.nextCursor} : {}),
           ...sourceSummary,
           providerCalls: dates.length,
           finishedFixtures: fixtures.filter(f => isFinishedStatus(fixtureStatusShort(f))).length,
@@ -2233,7 +2263,7 @@ export function createSettlementRuntime(deps) {
     try {
       const fixtures = await loadProviderFixturesForDate(date, cfg);
       const result = await settlePredictionsFromFixtures(fixtures, cfg);
-      await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), pending: pending.length, settled: result.settled }, cfg, 1440);
+      await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), pending: pending.length, settled: result.settled }, cfg, result.settled < pending.length ? 60 : 1440);
       return { date, pending: pending.length, settled: result.settled };
     } catch (error) {
       console.warn('daily backtest settle skipped', error?.message || error);

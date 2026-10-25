@@ -92,7 +92,10 @@
 
 
 
+
 ## На ревью
+
+- [ ] Автоматическая сверка незакрытых результатов — **Codex** — [PR #1019](https://github.com/TRAP44/football-analytics-cloudflare/pull/1019), `codex/automatic-pending-reconciliation`; release917/full4701, independent72focused/reviewclean; CI→activation→automaticproof→deploy проверяются.
 
 - [ ] Защита просмотра непосредственно перед Telegram — **Codex** — [PR #1018](https://github.com/TRAP44/football-analytics-cloudflare/pull/1018), `codex/watch-privacy-send-boundary`; strongsnapshot/latepause/newdelay/resultafterclaim, release898/full4692/79focused/reviewpassed; CI→deployproof проверяются.
 

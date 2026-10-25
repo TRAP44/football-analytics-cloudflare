@@ -147,7 +147,7 @@ test('scheduled boundary preserves dependency ordering without failure propagati
   });
 
   const tasks = rt.api.buildScheduledTaskPlan({}, new Date('2026-09-28T12:05:00.000Z'));
-  assert.deepEqual(tasks.map(([name]) => name), ['reminders', 'lineup_notifications', 'important_change_notifications', 'smart_notifications', 'backtest', 'post_match_return', 'prematch_predictions']);
+  assert.deepEqual(tasks.map(([name]) => name), ['reminders', 'lineup_notifications', 'important_change_notifications', 'smart_notifications', 'backtest', 'post_match_return', 'prematch_predictions', 'settlement_watchdog']);
   await Promise.resolve();
   assert.equal(postMatchStarted, false);
 
@@ -603,11 +603,11 @@ test('a fast tick cannot overlap the normal scheduled execution lease',async()=>
 });
 
 test('manual recovery profiles share cron-global ownership and run no notification or AI tasks',async()=>{
-  for(const mode of ['preview','apply']){
+  for(const mode of ['preview','apply','automatic']){
     const args=[];const h=runtime({runSettlementWatchdog:async(_cfg,opts)=>{args.push(opts);return {ok:true};}});
     const result=await h.api.executeScheduledRun({scheduledTime:Date.parse('2026-10-19T04:00:00Z'),settlementRecoveryMode:mode},{cronRunner:'github-actions'});
     assert.deepEqual(result.map(x=>x.task),['settlement_recovery']);
-    assert.equal(args[0].manual,true);assert.equal(args[0].preview,mode==='preview');assert.equal(args[0].canContinue(),true);
+    assert.equal(args[0].manual,mode!=='automatic');assert.equal(args[0].preview,mode==='preview');assert.equal(args[0].canContinue(),true);
   }
 });
 
