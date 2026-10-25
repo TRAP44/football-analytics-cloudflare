@@ -192,6 +192,16 @@ try{
  await evaluate("document.querySelector('[data-watch-library-open]').click()");await wait("document.getElementById('analysisView').classList.contains('active') && document.querySelector('#matchWatchPanel details')?.open",'library did not open checked watch panel');
  if(await evaluate("Boolean(document.querySelector('#matchWatchPanel iframe'))"))throw Error('library autoplayed video');
  await evaluate("document.getElementById('navMatches').click()");await wait("Boolean(document.querySelector('[data-watch-library-open]'))",'home library lost after return');
+ // A hidden Telegram view cancels its optional request and rechecks on return.
+ holdLibrary=true;const beforeHidden=libraryRequests;
+ await evaluate("document.querySelector('[data-watch-library-refresh]').click()");
+ for(let n=0;n<80&&libraryRequests===beforeHidden;n++)await new Promise(resolve=>setTimeout(resolve,50));
+ await evaluate("window.libraryVisibility='hidden';Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>window.libraryVisibility});document.dispatchEvent(new Event('visibilitychange'))");
+ holdLibrary=false;for(const release of releaseLibraries.splice(0))release();
+ await evaluate("window.libraryVisibility='visible';document.dispatchEvent(new Event('visibilitychange'))");
+ for(let n=0;n<80&&libraryRequests<beforeHidden+2;n++)await new Promise(resolve=>setTimeout(resolve,50));
+ if(libraryRequests!==beforeHidden+2)throw Error('visibility return did not recheck the cancelled library request once');
+ await wait("Boolean(document.querySelector('[data-watch-library-open]')) && !document.querySelector('[data-watch-library-state]').textContent",'library visibility recovery incomplete');
  // Expiry removes cards while an HTTP request is deliberately held open.
  holdLibrary=true;const beforeHeld=libraryRequests;
  await evaluate("window.libraryClock+=31*60000;window.dispatchEvent(new Event('pageshow'))");
@@ -200,5 +210,5 @@ try{
  await wait("!document.querySelector('[data-watch-library-open]')",'expired card survived a hung refresh');
  holdLibrary=false;for(const release of releaseLibraries.splice(0))release();
  await evaluate('Date.now=window.libraryRealNow');
- console.log(JSON.stringify({scope:'synthetic_browser_and_cache_api_not_actual_playback',countryRequired:true,homeLibraryOptIn:true,homeLibraryNoSpoilers:true,homeLibraryRoutesToCheckedMatch:true,homeLibraryNoAutoplay:true,homeLibraryCancelledImport:true,homeLibraryExpiryDuringRefresh:true,lazyMedia:true,sameFixturePreserved:true,deniedEmbedFallback:true,countryTeardownImmediate:true,navigationTeardown:true,backgroundRenewalPreservesFrame:true,withdrawalStopsPlayer:true,recoveryNeverAutoplays:true,actualAppWiring:true,actualCenterRefreshPreservesFrame:true,finishedReplayLabel:true,finishedReplayPlayer:true,officialHighlightLabel:true,officialHighlightPlayer:true,privacyHidesData:true,privacyApiConfirmed:true,privacyNavigationSafe:true,canonicalRestoreVisible:true,externalViewingPrivate:true,replayResume:true,replayRestart:true,widths:[320,390,900],requests}));
+ console.log(JSON.stringify({scope:'synthetic_browser_and_cache_api_not_actual_playback',countryRequired:true,homeLibraryOptIn:true,homeLibraryNoSpoilers:true,homeLibraryRoutesToCheckedMatch:true,homeLibraryNoAutoplay:true,homeLibraryCancelledImport:true,homeLibraryVisibilityPause:true,homeLibraryExpiryDuringRefresh:true,lazyMedia:true,sameFixturePreserved:true,deniedEmbedFallback:true,countryTeardownImmediate:true,navigationTeardown:true,backgroundRenewalPreservesFrame:true,withdrawalStopsPlayer:true,recoveryNeverAutoplays:true,actualAppWiring:true,actualCenterRefreshPreservesFrame:true,finishedReplayLabel:true,finishedReplayPlayer:true,officialHighlightLabel:true,officialHighlightPlayer:true,privacyHidesData:true,privacyApiConfirmed:true,privacyNavigationSafe:true,canonicalRestoreVisible:true,externalViewingPrivate:true,replayResume:true,replayRestart:true,widths:[320,390,900],requests}));
 }finally{for(const release of [...releaseControllers,...releaseLibraries])release();cdp?.close();await stopChrome(launched.chrome);await new Promise(resolve=>server.close(resolve));if(visualDir)await rm(visualDir,{recursive:true,force:true});if(launched.profileDir)await rm(launched.profileDir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}

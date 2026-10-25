@@ -1,13 +1,13 @@
 // Optional home library. No requests, player or third-party assets until opened.
 const COUNTRY_KEY='matchradar:watch-country:v1';
 const labels={live:'Трансляция',highlights:'Обзор',replay:'Полная запись'};
-export function createWatchLibrary({root,api,escapeHtml,onOpen,now=Date.now,window:win=window,isVisible=()=>true}={}){
+export function createWatchLibrary({root,api,escapeHtml,onOpen,now=Date.now,window:win=window,document:doc=document,isVisible=()=>true}={}){
   let country='',controller,sequence=0,refreshTimer,expiryTimer,loadedAt=0,items=[],opening=false,loading=false,countriesAvailable=false,intent=0;
   try{country=win.localStorage.getItem(COUNTRY_KEY)||'';if(!/^[A-Z]{2}$/.test(country))country='';}catch{}
   const body=root.querySelector('[data-watch-library-body]');
-  const active=()=>root.isConnected&&root.open&&isVisible();
+  const active=()=>root.isConnected&&root.open&&isVisible()&&doc.visibilityState!=='hidden';
   const date=value=>{try{return new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(value))+' МСК';}catch{return '';}};
-  function pause(){intent++;sequence++;controller?.abort();win.clearTimeout(refreshTimer);win.clearTimeout(expiryTimer);loading=false;}
+  function pause(){if(loading)loadedAt=0;intent++;sequence++;controller?.abort();win.clearTimeout(refreshTimer);win.clearTimeout(expiryTimer);loading=false;}
   function armExpiry(){
     win.clearTimeout(expiryTimer);if(!active())return;
     const expiry=Math.min(...items.map(item=>Date.parse(item.expiresAt)));
@@ -54,5 +54,6 @@ export function createWatchLibrary({root,api,escapeHtml,onOpen,now=Date.now,wind
   function resume(){if(!active()||loading)return;try{const raw=win.localStorage.getItem(COUNTRY_KEY)||'',saved=/^[A-Z]{2}$/.test(raw)?raw:'';if(saved!==country){country=saved;loadedAt=0;items=[];}}catch{}if(!loadedAt||now()-loadedAt>=60000)void load();else{renderCards();schedule();}}
   root.addEventListener('toggle',()=>{root.open?resume():pause();});
   win.addEventListener?.('pageshow',resume);
+  doc.addEventListener?.('visibilitychange',()=>{doc.visibilityState==='hidden'?pause():resume();});
   return {resume,pause};
 }
