@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Уведомления: последняя проверка подписки/избранного и настроек перед Telegram — **Codex** — `codex/notification-live-subscription-check`; изменения после discovery/claim, strongDB, failcloseddefer, прежниеCAS/dedupe.
 
 
 
@@ -93,6 +92,8 @@
 
 
 ## На ревью
+
+- [ ] Финальная проверка подписки перед Telegram — **Codex** — [PR #1017](https://github.com/TRAP44/football-analytics-cloudflare/pull/1017), `codex/notification-live-subscription-check`; latestreminderORfavorite/currentplayer/prefs, strongread, cancel/defer, release883/full4677/87focused/reviewpassed; CI→deployproof проверяются.
 
 - [ ] Точность владения отправкой уведомлений — **Codex** — [PR #1016](https://github.com/TRAP44/football-analytics-cloudflare/pull/1016), `codex/notification-claim-precision`; strict lossless6digits, прежниеCAS/dedupe, release870/full4664/independentreviewpassed; fresh+upgrade realDBproof иCI→deploy проверяются.
 
