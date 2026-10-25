@@ -21,7 +21,7 @@ const center=()=>({mode:match.finished?'finished':'live',generatedAt:new Date().
 const preferences=createUserPreferencesService({memory:{},hasSupabase:()=>false});
 const watchStore=createWatchSessionStore({memory:{},hasSupabase:()=>false});
 const api=createUserDataApiRuntime({...Object.fromEntries(functions.map(key=>[key,async()=>[]])),getWatchSession:watchStore.getWatchSession,saveWatchSession:watchStore.saveWatchSession,json:(data,status=200)=>Response.json(data,{status}),getQuota:async()=>({plan:'FREE',left:5,limit:5,used:0}),getPreferences:preferences.getPreferences,savePreferences:preferences.savePreferences,getUserRecord:async()=>({}),publicRuntimeControls:()=>runtime,publicDataCapabilities:()=>({}),publicSmartNotificationCapabilities:()=>({}),isAdminUser:()=>false,watchApprovals:[approval],getCache:async key=>key===matchCenterCacheKey(999)?{match}:key===watchCacheKey(999)?catalogue:key===WATCH_LIBRARY_KEY?{version:1,checkedAt:new Date().toISOString(),entries:[{match,catalogue}]}:null});
-let delay=false,requests=0,centerRequests=0,slowPrefs=false,libraryRequests=0,holdController=false,holdLibrary=false;const releaseControllers=[],releaseLibraries=[];
+let delay=false,requests=0,centerRequests=0,slowPrefs=false,libraryRequests=0,holdController=false,holdLibrary=false,holdCenter=false,holdPrefs=false,failPrefs=false,preferenceWrites=0;const releaseControllers=[],releaseLibraries=[],releaseCenters=[],releasePrefs=[];
 const server=createServer(async(req,res)=>{
  try{
   const url=new URL(req.url,'http://127.0.0.1');
@@ -30,12 +30,13 @@ const server=createServer(async(req,res)=>{
    const response=await api.apiMatchWatch(new Request(url),{},{id:42});res.writeHead(response.status,{'Content-Type':'application/json'});res.end(await response.text());return;
   }
   if(url.pathname==='/api/preferences'){
+   if(req.method==='POST'){preferenceWrites++;if(holdPrefs)await new Promise(resolve=>releasePrefs.push(resolve));if(failPrefs){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'SYNTHETIC_PREFERENCES_FAILURE'}));return;}}
    if(slowPrefs&&req.method==='GET')await new Promise(resolve=>setTimeout(resolve,600));
    const chunks=[];for await(const chunk of req)chunks.push(chunk);
    const response=await api.apiPreferences(new Request(url,{method:req.method,...(req.method==='GET'?{}:{body:Buffer.concat(chunks).toString('utf8')})}),{},{id:42});
    res.setHeader('Content-Type','application/json');res.writeHead(response.status);res.end(await response.text());return;
   }
-  if(url.pathname==='/api/match-center'){centerRequests++;res.setHeader('Content-Type','application/json');res.end(JSON.stringify(center()));return;}
+  if(url.pathname==='/api/match-center'){centerRequests++;if(holdCenter)await new Promise(resolve=>releaseCenters.push(resolve));res.setHeader('Content-Type','application/json');res.end(JSON.stringify(center()));return;}
   if(url.pathname==='/api/me'){const response=await api.apiMe(new Request(url),{},{id:42,first_name:'Fixture'});res.setHeader('Content-Type','application/json');res.end(await response.text());return;}
   if(url.pathname.startsWith('/api/')){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(url.pathname==='/api/app-manifest'?{version:'6.120.0-rc144',apiContract:5,minClientVersion:'6.120.0-rc144',recommendedClientVersion:'6.120.0-rc144',runtime}:{ok:true,items:[],matches:[],runtime}));return;}
   if(url.pathname==='/full-app'){
@@ -174,7 +175,7 @@ try{
  await wait("document.querySelector('[data-watch-library-country]')?.value==='RU' && Boolean(document.querySelector('[data-watch-library-open]'))",'library country race unresolved');delay=false;
  // Closing and returning while the controller import is pending cancels
  // the old intent, even when the home/library are active again at completion.
- holdController=true;const beforeCancelledOpen=centerRequests;
+ holdController=true;const beforeCancelledOpen=centerRequests,beforeCancelledPrefs=preferenceWrites;
  await evaluate("document.querySelector('[data-watch-library-open]').click()");
  for(let n=0;n<80&&!releaseControllers.length;n++)await new Promise(resolve=>setTimeout(resolve,50));
  if(!releaseControllers.length)throw Error('delayed controller import not exercised');
@@ -183,14 +184,35 @@ try{
  await evaluate("document.getElementById('watchLibrary').open=true;document.getElementById('navProfile').click();document.getElementById('navMatches').click()");
  holdController=false;for(const release of releaseControllers.splice(0))release();
  await wait("!document.querySelector('[data-watch-library-open]').disabled",'cancelled open did not finish');
- if(centerRequests!==beforeCancelledOpen||!await evaluate("document.getElementById('matchesView').classList.contains('active')"))throw Error('stale library intent opened a match');
+ if(centerRequests!==beforeCancelledOpen||preferenceWrites!==beforeCancelledPrefs||!await evaluate("document.getElementById('matchesView').classList.contains('active') && !document.body.classList.contains('watch-private')"))throw Error('stale library intent opened a match or changed privacy');
  await cdp.call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
  for(const theme of ['dark','light']){
   await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>{document.documentElement.dataset.theme='${theme}';document.getElementById('watchLibrary').scrollIntoView({block:'start'});requestAnimationFrame(()=>requestAnimationFrame(resolve));}))`);
   const shot=await cdp.call('Page.captureScreenshot',{format:'png'});visualDir ||= await mkdtemp(path.join(tmpdir(),'matchradar-watch-library-'));await writeFile(path.join(visualDir,'watch-library-'+theme+'.png'),Buffer.from(shot.data,'base64'),{flag:'wx',mode:0o600});
  }
- await evaluate("document.querySelector('[data-watch-library-open]').click()");await wait("document.getElementById('analysisView').classList.contains('active') && document.querySelector('#matchWatchPanel details')?.open",'library did not open checked watch panel');
- if(await evaluate("Boolean(document.querySelector('#matchWatchPanel iframe'))"))throw Error('library autoplayed video');
+ // The opt-in private action hides data BEFORE a held centre response and
+ // does not wait for preferences. A failed ACK must never reveal the result.
+ holdCenter=true;holdPrefs=true;const beforePrivate=centerRequests;
+ await evaluate("document.querySelector('[data-watch-without-spoilers]').click()");
+ for(let n=0;n<80&&(!releaseCenters.length||!releasePrefs.length);n++)await new Promise(resolve=>setTimeout(resolve,50));
+ if(centerRequests!==beforePrivate+1||!releasePrefs.length)throw Error('private entry did not start centre and preferences in parallel');
+ if(!await evaluate("document.body.classList.contains('watch-private') && document.getElementById('analysis').inert && getComputedStyle(document.getElementById('analysis')).display==='none' && document.getElementById('watchPrivacyBanner').textContent.includes('Сохраняем')"))throw Error('private entry exposed data before HTTP completion');
+ failPrefs=true;holdPrefs=false;for(const release of releasePrefs.splice(0))release();
+ await wait("document.getElementById('watchPrivacyBanner').textContent.includes('подтвердить не удалось')",'failed privacy ACK was not explained');
+ holdCenter=false;for(const release of releaseCenters.splice(0))release();
+ await wait("document.getElementById('analysisView').classList.contains('active') && document.querySelector('#matchWatchPanel details')?.open",'private library did not open checked watch panel');
+ if(!await evaluate("getComputedStyle(document.getElementById('analysis')).display==='none' && document.getElementById('analysis').inert && !document.querySelector('#matchWatchPanel iframe')"))throw Error('failed privacy ACK exposed result or autoplayed');
+ // An explicit retry confirms the actual server watch-session contract.
+ failPrefs=false;
+ await evaluate("document.querySelector('[data-watch-private]').checked=true;document.querySelector('[data-watch-privacy-save]').click()");
+ await wait("document.querySelector('[data-watch-privacy-state]').textContent.includes('сохранены')",'private library retry not acknowledged');
+ const savedPrivate=await watchStore.getWatchSession(42);
+ if(savedPrivate?.fixtureId!==999||savedPrivate.delaySeconds!==0)throw Error('private library did not pause notifications for the selected match');
+ await evaluate("document.querySelector('[data-privacy-off]').click()");await wait("!document.body.classList.contains('watch-private')",'private library mode could not be disabled');
+ await evaluate("document.getElementById('navMatches').click()");await wait("Boolean(document.querySelector('[data-watch-library-open]'))",'home library lost after private return');
+ const beforeOrdinaryPrefs=preferenceWrites;
+ await evaluate("document.querySelector('[data-watch-library-open]:not([data-watch-without-spoilers])').click()");await wait("document.getElementById('analysisView').classList.contains('active') && document.querySelector('#matchWatchPanel details')?.open",'ordinary library did not open checked match');
+ if(preferenceWrites!==beforeOrdinaryPrefs||!await evaluate("!document.body.classList.contains('watch-private') && !document.querySelector('#matchWatchPanel iframe')"))throw Error('ordinary entry changed privacy or autoplayed');
  await evaluate("document.getElementById('navMatches').click()");await wait("Boolean(document.querySelector('[data-watch-library-open]'))",'home library lost after return');
  // A hidden Telegram view cancels its optional request and rechecks on return.
  holdLibrary=true;const beforeHidden=libraryRequests;
@@ -210,5 +232,5 @@ try{
  await wait("!document.querySelector('[data-watch-library-open]')",'expired card survived a hung refresh');
  holdLibrary=false;for(const release of releaseLibraries.splice(0))release();
  await evaluate('Date.now=window.libraryRealNow');
- console.log(JSON.stringify({scope:'synthetic_browser_and_cache_api_not_actual_playback',countryRequired:true,homeLibraryOptIn:true,homeLibraryNoSpoilers:true,homeLibraryRoutesToCheckedMatch:true,homeLibraryNoAutoplay:true,homeLibraryCancelledImport:true,homeLibraryVisibilityPause:true,homeLibraryExpiryDuringRefresh:true,lazyMedia:true,sameFixturePreserved:true,deniedEmbedFallback:true,countryTeardownImmediate:true,navigationTeardown:true,backgroundRenewalPreservesFrame:true,withdrawalStopsPlayer:true,recoveryNeverAutoplays:true,actualAppWiring:true,actualCenterRefreshPreservesFrame:true,finishedReplayLabel:true,finishedReplayPlayer:true,officialHighlightLabel:true,officialHighlightPlayer:true,privacyHidesData:true,privacyApiConfirmed:true,privacyNavigationSafe:true,canonicalRestoreVisible:true,externalViewingPrivate:true,replayResume:true,replayRestart:true,widths:[320,390,900],requests}));
-}finally{for(const release of [...releaseControllers,...releaseLibraries])release();cdp?.close();await stopChrome(launched.chrome);await new Promise(resolve=>server.close(resolve));if(visualDir)await rm(visualDir,{recursive:true,force:true});if(launched.profileDir)await rm(launched.profileDir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
+ console.log(JSON.stringify({scope:'synthetic_browser_and_cache_api_not_actual_playback',countryRequired:true,homeLibraryOptIn:true,homeLibraryNoSpoilers:true,homeLibraryPrivateBeforeResponse:true,homeLibraryPrivacyFailureKeepsHidden:true,homeLibraryPrivacyRetryConfirmed:true,homeLibraryOrdinaryEntryUnchanged:true,homeLibraryRoutesToCheckedMatch:true,homeLibraryNoAutoplay:true,homeLibraryCancelledImport:true,homeLibraryVisibilityPause:true,homeLibraryExpiryDuringRefresh:true,lazyMedia:true,sameFixturePreserved:true,deniedEmbedFallback:true,countryTeardownImmediate:true,navigationTeardown:true,backgroundRenewalPreservesFrame:true,withdrawalStopsPlayer:true,recoveryNeverAutoplays:true,actualAppWiring:true,actualCenterRefreshPreservesFrame:true,finishedReplayLabel:true,finishedReplayPlayer:true,officialHighlightLabel:true,officialHighlightPlayer:true,privacyHidesData:true,privacyApiConfirmed:true,privacyNavigationSafe:true,canonicalRestoreVisible:true,externalViewingPrivate:true,replayResume:true,replayRestart:true,widths:[320,390,900],requests}));
+}finally{for(const release of [...releaseControllers,...releaseLibraries,...releaseCenters,...releasePrefs])release();cdp?.close();await stopChrome(launched.chrome);await new Promise(resolve=>server.close(resolve));if(visualDir)await rm(visualDir,{recursive:true,force:true});if(launched.profileDir)await rm(launched.profileDir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}

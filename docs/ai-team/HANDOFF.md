@@ -14,6 +14,13 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-25 — Codex — Просмотр из библиотеки без раскрытия результата
+PR: ветка `codex/watch-library-spoiler-entry` (ссылка после создания). #1014 уже merged40813420, MainQuality40180466107/Deploy40180725629success, activeCFf7f72273-315f-4625-809f-12ffa5fe4a0a, launch141. Реальная indexpublication Refresh40180468276 и ordinaryCFwatch40180590721: 4матча/6видео, cached1GoogleGET/4reads/6writes. Не phoneplayback.
+
+Новая явная кнопка «Смотреть без спойлеров» в каждой библиотечной карточке вызывает синхронное localhide до navigation/centerHTTP; существующий signed watch-session pause0 сохраняется параллельно, без дополнительного ожидания центра. При ошибке ACK данные остаются скрыты/inert, banner показывает неподтверждённую защиту; «Применить» повторяет serverconfirmation. «Открыть матч» оставляет обычный переход и не меняет существующий режим. Hint объясняет трёхчасовую паузу уведомлений. Никаких новых provider/Google запросов, SQL, прав, autoplay или самостоятельных рассылок. Уже отправляемое сообщение не отзывается.
+
+Native Chromium actualapp+actualHTTP подтверждает heldcenter+heldprefs: оба запроса начаты параллельно, CSSdisplaynone/inert до completion; prefs503 не раскрывает результат; explicitretry записал fixture999/delay0 в actual server store; ordinaryentry безpreferenceswrite; закрытие/возврат/уход во время lazycontrollerimport не включает режим. Сохранены countrygate/expiry/revocation/noautoplay/replayresume и320/390/900 dark/light. Synthetic источники/YTSDK, не реальный Telegramplayback. Node22 npmci/check316/lint/release846/full4660/securityscan/privileged/verifyrelease/workerdryrun passed; независимый read-only **Codex**, не Claude review без замечаний,34focusedtests. Frontendrevisionlaunch142 и точные fixtures обновлены. Следующее обязательное действие CI→merge→Deploy→manifest/assetproof; стоячее разрешение Сергея на выпуск проверенных PR действует.
+
 ## 2026-10-25 — Codex — Библиотека просмотра на главной
 PR [#1014](https://github.com/TRAP44/football-analytics-cloudflare/pull/1014), ветка `codex/watch-library-entrypoint`. Предыдущий этап #1011–#1013 действительно выпущен: maind16bbad9, Quality40137208227/CodeQL40137208067/Deploy40137491928success, activeCFa425c0f8-91cd-4d53-b04b-0f9c38cc5aad, launch140, publicmanifestSHA/auth401/25postdeploy+rendered verified. ActualRefresh40137210262 и ordinaryCFwatch40137416884: published6/rejected0 =4highlights+2replays, cached/1GoogleGET, источники1556114/1556120/1556119/1556117. Это actualcatalogue, не phoneplayback.
 
