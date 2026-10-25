@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-25 — Codex — Защита просмотра непосредственно перед отправкой
-PR: ветка `codex/watch-privacy-send-boundary`. #1017 полностью выпущен: mergedb3610dcd, MainQuality40205945231/CodeQL40205945233/Deploy40206230511success, CFb5d79c6f-a6f1-4b8e-9d6c-93462c3fca56, publicmanifestSHA/tag и25postdeploy/renderedverified; launch142 прежний. Обычный Background40206087981success (smartok+4liveok), не proof конкретной доставки.
+PR [#1018](https://github.com/TRAP44/football-analytics-cloudflare/pull/1018), ветка `codex/watch-privacy-send-boundary`. #1017 полностью выпущен: mergedb3610dcd, MainQuality40205945231/CodeQL40205945233/Deploy40206230511success, CFb5d79c6f-a6f1-4b8e-9d6c-93462c3fca56, publicmanifestSHA/tag и25postdeploy/renderedverified; launch142 прежний. Обычный Background40206087981success (smartok+4liveok), не proof конкретной доставки.
 
 Обнаружено и воспроизведено на прежних productionмодулях: watchmode читался доclaim/begin ипроверокподписки, поэтомуlatepause вauthorizationcallback неостанавливалагол; post-matchreturnпроверялmodeтолькодополученияclaim. Старыйкодпадаетна2новыхregressions /tmp/watch-send-before.log (syntheticcallbacks, неrealmessages).
 

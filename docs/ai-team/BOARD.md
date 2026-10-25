@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Без спойлеров: повторная проверка режима перед отправкой гола/карточки/итога — **Codex** — `codex/watch-privacy-send-boundary`; единыйstrongSELECT session+marker, latepause/delay, CAScancel/defer, проверкатабло.
 
 
 
@@ -94,6 +93,8 @@
 
 
 ## На ревью
+
+- [ ] Защита просмотра непосредственно перед Telegram — **Codex** — [PR #1018](https://github.com/TRAP44/football-analytics-cloudflare/pull/1018), `codex/watch-privacy-send-boundary`; strongsnapshot/latepause/newdelay/resultafterclaim, release898/full4692/79focused/reviewpassed; CI→deployproof проверяются.
 
 - [ ] Финальная проверка подписки перед Telegram — **Codex** — [PR #1017](https://github.com/TRAP44/football-analytics-cloudflare/pull/1017), `codex/notification-live-subscription-check`; latestreminderORfavorite/currentplayer/prefs, strongread, cancel/defer, release883/full4677/87focused/reviewpassed; CI→deployproof проверяются.
 
