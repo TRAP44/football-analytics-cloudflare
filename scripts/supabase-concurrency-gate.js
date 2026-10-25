@@ -609,6 +609,9 @@ async function testSmartNotificationOwnershipPrecision() {
       assert.match(args.p_claimed_at,/\.123456(?:Z|[+-])/,'ownership token must retain all six fractional digits');
       const token=`timestamptz ${literal(args.p_claimed_at)}`;
       if(name==='begin_smart_notification_delivery_send'){
+        const rounded=`timestamptz ${literal(new Date(args.p_claimed_at).toISOString())}`;
+        const oldPath=parseJson(await serviceRoleQuery(`select public.begin_smart_notification_delivery_send(${telegramId},${literal(dedupeKey)},${rounded},3)::text;`),'rounded smart notification owner');
+        assert.equal(oldPath.started,false);assert.equal(oldPath.reason,'claim_lost');
         const wrong=parseJson(await serviceRoleQuery(`select public.begin_smart_notification_delivery_send(${telegramId},${literal(dedupeKey)},${token}-interval '0.000001 seconds',3)::text;`),'wrong smart notification owner');
         assert.equal(wrong.started,false);assert.equal(wrong.reason,'claim_lost');beginFenced=true;
         return parseJson(await serviceRoleQuery(`select public.begin_smart_notification_delivery_send(${telegramId},${literal(dedupeKey)},${token},3)::text;`),'begin smart notification send');
