@@ -18,11 +18,6 @@ on:
         type: choice
         options: ['off', 'preview', 'apply', 'automatic']
         default: 'off'
-      settlement_automation:
-        description: 'Ограниченная автоматическая сверка: изменить только её runtime-флаг'
-        type: choice
-        options: ['unchanged', 'enable', 'disable']
-        default: 'unchanged'
   schedule:
     # GitHub запускает расписание с задержкой; скрипт сам относит запуск к
     # 5-минутному слоту, а общая блокировка не даёт задачам выполниться дважды.
@@ -52,7 +47,6 @@ jobs:
       BETA_ACCESS_ENABLED: ${{ secrets.BETA_ACCESS_ENABLED }}
       PREMATCH_PREDICTIONS_ENABLED: ${{ vars.PREMATCH_PREDICTIONS_ENABLED }}
       SETTLEMENT_RECOVERY_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.settlement_recovery != 'off' && inputs.settlement_recovery || '' }}
-      SETTLEMENT_AUTOMATION: ${{ inputs.settlement_automation || 'unchanged' }}
       LIVE_NOTIFICATIONS_FAST_ENABLED: ${{ vars.LIVE_NOTIFICATIONS_FAST_ENABLED }}
       FAVORITE_SCOREBOARD_ENABLED: ${{ vars.FAVORITE_SCOREBOARD_ENABLED }}
       API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
@@ -74,19 +68,14 @@ jobs:
       - name: Install background rendering dependency
         run: npm ci --omit=dev --ignore-scripts
 
-      - name: Configure automatic settlement
-        if: github.event_name == 'workflow_dispatch' && (inputs.settlement_automation == 'enable' || inputs.settlement_automation == 'disable')
-        run: node scripts/settlement-recovery-control.js
-
       - name: Run scheduled tasks
-        if: inputs.settlement_automation != 'enable' && inputs.settlement_automation != 'disable'
         run: node scripts/cron-runner.js
 
   # The existing Cloudflare dispatch is the reliable five-minute clock.
   # Keep optional video I/O independent of notification leases and Telegram keys.
   watch:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || (inputs.settlement_recovery != 'preview' && inputs.settlement_recovery != 'apply' && inputs.settlement_recovery != 'automatic' && inputs.settlement_automation != 'enable' && inputs.settlement_automation != 'disable'))
+    if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || (inputs.settlement_recovery != 'preview' && inputs.settlement_recovery != 'apply' && inputs.settlement_recovery != 'automatic'))
     environment: background-jobs
     timeout-minutes: 3
     concurrency:

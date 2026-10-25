@@ -14,6 +14,14 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-25 — Codex — Препятствие production-активации и завершение #1020
+#1019 merged e11b527d26b22d214d79231ad4aacb3972caec4c; MainQuality40234653998/CodeQL40234653968/Deploy40234963150success. Перваяактивация40234655541 завершилась RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED, флаг не объявлятьвключённым. Локальный Docker PostgreSQL среальнымrulev6.29.15 воспроизводит PostgREST-shaped WITH UPDATE→0A000 DO ALSO rules are not supported for data-modifying statements in WITH. Это доказательство механизма; исходный responsebody боевогоPATCHне выводился.
+
+Чтобыдовестиявуказаннуюавтоматику безSQLmigration/ослабленияaudit, prerequisite в #1020: ConfigureSettlementRecoveryworkflow (main-only production, только existingSUPABASE_DB_URL, modeenable/disable) иfixed plainSQL transaction через прежний strictproject/verifyfullTLS runRecoveryPostgres. Role service_role, FORUPDATE/CAS, onlyflag+revision/meta, existingruleatomic history, baseline+securitycontract+auditsnapshot проверены. НикакихSQL/projectinputs. Unknownwrite не replay: отдельный readonlyreadback требуетфлаг+revision+securityOk+audit. Новыхsecretзначений/SQLсхемнет. Сломанный backgroundenableinputremoved, ordinary/recoveryprofiles не меняютнастройку.
+
+Actual local PostgreSQL fixedSQL: enable→rev2/history2, duplicate preserves2, disable→rev3/history3; послеdropaudit rule попыткаenable падаетAUDIT_UNCONFIRMED иrollback сохраняетflagfalse/revision5. Existinglocal-only Supabaseconcurrencygate дополненactualshippedSQL/CTErepro/atomic audit/idempotence/otherflag preservation, требоватьfresh+upgrade CI. FinalindependentCodexreview activationclean/34focused: requiresecurity/audit/maintenancefalsereadback исправлено/новыерегрессии. Release925passed; finalfullвыполняется. Общий admin runtime-control HTTP handler остаётсяoutofscope/записанвfound; старыеSQLrulesнепереписывать. #1020scope дополненэтимпрепятствием, посколькубезнегоявнаязадача Сергея не завершалась. Осталось finalCI→merge→configenable→isolatedautomaticproof→deployment+manifestlaunch143/sourceproof.
+
+
 ## 2026-10-25 — Codex — Завершение восстановления просмотра
 PR [#1020](https://github.com/TRAP44/football-analytics-cloudflare/pull/1020), ветка `codex/watch-playback-recovery`, отдельный worktree /workspace/football-analytics-watch, подготовлен поверх #1019. Не сливать до выпуска/активации #1019 и exacthead CI. #1019 merged e11b527d; activation40234655541queued, MainQuality40234653998pending; полный выпуск ещё не подтверждён. Пользователь поручил довести трансляции до конца. Actual source inspect40233752920: no currentLIVE/upcoming; actualRefresh40233848827:10published=8highlights+2replay,8librarymatches, discoverycached/1GoogleGET, rejected0. Физический Telegramplayback не проверен, top-league coverage/Okko partnerembed не заявлять.
 

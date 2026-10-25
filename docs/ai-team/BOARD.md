@@ -96,9 +96,9 @@
 
 ## На ревью
 
-- [ ] Завершение восстановления просмотра — **Codex** — [PR #1020](https://github.com/TRAP44/football-analytics-cloudflare/pull/1020), `codex/watch-playback-recovery`; launch143, retry/deadline/Telegramofficial, release923/full4707/nativebrowser/44focusedreviewpassed; CI→deployproof проверяются.
+- [ ] Завершение восстановления просмотра — **Codex** — [PR #1020](https://github.com/TRAP44/football-analytics-cloudflare/pull/1020), `codex/watch-playback-recovery`; launch143, retry/deadline/Telegramofficial + prerequisite protected directSQL activation послеPostgREST отказа #1019; nativebrowser/independentreview, finalCI→activation→deployproof проверяются.
 
-- [ ] Автоматическая сверка незакрытых результатов — **Codex** — [PR #1019](https://github.com/TRAP44/football-analytics-cloudflare/pull/1019), `codex/automatic-pending-reconciliation`; release917/full4701, independent72focused/reviewclean; CI→activation→automaticproof→deploy проверяются.
+- [ ] Автоматическая сверка незакрытых результатов — **Codex** — [PR #1019](https://github.com/TRAP44/football-analytics-cloudflare/pull/1019), `codex/automatic-pending-reconciliation`; merged e11b527d, MainQuality40234653998/Deploy40234963150success; activation40234655541rejected, safeactivationfix включёнв#1020; automaticproof ещёнеподтверждён.
 
 - [ ] Защита просмотра непосредственно перед Telegram — **Codex** — [PR #1018](https://github.com/TRAP44/football-analytics-cloudflare/pull/1018), `codex/watch-privacy-send-boundary`; strongsnapshot/latepause/newdelay/resultafterclaim, release898/full4692/79focused/reviewpassed; CI→deployproof проверяются.
 
@@ -514,3 +514,5 @@ _Сюда оба ассистента пишут проблемы и идеи, �
 ## Отложено Codex
 
 - Клубные custom emoji — [PR #888](https://github.com/TRAP44/football-analytics-cloudflare/pull/888) закрыт без merge: у владельца нет Premium/набора; выбран подход с картинками #889.
+
+- [ ] Общий admin runtime-controls PATCH: PostgreSQL DO ALSO audit rule несовместим с PostgREST-shaped data-modifying CTE (локальнаярепродукция0A000). Защищённая настройка settlement в #1020 использует fixed directSQL transaction; общий HTTP handler требует отдельного audited RPC решения, не снимать audit rule — найдено **Codex** при выпуске #1019.
