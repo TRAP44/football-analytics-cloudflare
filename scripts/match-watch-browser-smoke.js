@@ -1,11 +1,11 @@
 import {createWatchSessionStore} from '../src/watch-session.js';
 import {createUserPreferencesService} from '../src/user-preferences.js';
 import {createServer} from 'node:http';
-import {readFile,rm} from 'node:fs/promises';
+import {readFile,rm,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {launchChromeWithRetry,stopChrome,Cdp,browserExecutable} from './bottom-nav-render-smoke.js';
 import {createUserDataApiRuntime} from '../src/user-data-api-runtime.js';
-import {watchFixtureIdentity,WATCH_PUBLISHERS,WATCH_TTL_MS,watchCacheKey} from '../src/match-watch.js';
+import {watchFixtureIdentity,WATCH_PUBLISHERS,WATCH_TTL_MS,watchCacheKey,WATCH_LIBRARY_KEY} from '../src/match-watch.js';
 import {matchCenterCacheKey} from '../src/match-center-cache-key.js';
 
 // Real browser DOM + HTTP + actual cache-only API. Synthetic approved source and
@@ -19,13 +19,13 @@ const runtime={maintenanceMode:false,analysisEnabled:true,aiEnabled:true,liveEna
 const center=()=>({mode:match.finished?'finished':'live',generatedAt:new Date().toISOString(),match,lineups:{},availability:{},playerLeaders:{home:[],away:[]}});
 const preferences=createUserPreferencesService({memory:{},hasSupabase:()=>false});
 const watchStore=createWatchSessionStore({memory:{},hasSupabase:()=>false});
-const api=createUserDataApiRuntime({...Object.fromEntries(functions.map(key=>[key,async()=>[]])),getWatchSession:watchStore.getWatchSession,saveWatchSession:watchStore.saveWatchSession,json:(data,status=200)=>Response.json(data,{status}),getQuota:async()=>({plan:'FREE',left:5,limit:5,used:0}),getPreferences:preferences.getPreferences,savePreferences:preferences.savePreferences,getUserRecord:async()=>({}),publicRuntimeControls:()=>runtime,publicDataCapabilities:()=>({}),publicSmartNotificationCapabilities:()=>({}),isAdminUser:()=>false,watchApprovals:[approval],getCache:async key=>key===matchCenterCacheKey(999)?{match}:key===watchCacheKey(999)?catalogue:null});
-let delay=false,requests=0,centerRequests=0,slowPrefs=false;
+const api=createUserDataApiRuntime({...Object.fromEntries(functions.map(key=>[key,async()=>[]])),getWatchSession:watchStore.getWatchSession,saveWatchSession:watchStore.saveWatchSession,json:(data,status=200)=>Response.json(data,{status}),getQuota:async()=>({plan:'FREE',left:5,limit:5,used:0}),getPreferences:preferences.getPreferences,savePreferences:preferences.savePreferences,getUserRecord:async()=>({}),publicRuntimeControls:()=>runtime,publicDataCapabilities:()=>({}),publicSmartNotificationCapabilities:()=>({}),isAdminUser:()=>false,watchApprovals:[approval],getCache:async key=>key===matchCenterCacheKey(999)?{match}:key===watchCacheKey(999)?catalogue:key===WATCH_LIBRARY_KEY?{version:1,checkedAt:new Date().toISOString(),entries:[{match,catalogue}]}:null});
+let delay=false,requests=0,centerRequests=0,slowPrefs=false,libraryRequests=0,holdController=false,holdLibrary=false;const releaseControllers=[],releaseLibraries=[];
 const server=createServer(async(req,res)=>{
  try{
   const url=new URL(req.url,'http://127.0.0.1');
   if(url.pathname==='/api/match-watch'){
-   requests++;if(delay)await new Promise(resolve=>setTimeout(resolve,300));
+   requests++;if(url.searchParams.get('list')==='1'){libraryRequests++;if(holdLibrary)await new Promise(resolve=>releaseLibraries.push(resolve));}if(delay)await new Promise(resolve=>setTimeout(resolve,300));
    const response=await api.apiMatchWatch(new Request(url),{},{id:42});res.writeHead(response.status,{'Content-Type':'application/json'});res.end(await response.text());return;
   }
   if(url.pathname==='/api/preferences'){
@@ -54,6 +54,7 @@ const server=createServer(async(req,res)=>{
     window.panel=createMatchWatch({now:()=>clock,window:clockWindow,api:async(url,options)=>{const response=await fetch(url,options);return response.json();},escapeHtml});
     window.mount=()=>window.panel.mount({root:document.getElementById('watch'),fixtureId:999,isCurrent:()=>window.active});window.mount();`);return;
   }
+  if(url.pathname==='/modules/match-center-controller.js'&&holdController)await new Promise(resolve=>releaseControllers.push(resolve));
   const root=path.resolve('public'),file=path.resolve(root,'.'+url.pathname);if(!file.startsWith(root+path.sep))throw Error('path');
   res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':'text/css');res.end(await readFile(file));
  }catch{res.writeHead(500);res.end();}
@@ -61,7 +62,7 @@ const server=createServer(async(req,res)=>{
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const launched=await launchChromeWithRetry(browserExecutable());let cdp;
 try{
- const tab=await(await fetch(`http://127.0.0.1:${launched.debugPort}/json/new?about:blank`,{method:'PUT'})).json();cdp=new Cdp(tab.webSocketDebuggerUrl);await cdp.open();await cdp.call('Page.enable');await cdp.call('Network.enable');await cdp.call('Network.setBlockedURLs',{urls:['*youtube.com*','*ytimg.com*']});await cdp.call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+ const tab=await(await fetch(`http://127.0.0.1:${launched.debugPort}/json/new?about:blank`,{method:'PUT'})).json();cdp=new Cdp(tab.webSocketDebuggerUrl);await cdp.open();await cdp.call('Page.enable');await cdp.call('Network.enable');await cdp.call('Network.setCacheDisabled',{cacheDisabled:true});await cdp.call('Network.setBlockedURLs',{urls:['*youtube.com*','*ytimg.com*']});await cdp.call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
  const evaluate=async expression=>{const result=await cdp.call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw Error(result.exceptionDetails.text);return result.result?.value;};
  const wait=async(expression,label)=>{for(let n=0;n<80;n++){if(await evaluate(expression))return;await new Promise(resolve=>setTimeout(resolve,50));}throw Error(label);};
  await cdp.call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/?watch=1`});await wait("Boolean(document.querySelector('[data-watch-country]'))",'country prompt not mounted');
@@ -155,5 +156,48 @@ try{
  await wait("Boolean(document.querySelector('[data-watch-private]')) && document.querySelector('#matchWatchPanel summary').textContent.includes('Режим просмотра')",'privacy missing for a match without a catalogued stream');
  if(await evaluate("Boolean(document.querySelector('#matchWatchPanel [data-watch-play],#matchWatchPanel .match-watch-source a'))"))throw Error('empty catalogue invented a stream');
  await evaluate("document.querySelector('[data-watch-private]').checked=true;document.querySelector('[data-watch-privacy-save]').click()");await wait("document.querySelector('[data-watch-privacy-state]').textContent.includes('сохранены')",'external viewing mode not acknowledged');
- console.log(JSON.stringify({scope:'synthetic_browser_and_cache_api_not_actual_playback',countryRequired:true,lazyMedia:true,sameFixturePreserved:true,deniedEmbedFallback:true,countryTeardownImmediate:true,navigationTeardown:true,backgroundRenewalPreservesFrame:true,withdrawalStopsPlayer:true,recoveryNeverAutoplays:true,actualAppWiring:true,actualCenterRefreshPreservesFrame:true,finishedReplayLabel:true,finishedReplayPlayer:true,officialHighlightLabel:true,officialHighlightPlayer:true,privacyHidesData:true,privacyApiConfirmed:true,privacyNavigationSafe:true,canonicalRestoreVisible:true,externalViewingPrivate:true,replayResume:true,replayRestart:true,widths:[320,390,900],requests}));
-}finally{cdp?.close();await stopChrome(launched.chrome);await new Promise(resolve=>server.close(resolve));if(launched.profileDir)await rm(launched.profileDir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
+ // Home library is strictly opt-in and routes to a checked match, not directly
+ // to a video URL. No media or score is exposed by the home discovery cards.
+ await evaluate("document.querySelector('[data-privacy-off]').click()");await wait("!document.body.classList.contains('watch-private')",'private mode reset before home library');
+ await evaluate("localStorage.removeItem('matchradar:watch-country:v1')");Object.assign(match,{fixtureId:999});
+ await cdp.call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/full-app?librarySmoke=1#${new URLSearchParams({tgWebAppData:launch})}`});
+ await wait("document.getElementById('bootGate')?.hidden && document.getElementById('matchesView').classList.contains('active')",'home library boot incomplete');
+ if(libraryRequests!==0)throw Error('library performed a startup request');
+ await evaluate("window.libraryRealNow=Date.now;window.libraryClock=Date.now();Date.now=()=>window.libraryClock;document.getElementById('watchLibrary').open=true");await wait("Boolean(document.querySelector('[data-watch-library-country]'))",'library country selector missing');
+ if(await evaluate("Boolean(document.querySelector('[data-watch-library-open],iframe,script[src*=youtube]'))"))throw Error('library exposed card/media before explicit country');
+ await evaluate("document.querySelector('[data-watch-library-country]').value='RU';document.querySelector('[data-watch-library-country]').dispatchEvent(new Event('change'))");await wait("Boolean(document.querySelector('[data-watch-library-open]'))",'library card missing');
+ if(await evaluate("/0:0|1:0|fixtureIdentity|https:/.test(document.getElementById('watchLibrary').innerText)"))throw Error('library leaked score or internal metadata');
+ for(const width of [320,390,900]){await cdp.call('Emulation.setDeviceMetricsOverride',{width,height:844,deviceScaleFactor:1,mobile:true});if(await evaluate('document.documentElement.scrollWidth>innerWidth+1'))throw Error('library overflow '+width);}
+ delay=true;
+ await evaluate("document.querySelector('[data-watch-library-country]').value='KZ';document.querySelector('[data-watch-library-country]').dispatchEvent(new Event('change'));document.querySelector('[data-watch-library-country]').value='RU';document.querySelector('[data-watch-library-country]').dispatchEvent(new Event('change'))");
+ await wait("document.querySelector('[data-watch-library-country]')?.value==='RU' && Boolean(document.querySelector('[data-watch-library-open]'))",'library country race unresolved');delay=false;
+ // Closing and returning while the controller import is pending cancels
+ // the old intent, even when the home/library are active again at completion.
+ holdController=true;const beforeCancelledOpen=centerRequests;
+ await evaluate("document.querySelector('[data-watch-library-open]').click()");
+ for(let n=0;n<80&&!releaseControllers.length;n++)await new Promise(resolve=>setTimeout(resolve,50));
+ if(!releaseControllers.length)throw Error('delayed controller import not exercised');
+ await evaluate("document.getElementById('watchLibrary').open=false");
+ await new Promise(resolve=>setTimeout(resolve,50));
+ await evaluate("document.getElementById('watchLibrary').open=true;document.getElementById('navProfile').click();document.getElementById('navMatches').click()");
+ holdController=false;for(const release of releaseControllers.splice(0))release();
+ await wait("!document.querySelector('[data-watch-library-open]').disabled",'cancelled open did not finish');
+ if(centerRequests!==beforeCancelledOpen||!await evaluate("document.getElementById('matchesView').classList.contains('active')"))throw Error('stale library intent opened a match');
+ await cdp.call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+ for(const theme of ['dark','light']){
+  await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>{document.documentElement.dataset.theme='${theme}';document.getElementById('watchLibrary').scrollIntoView({block:'start'});requestAnimationFrame(()=>requestAnimationFrame(resolve));}))`);
+  const shot=await cdp.call('Page.captureScreenshot',{format:'png'});await writeFile('/tmp/matchradar-watch-library-'+theme+'.png',Buffer.from(shot.data,'base64'));
+ }
+ await evaluate("document.querySelector('[data-watch-library-open]').click()");await wait("document.getElementById('analysisView').classList.contains('active') && document.querySelector('#matchWatchPanel details')?.open",'library did not open checked watch panel');
+ if(await evaluate("Boolean(document.querySelector('#matchWatchPanel iframe'))"))throw Error('library autoplayed video');
+ await evaluate("document.getElementById('navMatches').click()");await wait("Boolean(document.querySelector('[data-watch-library-open]'))",'home library lost after return');
+ // Expiry removes cards while an HTTP request is deliberately held open.
+ holdLibrary=true;const beforeHeld=libraryRequests;
+ await evaluate("window.libraryClock+=31*60000;window.dispatchEvent(new Event('pageshow'))");
+ for(let n=0;n<80&&libraryRequests===beforeHeld;n++)await new Promise(resolve=>setTimeout(resolve,50));
+ if(libraryRequests===beforeHeld)throw Error('held library refresh not exercised');
+ await wait("!document.querySelector('[data-watch-library-open]')",'expired card survived a hung refresh');
+ holdLibrary=false;for(const release of releaseLibraries.splice(0))release();
+ await evaluate('Date.now=window.libraryRealNow');
+ console.log(JSON.stringify({scope:'synthetic_browser_and_cache_api_not_actual_playback',countryRequired:true,homeLibraryOptIn:true,homeLibraryNoSpoilers:true,homeLibraryRoutesToCheckedMatch:true,homeLibraryNoAutoplay:true,homeLibraryCancelledImport:true,homeLibraryExpiryDuringRefresh:true,lazyMedia:true,sameFixturePreserved:true,deniedEmbedFallback:true,countryTeardownImmediate:true,navigationTeardown:true,backgroundRenewalPreservesFrame:true,withdrawalStopsPlayer:true,recoveryNeverAutoplays:true,actualAppWiring:true,actualCenterRefreshPreservesFrame:true,finishedReplayLabel:true,finishedReplayPlayer:true,officialHighlightLabel:true,officialHighlightPlayer:true,privacyHidesData:true,privacyApiConfirmed:true,privacyNavigationSafe:true,canonicalRestoreVisible:true,externalViewingPrivate:true,replayResume:true,replayRestart:true,widths:[320,390,900],requests}));
+}finally{for(const release of [...releaseControllers,...releaseLibraries])release();cdp?.close();await stopChrome(launched.chrome);await new Promise(resolve=>server.close(resolve));if(launched.profileDir)await rm(launched.profileDir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}

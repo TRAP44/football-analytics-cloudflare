@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Найти и открыть доступные эфиры, обзоры и записи с главной — **Codex** — `codex/watch-library-entrypoint`; lazy library беззамедленияstartup, source revalidation, directmatchwatchentry.
+
 
 
 

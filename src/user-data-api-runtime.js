@@ -1,7 +1,7 @@
 import {WATCH_POLICIES} from './match-watch-policy.js';
 import {withRequestDeadline} from './request-deadline.js';
 import {matchCenterCacheKey} from './match-center-cache-key.js';
-import {WATCH_APPROVALS,WATCH_COUNTRIES,watchCacheKey,watchApiPayload} from './match-watch.js';
+import {WATCH_APPROVALS,WATCH_COUNTRIES,WATCH_LIBRARY_KEY,watchCacheKey,watchApiPayload,watchLibraryPayload} from './match-watch.js';
 import {issueMatchQuestionAccess} from './match-question-access.js';
 import { publicSignalLabel, withPublicSignalLabel } from './signal-wording.js';
 // User profile, history, favorites, reminders, digest and preferences API extracted from worker.js.
@@ -20,6 +20,7 @@ export function createUserDataApiRuntime(deps) {
     analysisResponsePayload,
     getBotDigestSubscription,
     getCache,
+    hasSupabase, supaSelectOne,
     getFavoritePlayers,
     getFavorites,
     getHistory,
@@ -531,6 +532,21 @@ export function createUserDataApiRuntime(deps) {
     if(!positiveId(user?.id))return json({error:'Сессия Telegram не подтверждена.',code:'AUTH_REQUIRED'},401);
     if(request.method!=='GET')return json({error:'Метод не поддерживается.'},405,{allow:'GET'});
     const params=new URL(request.url).searchParams,id=positiveId(params.get('fixtureId')),country=params.get('country') || '';
+    if(params.has('list')){
+      if(params.get('list')!=='1'||params.has('fixtureId')||country&&!Object.hasOwn(WATCH_COUNTRIES,country))return json({error:'Проверьте список и страну.',code:'WATCH_INPUT_INVALID'},400);
+      const empty={country,available:false,countries:[],items:[]};
+      if(cfg.matchWatchEnabled===false)return json(empty);
+      try{
+        const library=await withRequestDeadline(async()=>{
+          if(typeof supaSelectOne==='function'&&hasSupabase?.(cfg)===true){
+            const row=await supaSelectOne(cfg,'analysis_cache',{cache_key:`eq.${WATCH_LIBRARY_KEY}`,select:'cache_key,payload,expires_at',limit:1});
+            return row?.cache_key===WATCH_LIBRARY_KEY&&Date.parse(row.expires_at)>Date.now()?row.payload:null;
+          }
+          return getCache(WATCH_LIBRARY_KEY,cfg);
+        },{budgetMs:1500,source:'match-watch-library-cache'});
+        return json(watchLibraryPayload(library,{country,approvals:watchApprovals,policies:watchPolicies}));
+      }catch{return json(empty);}
+    }
     if(!id || country && !Object.hasOwn(WATCH_COUNTRIES,country))return json({error:'Проверьте матч и страну.',code:'WATCH_INPUT_INVALID'},400);
     const empty={fixtureId:id,country,available:false,countries:[],items:[]};
     if(cfg.matchWatchEnabled===false || !watchPolicies.length && !watchApprovals.some(item=>item.match?.fixtureId===id))return json(empty);

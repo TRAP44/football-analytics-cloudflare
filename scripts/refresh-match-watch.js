@@ -2,7 +2,7 @@
 import {readFileSync,mkdirSync,writeFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {boundedSourceJson} from './inspect-match-watch.js';
-import {WATCH_COUNTRIES,WATCH_PUBLISHERS,WATCH_TTL_MS,watchFixtureIdentity,watchCacheKey,validatedWatchOptions,officialWatchUrl} from '../src/match-watch.js';
+import {WATCH_COUNTRIES,WATCH_PUBLISHERS,WATCH_TTL_MS,WATCH_LIBRARY_KEY,watchFixtureIdentity,watchCacheKey,validatedWatchOptions,officialWatchUrl} from '../src/match-watch.js';
 import {matchCenterCacheKey} from '../src/match-center-cache-key.js';
 import {automaticReplayEvidence,automaticHighlightsMatch,automaticHighlightsEvidence,WATCH_POLICIES} from '../src/match-watch-policy.js';
 import {discoverMatchWatch} from './discover-match-watch.js';
@@ -130,15 +130,23 @@ export async function refreshMatchWatch({env=process.env,manifest,fetchImpl=fetc
     if(!catalogues.has(match.fixtureId))catalogues.set(match.fixtureId,{version:1,fixtureIdentity:identity,items:[]});
     catalogues.get(match.fixtureId).items.push(item);
   }
+  const library=[];
   for(const [fixtureId,payload] of catalogues){
     const stored=await writeCache(watchCacheKey(fixtureId),fixtureId,payload,Math.min(now+WATCH_TTL_MS,...payload.items.map(item=>timestamp(item.expiresAt))));
     if(stored){
+      if(payload.items.length)library.push({match:matches.get(fixtureId),catalogue:payload});
       report.published+=payload.items.length;
       const automaticItems=payload.items.filter(item=>item.approval.version===2);
       report.automaticPublished=(report.automaticPublished||0)+automaticItems.length;
       if(automatic)(report.automaticItems||=[]).push(...automaticItems.map(item=>({fixtureId,videoId:item.videoId,kind:item.kind})));
     }
   }
+  // A single bounded cache read serves the library; no per-card provider/DB
+  // fan-out on the home screen. Only successfully stored catalogues enter it.
+  const entries=library.sort((a,b)=>Number(b.catalogue.items.some(item=>item.kind==='live'))-Number(a.catalogue.items.some(item=>item.kind==='live'))||timestamp(b.match.date)-timestamp(a.match.date)).slice(0,20);
+  await writeCache(WATCH_LIBRARY_KEY,0,{version:1,checkedAt:new Date(now).toISOString(),entries},now+WATCH_TTL_MS);
+  report.libraryMatches=entries.length;
+  report.libraryFixtureIds=entries.map(entry=>entry.match.fixtureId);
   return report;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
