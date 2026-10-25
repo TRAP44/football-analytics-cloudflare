@@ -1,8 +1,9 @@
 import {createWatchSessionStore} from '../src/watch-session.js';
 import {createUserPreferencesService} from '../src/user-preferences.js';
 import {createServer} from 'node:http';
-import {readFile,rm,writeFile} from 'node:fs/promises';
+import {readFile,rm,writeFile,mkdtemp} from 'node:fs/promises';
 import path from 'node:path';
+import {tmpdir} from 'node:os';
 import {launchChromeWithRetry,stopChrome,Cdp,browserExecutable} from './bottom-nav-render-smoke.js';
 import {createUserDataApiRuntime} from '../src/user-data-api-runtime.js';
 import {watchFixtureIdentity,WATCH_PUBLISHERS,WATCH_TTL_MS,watchCacheKey,WATCH_LIBRARY_KEY} from '../src/match-watch.js';
@@ -60,7 +61,7 @@ const server=createServer(async(req,res)=>{
  }catch{res.writeHead(500);res.end();}
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-const launched=await launchChromeWithRetry(browserExecutable());let cdp;
+const launched=await launchChromeWithRetry(browserExecutable());let cdp,visualDir;
 try{
  const tab=await(await fetch(`http://127.0.0.1:${launched.debugPort}/json/new?about:blank`,{method:'PUT'})).json();cdp=new Cdp(tab.webSocketDebuggerUrl);await cdp.open();await cdp.call('Page.enable');await cdp.call('Network.enable');await cdp.call('Network.setCacheDisabled',{cacheDisabled:true});await cdp.call('Network.setBlockedURLs',{urls:['*youtube.com*','*ytimg.com*']});await cdp.call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
  const evaluate=async expression=>{const result=await cdp.call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw Error(result.exceptionDetails.text);return result.result?.value;};
@@ -186,7 +187,7 @@ try{
  await cdp.call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
  for(const theme of ['dark','light']){
   await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>{document.documentElement.dataset.theme='${theme}';document.getElementById('watchLibrary').scrollIntoView({block:'start'});requestAnimationFrame(()=>requestAnimationFrame(resolve));}))`);
-  const shot=await cdp.call('Page.captureScreenshot',{format:'png'});await writeFile('/tmp/matchradar-watch-library-'+theme+'.png',Buffer.from(shot.data,'base64'));
+  const shot=await cdp.call('Page.captureScreenshot',{format:'png'});visualDir ||= await mkdtemp(path.join(tmpdir(),'matchradar-watch-library-'));await writeFile(path.join(visualDir,'watch-library-'+theme+'.png'),Buffer.from(shot.data,'base64'),{flag:'wx',mode:0o600});
  }
  await evaluate("document.querySelector('[data-watch-library-open]').click()");await wait("document.getElementById('analysisView').classList.contains('active') && document.querySelector('#matchWatchPanel details')?.open",'library did not open checked watch panel');
  if(await evaluate("Boolean(document.querySelector('#matchWatchPanel iframe'))"))throw Error('library autoplayed video');
@@ -200,4 +201,4 @@ try{
  holdLibrary=false;for(const release of releaseLibraries.splice(0))release();
  await evaluate('Date.now=window.libraryRealNow');
  console.log(JSON.stringify({scope:'synthetic_browser_and_cache_api_not_actual_playback',countryRequired:true,homeLibraryOptIn:true,homeLibraryNoSpoilers:true,homeLibraryRoutesToCheckedMatch:true,homeLibraryNoAutoplay:true,homeLibraryCancelledImport:true,homeLibraryExpiryDuringRefresh:true,lazyMedia:true,sameFixturePreserved:true,deniedEmbedFallback:true,countryTeardownImmediate:true,navigationTeardown:true,backgroundRenewalPreservesFrame:true,withdrawalStopsPlayer:true,recoveryNeverAutoplays:true,actualAppWiring:true,actualCenterRefreshPreservesFrame:true,finishedReplayLabel:true,finishedReplayPlayer:true,officialHighlightLabel:true,officialHighlightPlayer:true,privacyHidesData:true,privacyApiConfirmed:true,privacyNavigationSafe:true,canonicalRestoreVisible:true,externalViewingPrivate:true,replayResume:true,replayRestart:true,widths:[320,390,900],requests}));
-}finally{for(const release of [...releaseControllers,...releaseLibraries])release();cdp?.close();await stopChrome(launched.chrome);await new Promise(resolve=>server.close(resolve));if(launched.profileDir)await rm(launched.profileDir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
+}finally{for(const release of [...releaseControllers,...releaseLibraries])release();cdp?.close();await stopChrome(launched.chrome);await new Promise(resolve=>server.close(resolve));if(visualDir)await rm(visualDir,{recursive:true,force:true});if(launched.profileDir)await rm(launched.profileDir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
