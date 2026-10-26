@@ -14,6 +14,16 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-27 — Codex — Возврат к матчу: видео и LIVE
+PR [#1028](https://github.com/TRAP44/football-analytics-cloudflare/pull/1028), ветка `codex/match-return-recovery`.
+
+#1027 завершён: main61444f97, MainQuality40403623686/CodeQL40403623669/Deploy40404116693 success. Actual public manifest SHA/tag61444f97, CF aafcf583-ab85-475a-8817-d975f65fce05, launch148; app/chat/watch SHA256 совпали с проверенными файлами. Не возвращать этот выпуск в pending.
+
+Actual full-app Chromium воспроизвёл: открыть матч → команду → Back; раздел просмотра остаётся пустым после dispose. LIVE deactivated при уходе и не запускался на Back. На restore→analysisView теперь remount видеопанели и restart одного LIVE timer только для реально отрисованного fixture: #matchQuestions fixture совпадает с matchWatchFixture; анализ, loading/error и чужой currentCenter не запускают LIVE. Текущий DOM разбора/чата и вкладка сохраняются. Повторный вход не создаёт дубль таймера; вне матча dispose/abort и пауза сохранены. Нет автозапуска видео/AI, новых provider paths, SQL/auth или рассылок. Cache-only GET видео возобновляется при возврате. Frontend launch149.
+
+Проверено: baseline player browser (signed initData, actual auth/favorites service, add/remove, recovery, 320/390/900) прошёл. Negative actual watch browser упал именно на пустом разделе после Back, после исправления прошёл. Расширенный browser: team/player Back, one LIVE timer, offscreen stopped, refresh once, chat/tab identity, no autoplay; прежние watch/privacy/rights/country/reminder/crest сценарии прошли. Только controller timer управляется тестом; реальные UI/HTTP/cache API, synthetic SDK/матчи/источники, не physical Telegram playback. Focused22/22, независимый read-only Codex review clean и54/54; Claude не участвовал. Node22 npmci/check/lint/release952/full4744/securityscan/privileged/verifyrelease/workerdryrun passed. Exact-head CI/merge/deploy и public identity будут записаны в PR после выпуска.
+
+
 ## 2026-10-27 — Codex — Напоминания: статус главной после чтения и удаления
 PR [#1027](https://github.com/TRAP44/football-analytics-cloudflare/pull/1027), ветка `codex/reminder-view-sync`.
 

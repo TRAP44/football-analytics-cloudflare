@@ -98,9 +98,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Согласованное состояние напоминаний на всех экранах — **Codex** — [PR #1027](https://github.com/TRAP44/football-analytics-cloudflare/pull/1027), `codex/reminder-view-sync` — подтверждённый DELETE не должен оставлять включённый статус/значок на главной; GET и toggle обновляют те же представления.
+- [ ] Восстановление матча после возврата от команды/игрока — **Codex** — [PR #1028](https://github.com/TRAP44/football-analytics-cloudflare/pull/1028), `codex/match-return-recovery` — после Back исчезал раздел просмотра и не возобновлялся LIVE refresh; native Chromium воспроизводит отсутствие video details.
+
 
 
 
@@ -248,6 +250,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Согласованное состояние напоминаний на всех экранах — **Codex** — [PR #1027](https://github.com/TRAP44/football-analytics-cloudflare/pull/1027), `codex/reminder-view-sync` — подтверждённый DELETE не должен оставлять включённый статус/значок на главной; GET и toggle обновляют те же представления. Выпущен: main61444f97, Quality40403623686/CodeQL40403623669/Deploy40404116693 success; public launch148/CFaafcf583-ab85-475a-8817-d975f65fce05 verified.
 
 - [x] Восстановление чата и ожидание источника видео — **Codex** — [PR #1026](https://github.com/TRAP44/football-analytics-cloudflare/pull/1026), `codex/chat-watch-recovery` — auth-сообщение, черновик/ручной повтор, видимый открытый пустой видеоблок обновляется cache-only. Выпущен: main1bdd387c, Quality40374352274/CodeQL40374351787/Deploy40374886397 success; public launch147/CFfc3bad8f-9061-4956-b206-8c4307c309ea verified.
 
