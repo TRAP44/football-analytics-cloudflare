@@ -1,0 +1,63 @@
+name: Apply Runtime Controls Fix
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Inspect/apply v6.29.20, or verify RPC with unchanged flags (adds audit revision)
+        type: choice
+        options: [preflight, apply, verify-rpc]
+        default: preflight
+      backup_run_id:
+        description: Successful Backup Supabase run on this exact main revision (required for apply)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: supabase-production-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Use Node.js 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Apply only the reviewed runtime controls migration
+        if: inputs.mode != 'verify-rpc'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          RUNTIME_MIGRATION_MODE: ${{ inputs.mode }}
+          RUNTIME_MIGRATION_BACKUP_RUN_ID: ${{ inputs.backup_run_id }}
+        run: |
+          command -v psql >/dev/null
+          node scripts/apply-runtime-controls.js
+      - name: Verify real HTTP save without changing feature flags
+        if: inputs.mode == 'verify-rpc'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ADMIN_TELEGRAM_IDS: ${{ secrets.ADMIN_TELEGRAM_IDS }}
+        run: node scripts/verify-runtime-controls-rpc.js

@@ -1,6 +1,7 @@
 import {readFileSync,writeFileSync,mkdirSync,rmSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {localLoadDatabaseConfig} from './real-database-load-config.js';
+import {verifyRuntimeControlsRpc} from './verify-runtime-controls-rpc.js';
 
 const file=process.argv[2];
 if(!file)throw new Error('Path to disposable Supabase status JSON required.');
@@ -9,6 +10,7 @@ const env={...process.env,ISOLATED_REAL_DB_ACK:'disposable',
   LOCAL_LOAD_SUPABASE_URL:status.API_URL || status.api_url,
   LOCAL_LOAD_SUPABASE_SERVICE_ROLE_KEY:status.SERVICE_ROLE_KEY || status.service_role_key};
 localLoadDatabaseConfig(env);
+console.log(JSON.stringify({phase:'runtime_controls_rpc',...await verifyRuntimeControlsRpc({origin:env.LOCAL_LOAD_SUPABASE_URL,key:env.LOCAL_LOAD_SUPABASE_SERVICE_ROLE_KEY,actorId:900000000440})}));
 const reports=[];
 mkdirSync('load-results',{recursive:true});
 for(const peak of [10,50,100,1000])rmSync(`load-results/real-database-http-${peak}.json`,{force:true});

@@ -24,7 +24,7 @@ test('Issue #484 keeps rollback and save as distinct runtime-control functions',
   assert.match(rollback, /supaSelectOne\(cfg\s*,\s*'runtime_control_history'/);
   assert.match(rollback, /action:\s*'rollback'/);
   assert.match(rollback, /return await saveRuntimeControls\(/);
-  assert.doesNotMatch(rollback, /X-Runtime-Action/);
+  assert.doesNotMatch(rollback, /method:\s*'POST'/);
   assert.doesNotMatch(rollback, /method:\s*'PATCH'/);
 });
 
@@ -39,10 +39,10 @@ test('Issue #484 save owns current-state CAS and atomic-history mutation', () =>
   assert.match(save, /const expectedRevision=positiveRevision\(source\.expectedRevision,0\)/);
   assert.match(save, /RUNTIME_CONTROLS_CONFLICT/);
   assert.match(save, /RUNTIME_HISTORY_REQUIRED/);
-  assert.match(save, /await ensureRuntimeHistoryBaseline\(cfg\s*,\s*current\s*,\s*user\)/);
-  assert.match(save, /X-Runtime-Action/);
-  assert.match(save, /X-Runtime-Reason-Hex/);
-  assert.match(save, /method:\s*'PATCH'/);
+  assert.match(save, /commit_runtime_controls_v2/);
+  assert.match(save, /p_action/);
+  assert.match(save, /p_reason/);
+  assert.match(save, /method:\s*'POST'/);
   assert.match(save, /RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED/);
   assert.doesNotMatch(save, /await appendRuntimeHistory\(/);
 });

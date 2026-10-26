@@ -15,22 +15,21 @@ function saveSection() {
 test('runtime-control mutation fails closed when history is unavailable', () => {
   const save = saveSection();
   assert.match(save, /RUNTIME_HISTORY_REQUIRED/);
-  assert.match(save, /RUNTIME_HISTORY_BASELINE_WRITE_FAILED/);
   assert.match(save, /status:\s*503/);
-  assert.match(save, /await ensureRuntimeHistoryBaseline\(cfg\s*,\s*current\s*,\s*user\)/);
+  assert.match(save, /commit_runtime_controls_v2/);
 });
 
 test('runtime-control UPDATE carries bounded audit metadata and no longer appends history after commit', () => {
   const save = saveSection();
-  assert.match(save, /X-Runtime-Action/);
-  assert.match(save, /X-Runtime-Reason-Hex/);
-  assert.match(save, /X-Runtime-App-Version/);
-  assert.match(save, /X-Runtime-Source-Revision/);
-  assert.match(save, /TextEncoder/);
+  assert.match(save, /p_action/);
+  assert.match(save, /p_reason/);
+  assert.match(save, /p_app_version/);
+  assert.match(save, /p_source_revision/);
+  assert.match(save, /p_actor_id:actorId/);
   assert.match(save, /RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED/);
   assert.doesNotMatch(save, /await appendRuntimeHistory\(/);
 
-  const patchIndex = save.search(/method\s*:\s*'PATCH'/);
+  const patchIndex = save.search(/method\s*:\s*'POST'/);
   const memoryIndex = save.search(/memory\.runtimeControls\s*=/);
   assert.ok(patchIndex >= 0 && memoryIndex > patchIndex, 'memory may update only after the database transaction succeeds');
 });
@@ -72,10 +71,12 @@ test('atomic history snapshots capture every runtime feature flag and the matchi
 test('runtime controls require history availability before database mutation',()=>{
   const save=saveSection();
   const probe=save.indexOf('await probeRuntimeHistorySchema(cfg)');
-  const baseline=save.indexOf('await ensureRuntimeHistoryBaseline(cfg,current,user)');
-  const patch=save.search(/method\s*:\s*'PATCH'/);
-  assert.ok(probe>=0&&baseline>probe&&patch>baseline);
+  const actor=save.indexOf('const actorId=positiveId(user?.id)');
+  const patch=save.search(/method\s*:\s*'POST'/);
+  assert.ok(probe>=0&&actor>probe&&patch>actor);
   assert.match(save,/if \(!historySchema\.ok\)/);
   assert.match(save,/RUNTIME_HISTORY_REQUIRED/);
-  assert.match(save,/RUNTIME_HISTORY_BASELINE_WRITE_FAILED/);
+  const rpc=fs.readFileSync('supabase/migrations/supabase_migration_v6_29_20.sql','utf8');
+  assert.match(rpc,/Runtime baseline history mismatch/);
+  assert.match(rpc,/Runtime atomic history unconfirmed/);
 });
