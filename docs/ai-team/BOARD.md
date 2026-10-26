@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Открытие исчезнувшего разбора из истории — **Codex** — `codex/history-open-recovery` — fallback LIVE не запускал timer; сбой fallback запроса/модуля уходил без UI feedback. Подтверждено actual Chromium и выполнением настоящего handler.
+
 
 
 
@@ -101,7 +103,6 @@
 
 ## На ревью
 
-- [ ] Восстановление матча после возврата от команды/игрока — **Codex** — [PR #1028](https://github.com/TRAP44/football-analytics-cloudflare/pull/1028), `codex/match-return-recovery` — после Back исчезал раздел просмотра и не возобновлялся LIVE refresh; native Chromium воспроизводит отсутствие video details.
 
 
 
@@ -250,6 +251,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Восстановление матча после возврата от команды/игрока — **Codex** — [PR #1028](https://github.com/TRAP44/football-analytics-cloudflare/pull/1028), `codex/match-return-recovery` — после Back исчезал раздел просмотра и не возобновлялся LIVE refresh; native Chromium воспроизводит отсутствие video details. Выпущен: main78f973d0, Quality40407532487/CodeQL40407532471/Deploy40408059863 success; public launch149/CFf8309e72-2cdd-4966-92a9-12b094c97c73 verified.
 
 - [x] Согласованное состояние напоминаний на всех экранах — **Codex** — [PR #1027](https://github.com/TRAP44/football-analytics-cloudflare/pull/1027), `codex/reminder-view-sync` — подтверждённый DELETE не должен оставлять включённый статус/значок на главной; GET и toggle обновляют те же представления. Выпущен: main61444f97, Quality40403623686/CodeQL40403623669/Deploy40404116693 success; public launch148/CFaafcf583-ab85-475a-8817-d975f65fce05 verified.
 

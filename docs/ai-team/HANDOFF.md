@@ -14,6 +14,18 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-27 — Codex — История: исчезнувший снимок и восстановление после ошибки
+PR: ветка `codex/history-open-recovery`.
+
+#1028 завершён: main78f973d0, MainQuality40407532487/CodeQL40407532471/Deploy40408059863 success; actual public SHA/tag78f973d0/CFf8309e72-2cdd-4966-92a9-12b094c97c73, launch149; app/chat/watch SHA256 и official crest bytes проверены. Не возвращать его в pending.
+
+Подтверждены две проблемы openHistoryAnalysis: после snapshot404 renderMatchCenter выполнялся до showView и LIVE schedule оставался без таймера; ошибки center/extras внутри catch выходили из handler без UI feedback. Native actual app с HTTP/cache-only API воспроизводит отсутствие timer в прежнем main и успешный refresh после исправления. Ошибка fallback503 отдельно воспроизведена выполнением фактического handler: rejected Promise, no toast; после исправления она обработана, кнопка/история остаются доступны.
+
+Внешний catch теперь охватывает все операции; вложенный catch только для сохранённого GET и 404-only fallback. showView(fromHistoryOpen true) до renderMatchCenter/renderAnalysis; прежние seq guards и finally сохраняются, поздний failure не меняет экран/не показывает ошибку. Нет нового AI вызова/SQL/auth/provider paths, сохраняется read-only history snapshot. Frontend launch150.
+
+Проверено: focused42/42, независимый read-only Codex review clean и74/74. Native Chromium: actual apiHistoryAnalysis404 → center503 → нормализованная ошибка → retry→LIVE с одним реальным refresh; actual snapshot200 открывает AI view без нового center/analyze; Back в историю, late failure после перехода Home без unhandled rejection/перехвата навигации. Прежние watch/privacy/country/rights/reminder/crest/return cases прошли. Таймер controller управляется тестом, реальные DOM/HTTP/cache API; SDK/матчи/источники synthetic, не physical Telegram playback. Node22 npmci/check/lint/release952/full4750/securityscan/privileged/verifyrelease/workerdryrun passed. Exact-head CI/merge/deploy и public identity будут записаны в PR после выпуска.
+
+
 ## 2026-10-27 — Codex — Возврат к матчу: видео и LIVE
 PR [#1028](https://github.com/TRAP44/football-analytics-cloudflare/pull/1028), ветка `codex/match-return-recovery`.
 

@@ -286,3 +286,75 @@ test('history reads the same cache generation that AI writes', async () => {
     assert.ok(generations.every(value=>value===generation),owner);
   }
 });
+
+function historyOpenHarness({history,center,extras}={}) {
+  const calls=[],state={historyOpenRequestSeq:0,currentCenter:{match:{fixtureId:7}}};
+  let view='historyView';
+  const deps={
+    state,positiveEntityId:value=>Number.isSafeInteger(Number(value))&&Number(value)>0?Number(value):0,
+    prepareMatchWatchTarget:()=>{},activeViewId:()=>view,
+    api:async(path,options)=>{calls.push(['get',path,options]);if(history)return history(path);throw Object.assign(Error('expired snapshot'),{status:404});},
+    requestMatchCenter:async id=>{calls.push(['center-get',id]);return center?center():{mode:'live',match:{fixtureId:id}};},
+    ensureMatchCenterExtras:async()=>{if(extras)return extras();},
+    showView:(id,options)=>{view=id;calls.push(['show',id,options]);},
+    renderMatchCenter:data=>calls.push(['center-render',view,data]),renderAnalysis:data=>calls.push(['analysis-render',view,data]),
+    toast:message=>calls.push(['toast',message]),sendActionError:(_kind,error,source)=>calls.push(['error',error.message,source]),
+    sendProductAction:(name,source)=>calls.push(['event',name,source]),uiErrorMessage:(error,fallback)=>error?.message||fallback,
+  };
+  const start=app.indexOf('async function openHistoryAnalysis('),end=app.indexOf('\nlet historyRenderer',start);
+  const open=new Function(...Object.keys(deps),app.slice(start,end)+';return openHistoryAnalysis;')(...Object.values(deps));
+  return {calls,state,open,leave:()=>{view='matchesView';state.historyOpenRequestSeq++;},view:()=>view};
+}
+
+test('expired history activates the match view before rendering the LIVE fallback',async()=>{
+  const h=historyOpenHarness(),button={disabled:false,textContent:'Открыть'};
+  await h.open(999,button);
+  assert.deepEqual(h.calls.filter(x=>['show','center-render'].includes(x[0])).map(x=>x.slice(0,2)),[['show','analysisView'],['center-render','analysisView']]);
+  assert.equal(h.state.analysisBackView,'historyView');
+  assert.equal(button.disabled,false);assert.equal(button.textContent,'Открыть');
+  assert.match(h.calls.find(x=>x[0]==='toast')[1],/открыт центр матча/);
+});
+
+test('saved history activates its view before rendering without fetching a center or new analysis',async()=>{
+  const data={match:{fixtureId:999}},h=historyOpenHarness({history:async()=>data});
+  await h.open(999);
+  assert.deepEqual(h.calls.filter(x=>['show','analysis-render'].includes(x[0])).map(x=>x.slice(0,2)),[['show','analysisView'],['analysis-render','analysisView']]);
+  assert.equal(h.state.currentCenter,null);assert.equal(h.calls.some(x=>x[0]==='center-get'),false);
+  assert.equal(h.calls.filter(x=>x[0]==='get').length,1);assert.equal(h.calls.find(x=>x[0]==='get')[2].method,undefined);
+});
+
+test('history fallback request and core-module failures are handled and leave a usable source screen',async()=>{
+  for(const options of [{center:async()=>{throw Error('Центр временно недоступен.');}},{extras:async()=>{throw Error('Не удалось загрузить экран.');}}]){
+    const h=historyOpenHarness(options),button={disabled:false,textContent:'Открыть'};
+    await assert.doesNotReject(h.open(999,button));
+    assert.equal(h.view(),'historyView');assert.equal(button.disabled,false);assert.equal(button.textContent,'Открыть');
+    assert.equal(h.calls.filter(x=>x[0]==='error').length,1);assert.equal(h.calls.filter(x=>x[0]==='toast').length,1);
+    assert.equal(h.calls.some(x=>x[0]==='center-render'),false);
+  }
+});
+
+test('non-404 history failures do not fetch a center or render another screen',async()=>{
+  for(const status of [401,409,429,503]){
+    const h=historyOpenHarness({history:async()=>{throw Object.assign(Error('Сервис временно недоступен.'),{status});}});
+    await h.open(999);assert.equal(h.view(),'historyView');assert.equal(h.calls.some(x=>x[0]==='center-get'),false);
+    assert.equal(h.calls.filter(x=>x[0]==='toast').length,1);
+  }
+});
+
+test('a failed history fallback after leaving does not leak a rejection, toast, or navigation',async()=>{
+  let reject,started;
+  const ready=new Promise(resolve=>{started=resolve;});
+  const h=historyOpenHarness({center:()=>new Promise((_resolve,fail)=>{reject=fail;started();})}),button={disabled:false,textContent:'Открыть'};
+  const task=h.open(999,button);await ready;h.leave();reject(Error('late failure'));
+  await assert.doesNotReject(task);assert.equal(h.view(),'matchesView');assert.equal(button.disabled,false);
+  assert.equal(h.calls.some(x=>['show','toast','error','center-render'].includes(x[0])),false);
+});
+
+test('an older history fallback cannot replace a newer saved analysis',async()=>{
+  let resolve,started;const ready=new Promise(done=>{started=done;});
+  const h=historyOpenHarness({history:async path=>{if(path.includes('=999'))throw Object.assign(Error('expired'),{status:404});return {match:{fixtureId:1000}};},center:()=>new Promise(done=>{resolve=done;started();})});
+  const old=h.open(999);await ready;await h.open(1000);resolve({mode:'live',match:{fixtureId:999}});await old;
+  assert.equal(h.calls.some(x=>x[0]==='center-render'),false);
+  assert.equal(h.calls.filter(x=>x[0]==='analysis-render').length,1);
+  assert.equal(h.calls.find(x=>x[0]==='analysis-render')[2].match.fixtureId,1000);
+});
