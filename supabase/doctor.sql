@@ -98,3 +98,12 @@ select
   min(version) as first_remote_version,
   max(version) as last_remote_version
 from supabase_migrations.schema_migrations;
+
+-- Runtime RPC is service-only; its body/config/defaults participate in v2.
+select 'runtime_control_mutation' as section, p.proname, pg_catalog.md5(p.prosrc) as source_md5,
+  p.prosecdef as security_definer, p.proconfig,
+  pg_catalog.has_function_privilege('anon',p.oid,'execute') as anon_execute,
+  pg_catalog.has_function_privilege('authenticated',p.oid,'execute') as authenticated_execute,
+  pg_catalog.has_function_privilege('service_role',p.oid,'execute') as service_execute
+from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace
+where n.nspname='public' and p.proname='commit_runtime_controls_v2';

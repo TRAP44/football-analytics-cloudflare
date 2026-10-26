@@ -321,11 +321,11 @@ const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
 const RELEASE_CHANNEL = 'rc144';
 const RC_NAME = 'RC144';
-const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: примените миграции до v6.29.19, включая восстановление записей и блокировок.';
+const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: примените миграции до v6.29.20, включая атомарное сохранение настроек.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_CONTRACT_VERSION = 2;
-const EXPECTED_SCHEMA_FINGERPRINT = 'ecd2e855833b78694bef24223878eb19';
-const FRESH_INSTALL_SCHEMA_FINGERPRINT = '809a9b16fd55a19b3756f207da28c817';
+const EXPECTED_SCHEMA_FINGERPRINT = 'ef7b0db33b20c122b9382f3c9b1dd7c7';
+const FRESH_INSTALL_SCHEMA_FINGERPRINT = '28942368323a2aaa693987bc0225da34';
 // Exact reviewed fingerprints bridge additive schema rollouts without downtime.
 const COMPATIBLE_SCHEMA_FINGERPRINTS = Object.freeze([
   EXPECTED_SCHEMA_FINGERPRINT,
@@ -334,8 +334,8 @@ const COMPATIBLE_SCHEMA_FINGERPRINTS = Object.freeze([
   '0169ec29ea39da9d085040ed825057a6',
   '449654e62c352ffcbd618dfccabbda7d',
   'd87de7ad518d55bd0669334a7ce863ce',
-  'ef7b0db33b20c122b9382f3c9b1dd7c7',
-  '28942368323a2aaa693987bc0225da34',
+  'ecd2e855833b78694bef24223878eb19',
+  '809a9b16fd55a19b3756f207da28c817',
 ]);
 
 const { json, adminForbidden, publicRouteError } = createHttpRuntime({

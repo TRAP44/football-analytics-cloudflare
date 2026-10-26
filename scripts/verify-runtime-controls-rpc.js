@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {createRuntimeControlsRuntime} from '../src/runtime-controls.js';
+import {createSupabaseClient} from '../src/supabase-client.js';
 import {applyRuntimeMigration} from './apply-runtime-controls.js';
 
 const fields=['maintenance_mode','analysis_enabled','search_enabled','live_enabled','reminders_enabled','expanded_data_enabled','auto_settlement_recovery_enabled','ai_enabled'];
@@ -13,7 +14,7 @@ export async function verifyRuntimeControlsRpc({origin,key,actorId,fetchImpl=fet
   if(!((url.protocol==='https:'&&url.hostname==='nlmvhkjkpgzzlfavaohk.supabase.co')
     ||(url.protocol==='http:'&&['127.0.0.1','localhost'].includes(url.hostname)))
     ||url.username||url.password||url.search||url.hash||url.pathname!=='/'||!key||!Number.isSafeInteger(actorId)||actorId<1)fail();
-  const headers={apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'};
+  const headers=createSupabaseClient({fetchWithTimeout:fetchImpl}).supaHeaders({supabaseUrl:url.origin,supabaseKey:key});
   const request=(path,init={})=>fetchImpl(url.origin+'/rest/v1/'+path,{...init,headers,redirect:'error',signal:AbortSignal.timeout(10000)});
   const read=async(path)=>{const response=await request(path);if(!response.ok)fail();return response.json();};
   const rows=await read('runtime_controls?id=eq.global&select=*');

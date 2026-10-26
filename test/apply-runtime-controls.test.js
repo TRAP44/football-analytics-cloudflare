@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import {auditWorkflow} from '../scripts/privileged-access-audit.js';
 import {applyRuntimeMigration,applyRuntimeSql} from '../scripts/apply-runtime-controls.js';
 const contract=JSON.parse(fs.readFileSync('release-contract.json','utf8'));
 const sha='a'.repeat(40),repository='TRAP44/football-analytics-cloudflare',now=Date.now();
@@ -88,4 +89,12 @@ test('fixed PostgreSQL migration and its history row are one bounded transaction
 
 test('an unknown PostgreSQL write outcome is never reported as an unchanged database',async()=>{
   await assert.rejects(applyRuntimeSql({databaseUrl:'postgresql://postgres.nlmvhkjkpgzzlfavaohk:local@aws-1-eu-west-1.pooler.supabase.com:5432/postgres',run:async()=>{throw Error('private lost connection');}}),{code:'RUNTIME_MIGRATION_WRITE_UNCONFIRMED'});
+});
+
+test('runtime workflow permits only reviewed credentials inside protected production',()=>{
+  const file='.github/workflows/apply-runtime-controls.yml',workflow=fs.readFileSync(file,'utf8');
+  assert.deepEqual(auditWorkflow(file,workflow),[]);
+  assert.ok(auditWorkflow(file,workflow.replace('    environment: production','')).some(f=>f.type==='secret_environment_missing'));
+  assert.ok(auditWorkflow(file,workflow.replace('secrets.ADMIN_TELEGRAM_IDS','secrets.TELEGRAM_BOT_TOKEN')).some(f=>f.type==='unexpected_secret_reference'));
+  assert.match(workflow,/secrets\.SUPABASE_SECRET_KEY \|\| secrets\.SUPABASE_SERVICE_ROLE_KEY/);
 });

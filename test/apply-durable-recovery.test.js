@@ -1,9 +1,26 @@
-import test from 'node:test';
+import test,{after} from 'node:test';
+import os from 'node:os';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {X509Certificate} from 'node:crypto';
-import {applyDurableRecovery,readRecoveryState,RECOVERY_STATE_SQL,applyRecoveryMigration} from '../scripts/apply-durable-recovery.js';
-const contract=JSON.parse(fs.readFileSync('release-contract.json','utf8'));
+import {applyDurableRecovery as executeDurableRecovery,readRecoveryState,RECOVERY_STATE_SQL,applyRecoveryMigration as executeRecoveryMigration} from '../scripts/apply-durable-recovery.js';
+// Preserve the fixed v19 rollout's historical guards after v20 is promoted.
+const contract=JSON.parse(fs.readFileSync('test-support/release-contract-v19.json','utf8'));
+const historicalRoot=fs.mkdtempSync(path.join(os.tmpdir(),'runtime-v19-contract-'));
+fs.cpSync('supabase',path.join(historicalRoot,'supabase'),{recursive:true});
+fs.rmSync(path.join(historicalRoot,'supabase/migrations/supabase_migration_v6_29_20.sql'));
+const historicalManifest=JSON.parse(fs.readFileSync('supabase/migration-order.json','utf8'));
+historicalManifest.freshInstallAfterBaseline=historicalManifest.freshInstallAfterBaseline.filter(entry=>entry.path!=='migrations/supabase_migration_v6_29_20.sql');
+fs.writeFileSync(path.join(historicalRoot,'supabase/migration-order.json'),JSON.stringify(historicalManifest));
+fs.copyFileSync('package.json',path.join(historicalRoot,'package.json'));
+fs.mkdirSync(path.join(historicalRoot,'.github/workflows'),{recursive:true});
+fs.copyFileSync('.github/workflows/quality.yml',path.join(historicalRoot,'.github/workflows/quality.yml'));
+fs.writeFileSync(path.join(historicalRoot,'release-contract.json'),JSON.stringify(contract));
+after(()=>fs.rmSync(historicalRoot,{recursive:true,force:true}));
+const applyDurableRecovery=options=>executeDurableRecovery({...options,root:historicalRoot});
+const applyRecoveryMigration=options=>executeRecoveryMigration({...options,root:historicalRoot});
+
 const sha='a'.repeat(40),repository='TRAP44/football-analytics-cloudflare',now=Date.now();
 const env={GITHUB_REPOSITORY:repository,GITHUB_REF:'refs/heads/main',GITHUB_SHA:sha,SUPABASE_PROJECT_REF:'nlmvhkjkpgzzlfavaohk',GITHUB_TOKEN:'local-github',SUPABASE_ACCESS_TOKEN:'local-supabase',RECOVERY_MODE:'preflight',RECOVERY_BACKUP_RUN_ID:'1234'};
 function fixture(options={}){
@@ -148,3 +165,5 @@ test('fixed PostgreSQL migration and its history row are one bounded transaction
 test('an unknown PostgreSQL write outcome is never reported as an unchanged database',async()=>{
   await assert.rejects(applyRecoveryMigration({databaseUrl:'postgresql://postgres.nlmvhkjkpgzzlfavaohk:local@aws-1-eu-west-1.pooler.supabase.com:5432/postgres',run:async()=>{throw Error('private lost connection');}}),{code:'RECOVERY_WRITE_UNCONFIRMED'});
 });
+
+test('historical v19 operator refuses the current v20 release',async()=>{await assert.rejects(executeDurableRecovery({env}),{code:'RECOVERY_MIGRATION_MISMATCH'});});
