@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Единая кнопка «Открыть матч» и настоящие гербы — **Codex** — `codex/single-match-entry-crests` — без автоматического режима спойлеров; официальный PFL FarDU/Lochin, проверка камеры HTTP200.
 
 
 
@@ -97,6 +96,8 @@
 
 
 ## На ревью
+
+- [ ] Единая кнопка «Открыть матч» и настоящие гербы — **Codex** — [PR #1024](https://github.com/TRAP44/football-analytics-cloudflare/pull/1024), `codex/single-match-entry-crests` — без автоматического режима спойлеров; официальный PFL FarDU/Lochin, проверка камеры HTTP200.
 
 - [ ] Завершение восстановления просмотра — **Codex** — [PR #1020](https://github.com/TRAP44/football-analytics-cloudflare/pull/1020), `codex/watch-playback-recovery`; launch143, retry/deadline/Telegramofficial + prerequisite protected directSQL activation послеPostgREST отказа #1019; nativebrowser/independentreview, finalCI→activation→deployproof проверяются.
 
