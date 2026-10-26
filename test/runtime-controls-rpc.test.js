@@ -40,7 +40,7 @@ test('missing RPC and stale CAS fail without a PATCH fallback',async()=>{
 test('HTTP proof exercises the actual save path with unchanged flags and confirms its audit',async()=>{
   for(const key of ['sb_secret_local_only','eyJlocal.legacy.synthetic']){
   let current={...row};let args;let posts=0;
-  const result=await verifyRuntimeControlsRpc({origin:'http://127.0.0.1:54321',key,actorId:440,fetchImpl:async(url,init)=>{
+  const result=await verifyRuntimeControlsRpc({origin:key.startsWith('sb_')?'http://127.0.0.1:54321/':'http://127.0.0.1:54321',key,actorId:440,fetchImpl:async(url,init)=>{
     assert.equal(init.headers.apikey,key);assert.equal(init.headers.Authorization,undefined);assert.equal(init.headers.authorization,undefined);
     if(init.method==='POST'){
       posts++;args=JSON.parse(init.body);current={...current,...args.p_controls,revision:current.revision+1,updated_by:args.p_actor_id};return Response.json([current]);

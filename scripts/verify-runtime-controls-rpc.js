@@ -10,8 +10,8 @@ const camel={maintenance_mode:'maintenanceMode',analysis_enabled:'analysisEnable
 const fail=()=>{throw new Error('RUNTIME_RPC_PROOF_UNCONFIRMED');};
 export async function verifyRuntimeControlsRpc({origin,key,actorId,fetchImpl=fetch}={}){
   // Construct destinations from literals, never from a status file or env URL.
-  const base=origin==='https://nlmvhkjkpgzzlfavaohk.supabase.co'?'https://nlmvhkjkpgzzlfavaohk.supabase.co'
-    :origin==='http://127.0.0.1:54321'?'http://127.0.0.1:54321':null;
+  const base=(origin==='https://nlmvhkjkpgzzlfavaohk.supabase.co'||origin==='https://nlmvhkjkpgzzlfavaohk.supabase.co/')?'https://nlmvhkjkpgzzlfavaohk.supabase.co'
+    :(origin==='http://127.0.0.1:54321'||origin==='http://127.0.0.1:54321/')?'http://127.0.0.1:54321':null;
   if(!base||!key||!Number.isSafeInteger(actorId)||actorId<1)fail();
   const headers=createSupabaseClient({fetchWithTimeout:fetchImpl}).supaHeaders({supabaseUrl:base,supabaseKey:key});
   const request=(path,init={})=>fetchImpl(base+'/rest/v1/'+path,{...init,headers,redirect:'error',signal:AbortSignal.timeout(10000)});
