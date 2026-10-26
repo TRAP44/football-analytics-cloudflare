@@ -1,5 +1,5 @@
-import {createWatchExperience} from './modules/watch-experience.js?v=6.120.0-launch145';
-import {installCrestFallback} from './modules/team-crest.js';
+import {createWatchExperience} from './modules/watch-experience.js?v=6.120.0-launch146';
+import {installCrestFallback,matchTeamCrestUrl} from './modules/team-crest.js';
 import { createApiClient, initTelegramWebApp, localDate, timeOf, dateTime, dateOnly, relativeAge, phase5SessionToken, favoriteStarSvg } from './modules/client-core.js';
 import { CANONICAL_HOME_VIEW, PUBLIC_VIEW_IDS, backTargetForView, telegramBackButtonVisible } from './modules/navigation.js';
 import { createNavigationShell } from './modules/navigation-shell.js';
@@ -1105,10 +1105,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch145'),
+      import('./modules/match-center-view.js?v=6.120.0-launch146'),
       import('./modules/match-pulse.js?v=6.120.0-launch87'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch145'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch145'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch146'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch146'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1265,7 +1265,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch145').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch146').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -2574,6 +2574,7 @@ function russianCountLabel(value, one, few, many) {
 }
 
 function searchMatchCard(match) {
+  const homeLogo=matchTeamCrestUrl(match,'home'),awayLogo=matchTeamCrestUrl(match,'away');
   const finished = Boolean(match?.finished);
   const primary=Boolean(match?.selection?.primary || Number(match?.fixtureId || 0)===Number(state.globalSearch.primaryFixtureId || 0));
   const live = Boolean(match?.live);
@@ -2586,9 +2587,9 @@ function searchMatchCard(match) {
   return `<article class="search-match-card ${live ? 'is-live' : finished ? 'is-finished' : 'is-upcoming'} ${primary ? 'is-primary' : ''}">${primaryLabel}
     <div class="search-match-meta"><span>${escapeHtml(match.league || match.competition?.name || 'Матч')}</span><small>${escapeHtml(status)}</small></div>
     <div class="search-match-teams">
-      <span>${match.home?.logo ? `<img src="${safeUrl(match.home.logo)}" data-team-crest="${escapeHtml(match.home.name || '')}" alt="">` : '⚽'}<strong>${escapeHtml(match.home?.name || 'Хозяева')}</strong></span>
+      <span>${homeLogo ? `<img src="${escapeHtml(safeUrl(homeLogo))}" ${homeLogo.startsWith('https://media.api-sports.io/football/teams/')?'crossorigin="anonymous"':''} data-team-crest="${escapeHtml(match.home.name || '')}" alt="">` : '⚽'}<strong>${escapeHtml(match.home?.name || 'Хозяева')}</strong></span>
       <b>${score || '—'}</b>
-      <span>${match.away?.logo ? `<img src="${safeUrl(match.away.logo)}" data-team-crest="${escapeHtml(match.away.name || '')}" alt="">` : '⚽'}<strong>${escapeHtml(match.away?.name || 'Гости')}</strong></span>
+      <span>${awayLogo ? `<img src="${escapeHtml(safeUrl(awayLogo))}" ${awayLogo.startsWith('https://media.api-sports.io/football/teams/')?'crossorigin="anonymous"':''} data-team-crest="${escapeHtml(match.away.name || '')}" alt="">` : '⚽'}<strong>${escapeHtml(match.away?.name || 'Гости')}</strong></span>
     </div>
     <div class="search-match-footer">${action}</div>
   </article>`;
@@ -2928,7 +2929,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch145');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch146');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3332,8 +3333,9 @@ function matchCardHtml(m) {
   };
   const team = (side) => {
     const t = m[side] || {};
+    const logo=matchTeamCrestUrl(m,side);
     return `<span class="match-row-team">
-          ${t.logo ? `<img src="${safeUrl(t.logo)}" data-team-crest="${escapeHtml(t.name || '')}" alt="" loading="lazy">` : '<i class="match-row-logo-fallback" aria-hidden="true"></i>'}
+          ${logo ? `<img src="${escapeHtml(safeUrl(logo))}" ${logo.startsWith('https://media.api-sports.io/football/teams/')?'crossorigin="anonymous"':''} data-team-crest="${escapeHtml(t.name || '')}" alt="" loading="lazy">` : '<i class="match-row-logo-fallback" aria-hidden="true"></i>'}
           <span class="match-row-name">${escapeHtml(t.name || '')}</span>
           <b class="match-row-score">${escapeHtml(score(side))}</b>
         </span>`;
@@ -3415,7 +3417,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch145').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch146').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -5161,7 +5163,7 @@ function prepareMatchWatchTarget(fixtureId){
 async function mountMatchWatchPanel(fixtureId){
   const root=$('matchWatchPanel');if(!root)return;
   try{
-    matchWatchModulePromise ||= import('./modules/match-watch.js?v=6.120.0-launch145');
+    matchWatchModulePromise ||= import('./modules/match-watch.js?v=6.120.0-launch146');
     const module=await matchWatchModulePromise;
     if(!root.isConnected || matchWatchFixture!==fixtureId || activeViewId()!=='analysisView')return;
     matchWatchPanel ||= module.createMatchWatch({api,escapeHtml,watchExperience});
@@ -5207,7 +5209,7 @@ async function ensureWatchLibrary(){
   try{
     if(!watchLibrary){
       body.textContent='Загружаем доступные матчи…';
-      watchLibraryModulePromise ||= import('./modules/watch-library.js?v=6.120.0-launch145');
+      watchLibraryModulePromise ||= import('./modules/watch-library.js?v=6.120.0-launch146');
       const module=await watchLibraryModulePromise;
       watchLibrary ||= module.createWatchLibrary({root,api,escapeHtml,isVisible:()=>activeViewId()==='matchesView',onOpen:async(fixtureId,button,isCurrent)=>{
         const controller=await ensureMatchCenterController();if(!isCurrent()||activeViewId()!=='matchesView')return;
@@ -5654,7 +5656,7 @@ async function loadAnalysisExplanation(fixtureId) {
   const root = $('matchExplanation');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch145');
+    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch146');
     const { loadMatchExplanation } = await matchExplanationModule;
     await loadMatchExplanation({
       root,
@@ -5674,7 +5676,7 @@ async function loadMatchQuestions(fixtureId) {
   const root = $('matchQuestions');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch145');
+    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch146');
     const { mountMatchQuestions } = await matchQuestionsModule;
     mountMatchQuestions({
       root,
@@ -5694,7 +5696,7 @@ async function loadMatchQuestions(fixtureId) {
 // «Обыграй AI»: прогноз в Штабе матча и таблица в Профиле — ленивый модуль.
 let beatAiModule = null;
 function loadBeatAiModule() {
-  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch145').catch(error => { beatAiModule = null; throw error; });
+  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch146').catch(error => { beatAiModule = null; throw error; });
   return beatAiModule;
 }
 async function mountBeatAi(m = {}) {
@@ -5729,7 +5731,7 @@ async function loadReferralInvitePanel() {
   const root = $('referralInvite');
   if (!root) return;
   try {
-    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch145');
+    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch146');
     const { loadReferralInvite } = await referralInviteModule;
     await loadReferralInvite({ root, api, escapeHtml, tg, toast });
   } catch {
@@ -5740,7 +5742,7 @@ async function loadReferralInvitePanel() {
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch145');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch146');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {
@@ -6018,6 +6020,7 @@ function renderAnalysis(d) {
   const p = d.probabilities || {};
   const shownP = wholePercentTriple(p);
   const m = d.match || {};
+  const homeLogo=matchTeamCrestUrl(m,'home'),awayLogo=matchTeamCrestUrl(m,'away');
   const homeLine = d.lineups?.home;
   const awayLine = d.lineups?.away;
   const activeReminder = reminderFor(m.fixtureId);
@@ -6037,7 +6040,7 @@ function renderAnalysis(d) {
       </div>
       <div class="match-experience-teams">
         <div class="experience-team">
-          ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" data-team-crest="${escapeHtml(m.home.name || '')}" alt="">` : '<div class="experience-logo-placeholder">⚽</div>'}
+          ${homeLogo ? `<img src="${escapeHtml(safeUrl(homeLogo))}" ${homeLogo.startsWith('https://media.api-sports.io/football/teams/')?'crossorigin="anonymous"':''} data-team-crest="${escapeHtml(m.home.name || '')}" alt="">` : '<div class="experience-logo-placeholder">⚽</div>'}
           <strong>${escapeHtml(m.home?.name || '')}</strong>
           <small>Хозяева</small>
         </div>
@@ -6046,7 +6049,7 @@ function renderAnalysis(d) {
           ${m.venue ? `<small>${escapeHtml(m.venue)}</small>` : ''}
         </div>
         <div class="experience-team">
-          ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" data-team-crest="${escapeHtml(m.away.name || '')}" alt="">` : '<div class="experience-logo-placeholder">⚽</div>'}
+          ${awayLogo ? `<img src="${escapeHtml(safeUrl(awayLogo))}" ${awayLogo.startsWith('https://media.api-sports.io/football/teams/')?'crossorigin="anonymous"':''} data-team-crest="${escapeHtml(m.away.name || '')}" alt="">` : '<div class="experience-logo-placeholder">⚽</div>'}
           <strong>${escapeHtml(m.away?.name || '')}</strong>
           <small>Гости</small>
         </div>

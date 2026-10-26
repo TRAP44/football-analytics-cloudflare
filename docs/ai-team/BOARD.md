@@ -95,9 +95,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Единая кнопка «Открыть матч» и настоящие гербы — **Codex** — [PR #1024](https://github.com/TRAP44/football-analytics-cloudflare/pull/1024), `codex/single-match-entry-crests` — без автоматического режима спойлеров; официальный PFL FarDU/Lochin, проверка камеры HTTP200.
+- [ ] Гербы во всех карточках матчей — **Codex** — [PR #1025](https://github.com/TRAP44/football-analytics-cloudflare/pull/1025), `codex/match-crest-consistency` — лента, поиск, центр и AI-разбор используют проверенные team IDs при пустом logo, с общим official mapping.
+
 
 - [ ] Завершение восстановления просмотра — **Codex** — [PR #1020](https://github.com/TRAP44/football-analytics-cloudflare/pull/1020), `codex/watch-playback-recovery`; launch143, retry/deadline/Telegramofficial + prerequisite protected directSQL activation послеPostgREST отказа #1019; nativebrowser/independentreview, finalCI→activation→deployproof проверяются.
 
@@ -242,6 +244,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Единая кнопка «Открыть матч» и настоящие гербы — **Codex** — [PR #1024](https://github.com/TRAP44/football-analytics-cloudflare/pull/1024), `codex/single-match-entry-crests` — merged e50a31b9; Deploy40341145599 success; public SHA/launch145/official WebP verified, CFf1b680ab.
 
 - [x] Админские переключатели: атомарное сохранение, история и безопасный выпуск — **Codex** — [#1023](https://github.com/TRAP44/football-analytics-cloudflare/pull/1023), #1022 — production HTTP proof40304157015: verified/featureFlagsUnchanged/auditConfirmed true, revision3; deployedbea45f3f/CF5989fb48.
 

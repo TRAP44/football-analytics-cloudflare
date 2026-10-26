@@ -43,6 +43,11 @@ export function preferredTeamCrestUrl(team,context={}) {
   if(name==='LOCHIN'&&canonicalProviderCrest(url)&&context.opponentId===25763&&String(context.opponentName||'').trim().toUpperCase()==='FARDU'&&context.league==='Pro League A')return '/assets/teams/lochin-pfl.webp';
   return url;
 }
+export function matchTeamCrestUrl(match,side) {
+  if(side!=='home'&&side!=='away')return '';
+  const opponent=match?.[side==='home'?'away':'home'];
+  return preferredTeamCrestUrl(match?.[side],{league:match?.league,opponentId:opponent?.id,opponentName:opponent?.name});
+}
 // Verified from protected public-cache inspection39240543606 and the actual PNG.
 // Pin both the reported resource and exact file bytes; never classify by colour.
 export const REPORTED_CREST_URL='https://media.api-sports.io/football/teams/25763.png';
