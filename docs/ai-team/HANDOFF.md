@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-27 — Codex — История: исчезнувший снимок и восстановление после ошибки
-PR: ветка `codex/history-open-recovery`.
+PR [#1029](https://github.com/TRAP44/football-analytics-cloudflare/pull/1029), ветка `codex/history-open-recovery`.
 
 #1028 завершён: main78f973d0, MainQuality40407532487/CodeQL40407532471/Deploy40408059863 success; actual public SHA/tag78f973d0/CFf8309e72-2cdd-4966-92a9-12b094c97c73, launch149; app/chat/watch SHA256 и official crest bytes проверены. Не возвращать его в pending.
 

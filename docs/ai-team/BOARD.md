@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Открытие исчезнувшего разбора из истории — **Codex** — `codex/history-open-recovery` — fallback LIVE не запускал timer; сбой fallback запроса/модуля уходил без UI feedback. Подтверждено actual Chromium и выполнением настоящего handler.
 
 
 
@@ -102,6 +101,8 @@
 
 
 ## На ревью
+
+- [ ] Открытие исчезнувшего разбора из истории — **Codex** — [PR #1029](https://github.com/TRAP44/football-analytics-cloudflare/pull/1029), `codex/history-open-recovery` — fallback LIVE не запускал timer; сбой fallback запроса/модуля уходил без UI feedback. Подтверждено actual Chromium и выполнением настоящего handler.
 
 
 
