@@ -10,7 +10,7 @@ class Node {
  append(child){this.children.push(child);child.parent=this;child.isConnected=true;}
  remove(){this.isConnected=false;this.parent.children=this.parent.children.filter(node=>node!==this);}
  replaceChildren(){for(const child of this.children)child.isConnected=false;this.children=[];}
- addEventListener(){}
+ addEventListener(name,fn){(this.events||=new Map()).set(name,fn);}
 }
 class Root extends Node {
  get innerHTML(){return this.html||'';}
@@ -28,9 +28,10 @@ function fixture(ttl=120000,{ready=true,bridge}={}){
  const data=(items=[item()])=>({countries:[{code:'RU',name:'Россия'},{code:'KZ',name:'Казахстан'}],items});
  reply=()=>data();
  const win={...(bridge?{Telegram:{WebApp:{openLink:bridge}}}:{}),location:{href:'https://app.example/?watch=1',origin:'https://app.example'},localStorage:{getItem:key=>values.get(key),setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)},setTimeout:(fn,ms)=>{timers.set(++next,{at:time+ms,fn});return next;},clearTimeout:id=>timers.delete(id),setInterval:()=>++next,clearInterval(){},addEventListener:(name,fn)=>listeners.set(name,fn),YT:{Player:class{constructor(iframe,options){created++;this.iframe=iframe;playerEvents=options.events;if(ready)queueMicrotask(()=>options.events.onReady());}getCurrentTime(){return 125;}destroy(){destroyed++;this.iframe.remove();}}}};
- const panel=createMatchWatch({api:async()=>{requests++;return reply();},escapeHtml:String,watchExperience:{settings:()=>({enabled:true,delaySeconds:30}),setMode:async()=>true},now:()=>time,window:win,document:{createElement:()=>new Node(),addEventListener(){}}});
+ const docEvents=new Map(),doc={visibilityState:'visible',createElement:()=>new Node(),addEventListener:(name,fn)=>docEvents.set(name,fn)};
+ const panel=createMatchWatch({api:async()=>{requests++;return reply();},escapeHtml:String,watchExperience:{settings:()=>({enabled:true,delaySeconds:30}),setMode:async()=>true},now:()=>time,window:win,document:doc});
  const advance=async ms=>{const end=time+ms;for(;;){const due=[...timers].filter(([,task])=>task.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];if(!due)break;time=due[1].at;timers.delete(due[0]);due[1].fn();await settle();}time=end;await settle();};
- return {root,panel,item,data,values,advance,listeners,win,get playerEvents(){return playerEvents;},jump:ms=>time+=ms,setReply:fn=>reply=fn,mount:()=>panel.mount({root,fixtureId:999}),play:async()=>{root.playButton.onclick();await settle();},get time(){return time;},get requests(){return requests;},get destroyed(){return destroyed;},get created(){return created;}};
+ return {root,panel,item,data,values,advance,listeners,win,visibility:value=>{doc.visibilityState=value;docEvents.get('visibilitychange')?.();},toggle:open=>{const details=root.querySelector('details');details.open=open;details.events.get('toggle')({target:details});},get playerEvents(){return playerEvents;},jump:ms=>time+=ms,setReply:fn=>reply=fn,mount:()=>panel.mount({root,fixtureId:999}),play:async()=>{root.playButton.onclick();await settle();},get time(){return time;},get requests(){return requests;},get destroyed(){return destroyed;},get created(){return created;}};
 }
 
 test('renewal preserves the actual player, replay position and unsaved privacy controls',async()=>{
@@ -107,4 +108,23 @@ test('official link uses Telegram navigation only for a current unexpired item a
 });
 test('a disposed failed request cannot recreate the retry panel',async()=>{
   const h=fixture();let reject;h.setReply(()=>new Promise((_,no)=>reject=no));h.mount();await settle();h.panel.dispose();reject(Error('late failure'));await settle();assert.equal(h.root.hidden,true);assert.equal(h.root.nodes.size,0);
+});
+
+test('an initially empty visible open watch panel discovers a later source without autoplay',async()=>{
+ const h=fixture();h.setReply(()=>({countries:[],items:[]}));h.mount();await settle();assert.equal(h.requests,1);
+ h.setReply(()=>h.data());await h.advance(59999);assert.equal(h.requests,1);
+ await h.advance(1);assert.equal(h.requests,2);assert.ok(h.root.playButton);assert.equal(h.created,0);h.panel.dispose();
+});
+test('empty discovery pauses when collapsed or hidden, then refreshes on return',async()=>{
+ const h=fixture();h.setReply(()=>h.data([]));h.mount();await settle();h.toggle(false);
+ await h.advance(180000);assert.equal(h.requests,1);
+ h.visibility('hidden');await h.advance(180000);h.visibility('visible');await settle();assert.equal(h.requests,1,'returning must not reopen collapsed discovery');
+ h.mount();await settle();assert.equal(h.requests,1,'centre rerender must not reopen collapsed discovery');
+ h.toggle(true);await settle();assert.equal(h.requests,2);
+ h.visibility('hidden');await h.advance(180000);assert.equal(h.requests,2);
+ h.setReply(()=>h.data());h.visibility('visible');await settle();assert.equal(h.requests,3);assert.ok(h.root.playButton);assert.equal(h.created,0);h.panel.dispose();
+});
+test('empty discovery failure stays bounded and disposing prevents further requests',async()=>{
+ const h=fixture();h.setReply(()=>h.data([]));h.mount();await settle();h.setReply(()=>{throw Error('offline');});
+ await h.advance(180000);assert.equal(h.requests,4);h.panel.dispose();await h.advance(180000);assert.equal(h.requests,4);assert.equal(h.created,0);
 });

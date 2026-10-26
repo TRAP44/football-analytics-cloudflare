@@ -29,6 +29,7 @@ export function createMatchWatch({api,escapeHtml,watchExperience,now=Date.now,wi
   const storedCountry=()=>{try{const value=win.localStorage.getItem(COUNTRY_KEY)||'';return /^[A-Z]{2}$/.test(value)?value:'';}catch{return '';}};
   const saveCountry=country=>{try{win.localStorage.setItem(COUNTRY_KEY,country);}catch{}};
   const active=s=>session===s&&s.root.isConnected&&s.isCurrent();
+  const canRefreshEmpty=s=>active(s)&&s.open&&doc.visibilityState!=='hidden'&&s.data&&!s.failedRoot&&(!s.root.hidden||s.hadCatalogue);
   function stopPlayer(s){win.clearTimeout(s.playerReadyTimer);s.playerReadyTimer=null;savePosition(s);win.clearInterval(s.positionTimer);s.positionTimer=null;s.player?.destroy?.();s.player=null;s.item=null;s.root.querySelector('[data-watch-player]')?.replaceChildren();}
   function positionKey(s,item){return `matchradar:watch-position:${s.fixtureId}:${item.videoId}:v1`;}
   function savePosition(s){
@@ -47,7 +48,9 @@ export function createMatchWatch({api,escapeHtml,watchExperience,now=Date.now,wi
       // while waiting for a response, including a request that ignores abort.
       render(s,s.data);if(!s.loading)void load(s,true);
     },Math.max(1,expiry-now()));
-    const delay=Number.isFinite(expiry)?Math.min(60000,Math.max(15000,expiry-now()-15000)):s.hadCatalogue?30000:0;
+    // A previously published source may hide this panel when withdrawn; keep
+    // its existing bounded recovery while the previously open page is visible.
+    const delay=Number.isFinite(expiry)?Math.min(60000,Math.max(15000,expiry-now()-15000)):canRefreshEmpty(s)?(s.hadCatalogue?30000:60000):0;
     if(delay)s.refreshTimer=win.setTimeout(()=>{if(active(s)&&!s.loading)void load(s,true);},delay);
   }
   function render(s,data){
@@ -84,7 +87,14 @@ export function createMatchWatch({api,escapeHtml,watchExperience,now=Date.now,wi
         if(active(s)){button.disabled=false;if(ok)s.privacyEdited=false;s.root.querySelector('[data-watch-privacy-state]').textContent=ok?'Настройки просмотра сохранены.':'Данные скрыты, но настройка уведомлений не подтверждена. Повторите попытку.';}
       };
     }
-    if(!mounted)s.root.querySelector('details').addEventListener('toggle',event=>{s.open=event.target.open;});
+    if(!mounted)s.root.querySelector('details').addEventListener('toggle',event=>{
+      s.open=event.target.open;
+      if(!s.items.length){
+        if(!s.open)clearTimers(s);
+        else if(!s.loading&&now()-(s.loadedAt||0)>=60000)void load(s,true);
+        else schedule(s);
+      }
+    });
     const countrySelect=s.root.querySelector('[data-watch-country]');
     if(countrySelect)countrySelect.onchange=event=>{stopPlayer(s);clearTimers(s);s.data=null;s.items=[];s.root.querySelector('[data-watch-options]').textContent='Проверяем доступность…';s.country=event.target.value;saveCountry(s.country);s.open=true;void load(s);};
     s.root.querySelectorAll('[data-watch-play]').forEach(button=>{button.onclick=()=>void play(s,items[Number(button.dataset.watchPlay)]);});
@@ -128,13 +138,16 @@ export function createMatchWatch({api,escapeHtml,watchExperience,now=Date.now,wi
       s.player=new YT.Player(iframe,{events:{onReady:()=>{if(active(s)&&iframe.isConnected){win.clearTimeout(s.playerReadyTimer);s.playerReadyTimer=null;s.positionTimer=win.setInterval(()=>savePosition(s),5000);}},onError:event=>failed([101,150].includes(event?.data)?'Источник не разрешил просмотр здесь. Откройте официальную ссылку выше.':'Встроенный плеер недоступен. Откройте официальный источник по ссылке выше.')}});
     }catch{failed('Плеер не загрузился. Откройте официальный источник по ссылке выше.');}
   }
-  win.addEventListener?.('pagehide',()=>{if(session)savePosition(session);});
-  const resume=()=>{const s=session;if(!s||!active(s)||!s.data)return;render(s,s.data);if(!s.loading&&now()-s.loadedAt>=60000)void load(s,true);};
-  doc.addEventListener?.('visibilitychange',()=>{if(doc.visibilityState==='visible')resume();});
+  win.addEventListener?.('pagehide',()=>{if(session){savePosition(session);if(!session.items.length)clearTimers(session);}});
+  const resume=()=>{const s=session;if(!s||!active(s)||!s.data)return;render(s,s.data);if(!s.items.length&&!canRefreshEmpty(s))return;if(!s.loading&&now()-s.loadedAt>=60000)void load(s,true);};
+  doc.addEventListener?.('visibilitychange',()=>{
+    if(doc.visibilityState==='visible')resume();
+    else if(session&&!session.items.length)clearTimers(session);
+  });
   win.addEventListener?.('pageshow',resume);
   function mount({root,fixtureId,isCurrent=()=>true,open=false}={}){
     if(!root||!Number.isSafeInteger(fixtureId)||fixtureId<=0)return;
-    if(session?.fixtureId===fixtureId&&session.root===root){session.isCurrent=isCurrent;if(open){session.open=true;const details=root.querySelector('details');if(details)details.open=true;}if(!session.loading&&now()-(session.loadedAt||0)>60000)void load(session,true);return;}
+    if(session?.fixtureId===fixtureId&&session.root===root){session.isCurrent=isCurrent;if(open){session.open=true;const details=root.querySelector('details');if(details)details.open=true;}if(!session.loading&&(session.items.length||canRefreshEmpty(session))&&now()-(session.loadedAt||0)>60000)void load(session,true);return;}
     dispose();const s={root,fixtureId,isCurrent,country:storedCountry(),open:open||new URL(win.location.href).searchParams.get('watch')==='1',player:null,items:[],controller:null};session=s;
     s.root.dataset.fixture=String(fixtureId);void load(s);
   }

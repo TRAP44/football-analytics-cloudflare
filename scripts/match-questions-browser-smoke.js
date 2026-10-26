@@ -6,7 +6,7 @@ import {readFile,rm} from 'node:fs/promises';
 import path from 'node:path';
 
 
-let realHandlerCalls=0;
+let realHandlerCalls=0,rejectAuthProbe=true;
 const modelFailures=[];
 const trust={confidenceBearing:true,stale:false,provenanceState:'verified',fetchedAt:new Date().toISOString()};
 const runtime=createMatchQuestionRuntime({
@@ -24,8 +24,8 @@ const scenario=`<!doctype html><html data-theme="dark"><head><meta name="viewpor
 import {mountMatchQuestions} from '/modules/match-questions.js';
 import {createApiClient} from '/modules/client-core.js';
 try {
- const root=document.getElementById('questions');let requests=[],reply,event,signal;
- const api=async(url,options)=>{if(url!=='/api/match-question')throw Error('wrong endpoint');requests.push(JSON.parse(options.body));event=options.onEvent;signal=options.signal;return await new Promise((resolve,reject)=>{reply=resolve;signal.addEventListener('abort',()=>reject(new DOMException('cancel','AbortError')),{once:true});});};
+ const root=document.getElementById('questions');let requests=[],reply,event,signal,rejectReply;
+ const api=async(url,options)=>{if(url!=='/api/match-question')throw Error('wrong endpoint');requests.push(JSON.parse(options.body));event=options.onEvent;signal=options.signal;return await new Promise((resolve,reject)=>{reply=resolve;rejectReply=reject;signal.addEventListener('abort',()=>reject(new DOMException('cancel','AbortError')),{once:true});});};
  const esc=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;');
  const mount=(id,userId=1)=>mountMatchQuestions({root,fixtureId:id,userId,accessReceipt:id===123 ? '${receipt}' : null,api,escapeHtml:esc,isCurrent:()=>true});
  const flush=()=>new Promise(resolve=>setTimeout(resolve,0));
@@ -52,6 +52,15 @@ try {
  mount(124,2);if(root.textContent.includes('Новый матч'))throw Error('account dialogue leaked');
  const grid=document.querySelector('.center-hero-actions').getBoundingClientRect(),pass=document.querySelector('.center-pass-btn').getBoundingClientRect();
  if(Math.abs(pass.width-grid.width)>1 || Math.abs(pass.left-grid.left)>1)throw Error('Pass alignment');
+ mount(125,2);submit('Что важно для Chelsea?');
+ const nextDraft='А что с составами?';root.querySelector('input').value=nextDraft;root.querySelector('input').dispatchEvent(new Event('input'));
+ rejectReply(Object.assign(Error('service down'),{status:503}));await flush();
+ if(root.querySelector('input').value!==nextDraft || !root.textContent.includes('Сервис временно недоступен'))throw Error('failure overwrote next draft or hid service error');
+ const beforeRetry=requests.length,retry=root.querySelector('[data-question-retry]');if(!retry)throw Error('manual retry missing');retry.click();retry.click();
+ if(requests.length!==beforeRetry+1 || root.querySelector('input').value!==nextDraft)throw Error('retry duplicated a request or erased next draft');
+ complete('Успешный повтор');await flush();if(root.querySelectorAll('.match-chat-turn').length!==1 || root.querySelector('[data-question-retry]') || root.querySelector('input').value!==nextDraft)throw Error('retry did not replace the failed turn safely');
+ mount(126,2);mount(125,2);if(root.querySelector('input').value!==nextDraft)throw Error('same-owner match draft was lost');
+ mount(125,3);if(root.querySelector('input').value)throw Error('draft leaked to another account');
  const integrated=document.createElement('section');document.body.append(integrated);
  const clientState={clientPerf:{requests:0,completed:0,failed:0,totalMs:0,rateLimited:0,retries:0,timeouts:0,deduped:0}};
  const realApi=createApiClient({state:clientState,tg:{initData:'local-browser-test'},inflightGetRequests:new Map(),observeServerVersion:()=>{},showBootRecovery:()=>{},applyRuntimeUi:()=>{},normalizeApiError:e=>e,noteRequestSuccess:()=>{},noteRequestFailure:()=>{}});
@@ -66,6 +75,12 @@ try {
  await askReal('Какие вероятности исходов?','ничья — 25%');
  await askReal('Что важно в этом матче?','Если хозяева сохранят преимущество');
  if(clientState.clientPerf.completed!==3)throw Error('stream requests not recorded as complete');
+ const authQuestion='Кто судья этого матча?';
+ await askReal(authQuestion,'Сессия Telegram не подтверждена');
+ if(integrated.querySelector('input').value!==authQuestion || !integrated.querySelector('[data-question-retry]') || clientState.clientPerf.failed!==1 || clientState.clientPerf.requests!==4)throw Error('HTTP401 recovery lost question or retried automatically');
+ const authRetry=integrated.querySelector('[data-question-retry]');authRetry.click();authRetry.click();
+ for(let i=0;i<100 && (integrated.querySelector('[type=submit]').disabled || !integrated.querySelector('.match-chat-turn:last-child .match-chat-paragraph')?.textContent.includes('Michael Oliver'));i++)await new Promise(resolve=>setTimeout(resolve,20));
+ if(clientState.clientPerf.requests!==5 || clientState.clientPerf.completed!==4 || integrated.querySelector('[data-question-retry]') || integrated.querySelector('input').value || !integrated.querySelector('.match-chat-turn:last-child').textContent.includes('Michael Oliver'))throw Error('HTTP401 manual retry did not complete once');
  document.body.dataset.testStatus='passed';
 } catch(error){document.body.dataset.testStatus='failed';document.body.dataset.testError=error.message;}
 </script></body></html>`;
@@ -77,6 +92,7 @@ const server=createServer(async(req,res)=>{
    // Decode once: a network chunk can end inside a Cyrillic UTF-8 character.
    const chunks=[];for await(const chunk of req)chunks.push(chunk);
    const body=Buffer.concat(chunks).toString('utf8');
+   const authProbe=JSON.parse(body).question==='Кто судья этого матча?',requestUserId=authProbe&&rejectAuthProbe?0:1;if(authProbe)rejectAuthProbe=false;
    const response=await runtime.apiMatchQuestion(new Request('https://fixture.invalid/api/match-question',{method:'POST',body}),{
     botToken:'browser-fixture-secret',matchQuestionsEnabled:true,matchQuestionsDailyLimit:500,matchQuestionsUserHourlyLimit:10,workersAi:{run:async(_model,input)=>{
      if(input.stream!==false)throw Error('supported JSON transport required');
@@ -88,7 +104,7 @@ const server=createServer(async(req,res)=>{
      const text=JSON.stringify({kind:'answer',text:'',factIds:ids})+'\n';
      return new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode('data: '+JSON.stringify({response:text})+'\n\ndata: [DONE]\n\n'));controller.close();}});
     }},
-   },{id:1});realHandlerCalls++;
+   },{id:requestUserId});realHandlerCalls++;
    res.statusCode=response.status;res.setHeader('Content-Type',response.headers.get('content-type'));for await(const chunk of response.body)res.write(chunk);res.end();return;
   }
   if(pathname==='/test'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(scenario);return;}
@@ -111,7 +127,7 @@ try{
   if(result?.status)break;
   await new Promise(resolve=>setTimeout(resolve,100));
  }
- if(realHandlerCalls!==3)throw Error('actual handler was not exercised exactly three times');
+ if(realHandlerCalls!==5)throw Error('actual handler was not exercised exactly five times');
  if(result?.status!=='passed')throw Error('Rendered question flow failed: '+JSON.stringify(result)+'; fixture model failures: '+JSON.stringify(modelFailures));
- console.log('Rendered conversations passed: custom-only form without automatic requests, duplicate submit guard, same-analysis remount, typed question, actual referee/probabilities handler round trips, stale reply isolation, Pass alignment.');
+ console.log('Rendered conversations passed: custom-only form without automatic requests, duplicate submit guard, same-analysis remount, HTTP401/manual retry, preserved drafts/account isolation, typed question, actual referee/probabilities handler round trips, stale reply isolation, Pass alignment.');
 }finally{cdp?.socket.close();await stopChrome(launched.chrome);server.close();await rm(launched.profileDir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}

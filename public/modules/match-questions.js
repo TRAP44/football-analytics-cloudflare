@@ -55,6 +55,15 @@ export function matchQuestionAnswerHtml(data, escapeHtml) {
 
 const sessions=new Map();
 
+export function matchChatErrorMessage(error,partial=false){
+  if(Number(error?.status)===401)return 'Сессия Telegram не подтверждена. Закройте мини-приложение и откройте его снова из бота.';
+  if(partial)return 'Ответ прервался. Можно повторить вопрос.';
+  if(Number(error?.status)===429)return UNAVAILABLE.rate_limited;
+  if([408,504].includes(Number(error?.status)))return 'Сервис отвечает слишком долго. Повторите вопрос.';
+  if(Number(error?.status)>=500)return 'Сервис временно недоступен. Повторите вопрос позже.';
+  return 'Не удалось связаться с сервером. Проверьте соединение и повторите вопрос.';
+}
+
 export function conversationHtml(session,escapeHtml){
   return session.messages.slice(-6).map(message=>{
     const paragraphs=message.paragraphs || [];
@@ -63,7 +72,7 @@ export function conversationHtml(session,escapeHtml){
       return `<div class="match-chat-paragraph">${label ? `<small>${label}</small>` : ''}<p>${escapeHtml(paragraph.text)}</p></div>`;
     }).join('');
     const evidence=[...new Map(paragraphs.flatMap(item=>item.evidence || []).filter(item=>typeof item?.id==='string' && typeof item?.text==='string').map(item=>[item.id,item])).values()].slice(0,12);
-    return `<article class="match-chat-turn"><p class="match-question-asked">${escapeHtml(message.question)}</p><div class="match-question-response">${body || (session.busy && message===session.messages.at(-1) ? '<p class="match-question-empty">Сверяюсь с данными матча…</p>' : '')}</div>${evidence.length ? `<details class="match-chat-evidence"><summary>На чём основан ответ</summary>${evidence.map(item=>`<p>${escapeHtml(item.text)}</p>`).join('')}</details>` : ''}${message.error ? `<p class="match-question-empty">${escapeHtml(message.error)}</p>` : ''}</article>`;
+    return `<article class="match-chat-turn"><p class="match-question-asked">${escapeHtml(message.question)}</p><div class="match-question-response">${body || (session.busy && message===session.messages.at(-1) ? '<p class="match-question-empty">Сверяюсь с данными матча…</p>' : '')}</div>${evidence.length ? `<details class="match-chat-evidence"><summary>На чём основан ответ</summary>${evidence.map(item=>`<p>${escapeHtml(item.text)}</p>`).join('')}</details>` : ''}${message.error ? `<p class="match-question-empty">${escapeHtml(message.error)}</p>${message===session.messages.at(-1)?`<button type="button" class="secondary-btn" data-question-retry ${session.busy?'disabled':''}>Повторить вопрос</button>`:''}` : ''}</article>`;
   }).join('');
 }
 
@@ -78,7 +87,7 @@ export function mountMatchQuestions({root,fixtureId,userId=0,api,escapeHtml,acce
   }
   let session=sessions.get(sessionKey);
   if(!session){
-    session={messages:[],context:null,busy:false,receipt:null,remaining:null};
+    session={messages:[],context:null,busy:false,receipt:null,remaining:null,draft:''};
     sessions.set(sessionKey,session);
     if(sessions.size>8){const oldest=sessions.keys().next().value;sessions.get(oldest)?.controller?.abort();sessions.delete(oldest);}
   }
@@ -93,21 +102,28 @@ export function mountMatchQuestions({root,fixtureId,userId=0,api,escapeHtml,acce
     if(!active())return;
     root.setAttribute('aria-busy',String(session.busy));
     if(submit)submit.disabled=session.busy;
+    if(input&&input.value!==session.draft)input.value=session.draft;
     if(answer){
       const follow=session.scrollToLatest || answer.scrollHeight-answer.clientHeight-answer.scrollTop<60;
       answer.innerHTML=conversationHtml(session,escapeHtml);
+      answer.querySelector('[data-question-retry]')?.addEventListener('click',()=>{
+        const failed=session.messages.at(-1);
+        if(active()&&!session.busy&&failed?.error)void ask(failed.question,failed);
+      });
       if(follow)answer.scrollTop=answer.scrollHeight;
       session.scrollToLatest=false;
     }
   };
   session.render();
-  async function ask(question){
-    if(session.busy)return;
+  async function ask(question,retryMessage=null){
+    if(session.busy||!active())return;
     session.busy=true;session.controller=new AbortController();
-    const message={question,paragraphs:[]};session.messages.push(message);
+    const message=retryMessage||{question,paragraphs:[]};
+    if(retryMessage){message.paragraphs=[];delete message.error;}else session.messages.push(message);
     session.scrollToLatest=true;
     session.messages=session.messages.slice(-6);
-    if(input)input.value='';
+    if(input?.value.trim()===question)input.value='';
+    session.draft=input?.value||'';
     session.render();
     let terminal=false;
     try{
@@ -127,8 +143,11 @@ export function mountMatchQuestions({root,fixtureId,userId=0,api,escapeHtml,acce
         else message.error=UNAVAILABLE[data?.reason] || 'Не удалось получить ответ. Попробуйте ещё раз.';
       }
     }catch(error){
-      message.error=Number(error?.status)===429 ? UNAVAILABLE.rate_limited : message.paragraphs.length ? 'Ответ прервался. Можно задать вопрос ещё раз.' : UNAVAILABLE.ai_unavailable;
-    }finally{session.busy=false;session.controller=null;session.render();}
+      message.error=matchChatErrorMessage(error,message.paragraphs.length>0);
+    }finally{
+      if(message.error&&!session.draft.trim())session.draft=question;
+      session.busy=false;session.controller=null;session.render();
+    }
   }
   form?.addEventListener('submit',event=>{
     event.preventDefault();
@@ -137,6 +156,6 @@ export function mountMatchQuestions({root,fixtureId,userId=0,api,escapeHtml,acce
     input?.setCustomValidity?.('');
     void ask(question.slice(0,MAX_LENGTH));
   });
-  input?.addEventListener('input',()=>input.setCustomValidity?.(''));
+  input?.addEventListener('input',()=>{session.draft=input.value.slice(0,MAX_LENGTH);input.setCustomValidity?.('');});
   return true;
 }
