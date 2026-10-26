@@ -14,6 +14,15 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-26 — Codex — Совместимость для атомарных переключателей
+Ветка `codex/runtime-controls-schema-bridge`. #1020 уже выпущен624b6243, Deploy40236449746success, CFae004181-c5a9-4a7e-8f72-4bba937808d3, launch143; защищённое включение40236169776 подтверждено auto=true/rev2. Automatic40236224519 completed, pending>24h39 вread-only40236585405, не ноль. Watchcatalog10/8matches, physicalTelegramplayback не подтверждён.
+
+Общий admin PATCH воспроизводимо падает PostgreSQL0A000: data-modifying CTE несовместим с обязательным DO ALSO audit rule. Правило сохраняется. Для выпуска без окна schema-mismatch нужен bridge: текущая latest19/primaryhash прежние, добавлены только два точных будущих fingerprints reviewedRPC (prod ef7b0db33b20c122b9382f3c9b1dd7c7 / fresh28942368323a2aaa693987bc0225da34). SQL заморожен вdocs/rollouts, не вmanifest/migrations, не применяется вproduction. SHA256 и actualPostgreSQL functionmetadata вtest-supportfixture. CIлокальнаяБД устанавливает его вBEGIN, проверяет новыйhash/oldbase/recovery/legacy/security/readiness, все8switches/CAS/rollback/lockdown/неуспехauditINSERT/grantdrift, затемROLLBACK. ЭтотPR совместимость, самHTTPsave ещё требует следующего фиксированного выпуска.
+
+Node22 npmci/check/lint/verify:supabase/release925/full4711passed. Read-only independentCodexreview clean; proof усилен IS DISTINCT FROM, вызов добавлен иfresh, иupgrade CI. Следом exactfrozenSQL→migration20, RPCtransport, guardedbackup+applyworkflow, CI→merge→backup+restore→migration→deploy→realRPCreadback. Productionswitches не отключать радиproof; Telegramtestmessages не отправлять. IndependentCodexread-only cross-review; localminimalPG proof пройден (security stub, не полнаяSupabaseпроверка); полнаяsecurity/schemaproof требуетсяCI.
+
+
+
 ## 2026-10-25 — Codex — Препятствие production-активации и завершение #1020
 #1019 merged e11b527d26b22d214d79231ad4aacb3972caec4c; MainQuality40234653998/CodeQL40234653968/Deploy40234963150success. Перваяактивация40234655541 завершилась RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED, флаг не объявлятьвключённым. Локальный Docker PostgreSQL среальнымrulev6.29.15 воспроизводит PostgREST-shaped WITH UPDATE→0A000 DO ALSO rules are not supported for data-modifying statements in WITH. Это доказательство механизма; исходный responsebody боевогоPATCHне выводился.
 

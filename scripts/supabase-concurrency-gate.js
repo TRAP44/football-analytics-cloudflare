@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
+import fs from 'node:fs';
 import {settlementControlSql} from './settlement-recovery-control.js';
 import {createSmartNotificationDeliveryService} from '../src/smart-notification-delivery.js';
 
@@ -653,6 +654,35 @@ async function testSettlementControlTransport() {
   console.log('Settlement control PostgreSQL transport passed: PostgREST CTE reproduced, fixed transaction and audit atomic, other flags preserved, duplicate idempotent.');
 }
 
+async function testRuntimeControlRollout() {
+  const reviewed=JSON.parse(fs.readFileSync(new URL('../test-support/runtime-controls-v20-contract.json',import.meta.url)));
+  const sql=fs.readFileSync(new URL('../'+reviewed.sqlPath,import.meta.url),'utf8');
+  const proof=fs.readFileSync(new URL('../test-support/runtime-controls-rpc-proof.sql',import.meta.url),'utf8');
+  const before=await psql("select public.backend_schema_contract_v2()->>'fingerprint';");
+  await psql(`begin;
+create temporary table runtime_rollout_before as select public.backend_schema_contract_v2() as schema,public.backend_schema_fingerprint() as legacy;
+${sql}
+do $contract$ declare current_schema jsonb; previous_schema jsonb; begin
+  select schema into previous_schema from runtime_rollout_before;
+  current_schema:=public.backend_schema_contract_v2();
+  if current_schema->>'fingerprint' is distinct from '${reviewed.freshFingerprint}'
+    or current_schema->>'runtimeMutationFingerprint' is distinct from '${reviewed.fingerprint}'
+    or current_schema->>'baseFingerprint' is distinct from previous_schema->>'baseFingerprint'
+    or current_schema->>'recoveryFingerprint' is distinct from previous_schema->>'recoveryFingerprint'
+    or public.backend_schema_fingerprint()->>'fingerprint' is distinct from (select legacy->>'fingerprint' from runtime_rollout_before)
+    or coalesce((public.backend_security_contract()->>'ok')::boolean,false) is not true
+    or coalesce((public.backend_readiness_contract_v2('${reviewed.freshFingerprint}',5)->>'ok')::boolean,false) is not true
+  then raise exception 'Runtime rollout changed unreviewed schema or security'; end if;
+end $contract$;
+${proof}
+-- Fingerprint must detect privilege drift, including a public execute grant.
+grant execute on function public.commit_runtime_controls_v2(integer,jsonb,text,text,text,bigint,integer) to anon;
+do $drift$ begin if public.backend_schema_contract_v2()->>'fingerprint'='${reviewed.freshFingerprint}' then raise exception 'Runtime grant drift was invisible'; end if; end $drift$;
+rollback;`);
+  assert.equal(await psql("select public.backend_schema_contract_v2()->>'fingerprint';"),before,'rollout proof must restore the original schema');
+  console.log('Runtime rollout PostgreSQL proof passed: exact future fingerprint, unchanged legacy/base/recovery/security, all switches, CAS, rollback, lockdown, atomic audit failure, grant drift; schema/data rolled back.');
+}
+
 async function cleanup() {
   await psql([
     'delete from public.usage_daily where telegram_id=900000000433',
@@ -676,6 +706,7 @@ export async function runConcurrencyGate() {
     await testSensitiveMutationIdempotency();
     await testSmartNotificationOwnershipPrecision();
     await testSettlementControlTransport();
+    await testRuntimeControlRollout();
   } finally {
     await cleanup();
   }

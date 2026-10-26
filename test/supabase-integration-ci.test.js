@@ -127,9 +127,11 @@ test('Issue #438 CI contract proves complete v2 drift detection and rollout comp
       '449654e62c352ffcbd618dfccabbda7d',
       'af06ba7b6d944750f312e5cbfd4b5f20',
       '0169ec29ea39da9d085040ed825057a6',
-      'd87de7ad518d55bd0669334a7ce863ce'].sort(),
+      'd87de7ad518d55bd0669334a7ce863ce',
+      'ef7b0db33b20c122b9382f3c9b1dd7c7',
+      '28942368323a2aaa693987bc0225da34'].sort(),
   );
-  assert.equal(new Set(dbContract.compatibleFingerprints).size, 6);
+  assert.equal(new Set(dbContract.compatibleFingerprints).size, 8);
 
   assert.match(sql, /backend_schema_contract_v2/);
   assert.match(sql, /backend_readiness_contract_v2/);
