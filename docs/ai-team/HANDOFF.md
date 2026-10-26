@@ -18,7 +18,7 @@ PR: ссылка или ветка
 
 
 ## 2026-10-26 — Codex — Восстановление чата и появление источника видео
-Ветка `codex/chat-watch-recovery`, исправление трёх находок, одобренное Сергеем. #1025 уже merged f7e3d264, Quality40349691607/CodeQL40349691895/Deploy40350403725 success; public SHA f7e3d264, CF03692360-af9a-4f8e-9f00-127e6bd864db, launch146 и official assets verified. Не возвращать этот этап в pending.
+PR [#1026](https://github.com/TRAP44/football-analytics-cloudflare/pull/1026), ветка `codex/chat-watch-recovery`, исправление трёх находок, одобренное Сергеем. #1025 уже merged f7e3d264, Quality40349691607/CodeQL40349691895/Deploy40350403725 success; public SHA f7e3d264, CF03692360-af9a-4f8e-9f00-127e6bd864db, launch146 и official assets verified. Не возвращать этот этап в pending.
 
 Чат различает HTTP401 (вход Telegram), 429, timeout и сбой сервиса. Неотвеченный вопрос возвращается в поле, следующий набираемый вопрос не затирается; черновики в памяти разделены owner/fixture и удаляются при смене owner. Последняя неудачная реплика получает ручной «Повторить вопрос»: тот же bubble, synchronous busy guard, без автоматических LLM retry/дублирования и потери нового draft. Auth/initData, receipts, backend quotas/контекст и экранирование сохранены. Черновик не записывается на диск и не обещает сохранение после закрытия приложения.
 
