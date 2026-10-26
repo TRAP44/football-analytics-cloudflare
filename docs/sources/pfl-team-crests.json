@@ -1,0 +1,29 @@
+{
+  "observedAt": "2026-10-26",
+  "authority": "Uzbekistan Professional Football League",
+  "catalogue": "https://api.pfl.uz/v1/web/club",
+  "catalogueLinkedFrom": "https://pfl.uz/",
+  "requestReferer": "https://pfl.uz/",
+  "items": [
+    {
+      "officialClubId": 27,
+      "name": "FarDU",
+      "sourceUrl": "https://cdn.pfl.uz/club/0fd3aa15-1666-4945-97c5-b832b2ae1cd1-0372e775-e4e5-4458-a733-06e4a3578a11.png",
+      "sourceSha256": "f65bb57f17ad27651c6b262211a97e533bc21882e6dec4ca4e5d8f2368a5af5c",
+      "asset": "public/assets/teams/fardu-pfl.webp",
+      "assetSha256": "6b5cbff5fd1bed549558ea616d2bf10e1b09540233f16df18b529199487ac097",
+      "displaySize": 192
+    },
+    {
+      "officialClubId": 57,
+      "name": "Lochin",
+      "sourceUrl": "https://cdn.pfl.uz/club/a4b75f14-b429-4d63-9915-1c5167ef3d7a-42b8fb83-1de9-4aac-9255-f3374942820f.svg",
+      "sourceSha256": "8925a30a7e4a0b1522863de386d8abf9ad9b09e3f6b7573fbc8a140d73c56561",
+      "asset": "public/assets/teams/lochin-pfl.webp",
+      "assetSha256": "e74f4b884ac792d6ce287761e4222fe12763bee11e76e49e57f066f173dd6a31",
+      "displaySize": 192
+    }
+  ],
+  "mapping": "FARDU requires provider ID25763 and exact name. Lochin requires exact name, canonical provider team URL, Pro League A and the verified FARDU25763 opponent/name; no global name-only override.",
+  "optimization": "Source PNG (or PNG embedded in official SVG) reduced proportionally to 192px and encoded as lossless WebP, without redrawing or adding any design."
+}

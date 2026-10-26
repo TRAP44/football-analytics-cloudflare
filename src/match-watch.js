@@ -93,7 +93,7 @@ export function watchLibraryPayload(library,options={}){
     const home=text(match.home?.name,120),away=text(match.away?.name,120);
     if(!home||!away)continue;
     seen.add(match.fixtureId);
-    cards.push({fixtureId:match.fixtureId,home,away,league:text(match.league,120),date:new Date(time(match.date)).toISOString(),kinds:[...new Set(items.map(item=>item.kind))],expiresAt:new Date(Math.min(...items.map(item=>time(item.expiresAt)))).toISOString()});
+    cards.push({fixtureId:match.fixtureId,home,away,homeTeamId:id(match.home.id),awayTeamId:id(match.away.id),league:text(match.league,120),date:new Date(time(match.date)).toISOString(),kinds:[...new Set(items.map(item=>item.kind))],expiresAt:new Date(Math.min(...items.map(item=>time(item.expiresAt)))).toISOString()});
   }
   cards.sort((a,b)=>Number(b.kinds.includes('live'))-Number(a.kinds.includes('live'))||(a.kinds.includes('live')?time(a.date)-time(b.date):time(b.date)-time(a.date)));
   return {country,available:cards.length>0,countries:[...countries].sort().map(code=>({code,name:countryName(code)})),items:cards};

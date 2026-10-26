@@ -14,6 +14,17 @@ PR: ссылка или ветка
 
 ---
 
+
+## 2026-10-26 — Codex — Одна кнопка матча и гербы
+Ветка `codex/single-match-entry-crests`. По прямому запросу Сергея библиотека просмотра теперь предлагает одну кнопку «Открыть матч». Она открывает обычный Match Center с просмотром внутри, не меняет настройки приватности и не запускает видео. Явный режим без спойлеров внутри матча сохранён. Cache-only API добавляет только проверенные team IDs; две компактные строки команд показывают гербы без новых provider API вызовов.
+
+Для показанной пары FarDU/Lochin найдены настоящие изображения официального каталога ПФЛ Узбекистана: локальные 192px lossless WebP, исходные URL/SHA и ограничение соответствия в docs/sources/pfl-team-crests.json. FarDU строго ID25763+имя, Lochin только подтверждённая пара с FarDU в Pro League A, без угадывания provider ID. HTTP200 PNG камеры определяется по точным декодированным пикселям уже загруженной canonical-картинки; настоящие гербы того же размера сохраняются. CORS anonymous только для подтверждённого API-Sports host; нет повторного запроса для проверки каждой картинки. Неизвестные гербы получают инициалы. Frontend launch145 во всех entries/imports/exact fixtures.
+
+Native Chromium: одна кнопка, отсутствие автоматической записи privacy, переход в реальный экран, ручной privacy failure/retry, country/expiry/cancel/renewal/navigation gates; FarDU/Lochin в настоящем featured renderer, camera/404/genuine150px и один запрос на картинку. Это проверка UI на синтетическом матче, не физическое Telegram playback. Независимое read-only ревью Codex чистое, самостоятельно42/42+browser passed. Node22 npm ci/check/lint/release944/full4733/security scan/privileged/verify release/Worker dry-run passed. Первый полный запуск: flaky local HTTP close assertion в неизменённом supabase-read-recovery; отдельно15/15 и повторный полный4733/4733 прошли. Выложенный SHA и итог CI фиксируются в PR после выпуска.
+
+Предыдущий этап #1022/#1023 завершён: production HTTP workflow40304157015 verified=true, featureFlagsUnchanged=true, auditConfirmed=true, revision3. Migration20 applied40300425012; active runtimebea45f3f/CF5989fb48, #1023 workflow-only deploy корректно no-op. Новые секреты не нужны.
+
+
 ## 2026-10-26 — Codex — Реальная HTTP-проверка в правильном окружении
 #1022 merged bea45f3fe4af8d84f6231c55c5e762da0442c385, exactheadb5f1a77e: Quality40298993022/CodeQL40298992956/IsolatedLoad40298992961/audit40298993006 всеуспешны; actualisolatedPostgREST verified unchangedflags/audit. MainQuality40299801254/CodeQL40299801253 успешны, Deploy40300338257 success. Backup40299822869: encryptedartifact+isolatedrestore success samebeaSHA. Preflight40299823484 ready/ecd2e855; actualapply40300425012 success, productionChanged=true/applied=true/backupVerified=true, exactnewprodhash ef7b0db33b20c122b9382f3c9b1dd7c7. Миграция20 ужеприменена, не повторять SQL/неотключатьфлаги.
 
