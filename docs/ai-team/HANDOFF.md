@@ -15,6 +15,17 @@ PR: ссылка или ветка
 ---
 
 
+
+## 2026-10-26 — Codex — Гербы в ленте, поиске и центре матча
+Ветка `codex/match-crest-consistency`, следующий шаг после выпущенного #1024. #1024 merged e50a31b9, MainQuality40340536138/CodeQL40340535607/Deploy40341145599 success; реальный public manifest e50a31b9/CFf1b680ab-8aeb-4fa4-a52d-34dcf20235c1, launch145, SHA обоих official WebP проверены поHTTP. Не возвращать #1024 к незавершённой выкладке.
+
+Подтверждён разрыв: featured/library используют validated team ID при пустом logo, обычная лента/поиск/центр/AI hero оставляли заглушку. Общий matchTeamCrestUrl вызывает прежний preferred resolver со строгим home/away и opponent/league context; все четыре match renderers используют его. Existing custom HTTP(S) sources и строгий PFL mapping сохраняются; src/имена экранированы, anonymous CORS только API-Sports. Нет новых provider API вызовов/SQL/таймеров; feed images остаются lazy. Team profile и уведомления не менялись. Frontend launch146, в том числе escaped fixtures.
+
+Native Chromium: существующий full-app fixture без обоих logo теперь показывает реально загруженные и видимые картинки в ленте после «Все»/refresh и в центре после обычного открытия. Exact deployed app.js воспроизводит провал feed assertion; исправленный renderer проходит. До cancelled lazy-import scenario feed пуст, затем наполняется по UI refresh — ранний прогрев controller не ломает прежнюю проверку отмены. Остальные privacy/country/expiry/player/navigation guards сохранены. SDK/матч синтетические, не physical Telegram playback.
+
+Независимое read-only Codex ревью production clean; замечание об escaped asset regex исправлено, отдельно66/66passed. Node22 npmci/check/lint/release944/full4734/security scan/privileged/verify release/Worker dry-run passed. Обновлены6 escaped asset revision assertions и source-contract нового src=escapeHtml(safeUrl(logo)), без ослабления label/aria/score guards. Exacthead CI/merge/deploy и публичный SHA фиксируются в PR после завершения.
+
+
 ## 2026-10-26 — Codex — Одна кнопка матча и гербы
 PR [#1024](https://github.com/TRAP44/football-analytics-cloudflare/pull/1024), ветка `codex/single-match-entry-crests`. По прямому запросу Сергея библиотека просмотра теперь предлагает одну кнопку «Открыть матч». Она открывает обычный Match Center с просмотром внутри, не меняет настройки приватности и не запускает видео. Явный режим без спойлеров внутри матча сохранён. Cache-only API добавляет только проверенные team IDs; две компактные строки команд показывают гербы без новых provider API вызовов.
 

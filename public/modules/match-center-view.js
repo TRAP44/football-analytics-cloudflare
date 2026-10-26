@@ -1,3 +1,4 @@
+import { matchTeamCrestUrl } from './team-crest.js';
 import { homeMatchScoreLabel } from './home-match-priority.js';
 import { lineupPitchViewHtml } from './lineup-pitch.js';
 import { wholePercentText, wholePercentTriple } from './probability-display.js';
@@ -81,6 +82,7 @@ export function renderMatchCenterView(d, deps) {
   } = deps;
 
   const m = d.match || {};
+  const homeLogo=matchTeamCrestUrl(m,'home'),awayLogo=matchTeamCrestUrl(m,'away');
   const live = d.mode === 'live';
   const finished = d.mode === 'finished';
   const upcoming = d.mode === 'upcoming';
@@ -140,7 +142,7 @@ export function renderMatchCenterView(d, deps) {
 
       <div class="center-scoreboard">
         <button class="center-team-card" type="button" data-center-team="${Number(m.home?.id || 0)}">
-          ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" data-team-crest="${escapeHtml(m.home.name || '')}" alt="">` : '<span class="center-logo-fallback">⚽</span>'}
+          ${homeLogo ? `<img src="${escapeHtml(safeUrl(homeLogo))}" ${homeLogo.startsWith('https://media.api-sports.io/football/teams/')?'crossorigin="anonymous"':''} data-team-crest="${escapeHtml(m.home.name || '')}" alt="">` : '<span class="center-logo-fallback">⚽</span>'}
           <strong>${escapeHtml(m.home?.name || '')}</strong>
           <small>Хозяева</small>
         </button>
@@ -150,7 +152,7 @@ export function renderMatchCenterView(d, deps) {
           ${live ? '<small id="liveRefreshText">Обновляется автоматически</small>' : `<small>${upcoming ? dateTime(m.date) : `Обновлено ${dateTime(d.generatedAt)}`}</small>`}
         </div>
         <button class="center-team-card away" type="button" data-center-team="${Number(m.away?.id || 0)}">
-          ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" data-team-crest="${escapeHtml(m.away.name || '')}" alt="">` : '<span class="center-logo-fallback">⚽</span>'}
+          ${awayLogo ? `<img src="${escapeHtml(safeUrl(awayLogo))}" ${awayLogo.startsWith('https://media.api-sports.io/football/teams/')?'crossorigin="anonymous"':''} data-team-crest="${escapeHtml(m.away.name || '')}" alt="">` : '<span class="center-logo-fallback">⚽</span>'}
           <strong>${escapeHtml(m.away?.name || '')}</strong>
           <small>Гости</small>
         </button>

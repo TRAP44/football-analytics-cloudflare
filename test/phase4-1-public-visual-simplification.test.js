@@ -155,7 +155,7 @@ test('personal match and Radar feed never render before personalized data exists
 test('compact match cards escape untrusted team labels and use safe logo URLs',()=>{
   const card=block(app,'function matchCardHtml','function bindMatchActions');
   assert.match(card,/class="match-row-league">\$\{escapeHtml\(leagueLabel\)\}/);
-  assert.match(card,/src="\$\{safeUrl\(t\.logo\)\}"/);
+  assert.match(card,/src="\$\{escapeHtml\(safeUrl\(logo\)\)\}"/);
   assert.match(card,/<span class="match-row-name">\$\{escapeHtml\(t\.name \|\| ''\)\}<\/span>/);
   assert.match(card,/aria-label="\$\{escapeHtml\(`\$\{action\.label\}: \$\{m\.home\?\.name \|\| ''\} — \$\{m\.away\?\.name \|\| ''\}`\)\}"/);
   assert.match(card,/<b class="match-row-score">\$\{escapeHtml\(score\(side\)\)\}<\/b>/);
