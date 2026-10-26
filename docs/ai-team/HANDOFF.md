@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-27 — Codex — Официальные вещатели топ-лиг и путь к embed
-PR: ветка `codex/official-broadcast-guides`.
+PR [#1030](https://github.com/TRAP44/football-analytics-cloudflare/pull/1030), ветка `codex/official-broadcast-guides`.
 
 Запрос Сергея: найти источники просмотра топ-лиг и расширить приложение; встроенный просмотр там, где разрешён, официальная ссылка для остальных. #1029 завершён: maina0b5a381, MainQuality40410532669/CodeQL40410532740/Deploy40411036379 success; actual public SHA/tag/CFcb6076b0-a270-4689-b5e1-dda69dc22267 и launch150 verified; не возвращать в pending.
 
