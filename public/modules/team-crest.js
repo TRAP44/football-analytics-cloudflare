@@ -15,6 +15,34 @@ export function usableCrestUrl(value) {
     return url.href;
   } catch {return '';}
 }
+export function canonicalCrestUrl(teamId) {
+  return Number.isSafeInteger(teamId)&&teamId>0?`https://media.api-sports.io/football/teams/${teamId}.png`:'';
+}
+function canonicalProviderCrest(value) {
+  return typeof value==='string'&&/^https:\/\/media\.api-sports\.io\/football\/teams\/[1-9]\d*\.png$/.test(value);
+}
+// Exact decoded pixels of the observed camera PNG, composited on white in sRGB.
+// Checking the already loaded image avoids another request for every team badge.
+export const UNAVAILABLE_CREST_PIXELS_SHA256='3486fd04cb12194221ba21cd767faa8a3a3527739defd8291c7c764d26e0c0ae';
+export async function loadedCrestIsPlaceholder(image,{cryptoImpl=globalThis.crypto}={}) {
+  if(image.naturalWidth!==150||image.naturalHeight!==150)return false;
+  try {
+    const canvas=image.ownerDocument.createElement('canvas');canvas.width=150;canvas.height=150;
+    const context=canvas.getContext('2d',{colorSpace:'srgb',willReadFrequently:true});
+    context.fillStyle='#fff';context.fillRect(0,0,150,150);context.drawImage(image,0,0);
+    const hash=await cryptoImpl.subtle.digest('SHA-256',context.getImageData(0,0,150,150).data);
+    return Array.from(new Uint8Array(hash),value=>value.toString(16).padStart(2,'0')).join('')===UNAVAILABLE_CREST_PIXELS_SHA256;
+  } catch {return false;}
+}
+// Official PFL club catalogue, reviewed 2026-10-26. A name alone never maps
+// an unknown provider ID to another club's crest; Lochin needs the verified pair.
+export function preferredTeamCrestUrl(team,context={}) {
+  const url=usableCrestUrl(team?.logo)||canonicalCrestUrl(team?.id);
+  const name=String(team?.name||'').trim().toUpperCase();
+  if(Number(team?.id)===25763&&name==='FARDU'&&url==='https://media.api-sports.io/football/teams/25763.png')return '/assets/teams/fardu-pfl.webp';
+  if(name==='LOCHIN'&&canonicalProviderCrest(url)&&context.opponentId===25763&&String(context.opponentName||'').trim().toUpperCase()==='FARDU'&&context.league==='Pro League A')return '/assets/teams/lochin-pfl.webp';
+  return url;
+}
 // Verified from protected public-cache inspection39240543606 and the actual PNG.
 // Pin both the reported resource and exact file bytes; never classify by colour.
 export const REPORTED_CREST_URL='https://media.api-sports.io/football/teams/25763.png';
@@ -38,9 +66,13 @@ function sharedVerification(url) {
   if(!reportedVerification || Date.now()-reportedVerifiedAt>60000){reportedVerifiedAt=Date.now();reportedVerification=verifyReportedCrest(url);}
   return reportedVerification;
 }
-export function installCrestFallback(image,{verify=sharedVerification}={}) {
+export function installCrestFallback(image,{verify=sharedVerification,inspectLoaded=loadedCrestIsPlaceholder,context={}}={}) {
   if(!image?.matches?.('img[data-team-crest]') || image.dataset.crestObserved==='true')return;
   image.dataset.crestObserved='true';
+  const source=image.getAttribute('src');
+  const sourceId=canonicalProviderCrest(source)?Number(source.match(/\/(\d+)\.png$/)[1]):0;
+  const preferred=preferredTeamCrestUrl({id:sourceId,name:image.dataset.teamCrest,logo:source},context);
+  if(preferred.startsWith('/assets/teams/')&&preferred!==source&&typeof image.setAttribute==='function')image.setAttribute('src',preferred);
   const expected=image.getAttribute('src');
   let marker=null;
   const makeMarker=()=>{
@@ -69,5 +101,18 @@ export function installCrestFallback(image,{verify=sharedVerification}={}) {
       else image.remove();
     };
     Promise.resolve().then(()=>verify(expected)).then(settle,()=>settle('unavailable'));
-  } else if(image.complete && image.naturalWidth===0)fallback();
+  } else {
+    if(canonicalProviderCrest(expected)) {
+      let inspected=false;
+      const inspect=()=>{
+        if(inspected||!current()||!image.naturalWidth)return;inspected=true;
+        Promise.resolve().then(()=>inspectLoaded(image)).then(placeholder=>{if(placeholder)fallback();},()=>{});
+      };
+      image.addEventListener('load',inspect,{once:true});
+      // Only this provider has a confirmed anonymous CORS image response.
+      if(image.crossOrigin!=='anonymous')image.crossOrigin='anonymous';
+      if(image.complete&&image.naturalWidth>0)inspect();
+    }
+    if(image.complete && image.naturalWidth===0)fallback();
+  }
 }

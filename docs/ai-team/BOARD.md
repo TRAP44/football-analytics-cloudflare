@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Админские переключатели: атомарное сохранение, история и безопасный выпуск — **Codex** — `codex/runtime-rpc-production-proof` — #1022 deployedbea45f3f; migration20 applied40300425012/backup+restore40299822869; HTTPproof перенесён к existing background-jobs secrets.
 
 
 
@@ -97,6 +96,8 @@
 
 
 ## На ревью
+
+- [ ] Единая кнопка «Открыть матч» и настоящие гербы — **Codex** — [PR #1024](https://github.com/TRAP44/football-analytics-cloudflare/pull/1024), `codex/single-match-entry-crests` — без автоматического режима спойлеров; официальный PFL FarDU/Lochin, проверка камеры HTTP200.
 
 - [ ] Завершение восстановления просмотра — **Codex** — [PR #1020](https://github.com/TRAP44/football-analytics-cloudflare/pull/1020), `codex/watch-playback-recovery`; launch143, retry/deadline/Telegramofficial + prerequisite protected directSQL activation послеPostgREST отказа #1019; nativebrowser/independentreview, finalCI→activation→deployproof проверяются.
 
@@ -241,6 +242,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Админские переключатели: атомарное сохранение, история и безопасный выпуск — **Codex** — [#1023](https://github.com/TRAP44/football-analytics-cloudflare/pull/1023), #1022 — production HTTP proof40304157015: verified/featureFlagsUnchanged/auditConfirmed true, revision3; deployedbea45f3f/CF5989fb48.
 
 - [x] Первые два официальных источника J.LEAGUE — **Codex** — [PR #1004](https://github.com/TRAP44/football-analytics-cloudflare/pull/1004), merged601a9667 после exact-head CI (Chrome startup rerun на свежем runner), mainQuality40015069828/Deploy40015491940success. ActualRefresh40015072759: published2/rejected0. Эфир24Oct08:55МСК, RU/KZ/BY; реальный phoneplayback ещё не проверен.
 

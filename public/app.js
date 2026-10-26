@@ -1,4 +1,4 @@
-import {createWatchExperience} from './modules/watch-experience.js?v=6.120.0-launch144';
+import {createWatchExperience} from './modules/watch-experience.js?v=6.120.0-launch145';
 import {installCrestFallback} from './modules/team-crest.js';
 import { createApiClient, initTelegramWebApp, localDate, timeOf, dateTime, dateOnly, relativeAge, phase5SessionToken, favoriteStarSvg } from './modules/client-core.js';
 import { CANONICAL_HOME_VIEW, PUBLIC_VIEW_IDS, backTargetForView, telegramBackButtonVisible } from './modules/navigation.js';
@@ -1105,10 +1105,10 @@ async function ensureMatchCenterExtras() {
     // Обязателен только сам экран штаба; пульс, таймлайн и шапка — необязательные
     // дополнения: если какое-то не загрузилось, штаб показывается без него.
     matchCenterExtrasPromise = Promise.allSettled([
-      import('./modules/match-center-view.js?v=6.120.0-launch144'),
+      import('./modules/match-center-view.js?v=6.120.0-launch145'),
       import('./modules/match-pulse.js?v=6.120.0-launch87'),
-      import('./modules/ai-timeline.js?v=6.120.0-launch144'),
-      import('./modules/match-headquarters.js?v=6.120.0-launch144'),
+      import('./modules/ai-timeline.js?v=6.120.0-launch145'),
+      import('./modules/match-headquarters.js?v=6.120.0-launch145'),
     ]).then(([centerView, pulse, timeline, headquarters]) => {
       if (centerView.status !== 'fulfilled') throw centerView.reason;
       const optional = result => (result.status === 'fulfilled' ? result.value : {});
@@ -1265,7 +1265,7 @@ async function loadBetaDashboard(...args) {
 let adminFeedbackInbox = null;
 async function loadAdminFeedback(force = false) {
   if (!isAdmin() || !$('adminFeedbackList')) return;
-  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch144').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
+  adminFeedbackInbox ||= import('./modules/admin-feedback-inbox.js?v=6.120.0-launch145').then(m => m.createAdminFeedbackInbox({ elementById: $, api, escapeHtml, dateTime, isAdmin }));
   return (await adminFeedbackInbox).load(force);
 }
 
@@ -2928,7 +2928,7 @@ function homePersonalMatchMeta(item) {
 
 let observationModulePromise;
 function renderObservationPanel() {
-  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch144');
+  observationModulePromise ||= import('./modules/match-observation.js?v=6.120.0-launch145');
   observationModulePromise.then(module=>module.renderObservationPanel({
     root:$('matchObservation'),watchlist:state.watchlist,matches:state.matches,reminders:state.reminders,remindersLoaded:state.remindersLoaded,
     escapeHtml,dateTime,onOpen:(id,button)=>openMatchCenter(id,button),
@@ -3415,7 +3415,7 @@ function analysisHistoryForFixture(fixtureId) {
 
 let homeSignal;
 function renderHomeSignal() {
-  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch144').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
+  homeSignal ||= import('./modules/home-signal.js?v=6.120.0-launch145').then(m=>m.createHomeSignalRenderer({$,state,safeUrl,escapeHtml,openMatchCenter,openTeam})).catch(()=>{homeSignal=null;});
   homeSignal.then(r=>r?.render());
 }
 
@@ -5161,7 +5161,7 @@ function prepareMatchWatchTarget(fixtureId){
 async function mountMatchWatchPanel(fixtureId){
   const root=$('matchWatchPanel');if(!root)return;
   try{
-    matchWatchModulePromise ||= import('./modules/match-watch.js?v=6.120.0-launch144');
+    matchWatchModulePromise ||= import('./modules/match-watch.js?v=6.120.0-launch145');
     const module=await matchWatchModulePromise;
     if(!root.isConnected || matchWatchFixture!==fixtureId || activeViewId()!=='analysisView')return;
     matchWatchPanel ||= module.createMatchWatch({api,escapeHtml,watchExperience});
@@ -5207,13 +5207,10 @@ async function ensureWatchLibrary(){
   try{
     if(!watchLibrary){
       body.textContent='Загружаем доступные матчи…';
-      watchLibraryModulePromise ||= import('./modules/watch-library.js?v=6.120.0-launch144');
+      watchLibraryModulePromise ||= import('./modules/watch-library.js?v=6.120.0-launch145');
       const module=await watchLibraryModulePromise;
-      watchLibrary ||= module.createWatchLibrary({root,api,escapeHtml,isVisible:()=>activeViewId()==='matchesView',onOpen:async(fixtureId,button,isCurrent,{withoutSpoilers=false}={})=>{
+      watchLibrary ||= module.createWatchLibrary({root,api,escapeHtml,isVisible:()=>activeViewId()==='matchesView',onOpen:async(fixtureId,button,isCurrent)=>{
         const controller=await ensureMatchCenterController();if(!isCurrent()||activeViewId()!=='matchesView')return;
-        // Hide match data synchronously before navigation or the first centre response.
-        // The server confirmation runs in parallel and failures keep data hidden.
-        if(withoutSpoilers&&!watchExperience.settings().enabled)void watchExperience.setMode(fixtureId,true,0);
         matchWatchOpenFixture=fixtureId;prepareMatchWatchTarget(fixtureId);return controller.openMatchCenter(fixtureId,button);
       }});
     }
@@ -5657,7 +5654,7 @@ async function loadAnalysisExplanation(fixtureId) {
   const root = $('matchExplanation');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch144');
+    matchExplanationModule ||= import('./modules/match-explanation.js?v=6.120.0-launch145');
     const { loadMatchExplanation } = await matchExplanationModule;
     await loadMatchExplanation({
       root,
@@ -5677,7 +5674,7 @@ async function loadMatchQuestions(fixtureId) {
   const root = $('matchQuestions');
   if (!root || !Number.isSafeInteger(fixtureId) || fixtureId <= 0) return;
   try {
-    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch144');
+    matchQuestionsModule ||= import('./modules/match-questions.js?v=6.120.0-launch145');
     const { mountMatchQuestions } = await matchQuestionsModule;
     mountMatchQuestions({
       root,
@@ -5697,7 +5694,7 @@ async function loadMatchQuestions(fixtureId) {
 // «Обыграй AI»: прогноз в Штабе матча и таблица в Профиле — ленивый модуль.
 let beatAiModule = null;
 function loadBeatAiModule() {
-  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch144').catch(error => { beatAiModule = null; throw error; });
+  beatAiModule ||= import('./modules/beat-ai.js?v=6.120.0-launch145').catch(error => { beatAiModule = null; throw error; });
   return beatAiModule;
 }
 async function mountBeatAi(m = {}) {
@@ -5732,7 +5729,7 @@ async function loadReferralInvitePanel() {
   const root = $('referralInvite');
   if (!root) return;
   try {
-    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch144');
+    referralInviteModule ||= import('./modules/referral-invite.js?v=6.120.0-launch145');
     const { loadReferralInvite } = await referralInviteModule;
     await loadReferralInvite({ root, api, escapeHtml, tg, toast });
   } catch {
@@ -5743,7 +5740,7 @@ async function loadReferralInvitePanel() {
 let matchShareModule = null;
 async function shareMatchCard({ match, probabilities = null, confidence = null, source = 'miniapp' }) {
   try {
-    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch144');
+    matchShareModule ||= import('./modules/match-share.js?v=6.120.0-launch145');
     const { shareMatch } = await matchShareModule;
     return await shareMatch({ match, probabilities, confidence, source, api, tg, toast, safeTelegramUrl, dateTime });
   } catch {
@@ -6178,7 +6175,14 @@ function escapeHtml(value) {
 function optimizeImages(root = document) {
   const images=[...(root.matches?.('img') ? [root] : []),...(root.querySelectorAll?.('img') || [])];
   images.forEach(img => {
-    installCrestFallback(img);
+    let crestContext;
+    if(img.dataset.teamCrest==='Lochin'||img.dataset.teamCrest==='LOCHIN'){
+      const id=Number(img.getAttribute('src')?.match(/^https:\/\/media\.api-sports\.io\/football\/teams\/(\d+)\.png$/)?.[1]);
+      const matches=[...(state.matches||[]),state.currentCenter?.match,state.currentAnalysis?.match];
+      const match=matches.find(item=>item?.league==='Pro League A'&&((item.home?.id===id&&item.away?.id===25763)||(item.away?.id===id&&item.home?.id===25763)));
+      if(match){const opponent=match.home.id===id?match.away:match.home;crestContext={league:match.league,opponentId:opponent.id,opponentName:opponent.name};}
+    }
+    installCrestFallback(img,{context:crestContext});
     if (!img.hasAttribute('decoding')) img.decoding = 'async';
     if (!img.closest('.analysis-hero, .team-hero, .tournament-hero') && !img.hasAttribute('loading')) img.loading = 'lazy';
   });

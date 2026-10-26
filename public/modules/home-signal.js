@@ -1,4 +1,4 @@
-import {crestFallbackHtml,usableCrestUrl} from './team-crest.js';
+import {crestFallbackHtml,preferredTeamCrestUrl} from './team-crest.js';
 import { localDate, timeOf } from './client-core.js';
 import {
   homeMatchScoreLabel,
@@ -135,12 +135,12 @@ export function createHomeSignalRenderer({
     if ($('homeHeroLiveWrap')) $('homeHeroLiveWrap').hidden=stats.live<1;
   }
 
-  function teamHtml(team,role) {
-    const url=usableCrestUrl(team?.logo);
+  function teamHtml(team,role,context) {
+    const url=preferredTeamCrestUrl(team,context);
     const logo=url
-      ? `<img src="${escapeHtml(safeUrl(url))}" data-team-crest="${escapeHtml(team?.name || '')}" alt="" loading="eager" decoding="async">`
+      ? `<img src="${escapeHtml(safeUrl(url))}" data-team-crest="${escapeHtml(team?.name || '')}" ${url.startsWith('https://media.api-sports.io/football/teams/')?'crossorigin="anonymous"':''} alt="" loading="eager" decoding="async">`
       : crestFallbackHtml(team?.name,escapeHtml);
-    return `<button class="mr-featured-team team-open-link" type="button" data-open-team="${Number(team?.id)}" data-team-name="${escapeHtml(team?.name || '')}" data-team-logo="${escapeHtml(team?.logo || '')}">
+    return `<button class="mr-featured-team team-open-link" type="button" data-open-team="${Number(team?.id)}" data-team-name="${escapeHtml(team?.name || '')}" data-team-logo="${escapeHtml(url)}">
       <span class="mr-featured-crest">${logo}</span>
       <strong>${escapeHtml(team?.name || '')}</strong>
       <small>${role}</small>
@@ -184,9 +184,9 @@ export function createHomeSignalRenderer({
           ${status}
         </div>
         <div class="mr-featured-teams">
-          ${teamHtml(match.home,'Хозяева')}
+          ${teamHtml(match.home,'Хозяева',{league:match.league,opponentId:match.away?.id,opponentName:match.away?.name})}
           <div class="mr-featured-score">${centre}</div>
-          ${teamHtml(match.away,'Гости')}
+          ${teamHtml(match.away,'Гости',{league:match.league,opponentId:match.home?.id,opponentName:match.home?.name})}
         </div>
         <button class="mr-featured-open" type="button" data-featured-center="${fixtureId}">Открыть матч <span aria-hidden="true">→</span></button>
       </article>`;
