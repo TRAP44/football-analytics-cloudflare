@@ -236,6 +236,8 @@ jobs:
             "select public.backend_readiness_contract_v2('$FRESH_V2_FP',5)->>'ok';")"
           test "$NEW_WORKER_READY" = "true"
 
+          node "$GITHUB_WORKSPACE/scripts/supabase-concurrency-gate.js"
+
           npx --yes "supabase@$SUPABASE_CLI_VERSION" migration up
 
       - name: Stop upgrade Supabase stack
