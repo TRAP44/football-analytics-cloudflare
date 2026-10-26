@@ -14,6 +14,14 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-26 — Codex — Реальная HTTP-проверка в правильном окружении
+#1022 merged bea45f3fe4af8d84f6231c55c5e762da0442c385, exactheadb5f1a77e: Quality40298993022/CodeQL40298992956/IsolatedLoad40298992961/audit40298993006 всеуспешны; actualisolatedPostgREST verified unchangedflags/audit. MainQuality40299801254/CodeQL40299801253 успешны, Deploy40300338257 success. Backup40299822869: encryptedartifact+isolatedrestore success samebeaSHA. Preflight40299823484 ready/ecd2e855; actualapply40300425012 success, productionChanged=true/applied=true/backupVerified=true, exactnewprodhash ef7b0db33b20c122b9382f3c9b1dd7c7. Миграция20 ужеприменена, не повторять SQL/неотключатьфлаги.
+
+ProductionHTTPproof40300510597 остановлена ДО записи: envproduction имеетDB/Managementkeys, но SUPABASE_URL/SERVICE_ROLE_KEY/ADMIN_TELEGRAM_IDS пустые; этоexistingbackground-jobs secrets, не проситьновые. Исправление толькооперационногоproof: отдельный main-only background-jobs workflow с3existingappcredentials иGithubtoken; deploymentworkflow остаётсяproduction только2DBkeys. CLIпроверяет exactmain/mergedPR черезGithub, затем actualserviceHTTPschemafingerprint20+runtimebodypartition иbackendsecuritycontract до actualsave сunchangedflags. Unknownwriteнеповторять. НикакихTelegram/privatepayloadlog/fswrites. Privilegedaudit узкоразделён поenv; isolatedload workflowtracksexacthelperdependency. Productruntime/SQL/frontendunchanged (launch144).
+
+Node22 npmci/check/lint/privileged/verifyrelease/release944/full4731passed; independentCodexreviewclean/19focused. Публичныйmanifest1022 подтверждён bea45f3f/CF5989fb48-7fb6-45fd-a415-9ae089487958, frontendlaunch144. Осталось exactheadCI→merge→actualverify-runtime-controlsworkflow→finaldeploymanifest+postdeploy. ЭтотPR закрываетproductionproof, не меняетмеханизмсохранения повторно. ПоследнийуспешныйHTTPsaveнеимитировать; реальный новыйauditrevisionещёнеподтверждён.
+
+
 ## 2026-10-26 — Codex — Атомарное сохранение настроек через HTTP
 Ветка `codex/admin-runtime-atomic-rpc`, следующий этап #1021. Bridge merged e56ef59e9acb579fbd265abdad9a2d4485fd74c4: exacthead7901e70c Quality40296374985/fullfresh+upgrade+CodeQL40296375043/IsolatedLoad40296375115/audit40296375066 passed. Maindeploy ещё требуется подтвердить перед productionmigration20.
 

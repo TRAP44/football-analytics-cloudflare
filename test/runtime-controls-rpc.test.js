@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {auditWorkflow} from '../scripts/privileged-access-audit.js';
 import {createRuntimeControlsRuntime} from '../src/runtime-controls.js';
-import {verifyRuntimeControlsRpc} from '../scripts/verify-runtime-controls-rpc.js';
+import {verifyRuntimeControlsRpc,verifyRuntimeProofMain} from '../scripts/verify-runtime-controls-rpc.js';
 
 const row={id:'global',revision:7,maintenance_mode:false,analysis_enabled:true,search_enabled:true,live_enabled:true,reminders_enabled:true,expanded_data_enabled:true,auto_settlement_recovery_enabled:true,ai_enabled:true,message:'',updated_at:'2026-10-26T00:00:00.000Z',updated_by:1};
 const input={expectedRevision:7,maintenanceMode:false,analysisEnabled:true,searchEnabled:true,liveEnabled:true,remindersEnabled:true,expandedDataEnabled:true,autoSettlementRecoveryEnabled:true,aiEnabled:false,message:'',reason:'Проверка',action:'update',updated_by:999,p_actor_id:999};
@@ -42,6 +44,8 @@ test('HTTP proof exercises the actual save path with unchanged flags and confirm
   let current={...row};let args;let posts=0;
   const result=await verifyRuntimeControlsRpc({origin:key.startsWith('sb_')?'http://127.0.0.1:54321/':'http://127.0.0.1:54321',key,actorId:440,fetchImpl:async(url,init)=>{
     assert.equal(init.headers.apikey,key);assert.equal(init.headers.Authorization,undefined);assert.equal(init.headers.authorization,undefined);
+    if(String(url).includes('/rpc/backend_schema_contract_v2'))return Response.json({ok:true,version:2,fingerprint:'28942368323a2aaa693987bc0225da34',runtimeMutationFingerprint:'d23f93e48ea4d578a5f031f4ee352bfd'});
+    if(String(url).includes('/rpc/backend_security_contract'))return Response.json({ok:true});
     if(init.method==='POST'){
       posts++;args=JSON.parse(init.body);current={...current,...args.p_controls,revision:current.revision+1,updated_by:args.p_actor_id};return Response.json([current]);
     }
@@ -57,4 +61,33 @@ test('proof rejects foreign, altered-port and file-controlled URL destinations b
   for(const origin of ['https://foreign.invalid','https://nlmvhkjkpgzzlfavaohk.supabase.co:1234','http://127.0.0.1:9000','http://127.0.0.1:54321/redirect']){
     let calls=0;await assert.rejects(verifyRuntimeControlsRpc({origin,key:'local',actorId:440,fetchImpl:()=>{calls++;}}));assert.equal(calls,0);
   }
+});
+
+test('production proof refuses non-main, stale and unmerged source before application access',async()=>{
+  const env={GITHUB_REPOSITORY:'TRAP44/football-analytics-cloudflare',GITHUB_REF:'refs/heads/main',GITHUB_SHA:'a'.repeat(40),GITHUB_TOKEN:'local'};
+  await assert.rejects(verifyRuntimeProofMain({env:{...env,GITHUB_REF:'refs/heads/topic'},fetchImpl:()=>{throw Error('no access');}}));
+  for(const state of ['stale','unmerged','merged']){
+    const run=verifyRuntimeProofMain({env,fetchImpl:async url=>Response.json(String(url).endsWith('/main')?{commit:{sha:state==='stale'?'b'.repeat(40):env.GITHUB_SHA}}:state==='merged'?[{number:1022,state:'closed',merged_at:'2026-10-26T00:00:00Z',base:{ref:'main',repo:{full_name:env.GITHUB_REPOSITORY}}}]:[])});
+    if(state==='merged')await run;else await assert.rejects(run);
+  }
+});
+
+test('schema or audit security mismatch stops the HTTP proof before a settings mutation',async()=>{
+  for(const validSchema of [false,true]){
+    let writes=0;
+    await assert.rejects(verifyRuntimeControlsRpc({origin:'http://127.0.0.1:54321',key:'local',actorId:440,fetchImpl:async url=>{
+      if(String(url).includes('backend_schema_contract_v2'))return Response.json({ok:true,version:2,fingerprint:validSchema?'28942368323a2aaa693987bc0225da34':'0'.repeat(32),runtimeMutationFingerprint:'d23f93e48ea4d578a5f031f4ee352bfd'});
+      if(String(url).includes('backend_security_contract'))return Response.json({ok:false});
+      writes++;throw Error('unexpected mutation');
+    }}));assert.equal(writes,0);
+  }
+});
+
+test('HTTP proof uses only application credentials in protected background-jobs',()=>{
+  const file='.github/workflows/verify-runtime-controls.yml',workflow=fs.readFileSync(file,'utf8');
+  assert.deepEqual(auditWorkflow(file,workflow),[]);
+  assert.ok(auditWorkflow(file,workflow.replace('environment: background-jobs','environment: production')).some(f=>f.type==='secret_environment_missing'));
+  assert.ok(auditWorkflow(file,workflow.replace('secrets.ADMIN_TELEGRAM_IDS','secrets.SUPABASE_DB_URL')).some(f=>f.type==='unexpected_secret_reference'));
+  assert.match(workflow,/if: github\.ref == 'refs\/heads\/main'/);
+  assert.doesNotMatch(workflow,/SUPABASE_ACCESS_TOKEN|SUPABASE_DB_URL/);
 });

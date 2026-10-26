@@ -19,7 +19,7 @@
 
 ## В работе
 
-- [ ] Админские переключатели: атомарное сохранение, история и безопасный выпуск — **Codex** — `codex/admin-runtime-atomic-rpc` — bridge#1021 merged e56ef59e; exactmigration20/RPC/backup+restore/apply/realHTTPproof.
+- [ ] Админские переключатели: атомарное сохранение, история и безопасный выпуск — **Codex** — `codex/runtime-rpc-production-proof` — #1022 deployedbea45f3f; migration20 applied40300425012/backup+restore40299822869; HTTPproof перенесён к existing background-jobs secrets.
 
 
 
