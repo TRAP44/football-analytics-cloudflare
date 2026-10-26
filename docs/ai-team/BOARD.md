@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Восстановление матча после возврата от команды/игрока — **Codex** — `codex/match-return-recovery` — после Back исчезал раздел просмотра и не возобновлялся LIVE refresh; native Chromium воспроизводит отсутствие video details.
 
 
 
@@ -101,6 +100,8 @@
 
 
 ## На ревью
+
+- [ ] Восстановление матча после возврата от команды/игрока — **Codex** — [PR #1028](https://github.com/TRAP44/football-analytics-cloudflare/pull/1028), `codex/match-return-recovery` — после Back исчезал раздел просмотра и не возобновлялся LIVE refresh; native Chromium воспроизводит отсутствие video details.
 
 
 
