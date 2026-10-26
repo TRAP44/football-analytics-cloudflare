@@ -14,6 +14,16 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-27 — Codex — Напоминания: статус главной после чтения и удаления
+PR: ветка `codex/reminder-view-sync`.
+
+Предыдущий #1026 завершён: main1bdd387c, MainQuality40374352274/CodeQL40374351787/Deploy40374886397 success; public manifest подтвердил тот же SHA/CFfc3bad8f-9061-4956-b206-8c4307c309ea и launch147; SHA256 app/chat/watch совпали с проверенными файлами. Не возвращать его в pending.
+
+В полном Chromium-сценарии подтверждено: DELETE из профиля удалял серверную строку и список профиля, но Home оставлял «Telegram-напоминание включено». GET не обновлял колокольчики ленты; toggle центра тоже оставлял их прежними. Три finally теперь перерисовывают производные Home-представления из confirmed state; без матчей обновляется observation. Не добавлены API/provider calls, навигация, рассылка, auth/SQL или изменение видеоплеера. Неуспешная запись сохраняет подтверждённый статус. Frontend launch148.
+
+Проверено: native Chromium с actual createUserDataApiRuntime, in-memory user42 и synthetic fixture999: загрузка списка, failed DELETE503 (статус сохранён), successful DELETE профиля и центра (Home/колокольчик выключены). Прежние watch/privacy/rights/country/player/crest сценарии прошли. Это не проверка реальной отправки Telegram или физического playback. Focused24/24; независимый read-only Codex review clean, отдельно19/19. Node22 npmci/check/lint/release949/full4741/securityscan/privileged/verifyrelease/workerdryrun passed. Exact-head CI, merge, Deploy и public identity будут записаны в PR после выпуска.
+
+
 
 
 
