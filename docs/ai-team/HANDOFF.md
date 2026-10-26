@@ -22,6 +22,8 @@ PR [#1024](https://github.com/TRAP44/football-analytics-cloudflare/pull/1024), �
 
 Native Chromium: одна кнопка, отсутствие автоматической записи privacy, переход в реальный экран, ручной privacy failure/retry, country/expiry/cancel/renewal/navigation gates; FarDU/Lochin в настоящем featured renderer, camera/404/genuine150px и один запрос на картинку. Это проверка UI на синтетическом матче, не физическое Telegram playback. Независимое read-only ревью Codex чистое, самостоятельно42/42+browser passed. Node22 npm ci/check/lint/release944/full4733/security scan/privileged/verify release/Worker dry-run passed. Первый полный запуск: flaky local HTTP close assertion в неизменённом supabase-read-recovery; отдельно15/15 и повторный полный4733/4733 прошли. Выложенный SHA и итог CI фиксируются в PR после выпуска.
 
+CodeQL на первом head нашёл file-access-to-http у test PNG → CDP WebSocket. Исправлены только native fixtures: CDP выдаёт redirect на фиксированный loopback HTTP route, PNG отдаёт локальный сервер; file bytes не уходят через CDP. Gates/SARIF не подавлены. Оба native scripts повторно passed.
+
 Предыдущий этап #1022/#1023 завершён: production HTTP workflow40304157015 verified=true, featureFlagsUnchanged=true, auditConfirmed=true, revision3. Migration20 applied40300425012; active runtimebea45f3f/CF5989fb48, #1023 workflow-only deploy корректно no-op. Новые секреты не нужны.
 
 

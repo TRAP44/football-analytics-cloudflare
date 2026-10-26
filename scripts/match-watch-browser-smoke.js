@@ -11,6 +11,7 @@ import {matchCenterCacheKey} from '../src/match-center-cache-key.js';
 
 // Real browser DOM + HTTP + actual cache-only API. Synthetic approved source and
 // fake YouTube SDK: verifies our UI, not third-party or Telegram playback/rights.
+const crestBytes=await readFile('test-support/fixtures/api-sports-team-33.png');
 const now=Date.now(),iso=ms=>new Date(now+ms).toISOString();
 const match={fixtureId:999,home:{id:55,name:'Fixture Home'},away:{id:56,name:'Fixture Away'},league:'Fixture League',score:{home:0,away:0},elapsed:6,statusLabel:'Первый тайм',leagueId:39,season:2026,date:iso(-60000),live:true,finished:false,status:'1H'};
 const approval={match,provider:'youtube',publisher:'fifa',videoId:'abcdefghijk',eventUrl:'https://www.youtube.com/watch?v=abcdefghijk',kind:'live',access:'free',countries:['RU','KZ'],confirmed:true,confirmedAt:iso(-10000),validUntil:iso(3600000)};
@@ -25,6 +26,7 @@ let failWatch=false,delay=false,requests=0,centerRequests=0,slowPrefs=false,libr
 const server=createServer(async(req,res)=>{
  try{
   const url=new URL(req.url,'http://127.0.0.1');
+  if(url.pathname==='/__crest-fixture'){res.writeHead(200,{'Content-Type':'image/png','Access-Control-Allow-Origin':'*'});res.end(crestBytes);return;}
   if(url.pathname==='/api/match-watch'){
    requests++;if(failWatch){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'SYNTHETIC_WATCH_UNAVAILABLE'}));return;}if(url.searchParams.get('list')==='1'){libraryRequests++;if(holdLibrary)await new Promise(resolve=>releaseLibraries.push(resolve));}if(delay)await new Promise(resolve=>setTimeout(resolve,300));
    const response=await api.apiMatchWatch(new Request(url),{},{id:42});res.writeHead(response.status,{'Content-Type':'application/json'});res.end(await response.text());return;
@@ -66,8 +68,7 @@ const launched=await launchChromeWithRetry(browserExecutable());let cdp,visualDi
 try{
  const tab=await(await fetch(`http://127.0.0.1:${launched.debugPort}/json/new?about:blank`,{method:'PUT'})).json();cdp=new Cdp(tab.webSocketDebuggerUrl);await cdp.open();await cdp.call('Page.enable');await cdp.call('Network.enable');await cdp.call('Network.setCacheDisabled',{cacheDisabled:true});
  // Deterministic image transport for synthetic teams, not a provider identity claim.
- const crestBytes=await readFile('test-support/fixtures/api-sports-team-33.png');
- cdp.socket.addEventListener('message',event=>{const message=JSON.parse(String(event.data));if(message.method==='Fetch.requestPaused')void cdp.call('Fetch.fulfillRequest',{requestId:message.params.requestId,responseCode:200,responseHeaders:[{name:'Content-Type',value:'image/png'},{name:'Access-Control-Allow-Origin',value:'*'}],body:crestBytes.toString('base64')}).catch(()=>{});});
+ cdp.socket.addEventListener('message',event=>{const message=JSON.parse(String(event.data));if(message.method==='Fetch.requestPaused')void cdp.call('Fetch.fulfillRequest',{requestId:message.params.requestId,responseCode:302,responseHeaders:[{name:'Location',value:`http://127.0.0.1:${server.address().port}/__crest-fixture`},{name:'Access-Control-Allow-Origin',value:'*'}]}).catch(()=>{});});
  await cdp.call('Fetch.enable',{patterns:[{urlPattern:'https://media.api-sports.io/football/teams/*'}]});
 await cdp.call('Network.setBlockedURLs',{urls:['*youtube.com*','*ytimg.com*']});await cdp.call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
  const evaluate=async expression=>{const result=await cdp.call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw Error(result.exceptionDetails.text);return result.result?.value;};

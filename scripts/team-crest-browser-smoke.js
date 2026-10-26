@@ -10,6 +10,7 @@ const genuine=await readFile('test-support/fixtures/api-sports-team-33.png');
 const server=createServer(async(req,res)=>{
   try{
     const url=new URL(req.url,'http://127.0.0.1');
+    if(url.pathname.startsWith('/__crest-fixture/')){const absent=url.pathname.endsWith('/900002.png');res.writeHead(absent?404:200,{'Content-Type':'image/png','Access-Control-Allow-Origin':'*'});res.end(absent?'':url.pathname.endsWith('/33.png')?genuine:missing);return;}
     if(url.pathname==='/'){
       res.setHeader('Content-Type','text/html; charset=utf-8');
       res.end(`<!doctype html><html lang="ru" data-theme="dark"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/styles/public-shell.css"><link rel="stylesheet" href="/styles/premium-ui.css"><body class="miniapp-public-shell" style="background:#090e14;color:white"><section id="homeFeatured"><div id="homeFeaturedCard"></div></section><main style="display:flex;gap:16px;padding:20px">
@@ -34,8 +35,9 @@ try{
   cdp.socket.addEventListener('message',event=>{
     const message=JSON.parse(String(event.data));if(message.method!=='Fetch.requestPaused')return;
     const {requestId,request}=message.params;counts.set(request.url,(counts.get(request.url)||0)+1);
-    const absent=request.url.endsWith('/900002.png'),body=request.url.endsWith('/33.png')?genuine:missing;
-    void cdp.call('Fetch.fulfillRequest',{requestId,responseCode:absent?404:200,responseHeaders:[{name:'Content-Type',value:'image/png'},{name:'Access-Control-Allow-Origin',value:'*'}],body:absent?'':body.toString('base64')}).catch(error=>errors.push(error.message));
+    const filename=new URL(request.url).pathname.split('/').at(-1);
+    // Route the browser to a local HTTP fixture; never export file bytes via CDP.
+    void cdp.call('Fetch.fulfillRequest',{requestId,responseCode:302,responseHeaders:[{name:'Location',value:`http://127.0.0.1:${server.address().port}/__crest-fixture/${filename}`},{name:'Access-Control-Allow-Origin',value:'*'}]}).catch(error=>errors.push(error.message));
   });
   await cdp.call('Fetch.enable',{patterns:[{urlPattern:'https://media.api-sports.io/football/teams/*'}]});
   await cdp.call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/`});
