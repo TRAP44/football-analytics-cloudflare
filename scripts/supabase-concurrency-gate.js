@@ -662,13 +662,13 @@ async function testRuntimeControlRollout() {
   await psql(`begin;
 create temporary table runtime_rollout_before as select public.backend_schema_contract_v2() as schema,public.backend_schema_fingerprint() as legacy;
 ${sql}
-do $contract$ declare current_schema jsonb; previous_schema jsonb; begin
-  select schema into previous_schema from runtime_rollout_before;
-  current_schema:=public.backend_schema_contract_v2();
-  if current_schema->>'fingerprint' is distinct from '${reviewed.freshFingerprint}'
-    or current_schema->>'runtimeMutationFingerprint' is distinct from '${reviewed.fingerprint}'
-    or current_schema->>'baseFingerprint' is distinct from previous_schema->>'baseFingerprint'
-    or current_schema->>'recoveryFingerprint' is distinct from previous_schema->>'recoveryFingerprint'
+do $contract$ declare v_schema_after jsonb; v_schema_before jsonb; begin
+  select schema into v_schema_before from runtime_rollout_before;
+  v_schema_after:=public.backend_schema_contract_v2();
+  if v_schema_after->>'fingerprint' is distinct from '${reviewed.freshFingerprint}'
+    or v_schema_after->>'runtimeMutationFingerprint' is distinct from '${reviewed.fingerprint}'
+    or v_schema_after->>'baseFingerprint' is distinct from v_schema_before->>'baseFingerprint'
+    or v_schema_after->>'recoveryFingerprint' is distinct from v_schema_before->>'recoveryFingerprint'
     or public.backend_schema_fingerprint()->>'fingerprint' is distinct from (select legacy->>'fingerprint' from runtime_rollout_before)
     or coalesce((public.backend_security_contract()->>'ok')::boolean,false) is not true
     or coalesce((public.backend_readiness_contract_v2('${reviewed.freshFingerprint}',5)->>'ok')::boolean,false) is not true
