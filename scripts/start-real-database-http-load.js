@@ -8,6 +8,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createServer,request as httpRequest} from 'node:http';
 import {buildMigrationPlan} from './prepare-supabase-ci-migrations.js';
+import {verifyRuntimeControlsRpc} from './verify-runtime-controls-rpc.js';
 
 const uid=name=>Number(execFileSync('id',['-u',name]).toString().trim());
 const gid=name=>Number(execFileSync('id',['-g',name]).toString().trim());
@@ -121,6 +122,8 @@ try {
   }
   if(!ready)console.log(JSON.stringify({phase:'rest_health_failed',...lastHealth}));
   assert.ok(ready,'Disposable PostgREST did not become healthy.');
+  // Use the disposable JWT generated in memory; never load credentials from a file for HTTP proof.
+  console.log(JSON.stringify({phase:'runtime_controls_rpc',...await verifyRuntimeControlsRpc({origin:'http://127.0.0.1:54321',key:token,actorId:900000000440})}));
   const file=join(directory,'status.json');
   writeFileSync(file,JSON.stringify({API_URL:'http://127.0.0.1:54321',SERVICE_ROLE_KEY:token}),{mode:0o600});
   // Synthetic paid user: profile upserts must never overwrite billing fields.
