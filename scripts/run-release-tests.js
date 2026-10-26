@@ -23,6 +23,7 @@ const RELEASE_TESTS = Object.freeze([
   'test/runtime-controls-rpc.test.js',
   'test/apply-runtime-controls.test.js',
   'test/match-watch.test.js',
+  'test/broadcast-guides.test.js',
   'test/watch-session.test.js',
   'test/watch-send-boundary.test.js',
   'test/watch-library.test.js',

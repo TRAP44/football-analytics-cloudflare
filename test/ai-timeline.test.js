@@ -504,7 +504,7 @@ test('AI Timeline wiring captures fresh analyses and loads timeline into Match C
 });
 
 test('AI Timeline UI remains lazy-loaded after Match Pulse and supports narrow mobile widths', () => {
-  assert.match(appSource,/import\('\.\/modules\/ai-timeline\.js\?v=6\.120\.0-launch150'\)/);
+  assert.match(appSource,/import\('\.\/modules\/ai-timeline\.js\?v=6\.120\.0-launch151'\)/);
   const pulse=appSource.indexOf("matchCenterExtraHtml('renderMatchPulse'");
   const timeline=appSource.indexOf("'renderAiTimelineCompact',",appSource.indexOf('const matchPulseHtml'));
   assert.ok(pulse>=0 && timeline>pulse,'AI Timeline must be rendered after existing Match Pulse');

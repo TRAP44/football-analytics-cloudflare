@@ -1,0 +1,481 @@
+{
+  "observedAt": "2026-10-26T23:39:48.778067Z",
+  "primaryAudience": "RU",
+  "scope": "official_competition_navigation_and_embed_research_not_new_live_streams",
+  "sources": [
+    {
+      "id": "uefa_partners",
+      "url": "https://www.uefa.com/uefachampionsleague/news/0253-0d82037aaedd-f371c464f919-1000--where-to-watch-the-champions-league-tv-broadcast-partners-li/",
+      "httpStatus": 200,
+      "evidenceScope": "current_country_broadcaster",
+      "finding": "UEFA article updated 21 October2026 lists Russia:Okko,CTV for2026/27. Only Okko is added as a provider hint; no specific match or embed permission is established.",
+      "quote": "Russia: Okko, CTV",
+      "snapshotSha256": "bacc62c11239b86be11f2469c96efe2db3dde1a746452bf41515604f95f40728"
+    },
+    {
+      "id": "laliga_ru",
+      "url": "https://www.laliga.com/en-RU/where-to-watch-laliga-easports",
+      "httpStatus": 200,
+      "evidenceScope": "current_country_broadcaster",
+      "finding": "Official pageProps countryRU/season2026, broadcaster MatchTV. Schedule link independently checked; not an event stream.",
+      "snapshotSha256": "3d816aad5f3efbf70fc652eac2dc727f67a6f0b2260ecd3be6db512056e0d119",
+      "pagePropsEvidence": {
+        "country": "RU",
+        "season": "2026",
+        "broadcasters": [
+          {
+            "name": "MatchTV",
+            "web": "https://matchtv.ru/",
+            "countries": [
+              "RU"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "pl_watch",
+      "url": "https://www.premierleague.com/en/watch-live",
+      "httpStatus": 200,
+      "evidenceScope": "directory_only",
+      "finding": "Official2026/27 broadcast schedule selector. No Russia provider inferred from the JS shell.",
+      "snapshotSha256": "5215665202cd48353729f6a2828d534172f72d76d84f4c7d7760d44ae7e5076d"
+    },
+    {
+      "id": "seriea_watch",
+      "url": "https://en.legaseriea.it/serie-a/broadcasters",
+      "httpStatus": 200,
+      "evidenceScope": "directory_only",
+      "finding": "Official directory reachable; page title still2025/26. No current country rights inferred.",
+      "snapshotSha256": "1853a1fc7d158907b9a8989b1c644983ffa587774dc09f8293673cf48484a1a0"
+    },
+    {
+      "id": "ligue1_watch",
+      "url": "https://ligue1.com/en/international-broadcasters",
+      "httpStatus": 200,
+      "evidenceScope": "directory_only",
+      "finding": "Official international-broadcaster directory reachable; dynamic listings not established from shell.",
+      "snapshotSha256": "4e1e6d704b2e4729f7dd6bca30ec1da265a93d94d0c508f1fa27bc66dcab55ca"
+    },
+    {
+      "id": "bundesliga_watch",
+      "url": "https://www.bundesliga.com/en/bundesliga/info/broadcasters",
+      "httpStatus": 403,
+      "evidenceScope": "content_unverified",
+      "finding": "Content blocked in this execution environment. Official country-directory route is independently indexed at /info/broadcasters/united-states-of-america/us. No Russia rights/provider claim."
+    },
+    {
+      "id": "matchtv_schedule",
+      "url": "https://matchtv.ru/tvguide",
+      "httpStatus": 200,
+      "evidenceScope": "schedule_only",
+      "finding": "Official schedule for multiple channels. A programme index is not permission to embed or a confirmed event URL.",
+      "snapshotSha256": "538ef587d42ca43ee8272998d2ec97aac89c311fb791b2a050a80e411a544111"
+    },
+    {
+      "id": "matchtv_channel",
+      "url": "https://matchtv.ru/video/channel/matchtv",
+      "httpStatus": 200,
+      "evidenceScope": "channel_not_match",
+      "finding": "Official public channel page names playerUrl=https://video.matchtv.ru/iframe/channel/106; page X-Frame-Options:SAMEORIGIN. Channel was airing volleyball at inspection; not associated with a football fixture.",
+      "snapshotSha256": "086ed60a6800eb6bbaca27e014c357b805879c3b9fb8cdb9effdbaadb547c2b8"
+    },
+    {
+      "id": "matchtv_iframe",
+      "url": "https://video.matchtv.ru/iframe/channel/106",
+      "httpStatus": 200,
+      "evidenceScope": "technical_endpoint_only",
+      "finding": "Official iframe endpoint reachable. No partnership/embedding permission for MatchRadar, origin compatibility or match-specific geography established; not integrated.",
+      "snapshotSha256": "894194c7d7005f91a99656647d1a45e9d7099e17307991924e33a8f5da81f6f4"
+    },
+    {
+      "id": "onefootball_terms",
+      "url": "https://promo.onefootball.com/legal/embed-terms-and-conditions/en",
+      "httpStatus": 200,
+      "evidenceScope": "partner_integration_candidate",
+      "finding": "Sections3.1/3.2 define licence subject to Agreement and access via partnerCMS. Scope/content/territory must be agreed. No statement that top-league LIVE is supplied to this project.",
+      "quote": "3.2 OneFootball shall provide the Embed Partner with access to its content management system (CMS)",
+      "snapshotSha256": "162e915a821e249a3b79134f48e20025ca980afb12a62c7589efd16af25e367c"
+    },
+    {
+      "id": "onefootball_portal",
+      "url": "https://publishers.onefootball.com",
+      "httpStatus": 200,
+      "evidenceScope": "partner_entrypoint",
+      "finding": "Partner sign-in reachable; no account, contract or contact submission created.",
+      "snapshotSha256": "6f30c914b3ba916e53622419be4e8dc4630c7116e90ca44e47bf78f4b46b2c4a"
+    }
+  ],
+  "protectedSourceInspection": {
+    "runId": 40419973602,
+    "source": "sgpremierleague",
+    "observations": [
+      {
+        "observedAt": "2026-10-26T23:28:34.566Z",
+        "searchCountry": "RU",
+        "keyAccepted": true,
+        "channelVerified": true,
+        "requestCounts": {
+          "youtube": 3,
+          "search": 2,
+          "supabase": 1
+        },
+        "featureReady": false,
+        "videoCount": 0
+      }
+    ]
+  },
+  "newPlayableStreams": 0,
+  "newTopLeagueEmbedPermissions": 0,
+  "laligaDeclaredCountries": [
+    "SA",
+    "DZ",
+    "EG",
+    "AE",
+    "IR",
+    "IQ",
+    "JO",
+    "KW",
+    "LB",
+    "LY",
+    "MA",
+    "OM",
+    "QA",
+    "SY",
+    "TN",
+    "YE",
+    "KH",
+    "LA",
+    "MY",
+    "SG",
+    "GP",
+    "MQ",
+    "YT",
+    "NC",
+    "PF",
+    "RE",
+    "MU",
+    "MC",
+    "PM",
+    "WF",
+    "BL",
+    "MF",
+    "TD",
+    "SO",
+    "BH",
+    "PS",
+    "SS",
+    "VI",
+    "PH",
+    "MR",
+    "SD",
+    "DJ",
+    "AD",
+    "TH",
+    "ID",
+    "AU",
+    "NZ",
+    "BN",
+    "TL",
+    "AR",
+    "BO",
+    "CL",
+    "CO",
+    "EC",
+    "GF",
+    "GY",
+    "PY",
+    "PE",
+    "SR",
+    "TT",
+    "UY",
+    "AI",
+    "AG",
+    "AW",
+    "BS",
+    "BB",
+    "BZ",
+    "BM",
+    "CW",
+    "DM",
+    "GD",
+    "KY",
+    "VG",
+    "TC",
+    "GS",
+    "FK",
+    "VE",
+    "US",
+    "PR",
+    "GR",
+    "AO",
+    "BJ",
+    "BW",
+    "BF",
+    "BI",
+    "CV",
+    "CM",
+    "CI",
+    "ER",
+    "ET",
+    "GA",
+    "GM",
+    "GH",
+    "GN",
+    "GQ",
+    "GW",
+    "KE",
+    "LS",
+    "LR",
+    "MW",
+    "ML",
+    "MZ",
+    "NA",
+    "NE",
+    "NG",
+    "CF",
+    "CD",
+    "RW",
+    "SN",
+    "SL",
+    "ZA",
+    "TZ",
+    "TG",
+    "UG",
+    "ZM",
+    "ZW",
+    "MG",
+    "SH",
+    "ST",
+    "SC",
+    "KM",
+    "SZ",
+    "CR",
+    "SV",
+    "GT",
+    "HN",
+    "MX",
+    "NI",
+    "PA",
+    "DO",
+    "GE",
+    "IL",
+    "CU",
+    "HT",
+    "JM",
+    "KN",
+    "VC",
+    "MS",
+    "BQ",
+    "LC",
+    "HK",
+    "BE",
+    "LU",
+    "HR",
+    "SI",
+    "AL",
+    "KZ",
+    "KG",
+    "MD",
+    "TJ",
+    "TM",
+    "UZ",
+    "AZ",
+    "EE",
+    "LT",
+    "LV",
+    "AM",
+    "NL",
+    "DE",
+    "AT",
+    "JP",
+    "IT",
+    "TW",
+    "PT",
+    "FR",
+    "CH",
+    "CG",
+    "RO",
+    "RU",
+    "HU",
+    "PL",
+    "UA",
+    "MT",
+    "BG",
+    "GB",
+    "IE",
+    "VN",
+    "MO",
+    "GI",
+    "NO",
+    "ES",
+    "CN",
+    "BA",
+    "MK",
+    "ME",
+    "RS",
+    "CA",
+    "XK",
+    "CZ",
+    "SK",
+    "SE",
+    "DK",
+    "FI",
+    "IS",
+    "TR",
+    "FJ",
+    "SB",
+    "CK",
+    "VU",
+    "TV",
+    "NU",
+    "TK",
+    "TO",
+    "NR",
+    "WS",
+    "PG",
+    "KR",
+    "CY",
+    "IN",
+    "NP",
+    "PK",
+    "LK",
+    "BD",
+    "MV",
+    "BY",
+    "BR"
+  ],
+  "laligaCountryChecks": [
+    {
+      "code": "KZ",
+      "url": "https://www.laliga.com/en-KZ/where-to-watch-laliga-easports",
+      "httpStatus": 200,
+      "actualCountry": "KZ",
+      "season": "2026",
+      "broadcasters": [
+        "Setanta Sports"
+      ]
+    },
+    {
+      "code": "BY",
+      "url": "https://www.laliga.com/en-BY/where-to-watch-laliga-easports",
+      "httpStatus": 200,
+      "actualCountry": "BY",
+      "season": "2026",
+      "broadcasters": [
+        "Belarus 5",
+        "Kinopoisk",
+        "Voka TV"
+      ]
+    },
+    {
+      "code": "US",
+      "url": "https://www.laliga.com/en-US/where-to-watch-laliga-easports",
+      "httpStatus": 200,
+      "actualCountry": "US",
+      "season": "2026",
+      "broadcasters": [
+        "ESPN+",
+        "ESPN",
+        "ESPN Deportes"
+      ]
+    },
+    {
+      "code": "DE",
+      "url": "https://www.laliga.com/en-DE/where-to-watch-laliga-easports",
+      "httpStatus": 200,
+      "actualCountry": "DE",
+      "season": "2026",
+      "broadcasters": [
+        "DAZN"
+      ]
+    },
+    {
+      "code": "FR",
+      "url": "https://www.laliga.com/en-FR/where-to-watch-laliga-easports",
+      "httpStatus": 200,
+      "actualCountry": "FR",
+      "season": "2026",
+      "broadcasters": [
+        "DAZN",
+        "Disney+"
+      ]
+    },
+    {
+      "code": "ES",
+      "url": "https://www.laliga.com/en-ES/where-to-watch-laliga-easports",
+      "httpStatus": 200,
+      "actualCountry": "ES",
+      "season": "2026",
+      "broadcasters": [
+        "Movistar LALIGA",
+        "Dazn LALIGA",
+        "LALIGATV Bar"
+      ]
+    },
+    {
+      "code": "IT",
+      "url": "https://www.laliga.com/en-IT/where-to-watch-laliga-easports",
+      "httpStatus": 200,
+      "actualCountry": "IT",
+      "season": "2026",
+      "broadcasters": [
+        "DAZN"
+      ]
+    },
+    {
+      "code": "UA",
+      "url": "https://www.laliga.com/en-UA/where-to-watch-laliga-easports",
+      "httpStatus": 200,
+      "actualCountry": "UA",
+      "season": "2026",
+      "broadcasters": [
+        "Megogo"
+      ]
+    },
+    {
+      "code": "UZ",
+      "url": "https://www.laliga.com/en-UZ/where-to-watch-laliga-easports",
+      "httpStatus": 200,
+      "actualCountry": "UZ",
+      "season": "2026",
+      "broadcasters": [
+        "Setanta Sports"
+      ]
+    },
+    {
+      "code": "GE",
+      "url": "https://www.laliga.com/en-GE/where-to-watch-laliga-easports",
+      "httpStatus": 200,
+      "actualCountry": "GE",
+      "season": "2026",
+      "broadcasters": [
+        "Silknet",
+        "Setanta Sports"
+      ]
+    },
+    {
+      "code": "AM",
+      "url": "https://www.laliga.com/en-AM/where-to-watch-laliga-easports",
+      "httpStatus": 200,
+      "actualCountry": "AM",
+      "season": "2026",
+      "broadcasters": [
+        "Fast Media",
+        "Setanta Sports"
+      ]
+    },
+    {
+      "code": "AZ",
+      "url": "https://www.laliga.com/en-AZ/where-to-watch-laliga-easports",
+      "httpStatus": 200,
+      "actualCountry": "AZ",
+      "season": "2026",
+      "broadcasters": [
+        "Az TV",
+        "Sport TV",
+        "Setanta Sports"
+      ]
+    }
+  ]
+}

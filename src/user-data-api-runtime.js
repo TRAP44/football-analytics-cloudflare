@@ -1,3 +1,4 @@
+import {broadcastGuide} from './broadcast-guides.js';
 import {WATCH_POLICIES} from './match-watch-policy.js';
 import {withRequestDeadline} from './request-deadline.js';
 import {matchCenterCacheKey} from './match-center-cache-key.js';
@@ -553,7 +554,9 @@ export function createUserDataApiRuntime(deps) {
     try{
       const [center,catalogue]=await withRequestDeadline(()=>Promise.all([getCache(matchCenterCacheKey(id),cfg),getCache(watchCacheKey(id),cfg)]),{budgetMs:1500,source:'match-watch-cache'});
       if(center?.match?.fixtureId!==id)return json(empty);
-      return json(watchApiPayload(center.match,catalogue,{country,approvals:watchApprovals,policies:watchPolicies}));
+      const payload=watchApiPayload(center.match,catalogue,{country,approvals:watchApprovals,policies:watchPolicies});
+      const guide=broadcastGuide(center.match,{country});
+      return json(guide?{...payload,broadcastGuide:guide}:payload);
     }catch{return json(empty);}
   }
 

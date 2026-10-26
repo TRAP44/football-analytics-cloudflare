@@ -15,7 +15,7 @@ class Node {
 class Root extends Node {
  get innerHTML(){return this.html||'';}
  constructor(){super();this.nodes=new Map();}
- set innerHTML(value){this.html=value;this.nodes.clear();for(const key of ['details','summary','[data-watch-country-area]','[data-watch-country]','[data-watch-options]','[data-watch-player]','[data-watch-status]','[data-watch-private]','[data-watch-delay]','[data-watch-privacy-save]','[data-watch-privacy-state]','[data-watch-retry]'])this.nodes.set(key,new Node());}
+ set innerHTML(value){this.html=value;this.nodes.clear();for(const key of ['details','summary','[data-watch-country-area]','[data-watch-country]','[data-watch-options]','[data-broadcast-guide]','[data-watch-player]','[data-watch-status]','[data-watch-private]','[data-watch-delay]','[data-watch-privacy-save]','[data-watch-privacy-state]','[data-watch-retry]'])this.nodes.set(key,new Node());}
  querySelector(key){return key==='iframe'?this.nodes.get('[data-watch-player]')?.children[0]:this.nodes.get(key);}
  querySelectorAll(key){if(key==='[data-watch-external]' && this.nodes.get('[data-watch-options]')?.innerHTML.includes('data-watch-external')){const link=new Node();link.dataset.watchExternal='0';this.externalLink=link;return [link];}if(key!=='[data-watch-play]'||!this.nodes.get('[data-watch-options]')?.innerHTML.includes('data-watch-play'))return [];const button=new Node();button.dataset.watchPlay='0';this.playButton=button;return [button];}
  replaceChildren(){this.nodes.get('[data-watch-player]')?.replaceChildren();this.nodes.clear();}
