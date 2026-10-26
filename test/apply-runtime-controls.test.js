@@ -67,7 +67,7 @@ test('production apply workflow exposes only mode/backup input and main-only pro
   const workflow=fs.readFileSync('.github/workflows/apply-runtime-controls.yml','utf8');
   assert.match(workflow,/if: github\.ref == 'refs\/heads\/main'/);assert.match(workflow,/environment: production/);
   assert.match(workflow,/SUPABASE_DB_URL: \$\{\{ secrets\.SUPABASE_DB_URL \}\}/);
-  assert.match(workflow,/options: \[preflight, apply, verify-rpc\]/);assert.doesNotMatch(workflow,/pull_request_target|query:\s*\$\{\{/);
+  assert.match(workflow,/options: \[preflight, apply\]/);assert.doesNotMatch(workflow,/pull_request_target|query:\s*\$\{\{/);
 });
 
 
@@ -95,6 +95,6 @@ test('runtime workflow permits only reviewed credentials inside protected produc
   const file='.github/workflows/apply-runtime-controls.yml',workflow=fs.readFileSync(file,'utf8');
   assert.deepEqual(auditWorkflow(file,workflow),[]);
   assert.ok(auditWorkflow(file,workflow.replace('    environment: production','')).some(f=>f.type==='secret_environment_missing'));
-  assert.ok(auditWorkflow(file,workflow.replace('secrets.ADMIN_TELEGRAM_IDS','secrets.TELEGRAM_BOT_TOKEN')).some(f=>f.type==='unexpected_secret_reference'));
-  assert.match(workflow,/secrets\.SUPABASE_SECRET_KEY \|\| secrets\.SUPABASE_SERVICE_ROLE_KEY/);
+  assert.ok(auditWorkflow(file,workflow.replace('secrets.SUPABASE_ACCESS_TOKEN','secrets.TELEGRAM_BOT_TOKEN')).some(f=>f.type==='unexpected_secret_reference'));
+  assert.doesNotMatch(workflow,/SUPABASE_SECRET_KEY|ADMIN_TELEGRAM_IDS/);
 });
