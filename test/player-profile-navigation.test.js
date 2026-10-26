@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHmac} from 'node:crypto';
+import fs from 'node:fs';
+import vm from 'node:vm';
 import {telegramInitData,createApiClient} from '../public/modules/client-core.js';
 import {favoritePlayersHtml,playerLaunchIntent,playerTelegramUrl,squadPlayer,rememberPlayerReturn,takePlayerReturn} from '../public/modules/player-navigation.js';
 import {createPlayerFollowModule} from '../public/modules/player-follow.js';
@@ -91,4 +93,27 @@ test('Telegram recovery restores only this authenticated user and expires withou
  assert.deepEqual(takePlayerReturn(42,scope),{playerId:777,teamId:55});assert.equal(takePlayerReturn(42,scope),null);
  items.set('matchradar:player-return:v1:42',JSON.stringify({owner:42,playerId:777,teamId:55,expiresAt:Date.now()-1}));assert.equal(takePlayerReturn(42,scope),null);
  assert.equal(rememberPlayerReturn(player,0,scope),false);
+});
+
+function matchReturnHarness({fixture=999,rendered=999,centerFixture=999,mode='live',analysis=null}={}){
+ const calls=[],state={currentAnalysis:analysis,currentCenter:{mode,match:{fixtureId:centerFixture}}};
+ const app=fs.readFileSync('public/app.js','utf8');
+ const context={state,matchWatchFixture:fixture,positiveEntityId:value=>Number.isSafeInteger(Number(value))&&Number(value)>0?Number(value):0,
+  $:()=>rendered?{dataset:{fixture:String(rendered)}}:null,
+  mountMatchWatchPanel:id=>{calls.push(['video',id]);},matchCenterController:{startLiveRefresh:id=>calls.push(['live',id])}};
+ vm.createContext(context);vm.runInContext(app.slice(app.indexOf('function restoreMatchView()'),app.indexOf('function prepareMatchWatchTarget(')),context);
+ return {calls,restore:()=>context.restoreMatchView()};
+}
+test('return to a rendered LIVE match restores video and its live timer',()=>{
+ const h=matchReturnHarness();h.restore();assert.deepEqual(h.calls,[['video',999],['live',999]]);
+});
+test('return never starts LIVE for an analysis, a different center, or non-live modes',()=>{
+ for(const options of [{analysis:{match:{fixtureId:999}}},{centerFixture:1000},{mode:'upcoming'},{mode:'finished'}]){
+  const h=matchReturnHarness(options);h.restore();assert.deepEqual(h.calls,[['video',999]]);
+ }
+});
+test('return to a journey state or superseded fixture does not restore stale match activity',()=>{
+ for(const options of [{rendered:0},{rendered:1000},{fixture:0}]){
+  const h=matchReturnHarness(options);h.restore();assert.deepEqual(h.calls,[]);
+ }
 });
