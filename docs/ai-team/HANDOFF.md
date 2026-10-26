@@ -17,7 +17,7 @@ PR: ссылка или ветка
 
 
 ## 2026-10-26 — Codex — Гербы в ленте, поиске и центре матча
-Ветка `codex/match-crest-consistency`, следующий шаг после выпущенного #1024. #1024 merged e50a31b9, MainQuality40340536138/CodeQL40340535607/Deploy40341145599 success; реальный public manifest e50a31b9/CFf1b680ab-8aeb-4fa4-a52d-34dcf20235c1, launch145, SHA обоих official WebP проверены поHTTP. Не возвращать #1024 к незавершённой выкладке.
+PR [#1025](https://github.com/TRAP44/football-analytics-cloudflare/pull/1025), ветка `codex/match-crest-consistency`, следующий шаг после выпущенного #1024. #1024 merged e50a31b9, MainQuality40340536138/CodeQL40340535607/Deploy40341145599 success; реальный public manifest e50a31b9/CFf1b680ab-8aeb-4fa4-a52d-34dcf20235c1, launch145, SHA обоих official WebP проверены поHTTP. Не возвращать #1024 к незавершённой выкладке.
 
 Подтверждён разрыв: featured/library используют validated team ID при пустом logo, обычная лента/поиск/центр/AI hero оставляли заглушку. Общий matchTeamCrestUrl вызывает прежний preferred resolver со строгим home/away и opponent/league context; все четыре match renderers используют его. Existing custom HTTP(S) sources и строгий PFL mapping сохраняются; src/имена экранированы, anonymous CORS только API-Sports. Нет новых provider API вызовов/SQL/таймеров; feed images остаются lazy. Team profile и уведомления не менялись. Frontend launch146, в том числе escaped fixtures.
 

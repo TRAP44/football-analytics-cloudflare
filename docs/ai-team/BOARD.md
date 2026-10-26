@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Гербы во всех карточках матчей — **Codex** — `codex/match-crest-consistency` — лента, поиск, центр и AI-разбор используют проверенные team IDs при пустом logo, с общим official mapping.
 
 
 
@@ -98,6 +97,8 @@
 
 
 ## На ревью
+
+- [ ] Гербы во всех карточках матчей — **Codex** — [PR #1025](https://github.com/TRAP44/football-analytics-cloudflare/pull/1025), `codex/match-crest-consistency` — лента, поиск, центр и AI-разбор используют проверенные team IDs при пустом logo, с общим official mapping.
 
 
 - [ ] Завершение восстановления просмотра — **Codex** — [PR #1020](https://github.com/TRAP44/football-analytics-cloudflare/pull/1020), `codex/watch-playback-recovery`; launch143, retry/deadline/Telegramofficial + prerequisite protected directSQL activation послеPostgREST отказа #1019; nativebrowser/independentreview, finalCI→activation→deployproof проверяются.
