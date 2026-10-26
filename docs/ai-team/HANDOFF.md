@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-27 — Codex — Напоминания: статус главной после чтения и удаления
-PR: ветка `codex/reminder-view-sync`.
+PR [#1027](https://github.com/TRAP44/football-analytics-cloudflare/pull/1027), ветка `codex/reminder-view-sync`.
 
 Предыдущий #1026 завершён: main1bdd387c, MainQuality40374352274/CodeQL40374351787/Deploy40374886397 success; public manifest подтвердил тот же SHA/CFfc3bad8f-9061-4956-b206-8c4307c309ea и launch147; SHA256 app/chat/watch совпали с проверенными файлами. Не возвращать его в pending.
 
