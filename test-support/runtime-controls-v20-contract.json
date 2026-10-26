@@ -7,7 +7,7 @@
     "X|commit_runtime_controls_v2(p_expected_revision integer, p_controls jsonb, p_action text, p_reason text, p_app_version text, p_actor_id bigint, p_source_revision integer)|role=service_role|execute=true"
   ],
   "fingerprint": "d23f93e48ea4d578a5f031f4ee352bfd",
-  "sqlPath": "docs/rollouts/runtime-controls-v20.sql",
+  "sqlPath": "supabase/migrations/supabase_migration_v6_29_20.sql",
   "sqlSha256": "0de25bb2923306ab7c4dc791a6b0494a7298efb28733b2e6d4941895902d247e",
   "sourceMd5": "1b1f30c9f1b8c0b51bd85aea62359507",
   "baseFingerprint": "af06ba7b6d944750f312e5cbfd4b5f20",

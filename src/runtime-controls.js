@@ -604,29 +604,6 @@ export function createRuntimeControlsRuntime({
       };
     }
 
-    try {
-      await ensureRuntimeHistoryBaseline(cfg,current,user);
-    } catch (error) {
-      const historyReason='Журнал изменений недоступен: базовая точка не сохранена. Настройки не применены.';
-      void recordOpsEvent(cfg,{
-        severity:'error',
-        source:'release',
-        eventType:'runtime_history',
-        code:'RUNTIME_HISTORY_BASELINE_WRITE_FAILED',
-        message:redactOpsString(error?.message || error,160),
-        endpoint:'/api/runtime-controls',
-        meta:{revision:current.revision},
-      }).catch(()=>{});
-      return {
-        error:historyReason,
-        code:'RUNTIME_HISTORY_BASELINE_WRITE_FAILED',
-        status:503,
-        current:publicRuntimeControls(current),
-        historyReady:false,
-        historyReason,
-      };
-    }
-
     const historyReady=true;
     const historyReason='';
     const sourceRevision=trustedRollback
@@ -709,10 +686,6 @@ export function createRuntimeControlsRuntime({
       updated_by:positiveId(user?.id) || null,
     };
 
-    const reasonHex=Array.from(
-      new TextEncoder().encode(changeReason),
-      byte=>byte.toString(16).padStart(2,'0'),
-    ).join('');
     const origin=supabaseOrigin(cfg);
     if (!origin) {
       return {
@@ -722,20 +695,22 @@ export function createRuntimeControlsRuntime({
         current:publicRuntimeControls(current),
       };
     }
-    const url=new URL(`${origin}/rest/v1/runtime_controls`);
-    url.searchParams.set('id','eq.global');
-    url.searchParams.set('revision',`eq.${expectedRevision}`);
-    const response=await fetchWithTimeout(url,{
-      method:'PATCH',
-      headers:supaHeaders(cfg,{
-        Prefer:'return=representation',
-        'X-Runtime-Action':changeAction,
-        'X-Runtime-Reason-Hex':reasonHex,
-        'X-Runtime-App-Version':appVersion,
-        ...(sourceRevision ? {'X-Runtime-Source-Revision':String(sourceRevision)} : {}),
-      }),
-      body:JSON.stringify(next),
-    },7000,'Supabase atomic runtime controls');
+    const actorId=positiveId(user?.id);
+    if (!actorId) return {error:'Не подтверждён администратор изменения.',code:'RUNTIME_CONTROLS_ACTOR_REQUIRED',status:403,current:publicRuntimeControls(current)};
+    const controls=Object.fromEntries(Object.entries(next).filter(([key])=>!['revision','updated_at','updated_by'].includes(key)));
+    controls.ai_enabled=proposed.aiEnabled;
+    const url=new URL(`${origin}/rest/v1/rpc/commit_runtime_controls_v2`);
+    let response;
+    try {
+      response=await fetchWithTimeout(url,{
+        method:'POST',headers:supaHeaders(cfg),
+        body:JSON.stringify({p_expected_revision:expectedRevision,p_controls:controls,p_action:changeAction,
+          p_reason:changeReason,p_app_version:appVersion,p_actor_id:actorId,p_source_revision:sourceRevision}),
+      },7000,'Supabase atomic runtime controls');
+    } catch {
+      return {error:'Результат сохранения не подтверждён. Обновите панель перед повтором.',
+        code:'RUNTIME_CONTROLS_WRITE_UNCONFIRMED',status:503,current:publicRuntimeControls(current),writeUnconfirmed:true};
+    }
 
     if (response?.ok !== true) {
       let responseText='';
@@ -743,7 +718,11 @@ export function createRuntimeControlsRuntime({
         try { responseText=await response.text(); } catch {}
       }
       const status=integerCandidate(response?.status);
-      const failureReason='Настройки не применены: состояние и журнал не удалось сохранить одной транзакцией.';
+      if (status===408 || status>=500) return {
+        error:'Результат сохранения не подтверждён. Обновите панель перед повтором.',
+        code:'RUNTIME_CONTROLS_WRITE_UNCONFIRMED',status:503,current:publicRuntimeControls(current),writeUnconfirmed:true,
+      };
+      const failureReason=status===404?'Для сохранения настроек требуется обновление схемы базы.':'Настройки не применены: состояние и журнал не удалось сохранить одной транзакцией.';
       void recordOpsEvent(cfg,{
         severity:'error',
         source:'release',
@@ -768,7 +747,11 @@ export function createRuntimeControlsRuntime({
     if (typeof response?.json === 'function') {
       try { rows=await response.json(); } catch {}
     }
-    if (!Array.isArray(rows) || rows.length !== 1) {
+    if (!Array.isArray(rows) || rows.length>1) return {
+      error:'Результат сохранения не подтверждён. Обновите панель перед повтором.',
+      code:'RUNTIME_CONTROLS_WRITE_UNCONFIRMED',status:503,current:publicRuntimeControls(current),writeUnconfirmed:true,
+    };
+    if (rows.length !== 1) {
       return {
         error:'Настройки изменились до сохранения. Обновите панель и повторите.',
         code:'RUNTIME_CONTROLS_CONFLICT',

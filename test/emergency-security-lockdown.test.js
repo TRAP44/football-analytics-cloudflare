@@ -95,8 +95,10 @@ function runtimeControlsHarness(overrides={}) {
       if (value.includes('/runtime_control_history')) {
         return {ok:true,status:200};
       }
-      if (value.includes('/runtime_controls')) {
-        const body=JSON.parse(init.body);
+      if (value.includes('/rpc/commit_runtime_controls_v2')) {
+        const args=JSON.parse(init.body);
+        assert.equal(init.method,'POST');
+        const body={...args.p_controls,revision:args.p_expected_revision+1,updated_by:args.p_actor_id,updated_at:'2026-10-07T11:00:00.000Z'};
         patches.push(body);
         return {
           ok:true,

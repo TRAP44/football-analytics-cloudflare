@@ -14,6 +14,16 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-26 — Codex — Атомарное сохранение настроек через HTTP
+Ветка `codex/admin-runtime-atomic-rpc`, следующий этап #1021. Bridge merged e56ef59e9acb579fbd265abdad9a2d4485fd74c4: exacthead7901e70c Quality40296374985/fullfresh+upgrade+CodeQL40296375043/IsolatedLoad40296375115/audit40296375066 passed. Maindeploy ещё требуется подтвердить перед productionmigration20.
+
+Exactfrozen docsSQL без изменений promoted вforwardmigration20 сmanifestSHA/doctor/fullcontract; workerprimary prod ef7b0db33b20c122b9382f3c9b1dd7c7, fresh28942368323a2aaa693987bc0225da34, старыеcompat сохранены. Третий partition хеширует actualRPCprosrc/config/defaults и всеoverloads/grants; oldbase/recovery/legacy unchanged. HTTPsave вызывает service-only invokerRPC вместо сломанногоPATCH; lockedCAS/baseline+newaudit однаTX, typedactor толькоtrusteduser, rollback/lockdownintent проверяютсяSQL. Unknown408/5xx/transport/nonarray неreplay, требуетсяrefresh. Действующее audit rule остаётся.
+
+Fixedmain-only protectedproductionworkflow apply-runtime-controls: onlymode/backupID, exactproject/provenance/main, backup sameSHA<2h+isolatedrestore+encryptedartifact, strictverifyfullTLS/20sSQLtimeout; SQL+Supabasehistory commitатомарно, exactold→new fingerprint/security/bodyMD5 checks. Unknownapply толькоreadback, неповтор. Historicalfixed19operator неослаблен, tests используютtempfrozen19root. Optionalverify-rpc вызывает actualcreateRuntimeControlsRuntime черезrealPostgREST с текущимифлагами/realconfiguredadmin, добавляетровно1auditrevision, подтверждает unchangedflags+audit. Современныйkey черезactualsupaHeaders, workflowfallback SECRET_KEY||SERVICE_ROLE_KEY; noTelegram. Тажеproof встроенаisolatedrealHTTPgate.
+
+Реальный локальныйDockerPG соfullbaseline+19: reviewedrolloutsecurity/readiness/hash+8switches/CAS/rollback/lockdown/auditfailure passed сROLLBACK. Затем actualfixed20applySQL успешно COMMIT: migration+history+fullschema/security/sourceproof. Minimalstubproof неиспользуетсякакsecurityclaim. Frontendhint требует v20, поэтому launch144 bumped всеentries/imports/exactfixtures; productlayout неизменён. IndependentCodexreview исправлены modernkeyheaders/fallback иузкаяprivilegedallowlist+requiredproduction. Node22 npmci/check/lint/verify:supabase/privileged/verifyrelease/workerdryrun/release940/full4727passed. Final independentCodexreviewclean/46focused. Осталось exactheadCI→merge→exactmainbackup+restore→apply→deploy→realHTTPproof+manifest/postdeploy. Auto recovery true/rev2 неотключать радиproof.
+
+
 ## 2026-10-26 — Codex — Совместимость для атомарных переключателей
 Ветка `codex/runtime-controls-schema-bridge`. #1020 уже выпущен624b6243, Deploy40236449746success, CFae004181-c5a9-4a7e-8f72-4bba937808d3, launch143; защищённое включение40236169776 подтверждено auto=true/rev2. Automatic40236224519 completed, pending>24h39 вread-only40236585405, не ноль. Watchcatalog10/8matches, physicalTelegramplayback не подтверждён.
 

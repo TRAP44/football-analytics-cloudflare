@@ -26,10 +26,11 @@ test('runtime history failures are surfaced instead of being rendered as an empt
 
   const saveRuntime = section(runtimeControls, 'async function saveRuntimeControls', 'function runtimeFeatureResponse');
   assert.match(saveRuntime, /RUNTIME_HISTORY_REQUIRED/);
-  assert.match(saveRuntime, /RUNTIME_HISTORY_BASELINE_WRITE_FAILED/);
+  assert.match(saveRuntime, /commit_runtime_controls_v2/);
+  assert.doesNotMatch(saveRuntime,/await ensureRuntimeHistoryBaseline/);
   assert.match(saveRuntime, /RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED/);
-  assert.match(saveRuntime, /X-Runtime-Action/);
-  assert.match(saveRuntime, /X-Runtime-Reason-Hex/);
+  assert.match(saveRuntime, /p_action:changeAction/);
+  assert.match(saveRuntime, /p_reason:changeReason/);
   assert.match(saveRuntime, /const historyReady\s*=\s*true/);
   assert.doesNotMatch(saveRuntime, /RUNTIME_HISTORY_APPEND_FAILED/);
   assert.doesNotMatch(saveRuntime, /await appendRuntimeHistory\(/);

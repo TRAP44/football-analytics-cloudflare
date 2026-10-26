@@ -4,7 +4,7 @@
   "runtimeVersion": "6.120.0-rc144",
   "productionSchema": "6.29",
   "freshInstallBaseline": "supabase/baseline/supabase_baseline_v6_19.sql",
-  "latestMigration": "supabase/migrations/supabase_migration_v6_29_19.sql",
+  "latestMigration": "supabase/migrations/supabase_migration_v6_29_20.sql",
   "accessContract": "public-telegram-validated-by-default",
   "strictBeta": "opt-in-only-when-BETA_ACCESS_ENABLED=true",
   "productionDatabaseRule": "never-run-fresh-install-baseline-over-existing-production",
@@ -20,8 +20,8 @@
   "databaseContract": {
     "version": 2,
     "rpc": "backend_readiness_contract_v2",
-    "fingerprint": "ecd2e855833b78694bef24223878eb19",
-    "freshInstallFingerprint": "809a9b16fd55a19b3756f207da28c817",
+    "fingerprint": "ef7b0db33b20c122b9382f3c9b1dd7c7",
+    "freshInstallFingerprint": "28942368323a2aaa693987bc0225da34",
     "compatibleFingerprints": [
       "ecd2e855833b78694bef24223878eb19",
       "809a9b16fd55a19b3756f207da28c817",
@@ -142,8 +142,17 @@
       "cacheVersion": "updated_at with exact-content confirmation",
       "sourceMigration": "supabase/migrations/supabase_migration_v6_29_18.sql"
     },
-    "fingerprintAlgorithm": "partitioned-durable-v1",
+    "fingerprintAlgorithm": "partitioned-durable-runtime-v1",
     "baseFingerprint": "af06ba7b6d944750f312e5cbfd4b5f20",
-    "recoveryFingerprint": "06e4edee696bc201a48f7e608a79c0aa"
+    "recoveryFingerprint": "06e4edee696bc201a48f7e608a79c0aa",
+    "runtimeMutationFingerprint": "d23f93e48ea4d578a5f031f4ee352bfd",
+    "runtimeControlMutation": {
+      "version": 2,
+      "rpc": "commit_runtime_controls_v2",
+      "serviceOnly": true,
+      "atomicAudit": true,
+      "revisionCAS": true,
+      "sourceMigration": "supabase/migrations/supabase_migration_v6_29_20.sql"
+    }
   }
 }

@@ -50,8 +50,10 @@ function harness(row) {
     supaInsertIgnore: async () => null,
     supaSelectMany: async () => [],
     fetchWithTimeout: async (url, init = {}) => {
-      if (init.method === 'PATCH') {
-        const body = JSON.parse(init.body);
+      if (init.method === 'POST') {
+        if(!Object.hasOwn(row,'ai_enabled'))return new Response('',{status:404});
+        const args=JSON.parse(init.body);
+        const body={...args.p_controls,revision:args.p_expected_revision+1,updated_by:args.p_actor_id};
         patches.push(body);
         return new Response(JSON.stringify([{ ...row, ...body }]), { status: 200 });
       }
@@ -97,16 +99,14 @@ test('a malformed ai_enabled value fails the control plane closed', async () => 
   assert.equal(failClosedRuntimeControls({}).aiEnabled, false);
 });
 
-test('before the migration the panel can save other settings but cannot turn AI off', async () => {
+test('a pre-migration database cannot save through the missing RPC or bypass it with PATCH', async () => {
   const { api, patches } = harness(baseRow());
   const saved = await api.saveRuntimeControls(cfg, { id: 1 }, update({ searchEnabled: false, aiEnabled: true }));
-  assert.equal(saved.status, 200);
-  assert.equal(Object.hasOwn(patches[0], 'ai_enabled'), false, 'no write to a column that does not exist yet');
-
-  const { api: api2, patches: patches2 } = harness(baseRow());
+  assert.equal(saved.code, 'RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED');
+  assert.equal(patches.length,0);
+  const { api: api2 } = harness(baseRow());
   const refused = await api2.saveRuntimeControls(cfg, { id: 1 }, update({ aiEnabled: false }));
   assert.equal(refused.code, 'RUNTIME_CONTROLS_AI_SCHEMA');
-  assert.equal(patches2.length, 0);
 });
 
 test('after the migration the AI switch is saved and confirmed by the database', async () => {

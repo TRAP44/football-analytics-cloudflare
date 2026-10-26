@@ -24,7 +24,8 @@ test('current release accepts only the exact reviewed future production and fres
     assert.ok(release.databaseContract.compatibleFingerprints.includes(expected));
     assert.ok(worker.includes("'"+expected+"'"));
   }
-  // The bridge deliberately leaves the current required production migration intact.
-  assert.equal(release.latestMigration,'supabase/migrations/supabase_migration_v6_29_19.sql');
-  assert.equal(release.databaseContract.fingerprint,'ecd2e855833b78694bef24223878eb19');
+  // Promotion must match the exact SQL accepted by the previously deployed bridge.
+  assert.equal(release.latestMigration,'supabase/migrations/supabase_migration_v6_29_20.sql');
+  assert.equal(release.databaseContract.fingerprint,reviewed.productionFingerprint);
+  assert.equal(sql,fs.readFileSync(new URL('../docs/rollouts/runtime-controls-v20.sql',import.meta.url),'utf8'));
 });

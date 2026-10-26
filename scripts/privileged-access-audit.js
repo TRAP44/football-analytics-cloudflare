@@ -11,6 +11,7 @@ export const WORKFLOW_SECRET_ALLOWLIST = Object.freeze({
   '.github/workflows/verify-production-migration.yml': new Set(['SUPABASE_ACCESS_TOKEN']),
   '.github/workflows/configure-settlement-recovery.yml': new Set(['SUPABASE_DB_URL']),
   '.github/workflows/apply-durable-recovery.yml': new Set(['SUPABASE_ACCESS_TOKEN','SUPABASE_DB_URL']),
+  '.github/workflows/apply-runtime-controls.yml': new Set(['SUPABASE_ACCESS_TOKEN','SUPABASE_DB_URL','SUPABASE_URL','SUPABASE_SECRET_KEY','SUPABASE_SERVICE_ROLE_KEY','ADMIN_TELEGRAM_IDS']),
   '.github/workflows/audit-infrastructure-capacity.yml': new Set(['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','SUPABASE_ACCESS_TOKEN']),
   '.github/workflows/rollback-production.yml': new Set(['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID']),
   // Фоновые задачи вне Cloudflare (Workers Free обрывает cron): ключи только из
@@ -30,6 +31,7 @@ const WORKFLOW_REQUIRED_ENVIRONMENT = Object.freeze({
   '.github/workflows/audit-infrastructure-capacity.yml': 'production',
   '.github/workflows/configure-settlement-recovery.yml': 'production',
   '.github/workflows/apply-durable-recovery.yml': 'production',
+  '.github/workflows/apply-runtime-controls.yml': 'production',
   '.github/workflows/cron-runner.yml': 'background-jobs',
 });
 

@@ -19,7 +19,7 @@
 
 ## В работе
 
-- [ ] Админские переключатели: совместимость с атомарной операцией БД, затем исправление сохранения с историей — **Codex** — [#1021](https://github.com/TRAP44/football-analytics-cloudflare/pull/1021) — точные будущие fingerprints; БД не изменять до выпуска bridge.
+- [ ] Админские переключатели: атомарное сохранение, история и безопасный выпуск — **Codex** — `codex/admin-runtime-atomic-rpc` — bridge#1021 merged e56ef59e; exactmigration20/RPC/backup+restore/apply/realHTTPproof.
 
 
 
