@@ -16,6 +16,17 @@ PR: ссылка или ветка
 
 
 
+
+## 2026-10-26 — Codex — Восстановление чата и появление источника видео
+Ветка `codex/chat-watch-recovery`, исправление трёх находок, одобренное Сергеем. #1025 уже merged f7e3d264, Quality40349691607/CodeQL40349691895/Deploy40350403725 success; public SHA f7e3d264, CF03692360-af9a-4f8e-9f00-127e6bd864db, launch146 и official assets verified. Не возвращать этот этап в pending.
+
+Чат различает HTTP401 (вход Telegram), 429, timeout и сбой сервиса. Неотвеченный вопрос возвращается в поле, следующий набираемый вопрос не затирается; черновики в памяти разделены owner/fixture и удаляются при смене owner. Последняя неудачная реплика получает ручной «Повторить вопрос»: тот же bubble, synchronous busy guard, без автоматических LLM retry/дублирования и потери нового draft. Auth/initData, receipts, backend quotas/контекст и экранирование сохранены. Черновик не записывается на диск и не обещает сохранение после закрытия приложения.
+
+Первоначально пустой раздел просмотра делает cache-only GET раз в60с, когда открыт и страница видима. Collapse/hidden/pagehide/dispose прекращают новый опрос, раскрытие/возврат проверяют устаревшие данные. Общий canRefreshEmpty guard применяется в schedule/resume/samefixture mount. Сначала всегда выполняется TTL-render активного видео; прежняя bounded recovery исчезнувшего источника в ранее открытом блоке сохранена, autoplay отсутствует. Нет новых provider API/SQL/прав источников. launch147 во всех entries/imports/escaped fixtures.
+
+Native Chromium: actual handler401→понятная auth ошибка→вопрос сохранён→один ручной retry→реальный fixture ответ; service503 с новым draft, doubleclick, remount, account isolation. Прежний полный watch browser прошёл (TTL/country/privacy/recovery/navigation/player). 53focused и независимый read-only Codex review: исправлен guard collapsed→hidden→visible/remount; final18/18clean. Node22 npmci/check/lint/release947/full4739/security scan/privileged/verifyrelease/workerdryrun passed. SDK/матчи синтетические, не physical Telegram playback. Exacthead CI/merge/deploy/public identity фиксируются в PR после выпуска.
+
+
 ## 2026-10-26 — Codex — Гербы в ленте, поиске и центре матча
 PR [#1025](https://github.com/TRAP44/football-analytics-cloudflare/pull/1025), ветка `codex/match-crest-consistency`, следующий шаг после выпущенного #1024. #1024 merged e50a31b9, MainQuality40340536138/CodeQL40340535607/Deploy40341145599 success; реальный public manifest e50a31b9/CFf1b680ab-8aeb-4fa4-a52d-34dcf20235c1, launch145, SHA обоих official WebP проверены поHTTP. Не возвращать #1024 к незавершённой выкладке.
 
