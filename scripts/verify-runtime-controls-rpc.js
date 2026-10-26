@@ -1,6 +1,5 @@
 // Exercises the real application save path without changing any feature flag.
 // A successful proof adds one explicitly attributed audit revision.
-import fs from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {createRuntimeControlsRuntime} from '../src/runtime-controls.js';
 import {createSupabaseClient} from '../src/supabase-client.js';
@@ -10,12 +9,12 @@ const fields=['maintenance_mode','analysis_enabled','search_enabled','live_enabl
 const camel={maintenance_mode:'maintenanceMode',analysis_enabled:'analysisEnabled',search_enabled:'searchEnabled',live_enabled:'liveEnabled',reminders_enabled:'remindersEnabled',expanded_data_enabled:'expandedDataEnabled',auto_settlement_recovery_enabled:'autoSettlementRecoveryEnabled',ai_enabled:'aiEnabled'};
 const fail=()=>{throw new Error('RUNTIME_RPC_PROOF_UNCONFIRMED');};
 export async function verifyRuntimeControlsRpc({origin,key,actorId,fetchImpl=fetch}={}){
-  let url;try{url=new URL(origin);}catch{fail();}
-  if(!((url.protocol==='https:'&&url.hostname==='nlmvhkjkpgzzlfavaohk.supabase.co')
-    ||(url.protocol==='http:'&&['127.0.0.1','localhost'].includes(url.hostname)))
-    ||url.username||url.password||url.search||url.hash||url.pathname!=='/'||!key||!Number.isSafeInteger(actorId)||actorId<1)fail();
-  const headers=createSupabaseClient({fetchWithTimeout:fetchImpl}).supaHeaders({supabaseUrl:url.origin,supabaseKey:key});
-  const request=(path,init={})=>fetchImpl(url.origin+'/rest/v1/'+path,{...init,headers,redirect:'error',signal:AbortSignal.timeout(10000)});
+  // Construct destinations from literals, never from a status file or env URL.
+  const base=origin==='https://nlmvhkjkpgzzlfavaohk.supabase.co'?'https://nlmvhkjkpgzzlfavaohk.supabase.co'
+    :origin==='http://127.0.0.1:54321'?'http://127.0.0.1:54321':null;
+  if(!base||!key||!Number.isSafeInteger(actorId)||actorId<1)fail();
+  const headers=createSupabaseClient({fetchWithTimeout:fetchImpl}).supaHeaders({supabaseUrl:base,supabaseKey:key});
+  const request=(path,init={})=>fetchImpl(base+'/rest/v1/'+path,{...init,headers,redirect:'error',signal:AbortSignal.timeout(10000)});
   const read=async(path)=>{const response=await request(path);if(!response.ok)fail();return response.json();};
   const rows=await read('runtime_controls?id=eq.global&select=*');
   if(!Array.isArray(rows)||rows.length!==1)fail();
@@ -28,7 +27,7 @@ export async function verifyRuntimeControlsRpc({origin,key,actorId,fetchImpl=fet
     supaSelectMany:async()=>[],supaInsertIgnore:async()=>{throw new Error('APP_BASELINE_WRITE_FORBIDDEN');},
     fetchWithTimeout:(target,init)=>fetchImpl(target,{...init,redirect:'error',signal:AbortSignal.timeout(10000)}),
     supaHeaders:()=>headers,recordOpsEvent:async()=>{},redactOpsString:()=>'',json:()=>{},isAdminUser:()=>false});
-  const result=await runtime.saveRuntimeControls({supabaseUrl:url.origin},{id:actorId},
+  const result=await runtime.saveRuntimeControls({supabaseUrl:base},{id:actorId},
     {...defaults,message:before.message,expectedRevision:before.revision,action:'update',reason:'Проверка атомарного сохранения без изменения функций'});
   if(result.error)fail();
   const afterRows=await read('runtime_controls?id=eq.global&select=*');
@@ -49,6 +48,5 @@ if(import.meta.url===(process.argv[1]?pathToFileURL(process.argv[1]).href:'')){
     const actorId=Number(String(process.env.ADMIN_TELEGRAM_IDS||'').split(/[,\s]+/).filter(Boolean)[0]);
     const report=await verifyRuntimeControlsRpc({origin:process.env.SUPABASE_URL,key:process.env.SUPABASE_SERVICE_ROLE_KEY,actorId});
     console.log(JSON.stringify(report));
-    if(process.env.GITHUB_STEP_SUMMARY)fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,`Runtime RPC verified: unchanged flags, audited revision ${report.revision}.\n`);
   }catch{console.error('RUNTIME_RPC_PROOF_UNCONFIRMED');process.exitCode=1;}
 }

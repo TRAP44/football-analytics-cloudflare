@@ -52,3 +52,9 @@ test('HTTP proof exercises the actual save path with unchanged flags and confirm
   assert.equal(posts,1);assert.equal(result.verified,true);assert.equal(result.featureFlagsUnchanged,true);assert.equal(args.p_controls.auto_settlement_recovery_enabled,true);
   }
 });
+
+test('proof rejects foreign, altered-port and file-controlled URL destinations before HTTP',async()=>{
+  for(const origin of ['https://foreign.invalid','https://nlmvhkjkpgzzlfavaohk.supabase.co:1234','http://127.0.0.1:9000','http://127.0.0.1:54321/redirect']){
+    let calls=0;await assert.rejects(verifyRuntimeControlsRpc({origin,key:'local',actorId:440,fetchImpl:()=>{calls++;}}));assert.equal(calls,0);
+  }
+});
