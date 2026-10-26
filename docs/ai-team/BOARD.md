@@ -97,9 +97,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Восстановление чата и ожидание источника видео — **Codex** — [PR #1026](https://github.com/TRAP44/football-analytics-cloudflare/pull/1026), `codex/chat-watch-recovery` — auth-сообщение, черновик/ручной повтор, видимый открытый пустой видеоблок обновляется cache-only.
+- [ ] Согласованное состояние напоминаний на всех экранах — **Codex** — [PR #1027](https://github.com/TRAP44/football-analytics-cloudflare/pull/1027), `codex/reminder-view-sync` — подтверждённый DELETE не должен оставлять включённый статус/значок на главной; GET и toggle обновляют те же представления.
+
 
 
 
@@ -246,6 +248,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Восстановление чата и ожидание источника видео — **Codex** — [PR #1026](https://github.com/TRAP44/football-analytics-cloudflare/pull/1026), `codex/chat-watch-recovery` — auth-сообщение, черновик/ручной повтор, видимый открытый пустой видеоблок обновляется cache-only. Выпущен: main1bdd387c, Quality40374352274/CodeQL40374351787/Deploy40374886397 success; public launch147/CFfc3bad8f-9061-4956-b206-8c4307c309ea verified.
 
 - [x] Гербы во всех карточках матчей — **Codex** — [PR #1025](https://github.com/TRAP44/football-analytics-cloudflare/pull/1025), `codex/match-crest-consistency` — лента, поиск, центр и AI-разбор используют проверенные team IDs при пустом logo, с общим official mapping. — merged f7e3d264, Deploy40350403725/public launch146/CF03692360 verified.
 

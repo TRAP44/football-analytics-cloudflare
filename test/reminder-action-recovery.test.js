@@ -5,12 +5,12 @@ import vm from 'node:vm';
 const app=fs.readFileSync('public/app.js','utf8');
 function block(start,end){return app.slice(app.indexOf(start),app.indexOf(end,app.indexOf(start)));}
 function harness({get,post}={}){
-  const requests=[],messages=[];
+  const requests=[],messages=[],homeUpdates=[];
   const state={reminders:[],remindersLoaded:false,remindersLoading:false,remindersLoadError:'earlier failure',remindersRevision:0,reminderMutations:new Set(),matches:[],preferences:{reminderMinutes:15,kickoffNotification:true}};
-  const context={state,collectionItems:x=>x.items,api:async(url,options)=>{requests.push({url,...options});return options?.method==='POST' ? (post ? post() : {item:{fixtureId:42,remindBeforeMinutes:15}}) : get ? get() : {items:[]};},toast:x=>messages.push(x),uiErrorMessage:(_e,fallback)=>fallback,renderReminderList(){},syncAllQuickReminderButtons(){},renderRadarFeed(){},renderObservationPanel(){},renderMatchCenter(){},renderProfile(){},renderAnalysis(){},syncReminderMutationUi(){},positiveEntityId:Number,runtimeAllows:()=>true,reminderMinutesValue:()=>15,hasReminder:id=>state.reminders.some(x=>x.fixtureId===id)};
+  const context={state,collectionItems:x=>x.items,api:async(url,options)=>{requests.push({url,...options});return options?.method==='POST' ? (post ? post() : {item:{fixtureId:42,remindBeforeMinutes:15}}) : get ? get() : {items:[]};},toast:x=>messages.push(x),uiErrorMessage:(_e,fallback)=>fallback,renderReminderList(){},syncAllQuickReminderButtons(){},renderRadarFeed(){},renderObservationPanel(){homeUpdates.push({kind:'observation',ids:Array.from(state.reminders,x=>x.fixtureId)});},renderMatches(){homeUpdates.push({kind:'feed',ids:Array.from(state.reminders,x=>x.fixtureId)});},renderMatchCenter(){},renderProfile(){},renderAnalysis(){},syncReminderMutationUi(){},positiveEntityId:Number,runtimeAllows:()=>true,reminderMinutesValue:()=>15,hasReminder:id=>state.reminders.some(x=>x.fixtureId===id)};
   vm.createContext(context);
   vm.runInContext(block('let remindersLoadPromise = null;','async function handleReminderRemove')+block('async function toggleReminder','function clampPercent'),context);
-  return {state,requests,messages,toggle:()=>context.toggleReminder({fixtureId:42})};
+  return {state,requests,messages,homeUpdates,toggle:()=>context.toggleReminder({fixtureId:42})};
 }
 test('one tap after an initial reminder-read failure reloads then saves the selected 15 minute reminder',async()=>{
   const h=harness();await h.toggle();assert.deepEqual(h.requests.map(x=>x.method||'GET'),['GET','POST']);
@@ -35,4 +35,14 @@ test('retrying an unknown state preserves an existing server reminder instead of
 });
 test('a stale cancel intent never re-enables a reminder already removed elsewhere',async()=>{
   const h=harness();h.state.remindersLoaded=true;h.state.reminders=[{fixtureId:42}];await h.toggle();assert.equal(h.requests.length,1);assert.equal(h.state.reminders.length,0);assert.match(h.messages[0],/уже отключено/);
+});
+
+test('loading and toggling a reminder redraws the populated feed with confirmed state',async()=>{
+ const h=harness();h.state.matches=[{fixtureId:42}];await h.toggle();
+ assert.equal(h.homeUpdates.at(-1).kind,'feed');assert.deepEqual(h.homeUpdates.at(-1).ids,[42]);
+ h.state.remindersLoadError='';await h.toggle();assert.deepEqual(h.homeUpdates.at(-1).ids,[]);
+});
+test('a failed reminder write keeps confirmed state in all derived home views',async()=>{
+ const h=harness({post:async()=>{throw Error('offline');}});h.state.matches=[{fixtureId:42}];await h.toggle();
+ assert.equal(h.homeUpdates.at(-1).kind,'feed');assert.deepEqual(h.homeUpdates.at(-1).ids,[]);assert.equal(h.state.reminderMutations.size,0);
 });
