@@ -14,6 +14,18 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-27 — Codex — Официальные вещатели топ-лиг и путь к embed
+PR [#1030](https://github.com/TRAP44/football-analytics-cloudflare/pull/1030), ветка `codex/official-broadcast-guides`.
+
+Запрос Сергея: найти источники просмотра топ-лиг и расширить приложение; встроенный просмотр там, где разрешён, официальная ссылка для остальных. #1029 завершён: maina0b5a381, MainQuality40410532669/CodeQL40410532740/Deploy40411036379 success; actual public SHA/tag/CFcb6076b0-a270-4689-b5e1-dda69dc22267 и launch150 verified; не возвращать в pending.
+
+Исследование: docs/MATCH_WATCH_TOP_LEAGUES_RU.md и docs/research/TOP_LEAGUE_BROADCAST_EVIDENCE_2026-10-27.json. Current official UEFA2026/27 RU→Okko и LaLiga season2026/countryRU→MatchTV. PremierLeague watch-live, SerieA/Ligue1 directories reachable; Bundesliga content403 в среде, нет утверждения о RU-правах. Official MatchTV public iframe endpoint существует, но во время проверки канал показывал волейбол; права/домены/страны для нашего embed не установлены. OneFootball official Embed Partner terms3.1/3.2 требуют соглашения/CMS; LIVE/topcompetitions/territories не обещаны. docs/MATCH_WATCH_PARTNER_REQUEST.md — конкретный черновик, не отправлен; аккаунты/договоры/платежи не создавались. Protected existing-key source inspection40419973602: SGP official source verified, limitedRUsearch0videos; не утверждать глобальное отсутствие эфиров.
+
+Реализация:6 competition-scope guides (39/140/135/78/61/2) отдельно от videoitems/available/library/LIVEcounts. API добавляет guide только после прежних auth/feature/fresh matching center guards, два прежних cache reads, без дополнительных provider/YouTube/DBcalls. RUprovider hints140/2 ограничены30днями, directories сохраняются. UI exactURLallowlist, fixture/country/TTL guards, явная страна, старый provider убирается сразу; никакого новогоiframe/autoplay или фиктивной «Смотреть матч». LaLiga en-XX по выбранной стране из declaredcountryset; до выбора страны ссылка отсутствует. Frontend launch151. Новых playable LIVE/permissions этим PR нет.
+
+Проверено: native actual app/cache API — LaLiga/UCL с пустым catalogue показывают directories, RUhint/сменаKZ и exacten-KZ, TelegramopenLink, nofakevideo/iframe,320/390/900; все прежние watch/expiry/privacy/reminder/crest/history/return flags true. Focused31/31; независимый read-only Codex37/37, найден/исправлен P2LaLiga→enGB при выбранномKZ, final18/18clean. 12officialcountryprobes (KZ/BY/US/DE/FR/ES/IT/UA/UZ/GE/AM/AZ) HTTP200 с соответствующим pageProps.country/season2026. Minimal DOMdouble watch-revalidation дополнен новым slot без изменения assertions. Native provider hints проверяются, когда они действуют; после истечения проверяется правильный directory, без будущего date-dependent CI failure. Node22 npmci/check322/lint/release959/full4757/securityscan/privileged/verifyrelease/workerdryrun passed; revalidation34/34. Exact-head CI/merge/deploy и publicidentity будут записаны в PR после выпуска. Synthetic browser — не реальное Telegram playback; источники проверены отдельно.
+
+
 ## 2026-10-27 — Codex — История: исчезнувший снимок и восстановление после ошибки
 PR [#1029](https://github.com/TRAP44/football-analytics-cloudflare/pull/1029), ветка `codex/history-open-recovery`.
 

@@ -1,3 +1,4 @@
+import {broadcastGuideUrl,validBroadcastGuide} from './broadcast-guide-links.js?v=6.120.0-launch151';
 // Optional, lazy watch panel. No video, SDK or third-party connection before play.
 const COUNTRY_KEY='matchradar:watch-country:v1';
 let sdkPromise;
@@ -56,7 +57,9 @@ export function createMatchWatch({api,escapeHtml,watchExperience,now=Date.now,wi
   function render(s,data){
     if(!active(s))return;
     if(s.failedRoot){s.root.replaceChildren();s.failedRoot=false;}
-    const countries=Array.isArray(data?.countries)?data.countries.filter(item=>/^[A-Z]{2}$/.test(item?.code)&&typeof item.name==='string'):[];
+    const guide=validBroadcastGuide(data?.broadcastGuide,s.fixtureId,s.country,now());
+    const videoCountries=Array.isArray(data?.countries)?data.countries.filter(item=>/^[A-Z]{2}$/.test(item?.code)&&typeof item.name==='string'):[];
+    const countries=[...new Map([...videoCountries,...(guide?.countries||[])].map(item=>[item.code,item])).values()];
     const items=Array.isArray(data?.items)?data.items.filter(item=>Date.parse(item?.expiresAt)>now()).slice(0,10):[];
     s.data=data;s.items=items;s.hadCatalogue||=items.length>0;
     const privacy=watchExperience?.settings();
@@ -69,12 +72,23 @@ export function createMatchWatch({api,escapeHtml,watchExperience,now=Date.now,wi
     if(!mounted)s.root.innerHTML=`<details class="match-watch-details" ${s.open?'open':''}><summary></summary>
       <div class="match-watch-body"><div data-watch-country-area></div>
       ${privacy?`<div class="watch-privacy-controls"><label><input type="checkbox" data-watch-private ${privacy.enabled?'checked':''}> Без спойлеров</label><label>Голевые уведомления <select data-watch-delay><option value="0">Не присылать во время просмотра</option><option value="30">Не раньше чем через 30 секунд</option><option value="60">Не раньше чем через 60 секунд</option><option value="90">Не раньше чем через 90 секунд</option></select></label><small>Счёт, события и AI скрываются. Остальные сообщения и табло этого матча приостанавливаются на 3 часа. Доставка голевых сообщений может быть позже выбранного времени.</small><button type="button" data-watch-privacy-save>Применить</button><p data-watch-privacy-state role="status"></p></div>`:''}
-      <div data-watch-options></div><div data-watch-player></div><p class="muted" data-watch-status role="status">Доступ и подписку проверяет источник. Если плеер не открылся, перейдите по официальной ссылке.</p></div></details>`;
-    s.root.querySelector('summary').innerHTML=`${countries.length?'Где смотреть':'Режим просмотра'} <span>${countries.length?'Официальные источники':'Без спойлеров'}</span>`;
+      <div data-watch-options></div><div data-broadcast-guide></div><div data-watch-player></div><p class="muted" data-watch-status role="status">Доступ и подписку проверяет источник. Если плеер не открылся, перейдите по официальной ссылке.</p></div></details>`;
+    s.root.querySelector('summary').innerHTML=`${countries.length?'Где смотреть':'Режим просмотра'} <span>${guide?'Видео и вещатели':countries.length?'Официальные источники':'Без спойлеров'}</span>`;
     s.root.querySelector('[data-watch-country-area]').innerHTML=countries.length?`<label>Где будете смотреть? <select data-watch-country aria-label="Страна просмотра"><option value="">Выберите страну</option>${countries.map(item=>`<option value="${item.code}" ${item.code===country?'selected':''}>${escapeHtml(item.name)}</option>`).join('')}</select></label>`:'';
     s.root.querySelector('[data-watch-options]').innerHTML=!countries.length?'Доступный источник видео пока не подтверждён. Режим без спойлеров можно включить и для просмотра на другом сервисе.':country?items.length?items.map((item,index)=>`<article class="match-watch-source"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.kind==='live'?'Трансляция':item.kind==='replay'?'Полная запись':'Обзор')} · ${escapeHtml(({free:'Бесплатно',subscription:'По подписке',ppv:'Отдельная покупка',unknown:'Условия у источника'})[item.access]||'Условия у источника')}</span>
       ${youtubeEmbedUrl(item,win.location.origin)?`<button class="primary-btn" type="button" data-watch-play="${index}">${position(s,item)?`Продолжить с ${Math.floor(position(s,item)/60)}:${String(position(s,item)%60).padStart(2,'0')}`:'Смотреть в приложении'}</button>${position(s,item)?`<button class="secondary-btn" type="button" data-watch-restart="${index}">Сначала</button>`:''}`:''}
-      <a data-watch-external="${index}" href="${escapeHtml(item.eventUrl)}" target="_blank" rel="noopener noreferrer">${item.embed?'Открыть у источника ↗':'Смотреть у источника ↗'}</a></article>`).join(''):'<p>Для этой страны просмотр сейчас не подтверждён.</p>':'<p>Выберите страну — покажем доступный вариант.</p>';
+      <a data-watch-external="${index}" href="${escapeHtml(item.eventUrl)}" target="_blank" rel="noopener noreferrer">${item.embed?'Открыть у источника ↗':'Смотреть у источника ↗'}</a></article>`).join(''):guide?' ':'<p>Для этой страны просмотр сейчас не подтверждён.</p>':'<p>Выберите страну — покажем доступный вариант.</p>';
+    s.root.querySelector('[data-broadcast-guide]').innerHTML=guide?.directory?`<article class="match-watch-source broadcast-guide"><strong>${escapeHtml(guide.leagueName)} · где показывают</strong>
+      <span>Вещатели турнира. Эфир матча и условия просмотра уточняйте у сервиса.</span>
+      ${guide.providers.map(provider=>`<a data-broadcast-external href="${escapeHtml(provider.url)}" target="_blank" rel="noopener noreferrer">Открыть ${escapeHtml(provider.name)} ↗</a>`).join('')}
+      <a data-broadcast-external href="${escapeHtml(guide.directory.url)}" target="_blank" rel="noopener noreferrer">Вещатели и расписание ↗</a></article>`:'';
+    s.root.querySelectorAll('[data-broadcast-external]').forEach(link=>{link.onclick=event=>{
+      const current=validBroadcastGuide(s.data?.broadcastGuide,s.fixtureId,s.country,now());
+      const url=broadcastGuideUrl(link.getAttribute('href'));
+      if(!active(s)||!current||!url||![current.directory?.url,...current.providers.map(item=>item.url)].includes(url)){event.preventDefault();if(active(s)&&s.data)render(s,s.data);return;}
+      try{if(typeof win.Telegram?.WebApp?.openLink==='function'){win.Telegram.WebApp.openLink(url);event.preventDefault();}}catch{}
+    };});
+    s.root.querySelector('[data-watch-status]').hidden=Boolean(guide&&!items.length);
     if(stopped)s.root.querySelector('[data-watch-status]').textContent='Доступ к этому видео больше не подтверждён. Выберите доступный источник.';
     if(privacy&&!mounted){
       s.privacyEdited=false;
@@ -96,7 +110,7 @@ export function createMatchWatch({api,escapeHtml,watchExperience,now=Date.now,wi
       }
     });
     const countrySelect=s.root.querySelector('[data-watch-country]');
-    if(countrySelect)countrySelect.onchange=event=>{stopPlayer(s);clearTimers(s);s.data=null;s.items=[];s.root.querySelector('[data-watch-options]').textContent='Проверяем доступность…';s.country=event.target.value;saveCountry(s.country);s.open=true;void load(s);};
+    if(countrySelect)countrySelect.onchange=event=>{stopPlayer(s);clearTimers(s);s.data=null;s.items=[];s.root.querySelector('[data-watch-options]').textContent='Проверяем доступность…';s.root.querySelector('[data-broadcast-guide]')?.replaceChildren();s.country=event.target.value;saveCountry(s.country);s.open=true;void load(s);};
     s.root.querySelectorAll('[data-watch-play]').forEach(button=>{button.onclick=()=>void play(s,items[Number(button.dataset.watchPlay)]);});
     s.root.querySelectorAll('[data-watch-restart]').forEach(button=>{button.onclick=()=>void play(s,items[Number(button.dataset.watchRestart)],true);});
     s.root.querySelectorAll('[data-watch-external]').forEach(link=>{link.onclick=event=>{

@@ -100,9 +100,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Открытие исчезнувшего разбора из истории — **Codex** — [PR #1029](https://github.com/TRAP44/football-analytics-cloudflare/pull/1029), `codex/history-open-recovery` — fallback LIVE не запускал timer; сбой fallback запроса/модуля уходил без UI feedback. Подтверждено actual Chromium и выполнением настоящего handler.
+- [ ] Источники просмотра топ-лиг и официальные вещатели — **Codex** — [PR #1030](https://github.com/TRAP44/football-analytics-cloudflare/pull/1030), `codex/official-broadcast-guides` — актуальная проверка лиг/страны/встраивания; реальные ссылки в матчах без обещания неподтверждённого LIVE, отдельный путь к лицензированному embed.
+
 
 
 
@@ -252,6 +254,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Открытие исчезнувшего разбора из истории — **Codex** — [PR #1029](https://github.com/TRAP44/football-analytics-cloudflare/pull/1029), `codex/history-open-recovery` — fallback LIVE не запускал timer; сбой fallback запроса/модуля уходил без UI feedback. Подтверждено actual Chromium и выполнением настоящего handler. Выпущен: maina0b5a381, Quality40410532669/CodeQL40410532740/Deploy40411036379 success; public launch150/CFcb6076b0-a270-4689-b5e1-dda69dc22267 verified.
 
 - [x] Восстановление матча после возврата от команды/игрока — **Codex** — [PR #1028](https://github.com/TRAP44/football-analytics-cloudflare/pull/1028), `codex/match-return-recovery` — после Back исчезал раздел просмотра и не возобновлялся LIVE refresh; native Chromium воспроизводит отсутствие video details. Выпущен: main78f973d0, Quality40407532487/CodeQL40407532471/Deploy40408059863 success; public launch149/CFf8309e72-2cdd-4966-92a9-12b094c97c73 verified.
 
@@ -498,6 +502,8 @@
 - [x] Настройка совместной работы Claude + Codex — **Claude** — [PR #793](https://github.com/TRAP44/football-analytics-cloudflare/pull/793)
 
 ## Идеи / найдено по пути
+
+- [ ] Лицензированный LIVE/embed для топ-лиг — **Сергей** — найден официальный OneFootball Embed Partner (договор/CMS) и технический iframe МатчТВ; условия для MiniApp/RU/конкретных LIVE ещё не подтверждены. Подготовлен docs/MATCH_WATCH_PARTNER_REQUEST.md, не отправлен. Справочные ссылки не считать новыми эфирами.
 
 - [ ] Обычный Background Jobs40187426710 (25окт14:05МСК) завершился ошибкой `smart_notifications: failed`; siblingwatchsuccess, общийleasecompleted, DBtransport176/176errors0. Уведомления не объявлять полностью здоровыми по одномуwatch. Выяснить из structuredopsотчёта причину отдельно, без повторной отправки реальным людям — найдено **Codex** при #1015.
 
