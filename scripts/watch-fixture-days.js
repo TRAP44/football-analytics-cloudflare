@@ -22,7 +22,10 @@ export async function loadWatchFixtureDays({videos,policies,env,fetchImpl,now,re
  const today=Date.parse(new Date(now).toISOString().slice(0,10)+'T00:00:00Z'),dates=Array.from({length:9},(_,i)=>new Date(today+(i-7)*86400000).toISOString().slice(0,10));
  const votes=new Map(),vote=(value,weight)=>{const ms=time(value);if(!Number.isFinite(ms))return;const day=new Date(ms).toISOString().slice(0,10);if(dates.includes(day))votes.set(day,(votes.get(day)||0)+weight);};
  for(const video of videos){
-  if(!policies.some(policy=>policy.channelId===video.snippet?.channelId)||! /highlights|resumen|SPL:| - (?:A-League Men|Ninja A-League) |(?:Live|Full) Match \| J\.League$/i.test(video.snippet?.title||''))continue;
+  const title=video.snippet?.title||'';
+  const summaryOrLeague=/highlights|resumen|SPL:| - (?:A-League Men|Ninja A-League) /i.test(title);
+  const fullJleague=/(?:Live|Full) Match \| J\.League$/i.test(title);
+  if(!policies.some(policy=>policy.channelId===video.snippet?.channelId)||!summaryOrLeague&&!fullJleague)continue;
   vote(video.liveStreamingDetails?.scheduledStartTime,20);
   const published=time(video.snippet?.publishedAt);
   if(Number.isFinite(published)){vote(new Date(published).toISOString(),3);vote(new Date(published-86400000).toISOString(),2);vote(new Date(published-2*86400000).toISOString(),1);}
