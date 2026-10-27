@@ -1,4 +1,4 @@
-import {broadcastGuideUrl,validBroadcastGuide} from './broadcast-guide-links.js?v=6.120.0-launch151';
+import {broadcastGuideUrl,validBroadcastGuide} from './broadcast-guide-links.js?v=6.120.0-launch152';
 // Optional, lazy watch panel. No video, SDK or third-party connection before play.
 const COUNTRY_KEY='matchradar:watch-country:v1';
 let sdkPromise;

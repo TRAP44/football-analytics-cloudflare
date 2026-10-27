@@ -1159,6 +1159,10 @@ body.watch-private #toast { display: none !important; }
 .watch-library[open] > summary::after { transform: translateY(-50%) rotate(180deg); }
 .watch-library select { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); color: var(--text); }
 .watch-library-list { display: grid; gap: 10px; margin-block: 14px; }
+.watch-library-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.watch-library-filters[hidden] { display: none; }
+.watch-library-filters button { flex: 1 1 auto; min-height: 40px; padding: 8px 10px; font-size: 12px; }
+.watch-library-filters button[aria-pressed="true"] { color: var(--accent); border-color: var(--mr-accent-line); }
 .watch-library-card { display: grid; gap: 8px; min-width: 0; padding: 14px; border: 1px solid var(--mr-accent-line); border-radius: 16px; background: var(--surface-2); }
 .watch-library-card :is(strong,small,span) { min-width: 0; overflow-wrap: anywhere; }
 .watch-library-card strong { font-size: 15px; line-height: 1.4; }

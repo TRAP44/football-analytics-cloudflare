@@ -2,10 +2,11 @@
 import {readFileSync,mkdirSync,writeFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {boundedSourceJson} from './inspect-match-watch.js';
-import {WATCH_COUNTRIES,WATCH_PUBLISHERS,WATCH_TTL_MS,WATCH_LIBRARY_KEY,watchFixtureIdentity,watchCacheKey,validatedWatchOptions,officialWatchUrl} from '../src/match-watch.js';
+import {WATCH_COUNTRIES,WATCH_PUBLISHERS,WATCH_TTL_MS,WATCH_LIBRARY_KEY,WATCH_EXTENDED_LIBRARY_KEY,WATCH_LIBRARY_MAX,watchFixtureIdentity,watchCacheKey,validatedWatchOptions,officialWatchUrl,watchLibraryPayload} from '../src/match-watch.js';
 import {matchCenterCacheKey} from '../src/match-center-cache-key.js';
-import {automaticReplayEvidence,automaticHighlightsMatch,automaticHighlightsEvidence,WATCH_POLICIES} from '../src/match-watch-policy.js';
+import {automaticReplayEvidence,automaticHighlightsMatch,automaticHighlightsEvidence,youtubeWatchCountries,watchDescriptionEvidence,WATCH_POLICIES} from '../src/match-watch-policy.js';
 import {discoverMatchWatch} from './discover-match-watch.js';
+import {loadWatchFixtureDays} from './watch-fixture-days.js';
 
 const fail=code=>{throw Object.assign(new Error(code),{code});};
 const timestamp=value=>typeof value==='string'?Date.parse(value):NaN;
@@ -28,10 +29,7 @@ export function approvedYoutubeItem(approval,video,match,now){
   if(!video || video.id!==approval.videoId || video.snippet?.channelId!==WATCH_PUBLISHERS[approval.publisher] || video.status?.privacyStatus!=='public' || video.contentDetails?.contentRating?.ytRating==='ytAgeRestricted')return null;
   const details=video.contentDetails;
   if(!details||typeof details!=='object'||Array.isArray(details))return null;
-  const region=details.regionRestriction;
-  if(region!==undefined && (!region||typeof region!=='object'||Array.isArray(region)||Object.hasOwn(region,'allowed')===Object.hasOwn(region,'blocked')))return null;
-  if(region && !['allowed','blocked'].every(key=>region[key]===undefined||Array.isArray(region[key])&&region[key].length<=300&&region[key].every(code=>typeof code==='string'&&/^[A-Z]{2}$/.test(code))))return null;
-  const countries=approval.countries.filter(code=>region?.allowed?region.allowed.includes(code):!region?.blocked?.includes(code));
+  const countries=youtubeWatchCountries(video,approval.countries);
   if(!countries.length)return null;
   const stream=video.liveStreamingDetails || {},start=timestamp(stream.actualStartTime),end=timestamp(stream.actualEndTime),scheduled=timestamp(stream.scheduledStartTime);
   if(approval.kind==='live'){
@@ -42,14 +40,14 @@ export function approvedYoutubeItem(approval,video,match,now){
     if(!live&&!upcoming || Math.abs((Number.isFinite(scheduled)?scheduled:start)-Date.parse(match.date))>30*60000 || approval.policyId && live && Math.abs(start-Date.parse(match.date))>30*60000)return null;
   }else if(approval.kind==='highlights'&&approval.policyId){
     const policy=WATCH_POLICIES.find(item=>item.id===approval.policyId&&item.revision===approval.policyRevision);
-    if(!automaticHighlightsMatch(policy,match,video.snippet.title,video.snippet.publishedAt,now,video.snippet.description)||!automaticHighlightsEvidence(details.duration,video.snippet.liveBroadcastContent,video.liveStreamingDetails))return null;
+    if(!automaticHighlightsMatch(policy,match,video.snippet.title,video.snippet.publishedAt,now,video.snippet.description)||!automaticHighlightsEvidence(details.duration,video.snippet.liveBroadcastContent,video.liveStreamingDetails,policy?.maxHighlightsSeconds))return null;
   }else if(!match.finished || video.snippet.liveBroadcastContent!=='none' || stream.actualEndTime && (!Number.isFinite(end)||end>now) || approval.policyId && !automaticReplayEvidence(match,stream.actualStartTime,stream.actualEndTime,now))return null;
   return {...approval,channelId:video.snippet.channelId,countries,publicVideo:true,regionVerified:true,ageRestricted:false,embeddable:video.status.embeddable===true,
     ...(approval.kind==='highlights'?{publishedAt:video.snippet.publishedAt,videoDescription:video.snippet.description||'',videoDuration:details.duration,broadcastKind:video.snippet.liveBroadcastContent,videoStream:video.liveStreamingDetails||null}:{}),
     availableFrom:Number.isFinite(scheduled)?new Date(scheduled).toISOString():null,
     replayStartedAt:approval.kind==='replay'&&Number.isFinite(start)?new Date(start).toISOString():null,replayEndedAt:approval.kind==='replay'&&Number.isFinite(end)?new Date(end).toISOString():null};
 }
-export async function refreshMatchWatch({env=process.env,manifest,fetchImpl=fetch,now=Date.now(),automatic=false}={}){
+export async function refreshMatchWatch({env=process.env,manifest,fetchImpl=fetch,now=Date.now(),automatic=false,policies=WATCH_POLICIES}={}){
   const report={scope:automatic?'automatic_official_watch_catalogue':'curated_watch_catalogue',checkedAt:new Date(now).toISOString(),approvals:0,published:0,rejected:0,missingFixture:0,youtubeRequests:0,cacheReads:0,cacheWrites:0};
   let approvals=validateWatchApprovals(manifest,now);report.approvals=approvals.length;
   if(!approvals.length&&!automatic)return report;
@@ -67,7 +65,7 @@ export async function refreshMatchWatch({env=process.env,manifest,fetchImpl=fetc
   const dbHeaders={apikey:dbKey,Accept:'application/json','Content-Type':'application/json'};
   const youtube=async(path,params)=>{
     const key=env.YOUTUBE_DATA_API_KEY;if(!key||key.length>512)fail('WATCH_YOUTUBE_KEY_MISSING');
-    if(++report.youtubeRequests>5)fail('WATCH_YOUTUBE_BUDGET');
+    if(++report.youtubeRequests>20)fail('WATCH_YOUTUBE_BUDGET');
     const url=new URL('https://www.googleapis.com/youtube/v3/'+path);url.search=new URLSearchParams(params);
     const data=await request(url,{'X-Goog-Api-Key':key,Accept:'application/json'});
     if(!Array.isArray(data.items)||data.items.length>50)fail('WATCH_VIDEO_RESPONSE_INVALID');return data.items;
@@ -89,9 +87,17 @@ export async function refreshMatchWatch({env=process.env,manifest,fetchImpl=fetc
     if(!result.stored && fixtureId===0)fail('WATCH_DISCOVERY_WRITE_UNCONFIRMED');
     return result.stored;
   };
+  if(automatic){
+    // Atomic database window also deduplicates Cloudflare/manual/backup clock
+    // runs. Workflow concurrency alone permits two sequential runs in one slot.
+    report.refreshClaims=1;
+    const claim=await request(new URL('/rest/v1/rpc/claim_provider_request',base),dbHeaders,{p_bucket_key:'match-watch:refresh',p_limit:1,p_window_seconds:300});
+    if(typeof claim?.allowed!=='boolean')fail('WATCH_REFRESH_CLAIM_UNCONFIRMED');
+    if(!claim.allowed){report.skipped='refresh_interval';return report;}
+  }
   let discovery;
   if(automatic){
-    discovery=await discoverMatchWatch({readCache,writeCache,youtube,approvals,now,report});
+    discovery=await discoverMatchWatch({readCache,writeCache,youtube,approvals,now,report,policies,loadFixtureDays:(videos,selected)=>loadWatchFixtureDays({videos,policies:selected,env,fetchImpl,now,readCache,writeCache,report,signal:deadline})});
     // Prefer policy verification over a matching legacy per-video approval.
     approvals=approvals.filter(item=>!discovery.automatic.some(auto=>auto.eventUrl===item.eventUrl&&auto.match.fixtureId===item.match.fixtureId)).concat(discovery.automatic);
   }
@@ -125,8 +131,10 @@ export async function refreshMatchWatch({env=process.env,manifest,fetchImpl=fetc
     if(!source){report.rejected++;continue;}
     const expiresAt=new Date(Math.min(now+WATCH_TTL_MS,timestamp(approval.validUntil))).toISOString();
     const item={...source,approval:{version:approval.policyId?2:1,policyId:approval.policyId,policyRevision:approval.policyRevision,confirmed:true,confirmedAt:approval.confirmedAt,fixtureIdentity:identity},checkedAt:new Date(now).toISOString(),expiresAt};
+    delete item.match;delete item.fixtureEvidence;delete item.confirmed;delete item.confirmedAt;delete item.validUntil;
+    if(item.kind==='highlights'&&approval.policyId)item.videoDescription=watchDescriptionEvidence(policies.find(policy=>policy.id===approval.policyId),item.videoDescription);
     const catalogue={version:1,fixtureIdentity:identity,items:[item]};
-    if(!validatedWatchOptions(match,catalogue,{now,approvals}).length){report.rejected++;continue;}
+    if(!validatedWatchOptions(match,catalogue,{now,approvals,policies}).length){report.rejected++;continue;}
     if(!catalogues.has(match.fixtureId))catalogues.set(match.fixtureId,{version:1,fixtureIdentity:identity,items:[]});
     catalogues.get(match.fixtureId).items.push(item);
   }
@@ -138,15 +146,26 @@ export async function refreshMatchWatch({env=process.env,manifest,fetchImpl=fetc
       report.published+=payload.items.length;
       const automaticItems=payload.items.filter(item=>item.approval.version===2);
       report.automaticPublished=(report.automaticPublished||0)+automaticItems.length;
-      if(automatic)(report.automaticItems||=[]).push(...automaticItems.map(item=>({fixtureId,videoId:item.videoId,kind:item.kind})));
+      if(automatic)(report.automaticItems||=[]).push(...automaticItems.map(item=>({fixtureId,videoId:item.videoId,kind:item.kind,publisher:item.publisher,countries:item.countries,embeddable:item.embeddable})));
     }
   }
   // A single bounded cache read serves the library; no per-card provider/DB
   // fan-out on the home screen. Only successfully stored catalogues enter it.
-  const entries=library.sort((a,b)=>Number(b.catalogue.items.some(item=>item.kind==='live'))-Number(a.catalogue.items.some(item=>item.kind==='live'))||timestamp(b.match.date)-timestamp(a.match.date)).slice(0,20);
-  await writeCache(WATCH_LIBRARY_KEY,0,{version:1,checkedAt:new Date(now).toISOString(),entries},now+WATCH_TTL_MS);
+  const entries=library.sort((a,b)=>Number(b.catalogue.items.some(item=>item.kind==='live'))-Number(a.catalogue.items.some(item=>item.kind==='live'))||timestamp(b.match.date)-timestamp(a.match.date)).slice(0,WATCH_LIBRARY_MAX);
+  const index={version:1,checkedAt:new Date(now).toISOString(),entries};
+  await writeCache(WATCH_EXTENDED_LIBRARY_KEY,0,index,now+WATCH_TTL_MS);
+  // The rollback runtime knows manual approvals and the original J.LEAGUE
+  // policy. New-source cards must not crowd all of those out of its 20 slots.
+  const legacy=entries.flatMap(entry=>{const items=entry.catalogue.items.filter(item=>item.approval.version===1||item.publisher==='jleagueinternational'&&item.approval.policyId==='jleague-j1-live');return items.length?[{...entry,catalogue:{...entry.catalogue,items}}]:[];}).slice(0,20);
+  await writeCache(WATCH_LIBRARY_KEY,0,{...index,entries:legacy},now+WATCH_TTL_MS);
+  report.legacyLibraryMatches=legacy.length;
   report.libraryMatches=entries.length;
   report.libraryFixtureIds=entries.map(entry=>entry.match.fixtureId);
+  report.libraryBytes=new TextEncoder().encode(JSON.stringify(index)).byteLength;
+  report.libraryByCountry=Object.fromEntries([...new Set(entries.flatMap(entry=>entry.catalogue.items.flatMap(item=>item.countries)))].map(country=>{
+    const data=watchLibraryPayload(index,{now,country,approvals,policies,maxEntries:WATCH_LIBRARY_MAX});
+    return [country,{matches:data.items.length,liveMatches:data.items.filter(item=>item.kinds.includes('live')).length,fullReplayMatches:data.items.filter(item=>item.kinds.includes('replay')).length,highlightsMatches:data.items.filter(item=>item.kinds.includes('highlights')).length}];
+  }));
   return report;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){

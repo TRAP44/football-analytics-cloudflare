@@ -19,11 +19,12 @@ function harness(){
   if(url.hostname==='www.googleapis.com'){
    assert.equal(init.headers.apikey,undefined);assert.equal(init.headers['X-Goog-Api-Key'],env.YOUTUBE_DATA_API_KEY);
    if(url.pathname.endsWith('/search')){if(failSearch===true||failSearch===url.searchParams.get('eventType'))throw Error('private upstream text');return Response.json({items:searchResults??items.map(v=>({id:{videoId:v.id}}))});}
-   if(url.pathname.endsWith('/playlistItems')){if(failUploads)throw Error('uploads unavailable');assert.equal(url.searchParams.get('playlistId'),'UU'+WATCH_POLICIES[0].channelId.slice(2));assert.equal(url.searchParams.get('maxResults'),'20');return Response.json({items:(uploadResults??items.map(v=>v.id)).map(id=>({contentDetails:{videoId:id}}))});}
+   if(url.pathname.endsWith('/playlistItems')){if(failUploads)throw Error('uploads unavailable');assert.equal(url.searchParams.get('playlistId'),'UU'+WATCH_POLICIES[0].channelId.slice(2));assert.equal(url.searchParams.get('maxResults'),'50');return Response.json({items:(uploadResults??items.map(v=>v.id)).map(id=>({contentDetails:{videoId:id}}))});}
    assert.ok(url.pathname.endsWith('/videos'));assert.ok(url.searchParams.get('id').split(',').length<=50);return Response.json({items});
   }
   assert.equal(url.hostname,'example.supabase.co');assert.equal(init.headers['X-Goog-Api-Key'],undefined);
   if(init.method==='POST'){
+   if(url.pathname==='/rest/v1/rpc/claim_provider_request'){assert.deepEqual(JSON.parse(init.body),{p_bucket_key:'match-watch:refresh',p_limit:1,p_window_seconds:300});return Response.json({allowed:true});}
    assert.equal(url.pathname,'/rest/v1/rpc/write_analysis_cache_versioned');if(failWrite)throw Error('write outcome unknown');
    const body=JSON.parse(init.body),previous=cache.get(body.p_cache_key);
    // Model the real versioned RPC: repeated differing content at the same
@@ -31,13 +32,13 @@ function harness(){
    if(previous&&previous.updatedAt>=body.p_updated_at)return Response.json({stored:false,reason:'superseded'});
    cache.set(body.p_cache_key,{payload:body.p_payload,updatedAt:body.p_updated_at,expiresAt:Date.parse(body.p_expires_at)});return Response.json({stored:true,reason:'stored'});
   }
-  assert.equal(url.pathname,'/rest/v1/analysis_cache');const key=url.searchParams.get('cache_key');
+  assert.equal(url.pathname,'/rest/v1/analysis_cache');const key=url.searchParams.get('cache_key');if(key==='eq.match-watch-discovery:v1')return Response.json(cache.has('match-watch-discovery:v1')?[{cache_key:'match-watch-discovery:v1',payload:cache.get('match-watch-discovery:v1').payload}]:[]);
   if(key===`eq.${WATCH_DISCOVERY_KEY}`)return Response.json((cache.has(WATCH_DISCOVERY_KEY)&&(cache.get(WATCH_DISCOVERY_KEY).expiresAt??Infinity)>currentNow)?[{cache_key:WATCH_DISCOVERY_KEY,payload:cache.get(WATCH_DISCOVERY_KEY).payload}]:[]);
   if(key.startsWith('in.(provider-fixtures:'))return Response.json([{cache_key:'provider-fixtures:2026-10-24:v1',payload:{date:'2026-10-24',fetchedAt:new Date(currentNow-60000).toISOString(),fixtures:matches.map(raw)}}]);
   if(key.startsWith('like.'))return Response.json([]);
   assert.match(key,/^in\.\(match-center:/);return Response.json([]);
  };
- const run=(offset=0)=>{currentNow=now+offset;return refreshMatchWatch({env,manifest:{version:1,items:[]},automatic:true,fetchImpl,now:currentNow});};
+ const run=(offset=0)=>{currentNow=now+offset;return refreshMatchWatch({env,manifest:{version:1,items:[]},automatic:true,policies:[WATCH_POLICIES[0]],fetchImpl,now:currentNow});};
  return {run,cache,calls,setVideos:v=>{items=v;},setMatches:m=>{matches=m;},setSearchResults:v=>{searchResults=v;},setUploads:v=>{uploadResults=v;},failSearch:type=>{failSearch=type||true;},failUploads:()=>{failUploads=true;},failWrite:()=>{failWrite=true;}};
 }
 const apiRuntime=deps=>createUserDataApiRuntime(new Proxy(deps,{get:(target,key)=>key in target?target[key]:async()=>[]}));
@@ -101,7 +102,7 @@ test('search attempt is durable before API I/O; failed search does not repeat ev
  const h=harness();h.failSearch();const report=await h.run();assert.equal(report.discovery,'partial');assert.equal(report.discoveryError,'WATCH_DISCOVERY_SEARCH_FAILED');
  assert.ok(h.cache.get(WATCH_DISCOVERY_KEY).payload.attemptedAt);assert.equal(searchCalls(h),2);
  await h.run(300000);assert.equal(searchCalls(h),2);
- const unknown=harness();unknown.failWrite();await assert.rejects(unknown.run(),e=>e.code==='WATCH_WRITE_UNCONFIRMED');assert.equal(searchCalls(unknown),0);assert.equal(unknown.calls.filter(call=>call.init.method==='POST').length,1);
+ const unknown=harness();unknown.failWrite();await assert.rejects(unknown.run(),e=>e.code==='WATCH_WRITE_UNCONFIRMED');assert.equal(searchCalls(unknown),0);assert.equal(unknown.calls.filter(call=>call.url.pathname.endsWith('/write_analysis_cache_versioned')).length,1);
 });
 
 test('one failed search feed cannot discard a newly found LIVE or prevent the other feed from being queried',async()=>{
@@ -141,7 +142,7 @@ test('an old live session cannot be relabelled as a new fixture using a new sche
 
 test('malformed or future discovery state stops before any search',async()=>{
  for(const patch of [{attemptedAt:iso(60000)},{videoIds:['untrusted-url']},{bindings:Array(21).fill({})}]){
-  const h=harness();h.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-1),payload:{version:1,attemptedAt:iso(-60000),videoIds:[],bindings:[],...patch}});
+  const h=harness();h.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-1),payload:{version:2,attemptedAt:iso(-60000),videoIds:[],bindings:[],...patch}});
   await assert.rejects(h.run(),e=>e.code==='WATCH_DISCOVERY_STATE_INVALID');assert.equal(searchCalls(h),0);
  }
 });
@@ -260,7 +261,7 @@ test('deploying highlights reads uploads once without waiting for or repeating t
  h.setVideos([highlight]);h.setMatches([finished]);h.setSearchResults([]);const report=await h.run(15*3600000);
  assert.equal(report.published,1);
  // Simulate a legacy v1 discovery state whose live search ran one minute ago.
- const fresh=harness();fresh.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-60001),payload:{version:1,attemptedAt:iso(-60000),videoIds:[],bindings:[]}});
+ const fresh=harness();fresh.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-60001),payload:{version:2,attemptedAt:iso(-60000),videoIds:[],bindings:[]}});
  const first=await fresh.run();assert.equal(first.discovery,'uploads_searched');assert.equal(searchCalls(fresh),0);assert.equal(first.youtubeRequests,2);
  const second=await fresh.run(300000);assert.equal(second.discovery,'cached');assert.equal(searchCalls(fresh),0);assert.equal(second.youtubeRequests,1);
 });
@@ -271,13 +272,13 @@ test('uploads failure records the attempt before I/O, does not retry every tick,
  assert.equal(h.calls.filter(c=>c.url.pathname.endsWith('/playlistItems')).length,1);assert.ok(h.cache.get(WATCH_DISCOVERY_KEY).payload.uploadsAttemptedAt);
  await h.run(300000);assert.equal(h.calls.filter(c=>c.url.pathname.endsWith('/playlistItems')).length,1);
  for(const patch of [{uploadsAttemptedAt:iso(1000)},{uploadIds:['bad-url']}]){
-  const f=harness();f.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-60001),payload:{version:1,attemptedAt:iso(-60000),videoIds:[],bindings:[],...patch}});
+  const f=harness();f.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-60001),payload:{version:2,attemptedAt:iso(-60000),videoIds:[],bindings:[],...patch}});
   await assert.rejects(f.run(),error=>error.code==='WATCH_DISCOVERY_STATE_INVALID');assert.equal(f.calls.filter(c=>c.url.hostname==='www.googleapis.com').length,0);
  }
 });
 
 test('separately scheduled live search retains cached upload IDs until the next uploads check',async()=>{
- const h=harness();h.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-60001),payload:{version:1,attemptedAt:iso(-WATCH_DISCOVERY_INTERVAL),uploadsAttemptedAt:iso(-60000),uploadIds:[highlight.id],videoIds:[highlight.id],bindings:[]}});
+ const h=harness();h.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-60001),payload:{version:2,attemptedAt:iso(-WATCH_DISCOVERY_INTERVAL),uploadsAttemptedAt:iso(-60000),uploadIds:[highlight.id],videoIds:[highlight.id],bindings:[]}});
  h.setVideos([highlight]);h.setSearchResults([]);await h.run();assert.ok(h.cache.get(WATCH_DISCOVERY_KEY).payload.videoIds.includes(highlight.id));assert.equal(h.calls.filter(c=>c.url.pathname.endsWith('/playlistItems')).length,0);
 });
 
@@ -325,4 +326,11 @@ test('shared viewing library is built once without extra provider reads and with
  const cards=watchLibraryPayload(index,{now,country:'RU',approvals:[]});assert.equal(cards.items[0].fixtureId,match.fixtureId);assert.deepEqual(cards.items[0].kinds,['live']);
  assert.doesNotMatch(JSON.stringify(cards),/videoId|eventUrl|channelId|probabilities|score/);
  h.setVideos([]);const second=await h.run(300000);assert.equal(second.libraryMatches,0);assert.equal(h.cache.get(WATCH_LIBRARY_KEY).payload.entries.length,0);
+});
+
+
+test('discovery v2 migrates existing bound videos without modifying the rollback v1 state',async()=>{
+ const h=harness(),legacy={version:1,attemptedAt:iso(-60000),uploadsAttemptedAt:iso(-60000),videoIds:[video.id],uploadIds:[video.id],bindings:[{match,observedAt:iso(-60000),videoIds:[video.id]}]};
+ h.cache.set('match-watch-discovery:v1',{payload:structuredClone(legacy),updatedAt:iso(-60000),expiresAt:now+86400000});
+ const report=await h.run();assert.equal(report.discoveryMigration,'v1_to_v2');assert.equal(report.automaticPublished,1);assert.equal(searchCalls(h),0);assert.equal(report.youtubeRequests,1);assert.equal(h.cache.get(WATCH_DISCOVERY_KEY).payload.version,2);assert.deepEqual(h.cache.get('match-watch-discovery:v1').payload,legacy);
 });

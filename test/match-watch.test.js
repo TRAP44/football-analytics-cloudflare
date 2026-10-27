@@ -77,7 +77,7 @@ function refreshFixture({source=video,rows=[{cache_key:matchCenterCacheKey(999),
  return {calls,run};
 }
 test('refresh batches metadata, writes only shared versioned catalogue and never sends secrets to the wrong host',async()=>{
- const h=refreshFixture();const report=await h.run();assert.equal(report.published,1);assert.equal(h.calls.length,4);
+ const h=refreshFixture();const report=await h.run();assert.equal(report.published,1);assert.equal(h.calls.length,5);
  const yt=h.calls.find(call=>call.url.includes('googleapis'));assert.equal(yt.init.headers['X-Goog-Api-Key'],'local-fixture-key');assert.equal(yt.url.includes('key='),false);assert.equal(yt.init.headers.apikey,undefined);
  const db=h.calls.filter(call=>call.url.includes('supabase'));assert.ok(db.every(call=>!call.init.headers['X-Goog-Api-Key']));
  const body=JSON.parse(db.find(call=>call.init.body&&JSON.parse(call.init.body).p_fixture_id===999).init.body);assert.equal(body.p_cache_key,watchCacheKey(999));assert.equal(body.p_fixture_id,999);assert.equal(body.p_payload.items[0].approval.fixtureIdentity,watchFixtureIdentity(match));
@@ -87,7 +87,7 @@ test('refresh batches metadata, writes only shared versioned catalogue and never
 test('removed/private video clears old per-fixture cache; empty manifest never spends API quota',async()=>{
  const h=refreshFixture({source:null});const report=await h.run();assert.equal(report.rejected,1);assert.equal(JSON.parse(h.calls.find(call=>call.init.body&&JSON.parse(call.init.body).p_fixture_id===999).init.body).p_payload.items.length,0);
  const empty=await refreshMatchWatch({manifest:{version:1,items:[]},fetchImpl:()=>{throw Error('network forbidden');},now});assert.equal(empty.youtubeRequests,0);
- const missing=refreshFixture({rows:[]});assert.equal((await missing.run()).missingFixture,1);assert.equal(missing.calls.length,2);
+ const missing=refreshFixture({rows:[]});assert.equal((await missing.run()).missingFixture,1);assert.equal(missing.calls.length,3);
 });
 
 test('unknown cache write is never retried, and arbitrary provider exceptions are not returned',async()=>{

@@ -1,0 +1,3769 @@
+{
+  "observedSources": [
+    {
+      "run": 40513430842,
+      "handle": "aleagues",
+      "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+      "observedAt": "2026-10-27T13:36:25.669Z"
+    },
+    {
+      "run": 40514129711,
+      "handle": "sgpremierleague",
+      "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+      "observedAt": "2026-10-27T13:40:46.209Z"
+    },
+    {
+      "run": 40514244217,
+      "handle": "laliga",
+      "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+      "observedAt": "2026-10-27T13:41:30.056Z"
+    },
+    {
+      "run": 40515104569,
+      "handle": "seriea",
+      "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+      "observedAt": "2026-10-27T13:47:09.996Z"
+    }
+  ],
+  "matches": [
+    {
+      "fixtureId": 1593690,
+      "date": "2026-10-25T02:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 942,
+        "name": "Wellington Phoenix"
+      },
+      "away": {
+        "id": 941,
+        "name": "Central Coast Mariners"
+      },
+      "leagueId": 188,
+      "league": "A-League",
+      "season": 2026,
+      "round": "Regular Season - 2",
+      "score": {
+        "home": 2,
+        "away": 0
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1593691,
+      "date": "2026-10-25T04:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 943,
+        "name": "Sydney"
+      },
+      "away": {
+        "id": 948,
+        "name": "Adelaide United"
+      },
+      "leagueId": 188,
+      "league": "A-League",
+      "season": 2026,
+      "round": "Regular Season - 2",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1556116,
+      "date": "2026-10-25T05:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 288,
+        "name": "Nagoya Grampus"
+      },
+      "away": {
+        "id": 296,
+        "name": "Yokohama F. Marinos"
+      },
+      "leagueId": 98,
+      "league": "J1 League",
+      "season": 2027,
+      "round": "Regular Season - 12",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1556111,
+      "date": "2026-10-25T06:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 291,
+        "name": "Cerezo Osaka"
+      },
+      "away": {
+        "id": 301,
+        "name": "JEF United Chiba"
+      },
+      "leagueId": 98,
+      "league": "J1 League",
+      "season": 2027,
+      "round": "Regular Season - 12",
+      "score": {
+        "home": 2,
+        "away": 2
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1556118,
+      "date": "2026-10-25T06:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 287,
+        "name": "Urawa"
+      },
+      "away": {
+        "id": 285,
+        "name": "V-varen Nagasaki"
+      },
+      "leagueId": 98,
+      "league": "J1 League",
+      "season": 2027,
+      "round": "Regular Season - 12",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1632112,
+      "date": "2026-10-25T06:45:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 1968,
+        "name": "Sydney FC W"
+      },
+      "away": {
+        "id": 1971,
+        "name": "Melbourne City W"
+      },
+      "leagueId": 190,
+      "league": "A-League Women",
+      "season": 2026,
+      "round": "Regular Season - 2",
+      "score": {
+        "home": 0,
+        "away": 5
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1556112,
+      "date": "2026-10-25T07:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 292,
+        "name": "FC Tokyo"
+      },
+      "away": {
+        "id": 305,
+        "name": "Mito Hollyhock"
+      },
+      "leagueId": 98,
+      "league": "J1 League",
+      "season": 2027,
+      "round": "Regular Season - 12",
+      "score": {
+        "home": 6,
+        "away": 0
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1556115,
+      "date": "2026-10-25T07:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 294,
+        "name": "Kawasaki Frontale"
+      },
+      "away": {
+        "id": 310,
+        "name": "Fagiano Okayama"
+      },
+      "leagueId": 98,
+      "league": "J1 League",
+      "season": 2027,
+      "round": "Regular Season - 12",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1550161,
+      "date": "2026-10-25T11:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 505,
+        "name": "Inter"
+      },
+      "away": {
+        "id": 502,
+        "name": "Fiorentina"
+      },
+      "leagueId": 135,
+      "league": "Serie A",
+      "season": 2026,
+      "round": "Regular Season - 8",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1603476,
+      "date": "2026-10-25T11:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 4200,
+        "name": "Albirex Niigata S"
+      },
+      "away": {
+        "id": 4206,
+        "name": "Tampines Rovers"
+      },
+      "leagueId": 368,
+      "league": "Premier League",
+      "season": 2026,
+      "round": "Regular Season - 5",
+      "score": {
+        "home": 2,
+        "away": 3
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1603477,
+      "date": "2026-10-25T11:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 4204,
+        "name": "Home United"
+      },
+      "away": {
+        "id": 10077,
+        "name": "Tanjong Pagar"
+      },
+      "leagueId": 368,
+      "league": "Premier League",
+      "season": 2026,
+      "round": "Regular Season - 5",
+      "score": {
+        "home": 6,
+        "away": 0
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1570424,
+      "date": "2026-10-25T13:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 531,
+        "name": "Athletic Club"
+      },
+      "away": {
+        "id": 546,
+        "name": "Getafe"
+      },
+      "leagueId": 140,
+      "league": "La Liga",
+      "season": 2026,
+      "round": "Regular Season - 10",
+      "score": {
+        "home": 4,
+        "away": 0
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1550157,
+      "date": "2026-10-25T14:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 499,
+        "name": "Atalanta"
+      },
+      "away": {
+        "id": 512,
+        "name": "Frosinone"
+      },
+      "leagueId": 135,
+      "league": "Serie A",
+      "season": 2026,
+      "round": "Regular Season - 8",
+      "score": {
+        "home": 4,
+        "away": 4
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1550160,
+      "date": "2026-10-25T14:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 495,
+        "name": "Genoa"
+      },
+      "away": {
+        "id": 517,
+        "name": "Venezia"
+      },
+      "leagueId": 135,
+      "league": "Serie A",
+      "season": 2026,
+      "round": "Regular Season - 8",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1570427,
+      "date": "2026-10-25T15:15:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 538,
+        "name": "Celta Vigo"
+      },
+      "away": {
+        "id": 543,
+        "name": "Real Betis"
+      },
+      "leagueId": 140,
+      "league": "La Liga",
+      "season": 2026,
+      "round": "Regular Season - 10",
+      "score": {
+        "home": 0,
+        "away": 0
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1550163,
+      "date": "2026-10-25T17:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 867,
+        "name": "Lecce"
+      },
+      "away": {
+        "id": 496,
+        "name": "Juventus"
+      },
+      "leagueId": 135,
+      "league": "Serie A",
+      "season": 2026,
+      "round": "Regular Season - 8",
+      "score": {
+        "home": 0,
+        "away": 2
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1570430,
+      "date": "2026-10-25T17:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 548,
+        "name": "Real Sociedad"
+      },
+      "away": {
+        "id": 539,
+        "name": "Levante"
+      },
+      "leagueId": 140,
+      "league": "La Liga",
+      "season": 2026,
+      "round": "Regular Season - 10",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1550166,
+      "date": "2026-10-25T19:45:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 494,
+        "name": "Udinese"
+      },
+      "away": {
+        "id": 489,
+        "name": "AC Milan"
+      },
+      "leagueId": 135,
+      "league": "Serie A",
+      "season": 2026,
+      "round": "Regular Season - 8",
+      "score": {
+        "home": 0,
+        "away": 2
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1570426,
+      "date": "2026-10-25T20:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 529,
+        "name": "Barcelona"
+      },
+      "away": {
+        "id": 541,
+        "name": "Real Madrid"
+      },
+      "leagueId": 140,
+      "league": "La Liga",
+      "season": 2026,
+      "round": "Regular Season - 10",
+      "score": {
+        "home": 1,
+        "away": 2
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1632108,
+      "date": "2026-10-24T03:15:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 1974,
+        "name": "Western Sydney Wanderers W"
+      },
+      "away": {
+        "id": 1973,
+        "name": "Brisbane Roar FC W"
+      },
+      "leagueId": 190,
+      "league": "A-League Women",
+      "season": 2026,
+      "round": "Regular Season - 2",
+      "score": {
+        "home": 3,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1593687,
+      "date": "2026-10-24T04:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 946,
+        "name": "Newcastle Jets"
+      },
+      "away": {
+        "id": 15550,
+        "name": "Macarthur"
+      },
+      "leagueId": 188,
+      "league": "A-League",
+      "season": 2026,
+      "round": "Regular Season - 2",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1632109,
+      "date": "2026-10-24T04:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 22292,
+        "name": "Central Coast Mariners W"
+      },
+      "away": {
+        "id": 1970,
+        "name": "Canberra United W"
+      },
+      "leagueId": 190,
+      "league": "A-League Women",
+      "season": 2026,
+      "round": "Regular Season - 2",
+      "score": {
+        "home": 5,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1556117,
+      "date": "2026-10-24T05:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 282,
+        "name": "Sanfrecce Hiroshima"
+      },
+      "away": {
+        "id": 283,
+        "name": "Shimizu S-pulse"
+      },
+      "leagueId": 98,
+      "league": "J1 League",
+      "season": 2027,
+      "round": "Regular Season - 12",
+      "score": {
+        "home": 4,
+        "away": 0
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1556114,
+      "date": "2026-10-24T06:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 290,
+        "name": "Kashima"
+      },
+      "away": {
+        "id": 281,
+        "name": "Kashiwa Reysol"
+      },
+      "leagueId": 98,
+      "league": "J1 League",
+      "season": 2027,
+      "round": "Regular Season - 12",
+      "score": {
+        "home": 2,
+        "away": 3
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1556119,
+      "date": "2026-10-24T06:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 306,
+        "name": "Tokyo Verdy"
+      },
+      "away": {
+        "id": 316,
+        "name": "Avispa Fukuoka"
+      },
+      "leagueId": 98,
+      "league": "J1 League",
+      "season": 2027,
+      "round": "Regular Season - 12",
+      "score": {
+        "home": 3,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1556120,
+      "date": "2026-10-24T06:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 289,
+        "name": "Vissel Kobe"
+      },
+      "away": {
+        "id": 303,
+        "name": "Machida Zelvia"
+      },
+      "leagueId": 98,
+      "league": "J1 League",
+      "season": 2027,
+      "round": "Regular Season - 12",
+      "score": {
+        "home": 0,
+        "away": 0
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1593688,
+      "date": "2026-10-24T06:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 939,
+        "name": "Western Sydney Wanderers"
+      },
+      "away": {
+        "id": 24608,
+        "name": "Auckland"
+      },
+      "leagueId": 188,
+      "league": "A-League",
+      "season": 2026,
+      "round": "Regular Season - 2",
+      "score": {
+        "home": 5,
+        "away": 2
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1632110,
+      "date": "2026-10-24T06:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 1972,
+        "name": "Adelaide United W"
+      },
+      "away": {
+        "id": 1969,
+        "name": "Perth Glory FC W"
+      },
+      "leagueId": 190,
+      "league": "A-League Women",
+      "season": 2026,
+      "round": "Regular Season - 2",
+      "score": {
+        "home": 0,
+        "away": 0
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1556113,
+      "date": "2026-10-24T07:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 293,
+        "name": "Gamba Osaka"
+      },
+      "away": {
+        "id": 302,
+        "name": "Kyoto Sanga"
+      },
+      "leagueId": 98,
+      "league": "J1 League",
+      "season": 2027,
+      "round": "Regular Season - 12",
+      "score": {
+        "home": 2,
+        "away": 2
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1593689,
+      "date": "2026-10-24T08:40:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 944,
+        "name": "Melbourne Victory"
+      },
+      "away": {
+        "id": 945,
+        "name": "Melbourne City"
+      },
+      "leagueId": 188,
+      "league": "A-League",
+      "season": 2026,
+      "round": "Regular Season - 2",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1603475,
+      "date": "2026-10-24T11:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 4208,
+        "name": "Young Lions"
+      },
+      "away": {
+        "id": 4201,
+        "name": "Balestier Khalsa"
+      },
+      "leagueId": 368,
+      "league": "Premier League",
+      "season": 2026,
+      "round": "Regular Season - 5",
+      "score": {
+        "home": 1,
+        "away": 2
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1570429,
+      "date": "2026-10-24T12:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 728,
+        "name": "Rayo Vallecano"
+      },
+      "away": {
+        "id": 797,
+        "name": "Elche"
+      },
+      "leagueId": 140,
+      "league": "La Liga",
+      "season": 2026,
+      "round": "Regular Season - 10",
+      "score": {
+        "home": 0,
+        "away": 3
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1550158,
+      "date": "2026-10-24T13:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 490,
+        "name": "Cagliari"
+      },
+      "away": {
+        "id": 500,
+        "name": "Bologna"
+      },
+      "leagueId": 135,
+      "league": "Serie A",
+      "season": 2026,
+      "round": "Regular Season - 8",
+      "score": {
+        "home": 0,
+        "away": 2
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1550159,
+      "date": "2026-10-24T13:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 895,
+        "name": "Como"
+      },
+      "away": {
+        "id": 488,
+        "name": "Sassuolo"
+      },
+      "leagueId": 135,
+      "league": "Serie A",
+      "season": 2026,
+      "round": "Regular Season - 8",
+      "score": {
+        "home": 2,
+        "away": 0
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1570428,
+      "date": "2026-10-24T14:15:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 4665,
+        "name": "Racing Santander"
+      },
+      "away": {
+        "id": 540,
+        "name": "Espanyol"
+      },
+      "leagueId": 140,
+      "league": "La Liga",
+      "season": 2026,
+      "round": "Regular Season - 10",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1550164,
+      "date": "2026-10-24T16:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 492,
+        "name": "Napoli"
+      },
+      "away": {
+        "id": 497,
+        "name": "AS Roma"
+      },
+      "leagueId": 135,
+      "league": "Serie A",
+      "season": 2026,
+      "round": "Regular Season - 8",
+      "score": {
+        "home": 3,
+        "away": 3
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1570432,
+      "date": "2026-10-24T16:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 532,
+        "name": "Valencia"
+      },
+      "away": {
+        "id": 533,
+        "name": "Villarreal"
+      },
+      "leagueId": 140,
+      "league": "La Liga",
+      "season": 2026,
+      "round": "Regular Season - 10",
+      "score": {
+        "home": 1,
+        "away": 2
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1550162,
+      "date": "2026-10-24T18:45:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 487,
+        "name": "Lazio"
+      },
+      "away": {
+        "id": 523,
+        "name": "Parma"
+      },
+      "leagueId": 135,
+      "league": "Serie A",
+      "season": 2026,
+      "round": "Regular Season - 8",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1570425,
+      "date": "2026-10-24T19:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 530,
+        "name": "Atletico Madrid"
+      },
+      "away": {
+        "id": 544,
+        "name": "Deportivo La Coruna"
+      },
+      "leagueId": 140,
+      "league": "La Liga",
+      "season": 2026,
+      "round": "Regular Season - 10",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1632111,
+      "date": "2026-10-24T23:15:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 17905,
+        "name": "Wellington Phoenix W"
+      },
+      "away": {
+        "id": 1976,
+        "name": "Melbourne Victory W"
+      },
+      "leagueId": 190,
+      "league": "A-League Women",
+      "season": 2026,
+      "round": "Regular Season - 2",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1603478,
+      "date": "2026-10-26T11:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 4203,
+        "name": "Geylang International"
+      },
+      "away": {
+        "id": 4205,
+        "name": "Hougang United"
+      },
+      "leagueId": 368,
+      "league": "Premier League",
+      "season": 2026,
+      "round": "Regular Season - 5",
+      "score": {
+        "home": 3,
+        "away": 0
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1570431,
+      "date": "2026-10-26T20:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 536,
+        "name": "Sevilla"
+      },
+      "away": {
+        "id": 727,
+        "name": "Osasuna"
+      },
+      "leagueId": 140,
+      "league": "La Liga",
+      "season": 2026,
+      "round": "Regular Season - 10",
+      "score": {
+        "home": 2,
+        "away": 0
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1593686,
+      "date": "2026-10-23T09:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 947,
+        "name": "Brisbane Roar"
+      },
+      "away": {
+        "id": 940,
+        "name": "Perth Glory"
+      },
+      "leagueId": 188,
+      "league": "A-League",
+      "season": 2026,
+      "round": "Regular Season - 2",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1550165,
+      "date": "2026-10-23T18:45:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 503,
+        "name": "Torino"
+      },
+      "away": {
+        "id": 1579,
+        "name": "Monza"
+      },
+      "leagueId": 135,
+      "league": "Serie A",
+      "season": 2026,
+      "round": "Regular Season - 8",
+      "score": {
+        "home": 3,
+        "away": 2
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1570423,
+      "date": "2026-10-23T19:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 542,
+        "name": "Alaves"
+      },
+      "away": {
+        "id": 535,
+        "name": "Malaga"
+      },
+      "leagueId": 140,
+      "league": "La Liga",
+      "season": 2026,
+      "round": "Regular Season - 10",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    }
+  ],
+  "videos": [
+    {
+      "id": "l-d102CNgtg",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "Kicking Back Ep 2 | Vine’s Return, Matildas Debate & Players in Goal?!",
+        "description": "Sarah Rowe is back with Melbourne City stars Aideen Keane and Taylor Ray for Episode 2 of Kicking Back, presented by Ninja! ⚽\n\nThe girls break down Matchweek 2 of the Ninja A-League, including Melbourne City's huge 5-0 win over Sydney FC, the Central Coast Mariners' flying start and the week's best goals.\n\nPlus, the big debate: are Ninja A-League players getting a fair shot at the CommBank Matildas? Aideen and Taylor share their thoughts on playing in Australia, making the move overseas and what it takes to keep developing as a footballer.\n\nAlso on the agenda:\n🔥 Inside Melbourne City's dominant performance against Sydney FC\n⚽ Who gets the girls' Goal of the Week votes?\n👀 Talia Younis' standout start to the season\n🧤 When outfield players have to step into goal\n✈️ Melbourne City's upcoming AFC Women's Champions League trip to Uzbekistan\n📅 The Matchweek 3 fixtures to watch\n\nSubscribe to the A-Leagues YouTube channel for more Kicking Back, match highlights, original shows and all the biggest stories from Australian football.\n\nCHAPTERS 🎙️\n00:00 Welcome back to Kicking Back\n00:45 Life behind the scenes\n05:45 Sarah's big news\n06:55 Melbourne City's teammate celebrations\n08:22 Ninja A-League Matchweek 2 review\n11:45 Inside City's 5-0 win\n13:35 Reunited at Melbourne City\n14:33 Should you celebrate against your old club?\n16:25 Talia Younis' breakout performances\n18:11 Are the Mariners the real deal?\n19:55 Goal of the Week\n22:05 Do A-League players get a fair shot at the Matildas?\n26:17 When outfield players become goalkeepers\n30:18 Melbourne City's Champions League trip\n33:40 Matchweek 3 preview\n35:11 See you next week\n\nTo see more A-League Men and Ninja A-League coverage 👉🏻https://aleagues.com.au\n\n————————————————\n\nFor the latest updates, follow us on:\n►TIKTOK: https://www.tiktok.com/@aleagues\n►TWITTER: \nA-League Men - https://twitter.com/aleaguemen\nNinja A-League - https://twitter.com/aleaguewomen \n►FACEBOOK: https://www.facebook.com/aleagues\n►INSTAGRAM: https://www.instagram.com/aleagues/\n\n🎟️ Get your tickets to upcoming A-Leagues matches: https://aleagues.com.au/tickets-hub/\n\n#aleague #football #soccer #highlights #KickingBack #NinjaALeague #ALeagueWomen",
+        "publishedAt": "2026-10-27T06:00:09.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT35M46S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "liveStreamingDetails": {
+        "scheduledStartTime": "2026-10-27T06:00:00.000Z",
+        "actualStartTime": "2026-10-27T06:00:09.000Z",
+        "actualEndTime": "2026-10-27T06:36:51.000Z"
+      }
+    },
+    {
+      "id": "0kfPBrm0U30",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "Never Change, Bubs 😂🔥",
+        "description": "The former Matilda leading the charge pre-game before the reigning champions put FOUR past Sydney in the first half 👀😂\n\nNever change, Bubs 🔥\n\nSubscribe for more A-Leagues highlights, interviews and behind-the-scenes moments!\n\nTo see more A-League Men and Ninja A-League coverage 👉🏻https://aleagues.com.au\n\n————————————————\n\nFor the latest updates, follow us on:\n►TIKTOK: https://www.tiktok.com/@aleagues\n►TWITTER: \nA-League Men - https://twitter.com/aleaguemen\nNinja A-League - https://twitter.com/aleaguewomen \n►FACEBOOK: https://www.facebook.com/aleagues\n►INSTAGRAM: https://www.instagram.com/aleagues/\n\n#aleague #football #soccer #highlights #ALeagues #Football #Shorts",
+        "publishedAt": "2026-10-27T05:17:44.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT15S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "vii8Q27ree0",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "FIVE-STAR CITY! 🤯 | Ninja A-League Matchweek 2 Highlights",
+        "description": "Melbourne City put FIVE past Sydney FC, the Mariners kept marching and Wellington Phoenix fought back in a dramatic Matchweek 2 of the 2026/27 Ninja A-League season! 🤯\n\nCatch all the goals, skills, saves and biggest moments from another action-packed weekend of women's football.\n\nTo see more A-League Men and Ninja A-League coverage 👉🏻https://aleagues.com.au\n\n————————————————\n\nFor the latest updates, follow us on:\n►TIKTOK: https://www.tiktok.com/@aleagues\n►TWITTER: \nA-League Men - https://twitter.com/aleaguemen\nNinja A-League - https://twitter.com/aleaguewomen \n►FACEBOOK: https://www.facebook.com/aleagues\n►INSTAGRAM: https://www.instagram.com/aleagues/\n\n#aleague #football #soccer #highlights",
+        "publishedAt": "2026-10-26T08:30:29.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT23M25S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "A7vbb91faTk",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "A-League Men Highlights Show MW2 | Nam Tae-hee Wonder Goal, 5-2 Thriller & More!",
+        "description": "A wonder goal on debut, a five-goal Wanderers masterclass and a Melbourne Derby that had everyone talking! 🤯\n\nMatchweek 2 of the 2026/27 A-League Men season delivered another weekend of drama. Catch all the goals, skills, saves and biggest moments from across the competition.\n\n🔥 THE BIG STORIES FROM MATCHWEEK 2\n\n🇰🇷 Nam Tae-hee announces himself! The South Korean international scores a stunning debut goal as Brisbane Roar defeat Perth Glory 2-1. \n\n💥 Wanderers run riot! Western Sydney Wanderers put five past Auckland FC in a thrilling 5-2 victory. \n\n👀 The Melbourne Derby delivers. Melbourne Victory and Melbourne City share the points after a 1-1 draw. \n\n✈️ Phoenix fly at home. Wellington Phoenix claim a 2-0 win over Central Coast Mariners. \n\n\n⚔️ Jets and Bulls share the spoils. Newcastle Jets and Macarthur play out a 1-1 draw. \n\n\n🔵 Sydney FC get the job done. The Sky Blues defeat Adelaide United 2-1 to round out the action. \n\n\n🎟️ Get your tickets for the 2026/27 season: https://aleagues.com.au/tickets-hub/\n\nTo see more A-League Men and Ninja A-League coverage 👉🏻https://aleagues.com.au\n\n————————————————\n\nFor the latest updates, follow us on:\n►TIKTOK: https://www.tiktok.com/@aleagues\n►TWITTER: \nA-League Men - https://twitter.com/aleaguemen\nNinja A-League - https://twitter.com/aleaguewomen \n►FACEBOOK: https://www.facebook.com/aleagues\n►INSTAGRAM: https://www.instagram.com/aleagues/\n\n#aleague #football #soccer #highlights",
+        "publishedAt": "2026-10-26T07:30:06.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT23M25S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "YelMpSmg_eA",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "DOWNLOAD | Wanderers' statement win, Melbourne Derby keeping heroics, Sydney storm home, Nix on top",
+        "description": "Jake Barker-Daish, Naum Sekulovski and Thomas Sorensen review all the biggest moments from another action packed weekend of A-League Men's, including the Wanderers' dominant win over champions Auckland, Oriola Sunday meeting and imitating pelicans, Macklin Freke's freakish Melbourne Derby saves, Piping Hot Corban Piper and more!\n\nCHAPTERS:\n0:00 Intro\n1:25 Monday Best - Nam Tae-Hee’s volley vs Perth Glory\n2:39 Alex Badolato’s return from ACL injury\n3:39 Oriola Sunday’s pelican themed weekend\n5:29 Western Sydney Wanderers 5 - 2 Auckland FC\n9:14 Sydney FC 2 - 1 Adelaide United\n13:33 Melbourne Victory 1 - 1 Melbourne City\n16:07 Macklin Freke’s saves\n18:56 Download MVP - 1 vote - Rhys Youlley\n19:49 2 votes - Corban Piper\n20:48 3 votes - Dylan Scicluna\n22:08 Wellington Phoenix 2 - 0 Central Coast Mariners\n25:00 Brisbane Roar 2 - 1 Perth Glory\n29:07 Newcastle 1 - 1 Macarthur\n31:58 Peak Or Weak\n32:18 Awer Mabil copped a bad case of \"Missed a chance-itis\"\n32:57 Have we already seen the goal line clearance of the season?\n33:37 Juan Mata is as classy off the pitch as he is on it\n34:25 Outro\n\nTo see more A-League Men and Ninja A-League coverage 👉🏻https://aleagues.com.au\n\n————————————————\n\nFor the latest updates, follow us on:\n►TIKTOK: https://www.tiktok.com/@aleagues\n►TWITTER: \nA-League Men - https://twitter.com/aleaguemen\nNinja A-League - https://twitter.com/aleaguewomen \n►FACEBOOK: https://www.facebook.com/aleagues\n►INSTAGRAM: https://www.instagram.com/aleagues/\n\n#aleague #football #soccer #highlights",
+        "publishedAt": "2026-10-26T05:00:07.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT36M16S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "QRcGKBdK6hk",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "Wellington Phoenix v Melbourne Victory - Ninja A-League 2026/27 - Matchweek 2",
+        "description": "Wellington Phoenix v Melbourne Victory - Ninja A-League 2026/27 - Matchweek 2\n\nTo see more A-League Men and Ninja A-League coverage 👉🏻https://aleagues.com.au\n\n————————————————\n\nFor the latest updates, follow us on:\n►TIKTOK: https://www.tiktok.com/@aleagues\n►TWITTER: \nA-League Men - https://twitter.com/aleaguemen\nNinja A-League - https://twitter.com/aleaguewomen \n►FACEBOOK: https://www.facebook.com/aleagues\n►INSTAGRAM: https://www.instagram.com/aleagues/\n\n#aleague #football #soccer #highlights",
+        "publishedAt": "2026-10-25T14:53:44.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT2H15S",
+        "regionRestriction": {
+          "allowed": [
+            "KZ",
+            "UA",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "liveStreamingDetails": {
+        "scheduledStartTime": "2026-10-24T23:15:00.000Z",
+        "actualStartTime": "2026-10-24T23:12:19.000Z",
+        "actualEndTime": "2026-10-25T01:12:19.000Z"
+      }
+    },
+    {
+      "id": "Kd2Ic8B4fEI",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "Sydney FC v Melbourne City | SHARK HIGHLIGHTS | Ninja A-League 2026-27 | Matchweek 2",
+        "description": "Catch all the highlights as Sydney FC hosted Melbourne City in Matchweek 2 of the Ninja A-League.\n\n\n🎟️ Get your tickets to the next A-Leagues match: https://aleagues.com.au/tickets-hub/\n\nTo see more A-League Men and Ninja A-League coverage 👉🏻https://aleagues.com.au\n\n————————————————\n\nFor the latest updates, follow us on:\n►TIKTOK: https://www.tiktok.com/@aleagues\n►TWITTER: \nA-League Men - https://twitter.com/aleaguemen\nNinja A-League - https://twitter.com/aleaguewomen \n►FACEBOOK: https://www.facebook.com/aleagues\n►INSTAGRAM: https://www.instagram.com/aleagues/\n\n#aleague #football #soccer #highlights #ALeagueWomen #SharkHighlights",
+        "publishedAt": "2026-10-25T11:25:13.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT3M38S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "EduRmg4NgOg",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "Sydney FC v Melbourne City - Ninja A-League 2026/27 - Matchweek 2",
+        "description": "Sydney FC v Melbourne City - Ninja A-League 2026/27 - Matchweek 2\n\nTo see more A-League Men and Ninja A-League coverage 👉🏻https://aleagues.com.au\n\n————————————————\n\nFor the latest updates, follow us on:\n►TIKTOK: https://www.tiktok.com/@aleagues\n►TWITTER: \nA-League Men - https://twitter.com/aleaguemen\nNinja A-League - https://twitter.com/aleaguewomen \n►FACEBOOK: https://www.facebook.com/aleagues\n►INSTAGRAM: https://www.instagram.com/aleagues/\n\n#aleague #football #soccer #highlights",
+        "publishedAt": "2026-10-25T10:09:47.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT3H4M50S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "liveStreamingDetails": {
+        "scheduledStartTime": "2026-10-25T06:45:00.000Z",
+        "actualStartTime": "2026-10-25T06:40:35.000Z",
+        "actualEndTime": "2026-10-25T09:45:12.000Z"
+      }
+    },
+    {
+      "id": "dyPWqijZ0E0",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "Wellington Phoenix make HISTORY & What is COOKING at the Wanderers? | A-Leagues On The Whistle Ep 2",
+        "description": "Join James Dodd, Kosta Barbarouses and Roy O'Donovan on the brand new A-Leagues podcast On the Whistle, as the trio delve into the big talking points from Matchweek 2 of the A-League Men season for 2026/27.\n\nOn the menu:\n\n🔹 Wellington Phoenix make club history, winning their opening two matches of an A-League Men season for the first time ever!\n🔹 The Wanderers run riot at CommBank Stadium as they stick FIVE past reigning Champions Auckland FC - WSW were great, but what about the Black Knights?\n🔹Newcastle Jets remain winless this season after drawing 1-1 with Macarthur - what's not clicking for the Jets?\n🔹 The Melbourne Derby was a fiesty affair at AAMI Park that finished in a draw - who will be happier?\n🔹 Sydney FC come from behind to beat Adelaide United 2-1\n\nPLUS - Brisbane Roar opened their A-League Men season with a win over Perth Glory. The Roar were good but what's going wrong with the Glory?\n\nWhat stood out to you from Matchweek 2? Let us know in the comments!\n\n🎙️CHAPTERS\n00:00 Rapid Recap MW2\n01:35 Wellington still perfect\n07:10 Mariners - a learning curve?\n08:47 A deserved Sydney win?\n12:20 Paul Okon-Engstler - how to replace?\n14:10 Adelaide run out of gas\n15:35 Melbourne derby draw\n21:10 Five Star Wanderers\n24:27 How are the Jets shaping up?\n30:21 Bulls have the quality \n32:46 Is the Roar back in Brisbane?\n38: 58 STATEMENTS - Clough and Piper discussed\n\n🔔 Subscribe to the official A-Leagues YouTube channel for more highlights, interviews, podcasts and all the latest from Australian football.\n\n🎟️ Get your tickets to upcoming A-Leagues matches: https://aleagues.com.au/tickets-hub/\n\n#OnTheWhistle #ALeagueMen #ALeagues #AustralianFootball #FootballPodcast",
+        "publishedAt": "2026-10-25T09:07:27.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT44M",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "QiHGm59LNLQ",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "Sydney FC v Adelaide United - A-League Men 2026/27 - Matchweek 2",
+        "description": "Sydney FC v Adelaide United - A-League Men 2026/27 - Matchweek 2\n\nTo see more A-League Men and Ninja A-League coverage 👉🏻https://aleagues.com.au\n\n————————————————\n\nFor the latest updates, follow us on:\n►TIKTOK: https://www.tiktok.com/@aleagues\n►TWITTER: \nA-League Men - https://twitter.com/aleaguemen\nNinja A-League - https://twitter.com/aleaguewomen \n►FACEBOOK: https://www.facebook.com/aleagues\n►INSTAGRAM: https://www.instagram.com/aleagues/\n\n#aleague #football #soccer #highlights",
+        "publishedAt": "2026-10-25T07:14:17.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT2H13M35S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR"
+          ]
+        }
+      },
+      "liveStreamingDetails": {
+        "scheduledStartTime": "2026-10-25T04:00:00.000Z",
+        "actualStartTime": "2026-10-25T03:55:36.000Z",
+        "actualEndTime": "2026-10-25T06:08:59.000Z"
+      }
+    },
+    {
+      "id": "Gx3ChKBvKDg",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "Sydney FC v Adelaide United | SHARK HIGHLIGHTS | A-League Men 2026-27 | Matchweek 2",
+        "description": "Catch all the highlights as Sydney FC hosted Adelaide United in the A-League Men.\n\n\n\n🎟️ Get your tickets to the next A-Leagues match: https://aleagues.com.au/tickets-hub/\n\nTo see more A-League Men and Ninja A-League coverage 👉🏻https://aleagues.com.au\n\n————————————————\n\nFor the latest updates, follow us on:\n►TIKTOK: https://www.tiktok.com/@aleagues\n►TWITTER: \nA-League Men - https://twitter.com/aleaguemen\nNinja A-League - https://twitter.com/aleaguewomen \n►FACEBOOK: https://www.facebook.com/aleagues\n►INSTAGRAM: https://www.instagram.com/aleagues/\n\n#aleague #football #soccer #highlights #ALeagueMen #SharkHighlights",
+        "publishedAt": "2026-10-25T06:24:24.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT3M6S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "k6zMyNIr4UQ",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "Wellington Phoenix v Central Coast Mariners - A-League Men 2026/27 - Matchweek 2",
+        "description": "Wellington Phoenix v Central Coast Mariners - A-League Men 2026/27 - Matchweek 2\n\nTo see more A-League Men and Ninja A-League coverage 👉🏻https://aleagues.com.au\n\n————————————————\n\nFor the latest updates, follow us on:\n►TIKTOK: https://www.tiktok.com/@aleagues\n►TWITTER: \nA-League Men - https://twitter.com/aleaguemen\nNinja A-League - https://twitter.com/aleaguewomen \n►FACEBOOK: https://www.facebook.com/aleagues\n►INSTAGRAM: https://www.instagram.com/aleagues/\n\n#aleague #football #soccer #highlights",
+        "publishedAt": "2026-10-25T04:22:33.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT1H57M51S",
+        "regionRestriction": {
+          "allowed": [
+            "KZ",
+            "BY",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR"
+          ]
+        }
+      },
+      "liveStreamingDetails": {
+        "scheduledStartTime": "2026-10-25T02:00:00.000Z",
+        "actualStartTime": "2026-10-25T01:57:07.000Z",
+        "actualEndTime": "2026-10-25T03:54:43.000Z"
+      }
+    },
+    {
+      "id": "QyaLpGQ4PWg",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "Wellington Phoenix v Central Coast Mariners - Shark Highlights | A-League Men 2026-27 | Matchweek 2",
+        "description": "Catch all the highlights as Wellington Phoenix hosted Central Coast Mariners in Matchweek 2 of the 2026/27 A-League Men season.\n\n\n🎟️ Get your tickets to the next A-Leagues match: https://aleagues.com.au/tickets-hub/\n\nTo see more A-League Men and Ninja A-League coverage 👉🏻https://aleagues.com.au\n\n————————————————\n\nFor the latest updates, follow us on:\n►TIKTOK: https://www.tiktok.com/@aleagues\n►TWITTER: \nA-League Men - https://twitter.com/aleaguemen\nNinja A-League - https://twitter.com/aleaguewomen \n►FACEBOOK: https://www.facebook.com/aleagues\n►INSTAGRAM: https://www.instagram.com/aleagues/\n\n#aleague #football #soccer #highlights #ALeagueMen #SharkHighlights",
+        "publishedAt": "2026-10-25T04:20:03.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT3M15S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "3xlime4bsEg",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "Wellington Phoenix v Melbourne Victory | SHARK HIGHLIGHTS | Ninja A-League 2026-27 | Matchweek 2",
+        "description": "Catch the highlights as Wellington Phoenix hosted Melbourne Victory in Matchweek 2 of the Ninja A-League.\n\nWatch the best goals, saves, skills and biggest moments from one of Australian football’s fiercest rivalries in the latest episode of SHARK HIGHLIGHTS.\n\n🎟️ Get your tickets to the next A-Leagues match: https://aleagues.com.au/tickets-hub/\n\nTo see more A-League Men and Ninja A-League coverage 👉🏻https://aleagues.com.au\n\n————————————————\n\nFor the latest updates, follow us on:\n►TIKTOK: https://www.tiktok.com/@aleagues\n►TWITTER: \nA-League Men - https://twitter.com/aleaguemen\nNinja A-League - https://twitter.com/aleaguewomen \n►FACEBOOK: https://www.facebook.com/aleagues\n►INSTAGRAM: https://www.instagram.com/aleagues/\n\n#aleague #football #soccer #highlights #ALeagueWomen #MelbourneVictory #wellingtonphoenix  #SharkHighlights",
+        "publishedAt": "2026-10-25T01:49:17.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT3M10S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "X3zUSLPwUO0",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "Melbourne Victory v Melbourne City | SHARK HIGHLIGHTS | A-League Men 2026-27 | Matchweek 2",
+        "description": "Catch all the key moments from the Melbourne Derby as Melbourne Victory take on Melbourne City in Matchweek 2 of the 2026-27 A-League Men season! 🔥\n\nWatch the best goals, saves, skills and biggest moments from one of Australian football’s fiercest rivalries in the latest episode of SHARK HIGHLIGHTS.\n\n🎟️ Get your tickets to the next A-Leagues match: https://aleagues.com.au/tickets-hub/\n\nTo see more A-League Men and Ninja A-League coverage 👉🏻https://aleagues.com.au\n\n————————————————\n\nFor the latest updates, follow us on:\n►TIKTOK: https://www.tiktok.com/@aleagues\n►TWITTER: \nA-League Men - https://twitter.com/aleaguemen\nNinja A-League - https://twitter.com/aleaguewomen \n►FACEBOOK: https://www.facebook.com/aleagues\n►INSTAGRAM: https://www.instagram.com/aleagues/\n\n#aleague #football #soccer #highlights #ALeagueMen #MelbourneVictory #MelbourneCity #MelbourneDerby #SharkHighlights",
+        "publishedAt": "2026-10-24T11:29:41.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT3M25S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "xbxXGdxOxxw",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "Melbourne Victory v Melbourne City - A-League Men 2026/27 - Matchweek 2",
+        "description": "Melbourne Victory v Melbourne City - A-League Men 2026/27 - Matchweek 2\n\nTo see more A-League Men and Ninja A-League coverage 👉🏻https://aleagues.com.au\n\n————————————————\n\nFor the latest updates, follow us on:\n►TIKTOK: https://www.tiktok.com/@aleagues\n►TWITTER: \nA-League Men - https://twitter.com/aleaguemen\nNinja A-League - https://twitter.com/aleaguewomen \n►FACEBOOK: https://www.facebook.com/aleagues\n►INSTAGRAM: https://www.instagram.com/aleagues/\n\n#aleague #football #soccer #highlights",
+        "publishedAt": "2026-10-24T11:14:26.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT2H15S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR"
+          ]
+        }
+      },
+      "liveStreamingDetails": {
+        "scheduledStartTime": "2026-10-24T08:40:00.000Z",
+        "actualStartTime": "2026-10-24T08:35:54.000Z",
+        "actualEndTime": "2026-10-24T10:35:52.000Z"
+      }
+    },
+    {
+      "id": "5fq9UTbvJ44",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "The Angle, The Goal, THE LIMBS! 🤯",
+        "description": "An INCREDIBLE angle of Keegan Jelacic’s Melbourne Derby goal 🤯💙\n\nFrom the strike finding the back of the net to the absolute LIMBS in the Melbourne Victory end… this is what derby football is all about! 🔥\n\nTo see more A-League Men and Ninja A-League coverage 👉🏻https://aleagues.com.au\n\n————————————————\n\nFor the latest updates, follow us on:\n►TIKTOK: https://www.tiktok.com/@aleagues\n►TWITTER: \nA-League Men - https://twitter.com/aleaguemen\nNinja A-League - https://twitter.com/aleaguewomen \n►FACEBOOK: https://www.facebook.com/aleagues\n►INSTAGRAM: https://www.instagram.com/aleagues/\n\n#aleague #football #soccer #highlights #ALeagueMen #MelbourneDerby #MelbourneVictory",
+        "publishedAt": "2026-10-24T09:52:44.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT39S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "f73R0xz5xSg",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "Adelaide United v Perth Glory | SHARK HIGHLIGHTS | Ninja A-League 2026-27 | Matchweek 2",
+        "description": "To see more A-League Men and Ninja A-League coverage 👉🏻https://aleagues.com.au\n\n————————————————\n\nFor the latest updates, follow us on:\n►TIKTOK: https://www.tiktok.com/@aleagues\n►TWITTER: \nA-League Men - https://twitter.com/aleaguemen\nNinja A-League - https://twitter.com/aleaguewomen \n►FACEBOOK: https://www.facebook.com/aleagues\n►INSTAGRAM: https://www.instagram.com/aleagues/\n\n#aleague #football #soccer #highlights",
+        "publishedAt": "2026-10-24T09:00:12.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT3M4S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "KQ4QgOI0sVI",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "Western Sydney Wanderers v Auckland FC | SHARK HIGHLIGHTS | A-League Men 2026-27 | Matchweek 2",
+        "description": "Catch all the key moments from Western Sydney Wanderers v Auckland FC in Matchweek 2 of the 2026-27 A-League Men season! ⚽\n\nWatch the best goals, saves, skills and biggest moments from the clash in the latest episode of SHARK HIGHLIGHTS.\n\n🎟️ Get your tickets to the next A-Leagues match: https://aleagues.com.au/tickets-hub/\n\nTo see more A-League Men and Ninja A-League coverage 👉🏻https://aleagues.com.au\n\n————————————————\n\nFor the latest updates, follow us on:\n►TIKTOK: https://www.tiktok.com/@aleagues\n►TWITTER: \nA-League Men - https://twitter.com/aleaguemen\nNinja A-League - https://twitter.com/aleaguewomen \n►FACEBOOK: https://www.facebook.com/aleagues\n►INSTAGRAM: https://www.instagram.com/aleagues/\n\n#aleague #football #soccer #highlights #ALeagueMen #WSW #AucklandFC #SharkHighlights",
+        "publishedAt": "2026-10-24T08:44:49.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT3M53S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "GxBww4UiM-Y",
+      "snippet": {
+        "channelId": "UCzRogd_oK3bzKvAW-4aLuPQ",
+        "title": "Adelaide United v Perth Glory - Ninja A-League 2026/27 - Matchweek 2",
+        "description": "Adelaide United v Perth Glory - Ninja A-League 2026/27 - Matchweek 2\n\nTo see more A-League Men and Ninja A-League coverage 👉🏻https://aleagues.com.au\n\n————————————————\n\nFor the latest updates, follow us on:\n►TIKTOK: https://www.tiktok.com/@aleagues\n►TWITTER: \nA-League Men - https://twitter.com/aleaguemen\nNinja A-League - https://twitter.com/aleaguewomen \n►FACEBOOK: https://www.facebook.com/aleagues\n►INSTAGRAM: https://www.instagram.com/aleagues/\n\n#aleague #football #soccer #highlights",
+        "publishedAt": "2026-10-24T08:13:50.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT1H59M35S",
+        "regionRestriction": {
+          "allowed": [
+            "KZ",
+            "UA",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "liveStreamingDetails": {
+        "scheduledStartTime": "2026-10-24T06:00:00.000Z",
+        "actualStartTime": "2026-10-24T05:55:49.000Z",
+        "actualEndTime": "2026-10-24T07:55:09.000Z"
+      }
+    },
+    {
+      "id": "mE_rmKjzrBo",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "Post-Match – Geylang International vs Hougang United",
+        "description": "Noor Ali, Akbar Nawas and Man of the Match Yang Hyeonju reflect on the Geylang International 3-0 win against Hougang United on 26 October 2026. #SPL\n\nWatch the latest SPL highlights: https://www.youtube.com/@sgpremierleague  \n \nFollow SPL on Facebook:  https://www.facebook.com/SingaporePremierLeague/\n    \nFollow the SPL on Instagram: https://www.instagram.com/sgpremierleague/?hl=en\n\nFollow the SPL on Twitter: https://x.com/SGPremierLeague",
+        "publishedAt": "2026-10-27T07:22:26.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT4M32S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "LPIRSVkUwSU",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "Yang Hyeonju brace secures 3-0 victory! | 2026/27 SPL: Geylang International vs Hougang United",
+        "description": "Date: 26 October 2026\nVenue: Our Tampines Hub\nScore: 3-0 (Yang Hyeonju 45+2’, 90+2’, Kaisei Ogawa 53’)\n \nWatch the latest SPL highlights: https://www.youtube.com/@sgpremierleague  \n \nFollow SPL on Facebook:  https://www.facebook.com/SingaporePremierLeague/\n    \nFollow the SPL on Instagram: https://www.instagram.com/sgpremierleague/?hl=en\n\nFollow the SPL on Twitter: https://x.com/SGPremierLeague",
+        "publishedAt": "2026-10-27T02:00:26.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT5M26S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "a-UGepWO0ZE",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "Post-Match – FC Jurong vs Tampines Rovers",
+        "description": "Jaswinder Singh, Nazri Nasir and Man of the Match Hide Higashikawa reflect on the Tampines Rovers 2-3 win against Tampines Rovers on 25 October 2026. #SPL\n\nWatch the latest SPL highlights: https://www.youtube.com/@sgpremierleague  \n \nFollow SPL on Facebook:  https://www.facebook.com/SingaporePremierLeague/\n    \nFollow the SPL on Instagram: https://www.instagram.com/sgpremierleague/?hl=en\n\nFollow the SPL on Twitter: https://x.com/SGPremierLeague",
+        "publishedAt": "2026-10-26T04:45:14.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT4M40S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "xnJWW1HOpKo",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "Stags’ first-half surge secures away points! | 2026/27 SPL: FC Jurong vs Tampines Rovers",
+        "description": "Date: 25 October 2026\nVenue: Jurong East Stadium\nScore: 2-3 ( Seiya Satsukida 47’, Tyler Ho 90+2’ | Yuki Kobayashi 23’, Hide Higashikawa 41’, Kohya Kazama 45+2’)\n \nWatch the latest SPL highlights: https://www.youtube.com/@sgpremierleague  \n \nFollow SPL on Facebook:  https://www.facebook.com/SingaporePremierLeague/\n    \nFollow the SPL on Instagram: https://www.instagram.com/sgpremierleague/?hl=en\n\nFollow the SPL on Twitter: https://x.com/SGPremierLeague",
+        "publishedAt": "2026-10-26T04:30:01.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT5M36S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "3pXHkGCkUOo",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "Post-Match – Lion City Sailors vs Tanjong Pagar United",
+        "description": "Mark Jackson, Miquel Llado Plana and Man of the Match Hugo Gomes reflect on the Lion City Sailors 6-0 win against Tanjong Pagar United on 25 October 2026. #SPL\n\nWatch the latest SPL highlights: https://www.youtube.com/@sgpremierleague  \n \nFollow SPL on Facebook:  https://www.facebook.com/SingaporePremierLeague/\n    \nFollow the SPL on Instagram: https://www.instagram.com/sgpremierleague/?hl=en\n\nFollow the SPL on Twitter: https://x.com/SGPremierLeague",
+        "publishedAt": "2026-10-26T02:15:10.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT8M46S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "1Fkaos7SD_I",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "Sailors cruise to 6-0 rout over the Jaguars | 2026/27 SPL: Lion City Sailors vs Tanjong Pagar United",
+        "description": "Date: 25 October 2026\nVenue: Jalan Besar Stadium\nScore: 6-0 (Hugo Gomes 37’, Matthias Phaeton 60’, Antonio Mance 70’, 90+3’, Giovanni Haag 87’, Hariss Harun 90+5’)\n \nWatch the latest SPL highlights: https://www.youtube.com/@sgpremierleague  \n \nFollow SPL on Facebook:  https://www.facebook.com/SingaporePremierLeague/\n    \nFollow the SPL on Instagram: https://www.instagram.com/sgpremierleague/?hl=en\n\nFollow the SPL on Twitter: https://x.com/SGPremierLeague",
+        "publishedAt": "2026-10-26T02:06:05.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT7M43S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "r_qKRjzoK7s",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "Post-Match – Young Lions vs Balestier Khalsa",
+        "description": "Firdaus Kassim, Marko Kraljevic and Man of the Match Jakov Katusa reflect on Balestier Khalsa 1-2 win against Young Lions on 24 October 2026. #SPL\n\nWatch the latest SPL highlights: https://www.youtube.com/@sgpremierleague  \n \nFollow SPL on Facebook:  https://www.facebook.com/SingaporePremierLeague/\n    \nFollow the SPL on Instagram: https://www.instagram.com/sgpremierleague/?hl=en\n\nFollow the SPL on Twitter: https://x.com/SGPremierLeague",
+        "publishedAt": "2026-10-25T03:15:07.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT5M17S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "rj12dhsw2VM",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "Balestier’s early double seals away win! | 2026/27 SPL: Young Lions vs Balestier Khalsa",
+        "description": "Date: 24 October 2026\nVenue: Jalan Besar Stadium\nScore: 1-2 (Shuya Yamashita 45+4’ | Tin Matic 5’, Hiro Mizuguchi 22’)\n \nWatch the latest SPL highlights: https://www.youtube.com/@sgpremierleague  \n \nFollow SPL on Facebook:  https://www.facebook.com/SingaporePremierLeague/\n    \nFollow the SPL on Instagram: https://www.instagram.com/sgpremierleague/?hl=en\n\nFollow the SPL on Twitter: https://x.com/SGPremierLeague",
+        "publishedAt": "2026-10-25T03:00:09.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT5M13S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kS93hxAhUu0",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "OFF-PITCH CUTS: EPISODE 03 ft. DANIEL GOH (BALESTIER KHALSA)",
+        "description": "Fresh trim, real talk. 💈⚽️\n\nIn Episode 3 of Off Pitch Cut, we catch up with Daniel Goh! ⚽✨\n\nWhile many fall in love with football watching the English Premier League, Daniel’s love story started right under the void deck, watching neighbourhood friends,  older brothers and uncles in street soccer.\n\nFrom playing under the void deck to sharpening his skills your typical co-curricular activity in school and his National Service period, Daniel made his dream a reality by becoming a professional footballer in Singapore. In this episode, he opens up about his lifelong childhood friends, his deep passion for the game, and his ultimate drive to represent the National Team once again. 🇸🇬🔥\n\nHit LIKE and SUBSCRIBE for more episodes! Who would you like to see next, drop names in the comments below. 👇\n\n📲 FOLLOW THE SINGAPORE PREMIER LEAGUE\nStay locked in with all the action across our official social channels:\n\nInstagram: @sgpremierleague\nFacebook: Singapore Premier League\nTikTok: @sgpremierleague\nYouTube: @sgpremierleague\n\n💈 CREDITS & SPECIAL THANKS\nFeatured Guest: Daniel Goh (Balestier Khalsa)\nLocation & Barber: The Cut Collective (@thecutcollective)",
+        "publishedAt": "2026-10-23T14:14:33.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT12M12S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "CLh9ZnG3270",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "Post-Match – Tampines Rovers vs Young Lions",
+        "description": "Nazri Nasir, Firdaus Kassim and Man of the Match Kohya Kazama reflect on Tampines Rovers 4-1 win against Young Lions on 18 October 2026. #SPL\n\nWatch the latest SPL highlights: https://www.youtube.com/@sgpremierleague  \n \nFollow SPL on Facebook:  https://www.facebook.com/SingaporePremierLeague/\n    \nFollow the SPL on Instagram: https://www.instagram.com/sgpremierleague/?hl=en\n\nFollow the SPL on Twitter: https://x.com/SGPremierLeague",
+        "publishedAt": "2026-10-19T03:15:07.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT3M26S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "5xO_KqatlIs",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "The Stags put 4 goals past Young Lions! | 2026/27 SPL: Tampines Rovers vs Young Lions",
+        "description": "Date: 18 October 2026\nVenue: Our Tampines Hub\nScore: 4-1 (Faris Ramli 61’, Hide Higashikawa 73’, 90+7’, Kenshin Yamazaki 81’ | Daisuke Sakai 44’)\n \nWatch the latest SPL highlights: https://www.youtube.com/@sgpremierleague  \n \nFollow SPL on Facebook:  https://www.facebook.com/SingaporePremierLeague/\n    \nFollow the SPL on Instagram: https://www.instagram.com/sgpremierleague/?hl=en\n\nFollow the SPL on Twitter: https://x.com/SGPremierLeague",
+        "publishedAt": "2026-10-19T03:00:14.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT5M6S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "-F5mmCIDAcE",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "Post-Match – FC Jurong vs Lion City Sailors",
+        "description": "Jaswinder Singh, Mark Jackson and Man of the Match Diogo Costa reflect on Lion City Sailors 0-2 win against FC Jurong on 18 October 2026. #SPL\n\nWatch the latest SPL highlights: https://www.youtube.com/@sgpremierleague  \n \nFollow SPL on Facebook:  https://www.facebook.com/SingaporePremierLeague/\n    \nFollow the SPL on Instagram: https://www.instagram.com/sgpremierleague/?hl=en\n\nFollow the SPL on Twitter: https://x.com/SGPremierLeague",
+        "publishedAt": "2026-10-19T02:45:17.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT4M35S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "ISYuWFhrCVQ",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "Sailors clean sheet on away ground! | 2026/27 SPL: FC Jurong vs Lion City Sailors",
+        "description": "Date: 18 October 2026\nVenue: Jurong East Stadium\nScore: 0-2 (Giovanni Haag 41', Shawal Anuar 77')\n \nWatch the latest SPL highlights: https://www.youtube.com/@sgpremierleague  \n \nFollow SPL on Facebook:  https://www.facebook.com/SingaporePremierLeague/\n    \nFollow the SPL on Instagram: https://www.instagram.com/sgpremierleague/?hl=en\n\nFollow the SPL on Twitter: https://x.com/SGPremierLeague",
+        "publishedAt": "2026-10-19T02:30:23.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT4M56S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "_nLqOC7RxlA",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "Post-Match – Balestier Khalsa vs Geylang International",
+        "description": "Marko Kraljevic, Noor Ali and Man of the Match Mario Mustapic reflect on Balestier Khalsa’s 0-0 draw with Geylang International on 17 October 2026. #SPL\n\nWatch the latest SPL highlights: https://www.youtube.com/@sgpremierleague  \n \nFollow SPL on Facebook:  https://www.facebook.com/SingaporePremierLeague/\n    \nFollow the SPL on Instagram: https://www.instagram.com/sgpremierleague/?hl=en\n\nFollow the SPL on Twitter: https://x.com/SGPremierLeague",
+        "publishedAt": "2026-10-18T02:45:11.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT4M49S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "Nv1N4147FNM",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "Blown chances lead to stalemate! | 2026/27 SPL: Balestier Khalsa vs Geylang International",
+        "description": "Date: 17 October 2026\nVenue: Bishan Stadium\nScore: 0-0\n \nWatch the latest SPL highlights: https://www.youtube.com/@sgpremierleague  \n \nFollow SPL on Facebook:  https://www.facebook.com/SingaporePremierLeague/\n    \nFollow the SPL on Instagram: https://www.instagram.com/sgpremierleague/?hl=en\n\nFollow the SPL on Twitter: https://x.com/SGPremierLeague",
+        "publishedAt": "2026-10-18T02:30:15.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT4M16S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "PMjEyVVSnzI",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "Post-Match – Tanjong Pagar United vs Hougang United",
+        "description": "Miquel Llado, Akbar Nawas and Man of the Match Alejandro Masogo reflect on Tanjong Pagar United’s 2-1 win against Hougang United on 16 October 2026. #SPL\n\nWatch the latest SPL highlights: https://www.youtube.com/@sgpremierleague  \n \nFollow SPL on Facebook:  https://www.facebook.com/SingaporePremierLeague/\n    \nFollow the SPL on Instagram: https://www.instagram.com/sgpremierleague/?hl=en\n\nFollow the SPL on Twitter: https://x.com/SGPremierLeague",
+        "publishedAt": "2026-10-17T02:45:34.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT7M49S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "Qc9SQMgN0Vk",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "Fukashiro & Masogo Secure Home Win! | 2026/27 SPL: Tanjong Pagar United vs Hougang United",
+        "description": "Date: 16 October 2026\nVenue: Jurong East Stadium\nScore: 2-1 (Riku Fukashiro 56’, Alejandro Masogo 61’ | Jaramillo Ayovi Washington 11’)\n \nWatch the latest SPL highlights: https://www.youtube.com/@sgpremierleague  \n \nFollow SPL on Facebook:  https://www.facebook.com/SingaporePremierLeague/\n    \nFollow the SPL on Instagram: https://www.instagram.com/sgpremierleague/?hl=en\n\nFollow the SPL on Twitter: https://x.com/SGPremierLeague",
+        "publishedAt": "2026-10-17T02:30:21.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT7M42S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "szooYTH_gf4",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "Post-Match – Hougang United vs Balestier Khalsa",
+        "description": "Akbar Nawas, Marko Kraljevic and Man of the Match Takahiro Koga reflect onHougang United’s 1-2 win against Balestier Khalsa on 12 October 2026. #SPL\n\nWatch the latest SPL highlights: https://www.youtube.com/@sgpremierleague  \n \nFollow SPL on Facebook:  https://www.facebook.com/SingaporePremierLeague/\n    \nFollow the SPL on Instagram: https://www.instagram.com/sgpremierleague/?hl=en\n\nFollow the SPL on Twitter: https://x.com/SGPremierLeague",
+        "publishedAt": "2026-10-13T02:15:09.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT4M3S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "Zw4hvcP_cwM",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "Balestier’s defense and keeper deny Hougang | 2026/27 SPL: Hougang United vs Balestier Khalsa",
+        "description": "Date: 12 October 2026\nVenue: Bishan Stadium\nScore: 1-2 (Lucas Cardoso Soares 30’ | Marin Kuzminski 8’, Jakov Katusa 11’)\n \nWatch the latest SPL highlights: https://www.youtube.com/@sgpremierleague  \n \nFollow SPL on Facebook:  https://www.facebook.com/SingaporePremierLeague/\n    \nFollow the SPL on Instagram: https://www.instagram.com/sgpremierleague/?hl=en\n\nFollow the SPL on Twitter: https://x.com/SGPremierLeague",
+        "publishedAt": "2026-10-13T02:00:28.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT8M22S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "290fjdweE00",
+      "snippet": {
+        "channelId": "UCiJTKr-wja_JVM2dVTYCELA",
+        "title": "Post-Match – Tanjong Pagar United vs Tampines Rovers",
+        "description": "Miquel Llado Plana, Nazri Nasir and Man of the Match Hide Higashikawa reflect on Tampines Rovers’ 0-4 win against Tanjong Pagar United on 11 October 2026. #SPL\n\nWatch the latest SPL highlights: https://www.youtube.com/@sgpremierleague  \n \nFollow SPL on Facebook:  https://www.facebook.com/SingaporePremierLeague/\n    \nFollow the SPL on Instagram: https://www.instagram.com/sgpremierleague/?hl=en\n\nFollow the SPL on Twitter: https://x.com/SGPremierLeague",
+        "publishedAt": "2026-10-12T03:15:07.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT7M15S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "aF_Ba-3tB2I",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "Así fue como CUCURELLA frenó a LAMINE YAMAL",
+        "description": "",
+        "publishedAt": "2026-10-27T13:00:18.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT40S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "SEOuT9ea3HU",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "TODOS los GOLES de la JORNADA 10 de LALIGA EA SPORTS 2026/27",
+        "description": "Kylian Mbappé marcó un doblete para dar al Real Madrid la victoria por 2-1 ante el FC Barcelona en el primer ELCLÁSICO de la temporada, el Athletic Club firmó un contundente triunfo por 4-0 frente al Getafe CF, y Georges Mikautadze anotó un agónico gol de la victoria en el minuto 96 para que el Villarreal CF se impusiera por 2-1 al Valencia CF en el derbi.\n\n\nSuscríbete al canal de LALIGA EA SPORTS: http://goo.gl/Cp0tC",
+        "publishedAt": "2026-10-27T11:00:18.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT9M3S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "MEeSDKeM12A",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "La acción de BELLINGHAM que desencadenó el gol de MBAPPÉ",
+        "description": "",
+        "publishedAt": "2026-10-27T09:00:08.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT18S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "B-qo9tNVxUg",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "Yan Diomande 💎",
+        "description": "",
+        "publishedAt": "2026-10-27T03:00:15.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT20S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "A9msXwAxDGo",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "SEVILLA FC vs CA OSASUNA | RUEDA DE PRENSA",
+        "description": "Sigue la rueda de prensa oficial tras el Sevilla vs Osasuna con las declaraciones de Luís García Plaza y Jagoba Arrasate.\n\nJ10 LALIGA EA Sports 2026/2027\n\nSuscríbete al canal oficial de LALIGA EA Sports en HD http://goo.gl/Cp0tC",
+        "publishedAt": "2026-10-26T22:47:24.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT35M15S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "liveStreamingDetails": {
+        "scheduledStartTime": "2026-10-26T22:00:00.000Z",
+        "actualStartTime": "2026-10-26T22:09:29.000Z",
+        "actualEndTime": "2026-10-26T22:44:32.000Z"
+      }
+    },
+    {
+      "id": "2__euNO_niw",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "SEVILLA FC 2 - 0 CA OSASUNA | RESUMEN LALIGA EA SPORTS",
+        "description": "El Sevilla FC consiguió una sólida victoria por 2-0 ante CA Osasuna en el Ramón Sánchez-Pizjuán. Isaac Romero abrió el marcador en la primera mitad con un disparo desde fuera del área tras una gran acción de Fofana, mientras que Félix Correia amplió la ventaja en la segunda parte en una jugada en la que volvió a ser decisivo el centrocampista francés. El conjunto sevillista supo controlar el tramo final para sumar tres puntos y acercarse a la zona alta de la clasificación.\n\n#SevillaOsasuna LALIGA EA SPORTS 2026/27 J10\nSuscríbete al canal de LALIGA EA SPORTS: https://www.youtube.com/@LaLiga",
+        "publishedAt": "2026-10-26T22:08:56.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT3M11S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "OTk9QPxhcYY",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "𝗙𝗘𝗟𝗜𝗫. 🇵🇹",
+        "description": "#LALIGAHighlights #LALIGAEASPORTS",
+        "publishedAt": "2026-10-26T21:53:06.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT12S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "_66qg5V_wk8",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "¡Por muy poco! 👀",
+        "description": "#LALIGAHighlights #LALIGAEASPORTS",
+        "publishedAt": "2026-10-26T21:44:42.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT11S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "mC6ap3BA-mg",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "𝗜𝗦𝗔𝗔𝗖 𝗥𝗢𝗠𝗘𝗥𝗢. ❤️",
+        "description": "#LALIGAHighlights #LALIGAEASPORTS",
+        "publishedAt": "2026-10-26T20:39:13.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT11S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "0aUQ0eJpfJk",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "🔴 SEVILLA FC vs CA OSASUNA - PREVIA DEL PARTIDO",
+        "description": "No te pierdas la previa del partido entre #Sevilla y #Osasuna. \nLa llegada a vestuarios, el calentamiento y las últimas declaraciones de sus entrenadores. ¡Vive el partido desde el calentamiento!\n\nJ10 LALIGA EA Sports 2026/2027\n\nSuscríbete al canal oficial de LALIGA EA Sports en HD http://goo.gl/Cp0tC",
+        "publishedAt": "2026-10-26T20:02:38.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT49M15S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "liveStreamingDetails": {
+        "scheduledStartTime": "2026-10-26T19:10:00.000Z",
+        "actualStartTime": "2026-10-26T19:10:20.000Z",
+        "actualEndTime": "2026-10-26T19:59:19.000Z"
+      }
+    },
+    {
+      "id": "0QNFDFnUM4E",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "El ritual del Real Madrid 🔥",
+        "description": "",
+        "publishedAt": "2026-10-26T16:00:33.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT13S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "Ft-QdfwDBZY",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "Conquistar el Spotify Camp Nou ✅",
+        "description": "",
+        "publishedAt": "2026-10-26T11:23:34.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT17S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kqJDaqsQ6Tc",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "YAN DIOMANDÉ se exhibe con el Real Madrid ⚡ | LALIGA EA SPORTS",
+        "description": "Yan Diomandé acaparó todas las miradas en ELCLÁSICO, ¡pero lleva toda la temporada demostrando su calidad! Revive las mejores jugadas del joven talento del Real Madrid en LALIGA EA SPORTS 2026/27 hasta ahora, con regates espectaculares, arrancadas explosivas, goles y grandes acciones ofensivas. ¡No le pierdas de vista!\n\nSuscríbete al canal de LALIGA EA SPORTS: http://goo.gl/Cp0tC",
+        "publishedAt": "2026-10-26T11:00:38.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT8M2S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "BCyaligKk0Q",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "Mbappé 🤝 ELCLÁSICO",
+        "description": "",
+        "publishedAt": "2026-10-26T03:00:35.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT22S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "JY6b-OO8HW8",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "José Mourinho: \"Ha sido un gran partido de fútbol\"",
+        "description": "Sigue la rueda de prensa oficial tras el gran Clásico, Barça vs Real Madrid, con las declaraciones de Hansi Flick y José Mourinho.\n\nJ10 LALIGA EA Sports 2026/2027\n\nSuscríbete al canal oficial de LALIGA EA Sports en HD http://goo.gl/Cp0tC",
+        "publishedAt": "2026-10-25T23:09:55.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT34M36S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "liveStreamingDetails": {
+        "scheduledStartTime": "2026-10-25T22:00:00.000Z",
+        "actualStartTime": "2026-10-25T22:21:10.000Z",
+        "actualEndTime": "2026-10-25T22:55:32.000Z"
+      }
+    },
+    {
+      "id": "R2mVF13WhLc",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "FC BARCELONA 1 - 2 REAL MADRID | RESUMEN LALIGA EA SPORTS",
+        "description": "El Real Madrid se llevó #ELCLÁSICO tras vencer 1-2 al FC Barcelona en el Spotify Camp Nou y se acercó a tres puntos del conjunto azulgrana en la clasificación. Mbappé adelantó al equipo blanco en la primera mitad, Raphinha igualó tras el descanso a pase de Pedri y, cuando el empate parecía definitivo, el delantero francés volvió a aparecer en el minuto 87 para completar su doblete tras una gran acción de Bellingham y Camavinga. El triunfo permite al Real Madrid recortar distancias y frena la racha perfecta del Barça en LALIGA EA SPORTS.\n\n#BarçaRealMadrid LALIGA EA SPORTS 2026/27 J10\nSuscríbete al canal de LALIGA EA SPORTS: https://www.youtube.com/@LaLiga",
+        "publishedAt": "2026-10-25T23:00:08.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT2M49S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "SRqxWmTtibo",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "🔴 FC BARCELONA v REAL MADRID: ELCLÁSICO en DIRECTO desde el Spotify CAMP NOU",
+        "description": "Sigue el #ELCLÁSICO entre #FCBarcelona y #RealMadrid en directo con la mejor previa, el calentamiento y la narración del encuentro con imágenes del partido en exclusiva desde el Spotify Camp Nou.\n\nSuscríbete al canal de LALIGA EA SPORTS: http://goo.gl/Cp0tC",
+        "publishedAt": "2026-10-25T22:46:14.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT8H14M51S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "liveStreamingDetails": {
+        "scheduledStartTime": "2026-10-25T13:55:00.000Z",
+        "actualStartTime": "2026-10-25T13:56:08.000Z",
+        "actualEndTime": "2026-10-25T22:10:44.000Z"
+      }
+    },
+    {
+      "id": "VzRr1zWFl8U",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "FC BARCELONA 1 - 2 REAL MADRID | RESUMEN LALIGA EA SPORTS",
+        "description": "El Real Madrid se llevó #ElClásico tras vencer 1-2 al FC Barcelona en el Spotify Camp Nou y se acercó a tres puntos del conjunto azulgrana en la clasificación. Mbappé adelantó al equipo blanco en la primera mitad, Raphinha igualó tras el descanso a pase de Pedri y, cuando el empate parecía definitivo, el delantero francés volvió a aparecer en el minuto 87 para completar su doblete tras una gran acción de Bellingham y Camavinga. El triunfo permite al Real Madrid recortar distancias y frena la racha perfecta del Barça en LALIGA EA SPORTS.\n\n#ElClásico LALIGA EA SPORTS 2026/27 J10\nSuscríbete al canal de LALIGA EA SPORTS: https://www.youtube.com/@LaLiga",
+        "publishedAt": "2026-10-25T22:13:32.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT3M15S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "NiS8UhVicP8",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "DRAMA FINAL. 🤯🤍",
+        "description": "#LALIGAHighlights #LALIGAEASPORTS #ELCLÁSICO",
+        "publishedAt": "2026-10-25T22:06:20.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT13S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "NQbsAclEtko",
+      "snippet": {
+        "channelId": "UCTv-XvfzLX3i4IGWAm4sbmA",
+        "title": "¡Lunin al rescate! 🦸",
+        "description": "#LALIGAHighlights #LALIGAEASPORTS #ELCLÁSICO",
+        "publishedAt": "2026-10-25T21:52:16.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT9S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "1D7KD-NAqjk",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "TOP SAVES 🧤 From the Serie A Round 8 | 2026/27",
+        "description": "Watch the best saves from Round 8 of the 2026/27 Serie A season!\n\nIf you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-27T10:01:34.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT2M52S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "bFUK5gfU0bg",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "MAXI SINTESI ATALANTA-FROSINONE 4-4 | EXTENDED HIGHLIGHTS | SERIE A ENILIVE 2026/27",
+        "description": "Rivedi le migliori azioni del match tra Atalanta e Frosinone, finito 4-4 grazie alle reti di Schmid, Krstovic, Ederson, Calò, Elmas e Terzic | Serie A Enilive 2026/27\n\nIf you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-27T10:00:28.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT20M9S",
+        "regionRestriction": {
+          "allowed": [
+            "IT"
+          ]
+        }
+      }
+    },
+    {
+      "id": "yNzTRl-FvIQ",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "ATALANTA-FROSINONE 4-4 | EXTENDED HIGHLIGHTS | SERIE A 2026/27",
+        "description": "Relive the best actions of the match between Inter and Fiorentina, which ended 4-4 thanks to goals from Schmid, Krstovic, Ederson, Calò, Elmas and Terzic | Serie A 2026/27\n\nIf you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-27T10:00:09.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT20M9S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "Ogpb_blny1k",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "From 0-1 to 2-1 in STOPPAGE TIME 🤯 | Inter-Fiorentina | Serie A Enilive 2026/27",
+        "description": "Behind at 90’, celebrating victory at the final whistle 🤯 Relive the dramatic final ten minutes of #InterFiorentina, as Thuram equalises in the 91st minute before Zieliński wins it from the spot in the 98th!\n\nIf you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-26T18:00:21.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT7M57S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "149_oqimN1c",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "TOP GOALS ⚽️ From Serie A Round 8 | 2026/27",
+        "description": "Watch the best goals from Round 8 of the 2026/27 Serie A season!\n\nIf you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-26T16:00:21.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT1M56S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D8v2YrjcWho",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "🔴 PRE-MATCH LIVE | GENOA-JUVENTUS | Serie A Enilive 2026/27",
+        "description": "If you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-26T15:36:14.000Z",
+        "liveBroadcastContent": "upcoming"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "P0D",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "liveStreamingDetails": {
+        "scheduledStartTime": "2026-10-28T18:45:00.000Z"
+      }
+    },
+    {
+      "id": "SijXEGb5IRU",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "🔴 PRE-MATCH LIVE | MILAN-BOLOGNA | Serie A Enilive 2026/27",
+        "description": "If you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-26T15:34:30.000Z",
+        "liveBroadcastContent": "upcoming"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "P0D",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "liveStreamingDetails": {
+        "scheduledStartTime": "2026-10-28T16:30:00.000Z"
+      }
+    },
+    {
+      "id": "nQh0yHggxbQ",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "MODRIĆ’s Vision, PULISIC’s Finish 🎯 | Every Angle | Serie A Enilive 2026/27",
+        "description": "Modrić spots the run, Pulisic does the rest 🎯 Watch Luka’s perfectly weighted pass and Christian’s finish from every angle in #UdineseMilan!\n\nIf you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-26T15:30:23.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT2M36S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "vptTvM66Fv8",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "THURAM’S SOMETHING ELSE 🤯",
+        "description": "If you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-26T14:28:17.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT25S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "YCnxRNmwr-s",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "MAXI SINTESI INTER-FIORENTINA 2-1 | EXTENDED HIGHLIGHTS | SERIE A ENILIVE 2026/27",
+        "description": "Rivedi le migliori azioni del match tra Inter e Fiorentina, finito 2-1 grazie alle reti di Jimenez, Thuram e Zielinski | Serie A Enilive 2026/27\n\nIf you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-26T14:00:35.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT20M23S",
+        "regionRestriction": {
+          "allowed": [
+            "IT"
+          ]
+        }
+      }
+    },
+    {
+      "id": "JAjW2u5u4DE",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "INTER-FIORENTINA 2-1 | EXTENDED HIGHLIGHTS | SERIE A 2026/27",
+        "description": "Relive the best actions of the match between Inter and Fiorentina, which ended 2-1 thanks to goals from Jimenez, Thuram and Zielinski | Serie A 2026/27\n\nIf you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-26T14:00:23.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT20M23S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "1ZpJZk6oitA",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "MODRIC to PULISIC 🏹",
+        "description": "If you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-26T11:57:54.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT54S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "ftyzigYp8s8",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "MAXI SINTESI NAPOLI-ROMA 3-3 | EXTENDED HIGHLIGHTS | SERIE A ENILIVE 2026/27",
+        "description": "Rivedi le migliori azioni del match tra Napoli e Roma, finito 3-3 grazie alle reti di Anguissa, McTominay, Soulé e Balerdi | Serie A Enilive 2026/27\n\nIf you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-26T11:00:37.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT20M35S",
+        "regionRestriction": {
+          "allowed": [
+            "IT"
+          ]
+        }
+      }
+    },
+    {
+      "id": "oC5SKRAGozg",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "NAPOLI-ROMA 3-3 | EXTENDED HIGHLIGHTS | SERIE A 2026/27",
+        "description": "Relive the best actions of the match between Napoli and Roma, which ended 3-3 thanks to goals from Anguissa, McTominay, Soulé and Balerdi | Serie A 2026/27\n\nIf you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-26T11:00:03.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT20M35S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "9GJ1yUFPIJw",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "🥶 GOAL SERIE A | ZIELINSKI Wins It at 98' | Goal Collection | Round 08 | Serie A 2026/27",
+        "description": "Enjoy every goal from Round 8 of #SerieAEnilive 2026/27!\n\nIf you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-26T10:52:31.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT9M56S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "U19eAAGPjCk",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "98TH MINUTE!! 🥶🥶",
+        "description": "If you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-26T09:45:22.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT19S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "dP72ZmbEdRQ",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "Pulisic e Hutchinson a Segno a Udine | UDINESE-MILAN | HIGHLIGHTS | SERIE A ENILIVE 2026/27",
+        "description": "C. Pulisic 6'\nO. Hutchinson 65'\n\nPulisic porta i rossoneri in vantaggio dopo cinque minuti, e nella ripresa Hutchinson trova la prima rete in Serie A infliggendo ai friulani la sesta sconfitta consecutiva | Serie A ENILIVE 2026/27\n\nAlla fine degli highlights seguiranno 60 secondi senza commento con le migliori azioni della partita.\n\n#Highlights #UdineseMilan #Pulisic #Hutchinson #SerieAEnilive\n\nIf you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-26T01:44:06.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT3M12S",
+        "regionRestriction": {
+          "allowed": [
+            "IT"
+          ]
+        }
+      },
+      "liveStreamingDetails": {
+        "scheduledStartTime": "2026-10-26T01:44:00.000Z",
+        "actualStartTime": "2026-10-26T01:44:06.000Z",
+        "actualEndTime": "2026-10-26T01:48:17.000Z"
+      }
+    },
+    {
+      "id": "UBFOXsk7yx0",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "Spalletti si Impone al Via del Mare | LECCE-JUVENTUS | HIGHLIGHTS | SERIE A ENILIVE 2026/27",
+        "description": "W. McKennie 29'\nD. Luiz 41'\n\nMcKennie trova la prima rete della stagione, e Luiz raddoppia a fine primo tempo mettendo la firma sulla quarta vittoria in campionato di Spalletti | Serie A ENILIVE 2026/27\n\nAlla fine degli highlights seguiranno 60 secondi senza commento con le migliori azioni della partita.\n\n#Highlights #LecceJuventus #McKennie #Luiz #SerieAEnilive\n\nIf you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-25T22:59:10.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT3M1S",
+        "regionRestriction": {
+          "allowed": [
+            "IT"
+          ]
+        }
+      },
+      "liveStreamingDetails": {
+        "scheduledStartTime": "2026-10-25T22:59:00.000Z",
+        "actualStartTime": "2026-10-25T22:59:10.000Z",
+        "actualEndTime": "2026-10-25T23:03:07.000Z"
+      }
+    },
+    {
+      "id": "TovUeAQkaFc",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "Pulisic and Hutchinson Shine in Udine | UDINESE-MILAN | HIGHLIGHTS | Serie A 2026/27",
+        "description": "Pulisic gives Milan an early lead after five minutes, and in the second half Hutchinson scores his first Serie A goal sentencing Udinese to the sixth consecutive loss | Serie A 2026/27\n\n#Highlights #HighlightsSerieA #UdineseMilan #Pulisic #Hutchinson #SerieAIf you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-25T22:21:16.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT2M33S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "tiNv5KATFlQ",
+      "snippet": {
+        "channelId": "UCBJeMCIeLQos7wacox4hmLQ",
+        "title": "FIRST SERIE A GOALS FOR SCHMID 🤩💪",
+        "description": "If you enjoyed this video please leave a like & subscribe for more! https://bit.ly/SERIEA_YT\n\nInstagram: instagram.com/seriea\nTikTok: tiktok.com/@seriea\nX: twitter.com/SerieA\nFacebook: facebook.com/SerieA\n \nFind out more about the Serie A at: http://www.legaseriea.it/en/ \n\nSe ti è piaciuto questo video lascia un like e iscriviti al canale! https://bit.ly/SERIEA_YT\n\nInstagram: https://www.instagram.com/seriea\nTikTok: https://www.tiktok.com/@seriea\nX: https://twitter.com/SerieA\nFacebook: https://www.facebook.com/SerieA\n\nPer maggiori informazioni sulla Serie A: http://www.legaseriea.it/it",
+        "publishedAt": "2026-10-25T20:30:08.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT47S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    }
+  ],
+  "scope": "Recorded public metadata projected to fields used by tests; country allowlist conservatively limited to inspected regions, not raw unlimited video rights or physical playback."
+}
