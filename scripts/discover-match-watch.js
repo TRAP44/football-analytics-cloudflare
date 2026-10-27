@@ -28,15 +28,24 @@ export async function discoverMatchWatch({readCache,writeCache,youtube,approvals
     let found=new Set(state.videoIds.filter(id=>!state.uploadIds?.includes(id))),uploads=new Set(state.uploadIds||[]);
     let searched=false,uploaded=false;
     if(searchDue){
-      try{
-        const fresh=new Set();
-        for(const policy of policies)for(const eventType of ['live','upcoming']){
+      const fresh=new Set();let complete=true;
+      for(const policy of policies)for(const eventType of ['live','upcoming']){
+        try{
           const items=await youtube('search',{part:'id',channelId:policy.channelId,type:'video',eventType,regionCode:'RU',maxResults:'20'});
           if(items.length>20)fail('WATCH_DISCOVERY_RESPONSE_INVALID');
-          for(const item of items){if(!videoId(item?.id?.videoId))fail('WATCH_DISCOVERY_RESPONSE_INVALID');fresh.add(item.id.videoId);}
+          const ids=items.map(item=>item?.id?.videoId);
+          if(ids.some(id=>!videoId(id)))fail('WATCH_DISCOVERY_RESPONSE_INVALID');
+          for(const id of ids)fresh.add(id);
+          searched=true;
+        }catch{
+          complete=false;discoveryFailed=true;
+          if(!(report.failedFeeds||=[]).includes('live_search'))report.failedFeeds.push('live_search');
         }
-        found=fresh;searched=true;
-      }catch{discoveryFailed=true;(report.failedFeeds||=[]).push('live_search');}
+      }
+      // A failed upcoming feed must not discard a successful LIVE search (or
+      // prevent the next feed from running). Retained IDs still require fresh
+      // per-video metadata below; a partial search never renews video rights.
+      if(searched)found=complete?fresh:new Set([...fresh,...found]);
     }
     if(uploadsDue){
       try{

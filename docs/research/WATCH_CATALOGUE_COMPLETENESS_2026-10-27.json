@@ -1,0 +1,98 @@
+{
+  "observedAt": "2026-10-27T12:31:47.369Z",
+  "baselineRefreshRun": "https://github.com/TRAP44/football-analytics-cloudflare/actions/runs/40503003586",
+  "baselinePublishedVideos": 10,
+  "baselineLibraryMatches": 8,
+  "fixtures": [
+    {
+      "providerInspectionRun": "https://github.com/TRAP44/football-analytics-cloudflare/actions/runs/40503789580",
+      "providerFixture": {
+        "fixtureId": 1556113,
+        "verified": true,
+        "provider": "api-football",
+        "observedAt": "2026-10-27T12:26:55.830Z",
+        "fixtureIdentity": "1556113:293:302:98:2027:2026-10-24T07:00:00.000Z",
+        "match": {
+          "fixtureId": 1556113,
+          "date": "2026-10-24T07:00:00.000Z",
+          "status": "FT",
+          "home": {
+            "id": 293,
+            "name": "Gamba Osaka"
+          },
+          "away": {
+            "id": 302,
+            "name": "Kyoto Sanga"
+          },
+          "leagueId": 98,
+          "league": "J1 League",
+          "season": 2027,
+          "live": false,
+          "finished": true
+        }
+      },
+      "officialMatchPage": {
+        "url": "https://www.jleague.jp/en/match/j1/2026/102409/",
+        "status": 200,
+        "sha256": "2358976db1121e86b3663b5dc2898a9d2455af67713021bd71857bd47b0edae3",
+        "title": [
+          "Match Results &amp; Data for G-Osaka vs Kyoto (MEIJI YASUDA J1 League - 24 Oct 2026 (JST)) | Official Website of J.LEAGUE"
+        ],
+        "matchText": "tats Home Live Scores Tickets Fixtures & Results Standings Clubs News Features Stats Gamba Osaka vs Kyoto Sanga F.C. Sat, 24 Oct 2026, 16:00 (JST) KO Matchweek 12 Gamba Osaka G-Osaka Full Time 2 - 2 Kyoto Sanga F.C. Kyoto USAMI Takashi 31' 39' ARAI Haruki ISSAM JEBALI 65' 90+2' KATO Takumi Where to watch Panasonic Stadium Suita Attendance : 30,603 Weather : Cloudy ｜ Temperature : 22.8℃ ｜ Humidity : 81% Summary Lineup Preview Stats Match Progress Full Time Second Half Half Time First Half Kick Off Preview Stadium Match Progress Match Progress Gamba Osaka GAM Kyoto Sanga F.C. KSF FW ISSAM JEBALI Second Half 45' +7 Second Half 45' +2 FW KATO Tak"
+      },
+      "observedVideo": {
+        "videoId": "SScpVbbDmqc",
+        "title": "LATE DRAMA & RED CARD! 🤯 | Gamba Osaka vs Kyoto Sanga F.C. HIGHLIGHTS | J.League",
+        "publishedAt": "2026-10-24T09:13:15Z",
+        "description": "Highlights from Matchweek 12 in the 2026-27 J.League between Gamba Osaka and Kyoto Sanga F.C.\n\n🔗 Find out more about J.LEAGUE at: https://www.jleague.jp/en/\n🎫 Tickets are available here: https://www.jleague.jp/en/special/clubtickets-lp/?utm_source=owned&utm_medium=yt&utm_campaign=2026-27clubticket&utm_content=dm01\n\nX: https://x.com/J_League_En\nInstagram: https://instagram.com/jleagueintl  \nTikTok: https://www.tiktok.com/@jleague_intl\nFacebook: https://www.facebook.com/jleagueofficial.English \n\n#JLEAGUE",
+        "duration": "PT10M32S"
+      },
+      "approvalValidUntil": "2026-10-31T07:00:00.000Z"
+    },
+    {
+      "providerInspectionRun": "https://github.com/TRAP44/football-analytics-cloudflare/actions/runs/40503793712",
+      "providerFixture": {
+        "fixtureId": 1556118,
+        "verified": true,
+        "provider": "api-football",
+        "observedAt": "2026-10-27T12:27:15.968Z",
+        "fixtureIdentity": "1556118:287:285:98:2027:2026-10-25T06:00:00.000Z",
+        "match": {
+          "fixtureId": 1556118,
+          "date": "2026-10-25T06:00:00.000Z",
+          "status": "FT",
+          "home": {
+            "id": 287,
+            "name": "Urawa"
+          },
+          "away": {
+            "id": 285,
+            "name": "V-varen Nagasaki"
+          },
+          "leagueId": 98,
+          "league": "J1 League",
+          "season": 2027,
+          "live": false,
+          "finished": true
+        }
+      },
+      "officialMatchPage": {
+        "url": "https://www.jleague.jp/en/match/j1/2026/102503/",
+        "status": 200,
+        "sha256": "30133fefa13cc0aa0ba1eff213111d0358f09cfe657f4647061f7006625f85e5",
+        "title": [
+          "Match Results &amp; Data for Urawa vs Nagasaki (MEIJI YASUDA J1 League - 25 Oct 2026 (JST)) | Official Website of J.LEAGUE"
+        ],
+        "matchText": "Stats Home Live Scores Tickets Fixtures & Results Standings Clubs News Features Stats Urawa Reds vs V-Varen Nagasaki Sun, 25 Oct 2026, 15:00 (JST) KO Matchweek 12 Urawa Reds Urawa Full Time 1 - 0 V-Varen Nagasaki Nagasaki MATHEUS SAVIO 71' Where to watch Saitama Stadium 2002 Attendance : 33,440 Weather : Cloudy ｜ Temperature : 20.9℃ ｜ Humidity : 90% Summary Lineup Preview Stats Match Progress Full Time Second Half Half Time First Half Kick Off Preview Stadium Match Progress Match Progress Urawa Reds URA V-Varen Nagasaki NGS Second Half 45' +1 MF MATHEUS JESUS MF NAGANUMA Yoichi MF SAMUEL GUSTAFSON Second Half 42' FW MINAMINO Harumi MF MATHEUS"
+      },
+      "observedVideo": {
+        "videoId": "_mLsphCj8ZE",
+        "title": "Urawa Reds vs V-Varen Nagasaki HIGHLIGHTS | J.League",
+        "publishedAt": "2026-10-25T08:24:38Z",
+        "description": "Highlights from Matchweek 12 in the 2026-27 J.League between Urawa Reds and V-Varen Nagasaki.\n\n🔗 Find out more about J.LEAGUE at: https://www.jleague.jp/en/\n🎫 Tickets are available here: https://www.jleague.jp/en/special/clubtickets-lp/?utm_source=owned&utm_medium=yt&utm_campaign=2026-27clubticket&utm_content=dm01\n\nX: https://x.com/J_League_En\nInstagram: https://instagram.com/jleagueintl  \nTikTok: https://www.tiktok.com/@jleague_intl\nFacebook: https://www.facebook.com/jleagueofficial.English \n\n#JLEAGUE",
+        "duration": "PT9M56S"
+      },
+      "approvalValidUntil": "2026-11-01T06:00:00.000Z"
+    }
+  ]
+}

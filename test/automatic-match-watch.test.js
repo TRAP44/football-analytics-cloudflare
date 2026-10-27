@@ -18,7 +18,7 @@ function harness(){
   assert.equal(init.redirect,'error');
   if(url.hostname==='www.googleapis.com'){
    assert.equal(init.headers.apikey,undefined);assert.equal(init.headers['X-Goog-Api-Key'],env.YOUTUBE_DATA_API_KEY);
-   if(url.pathname.endsWith('/search')){if(failSearch)throw Error('private upstream text');return Response.json({items:searchResults??items.map(v=>({id:{videoId:v.id}}))});}
+   if(url.pathname.endsWith('/search')){if(failSearch===true||failSearch===url.searchParams.get('eventType'))throw Error('private upstream text');return Response.json({items:searchResults??items.map(v=>({id:{videoId:v.id}}))});}
    if(url.pathname.endsWith('/playlistItems')){if(failUploads)throw Error('uploads unavailable');assert.equal(url.searchParams.get('playlistId'),'UU'+WATCH_POLICIES[0].channelId.slice(2));assert.equal(url.searchParams.get('maxResults'),'20');return Response.json({items:(uploadResults??items.map(v=>v.id)).map(id=>({contentDetails:{videoId:id}}))});}
    assert.ok(url.pathname.endsWith('/videos'));assert.ok(url.searchParams.get('id').split(',').length<=50);return Response.json({items});
   }
@@ -38,10 +38,28 @@ function harness(){
   assert.match(key,/^in\.\(match-center:/);return Response.json([]);
  };
  const run=(offset=0)=>{currentNow=now+offset;return refreshMatchWatch({env,manifest:{version:1,items:[]},automatic:true,fetchImpl,now:currentNow});};
- return {run,cache,calls,setVideos:v=>{items=v;},setMatches:m=>{matches=m;},setSearchResults:v=>{searchResults=v;},setUploads:v=>{uploadResults=v;},failSearch:()=>{failSearch=true;},failUploads:()=>{failUploads=true;},failWrite:()=>{failWrite=true;}};
+ return {run,cache,calls,setVideos:v=>{items=v;},setMatches:m=>{matches=m;},setSearchResults:v=>{searchResults=v;},setUploads:v=>{uploadResults=v;},failSearch:type=>{failSearch=type||true;},failUploads:()=>{failUploads=true;},failWrite:()=>{failWrite=true;}};
 }
 const apiRuntime=deps=>createUserDataApiRuntime(new Proxy(deps,{get:(target,key)=>key in target?target[key]:async()=>[]}));
 const searchCalls=h=>h.calls.filter(call=>call.url.pathname.endsWith('/search')).length;
+
+test('observed official club names match only the independently verified Kyoto and Urawa team IDs',()=>{
+ const time=Date.parse('2026-10-27T12:30:00Z'),policy=WATCH_POLICIES[0];
+ const samples=[
+  {fixtureId:1556113,date:'2026-10-24T07:00:00.000Z',home:{id:293,name:'Gamba Osaka'},away:{id:302,name:'Kyoto Sanga'},title:'LATE DRAMA & RED CARD! 🤯 | Gamba Osaka vs Kyoto Sanga F.C. HIGHLIGHTS | J.League',publishedAt:'2026-10-24T09:13:15Z',description:'Highlights from Matchweek 12 in the 2026-27 J.League between Gamba Osaka and Kyoto Sanga F.C.'},
+  {fixtureId:1556118,date:'2026-10-25T06:00:00.000Z',home:{id:287,name:'Urawa'},away:{id:285,name:'V-varen Nagasaki'},title:'Urawa Reds vs V-Varen Nagasaki HIGHLIGHTS | J.League',publishedAt:'2026-10-25T08:24:38Z',description:'Highlights from Matchweek 12 in the 2026-27 J.League between Urawa Reds and V-Varen Nagasaki.'},
+ ];
+ for(const sample of samples){
+  const m={...sample,leagueId:98,season:2027,round:'Regular Season - 12',status:'FT',finished:true};
+  const accepts=patch=>automaticHighlightsMatch(policy,{...m,...patch},sample.title,sample.publishedAt,time,sample.description);
+  assert.equal(accepts({}),true,sample.title);
+  assert.equal(accepts({home:{...m.home,id:999999},away:{...m.away,id:999998}}),false,'aliases must not become global fuzzy names');
+  assert.equal(accepts({leagueId:99}),false);
+  assert.equal(accepts({round:'Regular Season - 11'}),false);
+  assert.equal(accepts({home:m.away,away:m.home}),false);
+  assert.equal(automaticHighlightsMatch(policy,m,sample.title,sample.publishedAt,time,sample.description.replace('Matchweek 12','Matchweek 11')),false);
+ }
+});
 
 test('a previously undeployed fixture/video is discovered, bound and published without a per-match approval',async()=>{
  const h=harness(),report=await h.run();
@@ -81,9 +99,24 @@ test('deleted/private/geoblocked videos withdraw old bindings on the next metada
 
 test('search attempt is durable before API I/O; failed search does not repeat every tick',async()=>{
  const h=harness();h.failSearch();const report=await h.run();assert.equal(report.discovery,'partial');assert.equal(report.discoveryError,'WATCH_DISCOVERY_SEARCH_FAILED');
- assert.ok(h.cache.get(WATCH_DISCOVERY_KEY).payload.attemptedAt);assert.equal(searchCalls(h),1);
- await h.run(300000);assert.equal(searchCalls(h),1);
+ assert.ok(h.cache.get(WATCH_DISCOVERY_KEY).payload.attemptedAt);assert.equal(searchCalls(h),2);
+ await h.run(300000);assert.equal(searchCalls(h),2);
  const unknown=harness();unknown.failWrite();await assert.rejects(unknown.run(),e=>e.code==='WATCH_WRITE_UNCONFIRMED');assert.equal(searchCalls(unknown),0);assert.equal(unknown.calls.filter(call=>call.init.method==='POST').length,1);
+});
+
+test('one failed search feed cannot discard a newly found LIVE or prevent the other feed from being queried',async()=>{
+ for(const failedType of ['live','upcoming']){
+  const h=harness();h.failSearch(failedType);h.failUploads();
+  const offset=failedType==='upcoming'?12*3600000+60000:0;
+  if(offset){h.setMatches([{...match,status:'1H'}]);h.setVideos([{...video,snippet:{...video.snippet,liveBroadcastContent:'live'},liveStreamingDetails:{...video.liveStreamingDetails,actualStartTime:iso(12*3600000)}}]);}
+  const report=await h.run(offset);
+  assert.equal(report.discovery,'partial');assert.equal(report.discoveryError,'WATCH_DISCOVERY_SEARCH_FAILED');
+  assert.equal(searchCalls(h),2);assert.equal(report.youtubeRequests,4);
+  assert.equal(report.automaticPublished,1,failedType);
+  assert.ok(h.cache.get(WATCH_DISCOVERY_KEY).payload.videoIds.includes(video.id));
+  assert.equal(watchLibraryPayload(h.cache.get(WATCH_LIBRARY_KEY).payload,{country:'RU',now:now+offset}).items.length,1);
+  await h.run(offset+300000);assert.equal(searchCalls(h),2,'failed feed still respects the durable two-hour attempt marker');
+ }
 });
 
 test('automatic catalogue is served through the authenticated cache-only API',async()=>{

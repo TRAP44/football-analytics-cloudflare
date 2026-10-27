@@ -101,9 +101,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Источники просмотра топ-лиг и официальные вещатели — **Codex** — [PR #1030](https://github.com/TRAP44/football-analytics-cloudflare/pull/1030), `codex/official-broadcast-guides` — актуальная проверка лиг/страны/встраивания; реальные ссылки в матчах без обещания неподтверждённого LIVE, отдельный путь к лицензированному embed.
+- [ ] Полнота каталога просмотра: точные имена клубов и изоляция ошибок поиска — **Codex** — [PR #1031](https://github.com/TRAP44/football-analytics-cloudflare/pull/1031), `codex/watch-catalogue-completeness` — подтвердить и добавить два пропущенных официальных обзора; не терять найденный LIVE при отказе соседнего feed.
+
 
 
 
@@ -254,6 +256,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Источники просмотра топ-лиг и официальные вещатели — **Codex** — [PR #1030](https://github.com/TRAP44/football-analytics-cloudflare/pull/1030), `codex/official-broadcast-guides` — актуальная проверка лиг/страны/встраивания; реальные ссылки в матчах без обещания неподтверждённого LIVE, отдельный путь к лицензированному embed. Выпущен: mainbdb5c5be, MainQuality40470639806/CodeQL40470639844/Deploy40471047315 success; public launch151/CF74947b02-baa7-40e6-951f-5c9d193d1a2d verified.
 
 - [x] Открытие исчезнувшего разбора из истории — **Codex** — [PR #1029](https://github.com/TRAP44/football-analytics-cloudflare/pull/1029), `codex/history-open-recovery` — fallback LIVE не запускал timer; сбой fallback запроса/модуля уходил без UI feedback. Подтверждено actual Chromium и выполнением настоящего handler. Выпущен: maina0b5a381, Quality40410532669/CodeQL40410532740/Deploy40411036379 success; public launch150/CFcb6076b0-a270-4689-b5e1-dda69dc22267 verified.
 

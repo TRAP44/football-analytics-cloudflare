@@ -7,7 +7,7 @@ export const WATCH_POLICIES=Object.freeze([Object.freeze({
 })]);
 const normalized=value=>typeof value==='string'?value.normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim():'';
 // Only exact provider team IDs may gain these observed official-name aliases.
-const aliases={290:['Kashima Antlers'],303:['FC Machida Zelvia']};
+const aliases={287:['Urawa Reds'],290:['Kashima Antlers'],302:['Kyoto Sanga F.C.'],303:['FC Machida Zelvia']};
 const names=team=>[team?.name,...aliases[team?.id]||[]].map(normalized).filter(Boolean);
 export function automaticWatchValidUntil(policy,match,kind='live'){
   const days=policy?.replayRetentionDays;

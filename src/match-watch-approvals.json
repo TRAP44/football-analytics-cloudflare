@@ -86,6 +86,92 @@
         "roundAuthorityUrl": "https://www.jleague.jp/en/match/j1/2026/102410/",
         "roundObservedAt": "2026-10-24T21:56:31.291762Z"
       }
+    },
+    {
+      "match": {
+        "fixtureId": 1556113,
+        "date": "2026-10-24T07:00:00.000Z",
+        "status": "FT",
+        "home": {
+          "id": 293,
+          "name": "Gamba Osaka"
+        },
+        "away": {
+          "id": 302,
+          "name": "Kyoto Sanga"
+        },
+        "leagueId": 98,
+        "league": "J1 League",
+        "season": 2027,
+        "live": false,
+        "finished": true,
+        "round": "Regular Season - 12"
+      },
+      "provider": "youtube",
+      "publisher": "jleagueinternational",
+      "videoId": "SScpVbbDmqc",
+      "eventUrl": "https://www.youtube.com/watch?v=SScpVbbDmqc",
+      "kind": "highlights",
+      "access": "free",
+      "label": "Обзор J.LEAGUE",
+      "countries": [
+        "RU",
+        "KZ",
+        "BY"
+      ],
+      "confirmed": true,
+      "confirmedAt": "2026-10-27T12:31:47.369Z",
+      "validUntil": "2026-10-31T07:00:00.000Z",
+      "fixtureEvidence": {
+        "provider": "api-football",
+        "observedAt": "2026-10-27T12:26:55.830Z",
+        "fixtureIdentity": "1556113:293:302:98:2027:2026-10-24T07:00:00.000Z",
+        "roundAuthorityUrl": "https://www.jleague.jp/en/match/j1/2026/102409/",
+        "roundObservedAt": "2026-10-27T12:31:47.369Z"
+      }
+    },
+    {
+      "match": {
+        "fixtureId": 1556118,
+        "date": "2026-10-25T06:00:00.000Z",
+        "status": "FT",
+        "home": {
+          "id": 287,
+          "name": "Urawa"
+        },
+        "away": {
+          "id": 285,
+          "name": "V-varen Nagasaki"
+        },
+        "leagueId": 98,
+        "league": "J1 League",
+        "season": 2027,
+        "live": false,
+        "finished": true,
+        "round": "Regular Season - 12"
+      },
+      "provider": "youtube",
+      "publisher": "jleagueinternational",
+      "videoId": "_mLsphCj8ZE",
+      "eventUrl": "https://www.youtube.com/watch?v=_mLsphCj8ZE",
+      "kind": "highlights",
+      "access": "free",
+      "label": "Обзор J.LEAGUE",
+      "countries": [
+        "RU",
+        "KZ",
+        "BY"
+      ],
+      "confirmed": true,
+      "confirmedAt": "2026-10-27T12:31:47.369Z",
+      "validUntil": "2026-11-01T06:00:00.000Z",
+      "fixtureEvidence": {
+        "provider": "api-football",
+        "observedAt": "2026-10-27T12:27:15.968Z",
+        "fixtureIdentity": "1556118:287:285:98:2027:2026-10-25T06:00:00.000Z",
+        "roundAuthorityUrl": "https://www.jleague.jp/en/match/j1/2026/102503/",
+        "roundObservedAt": "2026-10-27T12:31:47.369Z"
+      }
     }
   ]
 }
