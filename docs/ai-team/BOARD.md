@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Дополнительные официальные источники полных матчей — **Codex** — `codex/watch-full-sources` — исследование реальных uploads/полных записей/территорий, строгая provider identity и bounded квоты; прирост подтвердить actual publication.
 
 
 
@@ -107,6 +106,8 @@
 
 
 ## На ревью
+
+- [ ] Дополнительные официальные источники полных матчей — **Codex** — [PR #1034](https://github.com/TRAP44/football-analytics-cloudflare/pull/1034), `codex/watch-full-sources` — K LEAGUE TV: внешние записи с бесплатной регистрацией и встроенные YouTube-обзоры K1/K2; независимое review и локальные gates passed, exact-head CI/выпуск/actual publication ещё обязательны.
 
 
 
