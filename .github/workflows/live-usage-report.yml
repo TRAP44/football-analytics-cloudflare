@@ -32,10 +32,19 @@ on:
         description: Optional positive fixture ID for one read-only API-Football identity check
         type: string
         default: ''
+      watch_fixture_date:
+        description: Optional one guarded UTC date batch from the past seven days through tomorrow; exclusive with fixture ID
+        type: string
+        default: ''
       watch_candidate_handle:
         description: Optional public YouTube handle for bounded research only, without @; never approves a source
         type: string
         default: ''
+      watch_feed:
+        description: Read live/upcoming or one bounded uploads page; never approves or publishes videos
+        type: choice
+        options: ['live', 'uploads']
+        default: live
       watch_search_country:
         description: Explicit YouTube search territory; does not prove playback or broadcasting rights
         type: choice
@@ -101,8 +110,10 @@ jobs:
         env:
           MATCH_WATCH_PUBLISHER: ${{ inputs.watch_publisher || 'fifa' }}
           MATCH_WATCH_CANDIDATE_HANDLE: ${{ inputs.watch_candidate_handle }}
+          MATCH_WATCH_FEED: ${{ inputs.watch_feed || 'live' }}
           MATCH_WATCH_SEARCH_COUNTRY: ${{ inputs.watch_search_country || 'RU' }}
           MATCH_WATCH_FIXTURE_ID: ${{ inputs.watch_fixture_id }}
+          MATCH_WATCH_FIXTURE_DATE: ${{ inputs.watch_fixture_date }}
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           YOUTUBE_DATA_API_KEY: ${{ secrets.YOUTUBE_DATA_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

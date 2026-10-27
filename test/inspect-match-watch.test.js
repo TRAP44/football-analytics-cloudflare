@@ -164,3 +164,39 @@ test('search territory is explicit and the result cap is enforced before video l
   return t.fetchImpl(input,options);
  }});assert.equal(videos,0);assert.equal(oversized.errorCode,'YOUTUBE_SEARCH_RESPONSE_INVALID');
 });
+
+test('uploads inspection uses three cheap fixed-host calls and preserves independent matching metadata without approving',async()=>{
+ const calls=[];
+ const sourceVideo=video({snippet:{channelId:WATCH_SOURCE.channelId,title:'Alpha vs Beta | Full Match',liveBroadcastContent:'none',publishedAt:'2026-10-22T12:00:00Z',description:'Matchweek 7\nIndependent event date'},contentDetails:{duration:'PT1H45M',regionRestriction:{blocked:['RU']}},liveStreamingDetails:{actualStartTime:'2026-10-22T10:00:00Z',actualEndTime:'2026-10-22T11:45:00Z'}});
+ const report=await inspectMatchWatch({env:{...env,MATCH_WATCH_FEED:'uploads'},now,fetchImpl:async(input,options)=>{
+  const url=new URL(input);calls.push(url);assert.equal(url.origin,'https://www.googleapis.com');assert.equal(options.method,'GET');assert.equal(options.redirect,'error');
+  if(url.pathname.endsWith('/channels'))return Response.json({items:[{id:WATCH_SOURCE.channelId,snippet:{customUrl:'@fifa'}}]});
+  if(url.pathname.endsWith('/playlistItems')){assert.equal(url.searchParams.get('playlistId'),'UU'+WATCH_SOURCE.channelId.slice(2));assert.equal(url.searchParams.get('maxResults'),'20');return Response.json({items:[{contentDetails:{videoId:sourceVideo.id}}],nextPageToken:'DO_NOT_FOLLOW'});}
+  assert.ok(url.pathname.endsWith('/videos'));assert.equal(url.searchParams.get('id'),sourceVideo.id);return Response.json({items:[sourceVideo]});
+ }});
+ assert.equal(calls.length,3);assert.equal(report.requestCounts.search,0);assert.equal(report.requestCounts.supabase,0);assert.equal(report.featureReady,false);assert.equal(report.videos[0].fixtureVerified,false);assert.equal(report.videos[0].description,sourceVideo.snippet.description);assert.equal(report.videos[0].duration,'PT1H45M');assert.equal(report.videos[0].publishedAt,'2026-10-22T12:00:00.000Z');assert.equal(report.videos[0].regionMetadata.find(x=>x.country==='RU').allowedByMetadata,false);
+ let invalidCalls=0;const bad=await inspectMatchWatch({env:{...env,MATCH_WATCH_FEED:'https://bad.invalid'},now,fetchImpl:()=>{invalidCalls++;}});assert.equal(invalidCalls,0);assert.equal(bad.feed,null);assert.equal(bad.errorCode,'WATCH_FEED_INVALID');
+});
+
+test('one guarded date batch exposes canonical public fixtures with rounds without per-match fanout',async()=>{
+ const urls=[];const selected={...env,SUPABASE_URL:'https://nlmvhkjkpgzzlfavaohk.supabase.co',API_FOOTBALL_KEY:'local-football-fixture-key',MATCH_WATCH_FEED:'uploads',MATCH_WATCH_FIXTURE_DATE:'2026-10-23'};
+ const report=await inspectMatchWatch({env:selected,now,fetchImpl:async(input,options)=>{
+  const url=new URL(input);urls.push(url);
+  if(url.origin==='https://www.googleapis.com'){
+   if(url.pathname.endsWith('/channels'))return Response.json({items:[{id:WATCH_SOURCE.channelId,snippet:{customUrl:'@fifa'}}]});
+   if(url.pathname.endsWith('/playlistItems'))return Response.json({items:[]});
+   assert.fail('no video ids');
+  }
+  assert.equal(url.origin,'https://nlmvhkjkpgzzlfavaohk.supabase.co');
+  if(url.pathname.endsWith('/claim_provider_request'))return Response.json({allowed:true});
+  if(url.pathname.includes('/football-relay/')){
+   assert.equal(options.headers['x-apisports-key'],selected.API_FOOTBALL_KEY);assert.equal(options.headers.apikey,undefined);assert.equal(url.searchParams.get('date'),'2026-10-23');assert.equal(url.searchParams.get('timezone'),'UTC');assert.equal(url.searchParams.has('id'),false);
+   return Response.json({errors:[],response:[fixture({league:{id:3,name:'Senior League',season:2026,round:'Regular Season - 7'}}),fixture({fixture:{id:100,date:'2026-10-23T16:00:00Z',status:{short:'NS'}},league:{id:3,name:'Senior League',season:2026,round:'Regular Season - 7'}})]});
+  }
+  return Response.json([]);
+ }});
+ assert.equal(report.errorCode,undefined);assert.equal(report.fixtureBatch.verified,true);assert.equal(report.fixtureBatch.matches.length,2);assert.equal(report.fixtureBatch.matches[0].round,'Regular Season - 7');assert.equal(report.requestCounts.football,1);assert.equal(urls.filter(u=>u.pathname.includes('/football-relay/')).length,1);assert.equal(report.featureReady,false);
+ for(const patch of [{MATCH_WATCH_FIXTURE_DATE:'2026-02-30'},{MATCH_WATCH_FIXTURE_DATE:'2026-10-01'},{MATCH_WATCH_FIXTURE_DATE:'2026-10-25'},{MATCH_WATCH_FIXTURE_DATE:'2026-10-23&key=secret'},{MATCH_WATCH_FIXTURE_ID:'99'}]){
+  let calls=0;const bad=await inspectMatchWatch({env:{...selected,...patch},now,fetchImpl:()=>{calls++;}});assert.equal(calls,0);assert.equal(bad.errorCode,'WATCH_FIXTURE_DATE_INVALID');
+ }
+});
