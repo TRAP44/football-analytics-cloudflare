@@ -15,7 +15,8 @@ function runtime(deps={}){return createUserDataApiRuntime(new Proxy({json:(body,
 test('library requires an explicit country, groups kinds per fixture, and never exposes spoilers or video links',()=>{
  const initial=watchLibraryPayload(library(),{...options,country:''});assert.equal(initial.available,false);assert.deepEqual(initial.items,[]);assert.equal(initial.countries.length,2);
  const payload=watchLibraryPayload(library(),options);assert.equal(payload.available,true);assert.equal(payload.items.length,1);assert.deepEqual(payload.items[0].kinds,['highlights']);assert.equal(payload.items[0].home,'Home FC');assert.equal(payload.items[0].homeTeamId,55);assert.equal(payload.items[0].awayTeamId,56);
- assert.deepEqual(Object.keys(payload.items[0]).sort(),['fixtureId','home','away','homeTeamId','awayTeamId','league','date','kinds','expiresAt'].sort());
+ assert.deepEqual(Object.keys(payload.items[0]).sort(),['fixtureId','home','away','homeTeamId','awayTeamId','league','date','kinds','registrationReplay','embeddedReplay','expiresAt'].sort());
+ assert.equal(payload.items[0].registrationReplay,false);assert.equal(payload.items[0].embeddedReplay,false);
  // ISO dates such as 13:02 contain "3:0" without exposing a match score.
  // Exclude only the two known item timestamps; root fields, country labels
  // and every other item field remain subject to the original score check.

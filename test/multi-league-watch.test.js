@@ -63,7 +63,7 @@ function harness(){
   const keys=filter.startsWith('eq.')?[filter.slice(3)]:filter.startsWith('in.(')?filter.slice(4,-1).split(','):[];
   return Response.json(keys.flatMap(key=>{const row=cache.get(key);return row&&row.expiresAt>current?[{cache_key:key,payload:row.payload}]:[];}));
  };
- const run=async offset=>{current=now+offset;return refreshMatchWatch({env,fetchImpl,manifest:{version:1,items:[]},automatic:true,now:current});};
+ const run=async offset=>{current=now+offset;return refreshMatchWatch({env,fetchImpl,manifest:{version:1,items:[]},automatic:true,policies:WATCH_POLICIES.filter(policy=>policy.format!=='kleague'),now:current});};
  return {cache,calls,env,fetchImpl,run,setTime:value=>{current=value;},deny:()=>{deny=true;},unknownMarker:()=>{unknownMarker=true;},providerStatus:value=>{footballStatus=value;}};
 }
 let prepared;

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {refreshMatchWatch} from '../scripts/refresh-match-watch.js';
-import {WATCH_DISCOVERY_KEY,WATCH_DISCOVERY_INTERVAL} from '../scripts/discover-match-watch.js';
+import {WATCH_DISCOVERY_KEY,WATCH_PREVIOUS_DISCOVERY_KEY,WATCH_DISCOVERY_INTERVAL} from '../scripts/discover-match-watch.js';
 import {WATCH_POLICIES,automaticWatchMatch,automaticHighlightsMatch} from '../src/match-watch-policy.js';
 import {validatedWatchOptions,watchCacheKey,watchLibraryPayload,WATCH_LIBRARY_KEY} from '../src/match-watch.js';
 import {createUserDataApiRuntime} from '../src/user-data-api-runtime.js';
@@ -33,6 +33,7 @@ function harness(){
    cache.set(body.p_cache_key,{payload:body.p_payload,updatedAt:body.p_updated_at,expiresAt:Date.parse(body.p_expires_at)});return Response.json({stored:true,reason:'stored'});
   }
   assert.equal(url.pathname,'/rest/v1/analysis_cache');const key=url.searchParams.get('cache_key');if(key==='eq.match-watch-discovery:v1')return Response.json(cache.has('match-watch-discovery:v1')?[{cache_key:'match-watch-discovery:v1',payload:cache.get('match-watch-discovery:v1').payload}]:[]);
+  if(key===`eq.${WATCH_PREVIOUS_DISCOVERY_KEY}`)return Response.json(cache.has(WATCH_PREVIOUS_DISCOVERY_KEY)?[{cache_key:WATCH_PREVIOUS_DISCOVERY_KEY,payload:cache.get(WATCH_PREVIOUS_DISCOVERY_KEY).payload}]:[]);
   if(key===`eq.${WATCH_DISCOVERY_KEY}`)return Response.json((cache.has(WATCH_DISCOVERY_KEY)&&(cache.get(WATCH_DISCOVERY_KEY).expiresAt??Infinity)>currentNow)?[{cache_key:WATCH_DISCOVERY_KEY,payload:cache.get(WATCH_DISCOVERY_KEY).payload}]:[]);
   if(key.startsWith('in.(provider-fixtures:'))return Response.json([{cache_key:'provider-fixtures:2026-10-24:v1',payload:{date:'2026-10-24',fetchedAt:new Date(currentNow-60000).toISOString(),fixtures:matches.map(raw)}}]);
   if(key.startsWith('like.'))return Response.json([]);
@@ -142,7 +143,7 @@ test('an old live session cannot be relabelled as a new fixture using a new sche
 
 test('malformed or future discovery state stops before any search',async()=>{
  for(const patch of [{attemptedAt:iso(60000)},{videoIds:['untrusted-url']},{bindings:Array(21).fill({})}]){
-  const h=harness();h.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-1),payload:{version:2,attemptedAt:iso(-60000),videoIds:[],bindings:[],...patch}});
+  const h=harness();h.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-1),payload:{version:3,attemptedAt:iso(-60000),videoIds:[],bindings:[],...patch}});
   await assert.rejects(h.run(),e=>e.code==='WATCH_DISCOVERY_STATE_INVALID');assert.equal(searchCalls(h),0);
  }
 });
@@ -261,7 +262,7 @@ test('deploying highlights reads uploads once without waiting for or repeating t
  h.setVideos([highlight]);h.setMatches([finished]);h.setSearchResults([]);const report=await h.run(15*3600000);
  assert.equal(report.published,1);
  // Simulate a legacy v1 discovery state whose live search ran one minute ago.
- const fresh=harness();fresh.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-60001),payload:{version:2,attemptedAt:iso(-60000),videoIds:[],bindings:[]}});
+ const fresh=harness();fresh.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-60001),payload:{version:3,attemptedAt:iso(-60000),videoIds:[],bindings:[]}});
  const first=await fresh.run();assert.equal(first.discovery,'uploads_searched');assert.equal(searchCalls(fresh),0);assert.equal(first.youtubeRequests,2);
  const second=await fresh.run(300000);assert.equal(second.discovery,'cached');assert.equal(searchCalls(fresh),0);assert.equal(second.youtubeRequests,1);
 });
@@ -272,13 +273,13 @@ test('uploads failure records the attempt before I/O, does not retry every tick,
  assert.equal(h.calls.filter(c=>c.url.pathname.endsWith('/playlistItems')).length,1);assert.ok(h.cache.get(WATCH_DISCOVERY_KEY).payload.uploadsAttemptedAt);
  await h.run(300000);assert.equal(h.calls.filter(c=>c.url.pathname.endsWith('/playlistItems')).length,1);
  for(const patch of [{uploadsAttemptedAt:iso(1000)},{uploadIds:['bad-url']}]){
-  const f=harness();f.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-60001),payload:{version:2,attemptedAt:iso(-60000),videoIds:[],bindings:[],...patch}});
+  const f=harness();f.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-60001),payload:{version:3,attemptedAt:iso(-60000),videoIds:[],bindings:[],...patch}});
   await assert.rejects(f.run(),error=>error.code==='WATCH_DISCOVERY_STATE_INVALID');assert.equal(f.calls.filter(c=>c.url.hostname==='www.googleapis.com').length,0);
  }
 });
 
 test('separately scheduled live search retains cached upload IDs until the next uploads check',async()=>{
- const h=harness();h.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-60001),payload:{version:2,attemptedAt:iso(-WATCH_DISCOVERY_INTERVAL),uploadsAttemptedAt:iso(-60000),uploadIds:[highlight.id],videoIds:[highlight.id],bindings:[]}});
+ const h=harness();h.cache.set(WATCH_DISCOVERY_KEY,{updatedAt:iso(-60001),payload:{version:3,attemptedAt:iso(-WATCH_DISCOVERY_INTERVAL),uploadsAttemptedAt:iso(-60000),uploadIds:[highlight.id],videoIds:[highlight.id],bindings:[]}});
  h.setVideos([highlight]);h.setSearchResults([]);await h.run();assert.ok(h.cache.get(WATCH_DISCOVERY_KEY).payload.videoIds.includes(highlight.id));assert.equal(h.calls.filter(c=>c.url.pathname.endsWith('/playlistItems')).length,0);
 });
 
@@ -329,8 +330,14 @@ test('shared viewing library is built once without extra provider reads and with
 });
 
 
-test('discovery v2 migrates existing bound videos without modifying the rollback v1 state',async()=>{
+test('discovery v3 migrates existing bound videos without modifying the rollback v1 state',async()=>{
  const h=harness(),legacy={version:1,attemptedAt:iso(-60000),uploadsAttemptedAt:iso(-60000),videoIds:[video.id],uploadIds:[video.id],bindings:[{match,observedAt:iso(-60000),videoIds:[video.id]}]};
  h.cache.set('match-watch-discovery:v1',{payload:structuredClone(legacy),updatedAt:iso(-60000),expiresAt:now+86400000});
- const report=await h.run();assert.equal(report.discoveryMigration,'v1_to_v2');assert.equal(report.automaticPublished,1);assert.equal(searchCalls(h),0);assert.equal(report.youtubeRequests,1);assert.equal(h.cache.get(WATCH_DISCOVERY_KEY).payload.version,2);assert.deepEqual(h.cache.get('match-watch-discovery:v1').payload,legacy);
+ const report=await h.run();assert.equal(report.discoveryMigration,'v1_to_v3');assert.equal(report.automaticPublished,1);assert.equal(searchCalls(h),0);assert.equal(report.youtubeRequests,1);assert.equal(h.cache.get(WATCH_DISCOVERY_KEY).payload.version,3);assert.deepEqual(h.cache.get('match-watch-discovery:v1').payload,legacy);
+});
+
+test('discovery v3 preserves the multi-league v2 rollback snapshot and revalidates its retained videos',async()=>{
+ const h=harness(),previous={version:2,attemptedAt:iso(-60000),uploadsAttemptedAt:iso(-60000),videoIds:[video.id],uploadIds:[video.id],bindings:[{match,observedAt:iso(-60000),videoIds:[video.id]}]};
+ h.cache.set(WATCH_PREVIOUS_DISCOVERY_KEY,{payload:structuredClone(previous),updatedAt:iso(-60000),expiresAt:now+86400000});
+ const report=await h.run();assert.equal(report.discoveryMigration,'v2_to_v3');assert.equal(report.automaticPublished,1);assert.equal(searchCalls(h),0);assert.equal(report.youtubeRequests,1);assert.equal(h.cache.get(WATCH_DISCOVERY_KEY).payload.version,3);assert.deepEqual(h.cache.get(WATCH_PREVIOUS_DISCOVERY_KEY).payload,previous);
 });

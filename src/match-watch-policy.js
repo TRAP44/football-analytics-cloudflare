@@ -1,4 +1,5 @@
 import {leagueFullMatch,leagueHighlightsMatch} from './match-watch-league-formats.js';
+import {KLEAGUE_CHANNEL} from './kleague-watch-policy.js';
 // Official league/channel relationship and the observed full-match title format
 // are reviewed once. New fixtures/video IDs are NOT deployed source approvals.
 export const WATCH_POLICIES=Object.freeze([Object.freeze({
@@ -14,7 +15,7 @@ export const WATCH_POLICIES=Object.freeze([Object.freeze({
  id:'laliga-highlights',revision:1,publisher:'laliga',format:'laliga',leagueId:140,channelId:'UCTv-XvfzLX3i4IGWAm4sbmA',countries:Object.freeze(['RU','KZ','BY']),replayRetentionDays:7,highlights:true,highlightsOnly:true,uploadsIntervalMs:300000,authorityUrl:'https://www.laliga.com/en-GB',highlightsLabel:'Обзор Ла Лиги',
 }),Object.freeze({
  id:'seriea-highlights',revision:1,publisher:'seriea',format:'seriea',leagueId:135,channelId:'UCBJeMCIeLQos7wacox4hmLQ',countries:Object.freeze(['RU','KZ','BY']),replayRetentionDays:7,highlights:true,highlightsOnly:true,uploadsIntervalMs:300000,maxHighlightsSeconds:1800,authorityUrl:'https://en.legaseriea.it/serie-a/broadcasters',highlightsLabel:'Обзор Серии А',
-})]);
+}),...[1,2].map(number=>Object.freeze({id:`kleague-${number}-highlights`,revision:1,publisher:'kleagueintl',format:'kleague',videoLeague:number,leagueId:number===1?292:293,channelId:KLEAGUE_CHANNEL,countries:Object.freeze(['RU','KZ','BY']),replayRetentionDays:7,highlights:true,highlightsOnly:true,uploadsIntervalMs:300000,authorityUrl:'https://tv.kleague.com/en-int/page/home',highlightsLabel:`Расширенный обзор K LEAGUE ${number}`}))]);
 const normalized=value=>typeof value==='string'?value.normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim():'';
 // Only exact provider team IDs may gain these observed official-name aliases.
 const aliases={287:['Urawa Reds'],290:['Kashima Antlers'],302:['Kyoto Sanga F.C.'],303:['FC Machida Zelvia']};
@@ -106,6 +107,7 @@ export function watchDescriptionEvidence(policy,description=''){
   if(typeof description!=='string')return '';
   const lines=description.split(/\r?\n/);
   if(policy?.format==='aleagues')return '';
+  if(policy?.format==='kleague')return '';
   if(policy?.format==='seriea')return lines[0];
   if(policy?.format==='laliga')return lines.filter(line=>/\bLALIGA EA SPORTS 20\d{2}\/\d{2} J[1-9]\d?\b/.test(line)).join('\n');
   if(policy?.format==='spl')return lines.filter(line=>/^(?:Date:|Score:|Watch the latest SPL highlights:)/.test(line)).join('\n');

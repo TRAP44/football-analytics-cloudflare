@@ -382,3 +382,4 @@ await cdp.call('Network.setBlockedURLs',{urls:['*youtube.com*','*ytimg.com*']});
 
 // Scale contract shares the existing mandatory native CI entrypoint.
 await import('./watch-library-scale-browser-smoke.js');
+await import('./kleague-watch-browser-smoke.js');
