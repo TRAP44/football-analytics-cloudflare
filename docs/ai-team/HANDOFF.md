@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-27 — Codex — Не терять подтверждённые видео каталога
-Ветка `codex/watch-catalogue-completeness`, PR готовится. #1030 завершён: mainbdb5c5be, Quality40470639806/CodeQL40470639844/Deploy40471047315 success; public launch151/CF74947b02-baa7-40e6-951f-5c9d193d1a2d verified. Исследование #944 закрыто по документированным результатам, расширение #949 открыто; OneFootball/МатчТВ письма не отправлены, новых договоров нет.
+PR [#1031](https://github.com/TRAP44/football-analytics-cloudflare/pull/1031), ветка `codex/watch-catalogue-completeness`. #1030 завершён: mainbdb5c5be, Quality40470639806/CodeQL40470639844/Deploy40471047315 success; public launch151/CF74947b02-baa7-40e6-951f-5c9d193d1a2d verified. Исследование #944 закрыто по документированным результатам, расширение #949 открыто; OneFootball/МатчТВ письма не отправлены, новых договоров нет.
 
 Actual40503003586 показал10видео/8матчей и2пропущенных официальных обзора. Protected provider40503789580/40503793712 независимо подтвердил fixture1556113/1556118; officialJ.LEAGUE102409/102503 — команды, дата иMatchweek12. src aliases строго teamID302→Kyoto Sanga F.C.,287→Urawa Reds; в manifest два ограниченных7днями отkickoff seed approvals с fixtureEvidence/roundAuthority. Полные первичные свидетельства docs/research/WATCH_CATALOGUE_COMPLETENESS_2026-10-27.json. Первая пользовательская выдача всё ещё требует свежий совпадающий MatchCenter; region/public/age/embed/type checks выполняются заново поactualGooglemetadata при каждом обновлении. Никаких топ-LIVE/новыхproviders не добавлено.
 
