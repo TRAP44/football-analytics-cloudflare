@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-27 — Codex — Реальное расширение просмотра и устойчивость большого каталога
-Ветка `codex/watch-multi-league`, PR готовится. Это продолжение запроса Сергея о существенном охвате, не завершать после tooling. #1032 выпущен: main98fe961d, Quality40513424494/CodeQL40513424615/audit40513424457/Deploy40514049136 success; artifactno-op, actualpublic runtime4a23fa61/CF052c86d4/launch151 unchanged. Actual7uploads/date scans перечислены docs/research/WATCH_MULTILEAGUE_EVIDENCE_2026-10-27.json.
+PR [#1033](https://github.com/TRAP44/football-analytics-cloudflare/pull/1033), ветка `codex/watch-multi-league`. Это продолжение запроса Сергея о существенном охвате, не завершать после tooling. #1032 выпущен: main98fe961d, Quality40513424494/CodeQL40513424615/audit40513424457/Deploy40514049136 success; artifactno-op, actualpublic runtime4a23fa61/CF052c86d4/launch151 unchanged. Actual7uploads/date scans перечислены docs/research/WATCH_MULTILEAGUE_EVIDENCE_2026-10-27.json.
 
 Новые reviewedпубликации: A-League188/190 (полныеэфиры/записи иобзоры), SPL368 (обзоры сexplicitdate/score), LaLiga140 (score+season/round), SerieA135 (title+независимаяперваястрокаскомандами/счётом/сезоном). OriginalJleague98 сохранён. Женщины/мужчиныAleague различаютсяточнымcompetitiontag/leagueID; реальныезапретыRU соблюдены, watchalongs/weeklyshow/press/shorts невыданызаматчи. ObservedwrongSerieAAtalantatitle/Interdescription отвергается. Ownership источники —официальныеleaguefooters/directchannelIDs; неподтверждённыеBundes/Ligue1 иDAZNбезRUembed неapproved.
 

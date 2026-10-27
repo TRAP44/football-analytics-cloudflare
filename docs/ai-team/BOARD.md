@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Автоматический просмотр шести турниров и каталог до100матчей — **Codex** — `codex/watch-multi-league` — новые проверенные источники, пакетные fixture snapshots, квоты/миграция, компактные кеши/3s public coalescing, фильтры типов/показ20; реальный прирост и полные записи поRU подтвердить после выпуска.
 
 
 
@@ -106,6 +105,8 @@
 
 
 ## На ревью
+
+- [ ] Автоматический просмотр шести турниров и каталог до100матчей — **Codex** — [PR #1033](https://github.com/TRAP44/football-analytics-cloudflare/pull/1033), `codex/watch-multi-league` — новые проверенные источники, пакетные fixture snapshots, квоты/миграция, компактные кеши/3s public coalescing, фильтры типов/показ20; release975/full4773/nativebrowser/independentreview passed; exactheadCI→Deploy→actualRUcount проверяются.
 
 
 
