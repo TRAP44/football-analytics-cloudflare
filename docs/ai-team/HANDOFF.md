@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-27 — Codex — Данные для существенного расширения просмотра
-Ветка `codex/watch-source-uploads`, PR готовится. По запросу Сергея увеличить реальный охват, не остановиться на10матчах. #1031 завершён: main4a23fa61, Quality40505685440/CodeQL40505685588/Deploy40506134930 success; public CF052c86d4-a2d1-4a40-8bef-9e1ed2c2407b/launch151 verified. ActualRefresh40506753058 подтвердил12видео/10матчей,2новыхhighlights,0LIVE/2replays/10highlights. Не возвращать к pending.
+PR [#1032](https://github.com/TRAP44/football-analytics-cloudflare/pull/1032), ветка `codex/watch-source-uploads`. По запросу Сергея увеличить реальный охват, не остановиться на10матчах. #1031 завершён: main4a23fa61, Quality40505685440/CodeQL40505685588/Deploy40506134930 success; public CF052c86d4-a2d1-4a40-8bef-9e1ed2c2407b/launch151 verified. ActualRefresh40506753058 подтвердил12видео/10матчей,2новыхhighlights,0LIVE/2replays/10highlights. Не возвращать к pending.
 
 Обнаруженные пределы: один автоматический publisher J.LEAGUE; library/client20matches;5producerYouTube calls; candidateinspector ищет толькоlive/upcoming и не видит полные записи. Расширена существующая main-only inspection: `watch_feed=uploads` читает одну закреплённую UUplaylist из20публикаций черезchannels→playlistItems→videos (3quota units вместо200search), metadata publishedAt/description/duration/broadcastKind/regions/embed, безapprove/playbackclaim/DBwrites. Defaultlive unchanged, invalidfeed rejects beforeI/O, boundedbody и4callslimit сохранены.
 
