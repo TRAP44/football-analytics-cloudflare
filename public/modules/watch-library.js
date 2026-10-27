@@ -3,11 +3,12 @@ import {crestFallbackHtml,preferredTeamCrestUrl} from './team-crest.js';
 const COUNTRY_KEY='matchradar:watch-country:v1';
 const labels={live:'Трансляция',highlights:'Обзор',replay:'Полная запись'};
 export function createWatchLibrary({root,api,escapeHtml,onOpen,now=Date.now,window:win=window,document:doc=document,isVisible=()=>true}={}){
-  let country='',controller,sequence=0,refreshTimer,expiryTimer,loadedAt=0,items=[],opening=false,loading=false,countriesAvailable=false,intent=0;
+  let country='',controller,sequence=0,refreshTimer,expiryTimer,loadedAt=0,items=[],opening=false,loading=false,countriesAvailable=false,intent=0,visibleCount=20,selectedKind='all';
   try{country=win.localStorage.getItem(COUNTRY_KEY)||'';if(!/^[A-Z]{2}$/.test(country))country='';}catch{}
   const body=root.querySelector('[data-watch-library-body]');
   const active=()=>root.isConnected&&root.open&&isVisible()&&doc.visibilityState!=='hidden';
-  const date=value=>{try{return new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(value))+' МСК';}catch{return '';}};
+  let dateFormatter;
+  const date=value=>{try{dateFormatter ||= new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});return dateFormatter.format(new Date(value))+' МСК';}catch{return '';}};
   function pause(){if(loading)loadedAt=0;intent++;sequence++;controller?.abort();win.clearTimeout(refreshTimer);win.clearTimeout(expiryTimer);loading=false;}
   function armExpiry(){
     win.clearTimeout(expiryTimer);if(!active())return;
@@ -25,21 +26,32 @@ export function createWatchLibrary({root,api,escapeHtml,onOpen,now=Date.now,wind
   };
   function renderCards(){
     const list=body.querySelector('[data-watch-library-list]');if(!list)return;
-    items=items.filter(item=>Date.parse(item.expiresAt)>now());const current=items;
-    list.innerHTML=!countriesAvailable?'<p class="muted">Доступность источников пока не подтверждена. Попробуйте обновить список позже.</p>':!country?'<p class="muted">Выберите страну — покажем доступные матчи.</p>':current.length?current.map((item,index)=>`<article class="watch-library-card"><small>${escapeHtml(item.league)} · ${escapeHtml(date(item.date))}</small><div class="watch-library-teams">${team(item.home,item.homeTeamId)}${team(item.away,item.awayTeamId)}</div><span>${item.kinds.map(kind=>escapeHtml(labels[kind])).join(' · ')}</span><button type="button" class="primary-btn" data-watch-library-open="${index}">Открыть матч</button></article>`).join(''):'<p class="muted">Подтверждённых вариантов для этой страны пока нет. Список обновляется автоматически.</p>';
+    items=items.filter(item=>Date.parse(item.expiresAt)>now());const available=items.filter(item=>selectedKind==='all'||item.kinds.includes(selectedKind)),current=available.slice(0,visibleCount);
+    const filters=body.querySelector('[data-watch-library-filters]');
+    if(filters){
+      filters.hidden=!country||!items.length;
+      filters.innerHTML=[['all','Все'],['live','LIVE'],['replay','Полные матчи'],['highlights','Обзоры']].map(([kind,label])=>{const count=kind==='all'?items.length:items.filter(item=>item.kinds.includes(kind)).length;return `<button type="button" class="secondary-btn" data-watch-library-kind="${kind}" aria-pressed="${selectedKind===kind}" ${count?'':'disabled'}>${label} · ${count}</button>`;}).join('');
+      filters.querySelectorAll('[data-watch-library-kind]').forEach(button=>{button.onclick=()=>{const kind=button.dataset.watchLibraryKind;if(kind!=='all'&&!Object.hasOwn(labels,kind))return;intent++;selectedKind=kind;visibleCount=20;renderCards();};});
+    }
+    const empty=selectedKind==='replay'?'Полных записей для этой страны сейчас нет.':selectedKind==='live'?'Сейчас нет подтверждённых прямых эфиров.':selectedKind==='highlights'?'Обзоров для этой страны сейчас нет.':'Подтверждённых вариантов для этой страны пока нет. Список обновляется автоматически.';
+    list.innerHTML=!countriesAvailable?'<p class="muted">Доступность источников пока не подтверждена. Попробуйте обновить список позже.</p>':!country?'<p class="muted">Выберите страну — покажем доступные матчи.</p>':current.length?current.map((item,index)=>`<article class="watch-library-card"><small>${escapeHtml(item.league)} · ${escapeHtml(date(item.date))}</small><div class="watch-library-teams">${team(item.home,item.homeTeamId)}${team(item.away,item.awayTeamId)}</div><span>${item.kinds.map(kind=>escapeHtml(labels[kind])).join(' · ')}</span><button type="button" class="primary-btn" data-watch-library-open="${index}">Открыть матч</button></article>`).join(''):`<p class="muted">${empty}</p>`;
     list.querySelectorAll('[data-watch-library-open]').forEach(button=>{button.onclick=async()=>{
       const item=current[Number(button.dataset.watchLibraryOpen)];if(opening||!active()||Date.parse(item?.expiresAt)<=now())return;
       opening=true;button.disabled=true;const version=++intent,isCurrent=()=>active()&&version===intent;
       try{await onOpen(item.fixtureId,button,isCurrent);}catch{if(active())body.querySelector('[data-watch-library-state]').textContent='Не удалось открыть матч. Попробуйте ещё раз.';}
       finally{opening=false;if(button.isConnected)button.disabled=false;}
     };});
+    if(current.length<available.length){
+      const more=doc.createElement('button');more.type='button';more.className='secondary-btn';more.dataset.watchLibraryMore='';more.textContent=`Показать ещё ${Math.min(20,available.length-current.length)}`;
+      more.onclick=()=>{visibleCount=Math.min(100,visibleCount+20);renderCards();};list.appendChild(more);
+    }
   }
   function render(data){
     const countries=Array.isArray(data?.countries)?data.countries.filter(item=>/^[A-Z]{2}$/.test(item?.code)&&typeof item.name==='string'):[];
     countriesAvailable=countries.length>0;
-    items=data?.country===country&&Array.isArray(data?.items)?data.items.filter(item=>Number.isSafeInteger(item?.fixtureId)&&item.fixtureId>0&&typeof item.home==='string'&&typeof item.away==='string'&&Array.isArray(item.kinds)&&item.kinds.length>0&&item.kinds.every(kind=>Object.hasOwn(labels,kind))&&Date.parse(item.expiresAt)>now()).slice(0,20):[];
-    body.innerHTML=`${countriesAvailable?`<label>Страна просмотра <select data-watch-library-country aria-label="Страна просмотра видео"><option value="">Выберите страну</option>${countries.map(item=>`<option value="${item.code}" ${item.code===country?'selected':''}>${escapeHtml(item.name)}</option>`).join('')}</select></label>`:''}<div class="watch-library-list" data-watch-library-list></div><p class="muted" data-watch-library-state role="status"></p><button class="secondary-btn" type="button" data-watch-library-refresh>Обновить список</button>`;
-    const selector=body.querySelector('[data-watch-library-country]');if(selector)selector.onchange=event=>{intent++;country=event.target.value;try{win.localStorage.setItem(COUNTRY_KEY,country);}catch{}items=[];renderCards();void load();};
+    items=data?.country===country&&Array.isArray(data?.items)?data.items.filter(item=>Number.isSafeInteger(item?.fixtureId)&&item.fixtureId>0&&typeof item.home==='string'&&typeof item.away==='string'&&Array.isArray(item.kinds)&&item.kinds.length>0&&item.kinds.every(kind=>Object.hasOwn(labels,kind))&&Date.parse(item.expiresAt)>now()).slice(0,100):[];
+    body.innerHTML=`${countriesAvailable?`<label>Страна просмотра <select data-watch-library-country aria-label="Страна просмотра видео"><option value="">Выберите страну</option>${countries.map(item=>`<option value="${item.code}" ${item.code===country?'selected':''}>${escapeHtml(item.name)}</option>`).join('')}</select></label>`:''}<div class="watch-library-filters" data-watch-library-filters role="group" aria-label="Тип просмотра" hidden></div><div class="watch-library-list" data-watch-library-list></div><p class="muted" data-watch-library-state role="status"></p><button class="secondary-btn" type="button" data-watch-library-refresh>Обновить список</button>`;
+    const selector=body.querySelector('[data-watch-library-country]');if(selector)selector.onchange=event=>{intent++;country=event.target.value;visibleCount=20;try{win.localStorage.setItem(COUNTRY_KEY,country);}catch{}items=[];renderCards();void load();};
     body.querySelector('[data-watch-library-refresh]').onclick=()=>void load();renderCards();schedule();
   }
   async function load(){
@@ -47,7 +59,7 @@ export function createWatchLibrary({root,api,escapeHtml,onOpen,now=Date.now,wind
     const request=++sequence;controller?.abort();controller=new AbortController();const signal=controller.signal;loading=true;win.clearTimeout(refreshTimer);armExpiry();
     const status=body.querySelector('[data-watch-library-state]');if(status)status.textContent='Обновляем список…';else body.textContent='Загружаем доступные матчи…';
     try{
-      const data=await api('/api/match-watch?'+new URLSearchParams({list:'1',...(country?{country}:{})}),{signal,timeoutMs:4000});
+      const data=await api('/api/match-watch?'+new URLSearchParams({list:'1',limit:'100',...(country?{country}:{})}),{signal,timeoutMs:4000});
       if(request!==sequence||signal.aborted||!active())return;loadedAt=now();render(data);
     }catch(error){
       if(request!==sequence||signal.aborted||!active())return;
@@ -58,7 +70,7 @@ export function createWatchLibrary({root,api,escapeHtml,onOpen,now=Date.now,wind
       schedule();
     }finally{if(request===sequence)loading=false;}
   }
-  function resume(){if(!active()||loading)return;try{const raw=win.localStorage.getItem(COUNTRY_KEY)||'',saved=/^[A-Z]{2}$/.test(raw)?raw:'';if(saved!==country){country=saved;loadedAt=0;items=[];}}catch{}if(!loadedAt||now()-loadedAt>=60000)void load();else{renderCards();schedule();}}
+  function resume(){if(!active()||loading)return;try{const raw=win.localStorage.getItem(COUNTRY_KEY)||'',saved=/^[A-Z]{2}$/.test(raw)?raw:'';if(saved!==country){country=saved;loadedAt=0;items=[];visibleCount=20;}}catch{}if(!loadedAt||now()-loadedAt>=60000)void load();else{renderCards();schedule();}}
   root.addEventListener('toggle',()=>{root.open?resume():pause();});
   win.addEventListener?.('pageshow',resume);
   doc.addEventListener?.('visibilitychange',()=>{doc.visibilityState==='hidden'?pause():resume();});

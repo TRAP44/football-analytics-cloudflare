@@ -1,126 +1,116 @@
-// Main-only bounded discovery. No football-provider requests and no user data.
-import {WATCH_POLICIES,automaticWatchMatch,automaticWatchValidUntil,automaticHighlightsMatch,automaticHighlightsEvidence} from '../src/match-watch-policy.js';
+// Bounded official discovery: cheap uploads feeds, independent source checks.
+import {WATCH_POLICIES,automaticWatchMatch,automaticWatchValidUntil,automaticHighlightsMatch,automaticHighlightsEvidence,automaticReplayEvidence,youtubeWatchCountries} from '../src/match-watch-policy.js';
 import {watchFixtureIdentity} from '../src/match-watch.js';
 import {matchCenterCacheKey} from '../src/match-center-cache-key.js';
-export const WATCH_DISCOVERY_KEY='match-watch-discovery:v1';
+export const WATCH_DISCOVERY_KEY='match-watch-discovery:v2';
+export const WATCH_LEGACY_DISCOVERY_KEY='match-watch-discovery:v1';
 export const WATCH_DISCOVERY_INTERVAL=2*3600000;
+const JLEAGUE='UCmQp6ZaAejJKKkXc_Y_lh1A';
 const videoId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{11}$/.test(value);
 const fail=code=>{throw Object.assign(new Error(code),{code});};
 const validTime=(value,now,maxAge)=>typeof value==='string'&&Number.isFinite(Date.parse(value))&&Date.parse(value)<=now&&now-Date.parse(value)<=maxAge;
-export async function discoverMatchWatch({readCache,writeCache,youtube,approvals,now,report,policies=WATCH_POLICIES}){
-  const stateRows=await readCache({cache_key:`eq.${WATCH_DISCOVERY_KEY}`,limit:'1'});
-  if(stateRows.length>1)fail('WATCH_DISCOVERY_STATE_INVALID');
-  const previous=stateRows[0]?.payload;
-  if(previous && (stateRows[0].cache_key!==WATCH_DISCOVERY_KEY || previous.version!==1 || !validTime(previous.attemptedAt,now,72*3600000) || !Array.isArray(previous.videoIds)||previous.videoIds.length>30||previous.videoIds.some(id=>!videoId(id))||!Array.isArray(previous.bindings)||previous.bindings.length>20||previous.bindings.some(binding=>!binding||!watchFixtureIdentity(binding.match)||binding.videoIds!==undefined&&(!Array.isArray(binding.videoIds)||binding.videoIds.length>5||binding.videoIds.some(id=>!videoId(id))))))fail('WATCH_DISCOVERY_STATE_INVALID');
-  const state=previous?structuredClone(previous):{version:1,attemptedAt:new Date(0).toISOString(),videoIds:[],bindings:[]};
-  if(state.uploadsAttemptedAt!==undefined&&!validTime(state.uploadsAttemptedAt,now,72*3600000))fail('WATCH_DISCOVERY_STATE_INVALID');
-  if(state.uploadIds!==undefined&&(!Array.isArray(state.uploadIds)||state.uploadIds.length>15||state.uploadIds.some(id=>!videoId(id))))fail('WATCH_DISCOVERY_STATE_INVALID');
-  const retained=state.bindings.filter(binding=>validTime(binding.observedAt,now,7*86400000)&&Date.parse(binding.match.date)+7*86400000>now);
-  let discoveryFailed=false;
-  const searchDue=!previous||now-Date.parse(previous.attemptedAt)>=WATCH_DISCOVERY_INTERVAL;
-  const uploadsDue=policies.some(policy=>policy.highlights)&&(!state.uploadsAttemptedAt||now-Date.parse(state.uploadsAttemptedAt)>=WATCH_DISCOVERY_INTERVAL);
-  if(searchDue||uploadsDue){
-    // Persist the attempt BEFORE spending search quota. Shared workflow concurrency
-    // serializes manual/clock jobs; an unknown write is never retried or searched.
-    if(searchDue)state.attemptedAt=new Date(now).toISOString();
-    if(uploadsDue)state.uploadsAttemptedAt=new Date(now).toISOString();
-    await writeCache(WATCH_DISCOVERY_KEY,0,state,now+72*3600000);
-    let found=new Set(state.videoIds.filter(id=>!state.uploadIds?.includes(id))),uploads=new Set(state.uploadIds||[]);
-    let searched=false,uploaded=false;
-    if(searchDue){
-      const fresh=new Set();let complete=true;
-      for(const policy of policies)for(const eventType of ['live','upcoming']){
-        try{
-          const items=await youtube('search',{part:'id',channelId:policy.channelId,type:'video',eventType,regionCode:'RU',maxResults:'20'});
-          if(items.length>20)fail('WATCH_DISCOVERY_RESPONSE_INVALID');
-          const ids=items.map(item=>item?.id?.videoId);
-          if(ids.some(id=>!videoId(id)))fail('WATCH_DISCOVERY_RESPONSE_INVALID');
-          for(const id of ids)fresh.add(id);
-          searched=true;
-        }catch{
-          complete=false;discoveryFailed=true;
-          if(!(report.failedFeeds||=[]).includes('live_search'))report.failedFeeds.push('live_search');
-        }
-      }
-      // A failed upcoming feed must not discard a successful LIVE search (or
-      // prevent the next feed from running). Retained IDs still require fresh
-      // per-video metadata below; a partial search never renews video rights.
-      if(searched)found=complete?fresh:new Set([...fresh,...found]);
-    }
-    if(uploadsDue){
-      try{
-        const fresh=new Set();
-        for(const policy of policies.filter(item=>item.highlights)){
-          // The pinned official channel uploads playlist, one bounded page.
-          // One quota unit rather than a new 100-unit text search.
-          const items=await youtube('playlistItems',{part:'contentDetails',playlistId:'UU'+policy.channelId.slice(2),maxResults:'20'});
-          if(items.length>20)fail('WATCH_DISCOVERY_RESPONSE_INVALID');
-          for(const item of items){const id=item?.contentDetails?.videoId;if(!videoId(id))fail('WATCH_DISCOVERY_RESPONSE_INVALID');fresh.add(id);}
-        }
-        uploads=fresh;uploaded=true;
-      }catch{discoveryFailed=true;(report.failedFeeds||=[]).push('uploads');}
-    }
-    if(searched||uploaded){
-      state.uploadIds=[...uploads].slice(0,15);
-      state.videoIds=[...new Set([...found].slice(0,15).concat(state.uploadIds))].slice(0,30);
-      state.discoveredAt=new Date(now).toISOString();
-    }
-    report.discovery=discoveryFailed?(searched||uploaded?'partial':'failed_retaining_previous'):searched?'searched':'uploads_searched';
-  }else report.discovery='cached';
-  // Fresh per-video metadata is checked every tick, including deleted/private IDs.
-  const ids=[...new Set([...state.videoIds,...approvals.filter(item=>item.provider==='youtube').map(item=>item.videoId),...retained.flatMap(binding=>binding.videoIds||[])])].slice(0,50);
-  const videos=ids.length?await youtube('videos',{part:'snippet,status,contentDetails,liveStreamingDetails',id:ids.join(',')}):[];
-  if(videos.length>ids.length)fail('WATCH_VIDEO_RESPONSE_INVALID');
-  const seen=new Set();
-  for(const video of videos){if(!ids.includes(video?.id)||seen.has(video.id))fail('WATCH_VIDEO_RESPONSE_INVALID');seen.add(video.id);}
+const idsValid=(ids,max)=>Array.isArray(ids)&&ids.length<=max&&ids.every(videoId);
+function feedMapValid(value,max,now){
+ if(value===undefined)return true;
+ return value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length<=5&&Object.entries(value).every(([key,item])=>/^UC[A-Za-z0-9_-]{22}$/.test(key)&&item&&idsValid(item.ids,max)&&validTime(item.attemptedAt,now,72*3600000));
+}
+export async function discoverMatchWatch({readCache,writeCache,youtube,approvals,now,report,policies=WATCH_POLICIES,loadFixtureDays}={}){
+ let stateRows=await readCache({cache_key:`eq.${WATCH_DISCOVERY_KEY}`,limit:'1'}),legacy=false;
+ if(!stateRows.length){stateRows=await readCache({cache_key:`eq.${WATCH_LEGACY_DISCOVERY_KEY}`,limit:'1'});legacy=stateRows.length>0;}
+ if(stateRows.length>1)fail('WATCH_DISCOVERY_STATE_INVALID');
+ const previous=stateRows[0]?.payload;
+ if(previous&&(stateRows[0].cache_key!==(legacy?WATCH_LEGACY_DISCOVERY_KEY:WATCH_DISCOVERY_KEY)||previous.version!==(legacy?1:2)||!validTime(previous.attemptedAt,now,72*3600000)||!idsValid(previous.videoIds,legacy?30:330)||!Array.isArray(previous.bindings)||previous.bindings.length>(legacy?20:100)||previous.bindings.some(binding=>!binding||!watchFixtureIdentity(binding.match)||binding.videoIds!==undefined&&!idsValid(binding.videoIds,legacy?5:2))))fail('WATCH_DISCOVERY_STATE_INVALID');
+ const state=previous?structuredClone(previous):{attemptedAt:new Date(now).toISOString(),videoIds:[],bindings:[]};state.version=2;
+ if(state.uploadsAttemptedAt!==undefined&&!validTime(state.uploadsAttemptedAt,now,72*3600000)||state.uploadIds!==undefined&&!idsValid(state.uploadIds,legacy?15:250)||!feedMapValid(state.liveFeeds,40,now)||!feedMapValid(state.uploadFeeds,50,now))fail('WATCH_DISCOVERY_STATE_INVALID');
+ if(legacy){state.bindings=state.bindings.map(binding=>({...binding,videoIds:(binding.videoIds||[]).slice(0,2)}));report.discoveryMigration='v1_to_v2';}
+ state.liveFeeds||={};state.uploadFeeds||={};
+ if(previous&&!state.liveFeeds[JLEAGUE])state.liveFeeds[JLEAGUE]={attemptedAt:state.attemptedAt,ids:state.videoIds.filter(id=>!state.uploadIds?.includes(id)).slice(0,40)};
+ if(state.uploadsAttemptedAt&&!state.uploadFeeds[JLEAGUE])state.uploadFeeds[JLEAGUE]={attemptedAt:state.uploadsAttemptedAt,ids:state.uploadIds||[]};
+ const channelMap=new Map();for(const policy of policies){if(!channelMap.has(policy.channelId))channelMap.set(policy.channelId,[]);channelMap.get(policy.channelId).push(policy);}
+ const channels=[...channelMap.entries()];
+ if(channels.length>5||channels.filter(([,items])=>items.some(item=>!item.highlightsOnly)).length>2)fail('WATCH_POLICY_LIMIT');
+ for(const map of [state.liveFeeds,state.uploadFeeds])for(const id of Object.keys(map))if(!channelMap.has(id))delete map[id];
+ const retained=state.bindings.filter(binding=>validTime(binding.observedAt,now,7*86400000)&&Date.parse(binding.match.date)+7*86400000>now);
+ const searches=channels.filter(([id,items])=>items.some(item=>!item.highlightsOnly)&&(!previous||!state.liveFeeds[id]||now-Date.parse(id===JLEAGUE?state.attemptedAt:state.liveFeeds[id].attemptedAt)>=Math.min(...items.filter(item=>!item.highlightsOnly).map(item=>item.searchIntervalMs||WATCH_DISCOVERY_INTERVAL))));
+ const uploads=channels.filter(([id,items])=>items.some(item=>item.highlights)&&(!state.uploadFeeds[id]||items.some(item=>item.highlights&&item.uploadsIntervalMs===300000)||id===JLEAGUE&&!state.uploadsAttemptedAt||now-Date.parse(id===JLEAGUE?state.uploadsAttemptedAt:state.uploadFeeds[id].attemptedAt)>=Math.min(...items.filter(item=>item.highlights).map(item=>item.uploadsIntervalMs||WATCH_DISCOVERY_INTERVAL))));
+ let discoveryFailed=false,searched=false,uploaded=false;
+ if(searches.length||uploads.length){
+  const at=new Date(now).toISOString();
+  for(const [id] of searches){state.liveFeeds[id]={...state.liveFeeds[id],ids:state.liveFeeds[id]?.ids||[],attemptedAt:at};if(id===JLEAGUE)state.attemptedAt=at;}
+  for(const [id] of uploads){state.uploadFeeds[id]={...state.uploadFeeds[id],ids:state.uploadFeeds[id]?.ids||[],attemptedAt:at};if(id===JLEAGUE)state.uploadsAttemptedAt=at;}
+  await writeCache(WATCH_DISCOVERY_KEY,0,state,now+72*3600000);
+  for(const [id] of searches){
+   const fresh=new Set();let complete=true,success=false;
+   for(const eventType of ['live','upcoming']){
+    try{const items=await youtube('search',{part:'id',channelId:id,type:'video',eventType,regionCode:'RU',maxResults:'20'});
+     if(items.length>20||items.some(item=>!videoId(item?.id?.videoId)))fail('WATCH_DISCOVERY_RESPONSE_INVALID');
+     for(const item of items)fresh.add(item.id.videoId);success=true;searched=true;
+    }catch{complete=false;discoveryFailed=true;if(!(report.failedFeeds||=[]).includes('live_search'))report.failedFeeds.push('live_search');}
+   }
+   if(success)state.liveFeeds[id].ids=[...new Set([...fresh,...(complete?[]:state.liveFeeds[id].ids)])].slice(0,40);
+  }
+  for(const [id] of uploads){
+   try{const items=await youtube('playlistItems',{part:'contentDetails',playlistId:'UU'+id.slice(2),maxResults:'50'});
+    if(items.length>50||items.some(item=>!videoId(item?.contentDetails?.videoId)))fail('WATCH_DISCOVERY_RESPONSE_INVALID');
+    state.uploadFeeds[id].ids=[...new Set(items.map(item=>item.contentDetails.videoId))];uploaded=true;
+   }catch{discoveryFailed=true;(report.failedFeeds||=[]).push('uploads');}
+  }
+  state.uploadIds=[...new Set(Object.values(state.uploadFeeds).flatMap(feed=>feed.ids))];
+  state.videoIds=[...new Set([...Object.values(state.liveFeeds).flatMap(feed=>feed.ids),...state.uploadIds])];
+  if(state.videoIds.length>330||state.uploadIds.length>250)fail('WATCH_DISCOVERY_STATE_INVALID');
+  if(searched||uploaded)state.discoveredAt=at;
+  report.discovery=discoveryFailed?(searched||uploaded?'partial':'failed_retaining_previous'):searched?'searched':'uploads_searched';
+ }else report.discovery='cached';
+ const ids=[...new Set([...state.videoIds,...approvals.filter(item=>item.provider==='youtube').map(item=>item.videoId),...retained.flatMap(binding=>binding.videoIds||[])])];
+ if(ids.length>550)fail('WATCH_VIDEO_BUDGET');
+ const videos=[];
+ for(let index=0;index<ids.length;index+=50)videos.push(...await youtube('videos',{part:'snippet,status,contentDetails,liveStreamingDetails',id:ids.slice(index,index+50).join(',')}));
+ if(videos.length>ids.length)fail('WATCH_VIDEO_RESPONSE_INVALID');
+ const seen=new Set();for(const video of videos){if(!ids.includes(video?.id)||seen.has(video.id))fail('WATCH_VIDEO_RESPONSE_INVALID');seen.add(video.id);}
+ const external=typeof loadFixtureDays==='function'?await loadFixtureDays(videos,policies):[];
   const dates=Array.from({length:9},(_,index)=>new Date(now+(index-7)*86400000).toISOString().slice(0,10));
   const rows=await readCache({cache_key:`in.(${dates.map(date=>`provider-fixtures:${date}:v1`).join(',')})`,limit:'9'});
   const matches=new Map();
-  const put=(match,observedAt,maxAge=48*3600000)=>{if(watchFixtureIdentity(match)&&validTime(observedAt,now,maxAge))matches.set(match.fixtureId,{match,observedAt});};
+  const put=(match,observedAt,maxAge=48*3600000)=>{if(watchFixtureIdentity(match)&&validTime(observedAt,now,maxAge)&&(!matches.has(match.fixtureId)||Date.parse(observedAt)>=Date.parse(matches.get(match.fixtureId).observedAt)))matches.set(match.fixtureId,{match,observedAt});};
   for(const binding of retained)put(binding.match,binding.observedAt,7*86400000);
   for(const approval of approvals){const e=approval.fixtureEvidence;if(e?.provider==='api-football'&&e.fixtureIdentity===watchFixtureIdentity(approval.match))put(approval.match,e.observedAt,['replay','highlights'].includes(approval.kind)?7*86400000:48*3600000);}
+  for(const item of external)put(item.match,item.observedAt,7*86400000);
   for(const row of rows){
     const payload=row?.payload;
     if(!dates.includes(payload?.date)||row.cache_key!==`provider-fixtures:${payload.date}:v1`||!validTime(payload.fetchedAt,now,48*3600000)||!Array.isArray(payload.fixtures)||payload.fixtures.length>2000)continue;
     for(const raw of payload.fixtures){
       const status=raw.fixture?.status?.short;
-      put({fixtureId:raw.fixture?.id,date:raw.fixture?.date,status,home:raw.teams?.home,away:raw.teams?.away,leagueId:raw.league?.id,league:raw.league?.name,season:raw.league?.season,round:raw.league?.round,finished:['FT','AET','PEN'].includes(status)},payload.fetchedAt);
+      put({fixtureId:raw.fixture?.id,date:raw.fixture?.date,status,home:raw.teams?.home,away:raw.teams?.away,leagueId:raw.league?.id,league:raw.league?.name,season:raw.league?.season,round:raw.league?.round,score:raw.goals,finished:['FT','AET','PEN'].includes(status)},payload.fetchedAt);
     }
   }
   // A directly opened centre is also canonical even when the broad day feed is absent.
   const centers=policies.length?await readCache({cache_key:'like.match-center:*:v17-event-evidence-rc144','payload->match->>leagueId':`in.(${policies.map(policy=>policy.leagueId).join(',')})`,order:'updated_at.desc',limit:'100'}):[];
   for(const row of centers)if(row.cache_key===matchCenterCacheKey(row.payload?.match?.fixtureId))put(row.payload.match,new Date(now).toISOString());
-  const automatic=[];
-  for(const video of videos){
-    const policy=policies.find(item=>item.channelId===video.snippet?.channelId);
-    if(!policy)continue;
-    const candidates=[...matches.values()].flatMap(({match,observedAt})=>{
-      const highlight=automaticHighlightsMatch(policy,match,video.snippet.title,video.snippet.publishedAt,now,video.snippet.description)&&automaticHighlightsEvidence(video.contentDetails?.duration,video.snippet.liveBroadcastContent,video.liveStreamingDetails);
-      const kind=highlight?'highlights':match.finished?'replay':'live';
-      return highlight||automaticWatchMatch(policy,match,video.snippet.title,video.liveStreamingDetails?.scheduledStartTime,now,kind)?[{match,observedAt,kind}]:[];
-    });
-    if(candidates.length!==1){
-      report.ambiguousOrUnmatched=(report.ambiguousOrUnmatched||0)+1;
-      // Bounded public research evidence; never an approval or a published link.
-      if(/highlights/i.test(video.snippet?.title||'')&&(report.unmatchedHighlights||=[]).length<6)report.unmatchedHighlights.push({videoId:video.id,title:String(video.snippet.title).slice(0,220),publishedAt:video.snippet.publishedAt||null,description:String(video.snippet.description||'').slice(0,2000),duration:video.contentDetails?.duration||null});
-      continue;
-    }
-    if(automatic.length>=20)break;
-    if(automatic.filter(item=>item.match.fixtureId===candidates[0].match.fixtureId).length>=5)continue;
-    const {match,observedAt,kind}=candidates[0];
-    automatic.push({match,provider:'youtube',publisher:policy.publisher,videoId:video.id,eventUrl:`https://www.youtube.com/watch?v=${video.id}`,kind,access:'free',label:kind==='highlights'?'Обзор J.LEAGUE':kind==='replay'?'Полная запись J.LEAGUE':policy.label,countries:[...policy.countries],confirmed:true,confirmedAt:new Date(now).toISOString(),validUntil:new Date(automaticWatchValidUntil(policy,match,kind)).toISOString(),videoTitle:video.snippet.title,policyId:policy.id,policyRevision:policy.revision,fixtureEvidence:{provider:'api-football',observedAt,fixtureIdentity:watchFixtureIdentity(match)}});
+ const chosen=new Map();
+ for(const video of videos){
+  const candidates=policies.filter(policy=>policy.channelId===video.snippet?.channelId&&youtubeWatchCountries(video,policy.countries).length).flatMap(policy=>[...matches.values()].flatMap(({match,observedAt})=>{
+   const highlight=automaticHighlightsMatch(policy,match,video.snippet.title,video.snippet.publishedAt,now,video.snippet.description)&&automaticHighlightsEvidence(video.contentDetails?.duration,video.snippet.liveBroadcastContent,video.liveStreamingDetails,policy.maxHighlightsSeconds);
+   const kind=highlight?'highlights':match.finished?'replay':'live';
+   return highlight||automaticWatchMatch(policy,match,video.snippet.title,video.liveStreamingDetails?.scheduledStartTime,now,kind)&&(kind!=='replay'||automaticReplayEvidence(match,video.liveStreamingDetails?.actualStartTime,video.liveStreamingDetails?.actualEndTime,now))?[{policy,match,observedAt,kind}]:[];
+  }));
+  if(candidates.length!==1){
+   report.ambiguousOrUnmatched=(report.ambiguousOrUnmatched||0)+1;
+   if(/highlights|resumen|SPL:/i.test(video.snippet?.title||'')&&(report.unmatchedHighlights||=[]).length<10)report.unmatchedHighlights.push({videoId:video.id,title:String(video.snippet.title).slice(0,220),publishedAt:video.snippet.publishedAt||null,description:String(video.snippet.description||'').slice(0,2000),duration:video.contentDetails?.duration||null});
+   continue;
   }
-  report.automaticMatched=automatic.length;
-  // Retain bound video IDs even after search stops returning ended streams.
-  // Public/private/deleted metadata is still checked on every normal tick.
-  const cleanup=retained.map(binding=>binding.match);
-  const bindings=new Map(retained.map(binding=>[binding.match.fixtureId,{...binding,videoIds:binding.videoIds||[]}]));
-  for(const item of automatic){
-    const prior=bindings.get(item.match.fixtureId);
-    bindings.set(item.match.fixtureId,{match:item.match,observedAt:item.fixtureEvidence.observedAt,videoIds:[...new Set([item.videoId,...prior?.videoIds||[]])].slice(0,5)});
-  }
-  state.bindings=[...bindings.values()].sort((a,b)=>Date.parse(b.match.date)-Date.parse(a.match.date)).slice(0,20);
-  await writeCache(WATCH_DISCOVERY_KEY,0,state,now+72*3600000);
-  if(discoveryFailed)report.discoveryError='WATCH_DISCOVERY_SEARCH_FAILED';
-  return {automatic,videos,cleanup};
+  const candidate=candidates[0],key=candidate.match.fixtureId;
+  if(!chosen.has(key)&&chosen.size>=100)continue;
+  if(!chosen.has(key))chosen.set(key,new Map());
+  const type=candidate.kind==='highlights'?'highlights':'record',previous=chosen.get(key).get(type);
+  const countries=youtubeWatchCountries(video,candidate.policy.countries),rank=Number(countries.includes('RU'))*100+Number(video.status?.embeddable===true)*10+countries.length;
+  if(!previous||rank>previous.rank||rank===previous.rank&&Date.parse(video.snippet.publishedAt)>Date.parse(previous.video.snippet.publishedAt))chosen.get(key).set(type,{...candidate,video,rank});
+ }
+ const automatic=[...chosen.values()].flatMap(group=>[...group.values()].map(({policy,match,observedAt,kind,video})=>({match,provider:'youtube',publisher:policy.publisher,videoId:video.id,eventUrl:`https://www.youtube.com/watch?v=${video.id}`,kind,access:'free',label:kind==='highlights'?policy.highlightsLabel||'Обзор J.LEAGUE':kind==='replay'?policy.replayLabel||'Полная запись J.LEAGUE':policy.label,countries:[...policy.countries],confirmed:true,confirmedAt:new Date(now).toISOString(),validUntil:new Date(automaticWatchValidUntil(policy,match,kind)).toISOString(),videoTitle:video.snippet.title,policyId:policy.id,policyRevision:policy.revision,fixtureEvidence:{provider:'api-football',observedAt,fixtureIdentity:watchFixtureIdentity(match)}})));
+ report.automaticMatched=automatic.length;
+ const cleanup=retained.map(binding=>binding.match),bindings=new Map(retained.map(binding=>[binding.match.fixtureId,binding]));
+ for(const [id,group] of chosen){const items=[...group.values()];bindings.set(id,{match:items[0].match,observedAt:items[0].observedAt,videoIds:items.map(item=>item.video.id)});}
+ state.bindings=[...bindings.values()].sort((a,b)=>Date.parse(b.match.date)-Date.parse(a.match.date)).slice(0,100);
+ await writeCache(WATCH_DISCOVERY_KEY,0,state,now+72*3600000);
+ if(discoveryFailed)report.discoveryError='WATCH_DISCOVERY_SEARCH_FAILED';
+ return {automatic,videos,cleanup};
 }

@@ -103,9 +103,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Проверка новых каналов и пакетная сверка матчей для расширения просмотра — **Codex** — [PR #1032](https://github.com/TRAP44/football-analytics-cloudflare/pull/1032), `codex/watch-source-uploads` — первые20публикаций за3дешёвыхGooglecalls, один guardedfootball datebatch; без автопубликации кандидатов. Подготовка данных для расширения реального каталога, не завершение общего охвата.
+- [ ] Автоматический просмотр шести турниров и каталог до100матчей — **Codex** — [PR #1033](https://github.com/TRAP44/football-analytics-cloudflare/pull/1033), `codex/watch-multi-league` — новые проверенные источники, пакетные fixture snapshots, квоты/миграция, компактные кеши/3s public coalescing, фильтры типов/показ20; release975/full4773/nativebrowser/independentreview passed; exactheadCI→Deploy→actualRUcount проверяются.
+
 
 
 
@@ -258,6 +260,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Проверка новых каналов и пакетная сверка матчей для расширения просмотра — **Codex** — [PR #1032](https://github.com/TRAP44/football-analytics-cloudflare/pull/1032), `codex/watch-source-uploads` — первые20публикаций за3дешёвыхGooglecalls, один guardedfootball datebatch; без автопубликации кандидатов. Подготовка данных для расширения реального каталога, не завершение общего охвата. Выпущен: main98fe961d, Quality40513424494/CodeQL40513424615/audit40513424457/Deploy40514049136 success; runtimeartifact не менялся, actual7uploads/date scans получены. Общая задача охвата продолжается ниже.
 
 - [x] Полнота каталога просмотра: точные имена клубов и изоляция ошибок поиска — **Codex** — [PR #1031](https://github.com/TRAP44/football-analytics-cloudflare/pull/1031), `codex/watch-catalogue-completeness` — подтвердить и добавить два пропущенных официальных обзора; не терять найденный LIVE при отказе соседнего feed. Выпущен: main4a23fa61, Quality40505685440/CodeQL40505685588/Deploy40506134930 success; actual Refresh40506753058 —12видео/10матчей,0rejected; public CF052c86d4-a2d1-4a40-8bef-9e1ed2c2407b verified.
 

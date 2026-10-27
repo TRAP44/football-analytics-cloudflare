@@ -14,6 +14,18 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-27 — Codex — Реальное расширение просмотра и устойчивость большого каталога
+PR [#1033](https://github.com/TRAP44/football-analytics-cloudflare/pull/1033), ветка `codex/watch-multi-league`. Это продолжение запроса Сергея о существенном охвате, не завершать после tooling. #1032 выпущен: main98fe961d, Quality40513424494/CodeQL40513424615/audit40513424457/Deploy40514049136 success; artifactno-op, actualpublic runtime4a23fa61/CF052c86d4/launch151 unchanged. Actual7uploads/date scans перечислены docs/research/WATCH_MULTILEAGUE_EVIDENCE_2026-10-27.json.
+
+Новые reviewedпубликации: A-League188/190 (полныеэфиры/записи иобзоры), SPL368 (обзоры сexplicitdate/score), LaLiga140 (score+season/round), SerieA135 (title+независимаяперваястрокаскомандами/счётом/сезоном). OriginalJleague98 сохранён. Женщины/мужчиныAleague различаютсяточнымcompetitiontag/leagueID; реальныезапретыRU соблюдены, watchalongs/weeklyshow/press/shorts невыданызаматчи. ObservedwrongSerieAAtalantatitle/Interdescription отвергается. Ownership источники —официальныеleaguefooters/directchannelIDs; неподтверждённыеBundes/Ligue1 иDAZNбезRUembed неapproved.
+
+Discoveryv2 мигрируетстарыйv1 безегоизменения дляrollback. Fivechannels/twofullchannels dedup, per-channel independentattempts доI/O; новыеuploads5m,originalJleague2h/ALliveSearch6h. Atomicrefreshclaim one/300s черезсуществующийDBRPC передAPI, unknownclaim abort, skippedruns невыдаютсязапубликацию. <=330feedIDs+200boundIDs+20manual=550, batches50/<=20Googlecalls, <=100fixtures/onefull+onehighlight each, preferRU/embeddedvariants. Worst Google~7532units/day <10k сзафиксированнымиинтервалами; неизвестный6йchannel требуетявногоизмененияbound.
+
+Fixture evidence fetches up to2dates/run, <=16attempts/day durablemarker, existingglobalminute4/FREEreserve/cooldown, fixedrelayonly. <=5000publicrows/8MB upstream, watchedleagues<=200stored/day; no per-viewer providerfanout. FT только изprovider; endedstream merelytriggers15mcanonicalrefresh, speculativeFTcandidate никудане сохраняется. Unknownwrite aborts.
+
+Extendedlibraryv2<=100, compatibilityv1 onlyoriginalJ/manual<=20 forrollback. Auth/kill/TTL/rights validateperrequest; onlypublicsnapshot perruntimeisolate coalesced3s usingmonotonicclock; bounded1500ms includesfallback, latecheck before moreI/O/cache. Legacyread remainsstrong. Payload shedsduplicatedmatch/evidence/promotion AFTER originalfullmetadata validation; per-match playback pathunchanged. UIlaunch152,20cards +loadmore20, typefilters(All/LIVE/full/highlights) noAPI, accuratecountrycounts andexplicitSingaporelabel. Dailyrequests/bounds/physicalplaybacklimitations documented. Node22 npmci/check325/lint/release975/full4773/securityscan/privileged/verifyrelease/workerdryrun прошли. Native Chromium oldwatch+scale20→46, localtypefilters/countryreset/320/390/900 passed; syntheticAPI, не physicalplayback. Независимый read-only Codex review clean,102/102focused, Claude неучаствовал. Productiongrowth notyetclaimed: CI→merge→Deploy→actual producer иRUcount проверитьдофинальногоответа.
+
+
 ## 2026-10-27 — Codex — Данные для существенного расширения просмотра
 PR [#1032](https://github.com/TRAP44/football-analytics-cloudflare/pull/1032), ветка `codex/watch-source-uploads`. По запросу Сергея увеличить реальный охват, не остановиться на10матчах. #1031 завершён: main4a23fa61, Quality40505685440/CodeQL40505685588/Deploy40506134930 success; public CF052c86d4-a2d1-4a40-8bef-9e1ed2c2407b/launch151 verified. ActualRefresh40506753058 подтвердил12видео/10матчей,2новыхhighlights,0LIVE/2replays/10highlights. Не возвращать к pending.
 

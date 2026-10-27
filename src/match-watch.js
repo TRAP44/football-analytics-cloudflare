@@ -4,9 +4,11 @@ export const WATCH_APPROVALS=watchManifest.items;
 // Only service-owned, explicitly reviewed catalogue records are eligible for UI.
 // Public requests never discover/fetch/submit arbitrary videos or provider URLs.
 export const watchCacheKey=id=>`match-watch:${id}:v1`;
-export const WATCH_PUBLISHERS=Object.freeze({fifa:'UCpcTrCXblq78GZrTUTLWeBw',sgpremierleague:'UCiJTKr-wja_JVM2dVTYCELA',jleagueinternational:'UCmQp6ZaAejJKKkXc_Y_lh1A'});
+export const WATCH_PUBLISHERS=Object.freeze({fifa:'UCpcTrCXblq78GZrTUTLWeBw',sgpremierleague:'UCiJTKr-wja_JVM2dVTYCELA',jleagueinternational:'UCmQp6ZaAejJKKkXc_Y_lh1A',aleagues:'UCzRogd_oK3bzKvAW-4aLuPQ',laliga:'UCTv-XvfzLX3i4IGWAm4sbmA',seriea:'UCBJeMCIeLQos7wacox4hmLQ'});
 export const WATCH_TTL_MS=30*60*1000;
 export const WATCH_LIBRARY_KEY='match-watch-library:v1';
+export const WATCH_EXTENDED_LIBRARY_KEY='match-watch-library:v2';
+export const WATCH_LIBRARY_MAX=100;
 const COUNTRY_CODES='AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW'.split(' ');
 export const WATCH_COUNTRIES=Object.freeze(Object.fromEntries(COUNTRY_CODES.map(code=>[code,code])));
 let countryNames;
@@ -43,7 +45,7 @@ export function validatedWatchOptions(match,catalogue,{country='',now=Date.now()
     if(!item || typeof item!=='object' || Array.isArray(item) || !Array.isArray(item.countries))continue;
     const policy=Array.isArray(policies) && policies.find(source=>source.id===item.approval?.policyId && source.revision===item.approval?.policyRevision && source.publisher===item.publisher && source.channelId===item.channelId);
     const automatic=item.approval?.version===2 && policy && item.provider==='youtube' && item.access==='free' && (item.kind==='highlights'
-      ?automaticHighlightsMatch(policy,match,item.videoTitle,item.publishedAt,now,item.videoDescription)&&automaticHighlightsEvidence(item.videoDuration,item.broadcastKind,item.videoStream)
+      ?automaticHighlightsMatch(policy,match,item.videoTitle,item.publishedAt,now,item.videoDescription)&&automaticHighlightsEvidence(item.videoDuration,item.broadcastKind,item.videoStream,policy.maxHighlightsSeconds)
       :['live','replay'].includes(item.kind)&&automaticWatchMatch(policy,match,item.videoTitle,item.availableFrom,now,item.kind)&&(item.kind!=='replay'||automaticReplayEvidence(match,item.replayStartedAt,item.replayEndedAt,now)));
     const approvedSource=automatic?{countries:policy.countries,validUntil:new Date(automaticWatchValidUntil(policy,match,item.kind)).toISOString()}:item.approval?.version===1?approvals.find(source=>source.confirmed===true && watchFixtureIdentity(source.match)===identity && source.provider===item.provider && source.eventUrl===item.eventUrl && source.kind===item.kind && source.access===item.access && source.confirmedAt===item.approval?.confirmedAt && source.publisher===item.publisher && time(source.validUntil)>now):null;
     if(!approvedSource || !Array.isArray(approvedSource.countries) || item.countries?.some(code=>!approvedSource.countries.includes(code)))continue;
@@ -81,7 +83,8 @@ export function watchApiPayload(match,catalogue,options={}){
 export function watchLibraryPayload(library,options={}){
   const now=options.now??Date.now(),country=options.country||'';
   const empty={country,available:false,countries:[],items:[]};
-  if(options.enabled===false||library?.version!==1||!Array.isArray(library.entries)||library.entries.length>20||!Number.isFinite(now)||time(library.checkedAt)>now+5000||now-time(library.checkedAt)>WATCH_TTL_MS||!Number.isFinite(time(library.checkedAt)))return empty;
+  const limit=options.maxEntries===WATCH_LIBRARY_MAX?WATCH_LIBRARY_MAX:20;
+  if(options.enabled===false||library?.version!==1||!Array.isArray(library.entries)||library.entries.length>limit||!Number.isFinite(now)||time(library.checkedAt)>now+5000||now-time(library.checkedAt)>WATCH_TTL_MS||!Number.isFinite(time(library.checkedAt)))return empty;
   const cards=[],countries=new Set(),seen=new Set();
   for(const entry of library.entries){
     const match=entry?.match,identity=watchFixtureIdentity(match);
@@ -93,7 +96,8 @@ export function watchLibraryPayload(library,options={}){
     const home=text(match.home?.name,120),away=text(match.away?.name,120);
     if(!home||!away)continue;
     seen.add(match.fixtureId);
-    cards.push({fixtureId:match.fixtureId,home,away,homeTeamId:id(match.home.id),awayTeamId:id(match.away.id),league:text(match.league,120),date:new Date(time(match.date)).toISOString(),kinds:[...new Set(items.map(item=>item.kind))],expiresAt:new Date(Math.min(...items.map(item=>time(item.expiresAt)))).toISOString()});
+    const leagueId=id(match.leagueId),leagueLabels={98:'J1 · Япония',188:'A-League · мужчины',190:'A-League · женщины',368:'Премьер-лига · Сингапур',140:'Ла Лига · Испания',135:'Серия А · Италия'};
+    cards.push({fixtureId:match.fixtureId,home,away,homeTeamId:id(match.home.id),awayTeamId:id(match.away.id),league:leagueLabels[leagueId]||text(match.league,120),date:new Date(time(match.date)).toISOString(),kinds:[...new Set(items.map(item=>item.kind))],expiresAt:new Date(Math.min(...items.map(item=>time(item.expiresAt)))).toISOString()});
   }
   cards.sort((a,b)=>Number(b.kinds.includes('live'))-Number(a.kinds.includes('live'))||(a.kinds.includes('live')?time(a.date)-time(b.date):time(b.date)-time(a.date)));
   return {country,available:cards.length>0,countries:[...countries].sort().map(code=>({code,name:countryName(code)})),items:cards};

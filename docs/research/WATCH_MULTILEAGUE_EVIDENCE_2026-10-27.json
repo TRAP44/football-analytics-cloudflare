@@ -1,0 +1,122 @@
+{
+  "date": "2026-10-27",
+  "scans": [
+    {
+      "run": 40513430842,
+      "source": "aleagues",
+      "videos": 20,
+      "date": "2026-10-25",
+      "fixtures": 1176
+    },
+    {
+      "run": 40514129711,
+      "source": "sgpremierleague",
+      "videos": 20,
+      "date": "2026-10-24",
+      "fixtures": 1650
+    },
+    {
+      "run": 40514244217,
+      "source": "laliga",
+      "videos": 20,
+      "date": "2026-10-26",
+      "fixtures": 164
+    },
+    {
+      "run": 40515104569,
+      "source": "seriea",
+      "videos": 20,
+      "date": "2026-10-23",
+      "fixtures": 445
+    },
+    {
+      "run": 40515572093,
+      "source": "bundesliga",
+      "videos": 20,
+      "date": "2026-10-22",
+      "fixtures": 158
+    },
+    {
+      "run": 40518091590,
+      "source": "ligue1",
+      "videos": 20,
+      "date": "2026-10-21",
+      "fixtures": 272
+    },
+    {
+      "run": 40513468199,
+      "source": "daznwomensfootball",
+      "videos": 20,
+      "date": "2026-10-20",
+      "fixtures": 227
+    }
+  ],
+  "approvedSources": [
+    {
+      "id": "aleagues",
+      "url": "https://aleagues.com.au/more/where-to-watch-aleagues-overseas/",
+      "finalUrl": "https://aleagues.com.au/more/where-to-watch-aleagues-overseas/",
+      "status": 200,
+      "bytes": 697126,
+      "sha256": "38ef42e488d2e107c02a48ae0406f440d6263971c7aef5465c6c048f8859048a",
+      "youtubeLinks": [
+        "https://www.youtube.com/channel/UCzRogd_oK3bzKvAW-4aLuPQ"
+      ]
+    },
+    {
+      "id": "spl",
+      "url": "https://spl.sg/",
+      "finalUrl": "https://spl.sg/",
+      "status": 200,
+      "bytes": 183790,
+      "sha256": "d038e9df25eae4d99d4bcd1a0a49dc81a18be35d8b64feff500f3125e972da8c",
+      "youtubeLinks": [
+        "https://www.youtube.com/c/SingaporePremierLeagueOfficial",
+        "https://youtube.com/playlist?list=PLks2xrJsMMbQkRJ3IbPnnssfwLHGU1l7H&#038;si=-d7U76nKC4I1Qr3u",
+        "https://www.youtube.com/watch?v=${video.id}`;",
+        "https://www.googleapis.com/youtube/v3/${endpoint}?${query}`",
+        "https://www.youtube.com/@sgpremierleague"
+      ]
+    },
+    {
+      "id": "laliga",
+      "url": "https://www.laliga.com/en-GB",
+      "finalUrl": "https://www.laliga.com/en-GB",
+      "status": 200,
+      "bytes": 817264,
+      "sha256": "402d3eaa9ab0c46c8d4aaa00642bab154c4e3c437f4d867c3a5d670846b7ec0e",
+      "youtubeLinks": [
+        "https://www.youtube.com/watch?v=v_bhWqUO9VQ",
+        "https://www.youtube.com/watch?v=0-iCe4p1DS8",
+        "https://www.youtube.com/watch?v=xi0LHaS3eyU?si=gGZPt2b9y2TUxVtH",
+        "https://www.youtube.com/watch?v=rkFNzHlaBeM?si=UTGAaPS8EGv7bnRG",
+        "https://www.youtube.com/watch?v=Qfzsn1olOZc?si=D8nk51hxPF05jEdo",
+        "https://www.youtube.com/user/laliga"
+      ]
+    }
+  ],
+  "serieA": {
+    "authorityUrl": "https://en.legaseriea.it/serie-a/broadcasters",
+    "status": 200,
+    "sha256": "1853a1fc7d158907b9a8989b1c644983ffa587774dc09f8293673cf48484a1a0",
+    "officialFooter": "https://www.youtube.com/c/seriea/videos",
+    "channelId": "UCBJeMCIeLQos7wacox4hmLQ"
+  },
+  "recordedFixture": "test-support/fixtures/watch-source-expansion.json",
+  "notApproved": [
+    {
+      "source": "Bundesliga",
+      "reason": "Official primary site returned403 in this environment; do not infer territorial rights or identity solely from candidate metadata."
+    },
+    {
+      "source": "Ligue1",
+      "reason": "Candidate metadata returned match summaries, but bounded official-site research did not establish a direct channel relationship; not added to approved registry."
+    },
+    {
+      "source": "DAZN Womens Football",
+      "reason": "Recent football samples were RUblocked and not embeddable; unrelated and older videos are not substitute match coverage."
+    }
+  ],
+  "newLiveCoverageNotClaimed": true,
+  "physicalTelegramPlaybackVerified": false
+}
