@@ -19,6 +19,8 @@
 
 ## В работе
 
+- [ ] Проверка новых каналов и пакетная сверка матчей для расширения просмотра — **Codex** — `codex/watch-source-uploads` — первые20публикаций за3дешёвыхGooglecalls, один guardedfootball datebatch; без автопубликации кандидатов. Подготовка данных для расширения реального каталога, не завершение общего охвата.
+
 
 
 
@@ -104,7 +106,6 @@
 
 ## На ревью
 
-- [ ] Полнота каталога просмотра: точные имена клубов и изоляция ошибок поиска — **Codex** — [PR #1031](https://github.com/TRAP44/football-analytics-cloudflare/pull/1031), `codex/watch-catalogue-completeness` — подтвердить и добавить два пропущенных официальных обзора; не терять найденный LIVE при отказе соседнего feed.
 
 
 
@@ -256,6 +257,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Полнота каталога просмотра: точные имена клубов и изоляция ошибок поиска — **Codex** — [PR #1031](https://github.com/TRAP44/football-analytics-cloudflare/pull/1031), `codex/watch-catalogue-completeness` — подтвердить и добавить два пропущенных официальных обзора; не терять найденный LIVE при отказе соседнего feed. Выпущен: main4a23fa61, Quality40505685440/CodeQL40505685588/Deploy40506134930 success; actual Refresh40506753058 —12видео/10матчей,0rejected; public CF052c86d4-a2d1-4a40-8bef-9e1ed2c2407b verified.
 
 - [x] Источники просмотра топ-лиг и официальные вещатели — **Codex** — [PR #1030](https://github.com/TRAP44/football-analytics-cloudflare/pull/1030), `codex/official-broadcast-guides` — актуальная проверка лиг/страны/встраивания; реальные ссылки в матчах без обещания неподтверждённого LIVE, отдельный путь к лицензированному embed. Выпущен: mainbdb5c5be, MainQuality40470639806/CodeQL40470639844/Deploy40471047315 success; public launch151/CF74947b02-baa7-40e6-951f-5c9d193d1a2d verified.
 

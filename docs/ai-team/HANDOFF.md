@@ -14,6 +14,16 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-27 — Codex — Данные для существенного расширения просмотра
+Ветка `codex/watch-source-uploads`, PR готовится. По запросу Сергея увеличить реальный охват, не остановиться на10матчах. #1031 завершён: main4a23fa61, Quality40505685440/CodeQL40505685588/Deploy40506134930 success; public CF052c86d4-a2d1-4a40-8bef-9e1ed2c2407b/launch151 verified. ActualRefresh40506753058 подтвердил12видео/10матчей,2новыхhighlights,0LIVE/2replays/10highlights. Не возвращать к pending.
+
+Обнаруженные пределы: один автоматический publisher J.LEAGUE; library/client20matches;5producerYouTube calls; candidateinspector ищет толькоlive/upcoming и не видит полные записи. Расширена существующая main-only inspection: `watch_feed=uploads` читает одну закреплённую UUplaylist из20публикаций черезchannels→playlistItems→videos (3quota units вместо200search), metadata publishedAt/description/duration/broadcastKind/regions/embed, безapprove/playbackclaim/DBwrites. Defaultlive unchanged, invalidfeed rejects beforeI/O, boundedbody и4callslimit сохранены.
+
+`watch_fixture_date` даёт один guardedGET фиксированного footballrelay заUTCdate отtoday-7 доtomorrow, exclusive withid. Запретcooldown/FREEreserve/minute иsameoperationalclaim сохранены. <=2000publicsportfixtures/3MB, canonicalIDs/date/teams/league/season/round/score. Invalididentityrows пропускаются ссчётчиком, duplicate/wrongdate отвергаютпакет. Спортивные/пользовательские данные не пишутся, толькопрежнийoperationalquotaclaim. Новыхключей/привилегий/UI/runtime/SQL нет.
+
+Это подготовительный источник фактических данных; после выпуска нужно выполнитьuploads scans иdatebatches, подтвердитьофициальность/территории/тип/пару иреализоватьрасширенныйproductioncatalogue. Не завершатьобщуюзадачупослеодногоobserverPR. Node22 npmci/check322/lint/release963/full4761/securityscan/privileged/verifyrelease/workerdryrun passed. Независимый read-only Codexreview clean,57/57 плюс отдельные malformed/date/duplicate/overflow проверки; Claude неучаствовал. CI/merge/actual evidence — в PR после выпуска.
+
+
 ## 2026-10-27 — Codex — Не терять подтверждённые видео каталога
 PR [#1031](https://github.com/TRAP44/football-analytics-cloudflare/pull/1031), ветка `codex/watch-catalogue-completeness`. #1030 завершён: mainbdb5c5be, Quality40470639806/CodeQL40470639844/Deploy40471047315 success; public launch151/CF74947b02-baa7-40e6-951f-5c9d193d1a2d verified. Исследование #944 закрыто по документированным результатам, расширение #949 открыто; OneFootball/МатчТВ письма не отправлены, новых договоров нет.
 

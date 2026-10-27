@@ -24,6 +24,7 @@ const COUNTRIES=['RU','KZ','BY','UA','GB','US','DE','FR','ES','IT','BR','AR','SG
 const VIDEO_ID=/^[A-Za-z0-9_-]{11}$/;
 const text=(value,max=180)=>typeof value==='string'?value.replace(/[\u0000-\u001f\u007f<>]/g,' ').replace(/\s+/g,' ').trim().slice(0,max):'';
 const safeTime=value=>typeof value==='string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null;
+const description=value=>typeof value==='string'?value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f<>]/g,' ').slice(0,4000):'';
 const normalized=value=>text(value,400).normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
 class SourceFailure extends Error {constructor(code){super(code);this.code=code;}}
 const fail=code=>{throw new SourceFailure(code);};
@@ -58,6 +59,8 @@ export function describeWatchVideo(item,now=new Date(),source=WATCH_SOURCE){
   const publicVideo=status.privacyStatus==='public';
   const kind=ended && (!started || Date.parse(ended)>=Date.parse(started)) && Date.parse(ended)<=now.getTime()?'ended':!ended && started && Date.parse(started)<=now.getTime() && item.snippet.liveBroadcastContent==='live'?'live':!started && !ended && item.snippet.liveBroadcastContent==='upcoming' && scheduled && Date.parse(scheduled)>now.getTime()?'upcoming':'unconfirmed';
   return {videoId:item.id,channelId:source.channelId,title:text(item.snippet.title),
+    publishedAt:safeTime(item.snippet.publishedAt),description:description(item.snippet.description),
+    duration:text(item.contentDetails?.duration,80),broadcastKind:text(item.snippet.liveBroadcastContent,20),
     kind,scheduledStartTime:scheduled,actualStartTime:started,actualEndTime:ended,
     publicVideo,embeddable:status.embeddable===true,
     ageRestricted:item.contentDetails?.contentRating?.ytRating==='ytAgeRestricted',
@@ -93,17 +96,23 @@ export function watchMatchHints(videos,rows){
 export async function inspectMatchWatch({env=process.env,fetchImpl=fetch,now=new Date()}={}){
   let calls=0,searchCalls=0;
   const candidateHandle=env.MATCH_WATCH_CANDIDATE_HANDLE || '';
+  const feed=env.MATCH_WATCH_FEED || 'live';
   const searchCountry=env.MATCH_WATCH_SEARCH_COUNTRY || 'RU';
   const candidateValid=/^[A-Za-z0-9][A-Za-z0-9_.-]{2,29}$/.test(candidateHandle);
   let source=candidateHandle?{handle:candidateValid?candidateHandle.toLowerCase():null,channelId:null,authorityUrl:null,channelUrl:null}:Object.hasOwn(WATCH_SOURCES,env.MATCH_WATCH_PUBLISHER || 'fifa')?WATCH_SOURCES[env.MATCH_WATCH_PUBLISHER || 'fifa']:null;
   const requestedFixture=env.MATCH_WATCH_FIXTURE_ID || '';
+  const fixtureDate=env.MATCH_WATCH_FIXTURE_DATE || '';
+  const dateTime=/^20\d{2}-\d{2}-\d{2}$/.test(fixtureDate)?Date.parse(fixtureDate+'T00:00:00Z'):NaN;
+  const today=Date.parse(now.toISOString().slice(0,10)+'T00:00:00Z');
   const fixtureId=/^[1-9][0-9]{0,9}$/.test(requestedFixture)&&Number(requestedFixture)<=2_000_000_000?Number(requestedFixture):0;
   const report={scope:candidateHandle?'unverified_public_candidate_metadata_not_playback_or_published_catalogue':fixtureId?'official_source_and_one_guarded_fixture_not_playback_or_published_catalogue':'read_only_official_youtube_metadata_not_playback_or_published_catalogue',observedAt:now.toISOString(),searchCountry:['RU','GB','US','SG'].includes(searchCountry)?searchCountry:null,
-    keyAccepted:false,channelVerified:false,source,requestCounts:{youtube:0,search:0,supabase:0},videos:[],matchHints:[],matchCacheStatus:'not_requested',featureReady:false};
+    feed:['live','uploads'].includes(feed)?feed:null,keyAccepted:false,channelVerified:false,source,requestCounts:{youtube:0,search:0,supabase:0},videos:[],matchHints:[],matchCacheStatus:'not_requested',featureReady:false};
+  if(!['live','uploads'].includes(feed))return {...report,errorCode:'WATCH_FEED_INVALID'};
   if(!source)return {...report,errorCode:'WATCH_SOURCE_NOT_ALLOWED'};
   if(candidateHandle&&!candidateValid)return {...report,errorCode:'WATCH_CANDIDATE_HANDLE_INVALID'};
   if(!['RU','GB','US','SG'].includes(searchCountry))return {...report,searchCountry:null,errorCode:'WATCH_SEARCH_COUNTRY_INVALID'};
   if(requestedFixture && !fixtureId)return {...report,errorCode:'WATCH_FIXTURE_ID_INVALID'};
+  if(fixtureDate&&(!Number.isFinite(dateTime)||new Date(dateTime).toISOString().slice(0,10)!==fixtureDate||dateTime<today-7*86400000||dateTime>today+86400000||requestedFixture))return {...report,errorCode:'WATCH_FIXTURE_DATE_INVALID'};
   const key=typeof env.YOUTUBE_DATA_API_KEY==='string'?env.YOUTUBE_DATA_API_KEY.trim():'';
   if(!key || key.length>512) return {...report,errorCode:'YOUTUBE_KEY_NOT_CONFIGURED'};
   const deadline=AbortSignal.timeout(55000);
@@ -131,7 +140,11 @@ export async function inspectMatchWatch({env=process.env,fetchImpl=fetch,now=new
       report.source=source;report.sourceStatus='unverified_research_candidate';
     }else report.channelVerified=true;
     const ids=new Set();
-    for(const eventType of ['live','upcoming']){
+    if(feed==='uploads'){
+      const results=await youtube('playlistItems',{part:'contentDetails',playlistId:'UU'+source.channelId.slice(2),maxResults:'20'});
+      if(results.length>20||results.some(item=>!VIDEO_ID.test(item?.contentDetails?.videoId||'')))fail('YOUTUBE_UPLOADS_RESPONSE_INVALID');
+      for(const item of results)ids.add(item.contentDetails.videoId);
+    }else for(const eventType of ['live','upcoming']){
       const results=await youtube('search',{part:'id',channelId:source.channelId,type:'video',eventType,regionCode:searchCountry,maxResults:'10'});
       if(results.length>10)fail('YOUTUBE_SEARCH_RESPONSE_INVALID');
       for(const result of results){const id=result?.id?.videoId;if(VIDEO_ID.test(id || ''))ids.add(id);}
@@ -142,10 +155,11 @@ export async function inspectMatchWatch({env=process.env,fetchImpl=fetch,now=new
       report.videos=videos.filter(item=>{if(!ids.has(item?.id)||seen.has(item.id))return false;seen.add(item.id);return true;}).map(item=>describeWatchVideo(item,now,source)).filter(Boolean);
     }
   }catch(error){return {...report,errorCode:error instanceof SourceFailure?error.code:'YOUTUBE_CHECK_FAILED'};}
-  if(fixtureId){
+  if(fixtureId||fixtureDate){
     report.requestCounts.football=0;
     report.requestCounts.fixtureGuard=0;
-    report.fixtureCheck={fixtureId,verified:false};
+    if(fixtureId)report.fixtureCheck={fixtureId,verified:false};
+    else report.fixtureBatch={date:fixtureDate,verified:false,matches:[]};
     const footballKey=env.API_FOOTBALL_KEY;
     if(typeof footballKey!=='string'||!footballKey.trim()||footballKey.length>512)return {...report,errorCode:'WATCH_FIXTURE_KEY_NOT_CONFIGURED'};
     try{
@@ -170,22 +184,32 @@ export async function inspectMatchWatch({env=process.env,fetchImpl=fetch,now=new
       // This is one operational quota claim, never a sports/user-data write.
       const claim=await guardRequest('/rest/v1/rpc/claim_provider_request',{p_bucket_key:'api-football:minute',p_limit:4,p_window_seconds:60});
       if(claim?.allowed!==true)fail('WATCH_FIXTURE_GUARD_BLOCKED');
-      const url=new URL(FOOTBALL_RELAY.href+'/fixtures');url.searchParams.set('id',String(fixtureId));
+      const url=new URL(FOOTBALL_RELAY.href+'/fixtures');
+      if(fixtureId)url.searchParams.set('id',String(fixtureId));
+      else{url.searchParams.set('date',fixtureDate);url.searchParams.set('timezone','UTC');}
       report.requestCounts.football=1;
       const response=await fetchImpl(url,{method:'GET',redirect:'error',headers:{'x-apisports-key':footballKey,Accept:'application/json'},signal:AbortSignal.any([deadline,AbortSignal.timeout(8000)])});
       if(response.status!==200){await response.body?.cancel().catch(()=>{});fail('WATCH_FIXTURE_UNAVAILABLE');}
-      const data=await boundedSourceJson(response,256000);
-      if(!data || !Array.isArray(data.response)||data.response.length!==1 || !data.errors || typeof data.errors!=='object' || Object.keys(data.errors).length)fail('WATCH_FIXTURE_INVALID_RESPONSE');
-      const raw=data.response[0],status=text(raw?.fixture?.status?.short,12);
-      const match={fixtureId:raw?.fixture?.id,date:safeTime(raw?.fixture?.date),status,
+      const data=await boundedSourceJson(response,fixtureId?256000:3_000_000);
+      if(!data || !Array.isArray(data.response)||(fixtureId?data.response.length!==1:data.response.length>2000) || !data.errors || typeof data.errors!=='object' || Object.keys(data.errors).length)fail('WATCH_FIXTURE_INVALID_RESPONSE');
+      const matches=[],seen=new Set();let skippedInvalid=0;
+      for(const raw of data.response){
+       const status=text(raw?.fixture?.status?.short,12);
+       const match={fixtureId:raw?.fixture?.id,date:safeTime(raw?.fixture?.date),status,
         home:{id:raw?.teams?.home?.id,name:text(raw?.teams?.home?.name,120)},away:{id:raw?.teams?.away?.id,name:text(raw?.teams?.away?.name,120)},
-        leagueId:raw?.league?.id,league:text(raw?.league?.name,160),season:raw?.league?.season,
+        leagueId:raw?.league?.id,league:text(raw?.league?.name,160),season:raw?.league?.season,round:text(raw?.league?.round,120),
+        score:{home:Number.isInteger(raw?.goals?.home)&&raw.goals.home>=0&&raw.goals.home<=99?raw.goals.home:null,away:Number.isInteger(raw?.goals?.away)&&raw.goals.away>=0&&raw.goals.away<=99?raw.goals.away:null},
         live:['1H','HT','2H','ET','BT','P','LIVE'].includes(status),finished:['FT','AET','PEN'].includes(status)};
-      const identity=watchFixtureIdentity(match);
-      if(match.fixtureId!==fixtureId||!identity||!match.home.name||!match.away.name||!match.league||!status)fail('WATCH_FIXTURE_IDENTITY_INVALID');
-      report.fixtureCheck={fixtureId,verified:true,provider:'api-football',observedAt:now.toISOString(),fixtureIdentity:identity,match};
+       const identity=watchFixtureIdentity(match);
+       if(!identity||!match.home.name||!match.away.name||!match.league||!status){if(fixtureId)fail('WATCH_FIXTURE_IDENTITY_INVALID');skippedInvalid++;continue;}
+       if(seen.has(match.fixtureId)||fixtureId&&match.fixtureId!==fixtureId||fixtureDate&&match.date.slice(0,10)!==fixtureDate)fail('WATCH_FIXTURE_IDENTITY_INVALID');
+       seen.add(match.fixtureId);matches.push(match);
+      }
+      if(fixtureId)report.fixtureCheck={fixtureId,verified:true,provider:'api-football',observedAt:now.toISOString(),fixtureIdentity:watchFixtureIdentity(matches[0]),match:matches[0]};
+      else report.fixtureBatch={date:fixtureDate,verified:true,provider:'api-football',observedAt:now.toISOString(),skippedInvalid,matches};
     }catch{return {...report,errorCode:'WATCH_FIXTURE_VERIFICATION_FAILED'};}
   }
+  if(feed==='uploads')return report;
   // Only existing shared public sports cache. No users, Telegram messages,
   // arbitrary SQL/URL inputs, user-data or sports-data writes to production.
   const dbKey=env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
