@@ -70,6 +70,9 @@ jobs:
     timeout-minutes: 20
     env:
       SUPABASE_CLI_VERSION: "2.119.0"
+      # Official Supabase mirror; public ECR rejects hosted-runner pulls with
+      # "Data limit exceeded". Keep the same CLI-pinned image versions.
+      SUPABASE_INTERNAL_IMAGE_REGISTRY: ghcr.io
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -117,9 +120,11 @@ jobs:
           node "$GITHUB_WORKSPACE/scripts/prepare-supabase-ci-migrations.js" \
             fresh "$FRESH_DIR/supabase/migrations" "$GITHUB_WORKSPACE"
 
+          # Text mode leaves startup errors on stderr. Keep successful status
+          # output private because it includes local development credentials.
           npx --yes "supabase@$SUPABASE_CLI_VERSION" start \
             --exclude rest,auth,realtime,storage,functions,studio,mail,analytics,pooler \
-            --output-format json > "$RUNNER_TEMP/supabase-fresh-start.json"
+            --output-format text > "$RUNNER_TEMP/supabase-fresh-start.log"
           npx --yes "supabase@$SUPABASE_CLI_VERSION" db reset
 
           npx --yes "supabase@$SUPABASE_CLI_VERSION" status \
@@ -191,9 +196,10 @@ jobs:
           node "$GITHUB_WORKSPACE/scripts/prepare-supabase-ci-migrations.js" \
             upgrade-base "$UPGRADE_DIR/supabase/migrations" "$GITHUB_WORKSPACE"
 
+          # Keep status credentials out of logs; startup errors stay on stderr.
           npx --yes "supabase@$SUPABASE_CLI_VERSION" start \
             --exclude rest,auth,realtime,storage,functions,studio,mail,analytics,pooler \
-            --output-format json > "$RUNNER_TEMP/supabase-upgrade-start.json"
+            --output-format text > "$RUNNER_TEMP/supabase-upgrade-start.log"
 
           npx --yes "supabase@$SUPABASE_CLI_VERSION" status \
             -o env --output-format text > "$RUNNER_TEMP/supabase-upgrade.env"

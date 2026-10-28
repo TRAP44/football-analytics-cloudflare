@@ -104,9 +104,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Автоматический просмотр шести турниров и каталог до100матчей — **Codex** — [PR #1033](https://github.com/TRAP44/football-analytics-cloudflare/pull/1033), `codex/watch-multi-league` — новые проверенные источники, пакетные fixture snapshots, квоты/миграция, компактные кеши/3s public coalescing, фильтры типов/показ20; release975/full4773/nativebrowser/independentreview passed; exactheadCI→Deploy→actualRUcount проверяются.
+- [ ] Дополнительные официальные источники полных матчей — **Codex** — [PR #1034](https://github.com/TRAP44/football-analytics-cloudflare/pull/1034), `codex/watch-full-sources` — K LEAGUE TV: внешние записи с бесплатной регистрацией и встроенные YouTube-обзоры K1/K2; независимое review и локальные gates passed, exact-head CI/выпуск/actual publication ещё обязательны.
+
 
 
 
@@ -260,6 +262,9 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Автоматический просмотр шести турниров и каталог до100матчей — **Codex** — [PR #1033](https://github.com/TRAP44/football-analytics-cloudflare/pull/1033), `codex/watch-multi-league` — main1b07b7fe/Deploy40532435510/publiclaunch152 подтверждены; actual40533339404:31матч/41видео, RU9полных/29обзоров; автонаполнение40560637201:40матчей/RU11полных/37обзоров.
+
 
 - [x] Проверка новых каналов и пакетная сверка матчей для расширения просмотра — **Codex** — [PR #1032](https://github.com/TRAP44/football-analytics-cloudflare/pull/1032), `codex/watch-source-uploads` — первые20публикаций за3дешёвыхGooglecalls, один guardedfootball datebatch; без автопубликации кандидатов. Подготовка данных для расширения реального каталога, не завершение общего охвата. Выпущен: main98fe961d, Quality40513424494/CodeQL40513424615/audit40513424457/Deploy40514049136 success; runtimeartifact не менялся, actual7uploads/date scans получены. Общая задача охвата продолжается ниже.
 

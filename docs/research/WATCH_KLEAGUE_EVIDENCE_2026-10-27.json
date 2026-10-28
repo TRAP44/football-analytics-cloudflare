@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-27",
+  "fixtureProjection": "test-support/fixtures/kleague-watch-sources.json",
+  "projectionNote": "Projection of observed public Nuxt reference graph and actual Google metadata; unused images/config/login text omitted, original projected field values preserved. Region allowed list covers inspected territories only, not a worldwide rights assertion. Transport clocks in tests are synthetic.",
+  "publicPages": [
+    {
+      "url": "https://tv.kleague.com/en-int/page/home",
+      "bytes": 272098,
+      "sha256": "0124fcbc061a7aeaed899c183be618fc39e2a4fcfc3fb6623499b6e1a07d4bd6"
+    },
+    {
+      "url": "https://tv.kleague.com/en-int/video/r30paju-hwaseong/2260948",
+      "bytes": 344015,
+      "sha256": "081d5d750b29969735cb00b2ec6790e87ee39c5c33089cb3ec175ce6af30e6ce"
+    }
+  ],
+  "sourceScan": {
+    "run": 40562022454,
+    "observedAt": "2026-10-27T18:39:51.691Z",
+    "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA"
+  },
+  "canonicalReferences": [
+    {
+      "date": "2026-10-25",
+      "run": 40513430842,
+      "url": "https://github.com/TRAP44/football-analytics-cloudflare/actions/runs/40513430842"
+    },
+    {
+      "date": "2026-10-24",
+      "run": 40514129711,
+      "url": "https://github.com/TRAP44/football-analytics-cloudflare/actions/runs/40514129711"
+    }
+  ],
+  "independentRawPageChecks": {
+    "home": {
+      "metadataRecords": 6,
+      "currentApprovedRecordings": 6
+    },
+    "pajuDetail": {
+      "metadataRecords": 26,
+      "currentApprovedRecordings": 8
+    },
+    "selectedCheongjuDetail": {
+      "url": "https://tv.kleague.com/en-int/video/r30chungbuk-cheongju-yongin/2260950",
+      "bytes": 344089,
+      "metadataRecords": 26,
+      "currentApprovedRecordings": 8
+    }
+  },
+  "access": "registration",
+  "embedding": false,
+  "sourceRequests": "public HTML metadata only; no login, private API, media or manifest requests",
+  "physicalPlayback": false,
+  "newProductionGrowthNotYetClaimed": true,
+  "newLiveCoverageNotClaimed": true
+}

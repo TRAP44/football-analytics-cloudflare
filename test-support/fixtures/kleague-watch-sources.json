@@ -1,0 +1,5654 @@
+{
+  "note": "Projection of observed public Nuxt reference graph and actual Google metadata; unused images/config/login text omitted, original projected field values preserved. Region allowed list covers inspected territories only, not a worldwide rights assertion. Transport clocks in tests are synthetic.",
+  "sourceScan": {
+    "run": 40562022454,
+    "observedAt": "2026-10-27T18:39:51.691Z",
+    "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA"
+  },
+  "publicPages": [
+    {
+      "url": "https://tv.kleague.com/en-int/page/home",
+      "bytes": 272098,
+      "sha256": "0124fcbc061a7aeaed899c183be618fc39e2a4fcfc3fb6623499b6e1a07d4bd6"
+    },
+    {
+      "url": "https://tv.kleague.com/en-int/video/r30paju-hwaseong/2260948",
+      "bytes": 344015,
+      "sha256": "081d5d750b29969735cb00b2ec6790e87ee39c5c33089cb3ec175ce6af30e6ce"
+    }
+  ],
+  "homeNuxt": [
+    {
+      "id": 1,
+      "startTime": 2,
+      "contentType": 3,
+      "geoRestrictions": 7,
+      "status": 17,
+      "freeForEmbed": 20,
+      "editorial": 21,
+      "payment": 26,
+      "lastUpdatedAt": 29,
+      "distributionType": 30,
+      "event": 32,
+      "length": 63
+    },
+    2260950,
+    "2026-10-25T07:30:00+00:00",
+    {
+      "id": 4,
+      "name": 5,
+      "translations": 6
+    },
+    78742,
+    "Fullmatch",
+    {
+      "en": 5
+    },
+    [
+      8,
+      13
+    ],
+    {
+      "isolist": 9,
+      "deviceCategory": 10
+    },
+    "AD,AE,AF,AG,AI,AL,AM,AO,AQ,AR,AS,AT,AU,AW,AX,AZ,BA,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BN,BO,BQ,BR,BS,BT,BV,BW,BY,BZ,CA,CC,CD,CF,CG,CH,CI,CK,CL,CM,CN,CO,CR,CU,CV,CW,CX,CY,CZ,DE,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HK,HM,HN,HR,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KG,KH,KI,KM,KN,KP,KW,KY,KZ,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MD,ME,MF,MG,MH,MK,ML,MM,MN,MO,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MY,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PH,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RS,RU,RW,SA,SB,SC,SD,SE,SG,SH,SI,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TJ,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UA,UG,UM,US,UY,UZ,VA,VC,VE,VG,VI,VN,VU,WF,WS,XK,YE,YT,ZA,ZM,ZW",
+    {
+      "id": 11,
+      "name": 12
+    },
+    1,
+    "Desktop",
+    {
+      "isolist": 9,
+      "deviceCategory": 14
+    },
+    {
+      "id": 15,
+      "name": 16
+    },
+    2,
+    "Mobile",
+    {
+      "id": 18,
+      "name": 19
+    },
+    3,
+    "Live",
+    false,
+    {
+      "translations": 22
+    },
+    {
+      "en": 23
+    },
+    {
+      "title": 24,
+      "slug": 25
+    },
+    "[R30]CHUNGBUK CHEONGJU - YONGIN",
+    "r30chungbuk-cheongju-yongin",
+    {
+      "name": 27,
+      "entitlements": 28
+    },
+    "Registration",
+    [],
+    "2026-10-26T01:27:07+00:00",
+    {
+      "id": 15,
+      "name": 31
+    },
+    "VOD",
+    {
+      "id": 33,
+      "startTime": 2,
+      "category1": 34,
+      "category2": 38,
+      "category3": 42,
+      "metadata": 46,
+      "homeCompetitor": 57,
+      "awayCompetitor": 60
+    },
+    1264892,
+    {
+      "id": 35,
+      "name": 36,
+      "translations": 37
+    },
+    13916,
+    "Soccer",
+    {
+      "en": 36
+    },
+    {
+      "id": 39,
+      "name": 40,
+      "translations": 41
+    },
+    11877,
+    "K LEAGUE 2",
+    {
+      "en": 40
+    },
+    {
+      "id": 43,
+      "name": 44,
+      "translations": 45
+    },
+    13924,
+    "K League 2",
+    {
+      "en": 40
+    },
+    [
+      47,
+      52
+    ],
+    {
+      "name": 48,
+      "field": 49
+    },
+    "Cheongju Stadium",
+    {
+      "id": 50,
+      "name": 51
+    },
+    1543,
+    "Stadium",
+    {
+      "name": 53,
+      "field": 54
+    },
+    "Round 30",
+    {
+      "id": 55,
+      "name": 56
+    },
+    720,
+    "Round",
+    {
+      "id": 58,
+      "name": 59
+    },
+    1121518,
+    "Cheongju FC",
+    {
+      "id": 61,
+      "name": 62
+    },
+    1148972,
+    "Yongin FC",
+    8423,
+    {
+      "id": 65,
+      "startTime": 2,
+      "contentType": 66,
+      "geoRestrictions": 68,
+      "status": 73,
+      "freeForEmbed": 20,
+      "editorial": 74,
+      "payment": 79,
+      "lastUpdatedAt": 81,
+      "distributionType": 82,
+      "event": 83,
+      "length": 103
+    },
+    2260948,
+    {
+      "id": 4,
+      "name": 5,
+      "translations": 67
+    },
+    {
+      "en": 5
+    },
+    [
+      69,
+      71
+    ],
+    {
+      "isolist": 9,
+      "deviceCategory": 70
+    },
+    {
+      "id": 11,
+      "name": 12
+    },
+    {
+      "isolist": 9,
+      "deviceCategory": 72
+    },
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 18,
+      "name": 19
+    },
+    {
+      "translations": 75
+    },
+    {
+      "en": 76
+    },
+    {
+      "title": 77,
+      "slug": 78
+    },
+    "[R30]PAJU - HWASEONG",
+    "r30paju-hwaseong",
+    {
+      "name": 27,
+      "entitlements": 80
+    },
+    [],
+    "2026-10-26T00:33:40+00:00",
+    {
+      "id": 15,
+      "name": 31
+    },
+    {
+      "id": 84,
+      "startTime": 2,
+      "category1": 85,
+      "category2": 87,
+      "category3": 89,
+      "metadata": 91,
+      "homeCompetitor": 97,
+      "awayCompetitor": 100
+    },
+    1264891,
+    {
+      "id": 35,
+      "name": 36,
+      "translations": 86
+    },
+    {
+      "en": 36
+    },
+    {
+      "id": 39,
+      "name": 40,
+      "translations": 88
+    },
+    {
+      "en": 40
+    },
+    {
+      "id": 43,
+      "name": 44,
+      "translations": 90
+    },
+    {
+      "en": 40
+    },
+    [
+      92,
+      95
+    ],
+    {
+      "name": 93,
+      "field": 94
+    },
+    "Paju Stadium",
+    {
+      "id": 50,
+      "name": 51
+    },
+    {
+      "name": 53,
+      "field": 96
+    },
+    {
+      "id": 55,
+      "name": 56
+    },
+    {
+      "id": 98,
+      "name": 99
+    },
+    1145436,
+    "Paju Citizen FC",
+    {
+      "id": 101,
+      "name": 102
+    },
+    1133528,
+    "Hwaseong FC",
+    7964,
+    {
+      "id": 105,
+      "startTime": 2,
+      "contentType": 106,
+      "geoRestrictions": 108,
+      "status": 113,
+      "freeForEmbed": 20,
+      "editorial": 114,
+      "payment": 119,
+      "lastUpdatedAt": 121,
+      "distributionType": 122,
+      "event": 123,
+      "length": 143
+    },
+    2260946,
+    {
+      "id": 4,
+      "name": 5,
+      "translations": 107
+    },
+    {
+      "en": 5
+    },
+    [
+      109,
+      111
+    ],
+    {
+      "isolist": 9,
+      "deviceCategory": 110
+    },
+    {
+      "id": 11,
+      "name": 12
+    },
+    {
+      "isolist": 9,
+      "deviceCategory": 112
+    },
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 18,
+      "name": 19
+    },
+    {
+      "translations": 115
+    },
+    {
+      "en": 116
+    },
+    {
+      "title": 117,
+      "slug": 118
+    },
+    "[R30]CHEONAN - ANSAN",
+    "r30cheonan-ansan",
+    {
+      "name": 27,
+      "entitlements": 120
+    },
+    [],
+    "2026-10-26T00:35:46+00:00",
+    {
+      "id": 15,
+      "name": 31
+    },
+    {
+      "id": 124,
+      "startTime": 2,
+      "category1": 125,
+      "category2": 127,
+      "category3": 129,
+      "metadata": 131,
+      "homeCompetitor": 137,
+      "awayCompetitor": 140
+    },
+    1264890,
+    {
+      "id": 35,
+      "name": 36,
+      "translations": 126
+    },
+    {
+      "en": 36
+    },
+    {
+      "id": 39,
+      "name": 40,
+      "translations": 128
+    },
+    {
+      "en": 40
+    },
+    {
+      "id": 43,
+      "name": 44,
+      "translations": 130
+    },
+    {
+      "en": 40
+    },
+    [
+      132,
+      135
+    ],
+    {
+      "name": 133,
+      "field": 134
+    },
+    "Cheonan Baekseok Stadium",
+    {
+      "id": 50,
+      "name": 51
+    },
+    {
+      "name": 53,
+      "field": 136
+    },
+    {
+      "id": 55,
+      "name": 56
+    },
+    {
+      "id": 138,
+      "name": 139
+    },
+    1121517,
+    "Cheonan City FC",
+    {
+      "id": 141,
+      "name": 142
+    },
+    532280,
+    "Ansan Greeners FC",
+    8160,
+    {
+      "id": 145,
+      "startTime": 146,
+      "contentType": 147,
+      "geoRestrictions": 149,
+      "status": 154,
+      "freeForEmbed": 20,
+      "editorial": 155,
+      "payment": 160,
+      "lastUpdatedAt": 162,
+      "distributionType": 163,
+      "event": 164,
+      "length": 184
+    },
+    2260944,
+    "2026-10-25T05:00:00+00:00",
+    {
+      "id": 4,
+      "name": 5,
+      "translations": 148
+    },
+    {
+      "en": 5
+    },
+    [
+      150,
+      152
+    ],
+    {
+      "isolist": 9,
+      "deviceCategory": 151
+    },
+    {
+      "id": 11,
+      "name": 12
+    },
+    {
+      "isolist": 9,
+      "deviceCategory": 153
+    },
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 18,
+      "name": 19
+    },
+    {
+      "translations": 156
+    },
+    {
+      "en": 157
+    },
+    {
+      "title": 158,
+      "slug": 159
+    },
+    "[R30]BUSAN - GYEONGNAM",
+    "r30busan-gyeongnam",
+    {
+      "name": 27,
+      "entitlements": 161
+    },
+    [],
+    "2026-10-26T00:25:34+00:00",
+    {
+      "id": 15,
+      "name": 31
+    },
+    {
+      "id": 165,
+      "startTime": 146,
+      "category1": 166,
+      "category2": 168,
+      "category3": 170,
+      "metadata": 172,
+      "homeCompetitor": 178,
+      "awayCompetitor": 181
+    },
+    1264889,
+    {
+      "id": 35,
+      "name": 36,
+      "translations": 167
+    },
+    {
+      "en": 36
+    },
+    {
+      "id": 39,
+      "name": 40,
+      "translations": 169
+    },
+    {
+      "en": 40
+    },
+    {
+      "id": 43,
+      "name": 44,
+      "translations": 171
+    },
+    {
+      "en": 40
+    },
+    [
+      173,
+      176
+    ],
+    {
+      "name": 174,
+      "field": 175
+    },
+    "Asiad Main Stadium",
+    {
+      "id": 50,
+      "name": 51
+    },
+    {
+      "name": 53,
+      "field": 177
+    },
+    {
+      "id": 55,
+      "name": 56
+    },
+    {
+      "id": 179,
+      "name": 180
+    },
+    532259,
+    "Busan I Park",
+    {
+      "id": 182,
+      "name": 183
+    },
+    532260,
+    "Gyeongnam FC",
+    8296,
+    {
+      "id": 186,
+      "startTime": 146,
+      "contentType": 187,
+      "geoRestrictions": 189,
+      "status": 194,
+      "freeForEmbed": 20,
+      "editorial": 195,
+      "payment": 200,
+      "lastUpdatedAt": 202,
+      "distributionType": 203,
+      "event": 204,
+      "length": 224
+    },
+    2260942,
+    {
+      "id": 4,
+      "name": 5,
+      "translations": 188
+    },
+    {
+      "en": 5
+    },
+    [
+      190,
+      192
+    ],
+    {
+      "isolist": 9,
+      "deviceCategory": 191
+    },
+    {
+      "id": 11,
+      "name": 12
+    },
+    {
+      "isolist": 9,
+      "deviceCategory": 193
+    },
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 18,
+      "name": 19
+    },
+    {
+      "translations": 196
+    },
+    {
+      "en": 197
+    },
+    {
+      "title": 198,
+      "slug": 199
+    },
+    "[R30]SUWON FC - CHUNGNAM ASAN",
+    "r30suwon-fc-chungnam-asan",
+    {
+      "name": 27,
+      "entitlements": 201
+    },
+    [],
+    "2026-10-26T00:30:15+00:00",
+    {
+      "id": 15,
+      "name": 31
+    },
+    {
+      "id": 205,
+      "startTime": 146,
+      "category1": 206,
+      "category2": 208,
+      "category3": 210,
+      "metadata": 212,
+      "homeCompetitor": 218,
+      "awayCompetitor": 221
+    },
+    1264888,
+    {
+      "id": 35,
+      "name": 36,
+      "translations": 207
+    },
+    {
+      "en": 36
+    },
+    {
+      "id": 39,
+      "name": 40,
+      "translations": 209
+    },
+    {
+      "en": 40
+    },
+    {
+      "id": 43,
+      "name": 44,
+      "translations": 211
+    },
+    {
+      "en": 40
+    },
+    [
+      213,
+      216
+    ],
+    {
+      "name": 214,
+      "field": 215
+    },
+    "Suwon Civic Stadium",
+    {
+      "id": 50,
+      "name": 51
+    },
+    {
+      "name": 53,
+      "field": 217
+    },
+    {
+      "id": 55,
+      "name": 56
+    },
+    {
+      "id": 219,
+      "name": 220
+    },
+    532256,
+    "Suwon FC",
+    {
+      "id": 222,
+      "name": 223
+    },
+    532296,
+    "Chungnam Asan FC",
+    7974,
+    {
+      "id": 226,
+      "startTime": 146,
+      "contentType": 227,
+      "geoRestrictions": 229,
+      "status": 234,
+      "freeForEmbed": 20,
+      "editorial": 235,
+      "payment": 240,
+      "lastUpdatedAt": 242,
+      "distributionType": 243,
+      "event": 244,
+      "length": 264
+    },
+    2260940,
+    {
+      "id": 4,
+      "name": 5,
+      "translations": 228
+    },
+    {
+      "en": 5
+    },
+    [
+      230,
+      232
+    ],
+    {
+      "isolist": 9,
+      "deviceCategory": 231
+    },
+    {
+      "id": 11,
+      "name": 12
+    },
+    {
+      "isolist": 9,
+      "deviceCategory": 233
+    },
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 18,
+      "name": 19
+    },
+    {
+      "translations": 236
+    },
+    {
+      "en": 237
+    },
+    {
+      "title": 238,
+      "slug": 239
+    },
+    "[R30]SEONGNAM - SUWON",
+    "r30seongnam-suwon",
+    {
+      "name": 27,
+      "entitlements": 241
+    },
+    [],
+    "2026-10-26T00:31:11+00:00",
+    {
+      "id": 15,
+      "name": 31
+    },
+    {
+      "id": 245,
+      "startTime": 146,
+      "category1": 246,
+      "category2": 248,
+      "category3": 250,
+      "metadata": 252,
+      "homeCompetitor": 258,
+      "awayCompetitor": 261
+    },
+    1264887,
+    {
+      "id": 35,
+      "name": 36,
+      "translations": 247
+    },
+    {
+      "en": 36
+    },
+    {
+      "id": 39,
+      "name": 40,
+      "translations": 249
+    },
+    {
+      "en": 40
+    },
+    {
+      "id": 43,
+      "name": 44,
+      "translations": 251
+    },
+    {
+      "en": 40
+    },
+    [
+      253,
+      256
+    ],
+    {
+      "name": 254,
+      "field": 255
+    },
+    "Tancheon Sports Complex",
+    {
+      "id": 50,
+      "name": 51
+    },
+    {
+      "name": 53,
+      "field": 257
+    },
+    {
+      "id": 55,
+      "name": 56
+    },
+    {
+      "id": 259,
+      "name": 260
+    },
+    532246,
+    "Seongnam FC",
+    {
+      "id": 262,
+      "name": 263
+    },
+    532235,
+    "Suwon Samsung",
+    8291
+  ],
+  "detailNuxt": [
+    {
+      "id": 1,
+      "startTime": 2,
+      "status": 3,
+      "editorial": 6,
+      "payment": 11,
+      "distributionType": 14,
+      "event": 17,
+      "freeForEmbed": 48,
+      "contentType": 49,
+      "geoRestrictions": 53,
+      "lastUpdatedAt": 62,
+      "length": 63
+    },
+    2260948,
+    "2026-10-25T07:30:00+00:00",
+    {
+      "id": 4,
+      "name": 5
+    },
+    3,
+    "Live",
+    {
+      "translations": 7
+    },
+    {
+      "en": 8
+    },
+    {
+      "title": 9,
+      "slug": 10
+    },
+    "[R30]PAJU - HWASEONG",
+    "r30paju-hwaseong",
+    {
+      "name": 12,
+      "entitlements": 13
+    },
+    "Registration",
+    [],
+    {
+      "id": 15,
+      "name": 16
+    },
+    2,
+    "VOD",
+    {
+      "id": 18,
+      "category1": 19,
+      "category2": 23,
+      "category3": 27,
+      "metadata": 31,
+      "homeCompetitor": 42,
+      "awayCompetitor": 45,
+      "startTime": 2
+    },
+    1264891,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 22
+    },
+    13916,
+    "Soccer",
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 26
+    },
+    11877,
+    "K LEAGUE 2",
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 30
+    },
+    13924,
+    "K League 2",
+    {
+      "en": 25
+    },
+    [
+      32,
+      37
+    ],
+    {
+      "name": 33,
+      "field": 34
+    },
+    "Paju Stadium",
+    {
+      "id": 35,
+      "name": 36
+    },
+    1543,
+    "Stadium",
+    {
+      "name": 38,
+      "field": 39
+    },
+    "Round 30",
+    {
+      "id": 40,
+      "name": 41
+    },
+    720,
+    "Round",
+    {
+      "id": 43,
+      "name": 44
+    },
+    1145436,
+    "Paju Citizen FC",
+    {
+      "id": 46,
+      "name": 47
+    },
+    1133528,
+    "Hwaseong FC",
+    false,
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 52
+    },
+    78742,
+    "Fullmatch",
+    {
+      "en": 51
+    },
+    [
+      54,
+      59
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 56
+    },
+    "AD,AE,AF,AG,AI,AL,AM,AO,AQ,AR,AS,AT,AU,AW,AX,AZ,BA,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BN,BO,BQ,BR,BS,BT,BV,BW,BY,BZ,CA,CC,CD,CF,CG,CH,CI,CK,CL,CM,CN,CO,CR,CU,CV,CW,CX,CY,CZ,DE,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HK,HM,HN,HR,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KG,KH,KI,KM,KN,KP,KW,KY,KZ,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MD,ME,MF,MG,MH,MK,ML,MM,MN,MO,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MY,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PH,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RS,RU,RW,SA,SB,SC,SD,SE,SG,SH,SI,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TJ,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UA,UG,UM,US,UY,UZ,VA,VC,VE,VG,VI,VN,VU,WF,WS,XK,YE,YT,ZA,ZM,ZW",
+    {
+      "id": 57,
+      "name": 58
+    },
+    1,
+    "Desktop",
+    {
+      "isolist": 55,
+      "deviceCategory": 60
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    "Mobile",
+    "2026-10-26T00:33:40+00:00",
+    7964,
+    {
+      "id": 65,
+      "startTime": 2,
+      "contentType": 66,
+      "geoRestrictions": 68,
+      "status": 73,
+      "freeForEmbed": 48,
+      "editorial": 74,
+      "payment": 79,
+      "lastUpdatedAt": 81,
+      "distributionType": 82,
+      "event": 83,
+      "length": 103
+    },
+    2260950,
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 67
+    },
+    {
+      "en": 51
+    },
+    [
+      69,
+      71
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 70
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 72
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 75
+    },
+    {
+      "en": 76
+    },
+    {
+      "title": 77,
+      "slug": 78
+    },
+    "[R30]CHUNGBUK CHEONGJU - YONGIN",
+    "r30chungbuk-cheongju-yongin",
+    {
+      "name": 12,
+      "entitlements": 80
+    },
+    [],
+    "2026-10-26T01:27:07+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 84,
+      "startTime": 2,
+      "category1": 85,
+      "category2": 87,
+      "category3": 89,
+      "metadata": 91,
+      "homeCompetitor": 97,
+      "awayCompetitor": 100
+    },
+    1264892,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 86
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 88
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 90
+    },
+    {
+      "en": 25
+    },
+    [
+      92,
+      95
+    ],
+    {
+      "name": 93,
+      "field": 94
+    },
+    "Cheongju Stadium",
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 38,
+      "field": 96
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 98,
+      "name": 99
+    },
+    1121518,
+    "Cheongju FC",
+    {
+      "id": 101,
+      "name": 102
+    },
+    1148972,
+    "Yongin FC",
+    8423,
+    {
+      "id": 105,
+      "startTime": 2,
+      "contentType": 106,
+      "geoRestrictions": 108,
+      "status": 113,
+      "freeForEmbed": 48,
+      "editorial": 114,
+      "payment": 119,
+      "lastUpdatedAt": 121,
+      "distributionType": 122,
+      "event": 123,
+      "length": 143
+    },
+    2260946,
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 107
+    },
+    {
+      "en": 51
+    },
+    [
+      109,
+      111
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 110
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 112
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 115
+    },
+    {
+      "en": 116
+    },
+    {
+      "title": 117,
+      "slug": 118
+    },
+    "[R30]CHEONAN - ANSAN",
+    "r30cheonan-ansan",
+    {
+      "name": 12,
+      "entitlements": 120
+    },
+    [],
+    "2026-10-26T00:35:46+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 124,
+      "startTime": 2,
+      "category1": 125,
+      "category2": 127,
+      "category3": 129,
+      "metadata": 131,
+      "homeCompetitor": 137,
+      "awayCompetitor": 140
+    },
+    1264890,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 126
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 128
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 130
+    },
+    {
+      "en": 25
+    },
+    [
+      132,
+      135
+    ],
+    {
+      "name": 133,
+      "field": 134
+    },
+    "Cheonan Baekseok Stadium",
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 38,
+      "field": 136
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 138,
+      "name": 139
+    },
+    1121517,
+    "Cheonan City FC",
+    {
+      "id": 141,
+      "name": 142
+    },
+    532280,
+    "Ansan Greeners FC",
+    8160,
+    {
+      "id": 145,
+      "startTime": 146,
+      "contentType": 147,
+      "geoRestrictions": 149,
+      "status": 154,
+      "freeForEmbed": 48,
+      "editorial": 155,
+      "payment": 160,
+      "lastUpdatedAt": 162,
+      "distributionType": 163,
+      "event": 164,
+      "length": 184
+    },
+    2260944,
+    "2026-10-25T05:00:00+00:00",
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 148
+    },
+    {
+      "en": 51
+    },
+    [
+      150,
+      152
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 151
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 153
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 156
+    },
+    {
+      "en": 157
+    },
+    {
+      "title": 158,
+      "slug": 159
+    },
+    "[R30]BUSAN - GYEONGNAM",
+    "r30busan-gyeongnam",
+    {
+      "name": 12,
+      "entitlements": 161
+    },
+    [],
+    "2026-10-26T00:25:34+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 165,
+      "startTime": 146,
+      "category1": 166,
+      "category2": 168,
+      "category3": 170,
+      "metadata": 172,
+      "homeCompetitor": 178,
+      "awayCompetitor": 181
+    },
+    1264889,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 167
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 169
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 171
+    },
+    {
+      "en": 25
+    },
+    [
+      173,
+      176
+    ],
+    {
+      "name": 174,
+      "field": 175
+    },
+    "Asiad Main Stadium",
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 38,
+      "field": 177
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 179,
+      "name": 180
+    },
+    532259,
+    "Busan I Park",
+    {
+      "id": 182,
+      "name": 183
+    },
+    532260,
+    "Gyeongnam FC",
+    8296,
+    {
+      "id": 186,
+      "startTime": 146,
+      "contentType": 187,
+      "geoRestrictions": 189,
+      "status": 194,
+      "freeForEmbed": 48,
+      "editorial": 195,
+      "payment": 200,
+      "lastUpdatedAt": 202,
+      "distributionType": 203,
+      "event": 204,
+      "length": 224
+    },
+    2260942,
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 188
+    },
+    {
+      "en": 51
+    },
+    [
+      190,
+      192
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 191
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 193
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 196
+    },
+    {
+      "en": 197
+    },
+    {
+      "title": 198,
+      "slug": 199
+    },
+    "[R30]SUWON FC - CHUNGNAM ASAN",
+    "r30suwon-fc-chungnam-asan",
+    {
+      "name": 12,
+      "entitlements": 201
+    },
+    [],
+    "2026-10-26T00:30:15+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 205,
+      "startTime": 146,
+      "category1": 206,
+      "category2": 208,
+      "category3": 210,
+      "metadata": 212,
+      "homeCompetitor": 218,
+      "awayCompetitor": 221
+    },
+    1264888,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 207
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 209
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 211
+    },
+    {
+      "en": 25
+    },
+    [
+      213,
+      216
+    ],
+    {
+      "name": 214,
+      "field": 215
+    },
+    "Suwon Civic Stadium",
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 38,
+      "field": 217
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 219,
+      "name": 220
+    },
+    532256,
+    "Suwon FC",
+    {
+      "id": 222,
+      "name": 223
+    },
+    532296,
+    "Chungnam Asan FC",
+    7974,
+    {
+      "id": 226,
+      "startTime": 146,
+      "contentType": 227,
+      "geoRestrictions": 229,
+      "status": 234,
+      "freeForEmbed": 48,
+      "editorial": 235,
+      "payment": 240,
+      "lastUpdatedAt": 242,
+      "distributionType": 243,
+      "event": 244,
+      "length": 264
+    },
+    2260940,
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 228
+    },
+    {
+      "en": 51
+    },
+    [
+      230,
+      232
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 231
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 233
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 236
+    },
+    {
+      "en": 237
+    },
+    {
+      "title": 238,
+      "slug": 239
+    },
+    "[R30]SEONGNAM - SUWON",
+    "r30seongnam-suwon",
+    {
+      "name": 12,
+      "entitlements": 241
+    },
+    [],
+    "2026-10-26T00:31:11+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 245,
+      "startTime": 146,
+      "category1": 246,
+      "category2": 248,
+      "category3": 250,
+      "metadata": 252,
+      "homeCompetitor": 258,
+      "awayCompetitor": 261
+    },
+    1264887,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 247
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 249
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 251
+    },
+    {
+      "en": 25
+    },
+    [
+      253,
+      256
+    ],
+    {
+      "name": 254,
+      "field": 255
+    },
+    "Tancheon Sports Complex",
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 38,
+      "field": 257
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 259,
+      "name": 260
+    },
+    532246,
+    "Seongnam FC",
+    {
+      "id": 262,
+      "name": 263
+    },
+    532235,
+    "Suwon Samsung",
+    8291,
+    {
+      "id": 266,
+      "startTime": 267,
+      "contentType": 268,
+      "geoRestrictions": 270,
+      "status": 275,
+      "freeForEmbed": 48,
+      "editorial": 276,
+      "payment": 281,
+      "lastUpdatedAt": 283,
+      "distributionType": 284,
+      "event": 285,
+      "length": 305
+    },
+    2260938,
+    "2026-10-24T07:30:00+00:00",
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 269
+    },
+    {
+      "en": 51
+    },
+    [
+      271,
+      273
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 272
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 274
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 277
+    },
+    {
+      "en": 278
+    },
+    {
+      "title": 279,
+      "slug": 280
+    },
+    "[R30]GIMPO - GIMHAE",
+    "r30gimpo-gimhae",
+    {
+      "name": 12,
+      "entitlements": 282
+    },
+    [],
+    "2026-10-26T07:26:50+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 286,
+      "startTime": 267,
+      "category1": 287,
+      "category2": 289,
+      "category3": 291,
+      "metadata": 293,
+      "homeCompetitor": 299,
+      "awayCompetitor": 302
+    },
+    1264886,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 288
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 290
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 292
+    },
+    {
+      "en": 25
+    },
+    [
+      294,
+      297
+    ],
+    {
+      "name": 295,
+      "field": 296
+    },
+    "Gimpo Solteo Football Stadium",
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 38,
+      "field": 298
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 300,
+      "name": 301
+    },
+    1100792,
+    "Gimpo FC",
+    {
+      "id": 303,
+      "name": 304
+    },
+    1145434,
+    "GIMHAE FC",
+    8013,
+    {
+      "id": 307,
+      "startTime": 308,
+      "contentType": 309,
+      "geoRestrictions": 311,
+      "status": 316,
+      "freeForEmbed": 48,
+      "editorial": 317,
+      "payment": 322,
+      "lastUpdatedAt": 324,
+      "distributionType": 325,
+      "event": 326,
+      "length": 346
+    },
+    2260936,
+    "2026-10-24T05:00:00+00:00",
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 310
+    },
+    {
+      "en": 51
+    },
+    [
+      312,
+      314
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 313
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 315
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 318
+    },
+    {
+      "en": 319
+    },
+    {
+      "title": 320,
+      "slug": 321
+    },
+    "[R30]JEONNAM - DAEGU",
+    "r30jeonnam-daegu",
+    {
+      "name": 12,
+      "entitlements": 323
+    },
+    [],
+    "2026-10-26T01:26:15+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 327,
+      "startTime": 308,
+      "category1": 328,
+      "category2": 330,
+      "category3": 332,
+      "metadata": 334,
+      "homeCompetitor": 340,
+      "awayCompetitor": 343
+    },
+    1264885,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 329
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 331
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 333
+    },
+    {
+      "en": 25
+    },
+    [
+      335,
+      338
+    ],
+    {
+      "name": 336,
+      "field": 337
+    },
+    "Gwangyang Football Stadium",
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 38,
+      "field": 339
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 341,
+      "name": 342
+    },
+    532276,
+    "Jeonnam Dragons",
+    {
+      "id": 344,
+      "name": 345
+    },
+    532216,
+    "Daegu FC",
+    9022,
+    {
+      "id": 348,
+      "startTime": 349,
+      "contentType": 350,
+      "geoRestrictions": 352,
+      "status": 357,
+      "freeForEmbed": 48,
+      "editorial": 358,
+      "payment": 363,
+      "lastUpdatedAt": 365,
+      "distributionType": 366,
+      "event": 367,
+      "length": 383
+    },
+    2272742,
+    "2026-10-18T07:30:00+00:00",
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 351
+    },
+    {
+      "en": 51
+    },
+    [
+      353,
+      355
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 354
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 356
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 359
+    },
+    {
+      "en": 360
+    },
+    {
+      "title": 361,
+      "slug": 362
+    },
+    "[R29]BUSAN - JEONNAM",
+    "r29busan-jeonnam",
+    {
+      "name": 12,
+      "entitlements": 364
+    },
+    [],
+    "2026-10-18T23:30:38+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 368,
+      "startTime": 349,
+      "category1": 369,
+      "category2": 371,
+      "category3": 373,
+      "metadata": 375,
+      "homeCompetitor": 381,
+      "awayCompetitor": 382
+    },
+    1264884,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 370
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 372
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 374
+    },
+    {
+      "en": 25
+    },
+    [
+      376,
+      378
+    ],
+    {
+      "name": 174,
+      "field": 377
+    },
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 379,
+      "field": 380
+    },
+    "Round 29",
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 179,
+      "name": 180
+    },
+    {
+      "id": 341,
+      "name": 342
+    },
+    8327,
+    {
+      "id": 385,
+      "startTime": 386,
+      "contentType": 387,
+      "geoRestrictions": 389,
+      "status": 394,
+      "freeForEmbed": 48,
+      "editorial": 395,
+      "payment": 400,
+      "lastUpdatedAt": 402,
+      "distributionType": 403,
+      "event": 404,
+      "length": 422
+    },
+    2272740,
+    "2026-10-18T05:00:00+00:00",
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 388
+    },
+    {
+      "en": 51
+    },
+    [
+      390,
+      392
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 391
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 393
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 396
+    },
+    {
+      "en": 397
+    },
+    {
+      "title": 398,
+      "slug": 399
+    },
+    "[R29]SEOUL E - GIMHAE",
+    "r29seoul-e-gimhae",
+    {
+      "name": 12,
+      "entitlements": 401
+    },
+    [],
+    "2026-10-19T06:45:14+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 405,
+      "startTime": 386,
+      "category1": 406,
+      "category2": 408,
+      "category3": 410,
+      "metadata": 412,
+      "homeCompetitor": 418,
+      "awayCompetitor": 421
+    },
+    1264883,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 407
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 409
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 411
+    },
+    {
+      "en": 25
+    },
+    [
+      413,
+      416
+    ],
+    {
+      "name": 414,
+      "field": 415
+    },
+    "Mokdong Stadium",
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 379,
+      "field": 417
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 419,
+      "name": 420
+    },
+    532270,
+    "Seoul E-Land FC",
+    {
+      "id": 303,
+      "name": 304
+    },
+    8490,
+    {
+      "id": 424,
+      "startTime": 386,
+      "contentType": 425,
+      "geoRestrictions": 427,
+      "status": 432,
+      "freeForEmbed": 48,
+      "editorial": 433,
+      "payment": 438,
+      "lastUpdatedAt": 440,
+      "distributionType": 441,
+      "event": 442,
+      "length": 458
+    },
+    2272738,
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 426
+    },
+    {
+      "en": 51
+    },
+    [
+      428,
+      430
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 429
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 431
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 434
+    },
+    {
+      "en": 435
+    },
+    {
+      "title": 436,
+      "slug": 437
+    },
+    "[R29]SUWON - HWASEONG",
+    "r29suwon-hwaseong",
+    {
+      "name": 12,
+      "entitlements": 439
+    },
+    [],
+    "2026-10-18T23:21:37+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 443,
+      "startTime": 386,
+      "category1": 444,
+      "category2": 446,
+      "category3": 448,
+      "metadata": 450,
+      "homeCompetitor": 456,
+      "awayCompetitor": 457
+    },
+    1264882,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 445
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 447
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 449
+    },
+    {
+      "en": 25
+    },
+    [
+      451,
+      454
+    ],
+    {
+      "name": 452,
+      "field": 453
+    },
+    "Suwon World Cup Stadium",
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 379,
+      "field": 455
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 262,
+      "name": 263
+    },
+    {
+      "id": 46,
+      "name": 47
+    },
+    8700,
+    {
+      "id": 460,
+      "startTime": 461,
+      "contentType": 462,
+      "geoRestrictions": 464,
+      "status": 469,
+      "freeForEmbed": 48,
+      "editorial": 470,
+      "payment": 475,
+      "lastUpdatedAt": 477,
+      "distributionType": 478,
+      "event": 479,
+      "length": 495
+    },
+    2260928,
+    "2026-10-17T07:30:00+00:00",
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 463
+    },
+    {
+      "en": 51
+    },
+    [
+      465,
+      467
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 466
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 468
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 471
+    },
+    {
+      "en": 472
+    },
+    {
+      "title": 473,
+      "slug": 474
+    },
+    "[R29]GYEONGNAM  - CHUNGNAM ASAN",
+    "r29gyeongnam-chungnam-asan",
+    {
+      "name": 12,
+      "entitlements": 476
+    },
+    [],
+    "2026-10-20T02:18:01+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 480,
+      "startTime": 461,
+      "category1": 481,
+      "category2": 483,
+      "category3": 485,
+      "metadata": 487,
+      "homeCompetitor": 493,
+      "awayCompetitor": 494
+    },
+    1264881,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 482
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 484
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 486
+    },
+    {
+      "en": 25
+    },
+    [
+      488,
+      491
+    ],
+    {
+      "name": 489,
+      "field": 490
+    },
+    "Changwon Football Center",
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 379,
+      "field": 492
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 182,
+      "name": 183
+    },
+    {
+      "id": 222,
+      "name": 223
+    },
+    8338,
+    {
+      "id": 497,
+      "startTime": 461,
+      "contentType": 498,
+      "geoRestrictions": 500,
+      "status": 505,
+      "freeForEmbed": 48,
+      "editorial": 506,
+      "payment": 511,
+      "lastUpdatedAt": 513,
+      "distributionType": 514,
+      "event": 515,
+      "length": 530
+    },
+    2260926,
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 499
+    },
+    {
+      "en": 51
+    },
+    [
+      501,
+      503
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 502
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 504
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 507
+    },
+    {
+      "en": 508
+    },
+    {
+      "title": 509,
+      "slug": 510
+    },
+    "[R29]GIMPO - PAJU",
+    "r29gimpo-paju",
+    {
+      "name": 12,
+      "entitlements": 512
+    },
+    [],
+    "2026-10-18T23:07:29+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 516,
+      "startTime": 461,
+      "category1": 517,
+      "category2": 519,
+      "category3": 521,
+      "metadata": 523,
+      "homeCompetitor": 528,
+      "awayCompetitor": 529
+    },
+    1264880,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 518
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 520
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 522
+    },
+    {
+      "en": 25
+    },
+    [
+      524,
+      526
+    ],
+    {
+      "name": 295,
+      "field": 525
+    },
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 379,
+      "field": 527
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 300,
+      "name": 301
+    },
+    {
+      "id": 43,
+      "name": 44
+    },
+    8459,
+    {
+      "id": 532,
+      "startTime": 461,
+      "contentType": 533,
+      "geoRestrictions": 535,
+      "status": 540,
+      "freeForEmbed": 48,
+      "editorial": 541,
+      "payment": 546,
+      "lastUpdatedAt": 548,
+      "distributionType": 549,
+      "event": 550,
+      "length": 563
+    },
+    2260924,
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 534
+    },
+    {
+      "en": 51
+    },
+    [
+      536,
+      538
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 537
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 539
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 542
+    },
+    {
+      "en": 543
+    },
+    {
+      "title": 544,
+      "slug": 545
+    },
+    "[R29]YONGIN - ANSAN",
+    "r29yongin-ansan",
+    {
+      "name": 12,
+      "entitlements": 547
+    },
+    [],
+    "2026-10-19T04:47:08+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 551,
+      "startTime": 461,
+      "category1": 552,
+      "category2": 554,
+      "category3": 556,
+      "metadata": 558,
+      "homeCompetitor": 561,
+      "awayCompetitor": 562
+    },
+    1264879,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 553
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 555
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 557
+    },
+    {
+      "en": 25
+    },
+    [
+      559
+    ],
+    {
+      "name": 379,
+      "field": 560
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 101,
+      "name": 102
+    },
+    {
+      "id": 141,
+      "name": 142
+    },
+    8184,
+    {
+      "id": 565,
+      "startTime": 566,
+      "contentType": 567,
+      "geoRestrictions": 569,
+      "status": 574,
+      "freeForEmbed": 48,
+      "editorial": 575,
+      "payment": 580,
+      "lastUpdatedAt": 582,
+      "distributionType": 583,
+      "event": 584,
+      "length": 599
+    },
+    2260922,
+    "2026-10-17T05:00:00+00:00",
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 568
+    },
+    {
+      "en": 51
+    },
+    [
+      570,
+      572
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 571
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 573
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 576
+    },
+    {
+      "en": 577
+    },
+    {
+      "title": 578,
+      "slug": 579
+    },
+    "[R29]SEONGNAM - SUWON FC",
+    "r29seongnam-suwon-fc",
+    {
+      "name": 12,
+      "entitlements": 581
+    },
+    [],
+    "2026-10-18T23:05:00+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 585,
+      "startTime": 566,
+      "category1": 586,
+      "category2": 588,
+      "category3": 590,
+      "metadata": 592,
+      "homeCompetitor": 597,
+      "awayCompetitor": 598
+    },
+    1264878,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 587
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 589
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 591
+    },
+    {
+      "en": 25
+    },
+    [
+      593,
+      595
+    ],
+    {
+      "name": 254,
+      "field": 594
+    },
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 379,
+      "field": 596
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 259,
+      "name": 260
+    },
+    {
+      "id": 219,
+      "name": 220
+    },
+    8329,
+    {
+      "id": 601,
+      "startTime": 566,
+      "contentType": 602,
+      "geoRestrictions": 604,
+      "status": 609,
+      "freeForEmbed": 48,
+      "editorial": 610,
+      "payment": 615,
+      "lastUpdatedAt": 617,
+      "distributionType": 618,
+      "event": 619,
+      "length": 635
+    },
+    2260920,
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 603
+    },
+    {
+      "en": 51
+    },
+    [
+      605,
+      607
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 606
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 608
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 611
+    },
+    {
+      "en": 612
+    },
+    {
+      "title": 613,
+      "slug": 614
+    },
+    "[R29]DAEGU - CHUNGBUK CHEONGJU",
+    "r29daegu-chungbuk-cheongju",
+    {
+      "name": 12,
+      "entitlements": 616
+    },
+    [],
+    "2026-10-19T07:29:13+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 620,
+      "startTime": 566,
+      "category1": 621,
+      "category2": 623,
+      "category3": 625,
+      "metadata": 627,
+      "homeCompetitor": 633,
+      "awayCompetitor": 634
+    },
+    1264877,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 622
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 624
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 626
+    },
+    {
+      "en": 25
+    },
+    [
+      628,
+      631
+    ],
+    {
+      "name": 629,
+      "field": 630
+    },
+    "DGB Daegu Bank Park",
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 379,
+      "field": 632
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 344,
+      "name": 345
+    },
+    {
+      "id": 98,
+      "name": 99
+    },
+    8574,
+    {
+      "id": 637,
+      "startTime": 638,
+      "contentType": 639,
+      "geoRestrictions": 641,
+      "status": 646,
+      "freeForEmbed": 48,
+      "editorial": 647,
+      "payment": 652,
+      "lastUpdatedAt": 654,
+      "distributionType": 655,
+      "event": 656,
+      "length": 672
+    },
+    2260918,
+    "2026-10-11T05:00:00+00:00",
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 640
+    },
+    {
+      "en": 51
+    },
+    [
+      642,
+      644
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 643
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 645
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 648
+    },
+    {
+      "en": 649
+    },
+    {
+      "title": 650,
+      "slug": 651
+    },
+    "[R28]SUWON - ANSAN",
+    "r28suwon-ansan",
+    {
+      "name": 12,
+      "entitlements": 653
+    },
+    [],
+    "2026-10-11T23:34:49+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 657,
+      "startTime": 638,
+      "category1": 658,
+      "category2": 660,
+      "category3": 662,
+      "metadata": 664,
+      "homeCompetitor": 670,
+      "awayCompetitor": 671
+    },
+    1264876,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 659
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 661
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 663
+    },
+    {
+      "en": 25
+    },
+    [
+      665,
+      667
+    ],
+    {
+      "name": 452,
+      "field": 666
+    },
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 668,
+      "field": 669
+    },
+    "Round 28",
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 262,
+      "name": 263
+    },
+    {
+      "id": 141,
+      "name": 142
+    },
+    8809,
+    {
+      "id": 674,
+      "startTime": 675,
+      "contentType": 676,
+      "geoRestrictions": 678,
+      "status": 683,
+      "freeForEmbed": 48,
+      "editorial": 684,
+      "payment": 689,
+      "lastUpdatedAt": 691,
+      "distributionType": 692,
+      "event": 693,
+      "length": 709
+    },
+    2260916,
+    "2026-10-10T07:30:00+00:00",
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 677
+    },
+    {
+      "en": 51
+    },
+    [
+      679,
+      681
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 680
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 682
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 685
+    },
+    {
+      "en": 686
+    },
+    {
+      "title": 687,
+      "slug": 688
+    },
+    "[R28]GIMHAE - CHUNGNAM ASAN",
+    "r28gimhae-chungnam-asan",
+    {
+      "name": 12,
+      "entitlements": 690
+    },
+    [],
+    "2026-10-11T23:28:39+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 694,
+      "startTime": 675,
+      "category1": 695,
+      "category2": 697,
+      "category3": 699,
+      "metadata": 701,
+      "homeCompetitor": 707,
+      "awayCompetitor": 708
+    },
+    1264875,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 696
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 698
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 700
+    },
+    {
+      "en": 25
+    },
+    [
+      702,
+      705
+    ],
+    {
+      "name": 703,
+      "field": 704
+    },
+    "Gimhae Stadium",
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 668,
+      "field": 706
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 303,
+      "name": 304
+    },
+    {
+      "id": 222,
+      "name": 223
+    },
+    8358,
+    {
+      "id": 711,
+      "startTime": 675,
+      "contentType": 712,
+      "geoRestrictions": 714,
+      "status": 719,
+      "freeForEmbed": 48,
+      "editorial": 720,
+      "payment": 725,
+      "lastUpdatedAt": 727,
+      "distributionType": 728,
+      "event": 729,
+      "length": 744
+    },
+    2260914,
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 713
+    },
+    {
+      "en": 51
+    },
+    [
+      715,
+      717
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 716
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 718
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 721
+    },
+    {
+      "en": 722
+    },
+    {
+      "title": 723,
+      "slug": 724
+    },
+    "[R28]CHEONAN - GYEONGNAM",
+    "r28cheonan-gyeongnam",
+    {
+      "name": 12,
+      "entitlements": 726
+    },
+    [],
+    "2026-10-12T04:37:47+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 730,
+      "startTime": 675,
+      "category1": 731,
+      "category2": 733,
+      "category3": 735,
+      "metadata": 737,
+      "homeCompetitor": 742,
+      "awayCompetitor": 743
+    },
+    1264874,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 732
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 734
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 736
+    },
+    {
+      "en": 25
+    },
+    [
+      738,
+      740
+    ],
+    {
+      "name": 133,
+      "field": 739
+    },
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 668,
+      "field": 741
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 138,
+      "name": 139
+    },
+    {
+      "id": 182,
+      "name": 183
+    },
+    8509,
+    {
+      "id": 746,
+      "startTime": 747,
+      "contentType": 748,
+      "geoRestrictions": 750,
+      "status": 755,
+      "freeForEmbed": 48,
+      "editorial": 756,
+      "payment": 761,
+      "lastUpdatedAt": 763,
+      "distributionType": 764,
+      "event": 765,
+      "length": 780
+    },
+    2260912,
+    "2026-10-10T05:00:00+00:00",
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 749
+    },
+    {
+      "en": 51
+    },
+    [
+      751,
+      753
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 752
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 754
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 757
+    },
+    {
+      "en": 758
+    },
+    {
+      "title": 759,
+      "slug": 760
+    },
+    "[R28]PAJU - BUSAN",
+    "r28paju-busan",
+    {
+      "name": 12,
+      "entitlements": 762
+    },
+    [],
+    "2026-10-11T23:23:51+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 766,
+      "startTime": 747,
+      "category1": 767,
+      "category2": 769,
+      "category3": 771,
+      "metadata": 773,
+      "homeCompetitor": 778,
+      "awayCompetitor": 779
+    },
+    1264873,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 768
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 770
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 772
+    },
+    {
+      "en": 25
+    },
+    [
+      774,
+      776
+    ],
+    {
+      "name": 33,
+      "field": 775
+    },
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 668,
+      "field": 777
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 43,
+      "name": 44
+    },
+    {
+      "id": 179,
+      "name": 180
+    },
+    8077,
+    {
+      "id": 782,
+      "startTime": 747,
+      "contentType": 783,
+      "geoRestrictions": 785,
+      "status": 790,
+      "freeForEmbed": 48,
+      "editorial": 791,
+      "payment": 796,
+      "lastUpdatedAt": 798,
+      "distributionType": 799,
+      "event": 800,
+      "length": 815
+    },
+    2260910,
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 784
+    },
+    {
+      "en": 51
+    },
+    [
+      786,
+      788
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 787
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 789
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 792
+    },
+    {
+      "en": 793
+    },
+    {
+      "title": 794,
+      "slug": 795
+    },
+    "[R28]JEONNAM - YONGIN",
+    "r28jeonnam-yongin",
+    {
+      "name": 12,
+      "entitlements": 797
+    },
+    [],
+    "2026-10-12T04:36:47+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 801,
+      "startTime": 747,
+      "category1": 802,
+      "category2": 804,
+      "category3": 806,
+      "metadata": 808,
+      "homeCompetitor": 813,
+      "awayCompetitor": 814
+    },
+    1264872,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 803
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 805
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 807
+    },
+    {
+      "en": 25
+    },
+    [
+      809,
+      811
+    ],
+    {
+      "name": 336,
+      "field": 810
+    },
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 668,
+      "field": 812
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 341,
+      "name": 342
+    },
+    {
+      "id": 101,
+      "name": 102
+    },
+    8552,
+    {
+      "id": 817,
+      "startTime": 818,
+      "contentType": 819,
+      "geoRestrictions": 821,
+      "status": 826,
+      "freeForEmbed": 48,
+      "editorial": 827,
+      "payment": 832,
+      "lastUpdatedAt": 834,
+      "distributionType": 835,
+      "event": 836,
+      "length": 851
+    },
+    2260908,
+    "2026-10-09T07:30:00+00:00",
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 820
+    },
+    {
+      "en": 51
+    },
+    [
+      822,
+      824
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 823
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 825
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 828
+    },
+    {
+      "en": 829
+    },
+    {
+      "title": 830,
+      "slug": 831
+    },
+    "[R28]GIMPO - SEOUL E",
+    "r28gimpo-seoul-e",
+    {
+      "name": 12,
+      "entitlements": 833
+    },
+    [],
+    "2026-10-11T23:16:52+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 837,
+      "startTime": 818,
+      "category1": 838,
+      "category2": 840,
+      "category3": 842,
+      "metadata": 844,
+      "homeCompetitor": 849,
+      "awayCompetitor": 850
+    },
+    1264871,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 839
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 841
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 843
+    },
+    {
+      "en": 25
+    },
+    [
+      845,
+      847
+    ],
+    {
+      "name": 295,
+      "field": 846
+    },
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 668,
+      "field": 848
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 300,
+      "name": 301
+    },
+    {
+      "id": 419,
+      "name": 420
+    },
+    8380,
+    {
+      "id": 853,
+      "startTime": 818,
+      "contentType": 854,
+      "geoRestrictions": 856,
+      "status": 861,
+      "freeForEmbed": 48,
+      "editorial": 862,
+      "payment": 867,
+      "lastUpdatedAt": 869,
+      "distributionType": 870,
+      "event": 871,
+      "length": 886
+    },
+    2260906,
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 855
+    },
+    {
+      "en": 51
+    },
+    [
+      857,
+      859
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 858
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 860
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 863
+    },
+    {
+      "en": 864
+    },
+    {
+      "title": 865,
+      "slug": 866
+    },
+    "[R28]CHUNGBUK CHEONGJU - SEONGNAM",
+    "r28chungbuk-cheongju-seongnam",
+    {
+      "name": 12,
+      "entitlements": 868
+    },
+    [],
+    "2026-10-12T05:03:00+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 872,
+      "startTime": 818,
+      "category1": 873,
+      "category2": 875,
+      "category3": 877,
+      "metadata": 879,
+      "homeCompetitor": 884,
+      "awayCompetitor": 885
+    },
+    1264870,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 874
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 876
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 878
+    },
+    {
+      "en": 25
+    },
+    [
+      880,
+      882
+    ],
+    {
+      "name": 93,
+      "field": 881
+    },
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 668,
+      "field": 883
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 98,
+      "name": 99
+    },
+    {
+      "id": 259,
+      "name": 260
+    },
+    8393,
+    {
+      "id": 888,
+      "startTime": 889,
+      "contentType": 890,
+      "geoRestrictions": 892,
+      "status": 897,
+      "freeForEmbed": 48,
+      "editorial": 898,
+      "payment": 903,
+      "lastUpdatedAt": 905,
+      "distributionType": 906,
+      "event": 907,
+      "length": 922
+    },
+    2260904,
+    "2026-10-09T05:00:00+00:00",
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 891
+    },
+    {
+      "en": 51
+    },
+    [
+      893,
+      895
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 894
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 896
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 899
+    },
+    {
+      "en": 900
+    },
+    {
+      "title": 901,
+      "slug": 902
+    },
+    "[R28]SUWON FC - HWASEONG",
+    "r28suwon-fc-hwaseong",
+    {
+      "name": 12,
+      "entitlements": 904
+    },
+    [],
+    "2026-10-11T23:14:41+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 908,
+      "startTime": 889,
+      "category1": 909,
+      "category2": 911,
+      "category3": 913,
+      "metadata": 915,
+      "homeCompetitor": 920,
+      "awayCompetitor": 921
+    },
+    1264869,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 910
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 912
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 914
+    },
+    {
+      "en": 25
+    },
+    [
+      916,
+      918
+    ],
+    {
+      "name": 214,
+      "field": 917
+    },
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 668,
+      "field": 919
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 219,
+      "name": 220
+    },
+    {
+      "id": 46,
+      "name": 47
+    },
+    8100,
+    {
+      "id": 924,
+      "startTime": 925,
+      "contentType": 926,
+      "geoRestrictions": 928,
+      "status": 933,
+      "freeForEmbed": 48,
+      "editorial": 934,
+      "payment": 939,
+      "lastUpdatedAt": 941,
+      "distributionType": 942,
+      "event": 943,
+      "length": 956
+    },
+    2229466,
+    "2026-09-20T10:00:00+00:00",
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 927
+    },
+    {
+      "en": 51
+    },
+    [
+      929,
+      931
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 930
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 932
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 935
+    },
+    {
+      "en": 936
+    },
+    {
+      "title": 937,
+      "slug": 938
+    },
+    "[R27]SEONGNAM - HWASEONG",
+    "r27seongnam-hwaseong",
+    {
+      "name": 12,
+      "entitlements": 940
+    },
+    [],
+    "2026-09-20T23:24:57+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 944,
+      "startTime": 925,
+      "category1": 945,
+      "category2": 947,
+      "category3": 949,
+      "metadata": 951,
+      "homeCompetitor": 954,
+      "awayCompetitor": 955
+    },
+    1252516,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 946
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 948
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 950
+    },
+    {
+      "en": 25
+    },
+    [
+      952
+    ],
+    {
+      "name": 254,
+      "field": 953
+    },
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "id": 259,
+      "name": 260
+    },
+    {
+      "id": 46,
+      "name": 47
+    },
+    8214,
+    {
+      "id": 958,
+      "startTime": 925,
+      "contentType": 959,
+      "geoRestrictions": 961,
+      "status": 966,
+      "freeForEmbed": 48,
+      "editorial": 967,
+      "payment": 972,
+      "lastUpdatedAt": 974,
+      "distributionType": 975,
+      "event": 976,
+      "length": 989
+    },
+    2229464,
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 960
+    },
+    {
+      "en": 51
+    },
+    [
+      962,
+      964
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 963
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 965
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 968
+    },
+    {
+      "en": 969
+    },
+    {
+      "title": 970,
+      "slug": 971
+    },
+    "[R27]GIMHAE - PAJU",
+    "r27gimhae-paju",
+    {
+      "name": 12,
+      "entitlements": 973
+    },
+    [],
+    "2026-09-21T01:07:30+00:00",
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 977,
+      "startTime": 925,
+      "category1": 978,
+      "category2": 980,
+      "category3": 982,
+      "metadata": 984,
+      "homeCompetitor": 987,
+      "awayCompetitor": 988
+    },
+    1252515,
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 979
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 981
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 983
+    },
+    {
+      "en": 25
+    },
+    [
+      985
+    ],
+    {
+      "name": 703,
+      "field": 986
+    },
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "id": 303,
+      "name": 304
+    },
+    {
+      "id": 43,
+      "name": 44
+    },
+    8531,
+    {
+      "id": 1,
+      "startTime": 2,
+      "contentType": 991,
+      "geoRestrictions": 993,
+      "status": 998,
+      "freeForEmbed": 48,
+      "editorial": 999,
+      "payment": 1002,
+      "lastUpdatedAt": 62,
+      "distributionType": 1004,
+      "event": 1005,
+      "length": 63
+    },
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 992
+    },
+    {
+      "en": 51
+    },
+    [
+      994,
+      996
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 995
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 997
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 1000
+    },
+    {
+      "en": 1001
+    },
+    {
+      "title": 9,
+      "slug": 10
+    },
+    {
+      "name": 12,
+      "entitlements": 1003
+    },
+    [],
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 18,
+      "startTime": 2,
+      "category1": 1006,
+      "category2": 1008,
+      "category3": 1010,
+      "metadata": 1012,
+      "homeCompetitor": 1017,
+      "awayCompetitor": 1018
+    },
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 1007
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 1009
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 1011
+    },
+    {
+      "en": 25
+    },
+    [
+      1013,
+      1015
+    ],
+    {
+      "name": 33,
+      "field": 1014
+    },
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 38,
+      "field": 1016
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 43,
+      "name": 44
+    },
+    {
+      "id": 46,
+      "name": 47
+    },
+    {
+      "id": 1,
+      "startTime": 2,
+      "contentType": 1020,
+      "geoRestrictions": 1022,
+      "status": 1027,
+      "freeForEmbed": 48,
+      "editorial": 1028,
+      "payment": 1031,
+      "lastUpdatedAt": 62,
+      "distributionType": 1033,
+      "event": 1034,
+      "length": 63
+    },
+    {
+      "id": 50,
+      "name": 51,
+      "translations": 1021
+    },
+    {
+      "en": 51
+    },
+    [
+      1023,
+      1025
+    ],
+    {
+      "isolist": 55,
+      "deviceCategory": 1024
+    },
+    {
+      "id": 57,
+      "name": 58
+    },
+    {
+      "isolist": 55,
+      "deviceCategory": 1026
+    },
+    {
+      "id": 15,
+      "name": 61
+    },
+    {
+      "id": 4,
+      "name": 5
+    },
+    {
+      "translations": 1029
+    },
+    {
+      "en": 1030
+    },
+    {
+      "title": 9,
+      "slug": 10
+    },
+    {
+      "name": 12,
+      "entitlements": 1032
+    },
+    [],
+    {
+      "id": 15,
+      "name": 16
+    },
+    {
+      "id": 18,
+      "startTime": 2,
+      "category1": 1035,
+      "category2": 1037,
+      "category3": 1039,
+      "metadata": 1041,
+      "homeCompetitor": 1046,
+      "awayCompetitor": 1047
+    },
+    {
+      "id": 20,
+      "name": 21,
+      "translations": 1036
+    },
+    {
+      "en": 21
+    },
+    {
+      "id": 24,
+      "name": 25,
+      "translations": 1038
+    },
+    {
+      "en": 25
+    },
+    {
+      "id": 28,
+      "name": 29,
+      "translations": 1040
+    },
+    {
+      "en": 25
+    },
+    [
+      1042,
+      1044
+    ],
+    {
+      "name": 33,
+      "field": 1043
+    },
+    {
+      "id": 35,
+      "name": 36
+    },
+    {
+      "name": 38,
+      "field": 1045
+    },
+    {
+      "id": 40,
+      "name": 41
+    },
+    {
+      "id": 43,
+      "name": 44
+    },
+    {
+      "id": 46,
+      "name": 47
+    }
+  ],
+  "videos": [
+    {
+      "id": "ioszaWCQAIk",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "Which club is this? ⚽️ Comment A, B, C, or D below! 👇",
+        "description": "#TriviaTuesday #football #Mascot #quiz #KLEAGUE",
+        "publishedAt": "2026-10-27T09:00:22.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT12S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "__upuyntzv0",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "What a Rabona to spark the move! ⚡⚽",
+        "description": "#skills #Suwon #football #korea #KLEAGUE",
+        "publishedAt": "2026-10-27T07:00:16.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT18S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "TsiqbJnwi04",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "Gabriel takes on all 3 Defenders! 😱",
+        "description": "#goals #Busan #football #korea #KLEAGUE",
+        "publishedAt": "2026-10-27T05:19:55.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT27S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "MfkR_2csJnc",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "K LEAGUE 1 Round 33 Standings Update. 📊The Final Round groups are set! 🔥",
+        "description": "#KLEAGUE",
+        "publishedAt": "2026-10-26T09:00:21.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT49S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "agzuMg2K9Yc",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "Derby heroics at the death.🧤💥",
+        "description": "#supersave #Ulsan #football #korea #KLEAGUE",
+        "publishedAt": "2026-10-26T08:00:04.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT12S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "DqS3iL_9ELM",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "The Wall that saved the title. 🧤🏆🧱",
+        "description": "#supersave #Seoul #football #korea #KLEAGUE",
+        "publishedAt": "2026-10-26T07:00:20.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT17S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "U-fnZzTl5i8",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "A brace to seal the 10-10!⚽⚽🔟",
+        "description": "#goals #Daegu #football #korea #KLEAGUE",
+        "publishedAt": "2026-10-26T06:14:14.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT26S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "3Z_qQGIqz6M",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "[AMBIENT SOUND] 2026 K LEAGUE 2 I R30 I Cheonan vs Ansan I 15-Min Extended Highlights",
+        "description": "🏟️ EXPERIENCE THE LIVE ATMOSPHERE FOR FREE!\nWant to watch the full 90 minutes live without missing a beat?\nStream K LEAGUE 1 & 2 matches for free on our official OTT platform, K LEAGUE TV:\ntv.kleague.com\n⚽ Stay Connected Everywhere:\nFollow our social media for the quickest updates and the hottest clips:\nInstagram: @kleagueintl.official - Follow your favorite clubs and players!\nTikTok: @kleagueglobal - Viral moments and trending football fun!\nOfficial Website: kleague.com\n\n📍Subscribe to our YouTube: https://www.youtube.com/@KLeagueintl\nDon't forget to Subscribe and hit the bell🔔\n\n#Kleague #Cheonan #Ansan #FreeLiveStreaming #KLeagueTV #NoCommentary\n#MatchDay #Asienfootball #Koreanfootball #football",
+        "publishedAt": "2026-10-25T13:30:38.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT16M10S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "5la-gyndVOs",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "[AMBIENT SOUND] 2026 K LEAGUE 2 I R30 I Paju vs Hwaseong I 15-Min Extended Highlights",
+        "description": "🏟️ EXPERIENCE THE LIVE ATMOSPHERE FOR FREE!\nWant to watch the full 90 minutes live without missing a beat?\nStream K LEAGUE 1 & 2 matches for free on our official OTT platform, K LEAGUE TV:\ntv.kleague.com\n⚽ Stay Connected Everywhere:\nFollow our social media for the quickest updates and the hottest clips:\nInstagram: @kleagueintl.official - Follow your favorite clubs and players!\nTikTok: @kleagueglobal - Viral moments and trending football fun!\nOfficial Website: kleague.com\n\n📍Subscribe to our YouTube: https://www.youtube.com/@KLeagueintl\nDon't forget to Subscribe and hit the bell🔔\n\n#Kleague #Paju #Hwaseong #FreeLiveStreaming #KLeagueTV #NoCommentary\n#MatchDay #Asienfootball #Koreanfootball #football",
+        "publishedAt": "2026-10-25T13:30:30.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT15M17S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "UHQbyiljw9g",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "[AMBIENT SOUND] 2026 K LEAGUE 2 I R30 I Chungbuk Cheongju vs Yongin I 15-Min Extended Highlights",
+        "description": "🏟️ EXPERIENCE THE LIVE ATMOSPHERE FOR FREE!\nWant to watch the full 90 minutes live without missing a beat?\nStream K LEAGUE 1 & 2 matches for free on our official OTT platform, K LEAGUE TV:\ntv.kleague.com\n⚽ Stay Connected Everywhere:\nFollow our social media for the quickest updates and the hottest clips:\nInstagram: @kleagueintl.official - Follow your favorite clubs and players!\nTikTok: @kleagueglobal - Viral moments and trending football fun!\nOfficial Website: kleague.com\n\n📍Subscribe to our YouTube: https://www.youtube.com/@KLeagueintl\nDon't forget to Subscribe and hit the bell🔔\n\n#Kleague #ChungbukCheongju #Yongin #FreeLiveStreaming #KLeagueTV #NoCommentary\n#MatchDay #Asienfootball #Koreanfootball #football",
+        "publishedAt": "2026-10-25T13:30:30.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT14M26S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kZckKjCRbDE",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "[AMBIENT SOUND] 2026 K LEAGUE 2 I R30 I Seongnam vs Suwon I 15-Min Extended Highlights",
+        "description": "🏟️ EXPERIENCE THE LIVE ATMOSPHERE FOR FREE!\nWant to watch the full 90 minutes live without missing a beat?\nStream K LEAGUE 1 & 2 matches for free on our official OTT platform, K LEAGUE TV:\ntv.kleague.com\n⚽ Stay Connected Everywhere:\nFollow our social media for the quickest updates and the hottest clips:\nInstagram: @kleagueintl.official - Follow your favorite clubs and players!\nTikTok: @kleagueglobal - Viral moments and trending football fun!\nOfficial Website: kleague.com\n\n📍Subscribe to our YouTube: https://www.youtube.com/@KLeagueintl\nDon't forget to Subscribe and hit the bell🔔\n\n#Kleague #Seongnam #Suwon #FreeLiveStreaming #KLeagueTV #NoCommentary\n#MatchDay #Asienfootball #Koreanfootball #football",
+        "publishedAt": "2026-10-25T11:00:34.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT14M4S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "W40EkpkrVP8",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "[AMBIENT SOUND] 2026 K LEAGUE 2 I R30 I SuwonFC vs Chungnam Asan I 15-Min Extended Highlights",
+        "description": "🏟️ EXPERIENCE THE LIVE ATMOSPHERE FOR FREE!\nWant to watch the full 90 minutes live without missing a beat?\nStream K LEAGUE 1 & 2 matches for free on our official OTT platform, K LEAGUE TV:\ntv.kleague.com\n⚽ Stay Connected Everywhere:\nFollow our social media for the quickest updates and the hottest clips:\nInstagram: @kleagueintl.official - Follow your favorite clubs and players!\nTikTok: @kleagueglobal - Viral moments and trending football fun!\nOfficial Website: kleague.com\n\n📍Subscribe to our YouTube: https://www.youtube.com/@KLeagueintl\nDon't forget to Subscribe and hit the bell🔔\n\n#Kleague #SuwonFC #ChungnamAsan #FreeLiveStreaming #KLeagueTV #NoCommentary\n#MatchDay #Asienfootball #Koreanfootball #football",
+        "publishedAt": "2026-10-25T11:00:29.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT14M19S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "aLLM6CxPBJ4",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "[AMBIENT SOUND] 2026 K LEAGUE 2 I R30 I Busan vs Gyeongnam I 15-Min Extended Highlights",
+        "description": "🏟️ EXPERIENCE THE LIVE ATMOSPHERE FOR FREE!\nWant to watch the full 90 minutes live without missing a beat?\nStream K LEAGUE 1 & 2 matches for free on our official OTT platform, K LEAGUE TV:\ntv.kleague.com\n⚽ Stay Connected Everywhere:\nFollow our social media for the quickest updates and the hottest clips:\nInstagram: @kleagueintl.official - Follow your favorite clubs and players!\nTikTok: @kleagueglobal - Viral moments and trending football fun!\nOfficial Website: kleague.com\n\n📍Subscribe to our YouTube: https://www.youtube.com/@KLeagueintl\nDon't forget to Subscribe and hit the bell🔔\n\n#Kleague #Busan #Gyeongnam #FreeLiveStreaming #KLeagueTV #NoCommentary\n#MatchDay #Asienfootball #Koreanfootball #football",
+        "publishedAt": "2026-10-25T11:00:12.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT16M32S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "_BtX8BPeR0w",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "A miraculous finish to turn the tables when time ran out.🎬",
+        "description": "#goals #Daejeon #football #korea #KLEAGUE",
+        "publishedAt": "2026-10-25T09:00:36.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT28S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "ShGjpMGvqQM",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "Back-to-back masterclass to take over the game. ⚽⚽",
+        "description": "#goals #Gwangju #football #korea #KLEAGUE",
+        "publishedAt": "2026-10-25T08:00:32.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT30S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "sn9TRwH7n2M",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "The goal that seals the championship crown.👑",
+        "description": "#goals #Seoul #football #korea #KLEAGUE",
+        "publishedAt": "2026-10-25T07:00:29.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT27S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "CtFyyk8ibIE",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "🏆✨ FC SEOUL ARE CHAMPIONS!",
+        "description": "#Seoul #champions #football #korea #KLEAGUE",
+        "publishedAt": "2026-10-25T06:03:19.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT43S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "zUj9AIULGK4",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "[AMBIENT SOUND] 2026 K LEAGUE 2 I R30 I Gimpo vs Gimhae I 15-Min Extended Highlights",
+        "description": "🏟️ EXPERIENCE THE LIVE ATMOSPHERE FOR FREE!\nWant to watch the full 90 minutes live without missing a beat?\nStream K LEAGUE 1 & 2 matches for free on our official OTT platform, K LEAGUE TV:\ntv.kleague.com\n⚽ Stay Connected Everywhere:\nFollow our social media for the quickest updates and the hottest clips:\nInstagram: @kleagueintl.official - Follow your favorite clubs and players!\nTikTok: @kleagueglobal - Viral moments and trending football fun!\nOfficial Website: kleague.com\n\n📍Subscribe to our YouTube: https://www.youtube.com/@KLeagueintl\nDon't forget to Subscribe and hit the bell🔔\n\n#Kleague #Gimpo #Gimhae #FreeLiveStreaming #KLeagueTV #NoCommentary\n#MatchDay #Asienfootball #Koreanfootball #football",
+        "publishedAt": "2026-10-24T13:30:23.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT14M25S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "G0mgNnZviSw",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "[Full ENG] 2026 K LEAGUE 1 I R33 I Seoul vs Gangwon I 15-Min Extended Highlights",
+        "description": "📺WATCH K LEAGUE LIVE FOR FREE! Did you know you can watch full matches live\nfrom anywhere in the world? Register now at K LEAGUE TV and enjoy every moment for\nfree: tv.kleague.com\n\n📱Craving More K LEAGUE? Get Your Daily Fix Here:\nDon't stop at the highlights! Follow our official social channels for exclusive behind-thescenes, viral clips, and instant updates:\nInstagram: @kleagueintl.official - Best match photos & daily stories!\nTikTok: @kleagueglobal - Viral moments and trending football fun!\nOfficial Website: kleague.com\n\n📍Subscribe to our YouTube: https://www.youtube.com/@KLeagueintl\nDon't forget to Subscribe and hit the bell🔔\n\n#Kleague #Seoul #Gangwon #ExtendedHighlights #EnglishCommentary\n#AsianFootball #Koreanfootball #Football",
+        "publishedAt": "2026-10-24T11:00:39.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT16M34S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    },
+    {
+      "id": "WKR-jRHIJ1o",
+      "snippet": {
+        "channelId": "UCrfu1VaYOZ_-FBGQMzKFfMA",
+        "title": "[AMBIENT SOUND] 2026 K LEAGUE 1 I R33 I Incheon vs Jeju I 15-Min Extended Highlights",
+        "description": "🏟️ EXPERIENCE THE LIVE ATMOSPHERE FOR FREE!\nWant to watch the full 90 minutes live without missing a beat?\nStream K LEAGUE 1 & 2 matches for free on our official OTT platform, K LEAGUE TV:\ntv.kleague.com\n⚽ Stay Connected Everywhere:\nFollow our social media for the quickest updates and the hottest clips:\nInstagram: @kleagueintl.official - Follow your favorite clubs and players!\nTikTok: @kleagueglobal - Viral moments and trending football fun!\nOfficial Website: kleague.com\n\n📍Subscribe to our YouTube: https://www.youtube.com/@KLeagueintl\nDon't forget to Subscribe and hit the bell🔔\n\n#Kleague #Incheon #Jeju #FreeLiveStreaming #KLeagueTV #NoCommentary\n#MatchDay #Asienfootball #Koreanfootball #football",
+        "publishedAt": "2026-10-24T11:00:38.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      },
+      "contentDetails": {
+        "duration": "PT14M14S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      }
+    }
+  ],
+  "matches": [
+    {
+      "fixtureId": 1507088,
+      "date": "2026-10-24T05:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 2748,
+        "name": "FC Anyang"
+      },
+      "away": {
+        "id": 2762,
+        "name": "Jeonbuk Motors"
+      },
+      "leagueId": 292,
+      "league": "K League 1",
+      "season": 2026,
+      "round": "Regular Season - 33",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1507089,
+      "date": "2026-10-24T05:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 2745,
+        "name": "Bucheon FC 1995"
+      },
+      "away": {
+        "id": 2759,
+        "name": "Gwangju FC"
+      },
+      "leagueId": 292,
+      "league": "K League 1",
+      "season": 2026,
+      "round": "Regular Season - 33",
+      "score": {
+        "home": 0,
+        "away": 3
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1507090,
+      "date": "2026-10-24T05:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 2768,
+        "name": "Gimcheon Sangmu FC"
+      },
+      "away": {
+        "id": 2750,
+        "name": "Daejeon Citizen"
+      },
+      "leagueId": 292,
+      "league": "K League 1",
+      "season": 2026,
+      "round": "Regular Season - 33",
+      "score": {
+        "home": 1,
+        "away": 2
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1507091,
+      "date": "2026-10-24T05:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 2763,
+        "name": "Incheon United"
+      },
+      "away": {
+        "id": 2761,
+        "name": "Jeju United FC"
+      },
+      "leagueId": 292,
+      "league": "K League 1",
+      "season": 2026,
+      "round": "Regular Season - 33",
+      "score": {
+        "home": 3,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1507092,
+      "date": "2026-10-24T05:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 2766,
+        "name": "FC Seoul"
+      },
+      "away": {
+        "id": 2746,
+        "name": "Gangwon FC"
+      },
+      "leagueId": 292,
+      "league": "K League 1",
+      "season": 2026,
+      "round": "Regular Season - 33",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1507093,
+      "date": "2026-10-24T05:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 2767,
+        "name": "Ulsan Hyundai FC"
+      },
+      "away": {
+        "id": 2764,
+        "name": "Pohang Steelers"
+      },
+      "leagueId": 292,
+      "league": "K League 1",
+      "season": 2026,
+      "round": "Regular Season - 33",
+      "score": {
+        "home": 2,
+        "away": 2
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1510475,
+      "date": "2026-10-24T05:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 2760,
+        "name": "Jeonnam Dragons"
+      },
+      "away": {
+        "id": 2747,
+        "name": "Daegu FC"
+      },
+      "leagueId": 293,
+      "league": "K League 2",
+      "season": 2026,
+      "round": "Regular Season - 30",
+      "score": {
+        "home": 2,
+        "away": 4
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1510476,
+      "date": "2026-10-24T07:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 7078,
+        "name": "Gimpo Citizen"
+      },
+      "away": {
+        "id": 7076,
+        "name": "Gimhae City"
+      },
+      "leagueId": 293,
+      "league": "K League 2",
+      "season": 2026,
+      "round": "Regular Season - 30",
+      "score": {
+        "home": 1,
+        "away": 2
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1510477,
+      "date": "2026-10-25T05:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 2756,
+        "name": "Suwon City FC"
+      },
+      "away": {
+        "id": 2753,
+        "name": "Asan Mugunghwa"
+      },
+      "leagueId": 293,
+      "league": "K League 2",
+      "season": 2026,
+      "round": "Regular Season - 30",
+      "score": {
+        "home": 0,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1510478,
+      "date": "2026-10-25T05:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 2752,
+        "name": "Busan I Park"
+      },
+      "away": {
+        "id": 2751,
+        "name": "Gyeongnam FC"
+      },
+      "leagueId": 293,
+      "league": "K League 2",
+      "season": 2026,
+      "round": "Regular Season - 30",
+      "score": {
+        "home": 3,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1510479,
+      "date": "2026-10-25T05:00:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 2757,
+        "name": "Seongnam FC"
+      },
+      "away": {
+        "id": 2765,
+        "name": "Suwon Bluewings"
+      },
+      "leagueId": 293,
+      "league": "K League 2",
+      "season": 2026,
+      "round": "Regular Season - 30",
+      "score": {
+        "home": 0,
+        "away": 2
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1510480,
+      "date": "2026-10-25T07:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 7060,
+        "name": "Cheonan City"
+      },
+      "away": {
+        "id": 2758,
+        "name": "Ansan Greeners"
+      },
+      "leagueId": 293,
+      "league": "K League 2",
+      "season": 2026,
+      "round": "Regular Season - 30",
+      "score": {
+        "home": 3,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1510481,
+      "date": "2026-10-25T07:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 7061,
+        "name": "Cheongju"
+      },
+      "away": {
+        "id": 9171,
+        "name": "Yongin City"
+      },
+      "leagueId": 293,
+      "league": "K League 2",
+      "season": 2026,
+      "round": "Regular Season - 30",
+      "score": {
+        "home": 0,
+        "away": 2
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1510482,
+      "date": "2026-10-25T07:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 7098,
+        "name": "Paju Citizen"
+      },
+      "away": {
+        "id": 7087,
+        "name": "Hwaseong"
+      },
+      "leagueId": 293,
+      "league": "K League 2",
+      "season": 2026,
+      "round": "Regular Season - 30",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    }
+  ]
+}

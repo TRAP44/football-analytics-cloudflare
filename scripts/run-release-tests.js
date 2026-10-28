@@ -31,6 +31,7 @@ const RELEASE_TESTS = Object.freeze([
   'test/watch-revalidation.test.js',
   'test/automatic-match-watch.test.js',
   'test/multi-league-watch.test.js',
+  'test/kleague-watch.test.js',
   'test/inspect-match-watch.test.js',
   'test/match-question-facts.test.js',
   'test/match-conversation.test.js',

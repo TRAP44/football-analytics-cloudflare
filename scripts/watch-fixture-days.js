@@ -14,13 +14,14 @@ function normalize(raw){
  const status=text(raw?.fixture?.status?.short,12),date=time(raw?.fixture?.date);
  return {fixtureId:raw?.fixture?.id,date:Number.isFinite(date)?new Date(date).toISOString():null,status,home:{id:raw?.teams?.home?.id,name:text(raw?.teams?.home?.name,120)},away:{id:raw?.teams?.away?.id,name:text(raw?.teams?.away?.name,120)},leagueId:raw?.league?.id,league:text(raw?.league?.name),season:raw?.league?.season,round:text(raw?.league?.round,120),score:{home:Number.isInteger(raw?.goals?.home)&&raw.goals.home>=0&&raw.goals.home<=99?raw.goals.home:null,away:Number.isInteger(raw?.goals?.away)&&raw.goals.away>=0&&raw.goals.away<=99?raw.goals.away:null},finished:['FT','AET','PEN'].includes(status),live:['1H','HT','2H','ET','BT','P','LIVE'].includes(status)};
 }
-export async function loadWatchFixtureDays({videos,policies,env,fetchImpl,now,readCache,writeCache,report,signal}){
+export async function loadWatchFixtureDays({videos,policies,env,fetchImpl,now,readCache,writeCache,report,signal,fixtureHints=[]}){
  if(!env.API_FOOTBALL_KEY){report.fixtureSource='not_configured';return [];}
  const base=new URL(env.SUPABASE_URL),dbKey=env.SUPABASE_SECRET_KEY||env.SUPABASE_SERVICE_ROLE_KEY;
  if(!RELAY||base.href!==RELAY.origin+'/'||!dbKey||typeof env.API_FOOTBALL_KEY!=='string'||env.API_FOOTBALL_KEY.length>512)fail('WATCH_FIXTURE_CONFIGURATION');
  const leagueIds=[...new Set(policies.map(policy=>policy.leagueId))].sort((a,b)=>a-b),coverage=leagueIds.join(',');
  const today=Date.parse(new Date(now).toISOString().slice(0,10)+'T00:00:00Z'),dates=Array.from({length:9},(_,i)=>new Date(today+(i-7)*86400000).toISOString().slice(0,10));
  const votes=new Map(),vote=(value,weight)=>{const ms=time(value);if(!Number.isFinite(ms))return;const day=new Date(ms).toISOString().slice(0,10);if(dates.includes(day))votes.set(day,(votes.get(day)||0)+weight);};
+ for(const hint of fixtureHints.slice(0,100))vote(hint,20);
  for(const video of videos){
   const title=video.snippet?.title||'';
   const summaryOrLeague=/highlights|resumen|SPL:| - (?:A-League Men|Ninja A-League) /i.test(title);
