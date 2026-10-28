@@ -1,17 +1,37 @@
-# K LEAGUE: записи и расширенные обзоры
+# K LEAGUE: полные записи и расширенные обзоры
 
-Исследование: 27 октября 2026. Настоящее автонаполнение40560637201 до изменения подтвердило40матчей, RU11полныхзаписей/37обзоров. Производственный прирост нового источника пока не заявляется.
+Исследование выполнено 27 октября 2026 года. До подключения K LEAGUE реальное автонаполнение каталога подтвердило 40 матчей: для России — 11 полных записей и 37 обзоров. Это результаты запуска [40560637201](https://github.com/TRAP44/football-analytics-cloudflare/actions/runs/40560637201), повторно подтверждённые запуском 40654924883 28 октября. Новый производственный прирост нужно измерять после выпуска.
 
-Официальный K LEAGUE TV: https://tv.kleague.com/en-int/page/home со ссылкой на @KLeagueintl. Googleпроверка40562022454 подтвердила channelId UCrfu1VaYOZ_-FBGQMzKFfMA и20uploads срасширеннымиобзорамиK1/K2примернопо15минут. Ониразрешеныкembed иRU/KZ/BYпометаданным. Заголовокпроверяетсяпоточномусезону/номеру лиги/туру/парекоманд; aliases закрепленыAPI-FootballteamID. SuwonFC иSuwonSamsung различаются.
+## Источники и доступ
 
-Публичнаяглавнаясодержит6записей, Paju https://tv.kleague.com/en-int/video/r30paju-hwaseong/2260948 иреальновыбранныйCheongju https://tv.kleague.com/en-int/video/r30chungbuk-cheongju-yongin/2260950 дают26metadatarecords/8актуальныхfull24–25октября. Это независимо проверено наполныхrawHTML, не толькотестовойпроекции. Canonicalfixtures: actualAPI40513430842(date25) и40514129711(date24). test-support/fixtures/kleague-watch-sources.json — проекциянастоящегоNuxtreferencegraph/Googlemetadata, originalusedfieldvalues preserved; unusedimages/config/logintexts omitted. Googleallowedlist — толькоинспектированныетерритории, неworldwiderights. TestHTTPclocks synthetic.
+Официальная главная [K LEAGUE TV](https://tv.kleague.com/en-int/page/home) ссылается на YouTube-канал `@KLeagueintl`. Проверка Google API 40562022454 подтвердила ID `UCrfu1VaYOZ_-FBGQMzKFfMA` и 20 публикаций с расширенными обзорами K LEAGUE 1/2 примерно по 15 минут. По полученным метаданным они допускают встраивание и просмотр в RU/KZ/BY. Перед публикацией проверяются сезон, номер лиги, тур и обе команды; названия закреплены за ID команд API-Football. Suwon FC и Suwon Samsung различаются.
 
-Полныезаписи: Fullmatch, distributionVOD,60–240минут, Registration безплатныхentitlements, точныеeventleague/date/time/round/title/eventteams иcanonicalFT. PublicationstatusLive уVOD невыдаётсязапрямойэфир. ПроверяетсяпересечениеDesktop/Mobileстран; unknowngrants/paid/ambiguous/conflictingduplicates/archive>7д отвергаются. FreeForEmbed=false: записиоткрываютсятольконаофициальномсайте, бесплатнаярегистрациявиднадокликаиувариантапросмотра. Приложениенерегистрируетпользователя, нечитаетлогин/пароль, невыполняетmedia/manifest/privateAPIrequests. Physicalregisteredplayback нетестировался.
+Полные записи открываются на официальном сайте K LEAGUE TV. Источник требует бесплатной регистрации и запрещает встраивание (`freeForEmbed=false`). Это требование видно в приложении до перехода. Приложение не регистрирует зрителя, не получает его пароль и не запрашивает закрытые API, манифесты или видеофайлы. Воспроизведение после входа в зарегистрированный аккаунт не проверено.
 
-Отдельнаяapprovalversion3, повторнаяпроверкавconsumer, exacthttpshosttv.kleague.com/path/en-int/video/<slug>/<id> безпараметров/фрагмента/credentials/произвольногопорта. NuxtJSONboundedindexedprojection безeval/произвольнойрекурсии. SourceObservedAt30миннепродлеваетсяприотказах. Отзывочищаетобщийиперматчевыйкаталоги, включаяfull-onlyбезобзора; другиелиги продолжаютработать.
+Главная содержала 6 записей. Страницы [Paju](https://tv.kleague.com/en-int/video/r30paju-hwaseong/2260948) и выбранной из главной записи [Cheongju](https://tv.kleague.com/en-int/video/r30chungbuk-cheongju-yongin/2260950) содержали по 26 элементов метаданных, включая 8 актуальных полных записей за 24–25 октября. Это независимо проверено на полных исходных HTML. Канонические матчи получены отдельными запусками API-Football 40513430842 и 40514129711.
 
-На зрителяновыхsourceGETнет. Backgroundдо3publicGET/attempt:1homepage+до1relatedpageнакаждуюиз2лиг. Healthy15мин/failure5мин; суммарныйpublicHTTPbudget12с, до2MB/response, redirecterror, nosource-secret headers. AttemptdurablebeforeI/O; unknownDBwriteabort.6YouTubechannels:380feedIDs+200bound+20manual=600,batch50,max22calls/run, calculatedworst8108units/day vsstandard10k, неactualavailablequota. NewchannelhasnoLIVEsearch. Footballmax2dates/run16attempts/day/globalminute/FREEreserve/cooldown unchanged. Discoveryv3migratesv2/v1read-only forrollback, legacyJ1/manualindexkept. Reports split embeddedFullReplayMatches/registrationReplayMatches.
+Свидетельства: `docs/research/WATCH_KLEAGUE_EVIDENCE_2026-10-27.json`. Фикстура `test-support/fixtures/kleague-watch-sources.json` сохраняет используемые поля исходного графа Nuxt и фактические метаданные Google; неиспользуемые изображения, настройки и тексты входа исключены. Список стран Google содержит только проверенные территории и не означает наличие всемирных прав. Время и HTTP-транспорт тестов управляются тестом.
 
-Frontendlaunch153. Новыхаккаунтов/секретов/платежей/договоровнет. Native320390900 проверяетregistrationhint/label, exactTelegrampermalink, noiframe/media, expiredlinkblocked; recordedmetadata/syntheticHTTP, нерегистрированноевоспроизведение. Codecrossreviewclean78focused, localgates983release/4781full+check/lint/security/privileged/verifyrelease/workerdryrun+nativepassed. ПослевыпускаобязательныexactheadCI/mainDeploy/publicrevision+hash/actualnon-skippedproducerсчётчикипостранамиспособампросмотра. Доэтогоновыйproductionприростнезаявляется.
+## Проверка соответствия
 
-Неверный handlekleagueinternational identityfailed и неapproved; Virsliga channelUCT3m7HWyBGMIkUB1REN-_Fg далобзоры/пресс, fullнеобъявлены.
+Для полной записи обязательны `Fullmatch`, `distributionType=VOD`, длительность 60–240 минут, `Registration` без платных разрешений, совпадающие лига, дата, время, тур и команды. Независимый матч должен быть завершён. Статус публикации `Live` у записи VOD не считается прямым эфиром.
+
+Страны берутся из пересечения разрешений Desktop и Mobile. Неизвестные разрешения, платный доступ, неоднозначные соответствия, конфликтующие дубли и архив старше 7 дней отвергаются. Разрешены только точные HTTPS-ссылки вида `tv.kleague.com/en-int/video/<slug>/<id>` без параметров, фрагментов, учётных данных и произвольного порта.
+
+Разрешение версии 3 повторно проверяется при чтении каталога. Исходный JSON разбирается с пределами размера и числа узлов, без `eval` и произвольного рекурсивного обхода. Наблюдение источника действительно не больше 30 минут; отказ не продлевает этот срок. Отзыв записи очищает общий и отдельный каталог матча, включая матчи без YouTube-обзора. Другие лиги продолжают обновляться.
+
+## Запросы и ограничения
+
+Зритель не запускает запросы к источникам. Одна фоновая попытка делает до 3 публичных GET: главная и не больше одной связанной страницы на каждую из двух лиг. Перепроверка после успеха — через 15 минут, после отказа — через 5 минут. Общий бюджет HTTP — 12 секунд, ответ — до 2 МБ, перенаправления запрещены. Секреты источнику не отправляются. Попытка фиксируется в базе до сетевых запросов; неподтверждённая запись останавливает запуск.
+
+YouTube: 6 каналов, до 380 ID из лент, 200 связанных и 20 ручных ID; всего до 600, пакеты по 50, максимум 22 запроса за запуск. Расчётная верхняя граница — 8108 единиц квоты в сутки при стандартных 10000; это не измерение доступной квоты аккаунта. Новый канал не получает поиск LIVE. Бюджет футбольного источника сохранён: до 2 дат за запуск, 16 попыток в сутки, прежние минутный лимит, резерв бесплатного тарифа и пауза после ограничения.
+
+Discovery v3 читает v2/v1 при миграции, сохраняя прежние снимки для отката. Совместимый индекс J1/ручных записей сохранён. Отчёт разделяет `embeddedFullReplayMatches` и `registrationReplayMatches`: внешние записи нельзя называть встроенными.
+
+## Проверки и выпуск
+
+Фронтенд: launch153. Node 22: check, lint, 983 release-теста, 4781 полный тест, проверки секретов и привилегий, verify:release и сборка Worker прошли. Независимое ревью и 78 целевых тестов прошли. Chromium на ширинах 320/390/900 проверяет предупреждение о регистрации, точную ссылку Telegram, отсутствие iframe/запросов видео и блокировку просроченной ссылки. Это проверка интерфейса с записанными метаданными, а не фактическое воспроизведение после регистрации.
+
+Перед выпуском обязательны CI точного коммита, main/Deploy, публичная ревизия и хеши. После выпуска — реальный нескрытый ограничителем запуск наполнения с числами по странам и способам просмотра. Новые LIVE, аккаунты, секреты, платежи и договоры этим изменением не добавляются.
+
+Неверный handle `kleagueinternational` не прошёл проверку личности канала и не утверждён. Официальный канал Virsliga `UCT3m7HWyBGMIkUB1REN-_Fg` содержал обзоры и пресс-материалы; полные записи для него не заявлены.
