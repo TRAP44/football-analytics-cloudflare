@@ -1,11 +1,12 @@
 import watchManifest from './match-watch-approvals.json' with {type:'json'};
 import {WATCH_POLICIES,automaticWatchMatch,automaticWatchValidUntil,automaticReplayEvidence,automaticHighlightsMatch,automaticHighlightsEvidence} from './match-watch-policy.js';
+import {BUNDESLIGA_CHANNEL} from './bundesliga-watch-policy.js';
 import {KLEAGUE_CHANNEL,KLEAGUE_TV_POLICY,kleagueTvUrl,validKleagueTvReplay} from './kleague-watch-policy.js';
 export const WATCH_APPROVALS=watchManifest.items;
 // Only service-owned, explicitly reviewed catalogue records are eligible for UI.
 // Public requests never discover/fetch/submit arbitrary videos or provider URLs.
 export const watchCacheKey=id=>`match-watch:${id}:v1`;
-export const WATCH_PUBLISHERS=Object.freeze({fifa:'UCpcTrCXblq78GZrTUTLWeBw',sgpremierleague:'UCiJTKr-wja_JVM2dVTYCELA',jleagueinternational:'UCmQp6ZaAejJKKkXc_Y_lh1A',aleagues:'UCzRogd_oK3bzKvAW-4aLuPQ',laliga:'UCTv-XvfzLX3i4IGWAm4sbmA',seriea:'UCBJeMCIeLQos7wacox4hmLQ',kleagueintl:KLEAGUE_CHANNEL});
+export const WATCH_PUBLISHERS=Object.freeze({fifa:'UCpcTrCXblq78GZrTUTLWeBw',sgpremierleague:'UCiJTKr-wja_JVM2dVTYCELA',jleagueinternational:'UCmQp6ZaAejJKKkXc_Y_lh1A',aleagues:'UCzRogd_oK3bzKvAW-4aLuPQ',laliga:'UCTv-XvfzLX3i4IGWAm4sbmA',seriea:'UCBJeMCIeLQos7wacox4hmLQ',kleagueintl:KLEAGUE_CHANNEL,bundesliga:BUNDESLIGA_CHANNEL});
 export const WATCH_TTL_MS=30*60*1000;
 export const WATCH_LIBRARY_KEY='match-watch-library:v1';
 export const WATCH_EXTENDED_LIBRARY_KEY='match-watch-library:v2';
@@ -99,7 +100,7 @@ export function watchLibraryPayload(library,options={}){
     const home=text(match.home?.name,120),away=text(match.away?.name,120);
     if(!home||!away)continue;
     seen.add(match.fixtureId);
-    const leagueId=id(match.leagueId),leagueLabels={98:'J1 · Япония',188:'A-League · мужчины',190:'A-League · женщины',368:'Премьер-лига · Сингапур',140:'Ла Лига · Испания',135:'Серия А · Италия',292:'K LEAGUE 1 · Южная Корея',293:'K LEAGUE 2 · Южная Корея'};
+    const leagueId=id(match.leagueId),leagueLabels={78:'Бундеслига · Германия',98:'J1 · Япония',188:'A-League · мужчины',190:'A-League · женщины',368:'Премьер-лига · Сингапур',140:'Ла Лига · Испания',135:'Серия А · Италия',292:'K LEAGUE 1 · Южная Корея',293:'K LEAGUE 2 · Южная Корея'};
     cards.push({fixtureId:match.fixtureId,home,away,homeTeamId:id(match.home.id),awayTeamId:id(match.away.id),league:leagueLabels[leagueId]||text(match.league,120),date:new Date(time(match.date)).toISOString(),kinds:[...new Set(items.map(item=>item.kind))],registrationReplay:items.some(item=>item.kind==='replay'&&item.access==='registration'),embeddedReplay:items.some(item=>item.kind==='replay'&&item.embed),expiresAt:new Date(Math.min(...items.map(item=>time(item.expiresAt)))).toISOString()});
   }
   cards.sort((a,b)=>Number(b.kinds.includes('live'))-Number(a.kinds.includes('live'))||(a.kinds.includes('live')?time(a.date)-time(b.date):time(b.date)-time(a.date)));

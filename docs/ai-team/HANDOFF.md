@@ -14,6 +14,15 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-29 — Codex — Официальные обзоры Бундеслиги
+Ветка `codex/watch-bundesliga`. #1034 завершён: main `ba30b528`, PR/main CI и Deploy 40657221162 success; public launch153/CF705b9c46-0ce4-4d20-ba77-53aa7ef90b37, 8 хешей совпали. Post-deploy 40657908137:54 матча/73источника, RU11 встроенных полных+8регистрационных/51обзор. На 29 октября актуальный baseline40939220516:48матчей/66источников, RU10встроенных полных+8регистрационных/46обзоров; разница связана с семидневным окном. После публикации среды подключение восстановлено, команды работают.
+
+Источник: официальный https://www.bundesliga.com/en/bundesliga → @bundesliga/videos; Google ID UC6UL29enLNe4mqwTfAyeNuw. Actual inspections40941001362/40941321457/40941524317:20видео,9независимых canonical fixtures23–25октября;8валидныхобзоров, RU/KZ/BY metadata+embed. Полныеэфиры имеют запрет RU/KZ/BY и embed=false, не добавлены. Сопоставление требует title pair/round, первойстроки description pair/round и отдельной строки pair/season/round; точные aliases по teamID, без fuzzy. Только для Bundesliga задержка публикации до72ч (наблюдён Friday→Sunday52.5h), retention7д. Description compact после полной проверки, consumer проверяет заново.
+
+Новый канал10мин, максимум7каналов/650IDs/24YouTube calls; worst8540quota/day при стандартных10000, не замер квоты аккаунта. Discoveryv4 читаетv3/v2/v1 без их изменения; старые rollback snapshots и совместимый index сохранены. Football2dates/run/16attempts/day/minute/FREEreserve unchanged. Public/frontend/SQL/auth не менялись, launch153 сохраняется.
+
+Node22 npmci/check/lint/release989/989/full4787/4787/security/privileged/verifyrelease/workerdryrun passed. Независимое read-only Codex review clean73/73 с дополнительными country/age/time/duration negatives и сверкой actual evidence; Claude не участвовал. До заявления о новом production-приросте обязательны exact-head CI→merge→main/Deploy→publicidentity→реальный non-skipped producer. Физическое Telegram playback не проверено. Новых ключей/аккаунтов/оплат/писем нет.
+
 ## 2026-10-27 — Codex — K LEAGUE: официальные полные записи и расширенные обзоры
 PR [#1034](https://github.com/TRAP44/football-analytics-cloudflare/pull/1034), ветка `codex/watch-full-sources`. #1033 завершён: main1b07b7fee5ce3a80b60c267134818c47cb000827, PRQuality40530975942/CodeQL40530975987/audit40530976043, MainQuality40531706340/CodeQL40531706352/audit40531706346/Deploy40532435510 success. Public launch152/CF3690aaee-c3e0-40a4-afec-ed7fd218dd4e и 6assetSHA+официальныеэмблемы проверены. Actualpostdeploy40533339404:31matches/41items,RU9replays/29highlights. Автоматические clock запуски самостоятельно довели до40matches/51items,RU11replays/37highlights (40560637201,18:30UTC); baseline не считать pending.
 
