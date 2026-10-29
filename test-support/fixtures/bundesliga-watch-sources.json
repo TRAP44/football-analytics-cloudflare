@@ -1,0 +1,880 @@
+{
+  "observedAt": "2026-10-29T19:32:40.038Z",
+  "note": "Sanitized observed Google API fields and separately inspected canonical API-Football fixtures. Country list is restricted to inspected territories; no physical playback verified. Test transport reconstructed from these observations.",
+  "runs": [
+    {
+      "id": 40941001362,
+      "date": "2026-10-25"
+    },
+    {
+      "id": 40941321457,
+      "date": "2026-10-24"
+    },
+    {
+      "id": 40941524317,
+      "date": "2026-10-23"
+    }
+  ],
+  "authority": {
+    "url": "https://www.bundesliga.com/en/bundesliga",
+    "youtube": "https://www.youtube.com/@bundesliga/videos",
+    "bytes": 1109189,
+    "sha256": "ad4b42e21449dfc7db0b3e47ac589581b9969366e9769de61f7657b045dae723"
+  },
+  "videos": [
+    {
+      "id": "rejbV6nozWM",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "Did Dominik Szoboszlai have THE BEST shooting technique in Bundesliga History? 🎯🤯",
+        "description": "Dominik Szoboszlai in the Bundesliga was unreal \n\nA Hungarian international, a world-class midfielder and one of the finest shooters the league has ever seen. Dominik Szoboszlai ticks all these boxes. The Hungarian played for RB Leipzig in the Bundesliga from 2021 to 2023, where he established himself as a world-class footballer before moving to Liverpool. This clip shows you his Bundesliga highlights. Which one was your favorite? Let us know in the comments!\n\n► Sub now: https://redirect.bundesliga.com/_bwCS\n\nThe Official Bundesliga YouTube channel provides exclusive content for fans of Germany’s top league from all around the world that can’t be found anywhere else. Subscribe now and visit us at https://bndsl.ga/comYT to see what all the noise is about!\"  \n\n► Watch Bundesliga in your country: https://redirect.bundesliga.com/Bundesliga_O_O\n\n► Join the conversation in the Bundesliga Community Tab:\nhttps://www.youtube.com/bundesliga/community\n\nThe Official Bundesliga YouTube channel provides exclusive content for fans of Germany’s top league from all around the world that can’t be found anywhere else. Subscribe now and visit us at https://bndsl.ga/comYT to see what all the noise is about!",
+        "publishedAt": "2026-10-29T13:00:01.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT5M15S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      }
+    },
+    {
+      "id": "TcrR4vnfbKI",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "Bellingham with the INSTANT impact! 👏",
+        "description": "Jobe Bellingham was subbed in and immediately delivered the Assist to put Dortmund ahead! #shorts",
+        "publishedAt": "2026-10-29T11:00:22.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT33S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      }
+    },
+    {
+      "id": "_M_m_SHlPaY",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "The moment Harry Kane arrives back in Munich after winning the Ballon D‘or 🥳👏",
+        "description": "And his next game will be in Der Klassiker 🔥 #shorts",
+        "publishedAt": "2026-10-29T08:48:20.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT36S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "DE",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      }
+    },
+    {
+      "id": "fe9w2yRYilc",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "Upamecano proves his striker abilities 🔥👀",
+        "description": "He finishes a sensational run against SC Freiburg to put Bayern on top! #shorts",
+        "publishedAt": "2026-10-28T11:00:25.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT37S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      }
+    },
+    {
+      "id": "W8kHtvYvWeg",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "Your 2026 Ballon D‘or winner 🔥🥇",
+        "description": "Harry Kane has proved every year at Bayern that he's one of the best players in the world and now he reached the top 🙌 #shorts",
+        "publishedAt": "2026-10-27T11:00:17.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT53S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      }
+    },
+    {
+      "id": "6XKIFLNOKgY",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "THIS Is How Harry Kane Won the BALLON D'OR 💫🥇",
+        "description": "It´s official: Harry Kane has won the Ballon D'Or!\n\nOne of the best individual seasons the world has ever seen - crowned with the highest individual award in football! Harry Kanes 2025/26-season was one for the history books. 72 goals, trophies, assists, big performances in big games - the numbers speak for themselves! Enjoy this compilation showing Harry Kanes best moments in the Bundesliga from last season. Congratulations Harry! Which moment was your favorite? Let us know in the comments!\n\n► Sub now: https://redirect.bundesliga.com/_bwCS\n\nThe Official Bundesliga YouTube channel provides exclusive content for fans of Germany’s top league from all around the world that can’t be found anywhere else. Subscribe now and visit us at https://bndsl.ga/comYT to see what all the noise is about!\n\n► Watch Bundesliga in your country: https://redirect.bundesliga.com/Bundesliga_O_O\n\n► Join the conversation in the Bundesliga Community Tab:\nhttps://www.youtube.com/bundesliga/community\n\nThe Official Bundesliga YouTube channel provides exclusive content for fans of Germany’s top league from all around the world that can’t be found anywhere else. Subscribe now and visit us at https://bndsl.ga/comYT to see what all the noise is about!",
+        "publishedAt": "2026-10-26T22:52:40.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT10M46S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      }
+    },
+    {
+      "id": "rs-LKXOmgjc",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "Harry Kane doesn‘t need goals for a highlight reel 🔥👀",
+        "description": "His passes are a big reason why Bayern's offense is one of the best in Europe! 🔥 #shorts",
+        "publishedAt": "2026-10-26T11:00:04.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT58S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      }
+    },
+    {
+      "id": "qDNTweAhMhA",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "Upamecano’s Incredible Box-To-Box Solo | SC FREIBURG - FC BAYERN | Highlights | MD7 Bundesliga 26/27",
+        "description": "SC Freiburg vs. FC Bayern München – Highlights from Matchday 7!\n► Sub now: https://redirect.bundesliga.com/_bwCS \n\nWatch the Bundesliga highlights of SC Freiburg vs. FC Bayern München from Matchday 7 of the 2026/27 season!\n\nGoals: 0-1 Dayot Upamecano (16'), 0-2 Serge Gnabry (42'), 1-2 Tom Bischof (82' OG), 1-3 Michael Olise (90+5')\n\n► Watch Bundesliga in your country: https://redirect.bundesliga.com/Bundesliga_O_O\n\n► Join the conversation in the Bundesliga Community Tab:\nhttps://www.youtube.com/bundesliga/community\n\nWe’ve seen another Matchday full of unmissable Bundesliga drama. Don’t miss any highlights from Germany’s football league! The Official Bundesliga YouTube channel gives you access to videos about the greatest goals, best moments and anything else you should know about. Make sure to subscribe now and visit us at https://bndsl.ga/comYT to find out more about the fixtures, analysis and news about your favourite team!",
+        "publishedAt": "2026-10-25T23:00:19.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT4M9S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      }
+    },
+    {
+      "id": "2aqYr93NyUQ",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "A Red Card Each! | FC AUGSBURG - UNION BERLIN | Highlights | Matchday 7 – Bundesliga 2026/27",
+        "description": "FC Augsburg vs. 1. FC Union Berlin – Highlights from Matchday 7!\n► Sub now: https://redirect.bundesliga.com/_bwCS \n\nWatch the Bundesliga highlights of FC Augsburg vs. 1. FC Union Berlin from Matchday 7 of the 2026/27 season!\n\nGoals: 1-0 Massengo (71'), 1-1 Haberer (74')\n\n► Watch Bundesliga in your country: https://redirect.bundesliga.com/Bundesliga_O_O\n\n► Join the conversation in the Bundesliga Community Tab:\nhttps://www.youtube.com/bundesliga/community\n\nWe’ve seen another Matchday full of unmissable Bundesliga drama. Don’t miss any highlights from Germany’s football league! The Official Bundesliga YouTube channel gives you access to videos about the greatest goals, best moments and anything else you should know about. Make sure to subscribe now and visit us at https://bndsl.ga/comYT to find out more about the fixtures, analysis and news about your favourite team!",
+        "publishedAt": "2026-10-25T23:00:12.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT3M1S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      }
+    },
+    {
+      "id": "LUL29bWTEQY",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "VFB STUTTGART - BORUSSIA M'GLADBACH | Highlights | Matchday 7 – Bundesliga 2026/27",
+        "description": "VfB Stuttgart vs. Borussia Mönchengladbach – Highlights from Matchday 7!\n► Sub now: https://redirect.bundesliga.com/_bwCS \n\nWatch the Bundesliga highlights of VfB Stuttgart vs. Borussia Mönchengladbach from Matchday 7 of the 2026/27 season!\n\nGoals: 1-0 Demirović E. (5'), 1-1 Scally (38'), 1-2 Machino S. (51'), 1-3 Mohya W. (66'), 2-3 \nDemirović E. (83')\n\n► Watch Bundesliga in your country: https://redirect.bundesliga.com/Bundesliga_O_O\n\n► Join the conversation in the Bundesliga Community Tab:\nhttps://www.youtube.com/bundesliga/community\n\nWe’ve seen another Matchday full of unmissable Bundesliga drama. Don’t miss any highlights from Germany’s football league! The Official Bundesliga YouTube channel gives you access to videos about the greatest goals, best moments and anything else you should know about. Make sure to subscribe now and visit us at https://bndsl.ga/comYT to find out more about the fixtures, analysis and news about your favourite team!",
+        "publishedAt": "2026-10-25T23:00:12.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT3M55S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      }
+    },
+    {
+      "id": "LEr7TH3QJMs",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "Reis And Füllkrug Do It Again! | MAINZ 05 - WERDER BREMEN | Highlights | Matchday 7 – Bundesliga",
+        "description": "1. FSV Mainz 05 vs. SV Werder Bremen – Highlights from Matchday 7!\n► Sub now: https://redirect.bundesliga.com/_bwCS \n\nWatch the Bundesliga highlights of 1. FSV Mainz 05 vs. SV Werder Bremen from Matchday 7 of the 2026/27 season!\n\nGoals: 0-1 Füllkrug (7' Penalty), 0-2 Füllkrug (25' Penalty), 1-2 Caci (33'), 1-3 Reis (61'), 2-3 Lee (63')\n\n► Watch Bundesliga in your country: https://redirect.bundesliga.com/Bundesliga_O_O\n\n► Join the conversation in the Bundesliga Community Tab:\nhttps://www.youtube.com/bundesliga/community\n\nWe’ve seen another Matchday full of unmissable Bundesliga drama. Don’t miss any highlights from Germany’s football league! The Official Bundesliga YouTube channel gives you access to videos about the greatest goals, best moments and anything else you should know about. Make sure to subscribe now and visit us at https://bndsl.ga/comYT to find out more about the fixtures, analysis and news about your favourite team!",
+        "publishedAt": "2026-10-25T23:00:11.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT4M1S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      }
+    },
+    {
+      "id": "3BTHiTqZYlw",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "Beier Strike Wins It! | BORUSSIA DORTMUND - EINTRACHT FRANKFURT | Highlights | Matchday 7 Bundesliga",
+        "description": "Borussia Dortmund vs. Eintracht Frankfurt – Highlights from Matchday 7!\n► Sub now: https://redirect.bundesliga.com/_bwCS \n\nWatch the Bundesliga highlights of Borussia Dortmund vs. Eintracht Frankfurt from Matchday 7 of the 2026/27 season!\n\nGoals: 1-0 Beier (80')\n\n► Watch Bundesliga in your country: https://redirect.bundesliga.com/Bundesliga_O_O\n\n► Join the conversation in the Bundesliga Community Tab:\nhttps://www.youtube.com/bundesliga/community\n\nWe’ve seen another Matchday full of unmissable Bundesliga drama. Don’t miss any highlights from Germany’s football league! The Official Bundesliga YouTube channel gives you access to videos about the greatest goals, best moments and anything else you should know about. Make sure to subscribe now and visit us at https://bndsl.ga/comYT to find out more about the fixtures, analysis and news about your favourite team!",
+        "publishedAt": "2026-10-25T23:00:06.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT4M6S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      }
+    },
+    {
+      "id": "bigxu9WNRdo",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "ALL HIGHLIGHTS | BUNDESLIGA | MATCHDAY 07",
+        "description": "Matchday 07 starts off with a big surprise! Mönchengladbach pull off a major upset with their victory over Stuttgart. In a high-scoring match between Mainz and Bremen, the Green-Whites ultimately secure a win, while Leipzig dominates Elversberg. The matches between Köln and Schalke, and Augsburg and Union Berlin, both end in draws. Dortmund pull off a late victory over Frankfurt and on Sunday, Hoffenheim secure a decisive victory over Leverkusen with late goals, and Bayern are on top of the table with a win over Freiburg. \n\n00:00 Stuttgart - Mönchengladbach\n04:15 Leipzig - Elversberg\n07:44 Augsburg - Union Berlin\n11:12 Mainz - Bremen\n15:22 Köln - Schalke\n18:31 Paderborn - Hamburg \n21:29 Dortmund - Frankfurt\n25:46 Hoffenheim - Leverkusen\n30:22 Freiburg - Bayern\n35:06 Results & Table\n\nWatch all the highlights of Matchday 07 in our XXL highlight show!\nWhat Match was the most entertaining of Matchday 07? Let us know in the comments!\n\nWe’ve seen another Matchday full of unmissable Bundesliga drama. Don’t miss any highlights from Germany’s football league! The Official Bundesliga YouTube channel gives you access to videos about the greatest goals, best moments and anything else you should know about. Make sure to subscribe now and visit us at https://bndsl.ga/comYT to find out more about the fixtures, analysis and news about your favourite team!",
+        "publishedAt": "2026-10-25T23:00:06.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT36M23S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      }
+    },
+    {
+      "id": "iGs1LZ0k6Io",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "It Had To Be Philippe! | SC PADERBORN - HAMBURGER SV | Highlights | Matchday 7 – Bundesliga 2026/27",
+        "description": "SC Paderborn 07 vs. Hamburger SV – Highlights from Matchday 7!\n► Sub now: https://redirect.bundesliga.com/_bwCS \n\nWatch the Bundesliga highlights of SC Paderborn 07 vs. Hamburger SV from Matchday 7 of the 2026/27 season!\n\nGoal: 1-0 Philippe (88')\n\n► Watch Bundesliga in your country: https://redirect.bundesliga.com/Bundesliga_O_O\n\n► Join the conversation in the Bundesliga Community Tab:\nhttps://www.youtube.com/bundesliga/community\n\nWe’ve seen another Matchday full of unmissable Bundesliga drama. Don’t miss any highlights from Germany’s football league! The Official Bundesliga YouTube channel gives you access to videos about the greatest goals, best moments and anything else you should know about. Make sure to subscribe now and visit us at https://bndsl.ga/comYT to find out more about the fixtures, analysis and news about your favourite team!",
+        "publishedAt": "2026-10-25T23:00:02.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT3M3S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      }
+    },
+    {
+      "id": "Pd4GVdmrUtQ",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "1. FC KÖLN - SCHALKE 04 | Highlights | Matchday 7 – Bundesliga 2026/27",
+        "description": "1. FC Köln vs. FC Schalke 04 – Highlights from Matchday 7!\n► Sub now: https://redirect.bundesliga.com/_bwCS \n\nWatch the Bundesliga highlights of 1. FC Köln vs. FC Schalke 04 from Matchday 7 of the 2026/27 season!\n\nGoals: -\n\n► Watch Bundesliga in your country: https://redirect.bundesliga.com/Bundesliga_O_O\n\n► Join the conversation in the Bundesliga Community Tab:\nhttps://www.youtube.com/bundesliga/community\n\nWe’ve seen another Matchday full of unmissable Bundesliga drama. Don’t miss any highlights from Germany’s football league! The Official Bundesliga YouTube channel gives you access to videos about the greatest goals, best moments and anything else you should know about. Make sure to subscribe now and visit us at https://bndsl.ga/comYT to find out more about the fixtures, analysis and news about your favourite team!",
+        "publishedAt": "2026-10-25T23:00:01.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT2M56S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      }
+    },
+    {
+      "id": "LjbC_fKeUmE",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "Kramarić Strikes As Super-Sub! | HOFFENHEIM - BAYER 04 LEVERKUSEN | Highlights | MD 7 – Bundesliga",
+        "description": "TSG 1899 Hoffenheim vs. Bayer 04 Leverkusen – Highlights from Matchday 7!\n► Sub now: https://redirect.bundesliga.com/_bwCS \n\nWatch the Bundesliga highlights of TSG 1899 Hoffenheim vs. Bayer 04 Leverkusen from Matchday 7 of the 2026/27 season!\n\nGoals: 1:0 Kramarić (79., Penalty), 2:0 Prass (89.), 3:0 Moerstedt (90.+6)\n\n► Watch Bundesliga in your country: https://redirect.bundesliga.com/Bundesliga_O_O\n\n► Join the conversation in the Bundesliga Community Tab:\nhttps://www.youtube.com/bundesliga/community\n\nWe’ve seen another Matchday full of unmissable Bundesliga drama. Don’t miss any highlights from Germany’s football league! The Official Bundesliga YouTube channel gives you access to videos about the greatest goals, best moments and anything else you should know about. Make sure to subscribe now and visit us at https://bndsl.ga/comYT to find out more about the fixtures, analysis and news about your favourite team!",
+        "publishedAt": "2026-10-25T23:00:00.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT4M1S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      }
+    },
+    {
+      "id": "M5aYzSvorSE",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "Olise Punishes Late Blunder! | SC FREIBURG - FC BAYERN | Highlights | MD 7 – Bundesliga 2026/27",
+        "description": "SC Freiburg vs. FC Bayern München – Highlights from Matchday 7!\n► Sub now: https://redirect.bundesliga.com/_bwCS \n\nWatch the Bundesliga highlights of SC Freiburg vs. FC Bayern München from Matchday 7 of the 2026/27 season!\n\nGoals: 0-1 Dayot Upamecano (16'), 0-2 Serge Gnabry (42'), 1-2 Tom Bischof (82' OG), 1-3 Michael Olise (90+5')\n\n► Watch Bundesliga in your country: https://redirect.bundesliga.com/Bundesliga_O_O\n\n► Join the conversation in the Bundesliga Community Tab:\nhttps://www.youtube.com/bundesliga/community\n\nWe’ve seen another Matchday full of unmissable Bundesliga drama. Don’t miss any highlights from Germany’s football league! The Official Bundesliga YouTube channel gives you access to videos about the greatest goals, best moments and anything else you should know about. Make sure to subscribe now and visit us at https://bndsl.ga/comYT to find out more about the fixtures, analysis and news about your favourite team!",
+        "publishedAt": "2026-10-25T18:49:37.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT1M9S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      }
+    },
+    {
+      "id": "PTVbx3zh17U",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "LIVE 🔴 TSG Hoffenheim vs. Bayer 04 Leverkusen | Matchday 7 - Bundesliga 2026/27",
+        "description": "Enjoy the FULL MATCH between TSG Hoffenheim and Bayer 04 Leverkusen from matchday 7 of the Bundesliga 2026/27 season.\n\n► Sub now: https://redirect.bundesliga.com/_bwCS \n► Watch Bundesliga in your country: https://redirect.bundesliga.com/All_Broadcaster\n\n► Join the conversation in the Bundesliga Community Tab:\nhttps://www.youtube.com/bundesliga/community\n\nWe’ve seen another Matchday full of unmissable Bundesliga drama. Don’t miss any highlights from Germany’s football league! The Official Bundesliga YouTube channel gives you access to videos about the greatest goals, best moments and anything else you should know about. Make sure to subscribe now and visit us at https://bndsl.ga/comYT to find out more about the fixtures, analysis and news about your favourite team!",
+        "publishedAt": "2026-10-25T18:45:35.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT2H29M46S",
+        "regionRestriction": {
+          "allowed": []
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": false
+      },
+      "liveStreamingDetails": {
+        "scheduledStartTime": "2026-10-25T14:30:00.000Z",
+        "actualStartTime": "2026-10-25T14:21:00.000Z",
+        "actualEndTime": "2026-10-25T18:36:59.000Z"
+      }
+    },
+    {
+      "id": "weUHb2CjgX4",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "LIVE 🔴 Sport-Club Freiburg vs. FC Bayern München | Matchday 7 - Bundesliga 2026/27",
+        "description": "Enjoy the FULL MATCH between Sport-Club Freiburg and FC Bayern München from matchday 7 of the Bundesliga 2026/27 season.\n\n► Sub now: https://redirect.bundesliga.com/_bwCS \n► Watch Bundesliga in your country: https://redirect.bundesliga.com/All_Broadcaster\n\n► Join the conversation in the Bundesliga Community Tab:\nhttps://www.youtube.com/bundesliga/community\n\nWe’ve seen another Matchday full of unmissable Bundesliga drama. Don’t miss any highlights from Germany’s football league! The Official Bundesliga YouTube channel gives you access to videos about the greatest goals, best moments and anything else you should know about. Make sure to subscribe now and visit us at https://bndsl.ga/comYT to find out more about the fixtures, analysis and news about your favourite team!",
+        "publishedAt": "2026-10-25T18:43:43.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT2H17M1S",
+        "regionRestriction": {
+          "allowed": []
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": false
+      },
+      "liveStreamingDetails": {
+        "scheduledStartTime": "2026-10-25T16:30:00.000Z",
+        "actualStartTime": "2026-10-25T16:20:19.000Z",
+        "actualEndTime": "2026-10-25T18:37:07.000Z"
+      }
+    },
+    {
+      "id": "tkfO80xxSYU",
+      "snippet": {
+        "channelId": "UC6UL29enLNe4mqwTfAyeNuw",
+        "title": "Matchwinner Gets RED CARD! | HOFFENHEIM - BAYER 04 LEVERKUSEN | Highlights | Matchday 7 – Bundesliga",
+        "description": "TSG 1899 Hoffenheim vs. Bayer 04 Leverkusen – Highlights from Matchday 7!\n► Sub now: https://redirect.bundesliga.com/_bwCS \n\nWatch the Bundesliga highlights of TSG 1899 Hoffenheim vs. Bayer 04 Leverkusen from Matchday 7 of the 2026/27 season!\n\nGoals: 1:0 Kramarić (79., Penalty), 2:0 Prass (89.), 3:0 Moerstedt (90.+6)\n► Watch Bundesliga in your country: https://redirect.bundesliga.com/Bundesliga_O_O\n\n► Join the conversation in the Bundesliga Community Tab:\nhttps://www.youtube.com/bundesliga/community\n\nWe’ve seen another Matchday full of unmissable Bundesliga drama. Don’t miss any highlights from Germany’s football league! The Official Bundesliga YouTube channel gives you access to videos about the greatest goals, best moments and anything else you should know about. Make sure to subscribe now and visit us at https://bndsl.ga/comYT to find out more about the fixtures, analysis and news about your favourite team!",
+        "publishedAt": "2026-10-25T16:41:05.000Z",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": {
+        "duration": "PT1M6S",
+        "regionRestriction": {
+          "allowed": [
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "GB",
+            "US",
+            "FR",
+            "ES",
+            "IT",
+            "BR",
+            "AR",
+            "SG"
+          ]
+        }
+      },
+      "status": {
+        "privacyStatus": "public",
+        "embeddable": true
+      }
+    }
+  ],
+  "matches": [
+    {
+      "fixtureId": 1575197,
+      "date": "2026-10-25T14:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 167,
+        "name": "1899 Hoffenheim"
+      },
+      "away": {
+        "id": 168,
+        "name": "Bayer Leverkusen"
+      },
+      "leagueId": 78,
+      "league": "Bundesliga",
+      "season": 2026,
+      "round": "Regular Season - 7",
+      "score": {
+        "home": 3,
+        "away": 0
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1575198,
+      "date": "2026-10-25T16:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 160,
+        "name": "SC Freiburg"
+      },
+      "away": {
+        "id": 157,
+        "name": "Bayern München"
+      },
+      "leagueId": 78,
+      "league": "Bundesliga",
+      "season": 2026,
+      "round": "Regular Season - 7",
+      "score": {
+        "home": 1,
+        "away": 3
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1575195,
+      "date": "2026-10-24T13:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 173,
+        "name": "RB Leipzig"
+      },
+      "away": {
+        "id": 1660,
+        "name": "SV Elversberg"
+      },
+      "leagueId": 78,
+      "league": "Bundesliga",
+      "season": 2026,
+      "round": "Regular Season - 7",
+      "score": {
+        "home": 4,
+        "away": 0
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1575199,
+      "date": "2026-10-24T13:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 170,
+        "name": "FC Augsburg"
+      },
+      "away": {
+        "id": 182,
+        "name": "Union Berlin"
+      },
+      "leagueId": 78,
+      "league": "Bundesliga",
+      "season": 2026,
+      "round": "Regular Season - 7",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1575200,
+      "date": "2026-10-24T13:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 164,
+        "name": "FSV Mainz 05"
+      },
+      "away": {
+        "id": 162,
+        "name": "Werder Bremen"
+      },
+      "leagueId": 78,
+      "league": "Bundesliga",
+      "season": 2026,
+      "round": "Regular Season - 7",
+      "score": {
+        "home": 2,
+        "away": 3
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1575201,
+      "date": "2026-10-24T13:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 192,
+        "name": "1. FC Köln"
+      },
+      "away": {
+        "id": 174,
+        "name": "FC Schalke 04"
+      },
+      "leagueId": 78,
+      "league": "Bundesliga",
+      "season": 2026,
+      "round": "Regular Season - 7",
+      "score": {
+        "home": 0,
+        "away": 0
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1575202,
+      "date": "2026-10-24T13:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 185,
+        "name": "SC Paderborn 07"
+      },
+      "away": {
+        "id": 175,
+        "name": "Hamburger SV"
+      },
+      "leagueId": 78,
+      "league": "Bundesliga",
+      "season": 2026,
+      "round": "Regular Season - 7",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1575194,
+      "date": "2026-10-24T16:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 165,
+        "name": "Borussia Dortmund"
+      },
+      "away": {
+        "id": 169,
+        "name": "Eintracht Frankfurt"
+      },
+      "leagueId": 78,
+      "league": "Bundesliga",
+      "season": 2026,
+      "round": "Regular Season - 7",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "live": false,
+      "finished": true
+    },
+    {
+      "fixtureId": 1575196,
+      "date": "2026-10-23T18:30:00.000Z",
+      "status": "FT",
+      "home": {
+        "id": 172,
+        "name": "VfB Stuttgart"
+      },
+      "away": {
+        "id": 163,
+        "name": "Borussia Mönchengladbach"
+      },
+      "leagueId": 78,
+      "league": "Bundesliga",
+      "season": 2026,
+      "round": "Regular Season - 7",
+      "score": {
+        "home": 2,
+        "away": 3
+      },
+      "live": false,
+      "finished": true
+    }
+  ]
+}

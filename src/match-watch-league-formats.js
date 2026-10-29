@@ -1,5 +1,6 @@
 // Reviewed official channel formats. Discovery hints never supply identities.
 import {kleagueHighlightsMatch} from './kleague-watch-policy.js';
+import {bundesligaHighlightsMatch} from './bundesliga-watch-policy.js';
 const normalize=value=>typeof value==='string'?value.normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim():'';
 const aliases={4200:['FC Jurong'],4204:['Lion City Sailors'],10077:['Tanjong Pagar United'],538:['RC Celta']};
 let singaporeDate;
@@ -21,6 +22,7 @@ export function leagueFullMatch(policy,match,title){return policy.format==='alea
 export function leagueHighlightsMatch(policy,match,title,description){
  if(policy.format==='aleagues')return aleagueParts(policy,match,title,true);
  if(policy.format==='kleague')return typeof title==='string'&&title.length<=220&&kleagueHighlightsMatch(policy,match,title);
+ if(policy.format==='bundesliga')return bundesligaHighlightsMatch(match,title,description);
  if(typeof title!=='string'||title.length>220||typeof description!=='string'||description.length>6000)return false;
  if(policy.format==='spl'){
   const parts=title.match(/^[^|]{1,100} \| (20\d{2})\/(\d{2}) SPL: ([^|]+) vs ([^|]+)$/);

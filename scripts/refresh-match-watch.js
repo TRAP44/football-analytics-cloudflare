@@ -66,7 +66,7 @@ export async function refreshMatchWatch({env=process.env,manifest,fetchImpl=fetc
   const dbHeaders={apikey:dbKey,Accept:'application/json','Content-Type':'application/json'};
   const youtube=async(path,params)=>{
     const key=env.YOUTUBE_DATA_API_KEY;if(!key||key.length>512)fail('WATCH_YOUTUBE_KEY_MISSING');
-    if(++report.youtubeRequests>22)fail('WATCH_YOUTUBE_BUDGET');
+    if(++report.youtubeRequests>24)fail('WATCH_YOUTUBE_BUDGET');
     const url=new URL('https://www.googleapis.com/youtube/v3/'+path);url.search=new URLSearchParams(params);
     const data=await request(url,{'X-Goog-Api-Key':key,Accept:'application/json'});
     if(!Array.isArray(data.items)||data.items.length>50)fail('WATCH_VIDEO_RESPONSE_INVALID');return data.items;

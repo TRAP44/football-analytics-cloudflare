@@ -105,9 +105,13 @@
 
 
 
+
+
 ## На ревью
 
-- [ ] Дополнительные официальные источники полных матчей — **Codex** — [PR #1034](https://github.com/TRAP44/football-analytics-cloudflare/pull/1034), `codex/watch-full-sources` — K LEAGUE TV: внешние записи с бесплатной регистрацией и встроенные YouTube-обзоры K1/K2; независимое review и локальные gates passed, exact-head CI/выпуск/actual publication ещё обязательны.
+- [ ] Официальные обзоры Бундеслиги — **Codex** — [PR #1035](https://github.com/TRAP44/football-analytics-cloudflare/pull/1035), `codex/watch-bundesliga` — 8 observed обзоров; независимое review73/73, release989/full4787 passed. Точное сопоставление, 10-минутный канал,8540units/day и откат v3/v2/v1; CI/выпуск/реальные числа ещё проверить.
+
+
 
 
 
@@ -262,6 +266,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Официальные записи K LEAGUE TV и обзоры K1/K2 — **Codex** — [PR #1034](https://github.com/TRAP44/football-analytics-cloudflare/pull/1034), main `ba30b528`; CI/Deploy 40657221162/public launch153 подтверждены. После выпуска 40657908137: 54 матча, RU 11 встроенных полных записей + 8 на сайте с регистрацией, 51 обзор.
 
 - [x] Автоматический просмотр шести турниров и каталог до100матчей — **Codex** — [PR #1033](https://github.com/TRAP44/football-analytics-cloudflare/pull/1033), `codex/watch-multi-league` — main1b07b7fe/Deploy40532435510/publiclaunch152 подтверждены; actual40533339404:31матч/41видео, RU9полных/29обзоров; автонаполнение40560637201:40матчей/RU11полных/37обзоров.
 
