@@ -1858,5 +1858,307 @@
     },
     "Round",
     "Round 34"
-  ]
+  ],
+  "latestObservation": {
+    "observedAt": "2026-10-30T16:01:16.256Z",
+    "pageUrl": "https://tv.kleague.com/en-int/page/k-league-2",
+    "bytes": 271810,
+    "sha256": "64fe2cf9b0efb274cf0ca2292c935c91b7f56fda8b4a77f8b41e03ae2a3c12fe",
+    "sources": [
+      {
+        "id": 2283712,
+        "slug": "r31gyeongnam-hwaseong",
+        "title": "[R31]GYEONGNAM - HWASEONG",
+        "startTime": "2026-10-31T05:00:00+00:00",
+        "updatedAt": "2026-10-30T07:48:17+00:00",
+        "distribution": "Live",
+        "contentType": "Fullmatch",
+        "publication": "Announced",
+        "durationSeconds": 0,
+        "payment": "Registration",
+        "entitlementsEmpty": true,
+        "freeForEmbed": false,
+        "round": 31,
+        "countries": [
+          "RU",
+          "KZ",
+          "BY"
+        ],
+        "event": {
+          "id": 1273749,
+          "sport": "Soccer",
+          "league": "K LEAGUE 2",
+          "category": "K LEAGUE 2",
+          "startTime": "2026-10-31T05:00:00+00:00",
+          "homeId": 532260,
+          "awayId": 1133528,
+          "home": "Gyeongnam FC",
+          "away": "Hwaseong FC"
+        },
+        "eventUrl": "https://tv.kleague.com/en-int/video/r31gyeongnam-hwaseong/2283712"
+      },
+      {
+        "id": 2283735,
+        "slug": "r31yongin-seoul-e",
+        "title": "[R31]YONGIN - SEOUL E",
+        "startTime": "2026-10-31T05:00:00+00:00",
+        "updatedAt": "2026-10-30T07:47:31+00:00",
+        "distribution": "Live",
+        "contentType": "Fullmatch",
+        "publication": "Announced",
+        "durationSeconds": 0,
+        "payment": "Registration",
+        "entitlementsEmpty": true,
+        "freeForEmbed": false,
+        "round": 31,
+        "countries": [
+          "RU",
+          "KZ",
+          "BY"
+        ],
+        "event": {
+          "id": 1273760,
+          "sport": "Soccer",
+          "league": "K LEAGUE 2",
+          "category": "K LEAGUE 2",
+          "startTime": "2026-10-31T05:00:00+00:00",
+          "homeId": 1148972,
+          "awayId": 532270,
+          "home": "Yongin FC",
+          "away": "Seoul E-Land FC"
+        },
+        "eventUrl": "https://tv.kleague.com/en-int/video/r31yongin-seoul-e/2283735"
+      },
+      {
+        "id": 2283760,
+        "slug": "r31chungnam-asan-gimpo",
+        "title": "[R31]CHUNGNAM ASAN - GIMPO",
+        "startTime": "2026-10-31T07:30:00+00:00",
+        "updatedAt": "2026-10-30T07:50:27+00:00",
+        "distribution": "Live",
+        "contentType": "Fullmatch",
+        "publication": "Announced",
+        "durationSeconds": 0,
+        "payment": "Registration",
+        "entitlementsEmpty": true,
+        "freeForEmbed": false,
+        "round": null,
+        "countries": [
+          "RU",
+          "KZ",
+          "BY"
+        ],
+        "event": {
+          "id": 1273770,
+          "sport": "Soccer",
+          "league": "K LEAGUE 2",
+          "category": "K LEAGUE 2",
+          "startTime": "2026-10-31T07:30:00+00:00",
+          "homeId": 532296,
+          "awayId": 1100792,
+          "home": "Chungnam Asan FC",
+          "away": "Gimpo FC"
+        },
+        "eventUrl": "https://tv.kleague.com/en-int/video/r31chungnam-asan-gimpo/2283760"
+      },
+      {
+        "id": 2283766,
+        "slug": "r31daegu-suwon",
+        "title": "[R31]DAEGU - SUWON",
+        "startTime": "2026-10-31T07:30:00+00:00",
+        "updatedAt": "2026-10-30T07:49:47+00:00",
+        "distribution": "Live",
+        "contentType": "Fullmatch",
+        "publication": "Announced",
+        "durationSeconds": 0,
+        "payment": "Registration",
+        "entitlementsEmpty": true,
+        "freeForEmbed": false,
+        "round": 31,
+        "countries": [
+          "RU",
+          "KZ",
+          "BY"
+        ],
+        "event": {
+          "id": 1273774,
+          "sport": "Soccer",
+          "league": "K LEAGUE 2",
+          "category": "K LEAGUE 2",
+          "startTime": "2026-10-31T07:30:00+00:00",
+          "homeId": 532216,
+          "awayId": 532235,
+          "home": "Daegu FC",
+          "away": "Suwon Samsung"
+        },
+        "eventUrl": "https://tv.kleague.com/en-int/video/r31daegu-suwon/2283766"
+      },
+      {
+        "id": 2283724,
+        "slug": "r34suwon-fc-ansan",
+        "title": "[R34]SUWON FC - ANSAN",
+        "startTime": "2026-11-01T05:00:00+00:00",
+        "updatedAt": "2026-10-30T07:54:47+00:00",
+        "distribution": "Live",
+        "contentType": "Fullmatch",
+        "publication": "Announced",
+        "durationSeconds": 0,
+        "payment": "Registration",
+        "entitlementsEmpty": true,
+        "freeForEmbed": false,
+        "round": 31,
+        "countries": [
+          "RU",
+          "KZ",
+          "BY"
+        ],
+        "event": {
+          "id": 1273755,
+          "sport": "Soccer",
+          "league": "K LEAGUE 2",
+          "category": "K LEAGUE 2",
+          "startTime": "2026-11-01T05:00:00+00:00",
+          "homeId": 532256,
+          "awayId": 532280,
+          "home": "Suwon FC",
+          "away": "Ansan Greeners FC"
+        },
+        "eventUrl": "https://tv.kleague.com/en-int/video/r34suwon-fc-ansan/2283724"
+      },
+      {
+        "id": 2283752,
+        "slug": "r31jeonnam-seongnam",
+        "title": "[R31]JEONNAM - SEONGNAM",
+        "startTime": "2026-11-01T05:00:00+00:00",
+        "updatedAt": "2026-10-30T07:54:13+00:00",
+        "distribution": "Live",
+        "contentType": "Fullmatch",
+        "publication": "Announced",
+        "durationSeconds": 0,
+        "payment": "Registration",
+        "entitlementsEmpty": true,
+        "freeForEmbed": false,
+        "round": null,
+        "countries": [
+          "RU",
+          "KZ",
+          "BY"
+        ],
+        "event": {
+          "id": 1273766,
+          "sport": "Soccer",
+          "league": "K LEAGUE 2",
+          "category": "K LEAGUE 2",
+          "startTime": "2026-11-01T05:00:00+00:00",
+          "homeId": 532276,
+          "awayId": 532246,
+          "home": "Jeonnam Dragons",
+          "away": "Seongnam FC"
+        },
+        "eventUrl": "https://tv.kleague.com/en-int/video/r31jeonnam-seongnam/2283752"
+      }
+    ]
+  },
+  "latestCanonical": {
+    "run": 41086214587,
+    "date": "2026-10-31",
+    "verified": true,
+    "provider": "api-football",
+    "observedAt": "2026-10-30T16:02:38.144Z",
+    "skippedInvalid": 0,
+    "matches": [
+      {
+        "fixtureId": 1510483,
+        "date": "2026-10-31T05:00:00.000Z",
+        "status": "NS",
+        "home": {
+          "id": 2751,
+          "name": "Gyeongnam FC"
+        },
+        "away": {
+          "id": 7087,
+          "name": "Hwaseong"
+        },
+        "leagueId": 293,
+        "league": "K League 2",
+        "season": 2026,
+        "round": "Regular Season - 31",
+        "score": {
+          "home": null,
+          "away": null
+        },
+        "live": false,
+        "finished": false
+      },
+      {
+        "fixtureId": 1510484,
+        "date": "2026-10-31T05:00:00.000Z",
+        "status": "NS",
+        "home": {
+          "id": 9171,
+          "name": "Yongin City"
+        },
+        "away": {
+          "id": 2749,
+          "name": "Seoul E-Land FC"
+        },
+        "leagueId": 293,
+        "league": "K League 2",
+        "season": 2026,
+        "round": "Regular Season - 31",
+        "score": {
+          "home": null,
+          "away": null
+        },
+        "live": false,
+        "finished": false
+      },
+      {
+        "fixtureId": 1510485,
+        "date": "2026-10-31T07:30:00.000Z",
+        "status": "NS",
+        "home": {
+          "id": 2753,
+          "name": "Asan Mugunghwa"
+        },
+        "away": {
+          "id": 7078,
+          "name": "Gimpo Citizen"
+        },
+        "leagueId": 293,
+        "league": "K League 2",
+        "season": 2026,
+        "round": "Regular Season - 31",
+        "score": {
+          "home": null,
+          "away": null
+        },
+        "live": false,
+        "finished": false
+      },
+      {
+        "fixtureId": 1510486,
+        "date": "2026-10-31T07:30:00.000Z",
+        "status": "NS",
+        "home": {
+          "id": 2747,
+          "name": "Daegu FC"
+        },
+        "away": {
+          "id": 2765,
+          "name": "Suwon Bluewings"
+        },
+        "leagueId": 293,
+        "league": "K League 2",
+        "season": 2026,
+        "round": "Regular Season - 31",
+        "score": {
+          "home": null,
+          "away": null
+        },
+        "live": false,
+        "finished": false
+      }
+    ]
+  }
 }

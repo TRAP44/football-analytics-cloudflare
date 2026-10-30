@@ -21,7 +21,7 @@ const escapeHtml=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&l
 window.watch=createMatchWatch({api,escapeHtml,now:()=>clock});watch.mount({root:document.getElementById('watch'),fixtureId:${s.match.fixtureId},open:true});window.library=createWatchLibrary({root:document.getElementById('library'),api,escapeHtml,now:()=>clock,onOpen:async()=>{}});library.resume();window.ready=true;
 </script>`;}
 const server=createServer(async(req,res)=>{
- try{const u=new URL(req.url,'http://local.test'),key=u.searchParams.get('scenario')||'recording',s=scenarios[key];if(!s)throw Error('scenario');
+ try{const u=new URL(req.url,'http://local.test'),key=u.searchParams.get('scenario')==='scheduled'?'scheduled':'recording',s=scenarios[key];
   if(u.pathname==='/'){res.setHeader('Content-Type','text/html');res.end(html(key));return;}
   if(u.pathname==='/api/match-watch'){const opts={country:u.searchParams.get('country')||'',now,approvals:[],scheduledBroadcasts:u.searchParams.get('cap')==='scheduled-v1'};res.setHeader('Content-Type','application/json');res.end(JSON.stringify(u.searchParams.has('list')?watchLibraryPayload(s.index,{...opts,maxEntries:100}):watchApiPayload(s.match,s.catalogue,opts)));return;}
   const root=path.resolve('public'),file=path.resolve(root,'.'+u.pathname);if(!file.startsWith(root+path.sep)||!['.js','.css'].includes(path.extname(file)))throw Error('path');res.setHeader('Content-Type',file.endsWith('.css')?'text/css':'text/javascript');res.end(await readFile(file));

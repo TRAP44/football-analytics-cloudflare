@@ -35,6 +35,21 @@ test('actual announced source and independently verified fixture yield a schedul
  assert.equal(validKleagueTvLive(match,source,now,iso(now+1)),false);
  for(const blocked of parseKleagueTvPage(page(data.blockedK1Nuxt)))assert.equal(blocked.countries.length,0);
 });
+test('latest actual round-prefixed announcement remains eligible, while conflicting title and event rounds fail closed',()=>{
+ const observation=data.latestObservation,clock=Date.parse(observation.observedAt),latest=observation.sources.find(s=>s.id===source.id);
+ const batch=data.latestCanonical,at=Date.parse(batch.observedAt),approved=kleagueTvApprovals(observation.sources.map(source=>({source,observedAt:observation.observedAt})),batch.matches.map(match=>({match,observedAt:batch.observedAt})),at,watchFixtureIdentity);
+ assert.deepEqual(approved.map(a=>a.match.fixtureId),[1510483,1510484,1510485,1510486]);
+ assert.equal(observation.sources.length,6);assert.equal(latest.title,'[R31]GYEONGNAM - HWASEONG');assert.equal(latest.round,31);
+ assert.equal(validKleagueTvLive(match,latest,clock,iso(clock)),true);
+ assert.equal(kleagueTvApprovals([{source:latest,observedAt:iso(clock)}],[{match,observedAt:iso(clock)}],clock,watchFixtureIdentity)[0].eventUrl,latest.eventUrl);
+ for(const patch of [{title:'[R34]GYEONGNAM - HWASEONG'},{round:34},{title:'[R31]HWASEONG - GYEONGNAM'},{title:'[R31]GYEONGNAM - OTHER'}])assert.equal(validKleagueTvLive(match,{...latest,...patch},clock,iso(clock)),false);
+ const conflicting=observation.sources.find(s=>s.id===2283724);
+ assert.equal(conflicting.title,'[R34]SUWON FC - ANSAN');assert.equal(conflicting.round,31);
+ const known=old.matches.find(m=>m.home.id===2756),ansan=old.matches.find(m=>m.away.id===2758).away;
+ const candidate={...known,date:'2026-11-01T05:00:00.000Z',away:ansan,status:'NS',finished:false,live:false,round:'Regular Season - 31'};
+ assert.equal(validKleagueTvLive(candidate,{...conflicting,title:'[R31]SUWON FC - ANSAN'},clock,iso(clock)),true,'observed short aliases still require canonical team IDs and event names');
+ assert.equal(validKleagueTvLive(candidate,conflicting,clock,iso(clock)),false,'conflicting title R34 and event/canonical R31 cannot be published');
+});
 test('on-air and near-start options require recent independent sporting proof and cannot be renewed by fresh page metadata alone',()=>{
  // Explicit clock/status simulation of the later on-air transition; not an
  // observation that this future broadcast has started or was played.
