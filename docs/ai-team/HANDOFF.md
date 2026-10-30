@@ -15,7 +15,7 @@ PR: ссылка или ветка
 ---
 
 ## 2026-10-29 — Codex — Анонсы и эфиры K LEAGUE TV
-Ветка `codex/watch-kleague-scheduled`. #1035 завершён: main27990f14, PRQuality40942955838/CodeQL40942955525, mainQuality40943567057/CodeQL40943566984/Deploy40944081382 success. PublicCF1a436e7c-7f58-430d-9471-684a22c68e5a/launch153 и6assetSHA подтверждены. Post-deploy40945160763:57матчей75источников,9Bundesliga, все48прежних сохранены; RU10встроенных полных+8регистрационных/55обзоров/0LIVE. Не возвращать в pending.
+PR: https://github.com/TRAP44/football-analytics-cloudflare/pull/1036, ветка `codex/watch-kleague-scheduled`. #1035 завершён: main27990f14, PRQuality40942955838/CodeQL40942955525, mainQuality40943567057/CodeQL40943566984/Deploy40944081382 success. PublicCF1a436e7c-7f58-430d-9471-684a22c68e5a/launch153 и6assetSHA подтверждены. Post-deploy40945160763:57матчей75источников,9Bundesliga, все48прежних сохранены; RU10встроенных полных+8регистрационных/55обзоров/0LIVE. Не возвращать в pending.
 
 Официальный HOME KTV → /en-int/page/k-league-2: rawHTML260597B/d220587cd0cab3d816933c6ebbceb88e10310ae665a38dc3c9d40871fb29da05,6Announced/Live Fullmatch/Registration безentitlements/embedfalse, RU/KZ/BY. Четыре31Oct within48h, два1Nov пока вне окна. K1 raw262986B/bbdfc0... страны[] => неapproved. GoogleNWSL неверный handle неapproved; NWSLSoccer latest20 клипы/обзоры; USL affiliationстраницы403, новыхполныхsourceapprovalsнет. K2id1510483 получен только как публичнаяподсказкаSportsDB, затем actualAPI40950065420 подтвердил league293/NS/31Oct05UTC/Gyeongnam2751—Hwaseong7087/round31. Прочие будущиеfixtureID не выдуманы; producer должен подтвердить date31 batch. Fixtures сохраняют original parser-used Nuxtfields ссверкой fullHTML.
 

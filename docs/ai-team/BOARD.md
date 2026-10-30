@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Анонсы и эфиры K LEAGUE TV — **Codex** — `codex/watch-kleague-scheduled` — actual публичный каталог K2 и независимый fixture1510483; честный scheduled-статус, регистрация, capability154/legacy guards, свежий sporting proof, прежние квоты.
 
 
 
@@ -110,6 +109,8 @@
 
 
 ## На ревью
+
+- [ ] Анонсы и эфиры K LEAGUE TV — **Codex** — [PR #1036](https://github.com/TRAP44/football-analytics-cloudflare/pull/1036) — actual публичный каталог K2 и независимый fixture1510483; честный scheduled-статус, регистрация, capability154/legacy guards, свежий sporting proof, прежние квоты.
 
 
 
