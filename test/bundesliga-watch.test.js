@@ -71,12 +71,12 @@ test('failed uploads retain only separately revalidated source metadata and hono
  const h=harness();await h.run(0);h.fail();const failed=await h.run(600000);assert.equal(failed.discoveryError,'WATCH_DISCOVERY_SEARCH_FAILED');assert.equal(failed.published,8);
  await h.run(900000);assert.equal(h.calls.filter(c=>c.url.pathname.endsWith('/playlistItems')).length,2);
 });
-test('seven-channel maximum discovery remains below the standard daily quota with headroom',()=>{
- const day=86400000,channels=Map.groupBy(WATCH_POLICIES,p=>p.channelId);assert.equal(channels.size,7);
+test('eight-channel maximum discovery remains below the standard daily quota with headroom',()=>{
+ const day=86400000,channels=Map.groupBy(WATCH_POLICIES,p=>p.channelId);assert.equal(channels.size,8);
  let cost=0;for(const policies of channels.values()){
   const live=policies.filter(p=>!p.highlightsOnly);if(live.length)cost+=2*100*Math.ceil(day/Math.min(...live.map(p=>p.searchIntervalMs||7200000)));
   cost+=Math.ceil(day/Math.min(...policies.map(p=>p.uploadsIntervalMs||7200000)));
  }
- const maxIds=7*50+2*40+100*2+20;assert.equal(maxIds,650);
- cost+=Math.ceil(maxIds/50)*Math.ceil(day/300000);assert.equal(cost,8540);assert.ok(cost<9000);
+ const maxIds=7*50+20+2*40+20+100*2+20;assert.equal(maxIds,690);
+ cost+=Math.ceil(maxIds/50)*Math.ceil(day/300000);assert.equal(cost,9324);assert.ok(cost<9500);
 });

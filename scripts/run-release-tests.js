@@ -33,6 +33,7 @@ const RELEASE_TESTS = Object.freeze([
   'test/multi-league-watch.test.js',
   'test/kleague-watch.test.js',
   'test/kleague-scheduled-watch.test.js',
+  'test/isl-watch.test.js',
   'test/bundesliga-watch.test.js',
   'test/inspect-match-watch.test.js',
   'test/match-question-facts.test.js',

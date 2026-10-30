@@ -1,5 +1,6 @@
 // Public sports evidence only. One date query replaces per-match provider fanout.
 import {readFileSync} from 'node:fs';
+import {islEndedMatchHint} from '../src/isl-watch-policy.js';
 import {watchFixtureRelay,boundedSourceJson} from './inspect-match-watch.js';
 import {watchFixtureIdentity} from '../src/match-watch.js';
 import {automaticWatchMatch,automaticReplayEvidence} from '../src/match-watch-policy.js';
@@ -25,8 +26,9 @@ export async function loadWatchFixtureDays({videos,policies,env,fetchImpl,now,re
  for(const video of videos){
   const title=video.snippet?.title||'';
   const summaryOrLeague=/highlights|resumen|SPL:| - (?:A-League Men|Ninja A-League) /i.test(title);
+  const fullIsl=policies.some(p=>p.format==='isl'&&p.channelId===video.snippet?.channelId)&&/^(?:LIVE:|FULL REPLAY(?: \(English\))?\s*:)/.test(title)&&!title.endsWith('Vertical');
   const fullJleague=/(?:Live|Full) Match \| J\.League$/i.test(title);
-  if(!policies.some(policy=>policy.channelId===video.snippet?.channelId)||!summaryOrLeague&&!fullJleague)continue;
+  if(!policies.some(policy=>policy.channelId===video.snippet?.channelId)||!summaryOrLeague&&!fullJleague&&!fullIsl)continue;
   vote(video.liveStreamingDetails?.scheduledStartTime,20);
   const published=time(video.snippet?.publishedAt);
   if(Number.isFinite(published)){vote(new Date(published).toISOString(),3);vote(new Date(published-86400000).toISOString(),2);vote(new Date(published-2*86400000).toISOString(),1);}
@@ -46,7 +48,7 @@ export async function loadWatchFixtureDays({videos,policies,env,fetchImpl,now,re
   const snapshot=snapshots.get(date),unfinished=snapshot?.matches.filter(match=>['NS','1H','HT','2H','ET','BT','P','LIVE'].includes(match.status))||[];
   // Ended-video evidence schedules a canonical re-read; it never turns a cached
   // match into FT. Only the provider response below may change sporting state.
-  const ended=unfinished.some(match=>videos.some(video=>policies.some(policy=>policy.channelId===video.snippet?.channelId&&policy.leagueId===match.leagueId&&!policy.highlightsOnly&&automaticReplayEvidence(match,video.liveStreamingDetails?.actualStartTime,video.liveStreamingDetails?.actualEndTime,now)&&automaticWatchMatch(policy,{...match,finished:true,status:'FT'},video.snippet.title,video.liveStreamingDetails?.scheduledStartTime,now,'replay'))));
+  const ended=unfinished.some(match=>videos.some(video=>policies.some(policy=>policy.channelId===video.snippet?.channelId&&policy.leagueId===match.leagueId&&!policy.highlightsOnly&&automaticReplayEvidence(match,video.liveStreamingDetails?.actualStartTime,video.liveStreamingDetails?.actualEndTime,now,policy)&&(policy.format==='isl'?islEndedMatchHint(match,video.snippet.title,video.snippet.description):automaticWatchMatch(policy,{...match,finished:true,status:'FT'},video.snippet.title,video.liveStreamingDetails?.scheduledStartTime,now,'replay',video.snippet.description)))));
   const published=unfinished.length&&videos.some(video=>policies.some(policy=>policy.channelId===video.snippet?.channelId&&unfinished.some(match=>match.leagueId===policy.leagueId))&&/highlights|resumen|SPL:/i.test(video.snippet?.title||'')&&time(video.snippet?.publishedAt)>time(snapshot.checkedAt)&&time(video.snippet?.publishedAt)<=now&&time(video.snippet?.publishedAt)>=Date.parse(date+'T00:00:00Z')+60*60000&&time(video.snippet?.publishedAt)<Date.parse(date+'T00:00:00Z')+3*86400000);
   const nearBroadcast=unfinished.some(match=>broadcastHints.some(value=>Math.abs(time(value)-time(match.date))<=60000&&now>=time(value)-15*60000&&now<time(value)+4*3600000));
   const interval=nearBroadcast?30*60000:ended||published?15*60000:2*3600000;
