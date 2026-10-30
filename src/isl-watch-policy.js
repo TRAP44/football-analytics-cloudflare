@@ -22,7 +22,8 @@ export function islFullMatch(match,title,description,kind){return fullMatchEvide
 export function islEndedMatchHint(match,title,description){return fullMatchEvidence(match,title,description,'replay',false);}
 function fullMatchEvidence(match,title,description,kind,requireScore){
  if(match?.leagueId!==323||!Number.isSafeInteger(match.season)||typeof title!=='string'||title.length>220||typeof description!=='string'||description.length>6000)return false;
- const replay=kind==='replay';
+ if(!['live','replay'].includes(kind))return false;
+ const replay=kind==='replay'&&title.startsWith('FULL REPLAY');
  const parts=title.match(replay?/^FULL REPLAY(?: \(English\))?\s*: ([^|]+?) vs ([^|]+?) \((\d{1,2})-(\d{1,2})\) \| MG ISL (20\d{2})-(\d{2})$/:/^LIVE(?: \(English\))?: ([^|]+?) vs ([^|]+?) \| MG ISL (20\d{2})-(\d{2}) \| Gameweek ([1-9]\d?)$/);
  if(!parts||!team(match.home,parts[1])||!team(match.away,parts[2]))return false;
  const year=Number(parts[replay?5:3]),suffix=Number(parts[replay?6:4]);

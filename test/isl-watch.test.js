@@ -33,7 +33,7 @@ test('the observed thirty-minute preshow has a bounded ISL-only timing allowance
 });
 const raw=m=>({fixture:{id:m.fixtureId,date:m.date,status:{short:m.status}},teams:{home:m.home,away:m.away},league:{id:m.leagueId,name:m.league,season:m.season,round:m.round},goals:m.score});
 function harness(){
- const env={SUPABASE_URL:'https://nlmvhkjkpgzzlfavaohk.supabase.co',SUPABASE_SECRET_KEY:'test-db',YOUTUBE_DATA_API_KEY:'test-google'},cache=new Map(),calls=[];let clock=now,videos=structuredClone(data.videos),failFeeds=false;
+ const env={SUPABASE_URL:'https://nlmvhkjkpgzzlfavaohk.supabase.co',SUPABASE_SECRET_KEY:'test-db',YOUTUBE_DATA_API_KEY:'test-google'},cache=new Map(),calls=[];let clock=now,videos=structuredClone(data.videos),matches=structuredClone(data.matches),failFeeds=false;
  const fetchImpl=async(value,init)=>{
   const url=new URL(value);calls.push(url);assert.equal(init.redirect,'error');
   if(url.hostname==='www.googleapis.com'){
@@ -47,12 +47,12 @@ function harness(){
   if(url.pathname.endsWith('/claim_provider_request'))return Response.json({allowed:true});
   if(url.pathname.endsWith('/write_analysis_cache_versioned')){const b=JSON.parse(init.body);cache.set(b.p_cache_key,{cache_key:b.p_cache_key,payload:b.p_payload,expiresAt:Date.parse(b.p_expires_at)});return Response.json({stored:true,reason:'stored'});}
   const filter=url.searchParams.get('cache_key');
-  if(filter.startsWith('in.(provider-fixtures:'))return Response.json([...new Set(data.matches.map(m=>m.date.slice(0,10)))].map(date=>({cache_key:`provider-fixtures:${date}:v1`,payload:{date,fetchedAt:iso(clock-1000),fixtures:data.matches.filter(m=>m.date.startsWith(date)).map(raw)}})));
+  if(filter.startsWith('in.(provider-fixtures:'))return Response.json([...new Set(matches.map(m=>m.date.slice(0,10)))].map(date=>({cache_key:`provider-fixtures:${date}:v1`,payload:{date,fetchedAt:iso(clock-1000),fixtures:matches.filter(m=>m.date.startsWith(date)).map(raw)}})));
   if(filter.startsWith('like.'))return Response.json([]);
   const keys=filter.startsWith('eq.')?[filter.slice(3)]:filter.startsWith('in.(')?filter.slice(4,-1).split(','):[];
   return Response.json(keys.flatMap(k=>cache.has(k)&&cache.get(k).expiresAt>clock?[{cache_key:k,payload:cache.get(k).payload}]:[]));
  };
- return {cache,calls,fail:()=>{failFeeds=true;},change:fn=>{videos=fn(videos);},run:async(offset=0)=>{clock=now+offset;return refreshMatchWatch({env,fetchImpl,now:clock,manifest:{version:1,items:[]},automatic:true,policies:[policy]});}};
+ return {cache,calls,fail:()=>{failFeeds=true;},change:fn=>{videos=fn(videos);},setMatches:fn=>{matches=fn(matches);},run:async(offset=0)=>{clock=now+offset;return refreshMatchWatch({env,fetchImpl,now:clock,manifest:{version:1,items:[]},automatic:true,policies:[policy]});}};
 }
 test('real producer and consumer publish four English embedded full options, compact independent evidence and revoke changed rights/header/phase',async()=>{
  const h=harness(),r=await h.run();assert.equal(r.published,4);assert.equal(r.libraryMatches,4);assert.equal(r.libraryByCountry.RU.upcomingBroadcastMatches,2);assert.equal(r.libraryByCountry.RU.fullReplayMatches,2);
@@ -109,4 +109,15 @@ test('cached upcoming ISL metadata cannot turn into on-air when its scheduled pr
  h.change(videos=>videos.map(v=>v.id==='raS61rqsQQI'?{...v,snippet:{...v.snippet,liveBroadcastContent:'live'},liveStreamingDetails:{...v.liveStreamingDetails,actualStartTime:'2026-10-31T11:00:00Z'}}:v));
  await h.run(opts.now-now);const fresh=h.cache.get(watchCacheKey(1642186)).payload;assert.equal(watchApiPayload(match,fresh,opts).items[0].scheduled,false,'fresh live metadata plus real actualStart allows an on-air broadcast, while canonical match remains NS');
  assert.equal(match.status,'NS');assert.equal(match.live,false);
+});
+test('a completed observed LIVE format becomes a full replay only after canonical FT, without waiting for a publisher title rename',async()=>{
+ // Explicit future lifecycle simulation from actual upcoming metadata, not an
+ // observation or prediction of the match's future final score.
+ const h=harness(),m=data.matches.find(m=>m.fixtureId===1642187),v=data.videos.find(v=>v.id==='nZ8rESpcRTU'),kickoff=Date.parse(m.date),end=kickoff+125*60000,clock=end+5*60000;
+ await h.run();h.change(videos=>videos.map(item=>item.id===v.id?{...item,snippet:{...item.snippet,liveBroadcastContent:'none'},liveStreamingDetails:{...item.liveStreamingDetails,actualStartTime:iso(kickoff-31*60000),actualEndTime:iso(end)}}:item));
+ await h.run(clock-now);assert.equal(h.cache.get(WATCH_EXTENDED_LIBRARY_KEY).payload.entries.some(e=>e.match.fixtureId===m.fixtureId),false,'ended source cannot manufacture a canonical final status');
+ h.setMatches(matches=>matches.map(match=>match.fixtureId===m.fixtureId?{...match,status:'FT',finished:true,live:false,score:{home:2,away:1}}:match));
+ await h.run(clock+300000-now);const catalogue=h.cache.get(watchCacheKey(m.fixtureId)).payload,finished={...m,status:'FT',finished:true,score:{home:2,away:1}},opts={country:'RU',now:clock+300000,approvals:[],scheduledBroadcasts:true};
+ const item=watchApiPayload(finished,catalogue,opts).items[0];assert.equal(item.kind,'replay');assert.equal(item.embed,true);assert.equal(catalogue.items[0].videoTitle,v.snippet.title);assert.match(catalogue.items[0].videoDescription,/ \|\| LIVE \|\| /);
+ for(const change of [i=>{i.replayEndedAt=null;},i=>{i.broadcastKind='upcoming';},i=>{i.broadcastKind='live';},i=>{i.videoTitle=i.videoTitle.replace('Gameweek 4','Gameweek 5');},i=>{i.videoDescription=i.videoDescription.replace('31-Oct-2026','30-Oct-2026');},i=>{i.videoDescription=i.videoDescription.replace(' || LIVE || ',' || Match Content || Full Match Replay || ');}]){const bad=structuredClone(catalogue);change(bad.items[0]);assert.equal(watchApiPayload(finished,bad,opts).available,false);}
 });
