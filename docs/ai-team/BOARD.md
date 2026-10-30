@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Полные записи вне ленты клипов — **Codex** — `codex/watch-completed-streams` — отдельный completed-search ISL с прежними source/fixture/region/phase guards, совместимым откатом и проверкой реального прироста.
 
 
 
@@ -112,6 +111,8 @@
 
 
 ## На ревью
+
+- [ ] Полные записи вне ленты клипов — **Codex** — [PR #1038](https://github.com/TRAP44/football-analytics-cloudflare/pull/1038) — отдельный completed-search ISL с прежними source/fixture/region/phase guards, совместимым откатом и проверкой реального прироста.
 
 
 
