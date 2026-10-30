@@ -89,8 +89,8 @@ export async function discoverMatchWatch({readCache,writeCache,youtube,approvals
     }
   }
   // A directly opened centre is also canonical even when the broad day feed is absent.
-  const centers=policies.length?await readCache({cache_key:'like.match-center:*:v17-event-evidence-rc144','payload->match->>leagueId':`in.(${policies.map(policy=>policy.leagueId).join(',')})`,order:'updated_at.desc',limit:'100'}):[];
-  for(const row of centers)if(row.cache_key===matchCenterCacheKey(row.payload?.match?.fixtureId))put(row.payload.match,new Date(now).toISOString());
+  const centers=policies.length?await readCache({select:'cache_key,payload,source_updated_at,updated_at',cache_key:'like.match-center:*:v17-event-evidence-rc144','payload->match->>leagueId':`in.(${policies.map(policy=>policy.leagueId).join(',')})`,order:'updated_at.desc',limit:'100'}):[];
+  for(const row of centers)if(row.cache_key===matchCenterCacheKey(row.payload?.match?.fixtureId))put(row.payload.match,row.source_updated_at??row.updated_at);
  const chosen=new Map();
  for(const video of videos){
   const candidates=policies.filter(policy=>policy.channelId===video.snippet?.channelId&&youtubeWatchCountries(video,policy.countries).length).flatMap(policy=>[...matches.values()].flatMap(({match,observedAt})=>{

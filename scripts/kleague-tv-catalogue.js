@@ -1,6 +1,7 @@
 // Public page metadata only: never requests login, manifests or video files.
-import {kleagueTvUrl,KLEAGUE_TV_POLICY,validKleagueTvReplay} from '../src/kleague-watch-policy.js';
+import {kleagueTvUrl,KLEAGUE_TV_POLICY,KLEAGUE_TV_LIVE_POLICY,validKleagueTvReplay,validKleagueTvLive,kleagueTvLiveValidUntil} from '../src/kleague-watch-policy.js';
 const STATE='match-watch-kleaguetv:v1',HOME='https://tv.kleague.com/en-int/page/home';
+export const KLEAGUE_UPCOMING_PAGE='https://tv.kleague.com/en-int/page/k-league-2';
 const time=value=>typeof value==='string'?Date.parse(value):NaN;
 const positive=value=>Number.isSafeInteger(value)&&value>0;
 const fail=code=>{throw Object.assign(new Error(code),{code});};
@@ -41,16 +42,17 @@ export async function loadKleagueTv({fetchImpl,readCache,writeCache,now,signal,r
  const rows=await readCache({cache_key:`eq.${STATE}`,limit:'1'}),previous=rows[0]?.payload;
  if(rows.length>1||previous&&(rows[0].cache_key!==STATE||previous.version!==1||!Array.isArray(previous.entries)||previous.entries.length>100||!Array.isArray(previous.seeds)||previous.seeds.length>2||!Number.isFinite(time(previous.attemptedAt))||time(previous.attemptedAt)>now||previous.entries.some(e=>!e||!Number.isFinite(time(e.observedAt))||time(e.observedAt)>now)||previous.seeds.some(e=>![292,293].includes(e?.leagueId)||!kleagueTvUrl(e.url)||!Number.isFinite(time(e.date))||time(e.date)>now)))fail('WATCH_KLEAGUE_STATE_INVALID');
  const fresh=entries=>entries.filter(e=>now-time(e.observedAt)<30*60000&&now-time(e.source?.event?.startTime)<7*86400000);
- if(previous&&now-time(previous.attemptedAt)<(previous.failed?5:15)*60000){report.kleagueTvSource='cached';return fresh(previous.entries);}
- let seeds=(previous?.seeds||[]).filter(e=>now-time(e.date)<7*86400000),entries=[],failed=false;
+ const nearBroadcast=previous?.entries.some(e=>e.source?.distribution==='Live'&&time(e.source.event?.startTime)<=now+30*60000&&time(e.source.event?.startTime)+4*3600000>now);
+ if(previous&&now-time(previous.attemptedAt)<(previous.failed||nearBroadcast?5:15)*60000){report.kleagueTvSource='cached';return fresh(previous.entries);}
+ let seeds=(previous?.seeds||[]).filter(e=>now-time(e.date)<7*86400000),entries=[],failed=false,upcomingIds=null;
  // The global atomic refresh claim bounds this producer too. Persist the source
  // attempt before public I/O; uncertain DB writes stop the run.
  const state={version:1,attemptedAt:new Date(now).toISOString(),seeds,entries:previous?.entries||[],failed:true};
  await writeCache(STATE,0,state,now+7*86400000);
  const sourceSignal=AbortSignal.any([signal,AbortSignal.timeout(12000)]);
  async function page(url){
-  if(url!==HOME&&!kleagueTvUrl(url))fail('WATCH_KLEAGUE_URL_INVALID');
-  report.kleagueTvRequests=(report.kleagueTvRequests||0)+1;if(report.kleagueTvRequests>3)fail('WATCH_KLEAGUE_BUDGET');
+  if(url!==HOME&&url!==KLEAGUE_UPCOMING_PAGE&&!kleagueTvUrl(url))fail('WATCH_KLEAGUE_URL_INVALID');
+  report.kleagueTvRequests=(report.kleagueTvRequests||0)+1;if(report.kleagueTvRequests>4)fail('WATCH_KLEAGUE_BUDGET');
   const response=await fetchImpl(url,{redirect:'error',headers:{Accept:'text/html'},signal:AbortSignal.any([sourceSignal,AbortSignal.timeout(5000)])});
   if(response.status!==200){await response.body?.cancel().catch(()=>{});fail('WATCH_KLEAGUE_SOURCE_UNAVAILABLE');}
   if(Number(response.headers.get('content-length'))>2_000_000){await response.body?.cancel().catch(()=>{});fail('WATCH_KLEAGUE_PAGE_INVALID');}
@@ -66,9 +68,10 @@ export async function loadKleagueTv({fetchImpl,readCache,writeCache,now,signal,r
   for(const source of home){const leagueId=source.event.league==='K LEAGUE 1'?292:source.event.league==='K LEAGUE 2'?293:0;if(!leagueId||source.distribution!=='VOD'||source.payment!=='Registration'||!source.countries.length||!Number.isFinite(time(source.startTime))||time(source.startTime)>now||now-time(source.startTime)>=7*86400000)continue;const prior=latest.get(leagueId);if(!prior||time(source.startTime)>time(prior.date))latest.set(leagueId,{leagueId,url:source.eventUrl,date:source.startTime});}
   seeds=[...latest.values()].slice(0,2);
  }catch{failed=true;}
+ try{const upcoming=await page(KLEAGUE_UPCOMING_PAGE);upcomingIds=new Set(upcoming.map(source=>source.id));entries.push(...upcoming);}catch{failed=true;}
  for(const seed of seeds){try{entries.push(...await page(seed.url));}catch{failed=true;}}
  const merged=new Map(),conflicts=new Set();for(const source of entries){if(conflicts.has(source.id))continue;const prior=merged.get(source.id);if(prior&&JSON.stringify(prior.source)!==JSON.stringify(source)){failed=true;conflicts.add(source.id);merged.delete(source.id);continue;}merged.set(source.id,{source,observedAt:new Date(now).toISOString()});}
- entries=[...merged.values()];if(failed)for(const prior of fresh(previous?.entries||[]))if(!merged.has(prior.source?.id)&&!conflicts.has(prior.source?.id))entries.push(prior);
+ entries=[...merged.values()];if(failed)for(const prior of fresh(previous?.entries||[]))if(!merged.has(prior.source?.id)&&!conflicts.has(prior.source?.id)&&!(upcomingIds&&prior.source?.distribution==='Live'&&prior.source?.event?.league==='K LEAGUE 2'&&!upcomingIds.has(prior.source.id)))entries.push(prior);
  entries=entries.filter(e=>Number.isFinite(time(e.source.startTime))&&now-time(e.source.startTime)<7*86400000).slice(0,100);
  await writeCache(STATE,0,{...state,seeds,entries,failed},now+7*86400000);
  report.kleagueTvSource=failed?'partial_or_deferred':'fetched';return fresh(entries);
@@ -76,7 +79,8 @@ export async function loadKleagueTv({fetchImpl,readCache,writeCache,now,signal,r
 export function kleagueTvApprovals(entries,fixtures,now,identity){
  return entries.flatMap(({source,observedAt})=>{
   if(now-time(observedAt)>=30*60000||time(observedAt)>now)return [];
-  const candidates=fixtures.filter(({match})=>validKleagueTvReplay(match,source,now));if(candidates.length!==1)return [];
-  const {match,observedAt:fixtureAt}=candidates[0];return [{match,provider:'kleaguetv',publisher:'kleaguetv',kind:'replay',access:'registration',eventUrl:source.eventUrl,label:'Полная запись K LEAGUE TV',countries:source.countries,embeddable:false,sourceMetadata:source,sourceObservedAt:observedAt,policyId:KLEAGUE_TV_POLICY.id,policyRevision:KLEAGUE_TV_POLICY.revision,confirmed:true,confirmedAt:new Date(now).toISOString(),validUntil:new Date(Math.min(time(match.date)+7*86400000,time(observedAt)+30*60000)).toISOString(),fixtureEvidence:{provider:'api-football',observedAt:fixtureAt,fixtureIdentity:identity(match)}}];
+  const live=source.distribution==='Live',policy=live?KLEAGUE_TV_LIVE_POLICY:KLEAGUE_TV_POLICY;
+  const candidates=fixtures.filter(({match,observedAt:at})=>live?validKleagueTvLive(match,source,now,at):validKleagueTvReplay(match,source,now));if(candidates.length!==1)return [];
+  const {match,observedAt:fixtureAt}=candidates[0];return [{match,provider:'kleaguetv',publisher:'kleaguetv',kind:live?'live':'replay',access:'registration',eventUrl:source.eventUrl,label:live?'Эфир K LEAGUE TV':'Полная запись K LEAGUE TV',countries:source.countries,embeddable:false,sourceMetadata:source,sourceObservedAt:observedAt,...(live?{fixtureObservedAt:fixtureAt,availableFrom:match.date}:{}),policyId:policy.id,policyRevision:policy.revision,confirmed:true,confirmedAt:new Date(now).toISOString(),validUntil:new Date(live?kleagueTvLiveValidUntil(match,observedAt,fixtureAt,now):Math.min(time(match.date)+7*86400000,time(observedAt)+30*60000)).toISOString(),fixtureEvidence:{provider:'api-football',observedAt:fixtureAt,fixtureIdentity:identity(match)}}];
  });
 }

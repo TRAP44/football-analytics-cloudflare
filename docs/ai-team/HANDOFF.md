@@ -14,6 +14,15 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-29 — Codex — Анонсы и эфиры K LEAGUE TV
+Ветка `codex/watch-kleague-scheduled`. #1035 завершён: main27990f14, PRQuality40942955838/CodeQL40942955525, mainQuality40943567057/CodeQL40943566984/Deploy40944081382 success. PublicCF1a436e7c-7f58-430d-9471-684a22c68e5a/launch153 и6assetSHA подтверждены. Post-deploy40945160763:57матчей75источников,9Bundesliga, все48прежних сохранены; RU10встроенных полных+8регистрационных/55обзоров/0LIVE. Не возвращать в pending.
+
+Официальный HOME KTV → /en-int/page/k-league-2: rawHTML260597B/d220587cd0cab3d816933c6ebbceb88e10310ae665a38dc3c9d40871fb29da05,6Announced/Live Fullmatch/Registration безentitlements/embedfalse, RU/KZ/BY. Четыре31Oct within48h, два1Nov пока вне окна. K1 raw262986B/bbdfc0... страны[] => неapproved. GoogleNWSL неверный handle неapproved; NWSLSoccer latest20 клипы/обзоры; USL affiliationстраницы403, новыхполныхsourceapprovalsнет. K2id1510483 получен только как публичнаяподсказкаSportsDB, затем actualAPI40950065420 подтвердил league293/NS/31Oct05UTC/Gyeongnam2751—Hwaseong7087/round31. Прочие будущиеfixtureID не выдуманы; producer должен подтвердить date31 batch. Fixtures сохраняют original parser-used Nuxtfields ссверкой fullHTML.
+
+Новая отдельная policyKTV broadcasts: строгие sourceURL/IDs/type/payment/countries/teams/league/eventtime/season, Announced запланирован, NS неonAir. Околоkickoff sportday refresh30m/proof35m/expirycap; неизвестныйисход/лимит провайдера не продлевает sportproof. Center freshness поsource_updated_at/updated_at. SourceGET:HOME→fixedupcoming→до2VOD, max4/12s/2MB,15mилиnear5m, no perviewer; known empty listwithdraws дажеприhomefailure. Старые8replays сохраняются.
+
+Frontend154/cap=scheduled-v1 и list/detail: defaultlegacy153 скрывает новый KTVlive; scheduled/registrationflags толькоoptin, filterЭфиры. Датаloader10days(+2) с прежними2dates/run16attempts/day; statev1 максимум9markers, evict тольконепустойпрошлыйallFT snapshot, usage непрерывный/rollbackсовместимый. NoSQL/auth/newsecrets/accounts/purchases/messages. Docs MATCH_WATCH_KLEAGUE_BROADCASTS_RU.md. Node22 npmci/check/lint/release998/full4796/security/privileged/verifyrelease/worker прошли; independent93/93clean, полныйnativewatch/scale/replay+scheduled320390900passed. ActualonAir/registeredplayback не проверялось. ExactheadCI→merge→Deploy→publicidentity→actualproducer ещё обязательны, не заявлять fakeLIVE.
+
 ## 2026-10-29 — Codex — Официальные обзоры Бундеслиги
 PR [#1035](https://github.com/TRAP44/football-analytics-cloudflare/pull/1035), ветка `codex/watch-bundesliga`. #1034 завершён: main `ba30b528`, PR/main CI и Deploy 40657221162 success; public launch153/CF705b9c46-0ce4-4d20-ba77-53aa7ef90b37, 8 хешей совпали. Post-deploy 40657908137:54 матча/73источника, RU11 встроенных полных+8регистрационных/51обзор. На 29 октября актуальный baseline40939220516:48матчей/66источников, RU10встроенных полных+8регистрационных/46обзоров; разница связана с семидневным окном. После публикации среды подключение восстановлено, команды работают.
 

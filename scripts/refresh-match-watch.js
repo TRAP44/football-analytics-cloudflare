@@ -101,7 +101,7 @@ export async function refreshMatchWatch({env=process.env,manifest,fetchImpl=fetc
     let external=[];
     discovery=await discoverMatchWatch({readCache,writeCache,youtube,approvals,now,report,policies,additionalApprovals:fixtures=>kleagueTvApprovals(external,fixtures,now,watchFixtureIdentity),loadFixtureDays:async(videos,selected)=>{
       if(selected.some(policy=>policy.format==='kleague'))external=await loadKleagueTv({fetchImpl,readCache,writeCache,now,signal:deadline,report});
-      return loadWatchFixtureDays({videos,policies:selected,env,fetchImpl,now,readCache,writeCache,report,signal:deadline,fixtureHints:external.map(item=>item.source.event.startTime)});
+      return loadWatchFixtureDays({videos,policies:selected,env,fetchImpl,now,readCache,writeCache,report,signal:deadline,fixtureHints:external.filter(item=>item.source.countries.length).map(item=>item.source.event.startTime),broadcastHints:external.filter(item=>item.source.distribution==='Live'&&item.source.countries.length).map(item=>item.source.event.startTime)});
     }});
     // Prefer policy verification over a matching legacy per-video approval.
     approvals=approvals.filter(item=>!discovery.automatic.some(auto=>auto.eventUrl===item.eventUrl&&auto.match.fixtureId===item.match.fixtureId)).concat(discovery.automatic);
@@ -139,7 +139,7 @@ export async function refreshMatchWatch({env=process.env,manifest,fetchImpl=fetc
     delete item.match;delete item.fixtureEvidence;delete item.confirmed;delete item.confirmedAt;delete item.validUntil;
     if(item.kind==='highlights'&&approval.policyId)item.videoDescription=watchDescriptionEvidence(policies.find(policy=>policy.id===approval.policyId),item.videoDescription);
     const catalogue={version:1,fixtureIdentity:identity,items:[item]};
-    if(!validatedWatchOptions(match,catalogue,{now,approvals,policies}).length){report.rejected++;continue;}
+    if(!validatedWatchOptions(match,catalogue,{now,approvals,policies,scheduledBroadcasts:true}).length){report.rejected++;continue;}
     if(!catalogues.has(match.fixtureId))catalogues.set(match.fixtureId,{version:1,fixtureIdentity:identity,items:[]});
     catalogues.get(match.fixtureId).items.push(item);
   }
@@ -170,8 +170,8 @@ export async function refreshMatchWatch({env=process.env,manifest,fetchImpl=fetc
   report.libraryFixtureIds=entries.map(entry=>entry.match.fixtureId);
   report.libraryBytes=new TextEncoder().encode(JSON.stringify(index)).byteLength;
   report.libraryByCountry=Object.fromEntries([...new Set(entries.flatMap(entry=>entry.catalogue.items.flatMap(item=>item.countries)))].map(country=>{
-    const data=watchLibraryPayload(index,{now,country,approvals,policies,maxEntries:WATCH_LIBRARY_MAX});
-    return [country,{matches:data.items.length,liveMatches:data.items.filter(item=>item.kinds.includes('live')).length,fullReplayMatches:data.items.filter(item=>item.kinds.includes('replay')).length,highlightsMatches:data.items.filter(item=>item.kinds.includes('highlights')).length,embeddedFullReplayMatches:data.items.filter(item=>item.embeddedReplay).length,registrationReplayMatches:data.items.filter(item=>item.registrationReplay).length}];
+    const data=watchLibraryPayload(index,{now,country,approvals,policies,maxEntries:WATCH_LIBRARY_MAX,scheduledBroadcasts:true});
+    return [country,{matches:data.items.length,liveMatches:data.items.filter(item=>item.kinds.includes('live')).length,upcomingBroadcastMatches:data.items.filter(item=>item.upcomingLive).length,onAirBroadcastMatches:data.items.filter(item=>item.kinds.includes('live')&&!item.upcomingLive).length,fullReplayMatches:data.items.filter(item=>item.kinds.includes('replay')).length,highlightsMatches:data.items.filter(item=>item.kinds.includes('highlights')).length,embeddedFullReplayMatches:data.items.filter(item=>item.embeddedReplay).length,registrationReplayMatches:data.items.filter(item=>item.registrationReplay).length}];
   }));
   return report;
 }
