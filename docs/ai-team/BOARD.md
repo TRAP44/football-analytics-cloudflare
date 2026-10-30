@@ -108,9 +108,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Анонсы и эфиры K LEAGUE TV — **Codex** — [PR #1036](https://github.com/TRAP44/football-analytics-cloudflare/pull/1036) — actual публичный каталог K2 и независимый fixture1510483; честный scheduled-статус, регистрация, capability154/legacy guards, свежий sporting proof, прежние квоты.
+- [ ] Полные записи и эфиры Indian Super League — **Codex** — [PR #1037](https://github.com/TRAP44/football-analytics-cloudflare/pull/1037) — actual2English full+2upcoming, независимые API323/region/embed proofs; discoveryv5, ограниченные выдачи9324quota/day, прежний Footballбюджет.
+
 
 
 
@@ -269,6 +271,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Анонсы и эфиры K LEAGUE TV — **Codex** — [PR #1036](https://github.com/TRAP44/football-analytics-cloudflare/pull/1036), mainc510f5ba/Deploy41087834470/publicCF867b8c13/launch154 подтверждены. Post-deploy41089007902:65матчей/82источника,8предстоящихэфиров,6KTV; все57прежнихматчей/8записейсохранены.
 
 - [x] Официальные обзоры Бундеслиги — **Codex** — [PR #1035](https://github.com/TRAP44/football-analytics-cloudflare/pull/1035), main27990f14/Deploy40944081382/publicCF1a436e7c/launch153 подтверждены. Post-deploy40945160763:57матчей/75источников,9новыхобзоров, прежние48сохранены.
 

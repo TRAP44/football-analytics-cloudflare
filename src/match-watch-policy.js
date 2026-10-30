@@ -1,5 +1,6 @@
 import {leagueFullMatch,leagueHighlightsMatch} from './match-watch-league-formats.js';
 import {KLEAGUE_CHANNEL} from './kleague-watch-policy.js';
+import {ISL_CHANNEL,islFullMatch,islStreamStart} from './isl-watch-policy.js';
 import {BUNDESLIGA_CHANNEL} from './bundesliga-watch-policy.js';
 // Official league/channel relationship and the observed full-match title format
 // are reviewed once. New fixtures/video IDs are NOT deployed source approvals.
@@ -16,7 +17,7 @@ export const WATCH_POLICIES=Object.freeze([Object.freeze({
  id:'laliga-highlights',revision:1,publisher:'laliga',format:'laliga',leagueId:140,channelId:'UCTv-XvfzLX3i4IGWAm4sbmA',countries:Object.freeze(['RU','KZ','BY']),replayRetentionDays:7,highlights:true,highlightsOnly:true,uploadsIntervalMs:300000,authorityUrl:'https://www.laliga.com/en-GB',highlightsLabel:'Обзор Ла Лиги',
 }),Object.freeze({
  id:'seriea-highlights',revision:1,publisher:'seriea',format:'seriea',leagueId:135,channelId:'UCBJeMCIeLQos7wacox4hmLQ',countries:Object.freeze(['RU','KZ','BY']),replayRetentionDays:7,highlights:true,highlightsOnly:true,uploadsIntervalMs:300000,maxHighlightsSeconds:1800,authorityUrl:'https://en.legaseriea.it/serie-a/broadcasters',highlightsLabel:'Обзор Серии А',
-}),...[1,2].map(number=>Object.freeze({id:`kleague-${number}-highlights`,revision:1,publisher:'kleagueintl',format:'kleague',videoLeague:number,leagueId:number===1?292:293,channelId:KLEAGUE_CHANNEL,countries:Object.freeze(['RU','KZ','BY']),replayRetentionDays:7,highlights:true,highlightsOnly:true,uploadsIntervalMs:300000,authorityUrl:'https://tv.kleague.com/en-int/page/home',highlightsLabel:`Расширенный обзор K LEAGUE ${number}`})),Object.freeze({id:'bundesliga-highlights',revision:1,publisher:'bundesliga',format:'bundesliga',leagueId:78,channelId:BUNDESLIGA_CHANNEL,countries:Object.freeze(['RU','KZ','BY']),replayRetentionDays:7,highlights:true,highlightsOnly:true,uploadsIntervalMs:600000,authorityUrl:'https://www.bundesliga.com/en/bundesliga',highlightsLabel:'Обзор Бундеслиги'})]);
+}),...[1,2].map(number=>Object.freeze({id:`kleague-${number}-highlights`,revision:1,publisher:'kleagueintl',format:'kleague',videoLeague:number,leagueId:number===1?292:293,channelId:KLEAGUE_CHANNEL,countries:Object.freeze(['RU','KZ','BY']),replayRetentionDays:7,highlights:true,highlightsOnly:true,uploadsIntervalMs:300000,authorityUrl:'https://tv.kleague.com/en-int/page/home',highlightsLabel:`Расширенный обзор K LEAGUE ${number}`})),Object.freeze({id:'bundesliga-highlights',revision:1,publisher:'bundesliga',format:'bundesliga',leagueId:78,channelId:BUNDESLIGA_CHANNEL,countries:Object.freeze(['RU','KZ','BY']),replayRetentionDays:7,highlights:true,highlightsOnly:true,uploadsIntervalMs:600000,authorityUrl:'https://www.bundesliga.com/en/bundesliga',highlightsLabel:'Обзор Бундеслиги'}),Object.freeze({id:'isl-full',revision:1,publisher:'indiansuperleague',format:'isl',leagueId:323,channelId:ISL_CHANNEL,countries:Object.freeze(['RU','KZ','BY']),replayRetentionDays:7,uploads:true,searchIntervalMs:12*3600000,uploadsIntervalMs:15*60000,searchMaxResults:10,uploadsMaxResults:20,authorityUrl:'https://www.indiansuperleague.com/',label:'Трансляция Indian Super League',replayLabel:'Полная запись Indian Super League'})]);
 const normalized=value=>typeof value==='string'?value.normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim():'';
 // Only exact provider team IDs may gain these observed official-name aliases.
 const aliases={287:['Urawa Reds'],290:['Kashima Antlers'],302:['Kyoto Sanga F.C.'],303:['FC Machida Zelvia']};
@@ -90,9 +91,9 @@ export function automaticHighlightsEvidence(duration,broadcast,stream,maxSeconds
   const seconds=Number(parts[1]||0)*60+Number(parts[2]||0);
   return seconds>=120&&seconds<=Math.min(maxSeconds,1800)&&broadcast==='none'&&!stream;
 }
-export function automaticReplayEvidence(match,startedAt,endedAt,now){
+export function automaticReplayEvidence(match,startedAt,endedAt,now,policy){
   const start=typeof startedAt==='string'?Date.parse(startedAt):NaN,end=typeof endedAt==='string'?Date.parse(endedAt):NaN;
-  return Number.isFinite(start)&&Number.isFinite(end)&&end<=now&&Math.abs(start-Date.parse(match?.date))<=30*60000&&end-start>=60*60000&&end-start<=4*3600000;
+  return Number.isFinite(start)&&Number.isFinite(end)&&end<=now&&(policy?.format==='isl'?islStreamStart(match,startedAt):Math.abs(start-Date.parse(match?.date))<=30*60000)&&end-start>=60*60000&&end-start<=4*3600000;
 }
 export function youtubeWatchCountries(video,countries){
   if(video?.status?.privacyStatus!=='public'||video?.contentDetails?.contentRating?.ytRating==='ytAgeRestricted')return [];
@@ -108,6 +109,7 @@ export function youtubeWatchCountries(video,countries){
 export function watchDescriptionEvidence(policy,description=''){
   if(typeof description!=='string')return '';
   const lines=description.split(/\r?\n/);
+  if(policy?.format==='isl')return lines[0].trim();
   if(policy?.format==='aleagues')return '';
   if(policy?.format==='kleague')return '';
   if(policy?.format==='bundesliga')return lines.filter((line,index)=>index===0||line.startsWith('Watch the Bundesliga highlights of ')).join('\n');
@@ -116,13 +118,14 @@ export function watchDescriptionEvidence(policy,description=''){
   if(policy?.format==='spl')return lines.filter(line=>/^(?:Date:|Score:|Watch the latest SPL highlights:)/.test(line)).join('\n');
   return lines.filter((line,index)=>index===0||/\b20\d{2}[-/]\d{2}\b|\bMatch date:|\bJ1 League\b|\b(?:Matchweek|MW)\s*[1-9]\d?\b/i.test(line)).join('\n');
 }
-export function automaticWatchMatch(policy,match,title,scheduledStart,now,kind='live'){
+export function automaticWatchMatch(policy,match,title,scheduledStart,now,kind='live',description=''){
   if(!policy || match?.leagueId!==policy.leagueId || !Number.isSafeInteger(match?.season) || match.season<2000)return false;
   const replay=kind==='replay';
   if(replay?match.finished!==true||!['FT','AET','PEN'].includes(match.status):kind!=='live'||match.finished===true||!['NS','1H','HT','2H','ET','BT','P','LIVE'].includes(match.status))return false;
   const kickoff=Date.parse(match.date),start=typeof scheduledStart==='string'?Date.parse(scheduledStart):NaN;
-  if(!Number.isFinite(kickoff)||!Number.isFinite(start)||!Number.isFinite(now)||now>=automaticWatchValidUntil(policy,match,kind)||kickoff>now+(replay?0:48*3600000)||start<kickoff-15*60000||start>kickoff+5*60000)return false;
+  if(!Number.isFinite(kickoff)||!Number.isFinite(start)||!Number.isFinite(now)||now>=automaticWatchValidUntil(policy,match,kind)||kickoff>now+(replay?0:48*3600000)||(policy.format==='isl'?!islStreamStart(match,scheduledStart):start<kickoff-15*60000||start>kickoff+5*60000))return false;
   if(policy.highlightsOnly)return false;
+  if(policy.format==='isl')return islFullMatch(match,title,description,kind);
   if(policy.format)return leagueFullMatch(policy,match,title);
   // Only observed official full-match formats; no highlights, archive premieres,
   // youth/women qualifiers, combined streams or substring/fuzzy matching.
