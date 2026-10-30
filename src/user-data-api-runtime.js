@@ -547,6 +547,8 @@ export function createUserDataApiRuntime(deps) {
     if(!positiveId(user?.id))return json({error:'Сессия Telegram не подтверждена.',code:'AUTH_REQUIRED'},401);
     if(request.method!=='GET')return json({error:'Метод не поддерживается.'},405,{allow:'GET'});
     const params=new URL(request.url).searchParams,id=positiveId(params.get('fixtureId')),country=params.get('country') || '';
+    const scheduledBroadcasts=params.get('cap')==='scheduled-v1';
+    if(params.has('cap')&&(!scheduledBroadcasts||params.getAll('cap').length!==1))return json({error:'Проверьте версию просмотра.',code:'WATCH_INPUT_INVALID'},400);
     if(params.has('list')){
       if(params.get('list')!=='1'||params.has('fixtureId')||params.has('limit')&&params.get('limit')!==String(WATCH_LIBRARY_MAX)||country&&!Object.hasOwn(WATCH_COUNTRIES,country))return json({error:'Проверьте список и страну.',code:'WATCH_INPUT_INVALID'},400);
       const extended=params.get('limit')===String(WATCH_LIBRARY_MAX);
@@ -565,7 +567,7 @@ export function createUserDataApiRuntime(deps) {
           return extended?await read(WATCH_EXTENDED_LIBRARY_KEY)||await read(WATCH_LIBRARY_KEY):read(WATCH_LIBRARY_KEY);
         },{budgetMs:1500,source:'match-watch-library-cache'});
         const library=await (extended?sharedWatchLibrary(cfg,load):load());
-        return json(watchLibraryPayload(library,{country,approvals:watchApprovals,policies:watchPolicies,maxEntries:extended?WATCH_LIBRARY_MAX:20}));
+        return json(watchLibraryPayload(library,{country,approvals:watchApprovals,policies:watchPolicies,maxEntries:extended?WATCH_LIBRARY_MAX:20,scheduledBroadcasts}));
       }catch{return extended?json({error:'Список временно недоступен. Повторите обновление.',code:'WATCH_UNAVAILABLE'},503):json(empty);}
     }
     if(!id || country && !Object.hasOwn(WATCH_COUNTRIES,country))return json({error:'Проверьте матч и страну.',code:'WATCH_INPUT_INVALID'},400);
@@ -574,7 +576,7 @@ export function createUserDataApiRuntime(deps) {
     try{
       const [center,catalogue]=await withRequestDeadline(()=>Promise.all([getCache(matchCenterCacheKey(id),cfg),getCache(watchCacheKey(id),cfg)]),{budgetMs:1500,source:'match-watch-cache'});
       if(center?.match?.fixtureId!==id)return json(empty);
-      const payload=watchApiPayload(center.match,catalogue,{country,approvals:watchApprovals,policies:watchPolicies});
+      const payload=watchApiPayload(center.match,catalogue,{country,approvals:watchApprovals,policies:watchPolicies,scheduledBroadcasts});
       const guide=broadcastGuide(center.match,{country});
       return json(guide?{...payload,broadcastGuide:guide}:payload);
     }catch{return json(empty);}

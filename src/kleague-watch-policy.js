@@ -1,11 +1,13 @@
 // Source names observed with independent API-Football team IDs. In particular,
 // Suwon FC and Suwon Samsung must never collapse into the same short name.
-const aliases={2748:['Anyang'],2762:['Jeonbuk'],2745:['Bucheon'],2759:['Gwangju'],2768:['Gimcheon'],2750:['Daejeon'],2763:['Incheon'],2761:['Jeju'],2766:['Seoul'],2746:['Gangwon'],2767:['Ulsan','Ulsan HD'],2764:['Pohang'],2760:['Jeonnam'],2747:['Daegu'],7078:['Gimpo','Gimpo FC'],7076:['Gimhae','Gimhae FC'],2756:['SuwonFC','Suwon FC'],2753:['Chungnam Asan','Chungnam Asan FC'],2752:['Busan'],2751:['Gyeongnam'],2757:['Seongnam'],2765:['Suwon','Suwon Samsung'],7060:['Cheonan','Cheonan City FC'],2758:['Ansan','Ansan Greeners FC'],7061:['Chungbuk Cheongju','Cheongju FC'],9171:['Yongin','Yongin FC'],7098:['Paju','Paju Citizen FC'],7087:['Hwaseong FC']};
+const aliases={2749:['Seoul E'],2748:['Anyang'],2762:['Jeonbuk'],2745:['Bucheon'],2759:['Gwangju'],2768:['Gimcheon'],2750:['Daejeon'],2763:['Incheon'],2761:['Jeju'],2766:['Seoul'],2746:['Gangwon'],2767:['Ulsan','Ulsan HD'],2764:['Pohang'],2760:['Jeonnam'],2747:['Daegu'],7078:['Gimpo','Gimpo FC'],7076:['Gimhae','Gimhae FC'],2756:['SuwonFC','Suwon FC'],2753:['Chungnam Asan','Chungnam Asan FC'],2752:['Busan'],2751:['Gyeongnam'],2757:['Seongnam'],2765:['Suwon','Suwon Samsung'],7060:['Cheonan','Cheonan City FC'],2758:['Ansan','Ansan Greeners FC'],7061:['Chungbuk Cheongju','Cheongju FC'],9171:['Yongin','Yongin FC'],7098:['Paju','Paju Citizen FC'],7087:['Hwaseong FC']};
 const normalized=value=>typeof value==='string'?value.normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase().replace(/[^a-z0-9]/g,''):'';
 const time=value=>typeof value==='string'?Date.parse(value):NaN;
 const positive=value=>Number.isSafeInteger(value)&&value>0;
 export const KLEAGUE_CHANNEL='UCrfu1VaYOZ_-FBGQMzKFfMA';
 export const KLEAGUE_TV_POLICY=Object.freeze({id:'kleaguetv-replays',revision:1,publisher:'kleaguetv',countries:Object.freeze(['RU','KZ','BY'])});
+export const KLEAGUE_TV_LIVE_POLICY=Object.freeze({id:'kleaguetv-broadcasts',revision:1,publisher:'kleaguetv',countries:KLEAGUE_TV_POLICY.countries});
+export const KLEAGUE_SPORTING_PROOF_MS=35*60000;
 export function kleagueTeamMatches(team,label){return !!normalized(label)&&[team?.name,...aliases[team?.id]||[]].some(value=>normalized(value)===normalized(label));}
 export function kleagueRound(match){return Number(typeof match?.round==='string'?match.round.match(/^Regular Season - ([1-9]\d?)$/)?.[1]:NaN);}
 export function kleagueHighlightsMatch(policy,match,title){
@@ -24,4 +26,29 @@ export function validKleagueTvReplay(match,source,now){
   &&kleagueRound(match)===source.round&&source.round===Number(p[1])&&kleagueTeamMatches(match.home,p[2])&&kleagueTeamMatches(match.away,p[3])&&kleagueTeamMatches(match.home,event.home)&&kleagueTeamMatches(match.away,event.away)
   &&Math.abs(time(event.startTime)-time(match.date))<=60000&&Math.abs(time(source.startTime)-time(event.startTime))<=30*60000&&Number.isFinite(time(source.updatedAt))&&time(source.updatedAt)>=time(match.date)+60*60000&&time(source.updatedAt)<=now+5000&&now>=time(match.date)+60*60000&&now<time(match.date)+7*86400000
   &&Array.isArray(source.countries)&&source.countries.length>0&&source.countries.length<=3&&new Set(source.countries).size===source.countries.length&&source.countries.every(code=>KLEAGUE_TV_POLICY.countries.includes(code));
+}
+export function validKleagueTvLive(match,source,now,fixtureObservedAt){
+ const kickoff=time(match?.date),proof=time(fixtureObservedAt),event=source?.event;
+ const league=event?.league==='K LEAGUE 1'?292:event?.league==='K LEAGUE 2'?293:0;
+ const title=typeof source?.title==='string'&&source.title.length<=220?source.title.match(/^(?:\[R([1-9]\d?)\])?([^|]+?)\s+-\s+([^|]+)$/):null;
+ const url=kleagueTvUrl(source?.eventUrl),parts=url?new URL(url).pathname.split('/'):[];
+ const statuses=['NS','1H','HT','2H','ET','BT','P','LIVE'];
+ return !!title&&Number.isFinite(now)&&Number.isFinite(kickoff)&&kickoff<=now+48*3600000&&now<kickoff+4*3600000
+  &&Number.isFinite(proof)&&proof<=now&&now-proof<48*3600000&&(now<kickoff-15*60000||now-proof<KLEAGUE_SPORTING_PROOF_MS)
+  &&positive(source.id)&&String(source.id)===parts.at(-1)&&source.slug===parts.at(-2)&&source.distribution==='Live'&&source.contentType==='Fullmatch'
+  &&['Announced','Live'].includes(source.publication)&&(source.publication!=='Live'||now>=kickoff-30*60000)
+  &&source.payment==='Registration'&&source.entitlementsEmpty===true&&source.freeForEmbed===false
+  &&Number.isSafeInteger(source.durationSeconds)&&source.durationSeconds>=0&&source.durationSeconds<=14400
+  &&Number.isFinite(time(source.updatedAt))&&time(source.updatedAt)>0&&time(source.updatedAt)<=now+5000
+  &&positive(event?.id)&&positive(event?.homeId)&&positive(event?.awayId)&&event.homeId!==event.awayId&&event.sport==='Soccer'
+  &&league===match?.leagueId&&event.category===event.league&&match.finished===false&&statuses.includes(match.status)
+  &&Number.isSafeInteger(match.season)&&new Date(kickoff).getUTCFullYear()===match.season
+  &&(source.round===null||source.round===kleagueRound(match))&&(!title[1]||Number(title[1])===kleagueRound(match))
+  &&kleagueTeamMatches(match.home,title[2])&&kleagueTeamMatches(match.away,title[3])&&kleagueTeamMatches(match.home,event.home)&&kleagueTeamMatches(match.away,event.away)
+  &&Math.abs(time(event.startTime)-kickoff)<=60000&&Math.abs(time(source.startTime)-time(event.startTime))<=30*60000
+  &&Array.isArray(source.countries)&&source.countries.length>0&&source.countries.length<=3&&new Set(source.countries).size===source.countries.length&&source.countries.every(code=>KLEAGUE_TV_LIVE_POLICY.countries.includes(code));
+}
+export function kleagueTvLiveValidUntil(match,sourceObservedAt,fixtureObservedAt,now){
+ const kickoff=time(match.date),sportingExpiry=now<kickoff-15*60000?kickoff-15*60000:time(fixtureObservedAt)+KLEAGUE_SPORTING_PROOF_MS;
+ return Math.min(kickoff+4*3600000,time(sourceObservedAt)+30*60000,sportingExpiry);
 }

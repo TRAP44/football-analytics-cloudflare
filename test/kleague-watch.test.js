@@ -55,7 +55,7 @@ function harness(){
   if(url.origin==='https://tv.kleague.com'){
    assert.equal(options.headers.apikey,undefined);assert.equal(options.headers['X-Goog-Api-Key'],undefined);assert.equal(options.headers['x-apisports-key'],undefined);assert.equal(options.headers.Authorization,undefined);
    if(sourceMode==='fail')return new Response('unavailable',{status:503});
-   return new Response(page(sourceMode==='empty'?[{items:1},[]]:url.pathname.endsWith('/page/home')?recorded.homeNuxt:recorded.detailNuxt),{headers:{'Content-Type':'text/html'}});
+   return new Response(page(sourceMode==='empty'||url.pathname.endsWith('/page/k-league-2')?[{items:1},[]]:url.pathname.endsWith('/page/home')?recorded.homeNuxt:recorded.detailNuxt),{headers:{'Content-Type':'text/html'}});
   }
   if(url.origin==='https://www.googleapis.com'){
    assert.equal(options.headers['X-Goog-Api-Key'],env.YOUTUBE_DATA_API_KEY);
@@ -86,7 +86,7 @@ test('full production pipeline adds external recordings and embedded summaries w
  assert.ok(watchLibraryPayload(index,{country:'RU',now:clock,approvals:[],maxEntries:100}).items.some(i=>i.fixtureId===1510482&&i.kinds.includes('replay')));
  assert.ok(h.cache.get(WATCH_LIBRARY_KEY).payload.entries.every(e=>e.catalogue.items.every(i=>i.publisher==='jleagueinternational')));
  assert.ok(report.youtubeRequests<=22);assert.ok((report.kleagueTvRequests||0)<=3);assert.ok((report.fixtureRequests||0)<=2);
- const sourceCalls=h.calls.filter(c=>c.url.hostname==='tv.kleague.com');assert.equal(sourceCalls.length,4,'two 15-minute source polls use only homepage and one related page each');
+ const sourceCalls=h.calls.filter(c=>c.url.hostname==='tv.kleague.com');assert.equal(sourceCalls.length,6,'two 15-minute source polls use homepage, announcements and one related page each');
  assert.ok(h.cache.get(watchCacheKey(1510475)).payload.items.some(i=>i.provider==='kleaguetv'),'full-only match must be retained independently of summary discovery');
  h.mode('empty');const withdrawn=await h.run(30*60000);assert.equal(withdrawn.externalPublished||0,0);assert.equal(h.cache.get(watchCacheKey(1510475)).payload.items.length,0);assert.ok(withdrawn.published>0,'source withdrawal cannot empty other leagues');
 });

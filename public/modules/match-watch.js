@@ -1,4 +1,4 @@
-import {broadcastGuideUrl,validBroadcastGuide} from './broadcast-guide-links.js?v=6.120.0-launch153';
+import {broadcastGuideUrl,validBroadcastGuide} from './broadcast-guide-links.js?v=6.120.0-launch154';
 // Optional, lazy watch panel. No video, SDK or third-party connection before play.
 const COUNTRY_KEY='matchradar:watch-country:v1';
 let sdkPromise;
@@ -75,7 +75,7 @@ export function createMatchWatch({api,escapeHtml,watchExperience,now=Date.now,wi
       <div data-watch-options></div><div data-broadcast-guide></div><div data-watch-player></div><p class="muted" data-watch-status role="status">Доступ и подписку проверяет источник. Если плеер не открылся, перейдите по официальной ссылке.</p></div></details>`;
     s.root.querySelector('summary').innerHTML=`${countries.length?'Где смотреть':'Режим просмотра'} <span>${guide?'Видео и вещатели':countries.length?'Официальные источники':'Без спойлеров'}</span>`;
     s.root.querySelector('[data-watch-country-area]').innerHTML=countries.length?`<label>Где будете смотреть? <select data-watch-country aria-label="Страна просмотра"><option value="">Выберите страну</option>${countries.map(item=>`<option value="${item.code}" ${item.code===country?'selected':''}>${escapeHtml(item.name)}</option>`).join('')}</select></label>`:'';
-    s.root.querySelector('[data-watch-options]').innerHTML=!countries.length?'Доступный источник видео пока не подтверждён. Режим без спойлеров можно включить и для просмотра на другом сервисе.':country?items.length?items.map((item,index)=>`<article class="match-watch-source"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.kind==='live'?'Трансляция':item.kind==='replay'?'Полная запись':'Обзор')} · ${escapeHtml(({free:'Бесплатно',registration:'Бесплатно · регистрация у источника',subscription:'По подписке',ppv:'Отдельная покупка',unknown:'Условия у источника'})[item.access]||'Условия у источника')}</span>
+    s.root.querySelector('[data-watch-options]').innerHTML=!countries.length?'Доступный источник видео пока не подтверждён. Режим без спойлеров можно включить и для просмотра на другом сервисе.':country?items.length?items.map((item,index)=>`<article class="match-watch-source"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.kind==='live'?(item.scheduled===true?'Запланированный эфир':'Трансляция'):item.kind==='replay'?'Полная запись':'Обзор')} · ${escapeHtml(({free:'Бесплатно',registration:'Бесплатно · регистрация у источника',subscription:'По подписке',ppv:'Отдельная покупка',unknown:'Условия у источника'})[item.access]||'Условия у источника')}</span>
       ${youtubeEmbedUrl(item,win.location.origin)?`<button class="primary-btn" type="button" data-watch-play="${index}">${position(s,item)?`Продолжить с ${Math.floor(position(s,item)/60)}:${String(position(s,item)%60).padStart(2,'0')}`:'Смотреть в приложении'}</button>${position(s,item)?`<button class="secondary-btn" type="button" data-watch-restart="${index}">Сначала</button>`:''}`:''}
       <a data-watch-external="${index}" href="${escapeHtml(item.eventUrl)}" target="_blank" rel="noopener noreferrer">${item.embed?'Открыть у источника ↗':'Смотреть у источника ↗'}</a></article>`).join(''):guide?' ':'<p>Для этой страны просмотр сейчас не подтверждён.</p>':'<p>Выберите страну — покажем доступный вариант.</p>';
     s.root.querySelector('[data-broadcast-guide]').innerHTML=guide?.directory?`<article class="match-watch-source broadcast-guide"><strong>${escapeHtml(guide.leagueName)} · где показывают</strong>
@@ -130,7 +130,7 @@ export function createMatchWatch({api,escapeHtml,watchExperience,now=Date.now,wi
   }
   async function load(s,background=false){
     s.loadedAt=now();s.controller?.abort();const controller=new AbortController();s.controller=controller;s.loading=true;
-    try{const data=await api(`/api/match-watch?${new URLSearchParams({fixtureId:String(s.fixtureId),...(s.country?{country:s.country}:{})})}`,{signal:controller.signal,timeoutMs:4000});
+    try{const data=await api(`/api/match-watch?${new URLSearchParams({fixtureId:String(s.fixtureId),...(s.country?{country:s.country}:{}),cap:'scheduled-v1'})}`,{signal:controller.signal,timeoutMs:4000});
       if(!controller.signal.aborted&&s.controller===controller)render(s,data);
     }catch(error){if(active(s)&&!controller.signal.aborted&&s.controller===controller){
       if(background&&s.data)render(s,s.data);

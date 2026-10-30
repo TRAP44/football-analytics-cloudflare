@@ -1,7 +1,7 @@
 import watchManifest from './match-watch-approvals.json' with {type:'json'};
 import {WATCH_POLICIES,automaticWatchMatch,automaticWatchValidUntil,automaticReplayEvidence,automaticHighlightsMatch,automaticHighlightsEvidence} from './match-watch-policy.js';
 import {BUNDESLIGA_CHANNEL} from './bundesliga-watch-policy.js';
-import {KLEAGUE_CHANNEL,KLEAGUE_TV_POLICY,kleagueTvUrl,validKleagueTvReplay} from './kleague-watch-policy.js';
+import {KLEAGUE_CHANNEL,KLEAGUE_TV_POLICY,KLEAGUE_TV_LIVE_POLICY,kleagueTvUrl,validKleagueTvReplay,validKleagueTvLive,kleagueTvLiveValidUntil} from './kleague-watch-policy.js';
 export const WATCH_APPROVALS=watchManifest.items;
 // Only service-owned, explicitly reviewed catalogue records are eligible for UI.
 // Public requests never discover/fetch/submit arbitrary videos or provider URLs.
@@ -40,7 +40,7 @@ export function officialWatchUrl(provider,value){
   return '';
 }
 
-export function validatedWatchOptions(match,catalogue,{country='',now=Date.now(),enabled=true,approvals=WATCH_APPROVALS,policies=WATCH_POLICIES}={}){
+export function validatedWatchOptions(match,catalogue,{country='',now=Date.now(),enabled=true,approvals=WATCH_APPROVALS,policies=WATCH_POLICIES,scheduledBroadcasts=false}={}){
   const identity=watchFixtureIdentity(match);
   if(!Array.isArray(approvals) || !enabled || !identity || !Number.isFinite(now) || !catalogue || catalogue.version!==1 || catalogue.fixtureIdentity!==identity || !Array.isArray(catalogue.items) || catalogue.items.length>10 || ['PST','CANC','ABD','AWD','WO','TBD'].includes(match.status))return [];
   const seen=new Set(),result=[];
@@ -50,8 +50,11 @@ export function validatedWatchOptions(match,catalogue,{country='',now=Date.now()
     const automatic=item.approval?.version===2 && policy && item.provider==='youtube' && item.access==='free' && (item.kind==='highlights'
       ?automaticHighlightsMatch(policy,match,item.videoTitle,item.publishedAt,now,item.videoDescription)&&automaticHighlightsEvidence(item.videoDuration,item.broadcastKind,item.videoStream,policy.maxHighlightsSeconds)
       :['live','replay'].includes(item.kind)&&automaticWatchMatch(policy,match,item.videoTitle,item.availableFrom,now,item.kind)&&(item.kind!=='replay'||automaticReplayEvidence(match,item.replayStartedAt,item.replayEndedAt,now)));
-    const external=item.approval?.version===3&&item.approval.policyId===KLEAGUE_TV_POLICY.id&&item.approval.policyRevision===KLEAGUE_TV_POLICY.revision&&item.provider==='kleaguetv'&&item.publisher==='kleaguetv'&&item.kind==='replay'&&item.access==='registration'&&item.embeddable===false&&item.regionVerified===true&&item.registrationRequired===true&&Number.isFinite(time(item.sourceObservedAt))&&time(item.sourceObservedAt)<=now&&now-time(item.sourceObservedAt)<WATCH_TTL_MS&&item.eventUrl===item.sourceMetadata?.eventUrl&&validKleagueTvReplay(match,item.sourceMetadata,now);
-    const approvedSource=external?{countries:item.sourceMetadata.countries,validUntil:new Date(Math.min(time(match.date)+7*86400000,time(item.sourceObservedAt)+WATCH_TTL_MS)).toISOString()}:automatic?{countries:policy.countries,validUntil:new Date(automaticWatchValidUntil(policy,match,item.kind)).toISOString()}:item.approval?.version===1?approvals.find(source=>source.confirmed===true && watchFixtureIdentity(source.match)===identity && source.provider===item.provider && source.eventUrl===item.eventUrl && source.kind===item.kind && source.access===item.access && source.confirmedAt===item.approval?.confirmedAt && source.publisher===item.publisher && time(source.validUntil)>now):null;
+    const externalBase=item.approval?.version===3&&item.provider==='kleaguetv'&&item.publisher==='kleaguetv'&&item.access==='registration'&&item.embeddable===false&&item.regionVerified===true&&item.registrationRequired===true&&Number.isFinite(time(item.sourceObservedAt))&&time(item.sourceObservedAt)<=now&&now-time(item.sourceObservedAt)<WATCH_TTL_MS&&item.eventUrl===item.sourceMetadata?.eventUrl;
+    const externalReplay=externalBase&&item.kind==='replay'&&item.approval.policyId===KLEAGUE_TV_POLICY.id&&item.approval.policyRevision===KLEAGUE_TV_POLICY.revision&&validKleagueTvReplay(match,item.sourceMetadata,now);
+    const externalLive=externalBase&&scheduledBroadcasts===true&&item.kind==='live'&&item.approval.policyId===KLEAGUE_TV_LIVE_POLICY.id&&item.approval.policyRevision===KLEAGUE_TV_LIVE_POLICY.revision&&time(item.availableFrom)===time(match.date)&&validKleagueTvLive(match,item.sourceMetadata,now,item.fixtureObservedAt);
+    const external=externalReplay||externalLive;
+    const approvedSource=external?{countries:item.sourceMetadata.countries,validUntil:new Date(externalLive?kleagueTvLiveValidUntil(match,item.sourceObservedAt,item.fixtureObservedAt,now):Math.min(time(match.date)+7*86400000,time(item.sourceObservedAt)+WATCH_TTL_MS)).toISOString()}:automatic?{countries:policy.countries,validUntil:new Date(automaticWatchValidUntil(policy,match,item.kind)).toISOString()}:item.approval?.version===1?approvals.find(source=>source.confirmed===true && watchFixtureIdentity(source.match)===identity && source.provider===item.provider && source.eventUrl===item.eventUrl && source.kind===item.kind && source.access===item.access && source.confirmedAt===item.approval?.confirmedAt && source.publisher===item.publisher && time(source.validUntil)>now):null;
     if(!approvedSource || !Array.isArray(approvedSource.countries) || item.countries?.some(code=>!approvedSource.countries.includes(code)))continue;
     const checked=time(item?.checkedAt),expiry=time(item?.expiresAt),approved=time(item?.approval?.confirmedAt);
     if(item.approval.fixtureIdentity!==identity || item.approval.confirmed!==true || !Number.isFinite(checked)||!Number.isFinite(expiry)||!Number.isFinite(approved)||approved>now+5000||checked>now+5000||expiry<=checked||expiry<=now||expiry>time(approvedSource.validUntil)||expiry-checked>WATCH_TTL_MS||now-checked>WATCH_TTL_MS||checked<approved)continue;
@@ -66,6 +69,7 @@ export function validatedWatchOptions(match,catalogue,{country='',now=Date.now()
     seen.add(eventUrl);
     result.push({provider:item.provider,name:item.provider==='youtube'?'YouTube':item.provider==='kleaguetv'?'K LEAGUE TV':item.provider==='okko'?'Okko':'DAZN',
       kind:item.kind,access:item.access,eventUrl,videoId,
+      ...(scheduledBroadcasts&&item.kind==='live'?{scheduled:externalLive?item.sourceMetadata.publication==='Announced'||match.status==='NS'||time(match.date)>now:time(item.availableFrom)>now}:{}),
       // Official player only, with independent official-link fallback.
       embed:item.provider==='youtube' && item.embeddable===true,
       label:text(item.label)|| (item.kind==='live'?'Трансляция':item.kind==='replay'?'Полная запись':'Обзор'),
@@ -101,7 +105,7 @@ export function watchLibraryPayload(library,options={}){
     if(!home||!away)continue;
     seen.add(match.fixtureId);
     const leagueId=id(match.leagueId),leagueLabels={78:'Бундеслига · Германия',98:'J1 · Япония',188:'A-League · мужчины',190:'A-League · женщины',368:'Премьер-лига · Сингапур',140:'Ла Лига · Испания',135:'Серия А · Италия',292:'K LEAGUE 1 · Южная Корея',293:'K LEAGUE 2 · Южная Корея'};
-    cards.push({fixtureId:match.fixtureId,home,away,homeTeamId:id(match.home.id),awayTeamId:id(match.away.id),league:leagueLabels[leagueId]||text(match.league,120),date:new Date(time(match.date)).toISOString(),kinds:[...new Set(items.map(item=>item.kind))],registrationReplay:items.some(item=>item.kind==='replay'&&item.access==='registration'),embeddedReplay:items.some(item=>item.kind==='replay'&&item.embed),expiresAt:new Date(Math.min(...items.map(item=>time(item.expiresAt)))).toISOString()});
+    cards.push({fixtureId:match.fixtureId,home,away,homeTeamId:id(match.home.id),awayTeamId:id(match.away.id),league:leagueLabels[leagueId]||text(match.league,120),date:new Date(time(match.date)).toISOString(),kinds:[...new Set(items.map(item=>item.kind))],...(options.scheduledBroadcasts===true?{upcomingLive:items.some(item=>item.kind==='live')&&items.filter(item=>item.kind==='live').every(item=>item.scheduled===true),registrationLive:items.some(item=>item.kind==='live'&&item.access==='registration'),embeddedLive:items.some(item=>item.kind==='live'&&item.embed)}:{}),registrationReplay:items.some(item=>item.kind==='replay'&&item.access==='registration'),embeddedReplay:items.some(item=>item.kind==='replay'&&item.embed),expiresAt:new Date(Math.min(...items.map(item=>time(item.expiresAt)))).toISOString()});
   }
   cards.sort((a,b)=>Number(b.kinds.includes('live'))-Number(a.kinds.includes('live'))||(a.kinds.includes('live')?time(a.date)-time(b.date):time(b.date)-time(a.date)));
   return {country,available:cards.length>0,countries:[...countries].sort().map(code=>({code,name:countryName(code)})),items:cards};

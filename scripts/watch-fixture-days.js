@@ -14,12 +14,12 @@ function normalize(raw){
  const status=text(raw?.fixture?.status?.short,12),date=time(raw?.fixture?.date);
  return {fixtureId:raw?.fixture?.id,date:Number.isFinite(date)?new Date(date).toISOString():null,status,home:{id:raw?.teams?.home?.id,name:text(raw?.teams?.home?.name,120)},away:{id:raw?.teams?.away?.id,name:text(raw?.teams?.away?.name,120)},leagueId:raw?.league?.id,league:text(raw?.league?.name),season:raw?.league?.season,round:text(raw?.league?.round,120),score:{home:Number.isInteger(raw?.goals?.home)&&raw.goals.home>=0&&raw.goals.home<=99?raw.goals.home:null,away:Number.isInteger(raw?.goals?.away)&&raw.goals.away>=0&&raw.goals.away<=99?raw.goals.away:null},finished:['FT','AET','PEN'].includes(status),live:['1H','HT','2H','ET','BT','P','LIVE'].includes(status)};
 }
-export async function loadWatchFixtureDays({videos,policies,env,fetchImpl,now,readCache,writeCache,report,signal,fixtureHints=[]}){
+export async function loadWatchFixtureDays({videos,policies,env,fetchImpl,now,readCache,writeCache,report,signal,fixtureHints=[],broadcastHints=[]}){
  if(!env.API_FOOTBALL_KEY){report.fixtureSource='not_configured';return [];}
  const base=new URL(env.SUPABASE_URL),dbKey=env.SUPABASE_SECRET_KEY||env.SUPABASE_SERVICE_ROLE_KEY;
  if(!RELAY||base.href!==RELAY.origin+'/'||!dbKey||typeof env.API_FOOTBALL_KEY!=='string'||env.API_FOOTBALL_KEY.length>512)fail('WATCH_FIXTURE_CONFIGURATION');
  const leagueIds=[...new Set(policies.map(policy=>policy.leagueId))].sort((a,b)=>a-b),coverage=leagueIds.join(',');
- const today=Date.parse(new Date(now).toISOString().slice(0,10)+'T00:00:00Z'),dates=Array.from({length:9},(_,i)=>new Date(today+(i-7)*86400000).toISOString().slice(0,10));
+ const today=Date.parse(new Date(now).toISOString().slice(0,10)+'T00:00:00Z'),dates=Array.from({length:10},(_,i)=>new Date(today+(i-7)*86400000).toISOString().slice(0,10));
  const votes=new Map(),vote=(value,weight)=>{const ms=time(value);if(!Number.isFinite(ms))return;const day=new Date(ms).toISOString().slice(0,10);if(dates.includes(day))votes.set(day,(votes.get(day)||0)+weight);};
  for(const hint of fixtureHints.slice(0,100))vote(hint,20);
  for(const video of videos){
@@ -31,7 +31,7 @@ export async function loadWatchFixtureDays({videos,policies,env,fetchImpl,now,re
   const published=time(video.snippet?.publishedAt);
   if(Number.isFinite(published)){vote(new Date(published).toISOString(),3);vote(new Date(published-86400000).toISOString(),2);vote(new Date(published-2*86400000).toISOString(),1);}
  }
- const rows=await readCache({cache_key:`in.(${dates.map(key).join(',')})`,limit:'9'}),snapshots=new Map();
+ const rows=await readCache({cache_key:`in.(${dates.map(key).join(',')})`,limit:'10'}),snapshots=new Map();
  for(const row of rows){
   const p=row?.payload;if(!dates.includes(p?.date)||row.cache_key!==key(p.date)||p.version!==1||!Array.isArray(p.leagueIds)||!Array.isArray(p.matches)||p.matches.length>200||!Number.isFinite(time(p.checkedAt))||time(p.checkedAt)>now||now-time(p.checkedAt)>8*86400000)fail('WATCH_FIXTURE_CACHE_INVALID');
   const seen=new Set();for(const match of p.matches){if(!watchFixtureIdentity(match)||match.date.slice(0,10)!==p.date||!p.leagueIds.includes(match.leagueId)||seen.has(match.fixtureId))fail('WATCH_FIXTURE_CACHE_INVALID');seen.add(match.fixtureId);}
@@ -48,8 +48,9 @@ export async function loadWatchFixtureDays({videos,policies,env,fetchImpl,now,re
   // match into FT. Only the provider response below may change sporting state.
   const ended=unfinished.some(match=>videos.some(video=>policies.some(policy=>policy.channelId===video.snippet?.channelId&&policy.leagueId===match.leagueId&&!policy.highlightsOnly&&automaticReplayEvidence(match,video.liveStreamingDetails?.actualStartTime,video.liveStreamingDetails?.actualEndTime,now)&&automaticWatchMatch(policy,{...match,finished:true,status:'FT'},video.snippet.title,video.liveStreamingDetails?.scheduledStartTime,now,'replay'))));
   const published=unfinished.length&&videos.some(video=>policies.some(policy=>policy.channelId===video.snippet?.channelId&&unfinished.some(match=>match.leagueId===policy.leagueId))&&/highlights|resumen|SPL:/i.test(video.snippet?.title||'')&&time(video.snippet?.publishedAt)>time(snapshot.checkedAt)&&time(video.snippet?.publishedAt)<=now&&time(video.snippet?.publishedAt)>=Date.parse(date+'T00:00:00Z')+60*60000&&time(video.snippet?.publishedAt)<Date.parse(date+'T00:00:00Z')+3*86400000);
-  const interval=ended||published?15*60000:2*3600000;
-  const refresh=snapshot&&now-time(snapshot.checkedAt)>=interval&&(ended||published||unfinished.some(match=>time(match.date)+6*3600000<now));
+  const nearBroadcast=unfinished.some(match=>broadcastHints.some(value=>Math.abs(time(value)-time(match.date))<=60000&&now>=time(value)-15*60000&&now<time(value)+4*3600000));
+  const interval=nearBroadcast?30*60000:ended||published?15*60000:2*3600000;
+  const refresh=snapshot&&now-time(snapshot.checkedAt)>=interval&&(nearBroadcast||ended||published||unfinished.some(match=>time(match.date)+6*3600000<now));
   return (!snapshot||refresh)&&(!attempts[date]||now-time(attempts[date])>=interval);
  }).slice(0,2);
  async function request(url,headers,body,maxBytes=64000){
@@ -58,6 +59,13 @@ export async function loadWatchFixtureDays({videos,policies,env,fetchImpl,now,re
  }
  for(const date of candidates){
   if(usage.requests>=16){report.fixtureSource='daily_budget';break;}
+  if(!Object.hasOwn(attempts,date)&&Object.keys(attempts).length>=9){
+   // Preserve the rollback schema and every unresolved attempt interval. Only
+   // discard a marker for a positively completed, nonempty past-day snapshot.
+   const completed=Object.keys(attempts).sort().find(day=>Date.parse(day+'T00:00:00Z')<today&&snapshots.get(day)?.matches.length>0&&snapshots.get(day).matches.every(match=>match.finished===true&&['FT','AET','PEN'].includes(match.status)));
+   if(!completed){report.fixtureSource='marker_capacity';break;}
+   delete attempts[completed];
+  }
   attempts[date]=new Date(now).toISOString();
   usage.requests++;
   await writeCache(STATE,0,{version:1,coverage,attempts,usage},now+7*86400000);

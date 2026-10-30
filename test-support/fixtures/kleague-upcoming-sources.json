@@ -1,0 +1,2164 @@
+{
+  "observedAt": "2026-10-29T20:33:31.163Z",
+  "note": "Projection of actual public Nuxt indexed graphs; only parser-used fields retained and reference indexes renumbered. Independently confirmed API-Football fixture. No login/media/private API/playback verification.",
+  "pages": [
+    {
+      "url": "https://tv.kleague.com/en-int/page/k-league-2",
+      "bytes": 260597,
+      "sha256": "d220587cd0cab3d816933c6ebbceb88e10310ae665a38dc3c9d40871fb29da05"
+    },
+    {
+      "url": "https://tv.kleague.com/en-int/page/k-league-1",
+      "bytes": 262986,
+      "sha256": "bbdfc0caf93c7b6b383edad1fe773a505c7377daedf78a4c61af8df1085b23c6"
+    }
+  ],
+  "canonicalRun": 40950065420,
+  "canonicalMatch": {
+    "fixtureId": 1510483,
+    "date": "2026-10-31T05:00:00.000Z",
+    "status": "NS",
+    "home": {
+      "id": 2751,
+      "name": "Gyeongnam FC"
+    },
+    "away": {
+      "id": 7087,
+      "name": "Hwaseong"
+    },
+    "leagueId": 293,
+    "league": "K League 2",
+    "season": 2026,
+    "round": "Regular Season - 31",
+    "score": {
+      "home": null,
+      "away": null
+    },
+    "live": false,
+    "finished": false
+  },
+  "announcedNuxt": [
+    {
+      "items": 1
+    },
+    [
+      2,
+      61,
+      120,
+      179,
+      242,
+      305
+    ],
+    {
+      "id": 3,
+      "editorial": 4,
+      "contentType": 9,
+      "distributionType": 13,
+      "status": 15,
+      "length": 17,
+      "payment": 18,
+      "freeForEmbed": 21,
+      "startTime": 22,
+      "lastUpdatedAt": 23,
+      "geoRestrictions": 24,
+      "event": 35
+    },
+    2283712,
+    {
+      "translations": 5
+    },
+    {
+      "en": 6
+    },
+    {
+      "slug": 7,
+      "title": 8
+    },
+    "gyeongnam-fc-hwaseong-fc",
+    "GYEONGNAM FC - Hwaseong FC",
+    {
+      "name": 10,
+      "translations": 11
+    },
+    "Fullmatch",
+    {
+      "en": 12
+    },
+    "Fullmatch",
+    {
+      "name": 14
+    },
+    "Live",
+    {
+      "name": 16
+    },
+    "Announced",
+    0,
+    {
+      "name": 19,
+      "entitlements": 20
+    },
+    "Registration",
+    [],
+    false,
+    "2026-10-31T05:00:00+00:00",
+    "2026-10-28T14:32:03+00:00",
+    [
+      25,
+      30
+    ],
+    {
+      "deviceCategory": 26,
+      "isolist": 29
+    },
+    {
+      "id": 27,
+      "name": 28
+    },
+    1,
+    "Desktop",
+    "AD,AE,AF,AG,AI,AL,AM,AO,AQ,AR,AS,AT,AU,AW,AX,AZ,BA,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BN,BO,BQ,BR,BS,BT,BV,BW,BY,BZ,CA,CC,CD,CF,CG,CH,CI,CK,CL,CM,CN,CO,CR,CU,CV,CW,CX,CY,CZ,DE,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HK,HM,HN,HR,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KG,KH,KI,KM,KN,KP,KW,KY,KZ,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MD,ME,MF,MG,MH,MK,ML,MM,MN,MO,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MY,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PH,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RS,RU,RW,SA,SB,SC,SD,SE,SG,SH,SI,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TJ,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UA,UG,UM,US,UY,UZ,VA,VC,VE,VG,VI,VN,VU,WF,WS,XK,YE,YT,ZA,ZM,ZW",
+    {
+      "deviceCategory": 31,
+      "isolist": 34
+    },
+    {
+      "id": 32,
+      "name": 33
+    },
+    2,
+    "Mobile",
+    "AD,AE,AF,AG,AI,AL,AM,AO,AQ,AR,AS,AT,AU,AW,AX,AZ,BA,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BN,BO,BQ,BR,BS,BT,BV,BW,BY,BZ,CA,CC,CD,CF,CG,CH,CI,CK,CL,CM,CN,CO,CR,CU,CV,CW,CX,CY,CZ,DE,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HK,HM,HN,HR,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KG,KH,KI,KM,KN,KP,KW,KY,KZ,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MD,ME,MF,MG,MH,MK,ML,MM,MN,MO,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MY,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PH,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RS,RU,RW,SA,SB,SC,SD,SE,SG,SH,SI,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TJ,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UA,UG,UM,US,UY,UZ,VA,VC,VE,VG,VI,VN,VU,WF,WS,XK,YE,YT,ZA,ZM,ZW",
+    {
+      "id": 36,
+      "startTime": 37,
+      "category1": 38,
+      "category2": 42,
+      "category3": 46,
+      "homeCompetitor": 50,
+      "awayCompetitor": 53,
+      "metadata": 56
+    },
+    1273749,
+    "2026-10-31T05:00:00+00:00",
+    {
+      "name": 39,
+      "translations": 40
+    },
+    "Soccer",
+    {
+      "en": 41
+    },
+    "Soccer",
+    {
+      "name": 43,
+      "translations": 44
+    },
+    "K LEAGUE 2",
+    {
+      "en": 45
+    },
+    "K LEAGUE 2",
+    {
+      "name": 47,
+      "translations": 48
+    },
+    "K League 2",
+    {
+      "en": 49
+    },
+    "K LEAGUE 2",
+    {
+      "id": 51,
+      "name": 52
+    },
+    532260,
+    "Gyeongnam FC",
+    {
+      "id": 54,
+      "name": 55
+    },
+    1133528,
+    "Hwaseong FC",
+    [
+      57
+    ],
+    {
+      "field": 58,
+      "name": 60
+    },
+    {
+      "name": 59
+    },
+    "Stadium",
+    "Changwon Football Center",
+    {
+      "id": 62,
+      "editorial": 63,
+      "contentType": 68,
+      "distributionType": 72,
+      "status": 74,
+      "length": 76,
+      "payment": 77,
+      "freeForEmbed": 80,
+      "startTime": 81,
+      "lastUpdatedAt": 82,
+      "geoRestrictions": 83,
+      "event": 94
+    },
+    2283735,
+    {
+      "translations": 64
+    },
+    {
+      "en": 65
+    },
+    {
+      "slug": 66,
+      "title": 67
+    },
+    "yongin-fc-seoul-e-land-fc",
+    "Yongin FC - SEOUL E-LAND FC",
+    {
+      "name": 69,
+      "translations": 70
+    },
+    "Fullmatch",
+    {
+      "en": 71
+    },
+    "Fullmatch",
+    {
+      "name": 73
+    },
+    "Live",
+    {
+      "name": 75
+    },
+    "Announced",
+    0,
+    {
+      "name": 78,
+      "entitlements": 79
+    },
+    "Registration",
+    [],
+    false,
+    "2026-10-31T05:00:00+00:00",
+    "2026-10-28T14:35:44+00:00",
+    [
+      84,
+      89
+    ],
+    {
+      "deviceCategory": 85,
+      "isolist": 88
+    },
+    {
+      "id": 86,
+      "name": 87
+    },
+    1,
+    "Desktop",
+    "AD,AE,AF,AG,AI,AL,AM,AO,AQ,AR,AS,AT,AU,AW,AX,AZ,BA,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BN,BO,BQ,BR,BS,BT,BV,BW,BY,BZ,CA,CC,CD,CF,CG,CH,CI,CK,CL,CM,CN,CO,CR,CU,CV,CW,CX,CY,CZ,DE,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HK,HM,HN,HR,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KG,KH,KI,KM,KN,KP,KW,KY,KZ,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MD,ME,MF,MG,MH,MK,ML,MM,MN,MO,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MY,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PH,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RS,RU,RW,SA,SB,SC,SD,SE,SG,SH,SI,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TJ,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UA,UG,UM,US,UY,UZ,VA,VC,VE,VG,VI,VN,VU,WF,WS,XK,YE,YT,ZA,ZM,ZW",
+    {
+      "deviceCategory": 90,
+      "isolist": 93
+    },
+    {
+      "id": 91,
+      "name": 92
+    },
+    2,
+    "Mobile",
+    "AD,AE,AF,AG,AI,AL,AM,AO,AQ,AR,AS,AT,AU,AW,AX,AZ,BA,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BN,BO,BQ,BR,BS,BT,BV,BW,BY,BZ,CA,CC,CD,CF,CG,CH,CI,CK,CL,CM,CN,CO,CR,CU,CV,CW,CX,CY,CZ,DE,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HK,HM,HN,HR,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KG,KH,KI,KM,KN,KP,KW,KY,KZ,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MD,ME,MF,MG,MH,MK,ML,MM,MN,MO,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MY,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PH,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RS,RU,RW,SA,SB,SC,SD,SE,SG,SH,SI,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TJ,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UA,UG,UM,US,UY,UZ,VA,VC,VE,VG,VI,VN,VU,WF,WS,XK,YE,YT,ZA,ZM,ZW",
+    {
+      "id": 95,
+      "startTime": 96,
+      "category1": 97,
+      "category2": 101,
+      "category3": 105,
+      "homeCompetitor": 109,
+      "awayCompetitor": 112,
+      "metadata": 115
+    },
+    1273760,
+    "2026-10-31T05:00:00+00:00",
+    {
+      "name": 98,
+      "translations": 99
+    },
+    "Soccer",
+    {
+      "en": 100
+    },
+    "Soccer",
+    {
+      "name": 102,
+      "translations": 103
+    },
+    "K LEAGUE 2",
+    {
+      "en": 104
+    },
+    "K LEAGUE 2",
+    {
+      "name": 106,
+      "translations": 107
+    },
+    "K League 2",
+    {
+      "en": 108
+    },
+    "K LEAGUE 2",
+    {
+      "id": 110,
+      "name": 111
+    },
+    1148972,
+    "Yongin FC",
+    {
+      "id": 113,
+      "name": 114
+    },
+    532270,
+    "Seoul E-Land FC",
+    [
+      116
+    ],
+    {
+      "field": 117,
+      "name": 119
+    },
+    {
+      "name": 118
+    },
+    "Round",
+    "Round 31",
+    {
+      "id": 121,
+      "editorial": 122,
+      "contentType": 127,
+      "distributionType": 131,
+      "status": 133,
+      "length": 135,
+      "payment": 136,
+      "freeForEmbed": 139,
+      "startTime": 140,
+      "lastUpdatedAt": 141,
+      "geoRestrictions": 142,
+      "event": 153
+    },
+    2283760,
+    {
+      "translations": 123
+    },
+    {
+      "en": 124
+    },
+    {
+      "slug": 125,
+      "title": 126
+    },
+    "chungnam-asan-fc-gimpo-fc",
+    "CHUNGNAM ASAN FC - Gimpo FC",
+    {
+      "name": 128,
+      "translations": 129
+    },
+    "Fullmatch",
+    {
+      "en": 130
+    },
+    "Fullmatch",
+    {
+      "name": 132
+    },
+    "Live",
+    {
+      "name": 134
+    },
+    "Announced",
+    0,
+    {
+      "name": 137,
+      "entitlements": 138
+    },
+    "Registration",
+    [],
+    false,
+    "2026-10-31T07:30:00+00:00",
+    "2026-10-28T14:37:25+00:00",
+    [
+      143,
+      148
+    ],
+    {
+      "deviceCategory": 144,
+      "isolist": 147
+    },
+    {
+      "id": 145,
+      "name": 146
+    },
+    1,
+    "Desktop",
+    "AD,AE,AF,AG,AI,AL,AM,AO,AQ,AR,AS,AT,AU,AW,AX,AZ,BA,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BN,BO,BQ,BR,BS,BT,BV,BW,BY,BZ,CA,CC,CD,CF,CG,CH,CI,CK,CL,CM,CN,CO,CR,CU,CV,CW,CX,CY,CZ,DE,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HK,HM,HN,HR,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KG,KH,KI,KM,KN,KP,KW,KY,KZ,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MD,ME,MF,MG,MH,MK,ML,MM,MN,MO,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MY,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PH,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RS,RU,RW,SA,SB,SC,SD,SE,SG,SH,SI,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TJ,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UA,UG,UM,US,UY,UZ,VA,VC,VE,VG,VI,VN,VU,WF,WS,XK,YE,YT,ZA,ZM,ZW",
+    {
+      "deviceCategory": 149,
+      "isolist": 152
+    },
+    {
+      "id": 150,
+      "name": 151
+    },
+    2,
+    "Mobile",
+    "AD,AE,AF,AG,AI,AL,AM,AO,AQ,AR,AS,AT,AU,AW,AX,AZ,BA,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BN,BO,BQ,BR,BS,BT,BV,BW,BY,BZ,CA,CC,CD,CF,CG,CH,CI,CK,CL,CM,CN,CO,CR,CU,CV,CW,CX,CY,CZ,DE,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HK,HM,HN,HR,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KG,KH,KI,KM,KN,KP,KW,KY,KZ,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MD,ME,MF,MG,MH,MK,ML,MM,MN,MO,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MY,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PH,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RS,RU,RW,SA,SB,SC,SD,SE,SG,SH,SI,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TJ,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UA,UG,UM,US,UY,UZ,VA,VC,VE,VG,VI,VN,VU,WF,WS,XK,YE,YT,ZA,ZM,ZW",
+    {
+      "id": 154,
+      "startTime": 155,
+      "category1": 156,
+      "category2": 160,
+      "category3": 164,
+      "homeCompetitor": 168,
+      "awayCompetitor": 171,
+      "metadata": 174
+    },
+    1273770,
+    "2026-10-31T07:30:00+00:00",
+    {
+      "name": 157,
+      "translations": 158
+    },
+    "Soccer",
+    {
+      "en": 159
+    },
+    "Soccer",
+    {
+      "name": 161,
+      "translations": 162
+    },
+    "K LEAGUE 2",
+    {
+      "en": 163
+    },
+    "K LEAGUE 2",
+    {
+      "name": 165,
+      "translations": 166
+    },
+    "K League 2",
+    {
+      "en": 167
+    },
+    "K LEAGUE 2",
+    {
+      "id": 169,
+      "name": 170
+    },
+    532296,
+    "Chungnam Asan FC",
+    {
+      "id": 172,
+      "name": 173
+    },
+    1100792,
+    "Gimpo FC",
+    [
+      175
+    ],
+    {
+      "field": 176,
+      "name": 178
+    },
+    {
+      "name": 177
+    },
+    "Stadium",
+    "Yi Sun-sin Stadium",
+    {
+      "id": 180,
+      "editorial": 181,
+      "contentType": 186,
+      "distributionType": 190,
+      "status": 192,
+      "length": 194,
+      "payment": 195,
+      "freeForEmbed": 198,
+      "startTime": 199,
+      "lastUpdatedAt": 200,
+      "geoRestrictions": 201,
+      "event": 212
+    },
+    2283766,
+    {
+      "translations": 182
+    },
+    {
+      "en": 183
+    },
+    {
+      "slug": 184,
+      "title": 185
+    },
+    "daegu-fc-suwon-samsung",
+    "DAEGU FC - SUWON SAMSUNG",
+    {
+      "name": 187,
+      "translations": 188
+    },
+    "Fullmatch",
+    {
+      "en": 189
+    },
+    "Fullmatch",
+    {
+      "name": 191
+    },
+    "Live",
+    {
+      "name": 193
+    },
+    "Announced",
+    0,
+    {
+      "name": 196,
+      "entitlements": 197
+    },
+    "Registration",
+    [],
+    false,
+    "2026-10-31T07:30:00+00:00",
+    "2026-10-28T14:38:22+00:00",
+    [
+      202,
+      207
+    ],
+    {
+      "deviceCategory": 203,
+      "isolist": 206
+    },
+    {
+      "id": 204,
+      "name": 205
+    },
+    1,
+    "Desktop",
+    "AD,AE,AF,AG,AI,AL,AM,AO,AQ,AR,AS,AT,AU,AW,AX,AZ,BA,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BN,BO,BQ,BR,BS,BT,BV,BW,BY,BZ,CA,CC,CD,CF,CG,CH,CI,CK,CL,CM,CN,CO,CR,CU,CV,CW,CX,CY,CZ,DE,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HK,HM,HN,HR,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KG,KH,KI,KM,KN,KP,KW,KY,KZ,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MD,ME,MF,MG,MH,MK,ML,MM,MN,MO,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MY,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PH,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RS,RU,RW,SA,SB,SC,SD,SE,SG,SH,SI,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TJ,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UA,UG,UM,US,UY,UZ,VA,VC,VE,VG,VI,VN,VU,WF,WS,XK,YE,YT,ZA,ZM,ZW",
+    {
+      "deviceCategory": 208,
+      "isolist": 211
+    },
+    {
+      "id": 209,
+      "name": 210
+    },
+    2,
+    "Mobile",
+    "AD,AE,AF,AG,AI,AL,AM,AO,AQ,AR,AS,AT,AU,AW,AX,AZ,BA,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BN,BO,BQ,BR,BS,BT,BV,BW,BY,BZ,CA,CC,CD,CF,CG,CH,CI,CK,CL,CM,CN,CO,CR,CU,CV,CW,CX,CY,CZ,DE,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HK,HM,HN,HR,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KG,KH,KI,KM,KN,KP,KW,KY,KZ,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MD,ME,MF,MG,MH,MK,ML,MM,MN,MO,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MY,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PH,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RS,RU,RW,SA,SB,SC,SD,SE,SG,SH,SI,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TJ,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UA,UG,UM,US,UY,UZ,VA,VC,VE,VG,VI,VN,VU,WF,WS,XK,YE,YT,ZA,ZM,ZW",
+    {
+      "id": 213,
+      "startTime": 214,
+      "category1": 215,
+      "category2": 219,
+      "category3": 223,
+      "homeCompetitor": 227,
+      "awayCompetitor": 230,
+      "metadata": 233
+    },
+    1273774,
+    "2026-10-31T07:30:00+00:00",
+    {
+      "name": 216,
+      "translations": 217
+    },
+    "Soccer",
+    {
+      "en": 218
+    },
+    "Soccer",
+    {
+      "name": 220,
+      "translations": 221
+    },
+    "K LEAGUE 2",
+    {
+      "en": 222
+    },
+    "K LEAGUE 2",
+    {
+      "name": 224,
+      "translations": 225
+    },
+    "K League 2",
+    {
+      "en": 226
+    },
+    "K LEAGUE 2",
+    {
+      "id": 228,
+      "name": 229
+    },
+    532216,
+    "Daegu FC",
+    {
+      "id": 231,
+      "name": 232
+    },
+    532235,
+    "Suwon Samsung",
+    [
+      234,
+      238
+    ],
+    {
+      "field": 235,
+      "name": 237
+    },
+    {
+      "name": 236
+    },
+    "Stadium",
+    "DGB Daegu Bank Park",
+    {
+      "field": 239,
+      "name": 241
+    },
+    {
+      "name": 240
+    },
+    "Round",
+    "Round 31",
+    {
+      "id": 243,
+      "editorial": 244,
+      "contentType": 249,
+      "distributionType": 253,
+      "status": 255,
+      "length": 257,
+      "payment": 258,
+      "freeForEmbed": 261,
+      "startTime": 262,
+      "lastUpdatedAt": 263,
+      "geoRestrictions": 264,
+      "event": 275
+    },
+    2283724,
+    {
+      "translations": 245
+    },
+    {
+      "en": 246
+    },
+    {
+      "slug": 247,
+      "title": 248
+    },
+    "suwon-fc-ansan-greeners-fc",
+    "SUWON FC - ANSAN GREENERS FC",
+    {
+      "name": 250,
+      "translations": 251
+    },
+    "Fullmatch",
+    {
+      "en": 252
+    },
+    "Fullmatch",
+    {
+      "name": 254
+    },
+    "Live",
+    {
+      "name": 256
+    },
+    "Announced",
+    0,
+    {
+      "name": 259,
+      "entitlements": 260
+    },
+    "Registration",
+    [],
+    false,
+    "2026-11-01T05:00:00+00:00",
+    "2026-10-28T14:35:31+00:00",
+    [
+      265,
+      270
+    ],
+    {
+      "deviceCategory": 266,
+      "isolist": 269
+    },
+    {
+      "id": 267,
+      "name": 268
+    },
+    1,
+    "Desktop",
+    "AD,AE,AF,AG,AI,AL,AM,AO,AQ,AR,AS,AT,AU,AW,AX,AZ,BA,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BN,BO,BQ,BR,BS,BT,BV,BW,BY,BZ,CA,CC,CD,CF,CG,CH,CI,CK,CL,CM,CN,CO,CR,CU,CV,CW,CX,CY,CZ,DE,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HK,HM,HN,HR,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KG,KH,KI,KM,KN,KP,KW,KY,KZ,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MD,ME,MF,MG,MH,MK,ML,MM,MN,MO,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MY,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PH,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RS,RU,RW,SA,SB,SC,SD,SE,SG,SH,SI,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TJ,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UA,UG,UM,US,UY,UZ,VA,VC,VE,VG,VI,VN,VU,WF,WS,XK,YE,YT,ZA,ZM,ZW",
+    {
+      "deviceCategory": 271,
+      "isolist": 274
+    },
+    {
+      "id": 272,
+      "name": 273
+    },
+    2,
+    "Mobile",
+    "AD,AE,AF,AG,AI,AL,AM,AO,AQ,AR,AS,AT,AU,AW,AX,AZ,BA,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BN,BO,BQ,BR,BS,BT,BV,BW,BY,BZ,CA,CC,CD,CF,CG,CH,CI,CK,CL,CM,CN,CO,CR,CU,CV,CW,CX,CY,CZ,DE,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HK,HM,HN,HR,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KG,KH,KI,KM,KN,KP,KW,KY,KZ,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MD,ME,MF,MG,MH,MK,ML,MM,MN,MO,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MY,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PH,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RS,RU,RW,SA,SB,SC,SD,SE,SG,SH,SI,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TJ,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UA,UG,UM,US,UY,UZ,VA,VC,VE,VG,VI,VN,VU,WF,WS,XK,YE,YT,ZA,ZM,ZW",
+    {
+      "id": 276,
+      "startTime": 277,
+      "category1": 278,
+      "category2": 282,
+      "category3": 286,
+      "homeCompetitor": 290,
+      "awayCompetitor": 293,
+      "metadata": 296
+    },
+    1273755,
+    "2026-11-01T05:00:00+00:00",
+    {
+      "name": 279,
+      "translations": 280
+    },
+    "Soccer",
+    {
+      "en": 281
+    },
+    "Soccer",
+    {
+      "name": 283,
+      "translations": 284
+    },
+    "K LEAGUE 2",
+    {
+      "en": 285
+    },
+    "K LEAGUE 2",
+    {
+      "name": 287,
+      "translations": 288
+    },
+    "K League 2",
+    {
+      "en": 289
+    },
+    "K LEAGUE 2",
+    {
+      "id": 291,
+      "name": 292
+    },
+    532256,
+    "Suwon FC",
+    {
+      "id": 294,
+      "name": 295
+    },
+    532280,
+    "Ansan Greeners FC",
+    [
+      297,
+      301
+    ],
+    {
+      "field": 298,
+      "name": 300
+    },
+    {
+      "name": 299
+    },
+    "Stadium",
+    "Suwon Civic Stadium",
+    {
+      "field": 302,
+      "name": 304
+    },
+    {
+      "name": 303
+    },
+    "Round",
+    "Round 31",
+    {
+      "id": 306,
+      "editorial": 307,
+      "contentType": 312,
+      "distributionType": 316,
+      "status": 318,
+      "length": 320,
+      "payment": 321,
+      "freeForEmbed": 324,
+      "startTime": 325,
+      "lastUpdatedAt": 326,
+      "geoRestrictions": 327,
+      "event": 338
+    },
+    2283752,
+    {
+      "translations": 308
+    },
+    {
+      "en": 309
+    },
+    {
+      "slug": 310,
+      "title": 311
+    },
+    "jeonnam-dragons-seongnam-fc",
+    "JEONNAM DRAGONS - SEONGNAM FC",
+    {
+      "name": 313,
+      "translations": 314
+    },
+    "Fullmatch",
+    {
+      "en": 315
+    },
+    "Fullmatch",
+    {
+      "name": 317
+    },
+    "Live",
+    {
+      "name": 319
+    },
+    "Announced",
+    0,
+    {
+      "name": 322,
+      "entitlements": 323
+    },
+    "Registration",
+    [],
+    false,
+    "2026-11-01T05:00:00+00:00",
+    "2026-10-28T14:36:35+00:00",
+    [
+      328,
+      333
+    ],
+    {
+      "deviceCategory": 329,
+      "isolist": 332
+    },
+    {
+      "id": 330,
+      "name": 331
+    },
+    1,
+    "Desktop",
+    "AD,AE,AF,AG,AI,AL,AM,AO,AQ,AR,AS,AT,AU,AW,AX,AZ,BA,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BN,BO,BQ,BR,BS,BT,BV,BW,BY,BZ,CA,CC,CD,CF,CG,CH,CI,CK,CL,CM,CN,CO,CR,CU,CV,CW,CX,CY,CZ,DE,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HK,HM,HN,HR,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KG,KH,KI,KM,KN,KP,KW,KY,KZ,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MD,ME,MF,MG,MH,MK,ML,MM,MN,MO,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MY,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PH,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RS,RU,RW,SA,SB,SC,SD,SE,SG,SH,SI,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TJ,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UA,UG,UM,US,UY,UZ,VA,VC,VE,VG,VI,VN,VU,WF,WS,XK,YE,YT,ZA,ZM,ZW",
+    {
+      "deviceCategory": 334,
+      "isolist": 337
+    },
+    {
+      "id": 335,
+      "name": 336
+    },
+    2,
+    "Mobile",
+    "AD,AE,AF,AG,AI,AL,AM,AO,AQ,AR,AS,AT,AU,AW,AX,AZ,BA,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BN,BO,BQ,BR,BS,BT,BV,BW,BY,BZ,CA,CC,CD,CF,CG,CH,CI,CK,CL,CM,CN,CO,CR,CU,CV,CW,CX,CY,CZ,DE,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HK,HM,HN,HR,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KG,KH,KI,KM,KN,KP,KW,KY,KZ,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MD,ME,MF,MG,MH,MK,ML,MM,MN,MO,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MY,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PH,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RS,RU,RW,SA,SB,SC,SD,SE,SG,SH,SI,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TJ,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UA,UG,UM,US,UY,UZ,VA,VC,VE,VG,VI,VN,VU,WF,WS,XK,YE,YT,ZA,ZM,ZW",
+    {
+      "id": 339,
+      "startTime": 340,
+      "category1": 341,
+      "category2": 345,
+      "category3": 349,
+      "homeCompetitor": 353,
+      "awayCompetitor": 356,
+      "metadata": 359
+    },
+    1273766,
+    "2026-11-01T05:00:00+00:00",
+    {
+      "name": 342,
+      "translations": 343
+    },
+    "Soccer",
+    {
+      "en": 344
+    },
+    "Soccer",
+    {
+      "name": 346,
+      "translations": 347
+    },
+    "K LEAGUE 2",
+    {
+      "en": 348
+    },
+    "K LEAGUE 2",
+    {
+      "name": 350,
+      "translations": 351
+    },
+    "K League 2",
+    {
+      "en": 352
+    },
+    "K LEAGUE 2",
+    {
+      "id": 354,
+      "name": 355
+    },
+    532276,
+    "Jeonnam Dragons",
+    {
+      "id": 357,
+      "name": 358
+    },
+    532246,
+    "Seongnam FC",
+    [
+      360
+    ],
+    {
+      "field": 361,
+      "name": 363
+    },
+    {
+      "name": 362
+    },
+    "Stadium",
+    "Gwangyang Football Stadium"
+  ],
+  "blockedK1Nuxt": [
+    {
+      "items": 1
+    },
+    [
+      2,
+      65,
+      128,
+      191,
+      254,
+      317
+    ],
+    {
+      "id": 3,
+      "editorial": 4,
+      "contentType": 9,
+      "distributionType": 13,
+      "status": 15,
+      "length": 17,
+      "payment": 18,
+      "freeForEmbed": 21,
+      "startTime": 22,
+      "lastUpdatedAt": 23,
+      "geoRestrictions": 24,
+      "event": 35
+    },
+    2283625,
+    {
+      "translations": 5
+    },
+    {
+      "en": 6
+    },
+    {
+      "slug": 7,
+      "title": 8
+    },
+    "jeonbuk-hyundai-motors-daejeon-hana-citizen",
+    "JEONBUK HYUNDAI MOTORS - DAEJEON HANA CITIZEN",
+    {
+      "name": 10,
+      "translations": 11
+    },
+    "Fullmatch",
+    {
+      "en": 12
+    },
+    "Fullmatch",
+    {
+      "name": 14
+    },
+    "Live",
+    {
+      "name": 16
+    },
+    "Announced",
+    0,
+    {
+      "name": 19,
+      "entitlements": 20
+    },
+    "Registration",
+    [],
+    false,
+    "2026-10-31T05:00:00+00:00",
+    "2026-10-28T14:10:16+00:00",
+    [
+      25,
+      30
+    ],
+    {
+      "deviceCategory": 26,
+      "isolist": 29
+    },
+    {
+      "id": 27,
+      "name": 28
+    },
+    1,
+    "Desktop",
+    "AD,AE,AF,AG,AI,AL,AO,AQ,AR,AS,AU,AW,AX,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BO,BQ,BR,BS,BT,BV,BW,BZ,CA,CC,CD,CF,CG,CI,CK,CL,CM,CO,CR,CU,CV,CW,CX,CY,CZ,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HM,HN,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KH,KI,KM,KN,KP,KW,KY,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MF,MG,MH,ML,MM,MN,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RW,SA,SB,SC,SD,SE,SG,SH,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UG,UM,US,UY,VA,VC,VE,VG,VI,VN,VU,WF,WS,YE,YT,ZA,ZM,ZW",
+    {
+      "deviceCategory": 31,
+      "isolist": 34
+    },
+    {
+      "id": 32,
+      "name": 33
+    },
+    2,
+    "Mobile",
+    "AD,AE,AF,AG,AI,AL,AO,AQ,AR,AS,AU,AW,AX,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BO,BQ,BR,BS,BT,BV,BW,BZ,CA,CC,CD,CF,CG,CI,CK,CL,CM,CO,CR,CU,CV,CW,CX,CY,CZ,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HM,HN,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KH,KI,KM,KN,KP,KW,KY,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MF,MG,MH,ML,MM,MN,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RW,SA,SB,SC,SD,SE,SG,SH,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UG,UM,US,UY,VA,VC,VE,VG,VI,VN,VU,WF,WS,YE,YT,ZA,ZM,ZW",
+    {
+      "id": 36,
+      "startTime": 37,
+      "category1": 38,
+      "category2": 42,
+      "category3": 46,
+      "homeCompetitor": 50,
+      "awayCompetitor": 53,
+      "metadata": 56
+    },
+    1273699,
+    "2026-10-31T05:00:00+00:00",
+    {
+      "name": 39,
+      "translations": 40
+    },
+    "Soccer",
+    {
+      "en": 41
+    },
+    "Soccer",
+    {
+      "name": 43,
+      "translations": 44
+    },
+    "K LEAGUE 1",
+    {
+      "en": 45
+    },
+    "K LEAGUE 1",
+    {
+      "name": 47,
+      "translations": 48
+    },
+    "K League 1",
+    {
+      "en": 49
+    },
+    "K LEAGUE 1",
+    {
+      "id": 51,
+      "name": 52
+    },
+    532211,
+    "Jeonbuk Hyundai Motors",
+    {
+      "id": 54,
+      "name": 55
+    },
+    532264,
+    "Daejeon Citizen FC",
+    [
+      57,
+      61
+    ],
+    {
+      "field": 58,
+      "name": 60
+    },
+    {
+      "name": 59
+    },
+    "Stadium",
+    "Jeonju World Cup Stadium",
+    {
+      "field": 62,
+      "name": 64
+    },
+    {
+      "name": 63
+    },
+    "Round",
+    "Round 34",
+    {
+      "id": 66,
+      "editorial": 67,
+      "contentType": 72,
+      "distributionType": 76,
+      "status": 78,
+      "length": 80,
+      "payment": 81,
+      "freeForEmbed": 84,
+      "startTime": 85,
+      "lastUpdatedAt": 86,
+      "geoRestrictions": 87,
+      "event": 98
+    },
+    2283626,
+    {
+      "translations": 68
+    },
+    {
+      "en": 69
+    },
+    {
+      "slug": 70,
+      "title": 71
+    },
+    "gwangju-fc-gimcheon-sangmu-fc",
+    "GWANGJU FC - GIMCHEON SANGMU FC",
+    {
+      "name": 73,
+      "translations": 74
+    },
+    "Fullmatch",
+    {
+      "en": 75
+    },
+    "Fullmatch",
+    {
+      "name": 77
+    },
+    "Live",
+    {
+      "name": 79
+    },
+    "Announced",
+    0,
+    {
+      "name": 82,
+      "entitlements": 83
+    },
+    "Registration",
+    [],
+    false,
+    "2026-10-31T07:30:00+00:00",
+    "2026-10-28T14:10:17+00:00",
+    [
+      88,
+      93
+    ],
+    {
+      "deviceCategory": 89,
+      "isolist": 92
+    },
+    {
+      "id": 90,
+      "name": 91
+    },
+    1,
+    "Desktop",
+    "AD,AE,AF,AG,AI,AL,AO,AQ,AR,AS,AU,AW,AX,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BO,BQ,BR,BS,BT,BV,BW,BZ,CA,CC,CD,CF,CG,CI,CK,CL,CM,CO,CR,CU,CV,CW,CX,CY,CZ,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HM,HN,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KH,KI,KM,KN,KP,KW,KY,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MF,MG,MH,ML,MM,MN,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RW,SA,SB,SC,SD,SE,SG,SH,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UG,UM,US,UY,VA,VC,VE,VG,VI,VN,VU,WF,WS,YE,YT,ZA,ZM,ZW",
+    {
+      "deviceCategory": 94,
+      "isolist": 97
+    },
+    {
+      "id": 95,
+      "name": 96
+    },
+    2,
+    "Mobile",
+    "AD,AE,AF,AG,AI,AL,AO,AQ,AR,AS,AU,AW,AX,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BO,BQ,BR,BS,BT,BV,BW,BZ,CA,CC,CD,CF,CG,CI,CK,CL,CM,CO,CR,CU,CV,CW,CX,CY,CZ,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HM,HN,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KH,KI,KM,KN,KP,KW,KY,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MF,MG,MH,ML,MM,MN,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RW,SA,SB,SC,SD,SE,SG,SH,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UG,UM,US,UY,VA,VC,VE,VG,VI,VN,VU,WF,WS,YE,YT,ZA,ZM,ZW",
+    {
+      "id": 99,
+      "startTime": 100,
+      "category1": 101,
+      "category2": 105,
+      "category3": 109,
+      "homeCompetitor": 113,
+      "awayCompetitor": 116,
+      "metadata": 119
+    },
+    1273700,
+    "2026-10-31T07:30:00+00:00",
+    {
+      "name": 102,
+      "translations": 103
+    },
+    "Soccer",
+    {
+      "en": 104
+    },
+    "Soccer",
+    {
+      "name": 106,
+      "translations": 107
+    },
+    "K LEAGUE 1",
+    {
+      "en": 108
+    },
+    "K LEAGUE 1",
+    {
+      "name": 110,
+      "translations": 111
+    },
+    "K League 1",
+    {
+      "en": 112
+    },
+    "K LEAGUE 1",
+    {
+      "id": 114,
+      "name": 115
+    },
+    532224,
+    "Gwangju FC",
+    {
+      "id": 117,
+      "name": 118
+    },
+    532299,
+    "Gimcheon Sangmu FC",
+    [
+      120,
+      124
+    ],
+    {
+      "field": 121,
+      "name": 123
+    },
+    {
+      "name": 122
+    },
+    "Stadium",
+    "Gwangju Football Stadium",
+    {
+      "field": 125,
+      "name": 127
+    },
+    {
+      "name": 126
+    },
+    "Round",
+    "Round 34",
+    {
+      "id": 129,
+      "editorial": 130,
+      "contentType": 135,
+      "distributionType": 139,
+      "status": 141,
+      "length": 143,
+      "payment": 144,
+      "freeForEmbed": 147,
+      "startTime": 148,
+      "lastUpdatedAt": 149,
+      "geoRestrictions": 150,
+      "event": 161
+    },
+    2283629,
+    {
+      "translations": 131
+    },
+    {
+      "en": 132
+    },
+    {
+      "slug": 133,
+      "title": 134
+    },
+    "pohang-steelers-jeju-sk",
+    "POHANG STEELERS - JEJU SK",
+    {
+      "name": 136,
+      "translations": 137
+    },
+    "Fullmatch",
+    {
+      "en": 138
+    },
+    "Fullmatch",
+    {
+      "name": 140
+    },
+    "Live",
+    {
+      "name": 142
+    },
+    "Announced",
+    0,
+    {
+      "name": 145,
+      "entitlements": 146
+    },
+    "Registration",
+    [],
+    false,
+    "2026-11-01T05:00:00+00:00",
+    "2026-10-28T14:10:31+00:00",
+    [
+      151,
+      156
+    ],
+    {
+      "deviceCategory": 152,
+      "isolist": 155
+    },
+    {
+      "id": 153,
+      "name": 154
+    },
+    1,
+    "Desktop",
+    "AD,AE,AF,AG,AI,AL,AO,AQ,AR,AS,AU,AW,AX,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BO,BQ,BR,BS,BT,BV,BW,BZ,CA,CC,CD,CF,CG,CI,CK,CL,CM,CO,CR,CU,CV,CW,CX,CY,CZ,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HM,HN,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KH,KI,KM,KN,KP,KW,KY,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MF,MG,MH,ML,MM,MN,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RW,SA,SB,SC,SD,SE,SG,SH,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UG,UM,US,UY,VA,VC,VE,VG,VI,VN,VU,WF,WS,YE,YT,ZA,ZM,ZW",
+    {
+      "deviceCategory": 157,
+      "isolist": 160
+    },
+    {
+      "id": 158,
+      "name": 159
+    },
+    2,
+    "Mobile",
+    "AD,AE,AF,AG,AI,AL,AO,AQ,AR,AS,AU,AW,AX,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BO,BQ,BR,BS,BT,BV,BW,BZ,CA,CC,CD,CF,CG,CI,CK,CL,CM,CO,CR,CU,CV,CW,CX,CY,CZ,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HM,HN,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KH,KI,KM,KN,KP,KW,KY,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MF,MG,MH,ML,MM,MN,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RW,SA,SB,SC,SD,SE,SG,SH,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UG,UM,US,UY,VA,VC,VE,VG,VI,VN,VU,WF,WS,YE,YT,ZA,ZM,ZW",
+    {
+      "id": 162,
+      "startTime": 163,
+      "category1": 164,
+      "category2": 168,
+      "category3": 172,
+      "homeCompetitor": 176,
+      "awayCompetitor": 179,
+      "metadata": 182
+    },
+    1273701,
+    "2026-11-01T05:00:00+00:00",
+    {
+      "name": 165,
+      "translations": 166
+    },
+    "Soccer",
+    {
+      "en": 167
+    },
+    "Soccer",
+    {
+      "name": 169,
+      "translations": 170
+    },
+    "K LEAGUE 1",
+    {
+      "en": 171
+    },
+    "K LEAGUE 1",
+    {
+      "name": 173,
+      "translations": 174
+    },
+    "K League 1",
+    {
+      "en": 175
+    },
+    "K LEAGUE 1",
+    {
+      "id": 177,
+      "name": 178
+    },
+    532214,
+    "Pohang Steelers",
+    {
+      "id": 180,
+      "name": 181
+    },
+    532254,
+    "Jeju SK",
+    [
+      183,
+      187
+    ],
+    {
+      "field": 184,
+      "name": 186
+    },
+    {
+      "name": 185
+    },
+    "Stadium",
+    "Sangju Civic Stadium",
+    {
+      "field": 188,
+      "name": 190
+    },
+    {
+      "name": 189
+    },
+    "Round",
+    "Round 34",
+    {
+      "id": 192,
+      "editorial": 193,
+      "contentType": 198,
+      "distributionType": 202,
+      "status": 204,
+      "length": 206,
+      "payment": 207,
+      "freeForEmbed": 210,
+      "startTime": 211,
+      "lastUpdatedAt": 212,
+      "geoRestrictions": 213,
+      "event": 224
+    },
+    2283634,
+    {
+      "translations": 194
+    },
+    {
+      "en": 195
+    },
+    {
+      "slug": 196,
+      "title": 197
+    },
+    "ulsan-hyundai-fc-gangwon-fc",
+    "ULSAN HYUNDAI FC - GANGWON FC",
+    {
+      "name": 199,
+      "translations": 200
+    },
+    "Fullmatch",
+    {
+      "en": 201
+    },
+    "Fullmatch",
+    {
+      "name": 203
+    },
+    "Live",
+    {
+      "name": 205
+    },
+    "Announced",
+    0,
+    {
+      "name": 208,
+      "entitlements": 209
+    },
+    "Registration",
+    [],
+    false,
+    "2026-11-01T05:00:00+00:00",
+    "2026-10-28T14:11:03+00:00",
+    [
+      214,
+      219
+    ],
+    {
+      "deviceCategory": 215,
+      "isolist": 218
+    },
+    {
+      "id": 216,
+      "name": 217
+    },
+    1,
+    "Desktop",
+    "AD,AE,AF,AG,AI,AL,AO,AQ,AR,AS,AU,AW,AX,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BO,BQ,BR,BS,BT,BV,BW,BZ,CA,CC,CD,CF,CG,CI,CK,CL,CM,CO,CR,CU,CV,CW,CX,CY,CZ,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HM,HN,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KH,KI,KM,KN,KP,KW,KY,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MF,MG,MH,ML,MM,MN,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RW,SA,SB,SC,SD,SE,SG,SH,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UG,UM,US,UY,VA,VC,VE,VG,VI,VN,VU,WF,WS,YE,YT,ZA,ZM,ZW",
+    {
+      "deviceCategory": 220,
+      "isolist": 223
+    },
+    {
+      "id": 221,
+      "name": 222
+    },
+    2,
+    "Mobile",
+    "AD,AE,AF,AG,AI,AL,AO,AQ,AR,AS,AU,AW,AX,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BO,BQ,BR,BS,BT,BV,BW,BZ,CA,CC,CD,CF,CG,CI,CK,CL,CM,CO,CR,CU,CV,CW,CX,CY,CZ,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HM,HN,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KH,KI,KM,KN,KP,KW,KY,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MF,MG,MH,ML,MM,MN,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RW,SA,SB,SC,SD,SE,SG,SH,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UG,UM,US,UY,VA,VC,VE,VG,VI,VN,VU,WF,WS,YE,YT,ZA,ZM,ZW",
+    {
+      "id": 225,
+      "startTime": 226,
+      "category1": 227,
+      "category2": 231,
+      "category3": 235,
+      "homeCompetitor": 239,
+      "awayCompetitor": 242,
+      "metadata": 245
+    },
+    1273704,
+    "2026-11-01T05:00:00+00:00",
+    {
+      "name": 228,
+      "translations": 229
+    },
+    "Soccer",
+    {
+      "en": 230
+    },
+    "Soccer",
+    {
+      "name": 232,
+      "translations": 233
+    },
+    "K LEAGUE 1",
+    {
+      "en": 234
+    },
+    "K LEAGUE 1",
+    {
+      "name": 236,
+      "translations": 237
+    },
+    "K League 1",
+    {
+      "en": 238
+    },
+    "K LEAGUE 1",
+    {
+      "id": 240,
+      "name": 241
+    },
+    532212,
+    "Ulsan Hyundai FC",
+    {
+      "id": 243,
+      "name": 244
+    },
+    532232,
+    "Gangwon FC",
+    [
+      246,
+      250
+    ],
+    {
+      "field": 247,
+      "name": 249
+    },
+    {
+      "name": 248
+    },
+    "Stadium",
+    "Ulsan Munsu Football Stadium",
+    {
+      "field": 251,
+      "name": 253
+    },
+    {
+      "name": 252
+    },
+    "Round",
+    "Round 34",
+    {
+      "id": 255,
+      "editorial": 256,
+      "contentType": 261,
+      "distributionType": 265,
+      "status": 267,
+      "length": 269,
+      "payment": 270,
+      "freeForEmbed": 273,
+      "startTime": 274,
+      "lastUpdatedAt": 275,
+      "geoRestrictions": 276,
+      "event": 287
+    },
+    2283631,
+    {
+      "translations": 257
+    },
+    {
+      "en": 258
+    },
+    {
+      "slug": 259,
+      "title": 260
+    },
+    "fc-anyang-bucheon-fc-1995",
+    "FC ANYANG - BUCHEON FC 1995",
+    {
+      "name": 262,
+      "translations": 263
+    },
+    "Fullmatch",
+    {
+      "en": 264
+    },
+    "Fullmatch",
+    {
+      "name": 266
+    },
+    "Live",
+    {
+      "name": 268
+    },
+    "Announced",
+    0,
+    {
+      "name": 271,
+      "entitlements": 272
+    },
+    "Registration",
+    [],
+    false,
+    "2026-11-01T07:30:00+00:00",
+    "2026-10-28T14:10:48+00:00",
+    [
+      277,
+      282
+    ],
+    {
+      "deviceCategory": 278,
+      "isolist": 281
+    },
+    {
+      "id": 279,
+      "name": 280
+    },
+    1,
+    "Desktop",
+    "AD,AE,AF,AG,AI,AL,AO,AQ,AR,AS,AU,AW,AX,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BO,BQ,BR,BS,BT,BV,BW,BZ,CA,CC,CD,CF,CG,CI,CK,CL,CM,CO,CR,CU,CV,CW,CX,CY,CZ,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HM,HN,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KH,KI,KM,KN,KP,KW,KY,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MF,MG,MH,ML,MM,MN,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RW,SA,SB,SC,SD,SE,SG,SH,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UG,UM,US,UY,VA,VC,VE,VG,VI,VN,VU,WF,WS,YE,YT,ZA,ZM,ZW",
+    {
+      "deviceCategory": 283,
+      "isolist": 286
+    },
+    {
+      "id": 284,
+      "name": 285
+    },
+    2,
+    "Mobile",
+    "AD,AE,AF,AG,AI,AL,AO,AQ,AR,AS,AU,AW,AX,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BO,BQ,BR,BS,BT,BV,BW,BZ,CA,CC,CD,CF,CG,CI,CK,CL,CM,CO,CR,CU,CV,CW,CX,CY,CZ,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HM,HN,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KH,KI,KM,KN,KP,KW,KY,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MF,MG,MH,ML,MM,MN,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RW,SA,SB,SC,SD,SE,SG,SH,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UG,UM,US,UY,VA,VC,VE,VG,VI,VN,VU,WF,WS,YE,YT,ZA,ZM,ZW",
+    {
+      "id": 288,
+      "startTime": 289,
+      "category1": 290,
+      "category2": 294,
+      "category3": 298,
+      "homeCompetitor": 302,
+      "awayCompetitor": 305,
+      "metadata": 308
+    },
+    1273702,
+    "2026-11-01T07:30:00+00:00",
+    {
+      "name": 291,
+      "translations": 292
+    },
+    "Soccer",
+    {
+      "en": 293
+    },
+    "Soccer",
+    {
+      "name": 295,
+      "translations": 296
+    },
+    "K LEAGUE 1",
+    {
+      "en": 297
+    },
+    "K LEAGUE 1",
+    {
+      "name": 299,
+      "translations": 300
+    },
+    "K League 1",
+    {
+      "en": 301
+    },
+    "K LEAGUE 1",
+    {
+      "id": 303,
+      "name": 304
+    },
+    532292,
+    "FC Anyang",
+    {
+      "id": 306,
+      "name": 307
+    },
+    532286,
+    "Bucheon FC 1995",
+    [
+      309,
+      313
+    ],
+    {
+      "field": 310,
+      "name": 312
+    },
+    {
+      "name": 311
+    },
+    "Stadium",
+    "Anyang Stadium",
+    {
+      "field": 314,
+      "name": 316
+    },
+    {
+      "name": 315
+    },
+    "Round",
+    "Round 34",
+    {
+      "id": 318,
+      "editorial": 319,
+      "contentType": 324,
+      "distributionType": 328,
+      "status": 330,
+      "length": 332,
+      "payment": 333,
+      "freeForEmbed": 336,
+      "startTime": 337,
+      "lastUpdatedAt": 338,
+      "geoRestrictions": 339,
+      "event": 350
+    },
+    2283636,
+    {
+      "translations": 320
+    },
+    {
+      "en": 321
+    },
+    {
+      "slug": 322,
+      "title": 323
+    },
+    "fc-seoul-incheon-united",
+    "FC SEOUL - INCHEON UNITED",
+    {
+      "name": 325,
+      "translations": 326
+    },
+    "Fullmatch",
+    {
+      "en": 327
+    },
+    "Fullmatch",
+    {
+      "name": 329
+    },
+    "Live",
+    {
+      "name": 331
+    },
+    "Announced",
+    0,
+    {
+      "name": 334,
+      "entitlements": 335
+    },
+    "Registration",
+    [],
+    false,
+    "2026-11-01T07:30:00+00:00",
+    "2026-10-28T14:11:11+00:00",
+    [
+      340,
+      345
+    ],
+    {
+      "deviceCategory": 341,
+      "isolist": 344
+    },
+    {
+      "id": 342,
+      "name": 343
+    },
+    1,
+    "Desktop",
+    "AD,AE,AF,AG,AI,AL,AO,AQ,AR,AS,AU,AW,AX,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BO,BQ,BR,BS,BT,BV,BW,BZ,CA,CC,CD,CF,CG,CI,CK,CL,CM,CO,CR,CU,CV,CW,CX,CY,CZ,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HM,HN,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KH,KI,KM,KN,KP,KW,KY,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MF,MG,MH,ML,MM,MN,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RW,SA,SB,SC,SD,SE,SG,SH,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UG,UM,US,UY,VA,VC,VE,VG,VI,VN,VU,WF,WS,YE,YT,ZA,ZM,ZW",
+    {
+      "deviceCategory": 346,
+      "isolist": 349
+    },
+    {
+      "id": 347,
+      "name": 348
+    },
+    2,
+    "Mobile",
+    "AD,AE,AF,AG,AI,AL,AO,AQ,AR,AS,AU,AW,AX,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BO,BQ,BR,BS,BT,BV,BW,BZ,CA,CC,CD,CF,CG,CI,CK,CL,CM,CO,CR,CU,CV,CW,CX,CY,CZ,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HM,HN,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KH,KI,KM,KN,KP,KW,KY,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MF,MG,MH,ML,MM,MN,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RW,SA,SB,SC,SD,SE,SG,SH,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UG,UM,US,UY,VA,VC,VE,VG,VI,VN,VU,WF,WS,YE,YT,ZA,ZM,ZW",
+    {
+      "id": 351,
+      "startTime": 352,
+      "category1": 353,
+      "category2": 357,
+      "category3": 361,
+      "homeCompetitor": 365,
+      "awayCompetitor": 368,
+      "metadata": 371
+    },
+    1273705,
+    "2026-11-01T07:30:00+00:00",
+    {
+      "name": 354,
+      "translations": 355
+    },
+    "Soccer",
+    {
+      "en": 356
+    },
+    "Soccer",
+    {
+      "name": 358,
+      "translations": 359
+    },
+    "K LEAGUE 1",
+    {
+      "en": 360
+    },
+    "K LEAGUE 1",
+    {
+      "name": 362,
+      "translations": 363
+    },
+    "K League 1",
+    {
+      "en": 364
+    },
+    "K LEAGUE 1",
+    {
+      "id": 366,
+      "name": 367
+    },
+    532243,
+    "FC Seoul",
+    {
+      "id": 369,
+      "name": 370
+    },
+    532252,
+    "Incheon United",
+    [
+      372,
+      376
+    ],
+    {
+      "field": 373,
+      "name": 375
+    },
+    {
+      "name": 374
+    },
+    "Stadium",
+    "Seoul World Cup Stadium",
+    {
+      "field": 377,
+      "name": 379
+    },
+    {
+      "name": 378
+    },
+    "Round",
+    "Round 34"
+  ],
+  "latestObservation": {
+    "observedAt": "2026-10-30T16:01:16.256Z",
+    "pageUrl": "https://tv.kleague.com/en-int/page/k-league-2",
+    "bytes": 271810,
+    "sha256": "64fe2cf9b0efb274cf0ca2292c935c91b7f56fda8b4a77f8b41e03ae2a3c12fe",
+    "sources": [
+      {
+        "id": 2283712,
+        "slug": "r31gyeongnam-hwaseong",
+        "title": "[R31]GYEONGNAM - HWASEONG",
+        "startTime": "2026-10-31T05:00:00+00:00",
+        "updatedAt": "2026-10-30T07:48:17+00:00",
+        "distribution": "Live",
+        "contentType": "Fullmatch",
+        "publication": "Announced",
+        "durationSeconds": 0,
+        "payment": "Registration",
+        "entitlementsEmpty": true,
+        "freeForEmbed": false,
+        "round": 31,
+        "countries": [
+          "RU",
+          "KZ",
+          "BY"
+        ],
+        "event": {
+          "id": 1273749,
+          "sport": "Soccer",
+          "league": "K LEAGUE 2",
+          "category": "K LEAGUE 2",
+          "startTime": "2026-10-31T05:00:00+00:00",
+          "homeId": 532260,
+          "awayId": 1133528,
+          "home": "Gyeongnam FC",
+          "away": "Hwaseong FC"
+        },
+        "eventUrl": "https://tv.kleague.com/en-int/video/r31gyeongnam-hwaseong/2283712"
+      },
+      {
+        "id": 2283735,
+        "slug": "r31yongin-seoul-e",
+        "title": "[R31]YONGIN - SEOUL E",
+        "startTime": "2026-10-31T05:00:00+00:00",
+        "updatedAt": "2026-10-30T07:47:31+00:00",
+        "distribution": "Live",
+        "contentType": "Fullmatch",
+        "publication": "Announced",
+        "durationSeconds": 0,
+        "payment": "Registration",
+        "entitlementsEmpty": true,
+        "freeForEmbed": false,
+        "round": 31,
+        "countries": [
+          "RU",
+          "KZ",
+          "BY"
+        ],
+        "event": {
+          "id": 1273760,
+          "sport": "Soccer",
+          "league": "K LEAGUE 2",
+          "category": "K LEAGUE 2",
+          "startTime": "2026-10-31T05:00:00+00:00",
+          "homeId": 1148972,
+          "awayId": 532270,
+          "home": "Yongin FC",
+          "away": "Seoul E-Land FC"
+        },
+        "eventUrl": "https://tv.kleague.com/en-int/video/r31yongin-seoul-e/2283735"
+      },
+      {
+        "id": 2283760,
+        "slug": "r31chungnam-asan-gimpo",
+        "title": "[R31]CHUNGNAM ASAN - GIMPO",
+        "startTime": "2026-10-31T07:30:00+00:00",
+        "updatedAt": "2026-10-30T07:50:27+00:00",
+        "distribution": "Live",
+        "contentType": "Fullmatch",
+        "publication": "Announced",
+        "durationSeconds": 0,
+        "payment": "Registration",
+        "entitlementsEmpty": true,
+        "freeForEmbed": false,
+        "round": null,
+        "countries": [
+          "RU",
+          "KZ",
+          "BY"
+        ],
+        "event": {
+          "id": 1273770,
+          "sport": "Soccer",
+          "league": "K LEAGUE 2",
+          "category": "K LEAGUE 2",
+          "startTime": "2026-10-31T07:30:00+00:00",
+          "homeId": 532296,
+          "awayId": 1100792,
+          "home": "Chungnam Asan FC",
+          "away": "Gimpo FC"
+        },
+        "eventUrl": "https://tv.kleague.com/en-int/video/r31chungnam-asan-gimpo/2283760"
+      },
+      {
+        "id": 2283766,
+        "slug": "r31daegu-suwon",
+        "title": "[R31]DAEGU - SUWON",
+        "startTime": "2026-10-31T07:30:00+00:00",
+        "updatedAt": "2026-10-30T07:49:47+00:00",
+        "distribution": "Live",
+        "contentType": "Fullmatch",
+        "publication": "Announced",
+        "durationSeconds": 0,
+        "payment": "Registration",
+        "entitlementsEmpty": true,
+        "freeForEmbed": false,
+        "round": 31,
+        "countries": [
+          "RU",
+          "KZ",
+          "BY"
+        ],
+        "event": {
+          "id": 1273774,
+          "sport": "Soccer",
+          "league": "K LEAGUE 2",
+          "category": "K LEAGUE 2",
+          "startTime": "2026-10-31T07:30:00+00:00",
+          "homeId": 532216,
+          "awayId": 532235,
+          "home": "Daegu FC",
+          "away": "Suwon Samsung"
+        },
+        "eventUrl": "https://tv.kleague.com/en-int/video/r31daegu-suwon/2283766"
+      },
+      {
+        "id": 2283724,
+        "slug": "r34suwon-fc-ansan",
+        "title": "[R34]SUWON FC - ANSAN",
+        "startTime": "2026-11-01T05:00:00+00:00",
+        "updatedAt": "2026-10-30T07:54:47+00:00",
+        "distribution": "Live",
+        "contentType": "Fullmatch",
+        "publication": "Announced",
+        "durationSeconds": 0,
+        "payment": "Registration",
+        "entitlementsEmpty": true,
+        "freeForEmbed": false,
+        "round": 31,
+        "countries": [
+          "RU",
+          "KZ",
+          "BY"
+        ],
+        "event": {
+          "id": 1273755,
+          "sport": "Soccer",
+          "league": "K LEAGUE 2",
+          "category": "K LEAGUE 2",
+          "startTime": "2026-11-01T05:00:00+00:00",
+          "homeId": 532256,
+          "awayId": 532280,
+          "home": "Suwon FC",
+          "away": "Ansan Greeners FC"
+        },
+        "eventUrl": "https://tv.kleague.com/en-int/video/r34suwon-fc-ansan/2283724"
+      },
+      {
+        "id": 2283752,
+        "slug": "r31jeonnam-seongnam",
+        "title": "[R31]JEONNAM - SEONGNAM",
+        "startTime": "2026-11-01T05:00:00+00:00",
+        "updatedAt": "2026-10-30T07:54:13+00:00",
+        "distribution": "Live",
+        "contentType": "Fullmatch",
+        "publication": "Announced",
+        "durationSeconds": 0,
+        "payment": "Registration",
+        "entitlementsEmpty": true,
+        "freeForEmbed": false,
+        "round": null,
+        "countries": [
+          "RU",
+          "KZ",
+          "BY"
+        ],
+        "event": {
+          "id": 1273766,
+          "sport": "Soccer",
+          "league": "K LEAGUE 2",
+          "category": "K LEAGUE 2",
+          "startTime": "2026-11-01T05:00:00+00:00",
+          "homeId": 532276,
+          "awayId": 532246,
+          "home": "Jeonnam Dragons",
+          "away": "Seongnam FC"
+        },
+        "eventUrl": "https://tv.kleague.com/en-int/video/r31jeonnam-seongnam/2283752"
+      }
+    ]
+  },
+  "latestCanonical": {
+    "run": 41086214587,
+    "date": "2026-10-31",
+    "verified": true,
+    "provider": "api-football",
+    "observedAt": "2026-10-30T16:02:38.144Z",
+    "skippedInvalid": 0,
+    "matches": [
+      {
+        "fixtureId": 1510483,
+        "date": "2026-10-31T05:00:00.000Z",
+        "status": "NS",
+        "home": {
+          "id": 2751,
+          "name": "Gyeongnam FC"
+        },
+        "away": {
+          "id": 7087,
+          "name": "Hwaseong"
+        },
+        "leagueId": 293,
+        "league": "K League 2",
+        "season": 2026,
+        "round": "Regular Season - 31",
+        "score": {
+          "home": null,
+          "away": null
+        },
+        "live": false,
+        "finished": false
+      },
+      {
+        "fixtureId": 1510484,
+        "date": "2026-10-31T05:00:00.000Z",
+        "status": "NS",
+        "home": {
+          "id": 9171,
+          "name": "Yongin City"
+        },
+        "away": {
+          "id": 2749,
+          "name": "Seoul E-Land FC"
+        },
+        "leagueId": 293,
+        "league": "K League 2",
+        "season": 2026,
+        "round": "Regular Season - 31",
+        "score": {
+          "home": null,
+          "away": null
+        },
+        "live": false,
+        "finished": false
+      },
+      {
+        "fixtureId": 1510485,
+        "date": "2026-10-31T07:30:00.000Z",
+        "status": "NS",
+        "home": {
+          "id": 2753,
+          "name": "Asan Mugunghwa"
+        },
+        "away": {
+          "id": 7078,
+          "name": "Gimpo Citizen"
+        },
+        "leagueId": 293,
+        "league": "K League 2",
+        "season": 2026,
+        "round": "Regular Season - 31",
+        "score": {
+          "home": null,
+          "away": null
+        },
+        "live": false,
+        "finished": false
+      },
+      {
+        "fixtureId": 1510486,
+        "date": "2026-10-31T07:30:00.000Z",
+        "status": "NS",
+        "home": {
+          "id": 2747,
+          "name": "Daegu FC"
+        },
+        "away": {
+          "id": 2765,
+          "name": "Suwon Bluewings"
+        },
+        "leagueId": 293,
+        "league": "K League 2",
+        "season": 2026,
+        "round": "Regular Season - 31",
+        "score": {
+          "home": null,
+          "away": null
+        },
+        "live": false,
+        "finished": false
+      }
+    ]
+  }
+}
