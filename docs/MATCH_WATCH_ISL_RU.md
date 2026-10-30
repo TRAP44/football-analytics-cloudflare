@@ -1,5 +1,7 @@
 # Полные матчи Indian Super League
 
+Поиск завершённых трансляций вне смешанной ленты и актуальные квоты описаны в [дополнении](MATCH_WATCH_COMPLETED_RU.md). Ниже — исходный выпуск ISL.
+
 30 октября 2026 года официальный сайт https://www.indiansuperleague.com/ содержит ссылку на https://www.youtube.com/c/indiansuperleague. Google API подтвердил канал `UCJk-aQ7NZtqYtpcqKDt_vZg` с handle `indiansuperleague`. Публичный HTML, его размер и SHA, метаданные Google и отдельно полученные канонические матчи сохранены в `test-support/fixtures/isl-watch-sources.json`.
 
 Источники наблюдений: protected main-only runs41089768510/41090016108/41090069752/41090074832/41090400195. Реальные полные английские записи: Goa—SC Delhi 28 октября (1642184) и NorthEast United—Bengaluru 30 октября (1642185). Реальные английские анонсы 31 октября: Chennaiyin—Kerala Blasters (1642186, матч14:30МСК, эфир14:00МСК) и ATK Mohun Bagan—Minerva Punjab (1642187, матч17:00МСК, эфир16:30МСК). Независимый API-Football подтвердил league323, сезон2026, команды/ID, даты и исходы завершённых матчей. В API используются прежние названия некоторых клубов; короткие/новые имена источника разрешены только для наблюдённых ID. Нечёткого поиска нет.
