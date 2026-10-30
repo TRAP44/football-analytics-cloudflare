@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Полные записи и эфиры Indian Super League — **Codex** — `codex/watch-source-expansion-next` — actual2English full+2upcoming, независимые API323/region/embed proofs; discoveryv5, ограниченные выдачи9324quota/day, прежний Footballбюджет.
 
 
 
@@ -111,6 +110,8 @@
 
 
 ## На ревью
+
+- [ ] Полные записи и эфиры Indian Super League — **Codex** — [PR #1037](https://github.com/TRAP44/football-analytics-cloudflare/pull/1037) — actual2English full+2upcoming, независимые API323/region/embed proofs; discoveryv5, ограниченные выдачи9324quota/day, прежний Footballбюджет.
 
 
 
