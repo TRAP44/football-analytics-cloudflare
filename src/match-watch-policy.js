@@ -1,6 +1,6 @@
 import {leagueFullMatch,leagueHighlightsMatch} from './match-watch-league-formats.js';
 import {KLEAGUE_CHANNEL} from './kleague-watch-policy.js';
-import {ISL_CHANNEL,islFullMatch,islStreamStart} from './isl-watch-policy.js';
+import {ISL_CHANNEL,islFullMatch,islStreamStart,islDescriptionEvidence} from './isl-watch-policy.js';
 import {BUNDESLIGA_CHANNEL} from './bundesliga-watch-policy.js';
 // Official league/channel relationship and the observed full-match title format
 // are reviewed once. New fixtures/video IDs are NOT deployed source approvals.
@@ -109,7 +109,7 @@ export function youtubeWatchCountries(video,countries){
 export function watchDescriptionEvidence(policy,description=''){
   if(typeof description!=='string')return '';
   const lines=description.split(/\r?\n/);
-  if(policy?.format==='isl')return lines[0].trim();
+  if(policy?.format==='isl')return islDescriptionEvidence(description);
   if(policy?.format==='aleagues')return '';
   if(policy?.format==='kleague')return '';
   if(policy?.format==='bundesliga')return lines.filter((line,index)=>index===0||line.startsWith('Watch the Bundesliga highlights of ')).join('\n');
