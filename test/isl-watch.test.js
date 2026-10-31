@@ -32,8 +32,8 @@ test('the observed thirty-minute preshow has a bounded ISL-only timing allowance
  assert.equal(automaticReplayEvidence(m,stream.actualStartTime,undefined,now,policy),false);assert.equal(automaticReplayEvidence(m,stream.actualStartTime,iso(now+1),now,policy),false);
 });
 const raw=m=>({fixture:{id:m.fixtureId,date:m.date,status:{short:m.status}},teams:{home:m.home,away:m.away},league:{id:m.leagueId,name:m.league,season:m.season,round:m.round},goals:m.score});
-function harness(){
- const env={SUPABASE_URL:'https://nlmvhkjkpgzzlfavaohk.supabase.co',SUPABASE_SECRET_KEY:'test-db',YOUTUBE_DATA_API_KEY:'test-google'},cache=new Map(),calls=[];let clock=now,videos=structuredClone(data.videos),matches=structuredClone(data.matches),failFeeds=false,failCompleted=false,emptyCompleted=false,failMetadata=false,writeCount=0,failWriteAt=0,hiddenUploads=new Set();
+function harness({observations=data,at=now}={}){
+ const env={SUPABASE_URL:'https://nlmvhkjkpgzzlfavaohk.supabase.co',SUPABASE_SECRET_KEY:'test-db',YOUTUBE_DATA_API_KEY:'test-google'},cache=new Map(),calls=[];let clock=at,videos=structuredClone(observations.videos),matches=structuredClone(observations.matches),failFeeds=false,failCompleted=false,emptyCompleted=false,failMetadata=false,writeCount=0,failWriteAt=0,hiddenUploads=new Set();
  const fetchImpl=async(value,init)=>{
   const url=new URL(value);calls.push(url);assert.equal(init.redirect,'error');
   if(url.hostname==='www.googleapis.com'){
@@ -52,13 +52,13 @@ function harness(){
   const keys=filter.startsWith('eq.')?[filter.slice(3)]:filter.startsWith('in.(')?filter.slice(4,-1).split(','):[];
   return Response.json(keys.flatMap(k=>cache.has(k)&&cache.get(k).expiresAt>clock?[{cache_key:k,payload:cache.get(k).payload}]:[]));
  };
- return {cache,calls,hideUploads:ids=>{hiddenUploads=new Set(ids);},failCompleted:()=>{failCompleted=true;},emptyCompleted:()=>{emptyCompleted=true;},metadata:value=>{failMetadata=value;},failWriteAt:value=>{failWriteAt=value;},fail:()=>{failFeeds=true;},change:fn=>{videos=fn(videos);},setMatches:fn=>{matches=fn(matches);},run:async(offset=0)=>{clock=now+offset;return refreshMatchWatch({env,fetchImpl,now:clock,manifest:{version:1,items:[]},automatic:true,policies:[policy]});}};
+ return {cache,calls,hideUploads:ids=>{hiddenUploads=new Set(ids);},failCompleted:()=>{failCompleted=true;},emptyCompleted:()=>{emptyCompleted=true;},metadata:value=>{failMetadata=value;},failWriteAt:value=>{failWriteAt=value;},fail:()=>{failFeeds=true;},change:fn=>{videos=fn(videos);},setMatches:fn=>{matches=fn(matches);},run:async(offset=0)=>{clock=at+offset;return refreshMatchWatch({env,fetchImpl,now:clock,manifest:{version:1,items:[]},automatic:true,policies:[policy]});}};
 }
 test('real producer and consumer publish four English embedded full options, compact independent evidence and revoke changed rights/header/phase',async()=>{
  const h=harness(),r=await h.run();assert.equal(r.published,4);assert.equal(r.libraryMatches,4);assert.equal(r.libraryByCountry.RU.upcomingBroadcastMatches,2);assert.equal(r.libraryByCountry.RU.fullReplayMatches,2);
  const index=h.cache.get(WATCH_EXTENDED_LIBRARY_KEY).payload,opts={country:'RU',now,approvals:[],scheduledBroadcasts:true};
  const cards=watchLibraryPayload(index,{...opts,maxEntries:100});assert.ok(cards.items.every(c=>c.league==='Суперлига · Индия'));assert.doesNotMatch(JSON.stringify(cards),/videoId|eventUrl|"score"|videoDescription/);
- for(const e of index.entries){const item=watchApiPayload(e.match,e.catalogue,opts).items[0];assert.equal(item.embed,true);assert.equal(e.catalogue.items[0].videoDescription.includes('\n'),false);const broken=structuredClone(e.catalogue);broken.items[0].videoDescription='';assert.equal(watchApiPayload(e.match,broken,opts).available,false);}
+ for(const e of index.entries){const item=watchApiPayload(e.match,e.catalogue,opts).items[0];assert.equal(item.embed,true);const evidence=e.catalogue.items[0].videoDescription;assert.ok(evidence.length<800);assert.doesNotMatch(evidence,/https?:\/\/|To subscribe/);if(item.kind==='live')assert.match(evidence,/\n\n.*Gameweek 4 of the MG ISL 2026-27/);const broken=structuredClone(e.catalogue);broken.items[0].videoDescription='';assert.equal(watchApiPayload(e.match,broken,opts).available,false);}
  await h.run(300000);assert.equal(h.calls.filter(u=>u.pathname.endsWith('/search')).length,3);assert.equal(h.calls.filter(u=>u.pathname.endsWith('/playlistItems')).length,1);
  await h.run(900000);assert.equal(h.calls.filter(u=>u.pathname.endsWith('/playlistItems')).length,2);
  h.change(videos=>videos.map(v=>({...v,status:{...v.status,privacyStatus:'private'}})));const revoked=await h.run(1200000);assert.equal(revoked.published,0);assert.equal(revoked.libraryMatches,0);assert.ok(index.entries.every(e=>h.cache.get(watchCacheKey(e.match.fixtureId)).payload.items.length===0));
@@ -152,4 +152,33 @@ test('malformed or unbounded completed state fails before any Google call',async
  for(const completedFeeds of [null,[],{[ISL_CHANNEL]:{...valid,ids:Array.from({length:11},(_,i)=>String(i).padStart(11,'0'))}},{[ISL_CHANNEL]:{...valid,attemptedAt:iso(now+1)}},{UCpcTrCXblq78GZrTUTLWeBw:valid},{[ISL_CHANNEL]:{ids:['invalid'],attemptedAt:iso(now-1)}}]){
   await assert.rejects(discoverMatchWatch({now,policies:[policy],approvals:[],report:{},readCache:async()=>[{cache_key:WATCH_DISCOVERY_KEY,payload:{version:6,attemptedAt:iso(now-1000),videoIds:[],bindings:[],completedFeeds}}],writeCache:async()=>assert.fail('invalid discovery state'),youtube:async()=>assert.fail('invalid discovery state')}),{code:'WATCH_DISCOVERY_STATE_INVALID'});
  }
+});
+
+const continuity=JSON.parse(readFileSync('test-support/fixtures/isl-watch-live-continuity.json')),continuityNow=Date.parse(continuity.observedAt);
+test('actual changed ISL live titles restore three observed English events using independent opening-round and canonical evidence',()=>{
+ const matched=continuity.videos.flatMap(v=>continuity.matches.filter(m=>eligible(m,v,continuityNow)).map(m=>[m.fixtureId,v.id]));
+ assert.deepEqual(matched.sort(),[[1642186,'raS61rqsQQI'],[1642187,'nZ8rESpcRTU'],[1642189,'k178PJ6DfII']]);
+ for(const v of continuity.videos.filter(v=>/हिंदी|Vertical/.test(v.snippet.title)))assert.equal(continuity.matches.some(m=>eligible(m,v,continuityNow)),false);
+});
+test('a title without round cannot take evidence from a footer, a different paragraph, season, round, club or date',()=>{
+ const m=continuity.matches.find(m=>m.fixtureId===1642187),v=continuity.videos.find(v=>v.id==='nZ8rESpcRTU'),description=v.snippet.description,paragraph=description.split('\n\n')[1];
+ const bad=[description.split('\n')[0],description.replace('Gameweek 4','Gameweek 5'),description.replace('2026-27','2025-26'),description.replace(paragraph,'Subscribe to our channel!\n\n'+paragraph),description.replace(paragraph,'Gameweek 4 of the MG ISL 2026-27.'),description.replace('31-Oct-2026','30-Oct-2026'),description.replace(paragraph,paragraph+' Gameweek 5.'),description.replace(paragraph,paragraph+' 2025-26.'),description.replace(paragraph,'x'.repeat(601)+' '+paragraph),description.replace(paragraph,paragraph.replace('Punjab FC','Another FC'))];
+ for(const desc of bad)assert.equal(eligible(m,{...v,snippet:{...v.snippet,description:desc}},continuityNow),false,desc.slice(0,120));
+ for(const patch of [{round:'Regular Season - 5'},{round:''},{home:{...m.home,id:1,name:'Unknown'}},{season:2025},{leagueId:98}])assert.equal(eligible({...m,...patch},v,continuityNow),false);
+});
+test('the roundless title proof survives publication compaction and is independently enforced by the public consumer',async()=>{
+ const h=harness({observations:continuity,at:continuityNow}),r=await h.run();assert.equal(r.published,3);
+ const m=continuity.matches.find(m=>m.fixtureId===1642187),catalogue=h.cache.get(watchCacheKey(m.fixtureId)).payload,opts={country:'RU',now:continuityNow,approvals:[],scheduledBroadcasts:true};
+ const item=watchApiPayload(m,catalogue,opts).items[0];assert.equal(item.scheduled,true);assert.equal(item.embed,true);assert.equal(item.videoId,'nZ8rESpcRTU');
+ const evidence=catalogue.items[0].videoDescription;assert.ok(evidence.length<800);assert.match(evidence,/\n\nMohun Bagan Super Giant welcome Punjab FC.*Gameweek 4/);assert.doesNotMatch(evidence,/https?:\/\/|To subscribe|Last season/);
+ for(const change of [i=>{i.videoDescription=i.videoDescription.split('\n')[0];},i=>{i.videoDescription=i.videoDescription.replace('Gameweek 4','Gameweek 5');},i=>{i.videoDescription=i.videoDescription.replace('2026-27','2025-26');},i=>{i.videoDescription=i.videoDescription.replace('English ||','Hindi ||');},i=>{i.videoTitle+=' | Vertical';},i=>{i.broadcastKind='live';}]){const broken=structuredClone(catalogue);change(broken.items[0]);assert.equal(watchApiPayload(m,broken,opts).available,false);}
+ assert.equal(watchApiPayload({...m,home:{...m.home,id:1}},catalogue,opts).available,false);
+});
+test('an ended roundless-title stream stays unavailable until real canonical FT and valid source end, then becomes replay',async()=>{
+ const m=continuity.matches.find(m=>m.fixtureId===1642187),kickoff=Date.parse(m.date),clock=kickoff+130*60000,h=harness({observations:continuity,at:continuityNow});await h.run();
+ h.change(videos=>videos.map(v=>v.id==='nZ8rESpcRTU'?{...v,snippet:{...v.snippet,liveBroadcastContent:'none'},liveStreamingDetails:{...v.liveStreamingDetails,actualStartTime:iso(kickoff-30*60000),actualEndTime:iso(clock-5*60000)}}:v));
+ await h.run(clock-continuityNow);assert.equal(h.cache.get(WATCH_EXTENDED_LIBRARY_KEY).payload.entries.some(e=>e.match.fixtureId===m.fixtureId),false);
+ const finished={...m,status:'FT',finished:true,score:{home:2,away:1}};h.setMatches(matches=>matches.map(x=>x.fixtureId===m.fixtureId?finished:x));await h.run(clock-continuityNow+300000);
+ const catalogue=h.cache.get(watchCacheKey(m.fixtureId)).payload,opts={country:'RU',now:clock+300000,approvals:[],scheduledBroadcasts:true};assert.equal(watchApiPayload(finished,catalogue,opts).items[0].kind,'replay');
+ const broken=structuredClone(catalogue);broken.items[0].videoDescription=broken.items[0].videoDescription.split('\n')[0];assert.equal(watchApiPayload(finished,broken,opts).available,false);
 });

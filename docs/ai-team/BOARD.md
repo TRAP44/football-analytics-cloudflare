@@ -110,9 +110,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Полные записи вне ленты клипов — **Codex** — [PR #1038](https://github.com/TRAP44/football-analytics-cloudflare/pull/1038) — отдельный completed-search ISL с прежними source/fixture/region/phase guards, совместимым откатом и проверкой реального прироста.
+- [ ] Непрерывность эфиров ISL при изменении заголовка — **Codex** — [PR #1039](https://github.com/TRAP44/football-analytics-cloudflare/pull/1039) — реальные upcoming31Oct потеряли Gameweek в title; требовать независимый тур из первого абзаца, сохранить source/date/teams/phase/region guards и подтвердить публикацию.
+
 
 
 
@@ -273,6 +275,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Полные записи вне ленты клипов — **Codex** — [PR #1038](https://github.com/TRAP44/football-analytics-cloudflare/pull/1038) — выпущен main0708fb23; CI/Deploy/public identity и post-deploy41191672008 подтверждены:55матчей/67источников,+2полные записи, всё прежнее сохранено.
 
 - [x] Полные записи и эфиры Indian Super League — **Codex** — [PR #1037](https://github.com/TRAP44/football-analytics-cloudflare/pull/1037), mainc5f46640/Deploy41094685086/publicCF670da7fc/launch154 подтверждены. Post-deploy41097241139:68матчей/85источников,3новыхISL, прежние65сохранены; GoaEnglishвышлаиз20uploads, completed-search отдельнаяследующаязадача.
 
