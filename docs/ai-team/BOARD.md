@@ -19,7 +19,6 @@
 
 ## В работе
 
-- [ ] Непрерывность эфиров ISL при изменении заголовка — **Codex** — `codex/watch-live-continuity` — реальные upcoming31Oct потеряли Gameweek в title; требовать независимый тур из первого абзаца, сохранить source/date/teams/phase/region guards и подтвердить публикацию.
 
 
 
@@ -113,6 +112,8 @@
 
 
 ## На ревью
+
+- [ ] Непрерывность эфиров ISL при изменении заголовка — **Codex** — [PR #1039](https://github.com/TRAP44/football-analytics-cloudflare/pull/1039) — реальные upcoming31Oct потеряли Gameweek в title; требовать независимый тур из первого абзаца, сохранить source/date/teams/phase/region guards и подтвердить публикацию.
 
 
 
