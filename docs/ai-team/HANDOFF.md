@@ -14,6 +14,16 @@ PR: ссылка или ветка
 
 ---
 
+## 2026-10-30 — Codex — Поиск завершённых трансляций отдельно от клипов
+PR: https://github.com/TRAP44/football-analytics-cloudflare/pull/1038, ветка `codex/watch-completed-streams`, от mainc5f46640. #1037 полностью завершён: head223ee80b, PRQuality41093490369/CodeQL41093490394, mainQuality41094143325/CodeQL41094143012/Deploy41094685086 success. Public deploySha/tagc5f46640, CF670da7fc-053a-4580-8b7f-106b984e4ec6, launch154/6assetSHA exact. Реальный post-deploy41097241139/job124206006330 checkedAt17:15:54.866UTC:68матчей85источников, все65baselinefixtures и8KTVrecordingsсохранены; ISL1642185recording+1642186/87scheduled, RU/KZ/BYembedtrue. Полноеокно10днейподгружалось2датызаrunвпрежних16attempts/day, остаток1. 1010release/4808full/native/review93+56/CIpassed. Physical phoneplaybackнепроверен. Не возвращатьэто вpending.
+
+Реализован отдельныйISL completed-search/orderdate10результатовраз12ч, discoveryv6 отдельныйkey/readsv5..v1безизмененияrollback. Completedfeeds толькоизвестныйISL/10ID. FindIDs durablecheckpoint ДОmetadata/fixtures, неapproval; reviewнашёлпотерюIDна12чприmetadatafailure, исправлено. Failedcompleted retainsIDs/attemptcadence, ноfreshmetadataобязательна; emptysearchнеотзываетboundpublicrecord. Bounds700IDs/14videobatches/29calls, theoretical9524quota/day vsstandard10000 (неизмерениеостатка), Football/SQL/assets154/key permissionsunchanged. Main-onlyobserver feedcompleted3calls/read-only, releasedвтомжеfeaturePR.
+
+Node22 npmci/check/lint/release1016/full4814/securityscan/privileged/verifyrelease/workerdryrun/nativewatch+scale+KTVpassed. Independentread-onlyreview87/87clean, codeнеизменялсяreviewer. Docs MATCH_WATCH_COMPLETED_RU.md. Actualcompletedquery/currentGoapresence/productiongrowth ещёнеподтверждены: exact-headCI→merge→mainCI/Deploy→publicidentity→realnon-skippedproducer/observerобязательны.
+
+НаблюдавшаясяGoa—SC Delhi1642184/Ay1gYmJoFMk вышлаиз20uploads доcanonical backfill. Actualmain-only41096891959 observed17:13:27.206UTC подтвердил: NorthEastEnglishв20есть, GoaEnglishнет, GoaVerticalесть(исключёнpolicy). Поэтому3production, ане4; финальныйPRbodyчестноразличаетhistorical candidates/currentpublished. Следующее улучшение — отдельныйbounded eventTypecompleted/orderdate search дляISL; исходнаяполитикаpublisher/date/teams/season/GWилиscore/actualstart/end/FT/regionнеослабляется. Новых аккаунтов/ключей/покупок/писем нет. Sourceobsчерезсуществующийmain-onlyGoogleworkflow, не обходитьлокальныйYouTubehostdeny.
+
+
 ## 2026-10-30 — Codex — Продолжение расширения официального просмотра
 PR: https://github.com/TRAP44/football-analytics-cloudflare/pull/1037, ветка `codex/watch-source-expansion-next`, от mainc510f5ba. #1036 полностью завершён: head a3e73687, PRQuality41086692375/CodeQL41086692264; MainQuality41087278422/CodeQL41087277962/Deploy41087834470 success. Public deploySha/tagc510f5ba, CF867b8c13-2d48-44eb-a607-564c5d891932, launch154,6assetSHA exact. Post-deploy41089007902/job124177618797, checkedAt2026-10-30T16:20:46.286Z:65матчей/82источника,8upcoming/0onAir,6KTVscheduled,8прежнихKTVrecordings и все57baselinefixtures сохранены. В том цикле источник cached с сохранённым TTL, не новый GET. Локально999release/4797full, независимые93+17, native иCIpassed. Сам будущий эфир физически не проигрывался. PRbody содержит финальные доказательства/readback.
 

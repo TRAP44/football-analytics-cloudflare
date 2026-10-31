@@ -41,9 +41,9 @@ on:
         type: string
         default: ''
       watch_feed:
-        description: Read live/upcoming or one bounded uploads page; never approves or publishes videos
+        description: Read live/upcoming, completed streams or one bounded uploads page; never approves or publishes videos
         type: choice
-        options: ['live', 'uploads']
+        options: ['live', 'uploads', 'completed']
         default: live
       watch_search_country:
         description: Explicit YouTube search territory; does not prove playback or broadcasting rights

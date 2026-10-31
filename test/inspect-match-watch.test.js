@@ -200,3 +200,14 @@ test('one guarded date batch exposes canonical public fixtures with rounds witho
   let calls=0;const bad=await inspectMatchWatch({env:{...selected,...patch},now,fetchImpl:()=>{calls++;}});assert.equal(calls,0);assert.equal(bad.errorCode,'WATCH_FIXTURE_DATE_INVALID');
  }
 });
+
+test('completed inspection makes one bounded newest-first search and never reads users or publishes',async()=>{
+ const calls=[],sourceVideo=video({liveStreamingDetails:{actualStartTime:'2026-10-22T10:00:00Z',actualEndTime:'2026-10-22T11:45:00Z'}});
+ const report=await inspectMatchWatch({env:{...env,MATCH_WATCH_FEED:'completed'},now,fetchImpl:async(input,options)=>{
+  const url=new URL(input);calls.push(url);assert.equal(url.origin,'https://www.googleapis.com');assert.equal(options.redirect,'error');
+  if(url.pathname.endsWith('/channels'))return Response.json({items:[{id:WATCH_SOURCE.channelId,snippet:{customUrl:'@fifa'}}]});
+  if(url.pathname.endsWith('/search')){assert.equal(url.searchParams.get('eventType'),'completed');assert.equal(url.searchParams.get('order'),'date');assert.equal(url.searchParams.get('type'),'video');assert.equal(url.searchParams.get('maxResults'),'10');return Response.json({items:[{id:{videoId:sourceVideo.id}}],nextPageToken:'NOT_FOLLOWED'});}
+  assert.ok(url.pathname.endsWith('/videos'));return Response.json({items:[sourceVideo]});
+ }});
+ assert.equal(report.errorCode,undefined);assert.equal(report.feed,'completed');assert.equal(calls.length,3);assert.equal(report.requestCounts.search,1);assert.equal(report.requestCounts.supabase,0);assert.equal(report.featureReady,false);assert.equal(report.videos[0].kind,'ended');assert.equal(report.videos[0].fixtureVerified,false);
+});

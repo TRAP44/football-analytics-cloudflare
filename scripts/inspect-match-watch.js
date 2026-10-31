@@ -106,8 +106,8 @@ export async function inspectMatchWatch({env=process.env,fetchImpl=fetch,now=new
   const today=Date.parse(now.toISOString().slice(0,10)+'T00:00:00Z');
   const fixtureId=/^[1-9][0-9]{0,9}$/.test(requestedFixture)&&Number(requestedFixture)<=2_000_000_000?Number(requestedFixture):0;
   const report={scope:candidateHandle?'unverified_public_candidate_metadata_not_playback_or_published_catalogue':fixtureId?'official_source_and_one_guarded_fixture_not_playback_or_published_catalogue':'read_only_official_youtube_metadata_not_playback_or_published_catalogue',observedAt:now.toISOString(),searchCountry:['RU','GB','US','SG'].includes(searchCountry)?searchCountry:null,
-    feed:['live','uploads'].includes(feed)?feed:null,keyAccepted:false,channelVerified:false,source,requestCounts:{youtube:0,search:0,supabase:0},videos:[],matchHints:[],matchCacheStatus:'not_requested',featureReady:false};
-  if(!['live','uploads'].includes(feed))return {...report,errorCode:'WATCH_FEED_INVALID'};
+    feed:['live','uploads','completed'].includes(feed)?feed:null,keyAccepted:false,channelVerified:false,source,requestCounts:{youtube:0,search:0,supabase:0},videos:[],matchHints:[],matchCacheStatus:'not_requested',featureReady:false};
+  if(!['live','uploads','completed'].includes(feed))return {...report,errorCode:'WATCH_FEED_INVALID'};
   if(!source)return {...report,errorCode:'WATCH_SOURCE_NOT_ALLOWED'};
   if(candidateHandle&&!candidateValid)return {...report,errorCode:'WATCH_CANDIDATE_HANDLE_INVALID'};
   if(!['RU','GB','US','SG'].includes(searchCountry))return {...report,searchCountry:null,errorCode:'WATCH_SEARCH_COUNTRY_INVALID'};
@@ -144,8 +144,8 @@ export async function inspectMatchWatch({env=process.env,fetchImpl=fetch,now=new
       const results=await youtube('playlistItems',{part:'contentDetails',playlistId:'UU'+source.channelId.slice(2),maxResults:'20'});
       if(results.length>20||results.some(item=>!VIDEO_ID.test(item?.contentDetails?.videoId||'')))fail('YOUTUBE_UPLOADS_RESPONSE_INVALID');
       for(const item of results)ids.add(item.contentDetails.videoId);
-    }else for(const eventType of ['live','upcoming']){
-      const results=await youtube('search',{part:'id',channelId:source.channelId,type:'video',eventType,regionCode:searchCountry,maxResults:'10'});
+    }else for(const eventType of feed==='completed'?['completed']:['live','upcoming']){
+      const results=await youtube('search',{part:'id',channelId:source.channelId,type:'video',eventType,...(feed==='completed'?{order:'date'}:{}),regionCode:searchCountry,maxResults:'10'});
       if(results.length>10)fail('YOUTUBE_SEARCH_RESPONSE_INVALID');
       for(const result of results){const id=result?.id?.videoId;if(VIDEO_ID.test(id || ''))ids.add(id);}
     }
@@ -209,7 +209,7 @@ export async function inspectMatchWatch({env=process.env,fetchImpl=fetch,now=new
       else report.fixtureBatch={date:fixtureDate,verified:true,provider:'api-football',observedAt:now.toISOString(),skippedInvalid,matches};
     }catch{return {...report,errorCode:'WATCH_FIXTURE_VERIFICATION_FAILED'};}
   }
-  if(feed==='uploads')return report;
+  if(feed==='uploads'||feed==='completed')return report;
   // Only existing shared public sports cache. No users, Telegram messages,
   // arbitrary SQL/URL inputs, user-data or sports-data writes to production.
   const dbKey=env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY;

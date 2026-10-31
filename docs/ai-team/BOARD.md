@@ -109,9 +109,11 @@
 
 
 
+
 ## На ревью
 
-- [ ] Полные записи и эфиры Indian Super League — **Codex** — [PR #1037](https://github.com/TRAP44/football-analytics-cloudflare/pull/1037) — actual2English full+2upcoming, независимые API323/region/embed proofs; discoveryv5, ограниченные выдачи9324quota/day, прежний Footballбюджет.
+- [ ] Полные записи вне ленты клипов — **Codex** — [PR #1038](https://github.com/TRAP44/football-analytics-cloudflare/pull/1038) — отдельный completed-search ISL с прежними source/fixture/region/phase guards, совместимым откатом и проверкой реального прироста.
+
 
 
 
@@ -271,6 +273,8 @@
 - [ ] Mini App: кнопка «Разобрать матч» в карточках поиска и страницы команды — на всю ширину, янтарная (скриншот Сергея 13.10: была крупной серой справа — `button { font: inherit }` перебивал 11px) — **Claude** — [PR #874](https://github.com/TRAP44/football-analytics-cloudflare/pull/874) — ревью: Codex
 
 ## Готово
+
+- [x] Полные записи и эфиры Indian Super League — **Codex** — [PR #1037](https://github.com/TRAP44/football-analytics-cloudflare/pull/1037), mainc5f46640/Deploy41094685086/publicCF670da7fc/launch154 подтверждены. Post-deploy41097241139:68матчей/85источников,3новыхISL, прежние65сохранены; GoaEnglishвышлаиз20uploads, completed-search отдельнаяследующаязадача.
 
 - [x] Анонсы и эфиры K LEAGUE TV — **Codex** — [PR #1036](https://github.com/TRAP44/football-analytics-cloudflare/pull/1036), mainc510f5ba/Deploy41087834470/publicCF867b8c13/launch154 подтверждены. Post-deploy41089007902:65матчей/82источника,8предстоящихэфиров,6KTV; все57прежнихматчей/8записейсохранены.
 

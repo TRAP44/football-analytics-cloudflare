@@ -75,8 +75,9 @@ test('eight-channel maximum discovery remains below the standard daily quota wit
  const day=86400000,channels=Map.groupBy(WATCH_POLICIES,p=>p.channelId);assert.equal(channels.size,8);
  let cost=0;for(const policies of channels.values()){
   const live=policies.filter(p=>!p.highlightsOnly);if(live.length)cost+=2*100*Math.ceil(day/Math.min(...live.map(p=>p.searchIntervalMs||7200000)));
+  const completed=policies.filter(p=>p.completedSearchIntervalMs);if(completed.length)cost+=100*Math.ceil(day/Math.min(...completed.map(p=>p.completedSearchIntervalMs)));
   cost+=Math.ceil(day/Math.min(...policies.map(p=>p.uploadsIntervalMs||7200000)));
  }
- const maxIds=7*50+20+2*40+20+100*2+20;assert.equal(maxIds,690);
- cost+=Math.ceil(maxIds/50)*Math.ceil(day/300000);assert.equal(cost,9324);assert.ok(cost<9500);
+ const maxIds=7*50+20+2*40+20+10+100*2+20;assert.equal(maxIds,700);
+ cost+=Math.ceil(maxIds/50)*Math.ceil(day/300000);assert.equal(cost,9524);assert.ok(cost<10000);
 });
